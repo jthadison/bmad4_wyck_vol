@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: timescale/timescaledb:latest-pg15
     container_name: bmad-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-wyckoff_user}
@@ -42,7 +42,7 @@ services:
       dockerfile: Dockerfile
     container_name: bmad-backend
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-wyckoff_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-wyckoff_db}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wyckoff_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-wyckoff_db}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       POLYGON_API_KEY: ${POLYGON_API_KEY}
