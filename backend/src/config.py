@@ -87,6 +87,30 @@ class Settings(BaseSettings):
         description="Polygon.io API key for market data",
     )
 
+    # Data Ingestion Settings
+    default_provider: str = Field(
+        default="polygon",
+        description="Default market data provider (polygon, yahoo)",
+    )
+    rate_limit_delay: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Delay between API requests in seconds",
+    )
+    max_retries: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum number of retry attempts for failed requests",
+    )
+    batch_size: int = Field(
+        default=500,
+        ge=100,
+        le=50000,
+        description="Number of bars to fetch per batch",
+    )
+
     # Application Settings
     backend_port: int = Field(
         default=8000,
