@@ -63,6 +63,8 @@ yarn.lock
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+dist/
+.vite/
 
 # Python
 __pycache__/
@@ -98,6 +100,9 @@ htmlcov/
 *.cover
 .hypothesis/
 .pytype/
+.mypy_cache/
+.ruff_cache/
+poetry.lock
 
 # Java
 *.class
@@ -178,3 +183,19 @@ coverage/
 
 # Misc
 nul
+
+#BMAD
+.bmad-core/
+.claude/
+.ignore/
+.vscode/
+.history/
+.npm/
+.yarn/
+.pnp.caches/
+.pytest_cache/
+.coverage/
+.nyc_output/
+.ignore/
+docs/
+expansion-packs/
