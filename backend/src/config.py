@@ -86,11 +86,29 @@ class Settings(BaseSettings):
         default="",
         description="Polygon.io API key for market data",
     )
+    alpaca_api_key: str = Field(
+        default="",
+        description="Alpaca Markets API key for market data",
+    )
+    alpaca_secret_key: str = Field(
+        default="",
+        description="Alpaca Markets secret key for authentication",
+    )
+
+    # Real-Time Data Feed Configuration
+    watchlist_symbols: list[str] = Field(
+        default=["AAPL", "TSLA", "SPY"],
+        description="Symbols to stream real-time data for",
+    )
+    bar_timeframe: str = Field(
+        default="1m",
+        description="Real-time bar timeframe (1m, 5m, 15m, 1h, 1d)",
+    )
 
     # Data Ingestion Settings
     default_provider: str = Field(
         default="polygon",
-        description="Default market data provider (polygon, yahoo)",
+        description="Default market data provider (polygon, yahoo, alpaca)",
     )
     rate_limit_delay: float = Field(
         default=1.0,

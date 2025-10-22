@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import date
-from typing import List
+from typing import Callable, List
 
 from src.models.ohlcv import OHLCVBar
 
@@ -23,11 +23,15 @@ class MarketDataProvider(ABC):
     Abstract base class for market data providers.
 
     Concrete implementations must implement all abstract methods to provide
-    historical OHLCV data from various sources (Polygon.io, Yahoo Finance,
-    Alpaca, Alpha Vantage, etc.).
+    both historical and real-time OHLCV data from various sources
+    (Polygon.io, Yahoo Finance, Alpaca, Alpha Vantage, etc.).
 
     Expected behavior:
     - fetch_historical_bars() returns List[OHLCVBar] with validated data
+    - connect() establishes WebSocket connection for real-time data
+    - subscribe() subscribes to real-time bar updates for symbols
+    - disconnect() cleanly closes WebSocket connection
+    - on_bar_received() is a callback invoked when new bar arrives
     - Raises exception on failure (network errors, API errors, etc.)
     - Handles rate limits internally (provider-specific implementation)
     - Converts timestamps to UTC
@@ -58,6 +62,58 @@ class MarketDataProvider(ABC):
             httpx.HTTPError: For network or HTTP errors
             ValueError: For invalid parameters or data parsing errors
             RuntimeError: For provider-specific errors (rate limits, auth, etc.)
+        """
+        pass
+
+    @abstractmethod
+    async def connect(self) -> None:
+        """
+        Establish WebSocket connection to real-time data feed.
+
+        This method should authenticate with the provider and prepare
+        the WebSocket connection for receiving real-time data.
+
+        Raises:
+            ConnectionError: If connection fails
+            RuntimeError: For authentication or provider-specific errors
+        """
+        pass
+
+    @abstractmethod
+    async def subscribe(self, symbols: List[str], timeframe: str = "1m") -> None:
+        """
+        Subscribe to real-time bar updates for specified symbols.
+
+        Args:
+            symbols: List of symbols to subscribe to (e.g., ["AAPL", "TSLA"])
+            timeframe: Bar timeframe for subscription (e.g., "1m", "5m", "1h")
+
+        Raises:
+            ValueError: If symbols list is empty or timeframe is invalid
+            RuntimeError: If not connected or subscription fails
+        """
+        pass
+
+    @abstractmethod
+    async def disconnect(self) -> None:
+        """
+        Close WebSocket connection cleanly.
+
+        This method should gracefully disconnect from the provider,
+        cleaning up any resources and logging final metrics.
+        """
+        pass
+
+    @abstractmethod
+    def on_bar_received(self, callback: Callable[[OHLCVBar], None]) -> None:
+        """
+        Register callback to be invoked when a new bar is received.
+
+        The callback will be called with each validated OHLCVBar received
+        from the real-time feed.
+
+        Args:
+            callback: Function to call with OHLCVBar parameter
         """
         pass
 
