@@ -3,17 +3,22 @@ Market Data Service orchestration layer.
 
 This module orchestrates the workflow for ingesting historical market data:
 fetch → validate → check duplicates → insert.
+
+Also provides real-time data feed coordination via MarketDataCoordinator.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
-from datetime import date
-from typing import List
+from datetime import date, datetime, timezone
+from typing import List, Optional
 
 import structlog
 
+from src.config import Settings
 from src.database import async_session_maker
+from src.market_data.calculate_ratios import calculate_spread_and_volume_ratios
 from src.market_data.provider import MarketDataProvider
 from src.market_data.retry import with_retry
 from src.market_data.validators import validate_bar_batch
@@ -292,3 +297,214 @@ class DataQualityReport:
             f"  Zero Volume Bars: {self.zero_volume_bars}\n"
             f"  Quality Score: {self.quality_score:.1f}%"
         )
+
+
+class MarketDataCoordinator:
+    """
+    Coordinates real-time market data feed lifecycle.
+
+    Manages adapter connection, subscription, and database integration.
+    Designed for use with FastAPI startup/shutdown events.
+    """
+
+    def __init__(
+        self,
+        adapter: MarketDataProvider,
+        settings: Settings,
+    ):
+        """
+        Initialize coordinator with adapter and settings.
+
+        Args:
+            adapter: MarketDataProvider implementation (AlpacaAdapter, etc.)
+            settings: Application settings
+        """
+        self.adapter = adapter
+        self.settings = settings
+        self._is_running: bool = False
+        self._start_time: Optional[datetime] = None
+
+        logger.info(
+            "market_data_coordinator_initialized",
+            provider=adapter.__class__.__name__,
+        )
+
+    async def start(self) -> None:
+        """
+        Start real-time data feed.
+
+        Called on FastAPI app startup event.
+        Connects to provider and subscribes to watchlist symbols.
+        """
+        if self._is_running:
+            logger.warning("coordinator_already_running")
+            return
+
+        try:
+            logger.info(
+                "starting_realtime_feed",
+                symbols=self.settings.watchlist_symbols,
+                timeframe=self.settings.bar_timeframe,
+            )
+
+            # Register bar callback
+            self.adapter.on_bar_received(self._on_bar_received)
+
+            # Connect to provider
+            await self.adapter.connect()
+
+            # Subscribe to watchlist
+            await self.adapter.subscribe(
+                self.settings.watchlist_symbols,
+                self.settings.bar_timeframe,
+            )
+
+            self._is_running = True
+            self._start_time = datetime.now(timezone.utc)
+
+            logger.info(
+                "realtime_feed_started",
+                symbols=self.settings.watchlist_symbols,
+            )
+
+        except Exception as e:
+            logger.error(
+                "realtime_feed_start_failed",
+                error=str(e),
+            )
+            raise
+
+    async def stop(self) -> None:
+        """
+        Stop real-time data feed.
+
+        Called on FastAPI app shutdown event.
+        Gracefully disconnects from provider.
+        """
+        if not self._is_running:
+            logger.warning("coordinator_not_running")
+            return
+
+        try:
+            logger.info("stopping_realtime_feed")
+
+            # Calculate uptime
+            uptime = None
+            if self._start_time:
+                uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds()
+
+            # Disconnect from provider
+            await self.adapter.disconnect()
+
+            self._is_running = False
+
+            logger.info(
+                "realtime_feed_stopped",
+                uptime_seconds=uptime,
+            )
+
+        except Exception as e:
+            logger.error(
+                "realtime_feed_stop_failed",
+                error=str(e),
+            )
+            raise
+
+    def _on_bar_received(self, bar: OHLCVBar) -> None:
+        """
+        Callback invoked when bar is received from adapter.
+
+        Integrates with database by inserting bar asynchronously.
+
+        Args:
+            bar: Validated OHLCVBar from real-time feed
+        """
+        # Create async task to insert bar
+        asyncio.create_task(self._insert_bar(bar))
+
+    async def _insert_bar(self, bar: OHLCVBar) -> None:
+        """
+        Insert bar into database with error handling and latency tracking.
+
+        Args:
+            bar: OHLCVBar to insert
+        """
+        start_time = datetime.now(timezone.utc)
+
+        try:
+            # Calculate ratios before insertion
+            async with async_session_maker() as session:
+                repo = OHLCVRepository(session)
+
+                # Get recent bars for ratio calculation (last 20 bars)
+                # Calculate lookback period based on timeframe
+                from datetime import timedelta
+                lookback_days = 30  # Default lookback
+                if bar.timeframe == "1m":
+                    lookback_days = 1  # 1 day for minute bars
+                elif bar.timeframe == "1h":
+                    lookback_days = 7  # 1 week for hourly bars
+
+                recent_bars = await repo.get_bars(
+                    symbol=bar.symbol,
+                    timeframe=bar.timeframe,
+                    start_date=bar.timestamp - timedelta(days=lookback_days),
+                    end_date=bar.timestamp,
+                )
+
+                # Calculate spread and volume ratios
+                if recent_bars:
+                    bar = calculate_spread_and_volume_ratios([bar], recent_bars)[0]
+
+                # Insert bar
+                inserted_count = await repo.insert_bars([bar])
+
+                # Calculate insertion latency
+                end_time = datetime.now(timezone.utc)
+                insertion_latency = (end_time - start_time).total_seconds()
+
+                if inserted_count > 0:
+                    logger.info(
+                        "realtime_bar_inserted",
+                        symbol=bar.symbol,
+                        timestamp=bar.timestamp.isoformat(),
+                        insertion_latency_ms=insertion_latency * 1000,
+                    )
+                else:
+                    # Duplicate bar (already exists)
+                    logger.debug(
+                        "realtime_bar_duplicate",
+                        symbol=bar.symbol,
+                        timestamp=bar.timestamp.isoformat(),
+                    )
+
+        except Exception as e:
+            logger.error(
+                "realtime_bar_insertion_failed",
+                symbol=bar.symbol,
+                timestamp=bar.timestamp.isoformat(),
+                error=str(e),
+            )
+
+    async def health_check(self) -> dict:
+        """
+        Get health status of real-time feed.
+
+        Returns:
+            Dictionary with health status information
+        """
+        is_healthy = await self.adapter.health_check()
+        provider_name = await self.adapter.get_provider_name()
+
+        uptime = None
+        if self._start_time:
+            uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds()
+
+        return {
+            "is_running": self._is_running,
+            "is_healthy": is_healthy,
+            "provider": provider_name,
+            "uptime_seconds": uptime,
+            "symbols": self.settings.watchlist_symbols,
+            "timeframe": self.settings.bar_timeframe,
+        }
