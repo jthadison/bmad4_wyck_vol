@@ -1,0 +1,32 @@
+name: Code Generation
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'backend/src/models/**'
+
+jobs:
+  pydantic-to-typescript:
+    name: Generate TypeScript Types from Pydantic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Placeholder for pydantic-to-typescript generation
+      # This will be implemented in a later story when Pydantic models are created
+      # and pydantic-to-typescript package is configured
+
+      - name: Placeholder for type generation
+        run: echo "Type generation will be implemented in later stories"
+
+      # Future implementation will:
+      # 1. Install pydantic-to-typescript
+      # 2. Run generation script
+      # 3. Commit generated types to shared/types/
+      # 4. Create PR if changes detected
