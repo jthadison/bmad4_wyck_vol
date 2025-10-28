@@ -18,6 +18,8 @@ from src.pattern_engine.volume_analyzer import (
     calculate_volume_ratios_batch,
     calculate_spread_ratio,
     calculate_spread_ratios_batch,
+    calculate_close_position,
+    calculate_close_positions_batch,
 )
 
 
@@ -563,3 +565,413 @@ class TestSpreadAnalysisRealisticData:
 
         # Validate expected ranges
         assert avg_ratio > 0.7 and avg_ratio < 1.3, "Average should be near 1.0"
+
+
+class TestClosePositionAnalysisRealisticData:
+    """Integration tests for close position calculation with realistic market data patterns."""
+
+    def test_bullish_absorption_detection(self):
+        """
+        Test detection of bullish absorption: high volume + narrow spread + close >= 0.7.
+
+        Acceptance Criteria 8: Generate 252 bars with bullish patterns,
+        identify bars with close in upper 30% (close_position >= 0.7).
+        """
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 10_000_000
+        base_spread = Decimal("2.0")
+
+        # Track bullish absorption bars
+        bullish_indices = [40, 80, 120, 160, 200]
+
+        for i in range(252):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+
+            # Create bullish absorption bars
+            if i in bullish_indices:
+                # High volume + narrow spread + close at high
+                volume = int(base_volume * 2.0)
+                spread = base_spread * Decimal("0.4")  # Narrow spread
+                high = (Decimal(str(price)) + spread).quantize(Decimal("0.00000001"))
+                low = Decimal(str(price)).quantize(Decimal("0.00000001"))
+                # Close at 80% of range (strong buying pressure)
+                close = (low + spread * Decimal("0.8")).quantize(Decimal("0.00000001"))
+            else:
+                # Normal bars with random close positions
+                volume = int(base_volume * random.uniform(0.8, 1.2))
+                spread = base_spread * Decimal(str(random.uniform(0.8, 1.2)))
+                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+                # Random close position
+                close_pct = random.uniform(0.2, 0.8)
+                close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
+
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate close positions
+        close_positions = calculate_close_positions_batch(bars)
+
+        # Identify bars with close in upper 30% (bullish)
+        bullish_detected = [i for i, cp in enumerate(close_positions) if cp >= 0.7]
+
+        # Log statistics
+        print(f"\nBullish Absorption Detection (252 trading days):")
+        print(f"  Bullish bars expected: {len(bullish_indices)}")
+        print(f"  Bars with close >= 0.7: {len(bullish_detected)}")
+        print(f"  Detected indices: {bullish_detected}")
+
+        # All intentional bullish bars should be detected
+        for idx in bullish_indices:
+            assert idx in bullish_detected, f"Bullish bar at {idx} not detected"
+            assert close_positions[idx] >= 0.7, f"Expected close >= 0.7 at {idx}, got {close_positions[idx]}"
+
+        # Percentage of bullish bars
+        bullish_pct = (len(bullish_detected) / len(close_positions)) * 100
+        print(f"  Percentage of bullish bars: {bullish_pct:.1f}%")
+
+    def test_bearish_distribution_detection(self):
+        """
+        Test detection of bearish distribution: high volume + narrow spread + close <= 0.3.
+
+        Acceptance Criteria 9: Generate 252 bars with bearish patterns,
+        identify bars with close in lower 30% (close_position <= 0.3).
+        """
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 10_000_000
+        base_spread = Decimal("2.0")
+
+        # Track bearish distribution bars
+        bearish_indices = [50, 90, 130, 170, 210, 240]
+
+        for i in range(252):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+
+            # Create bearish distribution bars
+            if i in bearish_indices:
+                # High volume + narrow spread + close at low
+                volume = int(base_volume * 2.0)
+                spread = base_spread * Decimal("0.4")  # Narrow spread
+                high = (Decimal(str(price)) + spread).quantize(Decimal("0.00000001"))
+                low = Decimal(str(price)).quantize(Decimal("0.00000001"))
+                # Close at 20% of range (strong selling pressure)
+                close = (low + spread * Decimal("0.2")).quantize(Decimal("0.00000001"))
+            else:
+                # Normal bars with random close positions
+                volume = int(base_volume * random.uniform(0.8, 1.2))
+                spread = base_spread * Decimal(str(random.uniform(0.8, 1.2)))
+                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+                # Random close position
+                close_pct = random.uniform(0.2, 0.8)
+                close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
+
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate close positions
+        close_positions = calculate_close_positions_batch(bars)
+
+        # Identify bars with close in lower 30% (bearish)
+        bearish_detected = [i for i, cp in enumerate(close_positions) if cp <= 0.3]
+
+        # Log statistics
+        print(f"\nBearish Distribution Detection (252 trading days):")
+        print(f"  Bearish bars expected: {len(bearish_indices)}")
+        print(f"  Bars with close <= 0.3: {len(bearish_detected)}")
+        print(f"  Detected indices: {bearish_detected}")
+
+        # All intentional bearish bars should be detected
+        for idx in bearish_indices:
+            assert idx in bearish_detected, f"Bearish bar at {idx} not detected"
+            assert close_positions[idx] <= 0.3, f"Expected close <= 0.3 at {idx}, got {close_positions[idx]}"
+
+        # Percentage of bearish bars
+        bearish_pct = (len(bearish_detected) / len(close_positions)) * 100
+        print(f"  Percentage of bearish bars: {bearish_pct:.1f}%")
+
+    def test_pressure_analysis_252_bars(self):
+        """
+        Test pressure analysis categorization over 252-bar period.
+
+        Categorizes bars by pressure:
+        - Strong buying: close_position >= 0.7
+        - Neutral: 0.3 < close_position < 0.7
+        - Strong selling: close_position <= 0.3
+
+        Acceptance Criteria 8, 9, 10: Calculate statistics and verify realistic distribution.
+        """
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 10_000_000
+        base_spread = Decimal("2.0")
+
+        for i in range(252):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+            volume = int(base_volume * random.uniform(0.7, 1.3))
+            spread = base_spread * Decimal(str(random.uniform(0.8, 1.2)))
+            high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+
+            # Random close position across full range
+            close_pct = random.uniform(0.0, 1.0)
+            close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate close positions
+        close_positions = calculate_close_positions_batch(bars)
+
+        # Categorize by pressure
+        buying_pressure = [cp for cp in close_positions if cp >= 0.7]
+        neutral_pressure = [cp for cp in close_positions if 0.3 < cp < 0.7]
+        selling_pressure = [cp for cp in close_positions if cp <= 0.3]
+
+        # Calculate statistics
+        avg_close_position = sum(close_positions) / len(close_positions)
+        min_close_position = min(close_positions)
+        max_close_position = max(close_positions)
+        median_close_position = sorted(close_positions)[len(close_positions) // 2]
+
+        # Log statistics
+        print(f"\nPressure Analysis (252 trading days):")
+        print(f"  Strong buying pressure (>= 0.7): {len(buying_pressure)} bars ({len(buying_pressure)/252*100:.1f}%)")
+        print(f"  Neutral pressure (0.3-0.7): {len(neutral_pressure)} bars ({len(neutral_pressure)/252*100:.1f}%)")
+        print(f"  Strong selling pressure (<= 0.3): {len(selling_pressure)} bars ({len(selling_pressure)/252*100:.1f}%)")
+        print(f"  Average close position: {avg_close_position:.4f}")
+        print(f"  Min: {min_close_position:.4f}, Max: {max_close_position:.4f}, Median: {median_close_position:.4f}")
+
+        # Validate results
+        assert len(close_positions) == 252
+        assert all(0.0 <= cp <= 1.0 for cp in close_positions), "All positions must be in [0.0, 1.0]"
+
+        # Verify distribution is realistic (not all extremes)
+        # With random data, we expect significant neutral bars
+        assert len(neutral_pressure) > 50, "Expected significant neutral pressure bars"
+
+        # Total should equal 252
+        assert len(buying_pressure) + len(neutral_pressure) + len(selling_pressure) == 252
+
+    def test_combined_volume_spread_close_analysis(self):
+        """
+        Test combined analysis of volume_ratio, spread_ratio, and close_position.
+
+        Identifies advanced Wyckoff patterns:
+        - Bullish absorption: high volume + narrow spread + close >= 0.7
+        - Bearish distribution: high volume + narrow spread + close <= 0.3
+        - Climax: high volume + wide spread + extreme close position
+        """
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 10_000_000
+        base_spread = Decimal("2.0")
+
+        # Define pattern bars
+        bullish_absorption_idx = 40    # High vol + narrow spread + high close
+        bearish_distribution_idx = 80  # High vol + narrow spread + low close
+        buying_climax_idx = 120        # High vol + wide spread + high close
+        selling_climax_idx = 160       # High vol + wide spread + low close
+
+        for i in range(200):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+
+            if i == bullish_absorption_idx:
+                volume = int(base_volume * 2.0)
+                spread = base_spread * Decimal("0.4")
+                high = (Decimal(str(price)) + spread).quantize(Decimal("0.00000001"))
+                low = Decimal(str(price)).quantize(Decimal("0.00000001"))
+                close = (low + spread * Decimal("0.8")).quantize(Decimal("0.00000001"))  # 80% close
+            elif i == bearish_distribution_idx:
+                volume = int(base_volume * 2.0)
+                spread = base_spread * Decimal("0.4")
+                high = (Decimal(str(price)) + spread).quantize(Decimal("0.00000001"))
+                low = Decimal(str(price)).quantize(Decimal("0.00000001"))
+                close = (low + spread * Decimal("0.2")).quantize(Decimal("0.00000001"))  # 20% close
+            elif i == buying_climax_idx:
+                volume = int(base_volume * 3.0)
+                spread = base_spread * Decimal("2.5")
+                high = (Decimal(str(price)) + spread).quantize(Decimal("0.00000001"))
+                low = Decimal(str(price)).quantize(Decimal("0.00000001"))
+                close = (low + spread * Decimal("0.9")).quantize(Decimal("0.00000001"))  # 90% close
+            elif i == selling_climax_idx:
+                volume = int(base_volume * 3.0)
+                spread = base_spread * Decimal("2.5")
+                high = (Decimal(str(price)) + spread).quantize(Decimal("0.00000001"))
+                low = Decimal(str(price)).quantize(Decimal("0.00000001"))
+                close = (low + spread * Decimal("0.1")).quantize(Decimal("0.00000001"))  # 10% close
+            else:
+                volume = int(base_volume * random.uniform(0.9, 1.1))
+                spread = base_spread * Decimal(str(random.uniform(0.9, 1.1)))
+                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+                close_pct = random.uniform(0.3, 0.7)
+                close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
+
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate all metrics
+        volume_ratios = calculate_volume_ratios_batch(bars)
+        spread_ratios = calculate_spread_ratios_batch(bars)
+        close_positions = calculate_close_positions_batch(bars)
+
+        # Verify bullish absorption
+        assert volume_ratios[bullish_absorption_idx] >= 1.5
+        assert spread_ratios[bullish_absorption_idx] <= 0.5
+        assert close_positions[bullish_absorption_idx] >= 0.7
+
+        # Verify bearish distribution
+        assert volume_ratios[bearish_distribution_idx] >= 1.5
+        assert spread_ratios[bearish_distribution_idx] <= 0.5
+        assert close_positions[bearish_distribution_idx] <= 0.3
+
+        # Verify buying climax
+        assert volume_ratios[buying_climax_idx] >= 2.5
+        assert spread_ratios[buying_climax_idx] >= 2.0
+        assert close_positions[buying_climax_idx] >= 0.7
+
+        # Verify selling climax
+        assert volume_ratios[selling_climax_idx] >= 2.5
+        assert spread_ratios[selling_climax_idx] >= 2.0
+        assert close_positions[selling_climax_idx] <= 0.3
+
+        print(f"\nCombined Volume/Spread/Close Analysis:")
+        print(f"  Bullish Absorption (bar {bullish_absorption_idx}):")
+        print(f"    Vol: {volume_ratios[bullish_absorption_idx]:.2f}x, Spread: {spread_ratios[bullish_absorption_idx]:.2f}x, Close: {close_positions[bullish_absorption_idx]:.2f}")
+        print(f"  Bearish Distribution (bar {bearish_distribution_idx}):")
+        print(f"    Vol: {volume_ratios[bearish_distribution_idx]:.2f}x, Spread: {spread_ratios[bearish_distribution_idx]:.2f}x, Close: {close_positions[bearish_distribution_idx]:.2f}")
+        print(f"  Buying Climax (bar {buying_climax_idx}):")
+        print(f"    Vol: {volume_ratios[buying_climax_idx]:.2f}x, Spread: {spread_ratios[buying_climax_idx]:.2f}x, Close: {close_positions[buying_climax_idx]:.2f}")
+        print(f"  Selling Climax (bar {selling_climax_idx}):")
+        print(f"    Vol: {volume_ratios[selling_climax_idx]:.2f}x, Spread: {spread_ratios[selling_climax_idx]:.2f}x, Close: {close_positions[selling_climax_idx]:.2f}")
+
+    def test_close_position_statistics_252_bars(self):
+        """Test close position calculation for 252 trading days and log statistics."""
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_spread = Decimal("2.0")
+
+        for i in range(252):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+            volume = int(10_000_000 * random.uniform(0.7, 1.3))
+            spread = base_spread * Decimal(str(random.uniform(0.8, 1.2)))
+
+            high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+
+            # Random close position
+            close_pct = random.uniform(0.0, 1.0)
+            close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate close positions
+        close_positions = calculate_close_positions_batch(bars)
+
+        # Validate
+        assert len(close_positions) == 252
+        assert all(0.0 <= cp <= 1.0 for cp in close_positions)
+
+        # Calculate statistics
+        min_pos = min(close_positions)
+        max_pos = max(close_positions)
+        avg_pos = sum(close_positions) / len(close_positions)
+        median_pos = sorted(close_positions)[len(close_positions) // 2]
+
+        # Count by category
+        strong_buying = len([cp for cp in close_positions if cp >= 0.7])
+        moderate_buying = len([cp for cp in close_positions if 0.6 <= cp < 0.7])
+        neutral = len([cp for cp in close_positions if 0.4 < cp < 0.6])
+        moderate_selling = len([cp for cp in close_positions if 0.3 < cp <= 0.4])
+        strong_selling = len([cp for cp in close_positions if cp <= 0.3])
+
+        print(f"\nClose Position Statistics (252 trading days):")
+        print(f"  Min: {min_pos:.4f}")
+        print(f"  Max: {max_pos:.4f}")
+        print(f"  Mean: {avg_pos:.4f}")
+        print(f"  Median: {median_pos:.4f}")
+        print(f"  Strong buying (>= 0.7): {strong_buying} bars ({strong_buying/252*100:.1f}%)")
+        print(f"  Moderate buying (0.6-0.7): {moderate_buying} bars ({moderate_buying/252*100:.1f}%)")
+        print(f"  Neutral (0.4-0.6): {neutral} bars ({neutral/252*100:.1f}%)")
+        print(f"  Moderate selling (0.3-0.4): {moderate_selling} bars ({moderate_selling/252*100:.1f}%)")
+        print(f"  Strong selling (<= 0.3): {strong_selling} bars ({strong_selling/252*100:.1f}%)")
+
+        # Validate expected ranges (with random data, average should be near 0.5)
+        assert avg_pos > 0.35 and avg_pos < 0.65, "Average should be near 0.5 with random data"
