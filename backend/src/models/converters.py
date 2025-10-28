@@ -45,8 +45,25 @@ def bars_to_dataframe(bars: List[OHLCVBar]) -> pd.DataFrame:
     if not bars:
         return pd.DataFrame()
 
-    # Convert Pydantic models to dicts
-    data = [bar.model_dump() for bar in bars]
+    # Convert Pydantic models to dicts manually to bypass serializers
+    # This preserves datetime and Decimal objects as-is
+    data = []
+    for bar in bars:
+        data.append({
+            'id': bar.id,
+            'symbol': bar.symbol,
+            'timeframe': bar.timeframe,
+            'timestamp': bar.timestamp,
+            'open': bar.open,
+            'high': bar.high,
+            'low': bar.low,
+            'close': bar.close,
+            'volume': bar.volume,
+            'spread': bar.spread,
+            'spread_ratio': bar.spread_ratio,
+            'volume_ratio': bar.volume_ratio,
+            'created_at': bar.created_at,
+        })
 
     # Create DataFrame
     df = pd.DataFrame(data)

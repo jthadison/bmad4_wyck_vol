@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class OHLCVBar(BaseModel):
@@ -92,6 +92,21 @@ class OHLCVBar(BaseModel):
             return v
         return Decimal(str(v))
 
+    @field_serializer("open", "high", "low", "close", "spread", "spread_ratio", "volume_ratio")
+    def serialize_decimal(self, value: Decimal) -> str:
+        """Serialize Decimal fields as strings to preserve precision."""
+        return str(value)
+
+    @field_serializer("timestamp", "created_at")
+    def serialize_datetime(self, value: datetime) -> str:
+        """Serialize datetime fields as ISO format strings."""
+        return value.isoformat()
+
+    @field_serializer("id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID as string."""
+        return str(value)
+
     @property
     def close_position(self) -> float:
         """
@@ -115,9 +130,4 @@ class OHLCVBar(BaseModel):
 
     model_config = ConfigDict(
         from_attributes=True,  # Allow ORM mode for SQLAlchemy integration
-        json_encoders={
-            Decimal: lambda v: str(v),
-            datetime: lambda v: v.isoformat(),
-            UUID: lambda v: str(v),
-        }
     )
