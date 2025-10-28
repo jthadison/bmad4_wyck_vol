@@ -13,6 +13,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
+from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
 
 
@@ -43,10 +44,9 @@ class VolumeAnalysis(BaseModel):
         description="Position of close within bar range: (close - low) / (high - low) (Story 2.3)",
         decimal_places=4,
     )
-    effort_result: Optional[str] = Field(
+    effort_result: Optional[EffortResult] = Field(
         None,
-        description="Effort/Result classification (Story 2.4)",
-        max_length=50,
+        description="Effort vs. Result classification based on volume/spread relationship (Story 2.4)",
     )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -145,3 +145,8 @@ class VolumeAnalysis(BaseModel):
     def serialize_datetime(self, value: datetime) -> str:
         """Serialize datetime fields as ISO format strings."""
         return value.isoformat()
+
+    @field_serializer("effort_result")
+    def serialize_effort_result(self, value: Optional[EffortResult]) -> Optional[str]:
+        """Serialize EffortResult enum as string value."""
+        return value.value if value is not None else None
