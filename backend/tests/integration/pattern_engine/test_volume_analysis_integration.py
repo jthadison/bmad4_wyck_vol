@@ -16,6 +16,8 @@ from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.volume_analyzer import (
     calculate_volume_ratio,
     calculate_volume_ratios_batch,
+    calculate_spread_ratio,
+    calculate_spread_ratios_batch,
 )
 
 
@@ -266,3 +268,298 @@ class TestVolumeAnalysisRealisticData:
         ratio = calculate_volume_ratio(bars, 30)
         assert ratio is not None
         assert 1.8 < ratio < 2.2, f"Expected ratio ~2.0, got {ratio}"
+
+
+class TestSpreadAnalysisRealisticData:
+    """Integration tests for spread ratio calculation with realistic market data patterns."""
+
+    def test_wide_spread_bars_detection(self):
+        """
+        Test detection of wide spread bars (>2.0x) indicating climactic action.
+
+        Acceptance Criteria 9: Generate 252 bars with occasional wide spread bars,
+        verify ratios >=2.0 are correctly identified.
+        """
+        # Generate 252 bars (1 trading year)
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 10_000_000
+        base_spread = Decimal("2.0")  # $2 average spread
+
+        # Track which bars we intentionally made wide
+        wide_spread_indices = [40, 80, 120, 160, 200]  # 5 wide spread bars
+
+        for i in range(252):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+
+            # Create wide spread bars at specific indices
+            if i in wide_spread_indices:
+                # Wide spread: 2.5x normal (simulates climax, breakout)
+                spread = base_spread * Decimal("2.5")
+            else:
+                # Normal spread with slight variation
+                spread = base_spread * Decimal(str(random.uniform(0.8, 1.2)))
+
+            high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+            volume = int(base_volume * random.uniform(0.7, 1.3))
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=Decimal(str(price + 0.5)),
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate spread ratios for entire year
+        ratios = calculate_spread_ratios_batch(bars)
+
+        # Validate results
+        assert len(ratios) == 252
+
+        # First 20 bars should be None
+        assert all(r is None for r in ratios[:20])
+
+        # Identify wide spread bars (ratio >= 2.0)
+        wide_bars_detected = [i for i, r in enumerate(ratios[20:], start=20) if r is not None and r >= 2.0]
+
+        # Log statistics
+        print(f"\nWide Spread Detection (252 trading days):")
+        print(f"  Wide spread bars expected: {len([i for i in wide_spread_indices if i >= 20])}")
+        print(f"  Wide spread bars detected (ratio >= 2.0): {len(wide_bars_detected)}")
+        print(f"  Detected indices: {wide_bars_detected}")
+
+        # All intentional wide spread bars after bar 20 should be detected
+        for idx in wide_spread_indices:
+            if idx >= 20:
+                assert idx in wide_bars_detected, f"Wide spread bar at {idx} not detected"
+                assert ratios[idx] >= 2.0, f"Expected wide ratio at {idx}, got {ratios[idx]}"
+
+        # Count should match (allowing for some variation due to rolling window)
+        expected_wide = len([i for i in wide_spread_indices if i >= 20])
+        assert len(wide_bars_detected) >= expected_wide, "Not all wide spread bars detected"
+
+    def test_narrow_spread_bars_detection(self):
+        """
+        Test detection of narrow spread bars (<0.5x) indicating absorption.
+
+        Acceptance Criteria 10: Generate 252 bars with absorption patterns,
+        verify ratios <=0.5 are correctly identified.
+        """
+        # Generate 252 bars
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 10_000_000
+        base_spread = Decimal("2.0")
+
+        # Track narrow spread bars
+        narrow_spread_indices = [50, 90, 130, 170, 210, 240]  # 6 narrow spread bars
+
+        for i in range(252):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+
+            # Create narrow spread bars at specific indices
+            if i in narrow_spread_indices:
+                # Narrow spread: 0.4x normal (simulates absorption, consolidation)
+                spread = base_spread * Decimal("0.4")
+            else:
+                # Normal spread with variation
+                spread = base_spread * Decimal(str(random.uniform(0.8, 1.2)))
+
+            high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+            volume = int(base_volume * random.uniform(0.7, 1.3))
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=Decimal(str(price + 0.2)),
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate spread ratios
+        ratios = calculate_spread_ratios_batch(bars)
+
+        # Identify narrow spread bars (ratio <= 0.5)
+        narrow_bars_detected = [i for i, r in enumerate(ratios[20:], start=20) if r is not None and r <= 0.5]
+
+        # Log statistics
+        print(f"\nNarrow Spread Detection (252 trading days):")
+        print(f"  Narrow spread bars expected: {len([i for i in narrow_spread_indices if i >= 20])}")
+        print(f"  Narrow spread bars detected (ratio <= 0.5): {len(narrow_bars_detected)}")
+        print(f"  Detected indices: {narrow_bars_detected}")
+
+        # All intentional narrow spread bars after bar 20 should be detected
+        for idx in narrow_spread_indices:
+            if idx >= 20:
+                assert idx in narrow_bars_detected, f"Narrow spread bar at {idx} not detected"
+                assert ratios[idx] <= 0.5, f"Expected narrow ratio at {idx}, got {ratios[idx]}"
+
+        # Count should match
+        expected_narrow = len([i for i in narrow_spread_indices if i >= 20])
+        assert len(narrow_bars_detected) >= expected_narrow, "Not all narrow spread bars detected"
+
+    def test_combined_volume_and_spread_analysis(self):
+        """
+        Test cross-reference of volume_ratio and spread_ratio for Wyckoff patterns.
+
+        Identifies key patterns:
+        - Climax: high volume + wide spread
+        - Absorption: high volume + narrow spread
+        - No demand: low volume + narrow spread
+        """
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 10_000_000
+        base_spread = Decimal("2.0")
+
+        # Define pattern bars
+        climax_idx = 40       # High volume (2.5x) + wide spread (2.5x)
+        absorption_idx = 80   # High volume (2.0x) + narrow spread (0.4x)
+        no_demand_idx = 120   # Low volume (0.4x) + narrow spread (0.4x)
+
+        for i in range(150):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+
+            # Set volume and spread based on pattern
+            if i == climax_idx:
+                volume = int(base_volume * 2.5)
+                spread = base_spread * Decimal("2.5")
+            elif i == absorption_idx:
+                volume = int(base_volume * 2.0)
+                spread = base_spread * Decimal("0.4")
+            elif i == no_demand_idx:
+                volume = int(base_volume * 0.4)
+                spread = base_spread * Decimal("0.4")
+            else:
+                volume = int(base_volume * random.uniform(0.9, 1.1))
+                spread = base_spread * Decimal(str(random.uniform(0.9, 1.1)))
+
+            high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=Decimal(str(price + 0.3)),
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate both ratios
+        volume_ratios = calculate_volume_ratios_batch(bars)
+        spread_ratios = calculate_spread_ratios_batch(bars)
+
+        # Verify climax pattern (high volume + wide spread)
+        assert volume_ratios[climax_idx] >= 2.0, f"Climax volume ratio too low: {volume_ratios[climax_idx]}"
+        assert spread_ratios[climax_idx] >= 2.0, f"Climax spread ratio too low: {spread_ratios[climax_idx]}"
+
+        # Verify absorption pattern (high volume + narrow spread)
+        assert volume_ratios[absorption_idx] >= 1.5, f"Absorption volume ratio too low: {volume_ratios[absorption_idx]}"
+        assert spread_ratios[absorption_idx] <= 0.5, f"Absorption spread ratio too high: {spread_ratios[absorption_idx]}"
+
+        # Verify no demand pattern (low volume + narrow spread)
+        assert volume_ratios[no_demand_idx] <= 0.5, f"No demand volume ratio too high: {volume_ratios[no_demand_idx]}"
+        assert spread_ratios[no_demand_idx] <= 0.5, f"No demand spread ratio too high: {spread_ratios[no_demand_idx]}"
+
+        print(f"\nCombined Volume/Spread Analysis:")
+        print(f"  Climax (bar {climax_idx}):")
+        print(f"    Volume ratio: {volume_ratios[climax_idx]:.4f}, Spread ratio: {spread_ratios[climax_idx]:.4f}")
+        print(f"  Absorption (bar {absorption_idx}):")
+        print(f"    Volume ratio: {volume_ratios[absorption_idx]:.4f}, Spread ratio: {spread_ratios[absorption_idx]:.4f}")
+        print(f"  No Demand (bar {no_demand_idx}):")
+        print(f"    Volume ratio: {volume_ratios[no_demand_idx]:.4f}, Spread ratio: {spread_ratios[no_demand_idx]:.4f}")
+
+    def test_spread_ratio_statistics_252_bars(self):
+        """Test spread ratio calculation for 252 trading days and log statistics."""
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_spread = Decimal("2.0")
+
+        for i in range(252):
+            timestamp = base_timestamp + timedelta(days=i)
+            price = 150.0
+            # Normal spread variation
+            spread = base_spread * Decimal(str(random.uniform(0.6, 1.4)))
+
+            high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+            volume = int(10_000_000 * random.uniform(0.7, 1.3))
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(price)),
+                high=high,
+                low=low,
+                close=Decimal(str(price + 0.3)),
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Calculate spread ratios
+        ratios = calculate_spread_ratios_batch(bars)
+
+        # Validate
+        assert len(ratios) == 252
+        assert all(r is None for r in ratios[:20])
+
+        valid_ratios = [r for r in ratios[20:] if r is not None]
+        assert len(valid_ratios) == 232
+
+        # Calculate statistics
+        min_ratio = min(valid_ratios)
+        max_ratio = max(valid_ratios)
+        avg_ratio = sum(valid_ratios) / len(valid_ratios)
+        median_ratio = sorted(valid_ratios)[len(valid_ratios) // 2]
+
+        # Count by category
+        wide_count = len([r for r in valid_ratios if r >= 2.0])
+        narrow_count = len([r for r in valid_ratios if r <= 0.5])
+        normal_count = len([r for r in valid_ratios if 0.5 < r < 2.0])
+
+        print(f"\nSpread Ratio Statistics (252 trading days):")
+        print(f"  Min: {min_ratio:.4f}")
+        print(f"  Max: {max_ratio:.4f}")
+        print(f"  Mean: {avg_ratio:.4f}")
+        print(f"  Median: {median_ratio:.4f}")
+        print(f"  Wide spread bars (>=2.0x): {wide_count}")
+        print(f"  Narrow spread bars (<=0.5x): {narrow_count}")
+        print(f"  Normal spread bars: {normal_count}")
+
+        # Validate expected ranges
+        assert avg_ratio > 0.7 and avg_ratio < 1.3, "Average should be near 1.0"
