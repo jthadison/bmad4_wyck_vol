@@ -11,6 +11,7 @@ import numpy as np
 import structlog
 from decimal import Decimal
 
+from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
 
 logger = structlog.get_logger(__name__)
@@ -547,3 +548,143 @@ def calculate_close_positions_batch(bars: List[OHLCVBar]) -> List[float]:
         )
 
     return results.tolist()
+
+
+def classify_effort_result(
+    volume_ratio: Optional[float], spread_ratio: Optional[float]
+) -> EffortResult:
+    """
+    Classify bar based on effort (volume) vs. result (spread).
+
+    This function implements the core Wyckoff principle of "effort vs. result" analysis.
+    It uses dual-path CLIMACTIC detection to comply with VSA (Volume Spread Analysis)
+    standards, capturing both volume-dominated climaxes and balanced climaxes.
+
+    Classification Logic (evaluated in order):
+
+    1. CLIMACTIC (High effort, high result) - DUAL-PATH DETECTION:
+
+       Path 1: Ultra-High Volume Dominance
+       - Conditions: volume_ratio > 2.0 AND spread_ratio > 1.0
+       - Interpretation: Overwhelming volume spike with any wide spread = climactic
+         action being absorbed or exhausted
+       - Example: Selling Climax (SC) with volume=2.5x, spread=1.1x
+
+       Path 2: Strong Effort with Strong Result
+       - Conditions: volume_ratio > 1.5 AND spread_ratio > 1.5
+       - Interpretation: High volume with very wide spread = strong price movement
+         with participation
+       - Example: UTAD with volume=1.6x, spread=1.8x
+
+       Wyckoff context: Selling Climax (SC), Buying Climax (BC), Upthrust After
+       Distribution (UTAD)
+       Signal: Potential reversal, exhaustion of trend
+
+    2. ABSORPTION (High effort, low result):
+       - Conditions: volume_ratio > 1.4 AND spread_ratio < 0.8
+       - Interpretation: High volume but narrow price range = professional absorption
+         of supply/demand
+       - Wyckoff context: Spring, Test, Secondary Test, Last Point of Support (LPS)
+       - Signal: Accumulation (bullish if close >= 0.7) or distribution (bearish if
+         close <= 0.3)
+
+    3. NO_DEMAND (Low effort, low result):
+       - Conditions: volume_ratio < 0.6 AND spread_ratio < 0.8
+       - Interpretation: Low volume and narrow range = lack of interest
+       - Wyckoff context: Test bars in Phase C, weak rallies in distribution
+       - Signal: Potential reversal if in uptrend (no demand to continue)
+
+    4. NORMAL (Balanced or mixed):
+       - Conditions: All other combinations, including None values
+       - Interpretation: Normal market activity, no special signal
+
+    Args:
+        volume_ratio: Current bar volume / 20-bar average volume, or None if insufficient data
+        spread_ratio: Current bar spread / 20-bar average spread, or None if insufficient data
+
+    Returns:
+        EffortResult enum value indicating the classification
+
+    Performance:
+        Pure function with simple conditional logic, executes in <1µs per bar.
+
+    Example:
+        >>> # Selling Climax: ultra-high volume with moderate spread
+        >>> classify_effort_result(2.5, 1.1)
+        EffortResult.CLIMACTIC
+
+        >>> # Spring: high volume absorbed, narrow spread
+        >>> classify_effort_result(1.5, 0.5)
+        EffortResult.ABSORPTION
+
+        >>> # Test bar: low volume, narrow spread
+        >>> classify_effort_result(0.4, 0.5)
+        EffortResult.NO_DEMAND
+
+        >>> # Normal bar: average activity
+        >>> classify_effort_result(1.0, 1.0)
+        EffortResult.NORMAL
+
+        >>> # Insufficient data: first 20 bars
+        >>> classify_effort_result(None, 1.0)
+        EffortResult.NORMAL
+    """
+    # Handle None values (first 20 bars or invalid data)
+    if volume_ratio is None or spread_ratio is None:
+        logger.debug(
+            "insufficient_data_for_classification",
+            volume_ratio=volume_ratio,
+            spread_ratio=spread_ratio,
+            result="NORMAL",
+        )
+        return EffortResult.NORMAL
+
+    # CLIMACTIC Path 1: Ultra-high volume dominance
+    # Volume at 2.0x+ indicates extreme participation; even moderate spread shows climax
+    if volume_ratio >= 2.0 and spread_ratio >= 1.0:
+        logger.debug(
+            "classification",
+            result="CLIMACTIC",
+            path="ultra_volume",
+            volume_ratio=round(volume_ratio, 4),
+            spread_ratio=round(spread_ratio, 4),
+        )
+        return EffortResult.CLIMACTIC
+
+    # CLIMACTIC Path 2: Strong effort with strong result
+    # Balanced high effort and high result = classic climactic action
+    if volume_ratio >= 1.5 and spread_ratio >= 1.5:
+        logger.debug(
+            "classification",
+            result="CLIMACTIC",
+            path="balanced",
+            volume_ratio=round(volume_ratio, 4),
+            spread_ratio=round(spread_ratio, 4),
+        )
+        return EffortResult.CLIMACTIC
+
+    # ABSORPTION: High volume, narrow spread
+    # Professional absorption of supply/demand despite high activity
+    if volume_ratio >= 1.4 and spread_ratio <= 0.8:
+        logger.debug(
+            "classification",
+            result="ABSORPTION",
+            volume_ratio=round(volume_ratio, 4),
+            spread_ratio=round(spread_ratio, 4),
+        )
+        return EffortResult.ABSORPTION
+
+    # NO_DEMAND: Low volume, narrow spread
+    # Lack of interest, weak participation
+    if volume_ratio <= 0.6 and spread_ratio <= 0.8:
+        logger.debug(
+            "classification",
+            result="NO_DEMAND",
+            volume_ratio=round(volume_ratio, 4),
+            spread_ratio=round(spread_ratio, 4),
+        )
+        return EffortResult.NO_DEMAND
+
+    # NORMAL: All other combinations
+    # Balanced effort and result, continuation pattern
+    return EffortResult.NORMAL

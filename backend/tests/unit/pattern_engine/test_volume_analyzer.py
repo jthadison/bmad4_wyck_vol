@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import pytest
 
+from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.volume_analyzer import (
     calculate_volume_ratio,
@@ -19,6 +20,7 @@ from src.pattern_engine.volume_analyzer import (
     calculate_spread_ratios_batch,
     calculate_close_position,
     calculate_close_positions_batch,
+    classify_effort_result,
 )
 
 
@@ -808,3 +810,244 @@ class TestCalculateClosePositionsBatch:
         # All positions must be in [0.0, 1.0]
         for i, position in enumerate(positions):
             assert 0.0 <= position <= 1.0, f"Position {position} at index {i} outside valid range"
+
+
+class TestClassifyEffortResult:
+    """Test suite for classify_effort_result function."""
+
+    # ========== CLIMACTIC TESTS (Dual-Path) ==========
+
+    def test_climactic_path1_ultra_high_volume_boundary(self):
+        """Test CLIMACTIC Path 1 boundary: volume=2.0, spread=1.0."""
+        result = classify_effort_result(2.0, 1.0)
+        assert result == EffortResult.CLIMACTIC
+
+    def test_climactic_path1_ultra_high_volume(self):
+        """Test CLIMACTIC Path 1: ultra-high volume with moderate spread."""
+        result = classify_effort_result(2.5, 1.1)
+        assert result == EffortResult.CLIMACTIC
+
+    def test_climactic_path1_extreme_volume(self):
+        """Test CLIMACTIC Path 1: extreme volume spike."""
+        result = classify_effort_result(3.0, 1.2)
+        assert result == EffortResult.CLIMACTIC
+
+    def test_not_climactic_below_path1_volume(self):
+        """Test NOT CLIMACTIC: volume below Path 1 threshold."""
+        result = classify_effort_result(1.9, 1.0)
+        assert result != EffortResult.CLIMACTIC
+
+    def test_climactic_path2_balanced_boundary(self):
+        """Test CLIMACTIC Path 2 boundary: volume=1.5, spread=1.5."""
+        result = classify_effort_result(1.5, 1.5)
+        assert result == EffortResult.CLIMACTIC
+
+    def test_climactic_path2_balanced_high(self):
+        """Test CLIMACTIC Path 2: balanced high effort and result."""
+        result = classify_effort_result(1.6, 1.6)
+        assert result == EffortResult.CLIMACTIC
+
+    def test_climactic_path2_strong_climax(self):
+        """Test CLIMACTIC Path 2: strong climax pattern."""
+        result = classify_effort_result(2.0, 2.0)
+        assert result == EffortResult.CLIMACTIC
+
+    def test_not_climactic_below_path2_spread(self):
+        """Test NOT CLIMACTIC: below Path 2 spread threshold."""
+        result = classify_effort_result(1.5, 1.4)
+        assert result != EffortResult.CLIMACTIC
+
+    def test_not_climactic_below_path2_volume(self):
+        """Test NOT CLIMACTIC: below Path 2 volume threshold."""
+        result = classify_effort_result(1.4, 1.6)
+        assert result != EffortResult.CLIMACTIC
+
+    def test_not_climactic_high_volume_narrow_spread(self):
+        """Test NOT CLIMACTIC: high volume but narrow spread (becomes ABSORPTION)."""
+        result = classify_effort_result(1.9, 0.9)
+        assert result != EffortResult.CLIMACTIC
+
+    @pytest.mark.parametrize(
+        "volume_ratio,spread_ratio,expected",
+        [
+            # Path 1 tests
+            (2.0, 1.0, EffortResult.CLIMACTIC),  # Boundary
+            (2.5, 1.1, EffortResult.CLIMACTIC),  # Ultra-high volume
+            (3.0, 1.2, EffortResult.CLIMACTIC),  # Extreme volume
+            (1.9, 1.0, EffortResult.NORMAL),     # Below Path 1 volume
+            # Path 2 tests
+            (1.5, 1.5, EffortResult.CLIMACTIC),  # Boundary
+            (1.6, 1.6, EffortResult.CLIMACTIC),  # Balanced
+            (2.0, 2.0, EffortResult.CLIMACTIC),  # Strong
+            (1.5, 1.4, EffortResult.NORMAL),     # Below Path 2 spread
+            (1.4, 1.6, EffortResult.NORMAL),     # Below Path 2 volume
+        ],
+    )
+    def test_climactic_parametrized(self, volume_ratio, spread_ratio, expected):
+        """Parametrized test for CLIMACTIC classification."""
+        result = classify_effort_result(volume_ratio, spread_ratio)
+        assert result == expected
+
+    # ========== ABSORPTION TESTS ==========
+
+    def test_absorption_basic(self):
+        """Test ABSORPTION: high volume, narrow spread."""
+        result = classify_effort_result(1.5, 0.5)
+        assert result == EffortResult.ABSORPTION
+
+    def test_absorption_boundary(self):
+        """Test ABSORPTION boundary: volume=1.4, spread=0.8."""
+        result = classify_effort_result(1.4, 0.8)
+        assert result == EffortResult.ABSORPTION
+
+    def test_not_absorption_above_spread_threshold(self):
+        """Test NOT ABSORPTION: spread above threshold."""
+        result = classify_effort_result(1.4, 0.9)
+        assert result != EffortResult.ABSORPTION
+
+    def test_not_absorption_below_volume_threshold(self):
+        """Test NOT ABSORPTION: volume below threshold."""
+        result = classify_effort_result(1.3, 0.5)
+        assert result != EffortResult.ABSORPTION
+
+    def test_absorption_very_high_volume_very_narrow_spread(self):
+        """Test ABSORPTION: very high volume with very narrow spread."""
+        result = classify_effort_result(3.0, 0.2)
+        assert result == EffortResult.ABSORPTION
+
+    def test_absorption_not_climactic_conflict(self):
+        """Test ABSORPTION doesn't conflict with CLIMACTIC: high volume, narrow spread."""
+        result = classify_effort_result(2.1, 0.7)
+        assert result == EffortResult.ABSORPTION
+
+    @pytest.mark.parametrize(
+        "volume_ratio,spread_ratio,expected",
+        [
+            (1.5, 0.5, EffortResult.ABSORPTION),   # Basic
+            (1.4, 0.8, EffortResult.ABSORPTION),   # Boundary (updated threshold)
+            (1.4, 0.9, EffortResult.NORMAL),       # Above spread threshold
+            (1.3, 0.5, EffortResult.NORMAL),       # Below volume threshold
+            (3.0, 0.2, EffortResult.ABSORPTION),   # Very high volume, very narrow
+            (2.1, 0.7, EffortResult.ABSORPTION),   # Not CLIMACTIC
+        ],
+    )
+    def test_absorption_parametrized(self, volume_ratio, spread_ratio, expected):
+        """Parametrized test for ABSORPTION classification."""
+        result = classify_effort_result(volume_ratio, spread_ratio)
+        assert result == expected
+
+    # ========== NO_DEMAND TESTS ==========
+
+    def test_no_demand_basic(self):
+        """Test NO_DEMAND: low volume, narrow spread."""
+        result = classify_effort_result(0.4, 0.5)
+        assert result == EffortResult.NO_DEMAND
+
+    def test_no_demand_boundary(self):
+        """Test NO_DEMAND boundary: volume=0.6, spread=0.8."""
+        result = classify_effort_result(0.6, 0.8)
+        assert result == EffortResult.NO_DEMAND
+
+    def test_not_no_demand_above_volume_threshold(self):
+        """Test NOT NO_DEMAND: volume above threshold."""
+        result = classify_effort_result(0.7, 0.5)
+        assert result != EffortResult.NO_DEMAND
+
+    def test_not_no_demand_above_spread_threshold(self):
+        """Test NOT NO_DEMAND: spread above threshold."""
+        result = classify_effort_result(0.4, 0.9)
+        assert result != EffortResult.NO_DEMAND
+
+    def test_no_demand_very_low_activity(self):
+        """Test NO_DEMAND: very low volume and very narrow spread."""
+        result = classify_effort_result(0.1, 0.1)
+        assert result == EffortResult.NO_DEMAND
+
+    @pytest.mark.parametrize(
+        "volume_ratio,spread_ratio,expected",
+        [
+            (0.4, 0.5, EffortResult.NO_DEMAND),  # Basic
+            (0.6, 0.8, EffortResult.NO_DEMAND),  # Boundary
+            (0.7, 0.5, EffortResult.NORMAL),     # Above volume threshold
+            (0.4, 0.9, EffortResult.NORMAL),     # Above spread threshold
+            (0.1, 0.1, EffortResult.NO_DEMAND),  # Very low
+        ],
+    )
+    def test_no_demand_parametrized(self, volume_ratio, spread_ratio, expected):
+        """Parametrized test for NO_DEMAND classification."""
+        result = classify_effort_result(volume_ratio, spread_ratio)
+        assert result == expected
+
+    # ========== NORMAL TESTS ==========
+
+    def test_normal_average_activity(self):
+        """Test NORMAL: average volume and spread."""
+        result = classify_effort_result(1.0, 1.0)
+        assert result == EffortResult.NORMAL
+
+    def test_normal_mid_range(self):
+        """Test NORMAL: mid-range values."""
+        result = classify_effort_result(0.8, 0.9)
+        assert result == EffortResult.NORMAL
+
+    def test_normal_none_volume_ratio(self):
+        """Test NORMAL: volume_ratio is None (insufficient data)."""
+        result = classify_effort_result(None, 1.0)
+        assert result == EffortResult.NORMAL
+
+    def test_normal_none_spread_ratio(self):
+        """Test NORMAL: spread_ratio is None (insufficient data)."""
+        result = classify_effort_result(1.0, None)
+        assert result == EffortResult.NORMAL
+
+    def test_normal_both_none(self):
+        """Test NORMAL: both ratios are None."""
+        result = classify_effort_result(None, None)
+        assert result == EffortResult.NORMAL
+
+    @pytest.mark.parametrize(
+        "volume_ratio,spread_ratio",
+        [
+            (1.0, 1.0),    # Average
+            (0.8, 0.9),    # Mid-range
+            (1.2, 1.3),    # Slightly above average
+            (0.7, 1.0),    # Mixed
+            (1.0, 0.9),    # Mixed
+            (None, 1.0),   # None volume
+            (1.0, None),   # None spread
+            (None, None),  # Both None
+        ],
+    )
+    def test_normal_parametrized(self, volume_ratio, spread_ratio):
+        """Parametrized test for NORMAL classification."""
+        result = classify_effort_result(volume_ratio, spread_ratio)
+        assert result == EffortResult.NORMAL
+
+    # ========== BOUNDARY VALIDATION TESTS (AC 11) ==========
+
+    def test_no_classification_overlap(self):
+        """Test that no bar can match multiple classifications."""
+        # Test edge cases between categories to ensure no overlap
+        test_cases = [
+            # Between CLIMACTIC Path 1 and ABSORPTION
+            (2.1, 0.7, EffortResult.ABSORPTION),  # High vol, narrow spread
+            # Between CLIMACTIC paths (1.9, 1.6 actually qualifies for Path 2)
+            (1.4, 1.4, EffortResult.NORMAL),      # Below both paths
+            # Between ABSORPTION and NO_DEMAND
+            (1.3, 0.7, EffortResult.NORMAL),      # Between thresholds
+            # Between NO_DEMAND and NORMAL
+            (0.7, 0.7, EffortResult.NORMAL),      # Just above NO_DEMAND volume
+        ]
+
+        for volume_ratio, spread_ratio, expected in test_cases:
+            result = classify_effort_result(volume_ratio, spread_ratio)
+            assert result == expected, f"Overlap detected for vol={volume_ratio}, spread={spread_ratio}"
+
+    def test_decision_tree_deterministic(self):
+        """Test that classification is deterministic (same inputs = same output)."""
+        # Run same classification multiple times
+        for _ in range(10):
+            assert classify_effort_result(2.5, 1.1) == EffortResult.CLIMACTIC
+            assert classify_effort_result(1.5, 0.5) == EffortResult.ABSORPTION
+            assert classify_effort_result(0.4, 0.5) == EffortResult.NO_DEMAND
+            assert classify_effort_result(1.0, 1.0) == EffortResult.NORMAL
