@@ -73,10 +73,10 @@ class AlpacaAdapter(MarketDataProvider):
         self._shutdown_event = asyncio.Event()
         self._receiver_task: Optional[asyncio.Task] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
+        self._signal_handlers_registered: bool = False
 
-        # Register signal handlers for graceful shutdown
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
+        # Try to register signal handlers (only works in main thread)
+        self._try_register_signal_handlers()
 
         logger.info(
             "alpaca_adapter_initialized",
@@ -84,6 +84,32 @@ class AlpacaAdapter(MarketDataProvider):
             watchlist=self.settings.watchlist_symbols,
             timeframe=self.settings.bar_timeframe,
         )
+
+    def _try_register_signal_handlers(self) -> None:
+        """
+        Try to register signal handlers for graceful shutdown.
+
+        Signal handlers can only be registered in the main thread.
+        This method safely handles the case where it's called from a non-main thread
+        (e.g., during test execution), preventing ValueError.
+        """
+        try:
+            signal.signal(signal.SIGTERM, self._signal_handler)
+            signal.signal(signal.SIGINT, self._signal_handler)
+            self._signal_handlers_registered = True
+            logger.debug("signal_handlers_registered")
+        except ValueError as e:
+            # signal.signal() raises ValueError if called from non-main thread
+            logger.debug(
+                "signal_handlers_not_registered",
+                reason="not_main_thread",
+                error=str(e),
+            )
+        except Exception as e:
+            logger.warning(
+                "signal_handler_registration_failed",
+                error=str(e),
+            )
 
     def _signal_handler(self, signum, frame):
         """Handle SIGTERM/SIGINT for graceful shutdown."""
