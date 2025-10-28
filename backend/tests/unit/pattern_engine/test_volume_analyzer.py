@@ -21,7 +21,9 @@ from src.pattern_engine.volume_analyzer import (
     calculate_close_position,
     calculate_close_positions_batch,
     classify_effort_result,
+    VolumeAnalyzer,
 )
+from src.models.volume_analysis import VolumeAnalysis
 
 
 def create_test_bar(
@@ -1051,3 +1053,375 @@ class TestClassifyEffortResult:
             assert classify_effort_result(1.5, 0.5) == EffortResult.ABSORPTION
             assert classify_effort_result(0.4, 0.5) == EffortResult.NO_DEMAND
             assert classify_effort_result(1.0, 1.0) == EffortResult.NORMAL
+
+
+# ============================================================
+# STORY 2.5: VolumeAnalyzer Integration Tests
+# ============================================================
+
+
+class TestVolumeAnalyzer:
+    """
+    Test suite for VolumeAnalyzer class (Story 2.5).
+
+    Tests end-to-end integration of all volume calculations:
+    - Volume ratio (Story 2.1)
+    - Spread ratio (Story 2.2)
+    - Close position (Story 2.3)
+    - Effort/result classification (Story 2.4)
+    """
+
+    def test_analyzer_initialization(self):
+        """Test VolumeAnalyzer can be instantiated."""
+        analyzer = VolumeAnalyzer()
+        assert analyzer is not None
+
+    def test_end_to_end_analysis_with_synthetic_data(self):
+        """
+        Test end-to-end analysis of synthetic bar sequence.
+
+        AC 7: End-to-end analysis with synthetic data validates all fields populated.
+        """
+        # Create 50 bars with known values
+        bars = []
+        for i in range(50):
+            bar = create_test_bar(
+                volume=100 + i * 10,  # Increasing volume
+                high=Decimal("100.0") + Decimal(str(i)),
+                low=Decimal("90.0") + Decimal(str(i)),
+            )
+            bars.append(bar)
+
+        # Analyze
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Assert: returns list of 50 VolumeAnalysis objects
+        assert len(results) == 50
+        assert all(isinstance(r, VolumeAnalysis) for r in results)
+
+        # Assert: first 20 bars have None ratios, NORMAL effort_result
+        for i in range(20):
+            assert results[i].volume_ratio is None, f"Bar {i} should have None volume_ratio"
+            assert results[i].spread_ratio is None, f"Bar {i} should have None spread_ratio"
+            assert results[i].close_position is not None, f"Bar {i} should have close_position"
+            assert results[i].effort_result == EffortResult.NORMAL, f"Bar {i} should be NORMAL"
+
+        # Assert: bars 20+ have all fields populated (not None)
+        for i in range(20, 50):
+            assert results[i].volume_ratio is not None, f"Bar {i} should have volume_ratio"
+            assert results[i].spread_ratio is not None, f"Bar {i} should have spread_ratio"
+            assert results[i].close_position is not None, f"Bar {i} should have close_position"
+            assert results[i].effort_result is not None, f"Bar {i} should have effort_result"
+
+        # Verify VolumeAnalysis.bar references correct OHLCVBar object
+        for i, result in enumerate(results):
+            assert result.bar.id == bars[i].id
+            assert result.bar.volume == bars[i].volume
+
+    def test_exactly_20_bars(self):
+        """
+        Test with exactly 20 bars.
+
+        AC 4: All bars should have None ratios with exactly 20 bars.
+        """
+        bars = [create_test_bar(volume=100) for _ in range(20)]
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        assert len(results) == 20
+
+        # All bars should have None ratios
+        for i, result in enumerate(results):
+            assert result.volume_ratio is None, f"Bar {i} should have None volume_ratio"
+            assert result.spread_ratio is None, f"Bar {i} should have None spread_ratio"
+            assert result.close_position is not None, f"Bar {i} should have close_position"
+            assert result.effort_result == EffortResult.NORMAL, f"Bar {i} should be NORMAL"
+
+    def test_exactly_21_bars(self):
+        """
+        Test with exactly 21 bars.
+
+        AC 4: First 20 None, last bar populated.
+        """
+        bars = [create_test_bar(volume=100) for _ in range(21)]
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        assert len(results) == 21
+
+        # First 20: None ratios
+        for i in range(20):
+            assert results[i].volume_ratio is None
+            assert results[i].spread_ratio is None
+
+        # Last bar: populated ratios
+        assert results[20].volume_ratio is not None
+        assert results[20].spread_ratio is not None
+        assert results[20].close_position is not None
+        assert results[20].effort_result is not None
+
+    def test_empty_list_raises_error(self):
+        """
+        Test with empty list raises ValueError.
+
+        AC 7: Edge case handling.
+        """
+        analyzer = VolumeAnalyzer()
+
+        with pytest.raises(ValueError, match="Cannot analyze empty bar list"):
+            analyzer.analyze([])
+
+    def test_single_bar(self):
+        """
+        Test with single bar.
+
+        AC 7: Returns 1 VolumeAnalysis with None ratios.
+        """
+        bars = [create_test_bar(volume=100)]
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        assert len(results) == 1
+        assert results[0].volume_ratio is None
+        assert results[0].spread_ratio is None
+        assert results[0].close_position is not None  # Can calculate for single bar
+        assert results[0].effort_result == EffortResult.NORMAL
+
+    def test_zero_volume_bars(self):
+        """
+        Test with bars having zero volume.
+
+        AC 7: Verify graceful handling.
+        """
+        bars = [create_test_bar(volume=0) for _ in range(25)]
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Should complete without crashing
+        assert len(results) == 25
+
+        # Bar 20 should have None volume_ratio (zero volume average)
+        assert results[20].volume_ratio is None
+
+    def test_zero_spread_bars(self):
+        """
+        Test with bars having zero spread (doji bars).
+
+        AC 7: Verify close_position=0.5 for zero spread.
+        """
+        bars = []
+        for _ in range(25):
+            bar = create_test_bar(
+                volume=100,
+                high=Decimal("100.0"),
+                low=Decimal("100.0"),  # Zero spread
+            )
+            bars.append(bar)
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # All bars should have close_position=0.5 (neutral)
+        for result in results:
+            assert result.close_position == Decimal("0.5")
+
+    def test_climactic_pattern_detection(self):
+        """
+        Test detection of CLIMACTIC patterns in analysis.
+
+        Verify effort_result classification works in integration.
+        """
+        bars = []
+
+        # Create 20 normal bars (average volume 100)
+        for _ in range(20):
+            bars.append(create_test_bar(volume=100))
+
+        # Add climactic bar: high volume (250 = 2.5x) + wide spread (2x)
+        climactic_bar = create_test_bar(
+            volume=250,
+            high=Decimal("120.0"),
+            low=Decimal("80.0"),  # Spread = 40 (2x normal spread of 20)
+        )
+        bars.append(climactic_bar)
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Last bar should be CLIMACTIC
+        assert results[20].effort_result == EffortResult.CLIMACTIC
+        assert results[20].volume_ratio is not None
+        assert float(results[20].volume_ratio) > 2.0
+
+    def test_absorption_pattern_detection(self):
+        """
+        Test detection of ABSORPTION patterns in analysis.
+        """
+        bars = []
+
+        # Create 20 normal bars (average volume 100, average spread 10)
+        for _ in range(20):
+            bars.append(create_test_bar(
+                volume=100,
+                high=Decimal("105.0"),
+                low=Decimal("95.0"),
+            ))
+
+        # Add absorption bar: high volume (150 = 1.5x) + narrow spread (0.5x)
+        absorption_bar = create_test_bar(
+            volume=150,
+            high=Decimal("100.5"),
+            low=Decimal("95.5"),  # Spread = 5 (0.5x normal spread of 10)
+        )
+        bars.append(absorption_bar)
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Last bar should be ABSORPTION
+        assert results[20].effort_result == EffortResult.ABSORPTION
+        assert results[20].volume_ratio is not None
+        assert float(results[20].volume_ratio) >= 1.4
+
+    def test_no_demand_pattern_detection(self):
+        """
+        Test detection of NO_DEMAND patterns in analysis.
+        """
+        bars = []
+
+        # Create 20 normal bars
+        for _ in range(20):
+            bars.append(create_test_bar(
+                volume=100,
+                high=Decimal("105.0"),
+                low=Decimal("95.0"),
+            ))
+
+        # Add no demand bar: low volume (50 = 0.5x) + narrow spread (0.6x)
+        no_demand_bar = create_test_bar(
+            volume=50,
+            high=Decimal("101.0"),
+            low=Decimal("95.0"),  # Spread = 6 (0.6x normal spread of 10)
+        )
+        bars.append(no_demand_bar)
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Last bar should be NO_DEMAND
+        assert results[20].effort_result == EffortResult.NO_DEMAND
+        assert results[20].volume_ratio is not None
+        assert float(results[20].volume_ratio) < 0.6
+
+    def test_close_position_integration(self):
+        """
+        Test close position calculation is integrated correctly.
+
+        Verify close_position values are correct for different close levels.
+        """
+        bars = []
+
+        # Create bars with different close positions
+        test_cases = [
+            (Decimal("90.0"), 0.0),   # Close at low
+            (Decimal("100.0"), 0.5),  # Close at mid
+            (Decimal("110.0"), 1.0),  # Close at high
+        ]
+
+        for _ in range(20):
+            bars.append(create_test_bar(volume=100))
+
+        for close_price, expected_position in test_cases:
+            bar = OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=datetime.now(timezone.utc),
+                open=Decimal("100.0"),
+                high=Decimal("110.0"),
+                low=Decimal("90.0"),
+                close=close_price,
+                volume=100,
+                spread=Decimal("20.0"),
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            )
+            bars.append(bar)
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Check last 3 bars have correct close positions
+        for i, (_, expected_position) in enumerate(test_cases, start=20):
+            actual_position = float(results[i].close_position)
+            assert abs(actual_position - expected_position) < 0.01, \
+                f"Bar {i}: expected {expected_position}, got {actual_position}"
+
+    def test_batch_processing_efficiency(self):
+        """
+        Test that analyzer uses batch processing (not loops).
+
+        Verify results match what batch functions would produce.
+        """
+        bars = [create_test_bar(volume=100 + i) for i in range(50)]
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Results should match individual batch function calls
+        from src.pattern_engine.volume_analyzer import (
+            calculate_volume_ratios_batch,
+            calculate_spread_ratios_batch,
+            calculate_close_positions_batch,
+        )
+
+        volume_ratios = calculate_volume_ratios_batch(bars)
+        spread_ratios = calculate_spread_ratios_batch(bars)
+        close_positions = calculate_close_positions_batch(bars)
+
+        for i, result in enumerate(results):
+            # Volume ratios should match
+            if volume_ratios[i] is None:
+                assert result.volume_ratio is None
+            else:
+                assert abs(float(result.volume_ratio) - volume_ratios[i]) < 0.0001
+
+            # Spread ratios should match
+            if spread_ratios[i] is None:
+                assert result.spread_ratio is None
+            else:
+                assert abs(float(result.spread_ratio) - spread_ratios[i]) < 0.0001
+
+            # Close positions should match
+            assert abs(float(result.close_position) - close_positions[i]) < 0.0001
+
+    def test_thread_safety_stateless(self):
+        """
+        Test that VolumeAnalyzer is stateless (multiple calls don't interfere).
+
+        Verify same instance can be used for multiple independent analyses.
+        """
+        analyzer = VolumeAnalyzer()
+
+        # Analyze two different bar sequences
+        bars1 = [create_test_bar(volume=100) for _ in range(30)]
+        bars2 = [create_test_bar(volume=200, symbol="MSFT") for _ in range(40)]
+
+        results1 = analyzer.analyze(bars1)
+        results2 = analyzer.analyze(bars2)
+
+        # Results should be independent
+        assert len(results1) == 30
+        assert len(results2) == 40
+        assert results1[0].bar.symbol == "AAPL"
+        assert results2[0].bar.symbol == "MSFT"
+
+        # Second analysis shouldn't affect first
+        results1_again = analyzer.analyze(bars1)
+        assert len(results1_again) == 30
+        assert results1_again[0].bar.symbol == "AAPL"

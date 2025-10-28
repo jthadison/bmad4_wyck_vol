@@ -19,6 +19,7 @@ from src.pattern_engine.volume_analyzer import (
     calculate_volume_ratios_batch,
     calculate_spread_ratio,
     calculate_spread_ratios_batch,
+    VolumeAnalyzer,
 )
 
 
@@ -450,3 +451,154 @@ class TestSpreadAnalyzerPerformance:
         # Both should meet performance targets
         assert volume_time_ms < 50, f"Volume calculation too slow: {volume_time_ms:.2f}ms"
         assert spread_time_ms < 50, f"Spread calculation too slow: {spread_time_ms:.2f}ms"
+
+
+# ============================================================
+# STORY 2.5: VolumeAnalyzer Performance Tests
+# ============================================================
+
+
+class TestVolumeAnalyzerPerformance:
+    """
+    Performance tests for VolumeAnalyzer class (Story 2.5).
+
+    Tests that complete volume analysis meets performance requirements.
+    """
+
+    def test_analyzer_10000_bars_under_500ms(self):
+        """
+        Test VolumeAnalyzer processes 10,000 bars in <500ms.
+
+        AC 9: Performance test - 10,000 bars in <500ms.
+        """
+        # Generate 10,000 bars
+        bars = [create_test_bar(volume=10_000_000 + i*1000, index=i) for i in range(10_000)]
+
+        # Measure processing time
+        analyzer = VolumeAnalyzer()
+
+        start_time = time.perf_counter()
+        results = analyzer.analyze(bars)
+        end_time = time.perf_counter()
+
+        elapsed_ms = (end_time - start_time) * 1000
+
+        # Validate results
+        assert len(results) == 10_000
+        assert all(r.volume_ratio is None for r in results[:20])
+        assert all(r.volume_ratio is not None for r in results[20:])
+
+        # Performance assertion
+        print(f"\nVolumeAnalyzer: Processed 10,000 bars in {elapsed_ms:.2f}ms")
+        assert elapsed_ms < 500, f"Expected <500ms, took {elapsed_ms:.2f}ms"
+
+        # Calculate throughput
+        bars_per_second = 10_000 / (elapsed_ms / 1000)
+        print(f"Throughput: {bars_per_second:,.0f} bars/second")
+        print(f"Per 1000 bars: {elapsed_ms/10:.2f}ms")
+
+    def test_analyzer_252_bars_under_50ms(self):
+        """
+        Test VolumeAnalyzer processes 252 bars (1 year) in <50ms.
+
+        Typical use case: analyze 1 year of daily bars.
+        """
+        # Generate 252 bars (1 trading year)
+        bars = [create_test_bar(volume=10_000_000 + i*10000, index=i) for i in range(252)]
+
+        analyzer = VolumeAnalyzer()
+
+        start_time = time.perf_counter()
+        results = analyzer.analyze(bars)
+        end_time = time.perf_counter()
+
+        elapsed_ms = (end_time - start_time) * 1000
+
+        # Validate results
+        assert len(results) == 252
+
+        # Performance assertion
+        print(f"\nVolumeAnalyzer: Processed 252 bars in {elapsed_ms:.2f}ms")
+        assert elapsed_ms < 50, f"Expected <50ms, took {elapsed_ms:.2f}ms"
+
+        bars_per_second = 252 / (elapsed_ms / 1000)
+        print(f"Throughput: {bars_per_second:,.0f} bars/second")
+
+    def test_analyzer_throughput_consistency(self):
+        """
+        Test that VolumeAnalyzer throughput is consistent across different dataset sizes.
+
+        Verifies linear scalability.
+        """
+        test_sizes = [100, 500, 1000, 2500, 5000]
+        throughputs = []
+
+        for size in test_sizes:
+            bars = [create_test_bar(volume=10_000_000 + i*1000, index=i) for i in range(size)]
+
+            analyzer = VolumeAnalyzer()
+
+            start_time = time.perf_counter()
+            results = analyzer.analyze(bars)
+            end_time = time.perf_counter()
+
+            elapsed_ms = (end_time - start_time) * 1000
+            throughput = size / (elapsed_ms / 1000)
+            throughputs.append(throughput)
+
+            print(f"{size:5} bars: {elapsed_ms:6.2f}ms ({throughput:8,.0f} bars/sec)")
+
+        # Throughput should be relatively consistent (within 50% of each other)
+        min_throughput = min(throughputs[1:])  # Skip first (warm-up effect)
+        max_throughput = max(throughputs[1:])
+        ratio = max_throughput / min_throughput
+
+        print(f"\nThroughput range: {min_throughput:,.0f} - {max_throughput:,.0f} bars/sec")
+        print(f"Ratio: {ratio:.2f}x")
+
+        # Allow some variation but should be relatively linear
+        assert ratio < 3.0, f"Throughput too inconsistent: {ratio:.2f}x variation"
+
+    def test_analyzer_overhead_vs_individual_functions(self):
+        """
+        Measure overhead of VolumeAnalyzer vs calling individual batch functions.
+
+        VolumeAnalyzer adds convenience but should not add significant overhead.
+        """
+        bars = [create_test_bar(volume=10_000_000 + i*1000, index=i) for i in range(1000)]
+
+        # Measure VolumeAnalyzer
+        analyzer = VolumeAnalyzer()
+        start_analyzer = time.perf_counter()
+        analyzer_results = analyzer.analyze(bars)
+        end_analyzer = time.perf_counter()
+        analyzer_time_ms = (end_analyzer - start_analyzer) * 1000
+
+        # Measure individual batch functions
+        start_individual = time.perf_counter()
+        volume_ratios = calculate_volume_ratios_batch(bars)
+        spread_ratios = calculate_spread_ratios_batch(bars)
+        # Note: Not including close_position and classify_effort_result for fair comparison
+        end_individual = time.perf_counter()
+        individual_time_ms = (end_individual - start_individual) * 1000
+
+        # Calculate overhead
+        overhead_ms = analyzer_time_ms - individual_time_ms
+        overhead_pct = (overhead_ms / individual_time_ms) * 100
+
+        print(f"\nVolumeAnalyzer: {analyzer_time_ms:.2f}ms")
+        print(f"Individual functions: {individual_time_ms:.2f}ms")
+        print(f"Overhead: {overhead_ms:.2f}ms ({overhead_pct:.1f}%)")
+
+        # Analyzer should be slower due to additional work (close_position, effort_result, logging)
+        # but overhead should be reasonable
+        assert analyzer_time_ms > individual_time_ms, "Analyzer should do more work"
+        # Allow up to 20x overhead since we're doing significant additional work:
+        # - close_position calculation for all bars
+        # - effort_result classification for all bars
+        # - VolumeAnalysis object creation (1000 objects)
+        # - Comprehensive logging and statistics
+        assert overhead_pct < 2000, f"Overhead too high: {overhead_pct:.1f}%"
+
+        # But analyzer should still be fast in absolute terms
+        assert analyzer_time_ms < 100, f"Analyzer too slow: {analyzer_time_ms:.2f}ms"

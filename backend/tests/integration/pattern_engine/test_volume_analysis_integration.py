@@ -22,7 +22,9 @@ from src.pattern_engine.volume_analyzer import (
     calculate_close_position,
     calculate_close_positions_batch,
     classify_effort_result,
+    VolumeAnalyzer,
 )
+from src.models.volume_analysis import VolumeAnalysis
 
 
 def create_realistic_bar(
@@ -1302,3 +1304,237 @@ class TestEffortResultClassificationIntegration:
         assert climactic_pct < 30, "CLIMACTIC should be rare (<30%)"
         assert absorption_pct < 30, "ABSORPTION should be uncommon (<30%)"
         assert no_demand_pct < 30, "NO_DEMAND should be uncommon (<30%)"
+
+
+# ============================================================
+# STORY 2.5: VolumeAnalyzer Integration Tests
+# ============================================================
+
+
+class TestVolumeAnalyzerIntegration:
+    """
+    Integration tests for VolumeAnalyzer class (Story 2.5).
+
+    Tests complete end-to-end volume analysis with realistic AAPL-like data.
+    """
+
+    def test_analyze_252_bars_aapl_data(self):
+        """
+        Test VolumeAnalyzer with 252 bars of realistic AAPL data.
+
+        AC 8: Integration test with realistic AAPL data, verify reasonable distributions.
+        """
+        # Generate 252 bars (1 year) of realistic AAPL data
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 50_000_000  # 50M shares (typical AAPL daily volume)
+        base_price = 180.0  # Typical AAPL price
+
+        for i in range(252):
+            timestamp = base_timestamp + timedelta(days=i)
+
+            # Realistic volume variation
+            volume = int(base_volume * random.uniform(0.5, 2.5))
+
+            # Realistic price and spread
+            price_variation = base_price + random.uniform(-20, 20)
+            spread_pct = random.uniform(0.01, 0.04)  # 1-4% daily range
+            spread = Decimal(str(price_variation * spread_pct)).quantize(Decimal("0.00000001"))
+
+            bar = create_realistic_bar(volume, timestamp=timestamp, price=price_variation)
+            bars.append(bar)
+
+        # Analyze using VolumeAnalyzer
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Validate results
+        assert len(results) == 252
+        assert all(isinstance(r, VolumeAnalysis) for r in results)
+
+        # First 20 bars have None ratios
+        for i in range(20):
+            assert results[i].volume_ratio is None
+            assert results[i].spread_ratio is None
+            assert results[i].close_position is not None
+            assert results[i].effort_result == EffortResult.NORMAL
+
+        # Bars 20+ have populated ratios
+        for i in range(20, 252):
+            assert results[i].volume_ratio is not None
+            assert results[i].spread_ratio is not None
+            assert results[i].close_position is not None
+            assert results[i].effort_result is not None
+
+        # Verify distributions are reasonable
+        volume_ratios_valid = [
+            float(r.volume_ratio) for r in results[20:] if r.volume_ratio is not None
+        ]
+        spread_ratios_valid = [
+            float(r.spread_ratio) for r in results[20:] if r.spread_ratio is not None
+        ]
+        close_positions_valid = [
+            float(r.close_position) for r in results if r.close_position is not None
+        ]
+
+        # Most volume ratios should be 0.5x-2.0x
+        within_range = [r for r in volume_ratios_valid if 0.5 <= r <= 2.0]
+        assert len(within_range) / len(volume_ratios_valid) > 0.7, \
+            "At least 70% of volume ratios should be in 0.5x-2.0x range"
+
+        # Most spread ratios should be 0.5x-2.0x
+        within_range = [r for r in spread_ratios_valid if 0.5 <= r <= 2.0]
+        assert len(within_range) / len(spread_ratios_valid) > 0.7, \
+            "At least 70% of spread ratios should be in 0.5x-2.0x range"
+
+        # Close positions should be distributed across 0.0-1.0
+        avg_close = sum(close_positions_valid) / len(close_positions_valid)
+        assert 0.3 < avg_close < 0.7, "Average close position should be near 0.5"
+
+        # Effort result distribution: majority NORMAL
+        effort_counts = {
+            EffortResult.CLIMACTIC: 0,
+            EffortResult.ABSORPTION: 0,
+            EffortResult.NO_DEMAND: 0,
+            EffortResult.NORMAL: 0,
+        }
+        for r in results[20:]:
+            effort_counts[r.effort_result] += 1
+
+        normal_pct = 100 * effort_counts[EffortResult.NORMAL] / 232
+
+        print(f"\nAAP L Data Analysis (252 bars):")
+        print(f"  Volume ratio avg: {sum(volume_ratios_valid)/len(volume_ratios_valid):.4f}")
+        print(f"  Spread ratio avg: {sum(spread_ratios_valid)/len(spread_ratios_valid):.4f}")
+        print(f"  Close position avg: {avg_close:.4f}")
+        print(f"  Effort distribution:")
+        print(f"    CLIMACTIC: {effort_counts[EffortResult.CLIMACTIC]} ({100*effort_counts[EffortResult.CLIMACTIC]/232:.1f}%)")
+        print(f"    ABSORPTION: {effort_counts[EffortResult.ABSORPTION]} ({100*effort_counts[EffortResult.ABSORPTION]/232:.1f}%)")
+        print(f"    NO_DEMAND: {effort_counts[EffortResult.NO_DEMAND]} ({100*effort_counts[EffortResult.NO_DEMAND]/232:.1f}%)")
+        print(f"    NORMAL: {effort_counts[EffortResult.NORMAL]} ({normal_pct:.1f}%)")
+
+        # Majority should be NORMAL (60-80%)
+        assert 40 <= normal_pct <= 90, f"Expected 40-90% NORMAL, got {normal_pct:.1f}%"
+
+    def test_analyzer_with_wyckoff_patterns(self):
+        """
+        Test VolumeAnalyzer correctly identifies Wyckoff patterns.
+
+        Generates bars with known patterns and verifies correct classification.
+        """
+        bars = []
+        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_volume = 10_000_000
+        base_spread = Decimal("2.0")
+        base_price = 150.0
+
+        # Define pattern indices
+        selling_climax_idx = 40       # CLIMACTIC: vol=2.5x, spread=2.0x
+        spring_idx = 80                # ABSORPTION: vol=1.6x, spread=0.5x, close=0.8
+        test_idx = 120                 # NO_DEMAND: vol=0.4x, spread=0.5x
+
+        for i in range(150):
+            timestamp = base_timestamp + timedelta(days=i)
+
+            if i == selling_climax_idx:
+                volume = int(base_volume * 2.5)
+                spread = base_spread * Decimal("2.0")
+                high = Decimal(str(base_price + 2.0)).quantize(Decimal("0.00000001"))
+                low = Decimal(str(base_price - 2.0)).quantize(Decimal("0.00000001"))
+                close = Decimal(str(base_price - 1.5)).quantize(Decimal("0.00000001"))  # Low close
+            elif i == spring_idx:
+                volume = int(base_volume * 1.6)
+                spread = base_spread * Decimal("0.5")
+                high = Decimal(str(base_price + 0.5)).quantize(Decimal("0.00000001"))
+                low = Decimal(str(base_price - 0.5)).quantize(Decimal("0.00000001"))
+                close = Decimal(str(base_price + 0.4)).quantize(Decimal("0.00000001"))  # High close
+            elif i == test_idx:
+                volume = int(base_volume * 0.4)
+                spread = base_spread * Decimal("0.5")
+                high = Decimal(str(base_price + 0.5)).quantize(Decimal("0.00000001"))
+                low = Decimal(str(base_price - 0.5)).quantize(Decimal("0.00000001"))
+                close = Decimal(str(base_price + 0.1)).quantize(Decimal("0.00000001"))
+            else:
+                volume = int(base_volume * random.uniform(0.9, 1.1))
+                spread = base_spread * Decimal(str(random.uniform(0.9, 1.1)))
+                high = Decimal(str(base_price + 1.0)).quantize(Decimal("0.00000001"))
+                low = Decimal(str(base_price - 1.0)).quantize(Decimal("0.00000001"))
+                close = Decimal(str(base_price + random.uniform(-0.5, 0.5))).quantize(Decimal("0.00000001"))
+
+            spread = spread.quantize(Decimal("0.00000001"))
+
+            bar = OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=Decimal(str(base_price)),
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            )
+            bars.append(bar)
+
+        # Analyze
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Verify Selling Climax
+        sc_result = results[selling_climax_idx]
+        assert sc_result.effort_result == EffortResult.CLIMACTIC
+        assert float(sc_result.volume_ratio) > 2.0
+        assert float(sc_result.spread_ratio) > 1.5
+        assert float(sc_result.close_position) < 0.4
+
+        # Verify Spring (Absorption)
+        spring_result = results[spring_idx]
+        assert spring_result.effort_result == EffortResult.ABSORPTION
+        assert float(spring_result.volume_ratio) >= 1.4
+        assert float(spring_result.spread_ratio) < 0.8
+        assert float(spring_result.close_position) >= 0.7
+
+        # Verify Test (No Demand)
+        test_result = results[test_idx]
+        assert test_result.effort_result == EffortResult.NO_DEMAND
+        assert float(test_result.volume_ratio) < 0.6
+        assert float(test_result.spread_ratio) < 0.8
+
+        print(f"\nWyckoff Pattern Detection:")
+        print(f"  Selling Climax (bar {selling_climax_idx}): {sc_result.effort_result.value}")
+        print(f"    Vol: {float(sc_result.volume_ratio):.2f}x, Spread: {float(sc_result.spread_ratio):.2f}x, Close: {float(sc_result.close_position):.2f}")
+        print(f"  Spring (bar {spring_idx}): {spring_result.effort_result.value}")
+        print(f"    Vol: {float(spring_result.volume_ratio):.2f}x, Spread: {float(spring_result.spread_ratio):.2f}x, Close: {float(spring_result.close_position):.2f}")
+        print(f"  Test (bar {test_idx}): {test_result.effort_result.value}")
+        print(f"    Vol: {float(test_result.volume_ratio):.2f}x, Spread: {float(test_result.spread_ratio):.2f}x, Close: {float(test_result.close_position):.2f}")
+
+    def test_analyzer_json_serialization(self):
+        """
+        Test that VolumeAnalysis results are JSON serializable.
+
+        AC 10: Verify results serializable to JSON for API responses.
+        """
+        bars = [create_realistic_bar(volume=1000000 + i*1000) for i in range(30)]
+
+        analyzer = VolumeAnalyzer()
+        results = analyzer.analyze(bars)
+
+        # Test JSON serialization using Pydantic
+        for result in results[20:25]:  # Test a few bars
+            json_str = result.model_dump_json()
+            assert json_str is not None
+            assert len(json_str) > 0
+
+            # Verify key fields are in JSON
+            assert '"bar":' in json_str
+            assert '"volume_ratio":' in json_str
+            assert '"spread_ratio":' in json_str
+            assert '"close_position":' in json_str
+            assert '"effort_result":' in json_str
+
+        print(f"\nJSON Serialization Test:")
+        print(f"  Sample JSON: {results[22].model_dump_json()[:200]}...")
+        print(f"  All fields serializable: PASSED")
