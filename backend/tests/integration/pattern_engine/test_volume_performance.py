@@ -17,6 +17,8 @@ from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.volume_analyzer import (
     calculate_volume_ratio,
     calculate_volume_ratios_batch,
+    calculate_spread_ratio,
+    calculate_spread_ratios_batch,
 )
 
 
@@ -232,3 +234,219 @@ class TestVolumeAnalyzerPerformance:
         # Validate result
         assert len(result) == 1000
         print(f"\nBenchmark completed - see pytest-benchmark output for stats")
+
+
+class TestSpreadAnalyzerPerformance:
+    """Performance test suite for spread ratio analyzer."""
+
+    def test_spread_1000_bars_under_10ms(self):
+        """
+        Test that spread ratio for 1000 bars is processed in <10ms.
+
+        Acceptance Criteria 6: Vectorized implementation processes 1000 bars in <10ms.
+        Should match volume_ratio performance benchmarks.
+        """
+        # Generate 1000 bars with varying spreads
+        bars = []
+        for i in range(1000):
+            spread = (Decimal("5.0") + Decimal(str((i % 100) * 0.05))).quantize(Decimal("0.00000001"))
+            high = (Decimal("150.0") + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal("150.0") - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
+                open=Decimal("150.0"),
+                high=high,
+                low=low,
+                close=Decimal("151.0"),
+                volume=10_000_000,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Measure batch processing time
+        start_time = time.perf_counter()
+        ratios = calculate_spread_ratios_batch(bars)
+        end_time = time.perf_counter()
+
+        elapsed_ms = (end_time - start_time) * 1000
+
+        # Validate results
+        assert len(ratios) == 1000
+        assert all(r is None for r in ratios[:20])
+        assert all(r is not None for r in ratios[20:])
+
+        # Performance assertion
+        print(f"\nProcessed 1000 bars (spread) in {elapsed_ms:.2f}ms")
+        assert elapsed_ms < 10, f"Expected <10ms, took {elapsed_ms:.2f}ms"
+
+        # Calculate throughput
+        bars_per_second = 1000 / (elapsed_ms / 1000)
+        print(f"Throughput: {bars_per_second:,.0f} bars/second")
+
+    def test_spread_10000_bars_under_100ms(self):
+        """
+        Test that spread ratio for 10,000 bars is processed in <100ms.
+
+        Acceptance Criteria: Process 10,000 bars in <100ms.
+        """
+        # Generate 10,000 bars
+        bars = []
+        for i in range(10_000):
+            spread = (Decimal("5.0") + Decimal(str((i % 1000) * 0.01))).quantize(Decimal("0.00000001"))
+            high = (Decimal("150.0") + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal("150.0") - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
+                open=Decimal("150.0"),
+                high=high,
+                low=low,
+                close=Decimal("151.0"),
+                volume=10_000_000,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Measure batch processing time
+        start_time = time.perf_counter()
+        ratios = calculate_spread_ratios_batch(bars)
+        end_time = time.perf_counter()
+
+        elapsed_ms = (end_time - start_time) * 1000
+
+        # Validate results
+        assert len(ratios) == 10_000
+        assert all(r is None for r in ratios[:20])
+        assert all(r is not None for r in ratios[20:])
+
+        # Performance assertion
+        print(f"\nProcessed 10,000 bars (spread) in {elapsed_ms:.2f}ms")
+        assert elapsed_ms < 100, f"Expected <100ms, took {elapsed_ms:.2f}ms"
+
+        # Calculate throughput
+        bars_per_second = 10_000 / (elapsed_ms / 1000)
+        ms_per_1000_bars = elapsed_ms / 10
+        print(f"Throughput: {bars_per_second:,.0f} bars/second")
+        print(f"Per 1000 bars: {ms_per_1000_bars:.2f}ms")
+
+    def test_spread_batch_vs_individual_speedup(self):
+        """
+        Compare batch vs individual spread calculation for vectorization benefit.
+
+        Batch processing should be significantly faster than individual calls.
+        """
+        # Generate 500 bars
+        bars = []
+        for i in range(500):
+            spread = (Decimal("5.0") + Decimal(str(i * 0.01))).quantize(Decimal("0.00000001"))
+            high = (Decimal("150.0") + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal("150.0") - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
+                open=Decimal("150.0"),
+                high=high,
+                low=low,
+                close=Decimal("151.0"),
+                volume=10_000_000,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Measure batch processing
+        start_batch = time.perf_counter()
+        batch_ratios = calculate_spread_ratios_batch(bars)
+        end_batch = time.perf_counter()
+        batch_time_ms = (end_batch - start_batch) * 1000
+
+        # Measure individual processing
+        start_individual = time.perf_counter()
+        individual_ratios = [calculate_spread_ratio(bars, i) for i in range(len(bars))]
+        end_individual = time.perf_counter()
+        individual_time_ms = (end_individual - start_individual) * 1000
+
+        # Calculate speedup
+        speedup = individual_time_ms / batch_time_ms
+
+        print(f"\nSpread - Batch processing: {batch_time_ms:.2f}ms")
+        print(f"Spread - Individual processing: {individual_time_ms:.2f}ms")
+        print(f"Speedup: {speedup:.1f}x")
+
+        # Batch should be faster (at least 2x)
+        assert speedup > 2.0, f"Batch processing not fast enough: {speedup:.1f}x"
+
+        # Verify results match
+        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios)):
+            if batch is None and individual is None:
+                continue
+            if batch == 0.0 and individual == 0.0:
+                continue
+            assert batch is not None and individual is not None
+            assert abs(batch - individual) < 0.0001, f"Mismatch at {i}"
+
+    def test_spread_vs_volume_performance_comparison(self):
+        """
+        Compare performance of spread_ratio vs volume_ratio calculations.
+
+        Both should have similar performance characteristics since they use
+        identical algorithmic approaches.
+        """
+        # Generate 5000 bars
+        bars = []
+        for i in range(5000):
+            spread = (Decimal("5.0") + Decimal(str((i % 500) * 0.01))).quantize(Decimal("0.00000001"))
+            high = (Decimal("150.0") + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
+            low = (Decimal("150.0") - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+            volume = 10_000_000 + (i % 500) * 10_000
+            bars.append(OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
+                open=Decimal("150.0"),
+                high=high,
+                low=low,
+                close=Decimal("151.0"),
+                volume=volume,
+                spread=spread,
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            ))
+
+        # Measure volume ratio performance
+        start_volume = time.perf_counter()
+        volume_ratios = calculate_volume_ratios_batch(bars)
+        end_volume = time.perf_counter()
+        volume_time_ms = (end_volume - start_volume) * 1000
+
+        # Measure spread ratio performance
+        start_spread = time.perf_counter()
+        spread_ratios = calculate_spread_ratios_batch(bars)
+        end_spread = time.perf_counter()
+        spread_time_ms = (end_spread - start_spread) * 1000
+
+        # Calculate ratio
+        time_ratio = spread_time_ms / volume_time_ms
+
+        print(f"\nPerformance Comparison (5000 bars):")
+        print(f"  Volume ratio: {volume_time_ms:.2f}ms")
+        print(f"  Spread ratio: {spread_time_ms:.2f}ms")
+        print(f"  Ratio: {time_ratio:.2f}x")
+
+        # Performance should be similar (within 2.5x of each other)
+        # Spread calculation is slightly slower due to additional np.subtract operation
+        assert 0.5 < time_ratio < 2.5, f"Performance difference too large: {time_ratio:.2f}x"
+
+        # Both should meet performance targets
+        assert volume_time_ms < 50, f"Volume calculation too slow: {volume_time_ms:.2f}ms"
+        assert spread_time_ms < 50, f"Spread calculation too slow: {spread_time_ms:.2f}ms"

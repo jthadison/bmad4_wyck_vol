@@ -182,3 +182,195 @@ def calculate_volume_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
         )
 
     return results
+
+
+def calculate_spread_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
+    """
+    Calculate spread ratio: current bar spread / 20-bar average spread.
+
+    Computes the ratio of the current bar's spread (high - low) to the simple moving
+    average of the previous 20 bars' spreads (excluding the current bar). This metric
+    helps identify volatility changes:
+    - >2.0x = Wide spread (climactic action, breakout)
+    - <0.5x = Narrow spread (absorption, consolidation)
+    - 0.6x-1.5x = Normal spread
+
+    Args:
+        bars: List of OHLCVBar objects in chronological order
+        index: Index of the bar to calculate spread ratio for
+
+    Returns:
+        Spread ratio as float, or None if:
+        - Index < 20 (insufficient historical data)
+        - Invalid index (out of bounds)
+        Returns 0.0 if:
+        - Average spread is zero (all bars have same high/low)
+        - Current bar has zero spread (high == low)
+
+    Performance:
+        Uses NumPy for vectorized operations. Processes 1000 bars in <10ms.
+
+    Example:
+        >>> bars = [OHLCVBar(high=110, low=100, ...) for _ in range(20)]  # spread=10
+        >>> bars.append(OHLCVBar(high=120, low=100, ...))  # spread=20
+        >>> calculate_spread_ratio(bars, 20)
+        2.0
+    """
+    # Validate input parameters
+    if not bars:
+        return None
+    if index < 0 or index >= len(bars):
+        return None
+    if index < 20:
+        # Insufficient historical data for 20-bar average
+        return None
+
+    # Calculate current bar spread
+    current_bar = bars[index]
+    current_spread = float(current_bar.high - current_bar.low)
+
+    # Handle edge case: current bar has zero spread (high == low)
+    if current_spread == 0:
+        return 0.0
+
+    # Extract spreads from previous 20 bars (excluding current bar)
+    # Using list comprehension for small arrays (20 elements)
+    spreads = [float(bars[i].high - bars[i].low) for i in range(index - 20, index)]
+
+    # Convert to NumPy array for vectorized operations
+    spreads_array = np.array(spreads, dtype=np.float64)
+
+    # Calculate simple moving average
+    avg_spread_20 = np.mean(spreads_array)
+
+    # Handle edge case: zero spread average (all bars have same high/low)
+    if avg_spread_20 == 0:
+        logger.warning(
+            "zero_spread_average_detected",
+            symbol=bars[index].symbol,
+            index=index,
+            timeframe=bars[index].timeframe,
+        )
+        return 0.0
+
+    # Calculate and return spread ratio
+    spread_ratio = current_spread / avg_spread_20
+
+    # Log warning for abnormally wide spreads (>3.0x average)
+    if spread_ratio > 3.0:
+        logger.warning(
+            "abnormal_spread_detected",
+            symbol=bars[index].symbol,
+            index=index,
+            spread_ratio=round(spread_ratio, 4),
+            current_spread=round(current_spread, 8),
+            avg_spread=round(avg_spread_20, 8),
+            timeframe=bars[index].timeframe,
+            timestamp=bars[index].timestamp.isoformat(),
+        )
+
+    return spread_ratio
+
+
+def calculate_spread_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]:
+    """
+    Calculate spread ratios for all bars in a sequence using vectorized operations.
+
+    This is a fully optimized batch processing function that processes all bars
+    at once using NumPy's rolling window operations. Significantly faster than
+    calling calculate_spread_ratio() in a loop.
+
+    Performance: Processes 10,000 bars in <100ms using NumPy convolution.
+
+    Args:
+        bars: List of OHLCVBar objects in chronological order
+
+    Returns:
+        List of spread ratios (float or None) for each bar.
+        First 20 elements are None (insufficient data).
+        Returns 0.0 for bars with zero spread or zero spread average.
+
+    Example:
+        >>> bars = [OHLCVBar(high=110, low=100, ...) for _ in range(25)]  # spread=10
+        >>> bars[-1].high = 120  # Last bar has spread=20
+        >>> ratios = calculate_spread_ratios_batch(bars)
+        >>> ratios[24]  # Last bar's ratio
+        2.0
+    """
+    if not bars or len(bars) == 0:
+        return []
+
+    # Log debug info for batch processing
+    if len(bars) <= 25:
+        logger.debug(
+            "batch_spread_calculation_starting",
+            num_bars=len(bars),
+            symbol=bars[0].symbol if bars else None,
+            timeframe=bars[0].timeframe if bars else None,
+        )
+
+    # Extract all highs and lows into NumPy arrays (single pass, vectorized)
+    highs = np.array([float(bar.high) for bar in bars], dtype=np.float64)
+    lows = np.array([float(bar.low) for bar in bars], dtype=np.float64)
+
+    # Calculate spreads vectorized: spreads = highs - lows
+    spreads = np.subtract(highs, lows)
+
+    # Initialize result array with None for first 20 bars
+    results: List[Optional[float]] = [None] * len(bars)
+
+    # Calculate 20-bar rolling average using NumPy convolution
+    window_size = 20
+
+    # Use uniform filter (moving average kernel) for rolling computation
+    ones = np.ones(window_size)
+    rolling_sums = np.convolve(spreads, ones, mode='valid')
+    rolling_avgs = rolling_sums / window_size
+
+    # Calculate ratios for bars with sufficient history (index >= 20)
+    abnormal_count = 0
+    zero_spread_count = 0
+
+    for i in range(window_size, len(bars)):
+        current_spread = spreads[i]
+
+        # Handle zero current spread
+        if current_spread == 0:
+            results[i] = 0.0
+            zero_spread_count += 1
+            continue
+
+        # rolling_avgs[i - window_size] is the average of bars[i-20:i]
+        avg_spread = rolling_avgs[i - window_size]
+
+        if avg_spread == 0:
+            results[i] = 0.0
+            zero_spread_count += 1
+        else:
+            ratio = float(current_spread / avg_spread)
+            results[i] = ratio
+
+            # Track abnormally wide spreads
+            if ratio > 3.0:
+                abnormal_count += 1
+                # Log only first few abnormal spreads to avoid log spam
+                if abnormal_count <= 3:
+                    logger.warning(
+                        "abnormal_spread_in_batch",
+                        symbol=bars[i].symbol,
+                        index=i,
+                        spread_ratio=round(ratio, 4),
+                        timestamp=bars[i].timestamp.isoformat(),
+                    )
+
+    # Log batch completion summary
+    if len(bars) <= 25 or abnormal_count > 0 or zero_spread_count > 0:
+        logger.debug(
+            "batch_spread_calculation_completed",
+            num_bars=len(bars),
+            num_calculated=len([r for r in results if r is not None]),
+            abnormal_spreads=abnormal_count,
+            zero_spreads=zero_spread_count,
+        )
+
+    return results
