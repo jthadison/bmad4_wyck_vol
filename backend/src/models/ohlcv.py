@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class OHLCVBar(BaseModel):
@@ -92,12 +92,32 @@ class OHLCVBar(BaseModel):
             return v
         return Decimal(str(v))
 
-    class Config:
-        """Pydantic model configuration."""
+    @property
+    def close_position(self) -> float:
+        """
+        Calculate where close is within the bar's range (0.0 to 1.0).
 
-        json_encoders = {
+        Returns the position of the closing price within the bar's high-low range.
+        A value of 0.0 means close equals low, 1.0 means close equals high,
+        and 0.5 means close is at the midpoint.
+
+        Returns:
+            float: Position ratio between 0.0 and 1.0
+
+        Example:
+            >>> bar = OHLCVBar(high=Decimal("155"), low=Decimal("148"), close=Decimal("153"), ...)
+            >>> bar.close_position
+            0.714...  # (153 - 148) / (155 - 148) = 5/7
+        """
+        if self.spread == 0:
+            return 0.5  # Avoid division by zero - return midpoint
+        return float((self.close - self.low) / self.spread)
+
+    model_config = ConfigDict(
+        from_attributes=True,  # Allow ORM mode for SQLAlchemy integration
+        json_encoders={
             Decimal: lambda v: str(v),
             datetime: lambda v: v.isoformat(),
             UUID: lambda v: str(v),
         }
-        from_attributes = True  # Allow ORM mode for SQLAlchemy integration
+    )

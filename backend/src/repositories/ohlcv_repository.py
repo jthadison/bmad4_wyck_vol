@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.ohlcv import OHLCVBar
+from src.repositories.bar_iterator import BarIterator
 from src.repositories.models import OHLCVBarModel
 
 logger = structlog.get_logger(__name__)
@@ -37,6 +38,74 @@ class OHLCVRepository:
             session: SQLAlchemy async session
         """
         self.session = session
+
+    async def insert_bar(self, bar: OHLCVBar) -> Optional[str]:
+        """
+        Insert a single OHLCV bar into the database.
+
+        Handles unique constraint violations gracefully (duplicate bars are skipped).
+        Used primarily for real-time data ingestion.
+
+        Args:
+            bar: OHLCVBar object to insert
+
+        Returns:
+            Bar ID (UUID as string) if successful, None if duplicate
+
+        Example:
+            ```python
+            bar_id = await repo.insert_bar(bar)
+            if bar_id:
+                logger.info("bar_inserted", bar_id=bar_id)
+            else:
+                logger.info("duplicate_bar_skipped")
+            ```
+        """
+        try:
+            stmt = insert(OHLCVBarModel).values({
+                "id": bar.id,
+                "symbol": bar.symbol,
+                "timeframe": bar.timeframe,
+                "timestamp": bar.timestamp,
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+                "spread": bar.spread,
+                "spread_ratio": bar.spread_ratio,
+                "volume_ratio": bar.volume_ratio,
+                "created_at": bar.created_at,
+            })
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=["symbol", "timeframe", "timestamp"]
+            )
+
+            result = await self.session.execute(stmt)
+            await self.session.commit()
+
+            # Check if row was inserted
+            if result.rowcount and result.rowcount > 0:
+                logger.info(
+                    "bar_inserted",
+                    symbol=bar.symbol,
+                    timeframe=bar.timeframe,
+                    timestamp=bar.timestamp.isoformat(),
+                )
+                return str(bar.id)
+            else:
+                logger.debug(
+                    "duplicate_bar_skipped",
+                    symbol=bar.symbol,
+                    timeframe=bar.timeframe,
+                    timestamp=bar.timestamp.isoformat(),
+                )
+                return None
+
+        except Exception as e:
+            await self.session.rollback()
+            logger.error("insert_bar_failed", error=str(e), symbol=bar.symbol)
+            raise
 
     async def insert_bars(self, bars: List[OHLCVBar]) -> int:
         """
@@ -189,6 +258,50 @@ class OHLCVRepository:
         # Convert SQLAlchemy models to Pydantic models
         return [OHLCVBar.model_validate(model) for model in models]
 
+    async def get_latest_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        count: int = 100,
+    ) -> List[OHLCVBar]:
+        """
+        Retrieve the most recent N bars for a symbol.
+
+        Returns bars in chronological order (oldest first) for analysis.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+            count: Number of recent bars to fetch (default: 100)
+
+        Returns:
+            List of OHLCVBar objects sorted by timestamp (oldest first)
+
+        Example:
+            ```python
+            recent_bars = await repo.get_latest_bars("AAPL", "1d", count=252)
+            # Returns most recent 252 daily bars in chronological order
+            ```
+        """
+        stmt = (
+            select(OHLCVBarModel)
+            .where(
+                and_(
+                    OHLCVBarModel.symbol == symbol,
+                    OHLCVBarModel.timeframe == timeframe,
+                )
+            )
+            .order_by(OHLCVBarModel.timestamp.desc())
+            .limit(count)
+        )
+
+        result = await self.session.execute(stmt)
+        models = result.scalars().all()
+
+        # Convert to Pydantic models and reverse to chronological order
+        bars = [OHLCVBar.model_validate(model) for model in models]
+        return list(reversed(bars))
+
     async def count_bars(self, symbol: str, timeframe: str) -> int:
         """
         Count total bars for a symbol and timeframe.
@@ -327,3 +440,43 @@ class OHLCVRepository:
 
         result = await self.session.execute(stmt)
         return result.scalar() or 0
+
+    def iter_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start_date: datetime,
+        end_date: datetime,
+        batch_size: int = 100,
+    ) -> BarIterator:
+        """
+        Create an iterator for lazy loading bars.
+
+        Returns an async iterator that fetches bars in batches to avoid
+        loading full history into memory. Useful for analyzing long date ranges.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+            start_date: Start date (inclusive)
+            end_date: End date (inclusive)
+            batch_size: Number of bars per batch (default: 100)
+
+        Returns:
+            BarIterator for async iteration
+
+        Example:
+            ```python
+            async for batch in repository.iter_bars("AAPL", "1d", start, end):
+                for bar in batch:
+                    analyze(bar)
+            ```
+        """
+        return BarIterator(
+            repository=self,
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            batch_size=batch_size,
+        )
