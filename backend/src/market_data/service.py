@@ -10,9 +10,10 @@ Also provides real-time data feed coordination via MarketDataCoordinator.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import List, Optional
+from typing import Deque, List, Optional
 
 import structlog
 
@@ -324,6 +325,13 @@ class MarketDataCoordinator:
         self._is_running: bool = False
         self._start_time: Optional[datetime] = None
 
+        # Insertion failure tracking (REL-002)
+        self._insertion_failures: int = 0
+        self._insertion_successes: int = 0
+        self._failed_bars: Deque[OHLCVBar] = deque(maxlen=100)  # Dead letter queue
+        self._failure_alert_threshold: int = 10  # Alert after N consecutive failures
+        self._consecutive_failures: int = 0
+
         logger.info(
             "market_data_coordinator_initialized",
             provider=adapter.__class__.__name__,
@@ -464,11 +472,17 @@ class MarketDataCoordinator:
                 insertion_latency = (end_time - start_time).total_seconds()
 
                 if inserted_count > 0:
+                    # Track successful insertion (REL-002)
+                    self._insertion_successes += 1
+                    self._consecutive_failures = 0
+
                     logger.info(
                         "realtime_bar_inserted",
                         symbol=bar.symbol,
                         timestamp=bar.timestamp.isoformat(),
                         insertion_latency_ms=insertion_latency * 1000,
+                        total_successes=self._insertion_successes,
+                        total_failures=self._insertion_failures,
                     )
                 else:
                     # Duplicate bar (already exists)
@@ -479,12 +493,30 @@ class MarketDataCoordinator:
                     )
 
         except Exception as e:
+            # Track failure and add to dead letter queue (REL-002)
+            self._insertion_failures += 1
+            self._consecutive_failures += 1
+            self._failed_bars.append(bar)
+
             logger.error(
                 "realtime_bar_insertion_failed",
                 symbol=bar.symbol,
                 timestamp=bar.timestamp.isoformat(),
                 error=str(e),
+                total_failures=self._insertion_failures,
+                consecutive_failures=self._consecutive_failures,
+                failed_queue_size=len(self._failed_bars),
             )
+
+            # Alert on consecutive failures (REL-002)
+            if self._consecutive_failures >= self._failure_alert_threshold:
+                logger.critical(
+                    "realtime_insertion_failure_threshold_exceeded",
+                    consecutive_failures=self._consecutive_failures,
+                    threshold=self._failure_alert_threshold,
+                    failed_queue_size=len(self._failed_bars),
+                    action_required="Check database connection and health",
+                )
 
     async def health_check(self) -> dict:
         """
@@ -500,6 +532,12 @@ class MarketDataCoordinator:
         if self._start_time:
             uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds()
 
+        # Calculate insertion success rate (REL-002)
+        total_insertions = self._insertion_successes + self._insertion_failures
+        success_rate = 0.0
+        if total_insertions > 0:
+            success_rate = (self._insertion_successes / total_insertions) * 100
+
         return {
             "is_running": self._is_running,
             "is_healthy": is_healthy,
@@ -507,4 +545,34 @@ class MarketDataCoordinator:
             "uptime_seconds": uptime,
             "symbols": self.settings.watchlist_symbols,
             "timeframe": self.settings.bar_timeframe,
+            # Insertion metrics (REL-002)
+            "insertion_successes": self._insertion_successes,
+            "insertion_failures": self._insertion_failures,
+            "insertion_success_rate_pct": round(success_rate, 2),
+            "consecutive_failures": self._consecutive_failures,
+            "failed_queue_size": len(self._failed_bars),
         }
+
+    def get_failed_bars(self) -> List[OHLCVBar]:
+        """
+        Get failed bars from dead letter queue (REL-002).
+
+        Returns:
+            List of bars that failed to insert (max 100 most recent)
+        """
+        return list(self._failed_bars)
+
+    def clear_failed_bars(self) -> int:
+        """
+        Clear failed bars dead letter queue (REL-002).
+
+        Returns:
+            Number of bars cleared
+        """
+        count = len(self._failed_bars)
+        self._failed_bars.clear()
+        logger.info(
+            "failed_bars_queue_cleared",
+            bars_cleared=count,
+        )
+        return count
