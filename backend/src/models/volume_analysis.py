@@ -74,28 +74,44 @@ class VolumeAnalysis(BaseModel):
             return v
         return Decimal(str(v))
 
-    @field_validator("volume_ratio", "spread_ratio", "close_position")
+    @field_validator("volume_ratio", "spread_ratio", "close_position", mode="after")
     @classmethod
-    def validate_reasonable_range(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_reasonable_range(cls, v: Optional[Decimal], info) -> Optional[Decimal]:
         """
         Validate that ratios fall within reasonable bounds.
 
         Volume and spread ratios should typically be between 0.01 and 10.0.
         Close position should be between 0.0 and 1.0.
-        Log warning for abnormal values but don't reject them (data may be valid).
+        Logs warning for abnormal values but doesn't reject them (data may be valid).
 
         Args:
             v: Ratio value to validate
+            info: Field validation info
 
         Returns:
             The validated value (unchanged)
+
+        Raises:
+            ValueError: If close_position is outside 0.0-1.0 range (invalid calculation)
         """
         if v is None:
             return None
 
-        # Validate volume and spread ratios (0.01x to 10.0x is reasonable range)
-        if v < Decimal("0.01") or v > Decimal("10.0"):
-            # Don't raise error - just log warning (handled in business logic)
+        field_name = info.field_name
+
+        # Close position must be 0.0-1.0 (position within bar range)
+        if field_name == "close_position":
+            if v < Decimal("0.0") or v > Decimal("1.0"):
+                raise ValueError(
+                    f"close_position must be between 0.0 and 1.0, got {v}"
+                )
+
+        # Volume and spread ratios: warn if outside typical range but don't reject
+        # (extreme market conditions can produce valid extreme ratios)
+        elif field_name in ("volume_ratio", "spread_ratio"):
+            # Ratios outside 0.01-10.0 are unusual but possible
+            # Validation happens at the business logic layer with logging
+            # This validator just ensures the value is a valid Decimal
             pass
 
         return v
