@@ -6,6 +6,7 @@ Primary function is calculate_volume_ratio which computes current volume / 20-ba
 """
 
 from typing import List, Optional
+import time
 
 import numpy as np
 import structlog
@@ -13,6 +14,7 @@ from decimal import Decimal
 
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
+from src.models.volume_analysis import VolumeAnalysis
 
 logger = structlog.get_logger(__name__)
 
@@ -688,3 +690,266 @@ def classify_effort_result(
     # NORMAL: All other combinations
     # Balanced effort and result, continuation pattern
     return EffortResult.NORMAL
+
+
+class VolumeAnalyzer:
+    """
+    Unified volume analyzer that produces complete volume analysis for bar sequences.
+
+    Integrates calculations from Stories 2.1-2.4:
+    - Volume ratio (Story 2.1): current volume / 20-bar average
+    - Spread ratio (Story 2.2): current spread / 20-bar average
+    - Close position (Story 2.3): where bar closed in its range
+    - Effort vs. result classification (Story 2.4): CLIMACTIC, ABSORPTION, NO_DEMAND, NORMAL
+
+    This analyzer is stateless and thread-safe, optimized for batch processing
+    using NumPy vectorized operations. Designed for both backtesting and live trading.
+
+    Performance Characteristics:
+    - 252 bars (1 year daily): <50ms
+    - 10,000 bars (large dataset): <500ms
+    - Throughput: >20,000 bars/second
+
+    Pattern Detector Integration:
+    Pattern detectors (Epics 3-6) will use this analyzer to get complete volume
+    analysis for bar sequences, then filter for specific patterns (springs, UTADs, etc).
+
+    Example:
+        >>> from backend.src.pattern_engine.volume_analyzer import VolumeAnalyzer
+        >>> from backend.src.repositories.ohlcv_repository import OHLCVRepository
+        >>>
+        >>> # Load bars
+        >>> repo = OHLCVRepository()
+        >>> bars = repo.get_bars(symbol="AAPL", timeframe="1d", limit=252)
+        >>>
+        >>> # Analyze
+        >>> analyzer = VolumeAnalyzer()
+        >>> analysis_results = analyzer.analyze(bars)
+        >>>
+        >>> # Filter for patterns
+        >>> from backend.src.models.effort_result import EffortResult
+        >>> absorption_bars = [a for a in analysis_results
+        ...                    if a.effort_result == EffortResult.ABSORPTION]
+        >>> climactic_bars = [a for a in analysis_results
+        ...                   if a.effort_result == EffortResult.CLIMACTIC]
+    """
+
+    def __init__(self):
+        """
+        Initialize VolumeAnalyzer.
+
+        No parameters needed as analyzer is stateless.
+        Each analyze() call is independent and thread-safe.
+        """
+        pass
+
+    def analyze(self, bars: List[OHLCVBar]) -> List[VolumeAnalysis]:
+        """
+        Analyze a sequence of OHLCV bars and produce complete volume analysis.
+
+        This method integrates all volume calculations (Stories 2.1-2.4) into a unified
+        batch processing pipeline. Uses NumPy vectorization for optimal performance.
+
+        Processing Pipeline:
+        1. Validate input (non-empty bars list)
+        2. Extract bar data into NumPy arrays (vectorized)
+        3. Calculate volume ratios using rolling window (batch)
+        4. Calculate spread ratios using rolling window (batch)
+        5. Calculate close positions (vectorized)
+        6. Classify effort_result for each bar
+        7. Build VolumeAnalysis objects with all metrics
+        8. Log statistics and completion
+
+        Args:
+            bars: List of OHLCV bars to analyze, in chronological order.
+                  Must contain at least 1 bar. Typically 252 bars (1 year daily)
+                  or more for backtesting.
+
+        Returns:
+            List of VolumeAnalysis objects, one per bar, in same order as input.
+
+            First 20 bars will have:
+            - volume_ratio: None (insufficient data for 20-bar average)
+            - spread_ratio: None (insufficient data for 20-bar average)
+            - close_position: calculated value 0.0-1.0 (can calculate for all bars)
+            - effort_result: EffortResult.NORMAL (None ratios default to NORMAL)
+
+            Bars 21+ will have all fields populated with calculated values.
+
+        Raises:
+            ValueError: If bars list is empty
+
+        Performance:
+            - 252 bars: <50ms (typical use case)
+            - 10,000 bars: <500ms (large backtest dataset)
+            - Scales linearly with number of bars
+
+        Note:
+            This method is stateless and thread-safe. Multiple threads can call
+            analyze() concurrently on the same VolumeAnalyzer instance.
+
+        Example:
+            >>> analyzer = VolumeAnalyzer()
+            >>> bars = load_bars("AAPL", "1d", 252)
+            >>> analysis = analyzer.analyze(bars)
+            >>> len(analysis)
+            252
+            >>> analysis[0].volume_ratio  # First bar
+            None
+            >>> analysis[20].volume_ratio  # 21st bar (first with data)
+            Decimal('1.2345')
+        """
+        # Validate input
+        if not bars or len(bars) == 0:
+            logger.warning("empty_bars_list", message="Cannot analyze empty bar list")
+            raise ValueError("Cannot analyze empty bar list")
+
+        # Start timing for performance tracking
+        start_time = time.perf_counter()
+
+        # Log analysis start
+        logger.info(
+            "analysis_start",
+            symbol=bars[0].symbol,
+            timeframe=bars[0].timeframe,
+            bar_count=len(bars),
+            start_timestamp=bars[0].timestamp.isoformat(),
+            end_timestamp=bars[-1].timestamp.isoformat(),
+        )
+
+        # ============================================================
+        # BATCH PROCESSING PIPELINE
+        # ============================================================
+
+        # Step 1: Calculate volume ratios (batch)
+        volume_ratios = calculate_volume_ratios_batch(bars)
+
+        # Step 2: Calculate spread ratios (batch)
+        spread_ratios = calculate_spread_ratios_batch(bars)
+
+        # Step 3: Calculate close positions (vectorized)
+        close_positions = calculate_close_positions_batch(bars)
+
+        # Step 4: Build VolumeAnalysis objects with effort_result classification
+        results: List[VolumeAnalysis] = []
+
+        for i, bar in enumerate(bars):
+            # Get calculated values for this bar
+            volume_ratio_raw = volume_ratios[i]
+            spread_ratio_raw = spread_ratios[i]
+            close_position_raw = close_positions[i]
+
+            # Round ratios to 4 decimal places for Pydantic validation
+            # (Pydantic decimal_places constraint requires max 4 decimal places)
+            volume_ratio = (
+                round(volume_ratio_raw, 4) if volume_ratio_raw is not None else None
+            )
+            spread_ratio = (
+                round(spread_ratio_raw, 4) if spread_ratio_raw is not None else None
+            )
+            close_position = round(close_position_raw, 4)
+
+            # Classify effort_result based on volume/spread ratios
+            # Use raw values for classification (more accurate)
+            effort_result = classify_effort_result(volume_ratio_raw, spread_ratio_raw)
+
+            # Create VolumeAnalysis object
+            analysis = VolumeAnalysis(
+                bar=bar,
+                volume_ratio=volume_ratio,
+                spread_ratio=spread_ratio,
+                close_position=close_position,
+                effort_result=effort_result,
+            )
+
+            results.append(analysis)
+
+        # ============================================================
+        # LOGGING AND STATISTICS
+        # ============================================================
+
+        # Calculate processing time
+        end_time = time.perf_counter()
+        duration_ms = (end_time - start_time) * 1000
+
+        # Count effort_result distribution
+        effort_counts = {
+            EffortResult.CLIMACTIC: 0,
+            EffortResult.ABSORPTION: 0,
+            EffortResult.NO_DEMAND: 0,
+            EffortResult.NORMAL: 0,
+        }
+
+        for analysis in results:
+            if analysis.effort_result:
+                effort_counts[analysis.effort_result] += 1
+
+        # Calculate statistics
+        total_bars = len(results)
+        bars_with_ratios = sum(
+            1 for r in results if r.volume_ratio is not None
+        )
+
+        # Log abnormal conditions
+        extreme_volume_count = sum(
+            1 for r in results
+            if r.volume_ratio and float(r.volume_ratio) > 5.0
+        )
+        extreme_spread_count = sum(
+            1 for r in results
+            if r.spread_ratio and float(r.spread_ratio) > 3.0
+        )
+
+        if extreme_volume_count > 0:
+            logger.warning(
+                "extreme_volume_detected",
+                count=extreme_volume_count,
+                percentage=round(100 * extreme_volume_count / total_bars, 2),
+            )
+
+        if extreme_spread_count > 0:
+            logger.warning(
+                "extreme_spread_detected",
+                count=extreme_spread_count,
+                percentage=round(100 * extreme_spread_count / total_bars, 2),
+            )
+
+        # Calculate average ratios (excluding None values)
+        volume_ratios_valid = [
+            float(r.volume_ratio) for r in results if r.volume_ratio is not None
+        ]
+        spread_ratios_valid = [
+            float(r.spread_ratio) for r in results if r.spread_ratio is not None
+        ]
+
+        avg_volume_ratio = (
+            np.mean(volume_ratios_valid) if volume_ratios_valid else None
+        )
+        avg_spread_ratio = (
+            np.mean(spread_ratios_valid) if spread_ratios_valid else None
+        )
+
+        # Log completion with statistics
+        logger.info(
+            "analysis_complete",
+            bars_analyzed=total_bars,
+            bars_with_ratios=bars_with_ratios,
+            duration_ms=round(duration_ms, 2),
+            bars_per_second=round(total_bars / (duration_ms / 1000), 0),
+            effort_distribution={
+                "CLIMACTIC": effort_counts[EffortResult.CLIMACTIC],
+                "ABSORPTION": effort_counts[EffortResult.ABSORPTION],
+                "NO_DEMAND": effort_counts[EffortResult.NO_DEMAND],
+                "NORMAL": effort_counts[EffortResult.NORMAL],
+            },
+            effort_percentages={
+                "CLIMACTIC": round(100 * effort_counts[EffortResult.CLIMACTIC] / total_bars, 1),
+                "ABSORPTION": round(100 * effort_counts[EffortResult.ABSORPTION] / total_bars, 1),
+                "NO_DEMAND": round(100 * effort_counts[EffortResult.NO_DEMAND] / total_bars, 1),
+                "NORMAL": round(100 * effort_counts[EffortResult.NORMAL] / total_bars, 1),
+            },
+            avg_volume_ratio=round(avg_volume_ratio, 4) if avg_volume_ratio else None,
+            avg_spread_ratio=round(avg_spread_ratio, 4) if avg_spread_ratio else None,
+        )
+
+        return results
