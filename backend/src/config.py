@@ -68,8 +68,28 @@ class Settings(BaseSettings):
         default=False,
         description="Echo SQL statements to logs (useful for debugging)",
     )
+    enable_query_logging: bool = Field(
+        default=False,
+        description="Enable detailed query logging with execution times",
+    )
+    bar_batch_size: int = Field(
+        default=1000,
+        ge=100,
+        le=10000,
+        description="Batch size for bulk bar operations (insert/query)",
+    )
 
     # Redis Configuration
+    enable_bar_cache: bool = Field(
+        default=False,
+        description="Enable Redis cache for bar data (optional, for performance)",
+    )
+    bar_cache_ttl: int = Field(
+        default=60,
+        ge=10,
+        le=3600,
+        description="Bar cache TTL in seconds",
+    )
     redis_host: str = Field(
         default="localhost",
         description="Redis server hostname",
