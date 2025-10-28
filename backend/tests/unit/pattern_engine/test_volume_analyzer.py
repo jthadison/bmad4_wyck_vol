@@ -17,6 +17,8 @@ from src.pattern_engine.volume_analyzer import (
     calculate_volume_ratios_batch,
     calculate_spread_ratio,
     calculate_spread_ratios_batch,
+    calculate_close_position,
+    calculate_close_positions_batch,
 )
 
 
@@ -479,3 +481,330 @@ class TestCalculateSpreadRatiosBatch:
         # Bars 21-24 should have valid ratios
         for i in range(21, 25):
             assert ratios[i] is not None and ratios[i] > 0
+
+
+class TestCalculateClosePosition:
+    """Test suite for calculate_close_position function."""
+
+    def test_close_at_high(self):
+        """Test close position when bar closes at high (maximum buying pressure)."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0"),
+            low=Decimal("90.0")
+        )
+        # Set close at high
+        bar.close = Decimal("100.0")
+
+        position = calculate_close_position(bar)
+        assert position == 1.0, f"Expected 1.0 (close at high), got {position}"
+
+    def test_close_at_low(self):
+        """Test close position when bar closes at low (maximum selling pressure)."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0"),
+            low=Decimal("90.0")
+        )
+        # Set close at low
+        bar.close = Decimal("90.0")
+
+        position = calculate_close_position(bar)
+        assert position == 0.0, f"Expected 0.0 (close at low), got {position}"
+
+    def test_close_at_midpoint(self):
+        """Test close position when bar closes at midpoint (neutral pressure)."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0"),
+            low=Decimal("90.0")
+        )
+        # Set close at midpoint: (100 + 90) / 2 = 95
+        bar.close = Decimal("95.0")
+
+        position = calculate_close_position(bar)
+        assert abs(position - 0.5) < 0.0001, f"Expected 0.5 (close at midpoint), got {position}"
+
+    def test_close_at_75_percent(self):
+        """Test close position when bar closes at 75% of range (strong buying pressure)."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0"),
+            low=Decimal("90.0")
+        )
+        # Set close at 75%: low + 0.75 * (high - low) = 90 + 0.75 * 10 = 97.5
+        bar.close = Decimal("97.5")
+
+        position = calculate_close_position(bar)
+        assert abs(position - 0.75) < 0.0001, f"Expected 0.75, got {position}"
+
+    def test_close_at_25_percent(self):
+        """Test close position when bar closes at 25% of range (strong selling pressure)."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0"),
+            low=Decimal("90.0")
+        )
+        # Set close at 25%: low + 0.25 * (high - low) = 90 + 0.25 * 10 = 92.5
+        bar.close = Decimal("92.5")
+
+        position = calculate_close_position(bar)
+        assert abs(position - 0.25) < 0.0001, f"Expected 0.25, got {position}"
+
+    def test_zero_spread_returns_neutral(self):
+        """Test edge case: zero spread (doji bar) returns 0.5 (neutral)."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0"),
+            low=Decimal("100.0")
+        )
+        bar.close = Decimal("100.0")
+
+        position = calculate_close_position(bar)
+        assert position == 0.5, f"Expected 0.5 (neutral) for zero spread, got {position}"
+
+    def test_zero_spread_at_different_price_levels(self):
+        """Test zero spread at various price levels all return 0.5."""
+        price_levels = [Decimal("50.0"), Decimal("100.0"), Decimal("200.0"), Decimal("1000.0")]
+
+        for price in price_levels:
+            bar = create_test_bar(volume=100, high=price, low=price)
+            bar.close = price
+
+            position = calculate_close_position(bar)
+            assert position == 0.5, f"Expected 0.5 for price {price}, got {position}"
+
+    def test_very_small_spread(self):
+        """Test close position with very small spread (precision test)."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0001"),
+            low=Decimal("100.0000")
+        )
+        bar.close = Decimal("100.0001")  # Close at high
+
+        position = calculate_close_position(bar)
+        assert abs(position - 1.0) < 0.0001, f"Expected 1.0, got {position}"
+
+    def test_close_above_high_clamped(self):
+        """Test data integrity: close above high is clamped to valid range."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0"),
+            low=Decimal("90.0")
+        )
+        # Invalid data: close > high
+        bar.close = Decimal("105.0")
+
+        position = calculate_close_position(bar)
+        # Should clamp to 1.0 (treated as close at high)
+        assert position == 1.0, f"Expected 1.0 (clamped), got {position}"
+
+    def test_close_below_low_clamped(self):
+        """Test data integrity: close below low is clamped to valid range."""
+        bar = create_test_bar(
+            volume=100,
+            high=Decimal("100.0"),
+            low=Decimal("90.0")
+        )
+        # Invalid data: close < low
+        bar.close = Decimal("85.0")
+
+        position = calculate_close_position(bar)
+        # Should clamp to 0.0 (treated as close at low)
+        assert position == 0.0, f"Expected 0.0 (clamped), got {position}"
+
+    def test_none_bar_raises_error(self):
+        """Test that None bar parameter raises ValueError."""
+        with pytest.raises(ValueError, match="Bar parameter cannot be None"):
+            calculate_close_position(None)
+
+    def test_result_always_in_valid_range(self):
+        """Test that result is always in [0.0, 1.0] range."""
+        # Test various close positions
+        test_cases = [
+            (Decimal("90.0"), Decimal("100.0"), Decimal("90.0")),   # 0.0
+            (Decimal("90.0"), Decimal("100.0"), Decimal("92.0")),   # 0.2
+            (Decimal("90.0"), Decimal("100.0"), Decimal("95.0")),   # 0.5
+            (Decimal("90.0"), Decimal("100.0"), Decimal("98.0")),   # 0.8
+            (Decimal("90.0"), Decimal("100.0"), Decimal("100.0")),  # 1.0
+        ]
+
+        for low, high, close in test_cases:
+            bar = create_test_bar(volume=100, high=high, low=low)
+            bar.close = close
+
+            position = calculate_close_position(bar)
+            assert 0.0 <= position <= 1.0, f"Position {position} outside [0.0, 1.0] range"
+
+    @pytest.mark.parametrize(
+        "low,high,close,expected_position",
+        [
+            (Decimal("90.0"), Decimal("100.0"), Decimal("100.0"), 1.0),    # Close at high
+            (Decimal("90.0"), Decimal("100.0"), Decimal("90.0"), 0.0),     # Close at low
+            (Decimal("90.0"), Decimal("100.0"), Decimal("95.0"), 0.5),     # Midpoint
+            (Decimal("90.0"), Decimal("100.0"), Decimal("97.0"), 0.7),     # 70% (bullish)
+            (Decimal("90.0"), Decimal("100.0"), Decimal("93.0"), 0.3),     # 30% (bearish)
+            (Decimal("100.0"), Decimal("200.0"), Decimal("150.0"), 0.5),   # Different range
+            (Decimal("50.0"), Decimal("60.0"), Decimal("58.0"), 0.8),      # 80% (strong buying)
+            (Decimal("50.0"), Decimal("60.0"), Decimal("52.0"), 0.2),      # 20% (strong selling)
+        ],
+    )
+    def test_parametrized_close_positions(
+        self, low: Decimal, high: Decimal, close: Decimal, expected_position: float
+    ):
+        """Parametrized test for various close position scenarios."""
+        bar = create_test_bar(volume=100, high=high, low=low)
+        bar.close = close
+
+        position = calculate_close_position(bar)
+        assert abs(position - expected_position) < 0.0001, f"Expected {expected_position}, got {position}"
+
+
+class TestCalculateClosePositionsBatch:
+    """Test suite for calculate_close_positions_batch function (vectorized)."""
+
+    def test_batch_calculation_matches_individual(self):
+        """Test that batch calculation produces same results as individual calls."""
+        bars = []
+        closes = [Decimal("90.0"), Decimal("95.0"), Decimal("100.0"), Decimal("97.0"), Decimal("92.0")]
+
+        for close in closes:
+            bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+            bar.close = close
+            bars.append(bar)
+
+        # Calculate using batch function
+        batch_positions = calculate_close_positions_batch(bars)
+
+        # Calculate using individual function
+        individual_positions = [calculate_close_position(bar) for bar in bars]
+
+        # Compare results
+        assert len(batch_positions) == len(individual_positions)
+        for i, (batch, individual) in enumerate(zip(batch_positions, individual_positions)):
+            assert abs(batch - individual) < 0.0001, f"Mismatch at index {i}: batch={batch}, individual={individual}"
+
+    def test_batch_empty_list(self):
+        """Test batch function with empty list."""
+        positions = calculate_close_positions_batch([])
+        assert positions == []
+
+    def test_batch_large_sequence(self):
+        """Test batch function with large sequence for performance validation."""
+        bars = []
+        for i in range(1000):
+            # Varying close positions from 0.0 to 1.0
+            close = Decimal(str(90.0 + (i % 11)))  # 90, 91, ..., 100
+            bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+            bar.close = close
+            bars.append(bar)
+
+        positions = calculate_close_positions_batch(bars)
+
+        assert len(positions) == 1000
+        # All positions should be in valid range
+        assert all(0.0 <= p <= 1.0 for p in positions)
+
+    def test_batch_all_close_at_high(self):
+        """Test batch with all bars closing at high."""
+        bars = []
+        for _ in range(10):
+            bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+            bar.close = Decimal("100.0")
+            bars.append(bar)
+
+        positions = calculate_close_positions_batch(bars)
+
+        # All should be 1.0
+        assert all(abs(p - 1.0) < 0.0001 for p in positions)
+
+    def test_batch_all_close_at_low(self):
+        """Test batch with all bars closing at low."""
+        bars = []
+        for _ in range(10):
+            bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+            bar.close = Decimal("90.0")
+            bars.append(bar)
+
+        positions = calculate_close_positions_batch(bars)
+
+        # All should be 0.0
+        assert all(abs(p - 0.0) < 0.0001 for p in positions)
+
+    def test_batch_zero_spread_handling(self):
+        """Test batch function handles zero spreads correctly (returns 0.5)."""
+        bars = []
+        for _ in range(5):
+            bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("100.0"))
+            bar.close = Decimal("100.0")
+            bars.append(bar)
+
+        positions = calculate_close_positions_batch(bars)
+
+        # All should be 0.5 (neutral)
+        assert all(abs(p - 0.5) < 0.0001 for p in positions)
+
+    def test_batch_mixed_positions(self):
+        """Test batch with mixed close positions."""
+        bars = []
+        expected_positions = [0.0, 0.25, 0.5, 0.75, 1.0]
+
+        for expected_pos in expected_positions:
+            close = Decimal("90.0") + Decimal(str(expected_pos * 10.0))
+            bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+            bar.close = close
+            bars.append(bar)
+
+        positions = calculate_close_positions_batch(bars)
+
+        # Verify each position matches expected
+        for i, (position, expected) in enumerate(zip(positions, expected_positions)):
+            assert abs(position - expected) < 0.0001, f"Mismatch at index {i}: got {position}, expected {expected}"
+
+    def test_batch_invalid_data_clamped(self):
+        """Test batch function clamps invalid data (close outside [low, high])."""
+        bars = []
+
+        # Bar 1: close above high
+        bar1 = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+        bar1.close = Decimal("105.0")
+        bars.append(bar1)
+
+        # Bar 2: close below low
+        bar2 = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+        bar2.close = Decimal("85.0")
+        bars.append(bar2)
+
+        # Bar 3: valid close
+        bar3 = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+        bar3.close = Decimal("95.0")
+        bars.append(bar3)
+
+        positions = calculate_close_positions_batch(bars)
+
+        # Bar 1 should be clamped to 1.0
+        assert positions[0] == 1.0, f"Expected 1.0 (clamped), got {positions[0]}"
+
+        # Bar 2 should be clamped to 0.0
+        assert positions[1] == 0.0, f"Expected 0.0 (clamped), got {positions[1]}"
+
+        # Bar 3 should be 0.5
+        assert abs(positions[2] - 0.5) < 0.0001, f"Expected 0.5, got {positions[2]}"
+
+    def test_batch_all_results_in_valid_range(self):
+        """Test that all batch results are in [0.0, 1.0] range."""
+        bars = []
+
+        # Create bars with various close positions, including edge cases
+        for i in range(100):
+            close = Decimal(str(90.0 + (i / 10.0)))  # Close varies from 90.0 to 99.9
+            bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
+            bar.close = close
+            bars.append(bar)
+
+        positions = calculate_close_positions_batch(bars)
+
+        # All positions must be in [0.0, 1.0]
+        for i, position in enumerate(positions):
+            assert 0.0 <= position <= 1.0, f"Position {position} at index {i} outside valid range"

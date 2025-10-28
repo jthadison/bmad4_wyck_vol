@@ -374,3 +374,176 @@ def calculate_spread_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
         )
 
     return results
+
+
+def calculate_close_position(bar: OHLCVBar) -> float:
+    """
+    Calculate close position: where the bar closed within its range.
+
+    Computes the position of the close within the bar's range (high to low).
+    This metric indicates buying vs. selling pressure:
+    - 0.0 = Closed at low (maximum selling pressure)
+    - 1.0 = Closed at high (maximum buying pressure)
+    - 0.5 = Closed at midpoint (neutral/balanced pressure)
+
+    Wyckoff Interpretation:
+    - >= 0.7: Strong buying pressure (bullish)
+    - <= 0.3: Strong selling pressure (bearish)
+    - 0.4-0.6: Neutral/balanced pressure
+
+    Pattern Applications:
+    - Springs should close high (>= 0.7) to be valid
+    - UTAD should close low (<= 0.3) to be valid
+    - High volume + narrow spread + close >= 0.7 = Bullish absorption
+    - High volume + narrow spread + close <= 0.3 = Bearish distribution
+
+    Args:
+        bar: OHLCVBar object to analyze
+
+    Returns:
+        Close position as float in range [0.0, 1.0]
+        Returns 0.5 (neutral) if high == low (zero spread/doji bar)
+
+    Performance:
+        Simple arithmetic operation, executes in <1µs per bar.
+
+    Example:
+        >>> bar = OHLCVBar(high=Decimal('100'), low=Decimal('90'), close=Decimal('95'), ...)
+        >>> calculate_close_position(bar)
+        0.5
+        >>> bar = OHLCVBar(high=Decimal('100'), low=Decimal('90'), close=Decimal('100'), ...)
+        >>> calculate_close_position(bar)
+        1.0
+    """
+    # Validate input
+    if bar is None:
+        raise ValueError("Bar parameter cannot be None")
+
+    # Extract values and convert to float for calculation
+    close = float(bar.close)
+    high = float(bar.high)
+    low = float(bar.low)
+
+    # Calculate spread
+    spread = high - low
+
+    # Handle edge case: zero spread (doji bar, high == low)
+    if spread == 0:
+        logger.debug(
+            "zero_spread_bar",
+            symbol=bar.symbol,
+            timestamp=bar.timestamp.isoformat(),
+            price=close,
+            message="Doji bar detected (high == low), returning neutral position 0.5"
+        )
+        return 0.5
+
+    # Validate data integrity: close should be within [low, high]
+    if not (low <= close <= high):
+        logger.warning(
+            "invalid_close_position_data",
+            symbol=bar.symbol,
+            timestamp=bar.timestamp.isoformat(),
+            close=close,
+            low=low,
+            high=high,
+            message="Close is outside [low, high] range, data quality issue. Clamping value."
+        )
+        # Clamp close to [low, high] range
+        close = max(low, min(close, high))
+
+    # Calculate close position
+    close_position = (close - low) / spread
+
+    # Ensure result is in valid range [0.0, 1.0]
+    # This should always be true after clamping, but we validate to be safe
+    close_position = max(0.0, min(1.0, close_position))
+
+    return close_position
+
+
+def calculate_close_positions_batch(bars: List[OHLCVBar]) -> List[float]:
+    """
+    Calculate close positions for all bars in a sequence using vectorized operations.
+
+    This is an optimized batch processing function that processes all bars
+    at once using NumPy's vectorized operations. Much faster than calling
+    calculate_close_position() in a loop.
+
+    Performance: Processes 10,000 bars in <5ms using NumPy vectorization.
+
+    Args:
+        bars: List of OHLCVBar objects in chronological order
+
+    Returns:
+        List of close positions (float) for each bar, all in range [0.0, 1.0].
+        Zero spread bars return 0.5 (neutral).
+
+    Example:
+        >>> bars = [
+        ...     OHLCVBar(high=Decimal('100'), low=Decimal('90'), close=Decimal('95'), ...),
+        ...     OHLCVBar(high=Decimal('110'), low=Decimal('100'), close=Decimal('110'), ...)
+        ... ]
+        >>> positions = calculate_close_positions_batch(bars)
+        >>> positions
+        [0.5, 1.0]
+    """
+    if not bars or len(bars) == 0:
+        return []
+
+    # Log debug info for batch processing
+    if len(bars) <= 25:
+        logger.debug(
+            "batch_close_position_calculation_starting",
+            num_bars=len(bars),
+            symbol=bars[0].symbol if bars else None,
+            timeframe=bars[0].timeframe if bars else None,
+        )
+
+    # Extract all highs, lows, and closes into NumPy arrays (vectorized)
+    highs = np.array([float(bar.high) for bar in bars], dtype=np.float64)
+    lows = np.array([float(bar.low) for bar in bars], dtype=np.float64)
+    closes = np.array([float(bar.close) for bar in bars], dtype=np.float64)
+
+    # Calculate spreads vectorized: spreads = highs - lows
+    spreads = np.subtract(highs, lows)
+
+    # Initialize results array with neutral values (0.5)
+    results = np.full(len(bars), 0.5, dtype=np.float64)
+
+    # Find bars with non-zero spread
+    non_zero_mask = spreads != 0
+
+    # Calculate close positions only for non-zero spread bars (vectorized)
+    # close_position = (close - low) / spread
+    results[non_zero_mask] = (closes[non_zero_mask] - lows[non_zero_mask]) / spreads[non_zero_mask]
+
+    # Clamp all values to [0.0, 1.0] range (handles any data integrity issues)
+    results = np.clip(results, 0.0, 1.0)
+
+    # Count zero spread bars for logging
+    zero_spread_count = np.sum(~non_zero_mask)
+
+    # Count bars with data integrity issues (close outside [low, high])
+    # This check is done BEFORE clamping, so we need to recalculate
+    invalid_data_mask = (closes < lows) | (closes > highs)
+    invalid_data_count = np.sum(invalid_data_mask)
+
+    if invalid_data_count > 0:
+        logger.warning(
+            "invalid_close_position_data_in_batch",
+            num_bars=len(bars),
+            invalid_count=int(invalid_data_count),
+            message=f"Found {invalid_data_count} bars with close outside [low, high] range. Values clamped."
+        )
+
+    # Log batch completion summary
+    if len(bars) <= 25 or zero_spread_count > 0 or invalid_data_count > 0:
+        logger.debug(
+            "batch_close_position_calculation_completed",
+            num_bars=len(bars),
+            zero_spreads=int(zero_spread_count),
+            invalid_data=int(invalid_data_count),
+        )
+
+    return results.tolist()
