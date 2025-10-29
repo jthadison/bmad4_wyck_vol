@@ -34,7 +34,7 @@ Example:
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List, Dict, Tuple
+from typing import List
 from statistics import mean
 
 import structlog
@@ -100,6 +100,34 @@ def calculate_range_quality(
             bars_count=len(bars),
             volume_count=len(volume_analysis),
             message="Volume analysis length must match bars length"
+        )
+        return 0
+
+    # Validate array bounds (QA Issue #3 fix)
+    if trading_range.start_index < 0 or trading_range.start_index >= len(bars):
+        logger.error(
+            "invalid_start_index",
+            start_index=trading_range.start_index,
+            bars_length=len(bars),
+            message="Range start_index out of bounds"
+        )
+        return 0
+
+    if trading_range.end_index < 0 or trading_range.end_index >= len(bars):
+        logger.error(
+            "invalid_end_index",
+            end_index=trading_range.end_index,
+            bars_length=len(bars),
+            message="Range end_index out of bounds"
+        )
+        return 0
+
+    if trading_range.start_index > trading_range.end_index:
+        logger.error(
+            "invalid_range_indices",
+            start_index=trading_range.start_index,
+            end_index=trading_range.end_index,
+            message="Range start_index must be <= end_index"
         )
         return 0
 

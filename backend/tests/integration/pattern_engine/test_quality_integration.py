@@ -11,7 +11,8 @@ from datetime import datetime, timezone, timedelta
 from typing import List
 
 from src.models.ohlcv import OHLCVBar
-from src.models.volume_analysis import VolumeAnalysis, EffortResult, VolumeCharacteristic
+from src.models.volume_analysis import VolumeAnalysis
+from src.models.effort_result import EffortResult
 from src.models.trading_range import TradingRange
 from src.models.price_cluster import PriceCluster
 from src.models.pivot import Pivot, PivotType
@@ -75,7 +76,7 @@ def realistic_aapl_accumulation_data() -> tuple[List[OHLCVBar], List[VolumeAnaly
         else:
             volume_ratio = Decimal("1.2")
 
-        bars.append(OHLCVBar(
+        bar = OHLCVBar(
             symbol="AAPL",
             timestamp=timestamp,
             open=open_price,
@@ -83,18 +84,14 @@ def realistic_aapl_accumulation_data() -> tuple[List[OHLCVBar], List[VolumeAnaly
             low=low,
             close=close_price,
             volume=base_volume * volume_ratio,
-            timeframe="1d"
-        ))
+            timeframe="1d",
+            spread=high - low
+        )
+        bars.append(bar)
 
         volume_analysis.append(VolumeAnalysis(
-            symbol="AAPL",
-            timestamp=timestamp,
-            timeframe="1d",
-            volume_ratio=volume_ratio,
-            volume_ma=base_volume,
-            effort_result=EffortResult.NORMAL,
-            spread=high - low,
-            volume_characteristic=VolumeCharacteristic.NORMAL
+            bar=bar,
+            volume_ratio=volume_ratio
         ))
 
     return bars, volume_analysis
@@ -146,7 +143,7 @@ def noisy_range_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
         else:
             volume_ratio = Decimal("1.2")
 
-        bars.append(OHLCVBar(
+        bar = OHLCVBar(
             symbol="AAPL",
             timestamp=timestamp,
             open=open_price,
@@ -154,18 +151,14 @@ def noisy_range_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
             low=low,
             close=close_price,
             volume=base_volume * volume_ratio,
-            timeframe="1d"
-        ))
+            timeframe="1d",
+            spread=high - low
+        )
+        bars.append(bar)
 
         volume_analysis.append(VolumeAnalysis(
-            symbol="AAPL",
-            timestamp=timestamp,
-            timeframe="1d",
-            volume_ratio=volume_ratio,
-            volume_ma=base_volume,
-            effort_result=EffortResult.NORMAL,
-            spread=high - low,
-            volume_characteristic=VolumeCharacteristic.NORMAL
+            bar=bar,
+            volume_ratio=volume_ratio
         ))
 
     return bars, volume_analysis
@@ -235,7 +228,7 @@ def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
         open_price = (low + high) / 2
         close_price = open_price + Decimal(str((i % 3 - 1) * 0.5))
 
-        bars.append(OHLCVBar(
+        bar = OHLCVBar(
             symbol="AAPL",
             timestamp=timestamp,
             open=open_price,
@@ -243,18 +236,14 @@ def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
             low=low,
             close=close_price,
             volume=base_volume * volume_ratio,
-            timeframe="1d"
-        ))
+            timeframe="1d",
+            spread=high - low
+        )
+        bars.append(bar)
 
         volume_analysis.append(VolumeAnalysis(
-            symbol="AAPL",
-            timestamp=timestamp,
-            timeframe="1d",
-            volume_ratio=volume_ratio,
-            volume_ma=base_volume,
-            effort_result=EffortResult.NORMAL,
-            spread=high - low,
-            volume_characteristic=VolumeCharacteristic.NORMAL
+            bar=bar,
+            volume_ratio=volume_ratio
         ))
 
     return bars, volume_analysis

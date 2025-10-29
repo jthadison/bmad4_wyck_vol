@@ -42,18 +42,22 @@ def base_timestamp():
 @pytest.fixture
 def sample_bars(base_timestamp) -> List[OHLCVBar]:
     """Generate 50 OHLCV bars for testing."""
+    from datetime import timedelta
     bars = []
     for i in range(50):
-        timestamp = base_timestamp.replace(day=base_timestamp.day + i)
+        timestamp = base_timestamp + timedelta(days=i)  # Use timedelta instead of replace
+        high = Decimal("110.00")
+        low = Decimal("99.00")
         bars.append(OHLCVBar(
             symbol="TEST",
             timestamp=timestamp,
             open=Decimal("100.00"),
-            high=Decimal("110.00"),
-            low=Decimal("99.00"),
+            high=high,
+            low=low,
             close=Decimal("105.00"),
             volume=Decimal("1000000"),
-            timeframe="1d"
+            timeframe="1d",
+            spread=high - low  # Add spread field
         ))
     return bars
 
@@ -93,15 +97,31 @@ def create_pivot_cluster(
     pivots = []
     std_dev = base_price * std_dev_pct
 
+    from datetime import timedelta
     for i in range(touch_count):
         # Distribute pivots around base_price within std_dev
         offset = (Decimal(i) - Decimal(touch_count) / Decimal(2)) * (std_dev / Decimal(touch_count)) * Decimal(2)
         price = base_price + offset
-        timestamp = base_timestamp.replace(day=base_timestamp.day + i * 3)
+        timestamp = base_timestamp + timedelta(days=i * 3)  # Use timedelta
+
+        # Create proper OHLCVBar for pivot (QA Issue #2 fix)
+        # Round price to 8 decimal places for Pydantic validation
+        price_rounded = price.quantize(Decimal("0.00000001"))
+        bar = OHLCVBar(
+            symbol="TEST",
+            timestamp=timestamp,
+            open=price_rounded,
+            high=(price_rounded + Decimal("1.00")) if pivot_type == PivotType.HIGH else (price_rounded + Decimal("0.50")),
+            low=(price_rounded - Decimal("0.50")) if pivot_type == PivotType.LOW else (price_rounded - Decimal("1.00")),
+            close=price_rounded,
+            volume=Decimal("1000000"),
+            timeframe="1d",
+            spread=Decimal("1.50")
+        )
 
         pivots.append(Pivot(
-            bar=None,
-            price=price,
+            bar=bar,
+            price=price_rounded,  # Use rounded price
             type=pivot_type,
             strength=1,
             timestamp=timestamp,
@@ -147,6 +167,7 @@ def create_trading_range(
     support = support_cluster.average_price
     resistance = resistance_cluster.average_price
     range_width = resistance - support
+    range_width_pct = (range_width / support).quantize(Decimal("0.0001"))  # Round to 4 decimal places
 
     return TradingRange(
         symbol=symbol,
@@ -157,7 +178,7 @@ def create_trading_range(
         resistance=resistance,
         midpoint=(support + resistance) / 2,
         range_width=range_width,
-        range_width_pct=range_width / support,
+        range_width_pct=range_width_pct,
         start_index=start_index,
         end_index=start_index + duration - 1,
         duration=duration
