@@ -132,6 +132,20 @@ class TradingRange(BaseModel):
         """
         return self.support_cluster.touch_count + self.resistance_cluster.touch_count
 
+    def update_quality_score(self, score: int) -> None:
+        """
+        Update the quality score for this trading range.
+
+        Args:
+            score: Quality score 0-100
+
+        Raises:
+            ValueError: If score is not in range 0-100
+        """
+        if not 0 <= score <= 100:
+            raise ValueError(f"Quality score {score} must be between 0 and 100")
+        self.quality_score = score
+
     @field_serializer("support", "resistance", "midpoint", "range_width", "range_width_pct")
     def serialize_decimal(self, value: Decimal) -> str:
         """Serialize Decimal fields as strings to preserve precision."""
