@@ -1,0 +1,630 @@
+"""
+Unit tests for Creek level calculation.
+
+Tests volume-weighted averaging, strength scoring components, and validation
+with synthetic test data.
+"""
+
+from __future__ import annotations
+
+import pytest
+from decimal import Decimal
+from datetime import datetime, timezone, timedelta
+from typing import List
+
+from src.models.pivot import Pivot, PivotType
+from src.models.ohlcv import OHLCVBar
+from src.models.price_cluster import PriceCluster
+from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
+from src.models.creek_level import CreekLevel, TouchDetail
+from src.pattern_engine.level_calculator import (
+    calculate_creek_level,
+    _score_touch_count,
+    _score_volume_trend,
+    _score_rejection_wicks,
+    _score_hold_duration,
+    _calculate_weighted_price,
+    _assess_confidence
+)
+
+
+# ============================================================================
+# Test Fixtures and Helpers
+# ============================================================================
+
+def create_test_bar(
+    symbol: str = "TEST",
+    timeframe: str = "1d",
+    open_price: Decimal = Decimal("100.00"),
+    high: Decimal = Decimal("105.00"),
+    low: Decimal = Decimal("95.00"),
+    close: Decimal = Decimal("100.00"),
+    volume: int = 1000000,
+    timestamp: datetime = None,
+    index: int = 0
+) -> OHLCVBar:
+    """Create test OHLCV bar"""
+    if timestamp is None:
+        timestamp = datetime.now(timezone.utc) + timedelta(days=index)
+
+    return OHLCVBar(
+        symbol=symbol,
+        timeframe=timeframe,
+        timestamp=timestamp,
+        open=open_price,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+        spread=high - low
+    )
+
+
+def create_test_pivot(
+    price: Decimal,
+    index: int,
+    symbol: str = "TEST",
+    timeframe: str = "1d"
+) -> Pivot:
+    """Create test Pivot LOW object"""
+    bar = create_test_bar(
+        symbol=symbol,
+        timeframe=timeframe,
+        high=price + Decimal("5.00"),
+        low=price,
+        close=price + Decimal("3.50"),  # Upper half close (70% rejection wick)
+        timestamp=datetime.now(timezone.utc) + timedelta(days=index),
+        index=index
+    )
+
+    return Pivot(
+        bar=bar,
+        price=price,
+        type=PivotType.LOW,
+        strength=5,
+        timestamp=bar.timestamp,
+        index=index
+    )
+
+
+def create_touch_detail(
+    index: int,
+    price: Decimal,
+    volume: int,
+    volume_ratio: Decimal,
+    rejection_wick: Decimal = Decimal("0.7")
+) -> TouchDetail:
+    """Create TouchDetail for testing"""
+    return TouchDetail(
+        index=index,
+        price=price,
+        volume=volume,
+        volume_ratio=volume_ratio,
+        close_position=Decimal("0.7"),
+        rejection_wick=rejection_wick,
+        timestamp=datetime.now(timezone.utc) + timedelta(days=index)
+    )
+
+
+def create_test_trading_range(
+    support_pivots: List[Pivot],
+    resistance_pivots: List[Pivot],
+    quality_score: int = 80
+) -> TradingRange:
+    """Create test TradingRange with support and resistance clusters"""
+    # Create support cluster
+    support_prices = [p.price for p in support_pivots]
+    support_avg = sum(support_prices) / len(support_prices)
+    support_min = min(support_prices)
+    support_max = max(support_prices)
+    support_cluster = PriceCluster(
+        pivots=support_pivots,
+        average_price=support_avg,
+        min_price=support_min,
+        max_price=support_max,
+        price_range=support_max - support_min,
+        touch_count=len(support_pivots),
+        cluster_type=PivotType.LOW,
+        std_deviation=Decimal("0.50"),
+        timestamp_range=(
+            min(p.timestamp for p in support_pivots),
+            max(p.timestamp for p in support_pivots)
+        )
+    )
+
+    # Create resistance cluster
+    resistance_prices = [p.price for p in resistance_pivots]
+    resistance_avg = sum(resistance_prices) / len(resistance_prices)
+    resistance_min = min(resistance_prices)
+    resistance_max = max(resistance_prices)
+    resistance_cluster = PriceCluster(
+        pivots=resistance_pivots,
+        average_price=resistance_avg,
+        min_price=resistance_min,
+        max_price=resistance_max,
+        price_range=resistance_max - resistance_min,
+        touch_count=len(resistance_pivots),
+        cluster_type=PivotType.HIGH,
+        std_deviation=Decimal("0.50"),
+        timestamp_range=(
+            min(p.timestamp for p in resistance_pivots),
+            max(p.timestamp for p in resistance_pivots)
+        )
+    )
+
+    # Calculate range metrics
+    range_width = resistance_avg - support_avg
+    range_width_pct = (range_width / support_avg).quantize(Decimal("0.0001"))
+
+    # Get start/end indices
+    all_pivots = support_pivots + resistance_pivots
+    start_index = min(p.index for p in all_pivots)
+    end_index = max(p.index for p in all_pivots)
+    duration = end_index - start_index + 1
+
+    trading_range = TradingRange(
+        symbol="TEST",
+        timeframe="1d",
+        support_cluster=support_cluster,
+        resistance_cluster=resistance_cluster,
+        support=support_avg,
+        resistance=resistance_avg,
+        midpoint=((support_avg + resistance_avg) / 2).quantize(Decimal("0.00000001")),
+        range_width=range_width,
+        range_width_pct=range_width_pct,
+        start_index=start_index,
+        end_index=end_index,
+        duration=duration,
+        quality_score=quality_score
+    )
+
+    return trading_range
+
+
+# ============================================================================
+# Task 17: Test Volume-Weighted Averaging (AC 8)
+# ============================================================================
+
+def test_creek_volume_weighted_average():
+    """
+    Test volume-weighted average with known volumes and prices.
+
+    Scenario:
+        Pivot 1: $100, volume 1M
+        Pivot 2: $101, volume 2M
+        Pivot 3: $102, volume 1M
+        Expected: (100*1M + 101*2M + 102*1M) / 4M = $101.00
+    """
+    touches = [
+        create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.5")),
+        create_touch_detail(18, Decimal("101.00"), 2000000, Decimal("1.0")),
+        create_touch_detail(26, Decimal("102.00"), 1000000, Decimal("0.8"))
+    ]
+
+    weighted_price = _calculate_weighted_price(touches)
+
+    # Expected: (100*1M + 101*2M + 102*1M) / 4M = 404M / 4M = 101.00
+    assert weighted_price == Decimal("101.00"), f"Expected $101.00, got ${weighted_price}"
+
+
+def test_creek_volume_weighted_average_equal_volumes():
+    """Test weighted average with equal volumes (should equal simple average)"""
+    touches = [
+        create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0")),
+        create_touch_detail(18, Decimal("101.00"), 1000000, Decimal("1.0")),
+        create_touch_detail(26, Decimal("102.00"), 1000000, Decimal("1.0"))
+    ]
+
+    weighted_price = _calculate_weighted_price(touches)
+
+    # Expected: (100 + 101 + 102) / 3 = 101.00
+    assert weighted_price == Decimal("101.00"), f"Expected $101.00, got ${weighted_price}"
+
+
+def test_creek_volume_weighted_average_high_volume_outlier():
+    """Test weighted average with one high-volume outlier"""
+    touches = [
+        create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0")),
+        create_touch_detail(18, Decimal("105.00"), 5000000, Decimal("2.0")),  # High volume
+        create_touch_detail(26, Decimal("100.00"), 1000000, Decimal("0.8"))
+    ]
+
+    weighted_price = _calculate_weighted_price(touches)
+
+    # Expected: (100*1M + 105*5M + 100*1M) / 7M = 725M / 7M = 103.57
+    expected = Decimal("103.571428571428571428571428571")
+    assert abs(weighted_price - expected) < Decimal("0.01"), f"Expected ~$103.57, got ${weighted_price}"
+
+
+# ============================================================================
+# Task 18: Test Strength Scoring Components (AC 5)
+# ============================================================================
+
+def test_score_touch_count():
+    """Test touch count scoring: 5→40, 4→30, 3→20, 2→10"""
+    # 5 touches → 40 pts
+    touches_5 = [create_touch_detail(i*8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(5)]
+    assert _score_touch_count(touches_5) == 40
+
+    # 4 touches → 30 pts
+    touches_4 = [create_touch_detail(i*8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(4)]
+    assert _score_touch_count(touches_4) == 30
+
+    # 3 touches → 20 pts
+    touches_3 = [create_touch_detail(i*8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(3)]
+    assert _score_touch_count(touches_3) == 20
+
+    # 2 touches → 10 pts (minimum)
+    touches_2 = [create_touch_detail(i*8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(2)]
+    assert _score_touch_count(touches_2) == 10
+
+
+def test_score_volume_trend_decreasing():
+    """Test volume trend scoring: decreasing volume → 30 pts (accumulation)"""
+    touches = [
+        create_touch_detail(10, Decimal("100.00"), 2000000, Decimal("2.0")),
+        create_touch_detail(18, Decimal("100.00"), 1500000, Decimal("1.5")),
+        create_touch_detail(26, Decimal("100.00"), 1000000, Decimal("1.0")),
+        create_touch_detail(34, Decimal("100.00"), 500000, Decimal("0.5"))
+    ]
+
+    score, trend = _score_volume_trend(touches)
+
+    assert score == 30, f"Expected 30 pts for decreasing volume, got {score}"
+    assert trend == "DECREASING", f"Expected DECREASING, got {trend}"
+
+
+def test_score_volume_trend_flat():
+    """Test volume trend scoring: flat volume → 15 pts (neutral)"""
+    touches = [
+        create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0")),
+        create_touch_detail(18, Decimal("100.00"), 1100000, Decimal("1.1")),
+        create_touch_detail(26, Decimal("100.00"), 900000, Decimal("0.9")),
+        create_touch_detail(34, Decimal("100.00"), 1000000, Decimal("1.0"))
+    ]
+
+    score, trend = _score_volume_trend(touches)
+
+    assert score == 15, f"Expected 15 pts for flat volume, got {score}"
+    assert trend == "FLAT", f"Expected FLAT, got {trend}"
+
+
+def test_score_volume_trend_increasing():
+    """Test volume trend scoring: increasing volume → 0 pts (distribution)"""
+    touches = [
+        create_touch_detail(10, Decimal("100.00"), 500000, Decimal("0.5")),
+        create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0")),
+        create_touch_detail(26, Decimal("100.00"), 1500000, Decimal("1.5")),
+        create_touch_detail(34, Decimal("100.00"), 2000000, Decimal("2.0"))
+    ]
+
+    score, trend = _score_volume_trend(touches)
+
+    assert score == 0, f"Expected 0 pts for increasing volume, got {score}"
+    assert trend == "INCREASING", f"Expected INCREASING, got {trend}"
+
+
+def test_score_rejection_wicks():
+    """Test rejection wick scoring: high→20, moderate→15, low→5"""
+    # High rejection (avg 0.8) → 20 pts
+    touches_high = [
+        create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.8")),
+        create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.8")),
+        create_touch_detail(26, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.8"))
+    ]
+    assert _score_rejection_wicks(touches_high) == 20
+
+    # Moderate rejection (avg 0.5) → 15 pts
+    touches_mod = [
+        create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.5")),
+        create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.5"))
+    ]
+    assert _score_rejection_wicks(touches_mod) == 15
+
+    # Low rejection (avg 0.2) → 5 pts
+    touches_low = [
+        create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.2")),
+        create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.2"))
+    ]
+    assert _score_rejection_wicks(touches_low) == 5
+
+
+def test_score_hold_duration():
+    """Test hold duration scoring: 30→10, 20→8, 10→5, 5→2"""
+    assert _score_hold_duration(30) == 10  # Very strong
+    assert _score_hold_duration(20) == 8   # Strong
+    assert _score_hold_duration(10) == 5   # Good
+    assert _score_hold_duration(5) == 2    # Weak
+
+
+# ============================================================================
+# Task 19: Test Perfect Creek (100 score) (AC 5, 6)
+# ============================================================================
+
+def test_perfect_creek_100_score():
+    """
+    Test perfect creek scenario with 100 score.
+
+    Scenario:
+        - 5 touches (40 pts)
+        - Decreasing volume: 2.0x → 1.5x → 1.0x → 0.8x → 0.5x (30 pts)
+        - High rejection wicks: avg 0.8 (20 pts)
+        - Long hold: 30 bars (10 pts)
+        - Total: 100 pts
+    """
+    # Create 5 support pivots with decreasing volume
+    support_pivots = [
+        create_test_pivot(Decimal("100.00"), 10),
+        create_test_pivot(Decimal("100.50"), 18),
+        create_test_pivot(Decimal("100.20"), 26),
+        create_test_pivot(Decimal("100.80"), 34),
+        create_test_pivot(Decimal("100.30"), 40)  # 30 bars duration
+    ]
+
+    # Create resistance pivots (need 2 minimum) - using HIGH type
+    resistance_bar_15 = create_test_bar(low=Decimal("105.00"), high=Decimal("110.00"), index=15)
+    resistance_pivot_15 = Pivot(
+        bar=resistance_bar_15,
+        price=Decimal("110.00"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar_15.timestamp,
+        index=15
+    )
+
+    resistance_bar_30 = create_test_bar(low=Decimal("105.50"), high=Decimal("110.50"), index=30)
+    resistance_pivot_30 = Pivot(
+        bar=resistance_bar_30,
+        price=Decimal("110.50"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar_30.timestamp,
+        index=30
+    )
+
+    resistance_pivots = [resistance_pivot_15, resistance_pivot_30]
+
+    # Create trading range
+    trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=80)
+
+    # Create bars and volume analysis - must align with pivot indices
+    max_index = max(p.index for p in support_pivots + resistance_pivots) + 1
+    bars = []
+    volume_analysis = []
+    volume_ratios = [Decimal("2.0"), Decimal("1.5"), Decimal("1.0"), Decimal("0.8"), Decimal("0.5")]
+
+    # Create a mapping of pivot index to volume ratio
+    pivot_volume_map = {pivot.index: volume_ratios[i] for i, pivot in enumerate(support_pivots)}
+
+    for idx in range(max_index):
+        # Check if this index is a support pivot
+        if idx in pivot_volume_map:
+            # Find the pivot
+            pivot = next(p for p in support_pivots if p.index == idx)
+            bar = create_test_bar(
+                high=pivot.price + Decimal("5.00"),
+                low=pivot.price,
+                close=pivot.price + Decimal("4.00"),  # 80% rejection wick
+                volume=int(1000000 * float(pivot_volume_map[idx])),
+                index=idx
+            )
+            vol_ratio = pivot_volume_map[idx]
+        else:
+            # Filler bar
+            bar = create_test_bar(index=idx)
+            vol_ratio = Decimal("1.0")
+
+        bars.append(bar)
+        volume_analysis.append(VolumeAnalysis(
+            bar=bar,
+            volume_ratio=vol_ratio,
+            spread_ratio=Decimal("1.0"),
+            close_position=Decimal("0.8") if idx in pivot_volume_map else Decimal("0.5"),
+            effort_result=None
+        ))
+
+    # Calculate creek
+    creek = calculate_creek_level(trading_range, bars, volume_analysis)
+
+    # Verify strength score
+    assert creek.strength_score == 100, f"Expected 100, got {creek.strength_score}"
+    assert creek.strength_rating == "EXCELLENT"
+    assert creek.volume_trend == "DECREASING"
+    assert creek.confidence == "HIGH"
+    assert creek.touch_count == 5
+
+
+# ============================================================================
+# Task 20: Test Minimum Strength Threshold (AC 6)
+# ============================================================================
+
+def test_weak_creek_below_minimum_strength():
+    """
+    Test weak creek scenario below minimum strength (< 60).
+
+    Scenario:
+        - 2 touches (10 pts)
+        - Increasing volume (0 pts)
+        - Weak rejection (5 pts)
+        - Short hold: 5 bars (2 pts)
+        - Total: 17 pts (below 60 threshold)
+        - Should raise ValueError
+    """
+    # Create 2 support pivots with increasing volume (extended duration for min 10 bars)
+    support_pivots = [
+        create_test_pivot(Decimal("100.00"), 10),
+        create_test_pivot(Decimal("100.50"), 22)  # 12 bars duration (meets minimum)
+    ]
+
+    # Create resistance pivots - using HIGH type
+    resistance_bar_15 = create_test_bar(low=Decimal("105.00"), high=Decimal("110.00"), index=15)
+    resistance_pivot_15 = Pivot(
+        bar=resistance_bar_15,
+        price=Decimal("110.00"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar_15.timestamp,
+        index=15
+    )
+
+    resistance_bar_20 = create_test_bar(low=Decimal("105.50"), high=Decimal("110.50"), index=20)
+    resistance_pivot_20 = Pivot(
+        bar=resistance_bar_20,
+        price=Decimal("110.50"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar_20.timestamp,
+        index=20
+    )
+
+    resistance_pivots = [resistance_pivot_15, resistance_pivot_20]
+
+    # Create trading range
+    trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=80)
+
+    # Create bars and volume analysis with increasing volume and weak rejection
+    max_index = max(p.index for p in support_pivots + resistance_pivots) + 1
+    bars = []
+    volume_analysis = []
+
+    # Create a mapping of pivot index to volume ratio
+    pivot_volume_map = {pivot.index: Decimal(str(0.5 * (i + 1))) for i, pivot in enumerate(support_pivots)}
+
+    for idx in range(max_index):
+        # Check if this index is a support pivot
+        if idx in pivot_volume_map:
+            # Find the pivot
+            pivot = next(p for p in support_pivots if p.index == idx)
+            bar = create_test_bar(
+                high=pivot.price + Decimal("5.00"),
+                low=pivot.price,
+                close=pivot.price + Decimal("1.00"),  # 20% rejection wick (weak)
+                volume=int(500000 * (list(pivot_volume_map.keys()).index(idx) + 1)),
+                index=idx
+            )
+            vol_ratio = pivot_volume_map[idx]
+            close_pos = Decimal("0.2")  # Weak close position
+        else:
+            # Filler bar
+            bar = create_test_bar(index=idx)
+            vol_ratio = Decimal("1.0")
+            close_pos = Decimal("0.5")
+
+        bars.append(bar)
+        volume_analysis.append(VolumeAnalysis(
+            bar=bar,
+            volume_ratio=vol_ratio,
+            spread_ratio=Decimal("1.0"),
+            close_position=close_pos,
+            effort_result=None
+        ))
+
+    # Should raise ValueError for weak creek
+    with pytest.raises(ValueError, match="strength.*below minimum"):
+        calculate_creek_level(trading_range, bars, volume_analysis)
+
+
+# ============================================================================
+# Additional Tests
+# ============================================================================
+
+def test_assess_confidence():
+    """Test confidence level assessment"""
+    assert _assess_confidence(5) == "HIGH"
+    assert _assess_confidence(4) == "MEDIUM"
+    assert _assess_confidence(3) == "MEDIUM"
+    assert _assess_confidence(2) == "LOW"
+
+
+def test_creek_validation_low_quality_range():
+    """Test that creek calculation requires quality_score >= 70"""
+    support_pivots = [
+        create_test_pivot(Decimal("100.00"), 10),
+        create_test_pivot(Decimal("100.50"), 20)
+    ]
+
+    # Create resistance pivots - using HIGH type
+    resistance_bar_15 = create_test_bar(low=Decimal("105.00"), high=Decimal("110.00"), index=15)
+    resistance_pivot_15 = Pivot(
+        bar=resistance_bar_15,
+        price=Decimal("110.00"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar_15.timestamp,
+        index=15
+    )
+
+    resistance_bar_25 = create_test_bar(low=Decimal("105.50"), high=Decimal("110.50"), index=25)
+    resistance_pivot_25 = Pivot(
+        bar=resistance_bar_25,
+        price=Decimal("110.50"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar_25.timestamp,
+        index=25
+    )
+
+    resistance_pivots = [resistance_pivot_15, resistance_pivot_25]
+
+    # Create low-quality range (score 50)
+    trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=50)
+
+    bars = [create_test_bar(index=i) for i in range(30)]
+    volume_analysis = [VolumeAnalysis(
+        bar=bars[i],
+        volume_ratio=Decimal("1.0"),
+        spread_ratio=Decimal("1.0"),
+        close_position=Decimal("0.5"),
+        effort_result=None
+    ) for i in range(30)]
+
+    # Should raise ValueError for low quality
+    with pytest.raises(ValueError, match="quality score"):
+        calculate_creek_level(trading_range, bars, volume_analysis)
+
+
+def test_creek_validation_bars_volume_mismatch():
+    """Test that bars and volume_analysis must match in length"""
+    support_pivots = [
+        create_test_pivot(Decimal("100.00"), 10),
+        create_test_pivot(Decimal("100.50"), 20)
+    ]
+
+    # Create resistance pivots - using HIGH type
+    resistance_bar_15 = create_test_bar(low=Decimal("105.00"), high=Decimal("110.00"), index=15)
+    resistance_pivot_15 = Pivot(
+        bar=resistance_bar_15,
+        price=Decimal("110.00"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar_15.timestamp,
+        index=15
+    )
+
+    resistance_bar_25 = create_test_bar(low=Decimal("105.50"), high=Decimal("110.50"), index=25)
+    resistance_pivot_25 = Pivot(
+        bar=resistance_bar_25,
+        price=Decimal("110.50"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar_25.timestamp,
+        index=25
+    )
+
+    resistance_pivots = [resistance_pivot_15, resistance_pivot_25]
+
+    trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=80)
+
+    bars = [create_test_bar(index=i) for i in range(30)]
+    volume_analysis = [VolumeAnalysis(
+        bar=bars[i],
+        volume_ratio=Decimal("1.0"),
+        spread_ratio=Decimal("1.0"),
+        close_position=Decimal("0.5"),
+        effort_result=None
+    ) for i in range(20)]  # Mismatch: 20 vs 30
+
+    # Should raise ValueError for mismatch
+    with pytest.raises(ValueError, match="length mismatch"):
+        calculate_creek_level(trading_range, bars, volume_analysis)
