@@ -38,7 +38,7 @@ def create_test_bar(
     high: Decimal = Decimal("105.00"),
     low: Decimal = Decimal("95.00"),
     close: Decimal = Decimal("100.00"),
-    volume: Decimal = Decimal("1000000"),
+    volume: int = 1000000,
     timestamp: datetime = None,
     index: int = 0
 ) -> OHLCVBar:
@@ -54,7 +54,8 @@ def create_test_bar(
         high=high,
         low=low,
         close=close,
-        volume=volume
+        volume=volume,
+        spread=high - low  # Required field: high - low
     )
 
 

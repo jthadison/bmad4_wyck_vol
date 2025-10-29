@@ -24,7 +24,7 @@ Example:
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional
 from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
@@ -35,6 +35,26 @@ import statistics
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+
+def _quantize_decimal(value: Decimal, decimal_places: int = 8) -> Decimal:
+    """
+    Quantize a Decimal to a specific number of decimal places.
+
+    Args:
+        value: Decimal value to quantize
+        decimal_places: Number of decimal places (default: 8)
+
+    Returns:
+        Quantized Decimal value
+    """
+    if decimal_places == 4:
+        quantizer = Decimal("0.0001")
+    elif decimal_places == 8:
+        quantizer = Decimal("0.00000001")
+    else:
+        quantizer = Decimal(10) ** -decimal_places
+    return value.quantize(quantizer, rounding=ROUND_HALF_UP)
 
 
 def cluster_pivots(pivots: List[Pivot], tolerance_pct: float = 0.02) -> List[PriceCluster]:
@@ -172,14 +192,14 @@ def _create_price_cluster(pivots: List[Pivot]) -> PriceCluster:
     prices = [float(p.price) for p in pivots]
 
     # Calculate statistics
-    avg_price = Decimal(str(statistics.mean(prices)))
+    avg_price = _quantize_decimal(Decimal(str(statistics.mean(prices))), decimal_places=8)
     min_price = min(p.price for p in pivots)
     max_price = max(p.price for p in pivots)
     price_range = max_price - min_price
 
     # Standard deviation (need at least 2 values)
     if len(prices) >= 2:
-        std_dev = Decimal(str(statistics.stdev(prices)))
+        std_dev = _quantize_decimal(Decimal(str(statistics.stdev(prices))), decimal_places=8)
     else:
         std_dev = Decimal("0")
 
@@ -256,9 +276,9 @@ def form_trading_range(
         return None
 
     # Calculate range metrics
-    midpoint = (support + resistance) / Decimal("2")
+    midpoint = _quantize_decimal((support + resistance) / Decimal("2"), decimal_places=8)
     range_width = resistance - support
-    range_width_pct = range_width / support
+    range_width_pct = _quantize_decimal(range_width / support, decimal_places=4)
 
     # Validate: minimum 3% range size
     if range_width_pct < Decimal("0.03"):
