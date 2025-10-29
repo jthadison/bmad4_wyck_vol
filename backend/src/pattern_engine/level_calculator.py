@@ -3,15 +3,18 @@ Level Calculator module for Wyckoff Creek and Ice level calculation.
 
 This module calculates volume-weighted support (Creek) and resistance (Ice) levels
 for Wyckoff accumulation and distribution zones. The Creek is the foundation of
-accumulation where smart money absorbs supply with decreasing volume.
+accumulation where smart money absorbs supply with decreasing volume. The Ice is
+the ceiling of accumulation, broken on Sign of Strength (SOS) with high volume.
 
 Wyckoff Context:
     - Creek (support): Tested multiple times in Phase B, volume decreases each test
     - Ice (resistance): Upper boundary of range, breaks out in Phase D (SOS)
     - Spring pattern: Breaks below Creek absolute_low, then recovers
+    - SOS pattern: Breaks above Ice price on high volume (>1.5x)
+    - UTAD pattern: Breaks above Ice absolute_high, then fails (false breakout)
     - LPS (Last Point of Support): Final test of Creek before markup
 
-Algorithm:
+Algorithm (Creek):
     1. Collect pivot lows within support cluster (1.5% tolerance)
     2. Volume-weighted average: creek = Σ(pivot_price × volume) / Σ(volume)
     3. Strength scoring (0-100):
@@ -21,19 +24,31 @@ Algorithm:
        - Hold duration: 10 pts (longer = stronger cause)
     4. Minimum strength: 60 required (FR9)
 
+Algorithm (Ice):
+    1. Collect pivot highs within resistance cluster (1.5% tolerance)
+    2. Volume-weighted average: ice = Σ(pivot_price × volume) / Σ(volume)
+    3. Strength scoring (0-100):
+       - Touch count: 40 pts (same as Creek)
+       - Volume trend: 30 pts (decreasing = absorption at resistance)
+       - Rejection wicks: 20 pts (INVERTED: close near low = supply)
+       - Hold duration: 10 pts (same as Creek)
+    4. Minimum strength: 60 required (AC 5)
+
 Example:
-    >>> from src.pattern_engine.level_calculator import calculate_creek_level
+    >>> from src.pattern_engine.level_calculator import calculate_creek_level, calculate_ice_level
     >>> from src.pattern_engine.volume_analyzer import VolumeAnalyzer
     >>>
     >>> # Analyze volume
     >>> volume_analyzer = VolumeAnalyzer()
     >>> volume_analysis = volume_analyzer.analyze(bars)
     >>>
-    >>> # Calculate creek (only for quality ranges)
+    >>> # Calculate creek and ice (only for quality ranges)
     >>> if trading_range.quality_score >= 70:
     ...     creek = calculate_creek_level(trading_range, bars, volume_analysis)
-    ...     print(f"Creek: ${creek.price:.2f}, Strength: {creek.strength_score}")
-    ...     print(f"Entry: ${creek.price:.2f}, Stop: ${creek.absolute_low * 0.98:.2f}")
+    ...     ice = calculate_ice_level(trading_range, bars, volume_analysis)
+    ...     print(f"Creek: ${creek.price:.2f}, Ice: ${ice.price:.2f}")
+    ...     print(f"Range Width: {((ice.price - creek.price) / creek.price * 100):.1f}%")
+    ...     print(f"SOS Entry: ${ice.price:.2f}, Stop: ${creek.price * 0.98:.2f}")
 """
 
 from __future__ import annotations
@@ -47,13 +62,16 @@ import structlog
 from src.models.ohlcv import OHLCVBar
 from src.models.trading_range import TradingRange
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.creek_level import CreekLevel, TouchDetail
+from src.models.creek_level import CreekLevel
+from src.models.ice_level import IceLevel
+from src.models.touch_detail import TouchDetail
 
 logger = structlog.get_logger(__name__)
 
 # Constants
 PIVOT_TOLERANCE_PCT = Decimal("0.015")  # 1.5% tolerance from cluster average (AC 2)
-MIN_CREEK_STRENGTH = 60  # Minimum strength score for FR9 requirement (AC 6)
+MIN_CREEK_STRENGTH = 60  # Minimum strength score for FR9 requirement (Creek AC 6)
+MIN_ICE_STRENGTH = 60  # Minimum strength score for Ice (Story 3.5 AC 5)
 VALIDATION_TOLERANCE_PCT = Decimal("0.005")  # 0.5% max deviation (AC 10)
 
 
@@ -314,19 +332,21 @@ def _calculate_weighted_price(creek_touches: List[TouchDetail]) -> Decimal:
         creek_touches: List of creek touches
 
     Returns:
-        Decimal: Volume-weighted average price
+        Decimal: Volume-weighted average price (quantized to 8 decimal places)
     """
     total_volume = sum(touch.volume for touch in creek_touches)
 
     if total_volume == 0:
         # Defensive: fall back to simple average if all volumes are zero
         logger.warning("zero_total_volume", message="Total volume is zero, using simple average")
-        return sum(touch.price for touch in creek_touches) / len(creek_touches)
+        avg = sum(touch.price for touch in creek_touches) / len(creek_touches)
+        return avg.quantize(Decimal("0.00000001"))
 
     weighted_sum = sum(touch.price * touch.volume for touch in creek_touches)
     weighted_price = weighted_sum / total_volume
 
-    return weighted_price
+    # Quantize to 8 decimal places to match model max_digits=18, decimal_places=8
+    return weighted_price.quantize(Decimal("0.00000001"))
 
 
 def _assess_confidence(touch_count: int) -> str:
@@ -506,6 +526,326 @@ def _validate_creek_deviation(creek_price: Decimal, cluster_avg: Decimal, symbol
     else:
         logger.info(
             "creek_validation_passed",
+            symbol=symbol,
+            deviation_pct=str(deviation_pct)
+        )
+
+
+# ============================================================================
+# ICE LEVEL CALCULATION (Story 3.5)
+# ============================================================================
+
+
+def calculate_ice_level(
+    trading_range: TradingRange,
+    bars: List[OHLCVBar],
+    volume_analysis: List[VolumeAnalysis]
+) -> IceLevel:
+    """
+    Calculate Ice level (volume-weighted resistance) for a trading range.
+
+    The Ice represents the ceiling of Wyckoff accumulation where smart money
+    absorbs supply. High-volume tests are weighted more heavily than low-volume
+    tests, reflecting their greater significance. Ice is broken on Sign of
+    Strength (SOS) with high volume.
+
+    Args:
+        trading_range: TradingRange with quality_score >= 70 (quality ranges only)
+        bars: List of OHLCV bars in chronological order
+        volume_analysis: List of VolumeAnalysis matching bars (same length)
+
+    Returns:
+        IceLevel: Volume-weighted resistance level with strength metrics
+
+    Raises:
+        ValueError: If quality_score < 70, resistance_cluster invalid, or strength < 60
+
+    Algorithm:
+        1. Validate inputs (quality >= 70, resistance cluster exists)
+        2. Collect pivot highs within 1.5% tolerance of cluster average
+        3. Calculate volume-weighted average price
+        4. Score strength (touch count, volume trend, rejection wicks, duration)
+        5. Validate strength >= 60 (AC 5) and deviation <= 0.5%
+        6. Return IceLevel with all metadata
+
+    Note:
+        - Ice > Creek validation deferred to Story 3.8 (TradingRangeDetector)
+        - Range width >= 3% validation deferred to Story 3.8
+        - Rejection wick is INVERTED from Creek: (high - close) / spread
+
+    Example:
+        >>> ice = calculate_ice_level(trading_range, bars, volume_analysis)
+        >>> print(f"Ice: ${ice.price:.2f}, Absolute High: ${ice.absolute_high:.2f}")
+        >>> print(f"Strength: {ice.strength_score} ({ice.strength_rating})")
+        >>> print(f"Volume Trend: {ice.volume_trend}")
+        >>> # SOS breakout detection
+        >>> sos = bar.close > ice.price and bar.volume_ratio >= 1.5
+    """
+    # Validate inputs
+    _validate_ice_inputs(trading_range, bars, volume_analysis)
+
+    symbol = bars[trading_range.start_index].symbol if trading_range.start_index < len(bars) else "UNKNOWN"
+    resistance_cluster = trading_range.resistance_cluster
+    cluster_avg = resistance_cluster.average_price
+
+    logger.info(
+        "ice_calculation_start",
+        symbol=symbol,
+        range_id=str(trading_range.id),
+        cluster_avg=str(cluster_avg),
+        cluster_touches=resistance_cluster.touch_count
+    )
+
+    # Task 4: Collect pivot highs within tolerance
+    ice_touches = _collect_ice_touches(
+        resistance_cluster=resistance_cluster,
+        bars=bars,
+        volume_analysis=volume_analysis,
+        cluster_avg=cluster_avg
+    )
+
+    logger.info(
+        "ice_touches_collected",
+        symbol=symbol,
+        total_pivots=resistance_cluster.touch_count,
+        ice_touches=len(ice_touches)
+    )
+
+    # Task 5: Calculate volume-weighted average
+    ice_price = _calculate_weighted_price(ice_touches)
+
+    # Task 6: Identify absolute high (UTAD reference)
+    absolute_high = max(touch.price for touch in ice_touches)
+
+    # Task 7: Calculate touch count and timestamps
+    touch_count = len(ice_touches)
+    first_test_timestamp = min(touch.timestamp for touch in ice_touches)
+    last_test_timestamp = max(touch.timestamp for touch in ice_touches)
+    first_test_index = min(touch.index for touch in ice_touches)
+    last_test_index = max(touch.index for touch in ice_touches)
+    hold_duration = last_test_index - first_test_index
+
+    # Task 8: Assess confidence level
+    confidence = _assess_confidence(touch_count)
+
+    # Tasks 9-13: Calculate strength score
+    touch_score = _score_touch_count(ice_touches)
+    volume_score, volume_trend = _score_volume_trend(ice_touches)
+    wick_score = _score_rejection_wicks_ice(ice_touches)  # INVERTED from Creek
+    duration_score = _score_hold_duration(hold_duration)
+
+    strength_score = min(touch_score + volume_score + wick_score + duration_score, 100)
+    strength_rating = _determine_strength_rating(strength_score)
+
+    logger.info(
+        "ice_strength_calculated",
+        symbol=symbol,
+        touch_score=touch_score,
+        volume_score=volume_score,
+        volume_trend=volume_trend,
+        wick_score=wick_score,
+        duration_score=duration_score,
+        total_strength=strength_score,
+        strength_rating=strength_rating
+    )
+
+    # Task 16: Validate ice level within tolerance
+    _validate_ice_deviation(ice_price, cluster_avg, symbol)
+
+    # Task 13: Validate minimum strength (AC 5)
+    if strength_score < MIN_ICE_STRENGTH:
+        logger.error(
+            "ice_strength_too_low",
+            symbol=symbol,
+            strength_score=strength_score,
+            minimum_required=MIN_ICE_STRENGTH,
+            message=f"Ice level strength {strength_score} below minimum {MIN_ICE_STRENGTH} (AC 5)"
+        )
+        raise ValueError(f"Ice level strength {strength_score} below minimum {MIN_ICE_STRENGTH} (AC 5)")
+
+    # Task 17: Create IceLevel object and return
+    ice_level = IceLevel(
+        price=ice_price,
+        absolute_high=absolute_high,
+        touch_count=touch_count,
+        touch_details=ice_touches,
+        strength_score=strength_score,
+        strength_rating=strength_rating,
+        last_test_timestamp=last_test_timestamp,
+        first_test_timestamp=first_test_timestamp,
+        hold_duration=hold_duration,
+        confidence=confidence,
+        volume_trend=volume_trend
+    )
+
+    logger.info(
+        "ice_calculation_complete",
+        symbol=symbol,
+        ice_price=str(ice_price),
+        absolute_high=str(absolute_high),
+        touch_count=touch_count,
+        strength_score=strength_score,
+        strength_rating=strength_rating,
+        volume_trend=volume_trend,
+        confidence=confidence,
+        hold_duration=hold_duration
+    )
+
+    return ice_level
+
+
+def _validate_ice_inputs(
+    trading_range: TradingRange,
+    bars: List[OHLCVBar],
+    volume_analysis: List[VolumeAnalysis]
+) -> None:
+    """
+    Validate inputs for ice calculation.
+
+    Raises:
+        ValueError: If validation fails
+    """
+    # Validate trading_range exists
+    if trading_range is None:
+        raise ValueError("trading_range cannot be None")
+
+    # Validate quality score >= 70 (Story 3.3 requirement)
+    if trading_range.quality_score is None or trading_range.quality_score < 70:
+        logger.error(
+            "low_quality_range",
+            range_id=str(trading_range.id),
+            quality_score=trading_range.quality_score,
+            message="Ice calculation requires quality score >= 70"
+        )
+        raise ValueError(f"Cannot calculate ice for range with quality score {trading_range.quality_score} (minimum 70)")
+
+    # Validate resistance cluster exists
+    if not trading_range.resistance_cluster or trading_range.resistance_cluster.touch_count < 2:
+        logger.error(
+            "invalid_resistance_cluster",
+            range_id=str(trading_range.id),
+            message="Resistance cluster missing or insufficient touches"
+        )
+        raise ValueError("Invalid resistance cluster for ice calculation (minimum 2 touches required)")
+
+    # Validate bars not empty
+    if not bars:
+        raise ValueError("Bars list cannot be empty")
+
+    # Validate volume_analysis matches bars
+    if len(volume_analysis) != len(bars):
+        logger.error(
+            "bars_volume_mismatch",
+            bars_count=len(bars),
+            volume_count=len(volume_analysis)
+        )
+        raise ValueError(f"Bars and volume_analysis length mismatch ({len(bars)} vs {len(volume_analysis)})")
+
+
+def _collect_ice_touches(
+    resistance_cluster,
+    bars: List[OHLCVBar],
+    volume_analysis: List[VolumeAnalysis],
+    cluster_avg: Decimal
+) -> List[TouchDetail]:
+    """
+    Collect pivot highs within tolerance of cluster average.
+
+    Args:
+        resistance_cluster: PriceCluster with pivot highs
+        bars: OHLCV bars
+        volume_analysis: Volume analysis matching bars
+        cluster_avg: Cluster average price
+
+    Returns:
+        List[TouchDetail]: Ice touches within tolerance
+    """
+    tolerance_band = cluster_avg * PIVOT_TOLERANCE_PCT
+    ice_touches = []
+
+    for pivot in resistance_cluster.pivots:
+        # Check if pivot within tolerance (1.5%)
+        if abs(pivot.price - cluster_avg) <= tolerance_band:
+            # Get bar and volume analysis for this pivot
+            bar = bars[pivot.index]
+            vol_analysis = volume_analysis[pivot.index]
+
+            # Calculate rejection wick: (high - close) / spread (INVERTED from Creek)
+            # High value = close near low = strong downward rejection from resistance
+            spread = bar.high - bar.low
+            if spread > 0:
+                rejection_wick = (bar.high - bar.close) / spread
+            else:
+                rejection_wick = Decimal("0")  # Doji bar
+
+            # Create TouchDetail
+            touch = TouchDetail(
+                index=pivot.index,
+                price=pivot.price,  # Pivot high
+                volume=bar.volume,
+                volume_ratio=vol_analysis.volume_ratio,
+                close_position=vol_analysis.close_position,
+                rejection_wick=rejection_wick,  # UPPER wick for Ice
+                timestamp=bar.timestamp
+            )
+            ice_touches.append(touch)
+
+    return ice_touches
+
+
+def _score_rejection_wicks_ice(ice_touches: List[TouchDetail]) -> int:
+    """
+    Score rejection wick component for Ice (0-20 points) - large upper wicks = strong rejection.
+
+    CRITICAL DIFFERENCE FROM CREEK:
+    Ice rejection wicks measure UPPER wicks: (high - close) / spread
+    Large upper wicks show sellers stepping in at resistance (supply).
+
+    Args:
+        ice_touches: List of ice touches
+
+    Returns:
+        int: Score 0-20
+    """
+    # Calculate average rejection_wick
+    avg_rejection = mean([float(touch.rejection_wick) for touch in ice_touches])
+
+    if avg_rejection >= 0.7:
+        return 20  # Strong rejection, close in lower 30% (sellers in control)
+    elif avg_rejection >= 0.5:
+        return 15  # Good rejection, close in lower half
+    elif avg_rejection >= 0.3:
+        return 10  # Moderate rejection
+    else:
+        return 5  # Weak rejection, close near high
+
+
+def _validate_ice_deviation(ice_price: Decimal, cluster_avg: Decimal, symbol: str) -> None:
+    """
+    Validate ice level within tolerance of cluster average.
+
+    Volume weighting shouldn't drastically change the price. If deviation > 0.5%,
+    one high-volume outlier may be skewing the average.
+
+    Args:
+        ice_price: Volume-weighted ice price
+        cluster_avg: Cluster average price
+        symbol: Symbol for logging
+    """
+    deviation_pct = abs(ice_price - cluster_avg) / cluster_avg
+
+    if deviation_pct > VALIDATION_TOLERANCE_PCT:
+        logger.warning(
+            "ice_validation_warning",
+            symbol=symbol,
+            ice_price=str(ice_price),
+            cluster_avg=str(cluster_avg),
+            deviation_pct=str(deviation_pct),
+            message=f"Ice level deviated {float(deviation_pct)*100:.2f}% from cluster average, exceeds 0.5% tolerance"
+        )
+    else:
+        logger.info(
+            "ice_validation_passed",
             symbol=symbol,
             deviation_pct=str(deviation_pct)
         )
