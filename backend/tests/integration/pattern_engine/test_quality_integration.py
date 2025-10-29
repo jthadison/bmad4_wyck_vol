@@ -228,16 +228,17 @@ def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
         open_price = (low + high) / 2
         close_price = open_price + Decimal(str((i % 3 - 1) * 0.5))
 
+        # Quantize to 8 decimal places to match OHLCVBar validation
         bar = OHLCVBar(
             symbol="AAPL",
             timestamp=timestamp,
-            open=open_price,
-            high=high,
-            low=low,
-            close=close_price,
-            volume=base_volume * volume_ratio,
+            open=open_price.quantize(Decimal('0.00000001')),
+            high=high.quantize(Decimal('0.00000001')),
+            low=low.quantize(Decimal('0.00000001')),
+            close=close_price.quantize(Decimal('0.00000001')),
+            volume=int(base_volume * volume_ratio),
             timeframe="1d",
-            spread=high - low
+            spread=(high - low).quantize(Decimal('0.00000001'))
         )
         bars.append(bar)
 
