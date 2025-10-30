@@ -46,25 +46,24 @@ Example:
 from __future__ import annotations
 
 import time
-from decimal import Decimal
-from typing import List, Dict, Optional
 from datetime import datetime
+from decimal import Decimal
 
 import structlog
 
 from src.models.ohlcv import OHLCVBar
-from src.models.volume_analysis import VolumeAnalysis
-from src.models.trading_range import TradingRange, RangeStatus
 from src.models.pivot import Pivot, PivotType
-from src.models.zone import ZoneType, ZoneStrength
-from src.pattern_engine.pivot_detector import detect_pivots, get_pivot_highs, get_pivot_lows
-from src.pattern_engine.range_cluster import cluster_pivots, form_trading_range
-from src.pattern_engine.range_quality import calculate_range_quality
+from src.models.trading_range import RangeStatus, TradingRange
+from src.models.volume_analysis import VolumeAnalysis
+from src.models.zone import ZoneStrength, ZoneType
 from src.pattern_engine.level_calculator import (
     calculate_creek_level,
     calculate_ice_level,
     calculate_jump_level,
 )
+from src.pattern_engine.pivot_detector import detect_pivots, get_pivot_highs, get_pivot_lows
+from src.pattern_engine.range_cluster import cluster_pivots, form_trading_range
+from src.pattern_engine.range_quality import calculate_range_quality
 from src.pattern_engine.zone_mapper import map_supply_demand_zones
 
 logger = structlog.get_logger(__name__)
@@ -116,7 +115,7 @@ class TradingRangeDetector:
         self.cache_enabled = cache_enabled
 
         # Cache storage
-        self._range_cache: Dict[str, List[TradingRange]] = {}
+        self._range_cache: dict[str, list[TradingRange]] = {}
         self._cache_hits = 0
         self._cache_misses = 0
 
@@ -129,8 +128,8 @@ class TradingRangeDetector:
         )
 
     def detect_ranges(
-        self, bars: List[OHLCVBar], volume_analysis: List[VolumeAnalysis]
-    ) -> List[TradingRange]:
+        self, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
+    ) -> list[TradingRange]:
         """
         Detect trading ranges with complete levels and zones.
 
@@ -529,7 +528,7 @@ class TradingRangeDetector:
 
         return non_overlapping_ranges
 
-    def _create_cache_key(self, bars: List[OHLCVBar]) -> str:
+    def _create_cache_key(self, bars: list[OHLCVBar]) -> str:
         """
         Create cache key from bar sequence.
 
@@ -554,7 +553,7 @@ class TradingRangeDetector:
 
         return f"{symbol}:{timeframe}:{start_timestamp}:{end_timestamp}:{bar_count}"
 
-    def _resolve_overlapping_ranges(self, ranges: List[TradingRange]) -> List[TradingRange]:
+    def _resolve_overlapping_ranges(self, ranges: list[TradingRange]) -> list[TradingRange]:
         """
         Resolve overlapping ranges by archiving older ones.
 
@@ -631,12 +630,12 @@ class TradingRangeDetector:
             ...     print("Ranges overlap!")
         """
         # Check bar index overlap
-        bar_overlap = range1.end_index >= range2.start_index and range2.end_index >= range1.start_index
+        bar_overlap = (
+            range1.end_index >= range2.start_index and range2.end_index >= range1.start_index
+        )
 
         # Check price level overlap (using support/resistance)
-        price_overlap = (
-            range1.support <= range2.resistance and range1.resistance >= range2.support
-        )
+        price_overlap = range1.support <= range2.resistance and range1.resistance >= range2.support
 
         return bar_overlap and price_overlap
 
@@ -681,7 +680,8 @@ class TradingRangeDetector:
 
 # Helper functions for range access
 
-def get_active_ranges(ranges: List[TradingRange]) -> List[TradingRange]:
+
+def get_active_ranges(ranges: list[TradingRange]) -> list[TradingRange]:
     """
     Filter for only ACTIVE ranges.
 
@@ -699,7 +699,7 @@ def get_active_ranges(ranges: List[TradingRange]) -> List[TradingRange]:
     return [r for r in ranges if r.is_active]
 
 
-def get_ranges_by_symbol(ranges: List[TradingRange], symbol: str) -> List[TradingRange]:
+def get_ranges_by_symbol(ranges: list[TradingRange], symbol: str) -> list[TradingRange]:
     """
     Filter ranges by symbol.
 
@@ -717,7 +717,7 @@ def get_ranges_by_symbol(ranges: List[TradingRange], symbol: str) -> List[Tradin
     return [r for r in ranges if r.symbol == symbol]
 
 
-def get_most_recent_range(ranges: List[TradingRange]) -> Optional[TradingRange]:
+def get_most_recent_range(ranges: list[TradingRange]) -> TradingRange | None:
     """
     Get most recent range (highest end_index).
 
@@ -738,7 +738,7 @@ def get_most_recent_range(ranges: List[TradingRange]) -> Optional[TradingRange]:
     return max(ranges, key=lambda r: r.end_index)
 
 
-def get_range_at_timestamp(ranges: List[TradingRange], timestamp: datetime) -> Optional[TradingRange]:
+def get_range_at_timestamp(ranges: list[TradingRange], timestamp: datetime) -> TradingRange | None:
     """
     Find range containing specific timestamp.
 
