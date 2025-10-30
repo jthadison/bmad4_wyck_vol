@@ -225,7 +225,7 @@ class TestAAPLMarch2020ARIntegration:
         print("\n=== Wyckoff AR Characteristics Validation ===")
 
         # 1. Rally is upward
-        print(f"1. Rally Direction: ${ar.sc_low} → ${ar.ar_high}")
+        print(f"1. Rally Direction: ${ar.sc_low} -> ${ar.ar_high}")
         assert ar.ar_high > ar.sc_low, "AR high must be above SC low (upward rally)"
 
         # 2. Rally meets threshold
@@ -240,9 +240,9 @@ class TestAAPLMarch2020ARIntegration:
         # 4. Volume profile
         print(f"4. Volume Profile: {ar.volume_profile}")
         if ar.volume_profile == "HIGH":
-            print("   → Strong demand absorption (bullish)")
+            print("   -> Strong demand absorption (bullish)")
         else:
-            print("   → Weak relief rally (less bullish)")
+            print("   -> Weak relief rally (less bullish)")
         assert ar.volume_profile in ["HIGH", "NORMAL"], "Volume profile must be HIGH or NORMAL"
 
         # 5. SC reference integrity
@@ -253,7 +253,7 @@ class TestAAPLMarch2020ARIntegration:
         ), "AR must reference correct SC"
 
         print(f"\n[OK] All Wyckoff AR characteristics validated")
-        print(f"[OK] Phase A sequence: SC ({sc.bar['timestamp']}) → AR ({ar.bar['timestamp']})")
+        print(f"[OK] Phase A sequence: SC ({sc.bar['timestamp']}) -> AR ({ar.bar['timestamp']})")
 
     def test_ar_timing_within_10_bars(self, aapl_bars):
         """
@@ -338,10 +338,10 @@ class TestAAPLMarch2020ARIntegration:
 
         print(f"\nInterpretation:")
         if ar.volume_profile == "HIGH":
-            print("  → Strong buying interest after SC")
-            print("  → Smart money accumulating")
-            print("  → Phase A strong foundation")
+            print("  -> Strong buying interest after SC")
+            print("  -> Smart money accumulating")
+            print("  -> Phase A strong foundation")
         else:
-            print("  → Weak buying interest")
-            print("  → Cautious accumulation")
-            print("  → Monitor for Secondary Test confirmation")
+            print("  -> Weak buying interest")
+            print("  -> Cautious accumulation")
+            print("  -> Monitor for Secondary Test confirmation")

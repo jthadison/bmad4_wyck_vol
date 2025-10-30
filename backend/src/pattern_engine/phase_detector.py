@@ -80,7 +80,8 @@ def detect_selling_climax(
             volume_count=len(volume_analysis),
         )
         raise ValueError(
-            f"Bars and volume_analysis length mismatch: {len(bars)} bars vs {len(volume_analysis)} volume_analysis"
+            f"Bars and volume_analysis length mismatch: {len(bars)} bars "
+            f"vs {len(volume_analysis)} volume_analysis"
         )
 
     if len(bars) < 2:
@@ -590,7 +591,8 @@ def detect_automatic_rally(
             volume_count=len(volume_analysis),
         )
         raise ValueError(
-            f"Bars and volume_analysis length mismatch: {len(bars)} bars vs {len(volume_analysis)} volume_analysis"
+            f"Bars and volume_analysis length mismatch: {len(bars)} bars "
+            f"vs {len(volume_analysis)} volume_analysis"
         )
 
     symbol = bars[0].symbol if bars else "UNKNOWN"
@@ -638,6 +640,8 @@ def detect_automatic_rally(
         "ar_search_window",
         sc_low=float(sc_low),
         start_index=start_index,
+        ideal_end_index=ideal_end_index,
+        timeout_end_index=timeout_end_index,
         end_index=end_index,
         search_bars_count=len(search_bars),
     )
@@ -723,9 +727,14 @@ def detect_automatic_rally(
         volume_profile = "NORMAL"
         interpretation = "Weak relief rally (less bullish)"
 
+    volume_ratio_float = (
+        float(ar_volume_analysis.volume_ratio)
+        if ar_volume_analysis.volume_ratio
+        else None
+    )
     logger.info(
         "ar_volume_profile",
-        volume_ratio=float(ar_volume_analysis.volume_ratio) if ar_volume_analysis.volume_ratio else None,
+        volume_ratio=volume_ratio_float,
         volume_profile=volume_profile,
         interpretation=interpretation,
     )

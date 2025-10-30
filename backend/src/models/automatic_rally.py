@@ -10,8 +10,7 @@ AR must occur within 5 bars (ideal) or up to 10 bars (timeout) after SC.
 
 from decimal import Decimal
 from datetime import datetime, timezone
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class AutomaticRally(BaseModel):
@@ -82,12 +81,7 @@ class AutomaticRally(BaseModel):
             return v.replace(tzinfo=timezone.utc)
         return v.astimezone(timezone.utc)
 
-    class Config:
-        """Pydantic model configuration."""
-
-        json_encoders = {
-            Decimal: str,
-            datetime: lambda v: v.isoformat(),
-        }
+    model_config = ConfigDict(
         # Allow validation of dict for bar and sc_reference fields
-        arbitrary_types_allowed = True
+        arbitrary_types_allowed=True,
+    )
