@@ -443,22 +443,6 @@ class MarketDataCoordinator:
                 repo = OHLCVRepository(session)
 
                 # Get recent bars for ratio calculation (last 20 bars)
-                # Calculate lookback period based on timeframe
-                from datetime import timedelta
-
-                lookback_days = 30  # Default lookback
-                if bar.timeframe == "1m":
-                    lookback_days = 1  # 1 day for minute bars
-                elif bar.timeframe == "1h":
-                    lookback_days = 7  # 1 week for hourly bars
-
-                recent_bars = await repo.get_bars(
-                    symbol=bar.symbol,
-                    timeframe=bar.timeframe,
-                    start_date=bar.timestamp - timedelta(days=lookback_days),
-                    end_date=bar.timestamp,
-                )
-
                 # Note: Spread and volume ratios are calculated by VolumeAnalyzer (Epic 2)
                 # after bar insertion, not during ingestion
 
