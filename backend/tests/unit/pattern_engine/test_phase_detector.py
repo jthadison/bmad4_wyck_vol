@@ -16,7 +16,12 @@ from uuid import uuid4
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
 from src.models.effort_result import EffortResult
-from src.pattern_engine.phase_detector import detect_selling_climax, detect_sc_zone
+from src.pattern_engine.phase_detector import (
+    detect_selling_climax,
+    detect_sc_zone,
+    detect_automatic_rally,
+    is_phase_a_confirmed,
+)
 
 
 class TestSellingClimaxDetection:
@@ -1060,3 +1065,652 @@ class TestSCZoneDetection:
 
         # Assert
         assert zone is None, "SC bars beyond max_gap should not create zone"
+
+
+class TestAutomaticRallyDetection:
+    """Test suite for Automatic Rally (AR) detection functionality."""
+
+    def test_detect_synthetic_ar_after_sc(self):
+        """
+        Test detection of synthetic AR after SC with 3.2% rally.
+
+        AC 8: Synthetic AR sequence detected correctly.
+
+        Setup:
+        - SC bar at low $100.00
+        - Bar 1 after SC: high $101.00 (1% rally, not enough)
+        - Bar 2 after SC: high $102.50 (2.5% rally, not enough)
+        - Bar 3 after SC: high $103.20 (3.2% rally, VALID AR)
+
+        Expected:
+        - AR detected at bar 3
+        - rally_pct = 0.032 (3.2%)
+        - bars_after_sc = 3
+        - ar_high = 103.20
+        - sc_low = 100.00
+        """
+        # Prior bar (normal)
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=50000000,
+            spread=Decimal("2.00"),
+        )
+
+        # SC bar (climactic selling)
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("105.50"),
+            low=Decimal("100.00"),  # SC low
+            close=Decimal("103.75"),  # close_position = 0.68 (upper region)
+            volume=125000000,  # 2.5x volume
+            spread=Decimal("5.50"),  # 1.8x spread
+        )
+
+        # Bar 1 after SC (1% rally, insufficient)
+        bar1 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            open=Decimal("104.00"),
+            high=Decimal("101.00"),  # 1% from SC low
+            low=Decimal("100.20"),
+            close=Decimal("100.80"),
+            volume=60000000,
+            spread=Decimal("0.80"),
+        )
+
+        # Bar 2 after SC (2.5% rally, still insufficient)
+        bar2 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 4, tzinfo=timezone.utc),
+            open=Decimal("100.80"),
+            high=Decimal("102.50"),  # 2.5% from SC low
+            low=Decimal("100.50"),
+            close=Decimal("102.00"),
+            volume=55000000,
+            spread=Decimal("2.00"),
+        )
+
+        # Bar 3 after SC (3.2% rally, VALID AR)
+        bar3 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 5, tzinfo=timezone.utc),
+            open=Decimal("102.00"),
+            high=Decimal("103.20"),  # 3.2% from SC low
+            low=Decimal("101.80"),
+            close=Decimal("103.00"),
+            volume=70000000,  # 1.4x volume (HIGH)
+            spread=Decimal("1.40"),
+        )
+
+        bars = [prior_bar, sc_bar, bar1, bar2, bar3]
+        volume_analysis_list = [
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.68"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
+            VolumeAnalysis(
+                bar=bar1,
+                volume_ratio=Decimal("1.2"),
+                spread_ratio=Decimal("0.8"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=bar2,
+                volume_ratio=Decimal("1.1"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=bar3,
+                volume_ratio=Decimal("1.4"),  # HIGH volume
+                spread_ratio=Decimal("0.7"),
+                close_position=Decimal("0.86"),
+                effort_result=EffortResult.NORMAL,
+            ),
+        ]
+
+        # Detect SC first
+        sc = detect_selling_climax(bars, volume_analysis_list)
+        assert sc is not None, "SC should be detected"
+
+        # Execute AR detection
+        result = detect_automatic_rally(bars, sc, volume_analysis_list)
+
+        # Assert
+        assert result is not None, "AR should be detected"
+        assert result.rally_pct == Decimal("0.032"), f"Expected rally_pct 0.032, got {result.rally_pct}"
+        assert result.bars_after_sc == 3, f"Expected bars_after_sc 3, got {result.bars_after_sc}"
+        assert result.ar_high == Decimal("103.20"), f"Expected ar_high 103.20, got {result.ar_high}"
+        assert result.sc_low == Decimal("100.00"), f"Expected sc_low 100.00, got {result.sc_low}"
+        assert result.volume_profile == "HIGH", f"Expected HIGH volume, got {result.volume_profile}"
+        assert result.bar["symbol"] == "TEST"
+
+    def test_ar_timeout_no_demand(self):
+        """
+        Test AR timeout when no 3%+ rally occurs within 10 bars.
+
+        AC 10: If no AR within 10 bars, SC invalidated (not enough demand).
+
+        Setup:
+        - SC at low $100
+        - 10 bars oscillating between $100-$102 (max 2% rally)
+        - Never reach 3% threshold
+
+        Expected:
+        - AR not detected (returns None)
+        - Timeout message logged
+        """
+        # Prior bar
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=50000000,
+            spread=Decimal("2.00"),
+        )
+
+        # SC bar
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("105.50"),
+            low=Decimal("100.00"),
+            close=Decimal("103.00"),
+            volume=125000000,
+            spread=Decimal("5.50"),
+        )
+
+        bars = [prior_bar, sc_bar]
+        volume_analysis_list = [
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.55"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
+        ]
+
+        # Add 10 bars with weak rally (max 2%)
+        from datetime import timedelta
+        for i in range(10):
+            bar = OHLCVBar(
+                symbol="TEST",
+                timeframe="1d",
+                timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc) + timedelta(days=i),
+                open=Decimal("100.50"),
+                high=Decimal("102.00"),  # Only 2% rally
+                low=Decimal("100.00"),
+                close=Decimal("101.50"),
+                volume=55000000,
+                spread=Decimal("2.00"),
+            )
+            bars.append(bar)
+            volume_analysis_list.append(
+                VolumeAnalysis(
+                    bar=bar,
+                    volume_ratio=Decimal("1.1"),
+                    spread_ratio=Decimal("1.0"),
+                    close_position=Decimal("0.75"),
+                    effort_result=EffortResult.NORMAL,
+                )
+            )
+
+        # Detect SC first
+        sc = detect_selling_climax(bars, volume_analysis_list)
+        assert sc is not None
+
+        # Execute AR detection
+        result = detect_automatic_rally(bars, sc, volume_analysis_list)
+
+        # Assert
+        assert result is None, "AR should not be detected (timeout)"
+
+    def test_ar_volume_profile_high(self):
+        """
+        Test AR with HIGH volume profile (volume_ratio >= 1.2).
+
+        AC 4: Volume on rally can be normal or high.
+
+        Setup:
+        - SC low $100
+        - AR bar: high $103.50 (3.5% rally), volume_ratio 1.5 (high volume)
+
+        Expected:
+        - ar.volume_profile == "HIGH"
+        - Interpretation: Strong demand absorption
+        """
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=50000000,
+            spread=Decimal("2.00"),
+        )
+
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("105.50"),
+            low=Decimal("100.00"),
+            close=Decimal("103.00"),
+            volume=125000000,
+            spread=Decimal("5.50"),
+        )
+
+        ar_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            open=Decimal("103.00"),
+            high=Decimal("103.50"),  # 3.5% rally
+            low=Decimal("102.00"),
+            close=Decimal("103.20"),
+            volume=75000000,  # 1.5x volume (HIGH)
+            spread=Decimal("1.50"),
+        )
+
+        bars = [prior_bar, sc_bar, ar_bar]
+        volume_analysis_list = [
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.55"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
+            VolumeAnalysis(
+                bar=ar_bar,
+                volume_ratio=Decimal("1.5"),  # HIGH volume
+                spread_ratio=Decimal("0.75"),
+                close_position=Decimal("0.80"),
+                effort_result=EffortResult.NORMAL,
+            ),
+        ]
+
+        sc = detect_selling_climax(bars, volume_analysis_list)
+        result = detect_automatic_rally(bars, sc, volume_analysis_list)
+
+        assert result is not None
+        assert result.volume_profile == "HIGH"
+
+    def test_ar_volume_profile_normal(self):
+        """
+        Test AR with NORMAL volume profile (volume_ratio < 1.2).
+
+        AC 4: Volume on rally can be normal or high.
+
+        Setup:
+        - SC low $100
+        - AR bar: high $103.50 (3.5% rally), volume_ratio 0.8 (normal volume)
+
+        Expected:
+        - ar.volume_profile == "NORMAL"
+        - Interpretation: Weak relief rally
+        """
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=50000000,
+            spread=Decimal("2.00"),
+        )
+
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("105.50"),
+            low=Decimal("100.00"),
+            close=Decimal("103.00"),
+            volume=125000000,
+            spread=Decimal("5.50"),
+        )
+
+        ar_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            open=Decimal("103.00"),
+            high=Decimal("103.50"),
+            low=Decimal("102.00"),
+            close=Decimal("103.20"),
+            volume=40000000,  # 0.8x volume (NORMAL)
+            spread=Decimal("1.50"),
+        )
+
+        bars = [prior_bar, sc_bar, ar_bar]
+        volume_analysis_list = [
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.55"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
+            VolumeAnalysis(
+                bar=ar_bar,
+                volume_ratio=Decimal("0.8"),  # NORMAL volume
+                spread_ratio=Decimal("0.75"),
+                close_position=Decimal("0.80"),
+                effort_result=EffortResult.NORMAL,
+            ),
+        ]
+
+        sc = detect_selling_climax(bars, volume_analysis_list)
+        result = detect_automatic_rally(bars, sc, volume_analysis_list)
+
+        assert result is not None
+        assert result.volume_profile == "NORMAL"
+
+    def test_ar_within_ideal_window(self):
+        """
+        Test AR within ideal 5-bar window.
+
+        AC 2: AR occurs within 5 bars after SC (ideal).
+
+        Setup:
+        - SC at index 1
+        - AR at index 4 (3 bars after SC)
+
+        Expected:
+        - ar.bars_after_sc == 3
+        - Log message: "AR within ideal 5-bar window"
+        """
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=50000000,
+            spread=Decimal("2.00"),
+        )
+
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("105.50"),
+            low=Decimal("100.00"),
+            close=Decimal("103.00"),
+            volume=125000000,
+            spread=Decimal("5.50"),
+        )
+
+        # Bar 1 after SC
+        bar1 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            open=Decimal("103.00"),
+            high=Decimal("102.00"),
+            low=Decimal("101.00"),
+            close=Decimal("101.50"),
+            volume=55000000,
+            spread=Decimal("1.00"),
+        )
+
+        # Bar 2 after SC
+        bar2 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 4, tzinfo=timezone.utc),
+            open=Decimal("101.50"),
+            high=Decimal("102.50"),
+            low=Decimal("101.00"),
+            close=Decimal("102.00"),
+            volume=60000000,
+            spread=Decimal("1.50"),
+        )
+
+        # Bar 3 after SC (AR peak)
+        bar3 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 5, tzinfo=timezone.utc),
+            open=Decimal("102.00"),
+            high=Decimal("103.20"),  # 3.2% rally
+            low=Decimal("101.80"),
+            close=Decimal("103.00"),
+            volume=65000000,
+            spread=Decimal("1.40"),
+        )
+
+        bars = [prior_bar, sc_bar, bar1, bar2, bar3]
+        volume_analysis_list = [
+            VolumeAnalysis(bar=prior_bar, volume_ratio=Decimal("1.0"), spread_ratio=Decimal("1.0"), close_position=Decimal("0.75"), effort_result=EffortResult.NORMAL),
+            VolumeAnalysis(bar=sc_bar, volume_ratio=Decimal("2.5"), spread_ratio=Decimal("1.8"), close_position=Decimal("0.55"), effort_result=EffortResult.CLIMACTIC),
+            VolumeAnalysis(bar=bar1, volume_ratio=Decimal("1.1"), spread_ratio=Decimal("0.5"), close_position=Decimal("0.50"), effort_result=EffortResult.NORMAL),
+            VolumeAnalysis(bar=bar2, volume_ratio=Decimal("1.2"), spread_ratio=Decimal("0.75"), close_position=Decimal("0.67"), effort_result=EffortResult.NORMAL),
+            VolumeAnalysis(bar=bar3, volume_ratio=Decimal("1.3"), spread_ratio=Decimal("0.7"), close_position=Decimal("0.86"), effort_result=EffortResult.NORMAL),
+        ]
+
+        sc = detect_selling_climax(bars, volume_analysis_list)
+        result = detect_automatic_rally(bars, sc, volume_analysis_list)
+
+        assert result is not None
+        assert result.bars_after_sc == 3
+
+    def test_phase_a_confirmed(self):
+        """
+        Test Phase A confirmation when both SC and AR present.
+
+        AC 7: Phase A confirmation requires SC + AR.
+
+        Setup:
+        - SC detected
+        - AR detected (3.5% rally, 1 bar after SC)
+
+        Expected:
+        - is_phase_a_confirmed(sc, ar) returns True
+        """
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=50000000,
+            spread=Decimal("2.00"),
+        )
+
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("105.50"),
+            low=Decimal("100.00"),
+            close=Decimal("103.00"),
+            volume=125000000,
+            spread=Decimal("5.50"),
+        )
+
+        ar_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            open=Decimal("103.00"),
+            high=Decimal("103.50"),
+            low=Decimal("102.00"),
+            close=Decimal("103.20"),
+            volume=65000000,
+            spread=Decimal("1.50"),
+        )
+
+        bars = [prior_bar, sc_bar, ar_bar]
+        volume_analysis_list = [
+            VolumeAnalysis(bar=prior_bar, volume_ratio=Decimal("1.0"), spread_ratio=Decimal("1.0"), close_position=Decimal("0.75"), effort_result=EffortResult.NORMAL),
+            VolumeAnalysis(bar=sc_bar, volume_ratio=Decimal("2.5"), spread_ratio=Decimal("1.8"), close_position=Decimal("0.55"), effort_result=EffortResult.CLIMACTIC),
+            VolumeAnalysis(bar=ar_bar, volume_ratio=Decimal("1.3"), spread_ratio=Decimal("0.75"), close_position=Decimal("0.80"), effort_result=EffortResult.NORMAL),
+        ]
+
+        sc = detect_selling_climax(bars, volume_analysis_list)
+        ar = detect_automatic_rally(bars, sc, volume_analysis_list)
+
+        # Test Phase A confirmation
+        assert is_phase_a_confirmed(sc, ar) == True
+
+    def test_phase_a_not_confirmed_missing_ar(self):
+        """
+        Test Phase A not confirmed when AR missing.
+
+        AC 7: Phase A requires both SC and AR.
+
+        Setup:
+        - SC detected
+        - AR = None (no rally)
+
+        Expected:
+        - is_phase_a_confirmed(sc, None) returns False
+        """
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=50000000,
+            spread=Decimal("2.00"),
+        )
+
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("105.50"),
+            low=Decimal("100.00"),
+            close=Decimal("103.00"),
+            volume=125000000,
+            spread=Decimal("5.50"),
+        )
+
+        bars = [prior_bar, sc_bar]
+        volume_analysis_list = [
+            VolumeAnalysis(bar=prior_bar, volume_ratio=Decimal("1.0"), spread_ratio=Decimal("1.0"), close_position=Decimal("0.75"), effort_result=EffortResult.NORMAL),
+            VolumeAnalysis(bar=sc_bar, volume_ratio=Decimal("2.5"), spread_ratio=Decimal("1.8"), close_position=Decimal("0.55"), effort_result=EffortResult.CLIMACTIC),
+        ]
+
+        sc = detect_selling_climax(bars, volume_analysis_list)
+
+        # Test Phase A not confirmed
+        assert is_phase_a_confirmed(sc, None) == False
+
+    def test_ar_sc_at_end_no_bars_after(self):
+        """
+        Test AR detection when SC is last bar (no bars after).
+
+        AC: Edge case - SC as last bar should return None.
+
+        Setup:
+        - SC at last position in bars list
+
+        Expected:
+        - AR not detected (returns None)
+        - Log: "SC is last bar, no bars for AR detection"
+        """
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=50000000,
+            spread=Decimal("2.00"),
+        )
+
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            open=Decimal("105.00"),
+            high=Decimal("105.50"),
+            low=Decimal("100.00"),
+            close=Decimal("103.00"),
+            volume=125000000,
+            spread=Decimal("5.50"),
+        )
+
+        bars = [prior_bar, sc_bar]
+        volume_analysis_list = [
+            VolumeAnalysis(bar=prior_bar, volume_ratio=Decimal("1.0"), spread_ratio=Decimal("1.0"), close_position=Decimal("0.75"), effort_result=EffortResult.NORMAL),
+            VolumeAnalysis(bar=sc_bar, volume_ratio=Decimal("2.5"), spread_ratio=Decimal("1.8"), close_position=Decimal("0.55"), effort_result=EffortResult.CLIMACTIC),
+        ]
+
+        sc = detect_selling_climax(bars, volume_analysis_list)
+        result = detect_automatic_rally(bars, sc, volume_analysis_list)
+
+        assert result is None
