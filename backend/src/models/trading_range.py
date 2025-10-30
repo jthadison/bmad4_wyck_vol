@@ -11,11 +11,34 @@ from decimal import Decimal
 from datetime import datetime, timezone
 from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID, uuid4
+from enum import Enum
 from pydantic import BaseModel, Field, field_validator, field_serializer
 from src.models.price_cluster import PriceCluster
 
 if TYPE_CHECKING:
     from src.models.zone import Zone
+
+# Import level models directly (not TYPE_CHECKING) to avoid forward reference issues
+from src.models.creek_level import CreekLevel
+from src.models.ice_level import IceLevel
+from src.models.jump_level import JumpLevel
+
+
+class RangeStatus(str, Enum):
+    """
+    Lifecycle status of a trading range in Wyckoff analysis.
+
+    FORMING: Range detected but not yet confirmed (< 15 bars duration)
+    ACTIVE: Range confirmed and valid for pattern detection (15-100 bars, quality >= 70)
+    BREAKOUT: Price closed above Ice or below Creek (range invalidated)
+    COMPLETED: Range ended naturally in historical analysis (old data)
+    ARCHIVED: Range replaced by newer overlapping range
+    """
+    FORMING = "FORMING"
+    ACTIVE = "ACTIVE"
+    BREAKOUT = "BREAKOUT"
+    COMPLETED = "COMPLETED"
+    ARCHIVED = "ARCHIVED"
 
 
 class TradingRange(BaseModel):
@@ -80,6 +103,15 @@ class TradingRange(BaseModel):
     quality_score: Optional[int] = Field(None, ge=0, le=100, description="Quality score 0-100")
     supply_zones: List["Zone"] = Field(default_factory=list, description="Supply zones in range")
     demand_zones: List["Zone"] = Field(default_factory=list, description="Demand zones in range")
+
+    # Epic 3.8: Creek, Ice, Jump levels and lifecycle status
+    creek: Optional[CreekLevel] = Field(None, description="Support level (Story 3.4)")
+    ice: Optional[IceLevel] = Field(None, description="Resistance level (Story 3.5)")
+    jump: Optional[JumpLevel] = Field(None, description="Price target (Story 3.6)")
+    status: RangeStatus = Field(default=RangeStatus.FORMING, description="Range lifecycle status")
+    start_timestamp: Optional[datetime] = Field(None, description="First bar timestamp")
+    end_timestamp: Optional[datetime] = Field(None, description="Last bar timestamp")
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator('resistance')
@@ -232,3 +264,18 @@ class TradingRange(BaseModel):
         """
         near_ice = [z for z in self.all_zones if z.proximity_to_level == "NEAR_ICE"]
         return sorted(near_ice, key=lambda z: z.significance_score, reverse=True)
+
+    @property
+    def is_active(self) -> bool:
+        """
+        Whether range is currently active for pattern detection.
+
+        Returns:
+            bool: True if status is ACTIVE, False otherwise
+
+        Example:
+            >>> trading_range = TradingRange(...)
+            >>> if trading_range.is_active:
+            ...     print("Range can be used for pattern detection")
+        """
+        return self.status == RangeStatus.ACTIVE
