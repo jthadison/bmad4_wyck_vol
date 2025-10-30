@@ -9,10 +9,13 @@ from __future__ import annotations
 
 from decimal import Decimal
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, field_validator, field_serializer
 from src.models.price_cluster import PriceCluster
+
+if TYPE_CHECKING:
+    from src.models.zone import Zone
 
 
 class TradingRange(BaseModel):
@@ -38,6 +41,8 @@ class TradingRange(BaseModel):
         end_index: Latest pivot index in range
         duration: Number of bars in range (end - start + 1)
         quality_score: Optional 0-100 score (Story 3.3 adds full scoring)
+        supply_zones: List of supply zones detected in range (Story 3.7)
+        demand_zones: List of demand zones detected in range (Story 3.7)
         created_at: Detection timestamp
 
     Example:
@@ -73,6 +78,8 @@ class TradingRange(BaseModel):
     end_index: int = Field(..., ge=0, description="Latest pivot index")
     duration: int = Field(..., ge=10, description="Range duration in bars")
     quality_score: Optional[int] = Field(None, ge=0, le=100, description="Quality score 0-100")
+    supply_zones: List["Zone"] = Field(default_factory=list, description="Supply zones in range")
+    demand_zones: List["Zone"] = Field(default_factory=list, description="Demand zones in range")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator('resistance')
@@ -160,3 +167,68 @@ class TradingRange(BaseModel):
     def serialize_uuid(self, value: UUID) -> str:
         """Serialize UUID as string."""
         return str(value)
+
+    @property
+    def all_zones(self) -> List["Zone"]:
+        """
+        Get all zones (supply + demand) sorted by significance score.
+
+        Returns:
+            List[Zone]: All zones sorted by significance (highest first)
+
+        Example:
+            >>> trading_range = TradingRange(...)
+            >>> for zone in trading_range.all_zones[:5]:
+            ...     print(f"{zone.zone_type.value}: {zone.significance_score}")
+        """
+        all_zones_list = self.supply_zones + self.demand_zones
+        return sorted(all_zones_list, key=lambda z: z.significance_score, reverse=True)
+
+    @property
+    def fresh_zones(self) -> List["Zone"]:
+        """
+        Get only FRESH zones (untested, 0 touches).
+
+        Returns:
+            List[Zone]: FRESH zones sorted by significance
+
+        Example:
+            >>> trading_range = TradingRange(...)
+            >>> fresh_zones = trading_range.fresh_zones
+            >>> print(f"Found {len(fresh_zones)} fresh zones")
+        """
+        from src.models.zone import ZoneStrength
+        fresh = [z for z in self.all_zones if z.strength == ZoneStrength.FRESH]
+        return sorted(fresh, key=lambda z: z.significance_score, reverse=True)
+
+    @property
+    def zones_near_creek(self) -> List["Zone"]:
+        """
+        Get zones near Creek level (demand zones within 2%).
+
+        Returns:
+            List[Zone]: Zones near Creek sorted by significance
+
+        Example:
+            >>> trading_range = TradingRange(...)
+            >>> creek_zones = trading_range.zones_near_creek
+            >>> print(f"Found {len(creek_zones)} zones near Creek")
+        """
+        near_creek = [z for z in self.all_zones if z.proximity_to_level == "NEAR_CREEK"]
+        return sorted(near_creek, key=lambda z: z.significance_score, reverse=True)
+
+    @property
+    def zones_near_ice(self) -> List["Zone"]:
+        """
+        Get zones near Ice level (supply zones within 2%).
+
+        Returns:
+            List[Zone]: Zones near Ice sorted by significance
+
+        Example:
+            >>> trading_range = TradingRange(...)
+            >>> ice_zones = trading_range.zones_near_ice
+            >>> print(f"Found {len(ice_zones)} zones near Ice")
+        """
+        near_ice = [z for z in self.all_zones if z.proximity_to_level == "NEAR_ICE"]
+        return sorted(near_ice, key=lambda z: z.significance_score, reverse=True)

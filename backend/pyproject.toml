@@ -3,7 +3,6 @@ name = "bmad-wyckoff-backend"
 version = "0.1.0"
 description = "BMAD Wyckoff Volume Pattern Detection System - Backend"
 authors = ["BMAD Team"]
-package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.11"
