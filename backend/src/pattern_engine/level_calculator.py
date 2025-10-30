@@ -1,14 +1,17 @@
 """
-Level Calculator module for Wyckoff Creek and Ice level calculation.
+Level Calculator module for Wyckoff Creek, Ice, and Jump level calculation.
 
-This module calculates volume-weighted support (Creek) and resistance (Ice) levels
-for Wyckoff accumulation and distribution zones. The Creek is the foundation of
-accumulation where smart money absorbs supply with decreasing volume. The Ice is
-the ceiling of accumulation, broken on Sign of Strength (SOS) with high volume.
+This module calculates volume-weighted support (Creek), resistance (Ice), and
+price targets (Jump) for Wyckoff accumulation and distribution zones. The Creek
+is the foundation of accumulation where smart money absorbs supply with decreasing
+volume. The Ice is the ceiling of accumulation, broken on Sign of Strength (SOS)
+with high volume. The Jump is the upside target calculated using Wyckoff Point &
+Figure cause-effect methodology.
 
 Wyckoff Context:
     - Creek (support): Tested multiple times in Phase B, volume decreases each test
     - Ice (resistance): Upper boundary of range, breaks out in Phase D (SOS)
+    - Jump (target): Upside projection after SOS, proportional to accumulation duration
     - Spring pattern: Breaks below Creek absolute_low, then recovers
     - SOS pattern: Breaks above Ice price on high volume (>1.5x)
     - UTAD pattern: Breaks above Ice absolute_high, then fails (false breakout)
@@ -34,26 +37,39 @@ Algorithm (Ice):
        - Hold duration: 10 pts (same as Creek)
     4. Minimum strength: 60 required (AC 5)
 
+Algorithm (Jump):
+    1. Extract range duration from TradingRange (minimum 15 bars)
+    2. Determine cause factor: 40+ bars = 3.0x, 25-39 bars = 2.5x, 15-24 bars = 2.0x
+    3. Calculate range width: range_width = ice - creek
+    4. Aggressive jump: jump = ice + (cause_factor × range_width)
+    5. Conservative jump: conservative = ice + (1.0 × range_width)
+    6. Risk-reward ratio: RR = (jump - ice) / (ice - creek) = cause_factor
+
 Example:
-    >>> from src.pattern_engine.level_calculator import calculate_creek_level, calculate_ice_level
+    >>> from src.pattern_engine.level_calculator import (
+    ...     calculate_creek_level, calculate_ice_level, calculate_jump_level
+    ... )
     >>> from src.pattern_engine.volume_analyzer import VolumeAnalyzer
     >>>
     >>> # Analyze volume
     >>> volume_analyzer = VolumeAnalyzer()
     >>> volume_analysis = volume_analyzer.analyze(bars)
     >>>
-    >>> # Calculate creek and ice (only for quality ranges)
+    >>> # Calculate all three levels (only for quality ranges)
     >>> if trading_range.quality_score >= 70:
     ...     creek = calculate_creek_level(trading_range, bars, volume_analysis)
     ...     ice = calculate_ice_level(trading_range, bars, volume_analysis)
+    ...     jump = calculate_jump_level(trading_range, creek, ice)
     ...     print(f"Creek: ${creek.price:.2f}, Ice: ${ice.price:.2f}")
-    ...     print(f"Range Width: {((ice.price - creek.price) / creek.price * 100):.1f}%")
-    ...     print(f"SOS Entry: ${ice.price:.2f}, Stop: ${creek.price * 0.98:.2f}")
+    ...     print(f"Jump (Aggressive): ${jump.price:.2f} ({jump.cause_factor}x)")
+    ...     print(f"Jump (Conservative): ${jump.conservative_price:.2f} (1.0x)")
+    ...     print(f"Risk-Reward: {jump.risk_reward_ratio}:1")
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
+from datetime import datetime, timezone
 from typing import List, Tuple
 from statistics import mean
 
@@ -64,15 +80,23 @@ from src.models.trading_range import TradingRange
 from src.models.volume_analysis import VolumeAnalysis
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
+from src.models.jump_level import JumpLevel
 from src.models.touch_detail import TouchDetail
 
 logger = structlog.get_logger(__name__)
 
-# Constants
+# Constants - Creek and Ice
 PIVOT_TOLERANCE_PCT = Decimal("0.015")  # 1.5% tolerance from cluster average (AC 2)
 MIN_CREEK_STRENGTH = 60  # Minimum strength score for FR9 requirement (Creek AC 6)
 MIN_ICE_STRENGTH = 60  # Minimum strength score for Ice (Story 3.5 AC 5)
 VALIDATION_TOLERANCE_PCT = Decimal("0.005")  # 0.5% max deviation (AC 10)
+
+# Constants - Jump (Story 3.6)
+CAUSE_FACTOR_LONG = Decimal("3.0")  # 40+ bars, strong cause
+CAUSE_FACTOR_MEDIUM = Decimal("2.5")  # 25-39 bars, good cause
+CAUSE_FACTOR_SHORT = Decimal("2.0")  # 15-24 bars, adequate cause
+CONSERVATIVE_FACTOR = Decimal("1.0")  # Conservative projection (measured move)
+MIN_RANGE_DURATION = 15  # Minimum bars for Jump calculation (AC 2)
 
 
 def calculate_creek_level(
@@ -849,3 +873,213 @@ def _validate_ice_deviation(ice_price: Decimal, cluster_avg: Decimal, symbol: st
             symbol=symbol,
             deviation_pct=str(deviation_pct)
         )
+
+
+# ============================================================================
+# JUMP LEVEL CALCULATION (Story 3.6)
+# ============================================================================
+
+
+def calculate_jump_level(
+    trading_range: TradingRange,
+    creek: CreekLevel,
+    ice: IceLevel
+) -> JumpLevel:
+    """
+    Calculate Jump level (price target) using Wyckoff Point & Figure cause-effect method.
+
+    The Jump represents the upside profit objective after successful SOS breakout,
+    calculated using Wyckoff's cause-effect principle: longer accumulation (cause)
+    produces larger price move (effect). The cause factor amplifies based on
+    accumulation duration: 40+ bars = 3.0x, 25-39 bars = 2.5x, 15-24 bars = 2.0x.
+
+    Args:
+        trading_range: TradingRange with duration >= 15 bars
+        creek: CreekLevel (support reference)
+        ice: IceLevel (resistance reference)
+
+    Returns:
+        JumpLevel: Price target with aggressive and conservative projections
+
+    Raises:
+        ValueError: If range_duration < 15 bars (insufficient cause)
+        ValueError: If ice.price <= creek.price (invalid range)
+
+    Algorithm:
+        1. Validate inputs (duration >= 15, ice > creek)
+        2. Calculate range width: range_width = ice - creek
+        3. Determine cause factor based on duration:
+           - 40+ bars: 3.0x (HIGH confidence)
+           - 25-39 bars: 2.5x (MEDIUM confidence)
+           - 15-24 bars: 2.0x (LOW confidence)
+        4. Calculate aggressive jump: jump = ice + (cause_factor × range_width)
+        5. Calculate conservative jump: conservative = ice + (1.0 × range_width)
+        6. Calculate risk-reward ratios
+        7. Validate jump > ice (defensive check)
+
+    Wyckoff Context:
+        The effect (price move) is proportional to the cause (accumulation duration).
+        A large cause (extended accumulation) produces a large effect (significant
+        price advance). A small cause produces a small effect. The Jump is the
+        measured objective derived from the cause built during accumulation.
+
+    Example:
+        >>> # 40-bar range: Creek $100, Ice $110, Width $10
+        >>> jump = calculate_jump_level(trading_range, creek, ice)
+        >>> print(f"Aggressive: ${jump.price:.2f} ({jump.cause_factor}x)")
+        >>> # Output: Aggressive: $140.00 (3.0x)
+        >>> print(f"Conservative: ${jump.conservative_price:.2f}")
+        >>> # Output: Conservative: $120.00
+        >>> print(f"Risk-Reward: {jump.risk_reward_ratio}:1")
+        >>> # Output: Risk-Reward: 3.0:1
+    """
+    # Validate inputs
+    if trading_range is None:
+        raise ValueError("trading_range cannot be None")
+    if creek is None:
+        raise ValueError("creek cannot be None")
+    if ice is None:
+        raise ValueError("ice cannot be None")
+
+    # Get range duration
+    range_duration = trading_range.duration
+
+    # Validate minimum duration (AC 2)
+    if range_duration < MIN_RANGE_DURATION:
+        logger.error(
+            "insufficient_cause",
+            range_id=str(trading_range.id),
+            duration=range_duration,
+            minimum=MIN_RANGE_DURATION,
+            message=f"Range duration {range_duration} < {MIN_RANGE_DURATION} bars minimum"
+        )
+        raise ValueError(f"Insufficient cause: {range_duration} bars < {MIN_RANGE_DURATION} minimum")
+
+    # Defensive validation: ice > creek (should be validated by Story 3.8)
+    if ice.price <= creek.price:
+        logger.error(
+            "invalid_range",
+            ice_price=str(ice.price),
+            creek_price=str(creek.price),
+            message="Ice must be above Creek"
+        )
+        raise ValueError(f"Invalid range: Ice {ice.price} <= Creek {creek.price}")
+
+    symbol = trading_range.symbol if hasattr(trading_range, 'symbol') else "UNKNOWN"
+
+    logger.info(
+        "jump_calculation_start",
+        symbol=symbol,
+        range_id=str(trading_range.id),
+        range_duration=range_duration,
+        creek_price=str(creek.price),
+        ice_price=str(ice.price)
+    )
+
+    # Calculate range width (AC 4)
+    range_width = ice.price - creek.price
+
+    # Defensive validation: range_width > 0
+    if range_width <= 0:
+        logger.error(
+            "invalid_range_width",
+            range_width=str(range_width),
+            message="Range width must be positive"
+        )
+        raise ValueError(f"Invalid range width: {range_width}")
+
+    # Determine cause factor based on duration (AC 2)
+    if range_duration >= 40:
+        cause_factor = CAUSE_FACTOR_LONG  # 3.0x
+        confidence = "HIGH"
+    elif range_duration >= 25:
+        cause_factor = CAUSE_FACTOR_MEDIUM  # 2.5x
+        confidence = "MEDIUM"
+    elif range_duration >= 15:
+        cause_factor = CAUSE_FACTOR_SHORT  # 2.0x
+        confidence = "LOW"
+    else:
+        # Should never reach here due to earlier validation
+        raise ValueError(f"Insufficient range duration: {range_duration} bars")
+
+    logger.info(
+        "cause_factor_determined",
+        symbol=symbol,
+        duration=range_duration,
+        cause_factor=str(cause_factor),
+        confidence=confidence
+    )
+
+    # Calculate aggressive jump target (AC 3)
+    effect = cause_factor * range_width
+    jump_price = ice.price + effect
+
+    # Calculate conservative jump target (AC 6)
+    conservative_effect = CONSERVATIVE_FACTOR * range_width
+    conservative_price = ice.price + conservative_effect
+
+    # Calculate risk-reward ratios (AC all)
+    aggressive_reward = jump_price - ice.price
+    risk = ice.price - creek.price  # Same as range_width
+    risk_reward_ratio = aggressive_reward / risk  # Simplifies to cause_factor
+
+    conservative_reward = conservative_price - ice.price
+    conservative_risk_reward = conservative_reward / risk  # Always 1.0
+
+    logger.info(
+        "jump_targets_calculated",
+        symbol=symbol,
+        range_width=str(range_width),
+        aggressive_jump=str(jump_price),
+        conservative_jump=str(conservative_price),
+        aggressive_rr=str(risk_reward_ratio),
+        conservative_rr=str(conservative_risk_reward)
+    )
+
+    # Validate jump > ice (AC 10) - defensive check
+    if jump_price <= ice.price:
+        logger.error(
+            "invalid_jump_calculation",
+            jump_price=str(jump_price),
+            ice_price=str(ice.price),
+            message="Jump must be above Ice"
+        )
+        raise ValueError(f"Invalid jump calculation: {jump_price} <= {ice.price}")
+
+    if conservative_price <= ice.price:
+        logger.error(
+            "invalid_conservative_jump",
+            conservative_price=str(conservative_price),
+            ice_price=str(ice.price),
+            message="Conservative jump must be above Ice"
+        )
+        raise ValueError(f"Invalid conservative jump: {conservative_price} <= {ice.price}")
+
+    # Create JumpLevel object (AC 5)
+    jump_level = JumpLevel(
+        price=jump_price,
+        conservative_price=conservative_price,
+        range_width=range_width,
+        cause_factor=cause_factor,
+        range_duration=range_duration,
+        confidence=confidence,
+        risk_reward_ratio=risk_reward_ratio,
+        conservative_risk_reward=conservative_risk_reward,
+        ice_price=ice.price,
+        creek_price=creek.price,
+        calculated_at=datetime.now(timezone.utc)
+    )
+
+    logger.info(
+        "jump_calculation_complete",
+        symbol=symbol,
+        aggressive_target=str(jump_price),
+        conservative_target=str(conservative_price),
+        cause_factor=str(cause_factor),
+        confidence=confidence,
+        range_duration=range_duration,
+        aggressive_rr=str(risk_reward_ratio),
+        conservative_rr=str(conservative_risk_reward)
+    )
+
+    return jump_level
