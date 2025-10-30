@@ -16,7 +16,7 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from src.database import get_async_session
+from src.database import get_db
 from src.models.converters import bars_to_dataframe, dataframe_to_bars
 from src.models.ohlcv import OHLCVBar
 from src.repositories.ohlcv_repository import OHLCVRepository
@@ -67,7 +67,7 @@ def generate_test_bars(symbol: str, count: int, timeframe: str = "1d") -> list[O
 @pytest.fixture
 async def repository():
     """Create repository with test database session."""
-    async for session in get_async_session():
+    async for session in get_db():
         yield OHLCVRepository(session)
         break
 

@@ -18,7 +18,6 @@ import structlog
 
 from src.config import Settings
 from src.database import async_session_maker
-from src.market_data.calculate_ratios import calculate_spread_and_volume_ratios
 from src.market_data.provider import MarketDataProvider
 from src.market_data.retry import with_retry
 from src.market_data.validators import validate_bar_batch
@@ -460,9 +459,8 @@ class MarketDataCoordinator:
                     end_date=bar.timestamp,
                 )
 
-                # Calculate spread and volume ratios
-                if recent_bars:
-                    bar = calculate_spread_and_volume_ratios([bar], recent_bars)[0]
+                # Note: Spread and volume ratios are calculated by VolumeAnalyzer (Epic 2)
+                # after bar insertion, not during ingestion
 
                 # Insert bar
                 inserted_count = await repo.insert_bars([bar])
