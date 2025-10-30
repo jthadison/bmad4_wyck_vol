@@ -12,7 +12,7 @@ from typing import List, Optional
 
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.selling_climax import SellingClimax
+from src.models.selling_climax import SellingClimax, SellingClimaxZone
 from src.models.effort_result import EffortResult
 
 logger = structlog.get_logger(__name__)
@@ -288,3 +288,233 @@ def _calculate_sc_confidence(
     )
 
     return min(total, 100)  # Cap at 100 (shouldn't exceed, but safety check)
+
+
+def detect_sc_zone(
+    bars: List[OHLCVBar],
+    volume_analysis: List[VolumeAnalysis],
+    max_gap_bars: int = 10,
+) -> Optional[SellingClimaxZone]:
+    """
+    Detect Selling Climax Zone - multiple consecutive climactic bars within 5-10 bars.
+
+    A SC Zone represents extended climactic selling rather than a single event.
+    This is common in real markets where panic selling extends over multiple days.
+
+    Algorithm:
+    1. Find first SC using detect_selling_climax()
+    2. Look ahead for additional SC bars within max_gap_bars
+    3. Group consecutive SC bars into a zone if they meet criteria:
+       - Similar volume characteristics (>2x average)
+       - Wide spreads (>1.5x average)
+       - Close in upper region (>= 0.5)
+       - Within max_gap_bars of previous SC bar
+    4. Zone ends when no more SC bars found within gap window
+    5. Return zone with zone_start (first SC) and zone_end (last SC)
+
+    Wyckoff Context:
+    - SC Zones are more common than single-bar SCs in real data
+    - Multiple waves of panic selling over several days
+    - True exhaustion occurs at LAST climactic bar (zone_end)
+    - AR (Automatic Rally) should start from zone_end, not zone_start
+    - This is why "first SC" approach can miss true bottom
+
+    Args:
+        bars: List of OHLCV bars to analyze
+        volume_analysis: List of VolumeAnalysis results matching bars
+        max_gap_bars: Maximum bars between SC bars to group into zone (default: 10)
+
+    Returns:
+        SellingClimaxZone if zone detected (2+ climactic bars), None otherwise
+
+    Example:
+        >>> sc_zone = detect_sc_zone(bars, volume_analysis)
+        >>> if sc_zone:
+        ...     print(f"SC Zone detected:")
+        ...     print(f"  Start: {sc_zone.zone_start.bar['timestamp']}")
+        ...     print(f"  End: {sc_zone.zone_end.bar['timestamp']}")
+        ...     print(f"  Bar count: {sc_zone.bar_count}")
+        ...     print(f"  Zone low: ${sc_zone.zone_low}")
+        ...     print(f"  Use zone_end for AR detection")
+    """
+    # Step 1: Find first SC
+    first_sc = detect_selling_climax(bars, volume_analysis)
+
+    if first_sc is None:
+        logger.info("sc_zone_not_detected", message="No initial SC found")
+        return None
+
+    # Find index of first SC
+    first_sc_timestamp = datetime.fromisoformat(first_sc.bar["timestamp"])
+    first_sc_index = None
+    for i, bar in enumerate(bars):
+        if bar.timestamp == first_sc_timestamp:
+            first_sc_index = i
+            break
+
+    if first_sc_index is None:
+        logger.error(
+            "sc_zone_index_not_found",
+            timestamp=first_sc.bar["timestamp"],
+            message="Could not find first SC bar in bars list",
+        )
+        return None
+
+    # Step 2: Look for additional SC bars within max_gap_bars
+    climactic_bars = [first_sc]
+    current_index = first_sc_index
+    symbol = bars[0].symbol if bars else "UNKNOWN"
+
+    logger.info(
+        "sc_zone_search_start",
+        symbol=symbol,
+        first_sc_index=first_sc_index,
+        first_sc_timestamp=first_sc.bar["timestamp"],
+        max_gap_bars=max_gap_bars,
+    )
+
+    # Scan forward from first SC, looking for additional SC bars
+    search_end_index = min(len(bars), first_sc_index + max_gap_bars + 50)  # Extended search window
+
+    for i in range(first_sc_index + 1, search_end_index):
+        analysis = volume_analysis[i]
+
+        # Check if this bar meets SC criteria (same as detect_selling_climax)
+        if analysis.effort_result != EffortResult.CLIMACTIC:
+            continue
+
+        if (
+            analysis.volume_ratio is None
+            or analysis.spread_ratio is None
+            or analysis.volume_ratio < Decimal("2.0")
+            or analysis.spread_ratio < Decimal("1.5")
+        ):
+            continue
+
+        close_position = analysis.close_position
+        if close_position is None:
+            current_bar = bars[i]
+            if current_bar.spread > 0:
+                close_position = (current_bar.close - current_bar.low) / current_bar.spread
+            else:
+                close_position = Decimal("0.5")
+
+        if close_position < Decimal("0.5"):
+            continue
+
+        current_bar = bars[i]
+        prior_bar = bars[i - 1]
+
+        if current_bar.close >= prior_bar.close:
+            continue
+
+        # This bar meets ALL SC criteria
+        gap_from_last = i - current_index
+
+        # Check if within gap window
+        if gap_from_last > max_gap_bars:
+            logger.debug(
+                "sc_zone_gap_exceeded",
+                index=i,
+                gap=gap_from_last,
+                max_gap=max_gap_bars,
+                message="Gap exceeded, ending zone search",
+            )
+            break  # Stop searching, zone ended
+
+        # Create SellingClimax for this bar
+        confidence = _calculate_sc_confidence(
+            analysis.volume_ratio, analysis.spread_ratio, close_position
+        )
+
+        sc = SellingClimax(
+            bar={
+                "symbol": current_bar.symbol,
+                "timestamp": current_bar.timestamp.isoformat(),
+                "open": str(current_bar.open),
+                "high": str(current_bar.high),
+                "low": str(current_bar.low),
+                "close": str(current_bar.close),
+                "volume": current_bar.volume,
+                "spread": str(current_bar.spread),
+            },
+            volume_ratio=analysis.volume_ratio,
+            spread_ratio=analysis.spread_ratio,
+            close_position=close_position,
+            confidence=confidence,
+            prior_close=prior_bar.close,
+            detection_timestamp=datetime.now(timezone.utc),
+        )
+
+        climactic_bars.append(sc)
+        current_index = i
+
+        logger.debug(
+            "sc_zone_bar_added",
+            index=i,
+            timestamp=current_bar.timestamp.isoformat(),
+            gap_from_last=gap_from_last,
+            total_bars=len(climactic_bars),
+        )
+
+    # Step 3: Determine if we have a zone (2+ bars)
+    if len(climactic_bars) == 1:
+        logger.info(
+            "sc_zone_single_bar",
+            symbol=symbol,
+            message="Only single SC found, no zone",
+        )
+        return None
+
+    # Step 4: Create SellingClimaxZone
+    zone_start = climactic_bars[0]
+    zone_end = climactic_bars[-1]
+
+    # Calculate zone metrics
+    avg_volume_ratio = sum(sc.volume_ratio for sc in climactic_bars) / len(
+        climactic_bars
+    )
+    avg_confidence = sum(sc.confidence for sc in climactic_bars) // len(
+        climactic_bars
+    )
+
+    # Find zone low (lowest price in any SC bar)
+    zone_low = min(Decimal(sc.bar["low"]) for sc in climactic_bars)
+
+    # Calculate duration
+    zone_start_index = first_sc_index
+    zone_end_timestamp = datetime.fromisoformat(zone_end.bar["timestamp"])
+    zone_end_index = None
+    for i, bar in enumerate(bars):
+        if bar.timestamp == zone_end_timestamp:
+            zone_end_index = i
+            break
+
+    duration_bars = zone_end_index - zone_start_index if zone_end_index else 0
+
+    zone = SellingClimaxZone(
+        zone_start=zone_start,
+        zone_end=zone_end,
+        climactic_bars=climactic_bars,
+        bar_count=len(climactic_bars),
+        duration_bars=duration_bars,
+        avg_volume_ratio=avg_volume_ratio,
+        avg_confidence=avg_confidence,
+        zone_low=zone_low,
+        detection_timestamp=datetime.now(timezone.utc),
+    )
+
+    logger.info(
+        "sc_zone_detected",
+        symbol=symbol,
+        zone_start=zone_start.bar["timestamp"],
+        zone_end=zone_end.bar["timestamp"],
+        bar_count=len(climactic_bars),
+        duration_bars=duration_bars,
+        zone_low=float(zone_low),
+        avg_volume_ratio=float(avg_volume_ratio),
+        avg_confidence=avg_confidence,
+        message="SC Zone detected - extended climactic selling",
+    )
+
+    return zone

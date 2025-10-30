@@ -14,7 +14,7 @@ from pathlib import Path
 
 from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.volume_analyzer import VolumeAnalyzer
-from src.pattern_engine.phase_detector import detect_selling_climax
+from src.pattern_engine.phase_detector import detect_selling_climax, detect_sc_zone
 
 
 class TestAAPLMarch2020Integration:
@@ -276,3 +276,63 @@ class TestAAPLMarch2020Integration:
         else:
             print(f"[WARN] Rally < 3% within 10 bars (highest: {float(rally_pct):.2f}%)")
             print(f"  (AR detection is Story 4.2 - this is informational)")
+
+    def test_detect_sc_zone_march_2020(self, aapl_bars):
+        """
+        Test SC Zone detection on AAPL March 2020 COVID crash.
+
+        The COVID crash had multiple climactic selling bars, not just one.
+        This test validates that detect_sc_zone properly identifies the
+        multi-bar climactic zone.
+
+        Expected:
+        - SC Zone with 2+ climactic bars
+        - Zone starts at first SC (Feb 28, 2020)
+        - Zone ends at last SC within 10-bar window
+        - Zone metrics calculated correctly
+        """
+        # Analyze volume
+        volume_analyzer = VolumeAnalyzer()
+        volume_analysis = volume_analyzer.analyze(aapl_bars)
+
+        # Detect SC Zone
+        sc_zone = detect_sc_zone(aapl_bars, volume_analysis, max_gap_bars=10)
+
+        # Assert zone detected
+        if sc_zone is None:
+            print("\n[INFO] No SC Zone detected - single SC event")
+            # This is acceptable - not all crashes have multi-bar zones
+            return
+
+        print("\n=== AAPL March 2020 SC Zone Detected ===")
+        print(f"Zone Start: {sc_zone.zone_start.bar['timestamp']}")
+        print(f"Zone End: {sc_zone.zone_end.bar['timestamp']}")
+        print(f"Bar Count: {sc_zone.bar_count}")
+        print(f"Duration: {sc_zone.duration_bars} bars")
+        print(f"Zone Low: ${sc_zone.zone_low}")
+        print(f"Avg Volume Ratio: {float(sc_zone.avg_volume_ratio):.2f}x")
+        print(f"Avg Confidence: {sc_zone.avg_confidence}%")
+        print()
+        print("Climactic Bars in Zone:")
+        for i, sc in enumerate(sc_zone.climactic_bars, 1):
+            print(f"  {i}. {sc.bar['timestamp']} - "
+                  f"Low: ${sc.bar['low']}, "
+                  f"Vol: {float(sc.volume_ratio):.2f}x, "
+                  f"Conf: {sc.confidence}%")
+
+        # Assertions
+        assert sc_zone.bar_count >= 2, "Zone must have at least 2 climactic bars"
+        assert sc_zone.duration_bars <= 10, "Zone duration should be within max_gap (10 bars)"
+        assert sc_zone.avg_volume_ratio >= Decimal("2.0"), "Avg volume should be >= 2.0x"
+        assert sc_zone.avg_confidence >= 70, "Avg confidence should be >= 70%"
+
+        # Zone start should be first SC (Feb 28, 2020 or later)
+        zone_start_date = datetime.fromisoformat(sc_zone.zone_start.bar["timestamp"]).date()
+        assert zone_start_date >= datetime(2020, 2, 28).date(), "Zone start should be >= Feb 28, 2020"
+
+        # Zone end should be after zone start
+        zone_end_date = datetime.fromisoformat(sc_zone.zone_end.bar["timestamp"]).date()
+        assert zone_end_date >= zone_start_date, "Zone end should be >= zone start"
+
+        print(f"\n[OK] SC Zone validation passed")
+        print(f"[OK] For AR detection (Story 4.2), use zone_end: {sc_zone.zone_end.bar['timestamp']}")

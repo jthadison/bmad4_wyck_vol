@@ -16,7 +16,7 @@ from uuid import uuid4
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
 from src.models.effort_result import EffortResult
-from src.pattern_engine.phase_detector import detect_selling_climax
+from src.pattern_engine.phase_detector import detect_selling_climax, detect_sc_zone
 
 
 class TestSellingClimaxDetection:
@@ -717,3 +717,346 @@ class TestEdgeCases:
 
         # Assert
         assert result is None, "CLIMACTIC at index 0 should be skipped (no prior bar)"
+
+
+class TestSCZoneDetection:
+    """Test suite for Selling Climax Zone detection functionality."""
+
+    def test_detect_multi_bar_sc_zone(self):
+        """
+        Test detection of SC zone with multiple climactic bars.
+
+        Setup: 3 SC bars within 10 bars:
+        - Bar 0: Normal (prior)
+        - Bar 1: SC #1 (first SC)
+        - Bar 2-3: Normal
+        - Bar 4: SC #2 (3 bars after SC #1)
+        - Bar 5-7: Normal
+        - Bar 8: SC #3 (4 bars after SC #2)
+
+        Expected: SC Zone with 3 bars, duration = 7 bars
+        """
+        bars = []
+        volume_analysis_list = []
+
+        # Bar 0: Normal (prior)
+        bar0 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2020, 3, 20, tzinfo=timezone.utc),
+            open=Decimal("300.00"),
+            high=Decimal("305.00"),
+            low=Decimal("298.00"),
+            close=Decimal("302.00"),
+            volume=30000000,
+            spread=Decimal("7.00"),
+        )
+        bars.append(bar0)
+        volume_analysis_list.append(
+            VolumeAnalysis(
+                bar=bar0,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.57"),
+                effort_result=EffortResult.NORMAL,
+            )
+        )
+
+        # Bar 1: SC #1 (first SC)
+        bar1 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2020, 3, 21, tzinfo=timezone.utc),
+            open=Decimal("302.00"),
+            high=Decimal("302.50"),
+            low=Decimal("270.00"),
+            close=Decimal("294.60"),  # close_position = 0.76
+            volume=75000000,  # 2.5x
+            spread=Decimal("32.50"),
+        )
+        bars.append(bar1)
+        volume_analysis_list.append(
+            VolumeAnalysis(
+                bar=bar1,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.76"),
+                effort_result=EffortResult.CLIMACTIC,
+            )
+        )
+
+        # Bars 2-3: Normal
+        for i in range(2, 4):
+            bar = OHLCVBar(
+                symbol="TEST",
+                timeframe="1d",
+                timestamp=datetime(2020, 3, 20 + i, tzinfo=timezone.utc),
+                open=Decimal("290.00"),
+                high=Decimal("295.00"),
+                low=Decimal("288.00"),
+                close=Decimal("292.00"),
+                volume=35000000,
+                spread=Decimal("7.00"),
+            )
+            bars.append(bar)
+            volume_analysis_list.append(
+                VolumeAnalysis(
+                    bar=bar,
+                    volume_ratio=Decimal("1.2"),
+                    spread_ratio=Decimal("1.0"),
+                    close_position=Decimal("0.57"),
+                    effort_result=EffortResult.NORMAL,
+                )
+            )
+
+        # Bar 4: SC #2 (3 bars after SC #1)
+        bar4 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2020, 3, 24, tzinfo=timezone.utc),
+            open=Decimal("292.00"),
+            high=Decimal("293.00"),
+            low=Decimal("265.00"),
+            close=Decimal("286.00"),  # close_position = 0.75
+            volume=80000000,  # 2.67x
+            spread=Decimal("28.00"),
+        )
+        bars.append(bar4)
+        volume_analysis_list.append(
+            VolumeAnalysis(
+                bar=bar4,
+                volume_ratio=Decimal("2.67"),
+                spread_ratio=Decimal("1.9"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.CLIMACTIC,
+            )
+        )
+
+        # Bars 5-7: Normal
+        for i in range(5, 8):
+            bar = OHLCVBar(
+                symbol="TEST",
+                timeframe="1d",
+                timestamp=datetime(2020, 3, 20 + i, tzinfo=timezone.utc),
+                open=Decimal("286.00"),
+                high=Decimal("290.00"),
+                low=Decimal("283.00"),
+                close=Decimal("287.00"),
+                volume=38000000,
+                spread=Decimal("7.00"),
+            )
+            bars.append(bar)
+            volume_analysis_list.append(
+                VolumeAnalysis(
+                    bar=bar,
+                    volume_ratio=Decimal("1.3"),
+                    spread_ratio=Decimal("1.0"),
+                    close_position=Decimal("0.57"),
+                    effort_result=EffortResult.NORMAL,
+                )
+            )
+
+        # Bar 8: SC #3 (4 bars after SC #2)
+        bar8 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2020, 3, 28, tzinfo=timezone.utc),
+            open=Decimal("287.00"),
+            high=Decimal("288.00"),
+            low=Decimal("260.00"),
+            close=Decimal("281.00"),  # close_position = 0.75
+            volume=85000000,  # 2.83x
+            spread=Decimal("28.00"),
+        )
+        bars.append(bar8)
+        volume_analysis_list.append(
+            VolumeAnalysis(
+                bar=bar8,
+                volume_ratio=Decimal("2.83"),
+                spread_ratio=Decimal("2.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.CLIMACTIC,
+            )
+        )
+
+        # Execute
+        zone = detect_sc_zone(bars, volume_analysis_list, max_gap_bars=10)
+
+        # Assert
+        assert zone is not None, "SC Zone should be detected"
+        assert zone.bar_count == 3, f"Expected 3 SC bars, got {zone.bar_count}"
+        assert zone.duration_bars == 7, f"Expected duration 7 bars, got {zone.duration_bars}"
+        assert zone.zone_start.bar["timestamp"] == "2020-03-21T00:00:00+00:00", "Zone start should be first SC"
+        assert zone.zone_end.bar["timestamp"] == "2020-03-28T00:00:00+00:00", "Zone end should be last SC"
+        assert zone.zone_low == Decimal("260.00"), f"Zone low should be $260, got ${zone.zone_low}"
+        assert zone.avg_confidence >= 80, f"Average confidence should be >= 80, got {zone.avg_confidence}"
+
+    def test_single_sc_returns_none(self):
+        """
+        Test that single SC (no additional bars) returns None.
+
+        A zone requires 2+ climactic bars.
+        """
+        # Create single SC scenario
+        prior_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            open=Decimal("230.00"),
+            high=Decimal("235.00"),
+            low=Decimal("228.00"),
+            close=Decimal("232.00"),
+            volume=30000000,
+            spread=Decimal("7.00"),
+        )
+
+        sc_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            open=Decimal("228.00"),
+            high=Decimal("228.50"),
+            low=Decimal("212.00"),
+            close=Decimal("225.28"),
+            volume=75000000,
+            spread=Decimal("16.50"),
+        )
+
+        bars = [prior_bar, sc_bar]
+        volume_analysis_list = [
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.57"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.8"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
+        ]
+
+        # Execute
+        zone = detect_sc_zone(bars, volume_analysis_list)
+
+        # Assert
+        assert zone is None, "Single SC should not create a zone"
+
+    def test_sc_zone_with_gap_exceeded(self):
+        """
+        Test that SC bars beyond max_gap_bars are not included in zone.
+
+        Setup: 2 SC bars 15 bars apart (exceeds default max_gap=10)
+        Expected: Zone not created (only 1 SC within gap window)
+        """
+        bars = []
+        volume_analysis_list = []
+
+        # Prior bar
+        bars.append(
+            OHLCVBar(
+                symbol="TEST",
+                timeframe="1d",
+                timestamp=datetime(2020, 3, 20, tzinfo=timezone.utc),
+                open=Decimal("300.00"),
+                high=Decimal("305.00"),
+                low=Decimal("298.00"),
+                close=Decimal("302.00"),
+                volume=30000000,
+                spread=Decimal("7.00"),
+            )
+        )
+        volume_analysis_list.append(
+            VolumeAnalysis(
+                bar=bars[-1],
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.57"),
+                effort_result=EffortResult.NORMAL,
+            )
+        )
+
+        # SC #1
+        bars.append(
+            OHLCVBar(
+                symbol="TEST",
+                timeframe="1d",
+                timestamp=datetime(2020, 3, 21, tzinfo=timezone.utc),
+                open=Decimal("302.00"),
+                high=Decimal("302.50"),
+                low=Decimal("270.00"),
+                close=Decimal("294.60"),
+                volume=75000000,
+                spread=Decimal("32.50"),
+            )
+        )
+        volume_analysis_list.append(
+            VolumeAnalysis(
+                bar=bars[-1],
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.76"),
+                effort_result=EffortResult.CLIMACTIC,
+            )
+        )
+
+        # 15 normal bars (exceeds gap)
+        from datetime import timedelta
+        base_date = datetime(2020, 3, 22, tzinfo=timezone.utc)
+        for i in range(15):
+            bars.append(
+                OHLCVBar(
+                    symbol="TEST",
+                    timeframe="1d",
+                    timestamp=base_date + timedelta(days=i),
+                    open=Decimal("290.00"),
+                    high=Decimal("295.00"),
+                    low=Decimal("288.00"),
+                    close=Decimal("292.00"),
+                    volume=35000000,
+                    spread=Decimal("7.00"),
+                )
+            )
+            volume_analysis_list.append(
+                VolumeAnalysis(
+                    bar=bars[-1],
+                    volume_ratio=Decimal("1.2"),
+                    spread_ratio=Decimal("1.0"),
+                    close_position=Decimal("0.57"),
+                    effort_result=EffortResult.NORMAL,
+                )
+            )
+
+        # SC #2 (15 bars after SC #1, exceeds gap)
+        bars.append(
+            OHLCVBar(
+                symbol="TEST",
+                timeframe="1d",
+                timestamp=datetime(2020, 4, 6, tzinfo=timezone.utc),
+                open=Decimal("292.00"),
+                high=Decimal("293.00"),
+                low=Decimal("265.00"),
+                close=Decimal("286.00"),
+                volume=80000000,
+                spread=Decimal("28.00"),
+            )
+        )
+        volume_analysis_list.append(
+            VolumeAnalysis(
+                bar=bars[-1],
+                volume_ratio=Decimal("2.67"),
+                spread_ratio=Decimal("1.9"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.CLIMACTIC,
+            )
+        )
+
+        # Execute
+        zone = detect_sc_zone(bars, volume_analysis_list, max_gap_bars=10)
+
+        # Assert
+        assert zone is None, "SC bars beyond max_gap should not create zone"
