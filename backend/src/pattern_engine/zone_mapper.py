@@ -34,6 +34,9 @@ from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
 from src.models.zone import Zone, ZoneType, ZoneStrength, PriceRange
 
+# Rebuild TradingRange model after Zone is imported to resolve forward references
+TradingRange.model_rebuild()
+
 logger = structlog.get_logger(__name__)
 
 # Constants for zone detection
