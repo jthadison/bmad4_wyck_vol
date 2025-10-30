@@ -14,15 +14,16 @@ Usage:
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+
+# Add src to path for imports (must be before model imports)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+# ruff: noqa: E402 - Module imports must come after sys.path modification
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import matplotlib.pyplot as plt
 import numpy as np
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from models.ohlcv import OHLCVBar
 from pattern_engine.pivot_detector import detect_pivots, get_pivot_highs, get_pivot_lows
 
@@ -40,7 +41,7 @@ def generate_realistic_bars(num_bars: int = 252, symbol: str = "AAPL") -> list[O
     """
     bars = []
     base_price = 170.0
-    base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
 
     np.random.seed(42)  # For reproducibility
 
@@ -76,9 +77,7 @@ def generate_realistic_bars(num_bars: int = 252, symbol: str = "AAPL") -> list[O
     return bars
 
 
-def visualize_pivots(
-    bars: list[OHLCVBar], lookback: int = 5, save_path: str = None
-) -> None:
+def visualize_pivots(bars: list[OHLCVBar], lookback: int = 5, save_path: str = None) -> None:
     """
     Visualize pivot points on a price chart.
 
@@ -115,9 +114,7 @@ def visualize_pivots(
 
     # Plot price data
     ax.plot(indices, closes, label="Close Price", color="#2E86DE", linewidth=1.5, alpha=0.8)
-    ax.fill_between(
-        indices, lows, highs, alpha=0.1, color="#2E86DE", label="High-Low Range"
-    )
+    ax.fill_between(indices, lows, highs, alpha=0.1, color="#2E86DE", label="High-Low Range")
 
     # Mark pivot highs (resistance)
     for p in pivot_highs:
@@ -140,7 +137,7 @@ def visualize_pivots(
             fontsize=7,
             ha="center",
             color="darkred",
-            bbox=dict(boxstyle="round,pad=0.3", fc="#EE5A6F", alpha=0.3, ec="none"),
+            bbox={"boxstyle": "round,pad=0.3", "fc": "#EE5A6F", "alpha": 0.3, "ec": "none"},
         )
 
     # Mark pivot lows (support)
@@ -164,7 +161,7 @@ def visualize_pivots(
             fontsize=7,
             ha="center",
             color="darkgreen",
-            bbox=dict(boxstyle="round,pad=0.3", fc="#1DD1A1", alpha=0.3, ec="none"),
+            bbox={"boxstyle": "round,pad=0.3", "fc": "#1DD1A1", "alpha": 0.3, "ec": "none"},
         )
 
     # Styling
@@ -199,7 +196,7 @@ def visualize_pivots(
         fontsize=10,
         verticalalignment="bottom",
         horizontalalignment="right",
-        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+        bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.5},
     )
 
     plt.tight_layout()
@@ -209,9 +206,7 @@ def visualize_pivots(
         # Create output directory if it doesn't exist
         output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "output")
         os.makedirs(output_dir, exist_ok=True)
-        save_path = os.path.join(
-            output_dir, f"pivot_validation_{symbol}_lb{lookback}.png"
-        )
+        save_path = os.path.join(output_dir, f"pivot_validation_{symbol}_lb{lookback}.png")
 
     plt.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"Chart saved to: {save_path}")

@@ -6,25 +6,21 @@ with various market conditions (normal, high volume, low volume).
 """
 
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-import pytest
-
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
+from src.models.volume_analysis import VolumeAnalysis
 from src.pattern_engine.volume_analyzer import (
+    VolumeAnalyzer,
+    calculate_close_positions_batch,
+    calculate_spread_ratios_batch,
     calculate_volume_ratio,
     calculate_volume_ratios_batch,
-    calculate_spread_ratio,
-    calculate_spread_ratios_batch,
-    calculate_close_position,
-    calculate_close_positions_batch,
     classify_effort_result,
-    VolumeAnalyzer,
 )
-from src.models.volume_analysis import VolumeAnalysis
 
 
 def create_realistic_bar(
@@ -46,17 +42,25 @@ def create_realistic_bar(
         Realistic OHLCVBar for testing
     """
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     # Generate realistic OHLC values with proper decimal precision (8 places)
     from decimal import ROUND_HALF_UP
 
     open_price = Decimal(str(price)).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
     spread_pct = random.uniform(0.01, 0.03)  # 1-3% daily range
-    spread = Decimal(str(price * spread_pct)).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
-    high_price = (open_price + spread * Decimal("0.6")).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
-    low_price = (open_price - spread * Decimal("0.4")).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
-    close_price = (low_price + spread * Decimal(str(random.uniform(0.3, 0.7)))).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
+    spread = Decimal(str(price * spread_pct)).quantize(
+        Decimal("0.00000001"), rounding=ROUND_HALF_UP
+    )
+    high_price = (open_price + spread * Decimal("0.6")).quantize(
+        Decimal("0.00000001"), rounding=ROUND_HALF_UP
+    )
+    low_price = (open_price - spread * Decimal("0.4")).quantize(
+        Decimal("0.00000001"), rounding=ROUND_HALF_UP
+    )
+    close_price = (low_price + spread * Decimal(str(random.uniform(0.3, 0.7)))).quantize(
+        Decimal("0.00000001"), rounding=ROUND_HALF_UP
+    )
 
     return OHLCVBar(
         id=uuid4(),
@@ -86,7 +90,7 @@ class TestVolumeAnalysisRealisticData:
         """
         # Generate 252 bars (1 trading year)
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000  # 10M shares average daily volume
 
         for i in range(252):
@@ -122,7 +126,7 @@ class TestVolumeAnalysisRealisticData:
         median_ratio = sorted(valid_ratios)[len(valid_ratios) // 2]
 
         # Log statistics (pytest will capture this)
-        print(f"\nVolume Ratio Statistics (252 trading days):")
+        print("\nVolume Ratio Statistics (252 trading days):")
         print(f"  Min: {min_ratio:.4f}")
         print(f"  Max: {max_ratio:.4f}")
         print(f"  Mean: {avg_ratio:.4f}")
@@ -134,7 +138,7 @@ class TestVolumeAnalysisRealisticData:
     def test_high_volume_spike_detection(self):
         """Test that high volume spikes are correctly detected with ratio >2.0."""
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         normal_volume = 5_000_000
 
         # Create 30 bars with normal volume
@@ -162,7 +166,7 @@ class TestVolumeAnalysisRealisticData:
     def test_low_volume_detection(self):
         """Test that low volume periods are correctly detected with ratio <0.5."""
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         normal_volume = 5_000_000
 
         # Create 30 bars with normal volume
@@ -190,7 +194,7 @@ class TestVolumeAnalysisRealisticData:
     def test_gradual_volume_increase_trend(self):
         """Test volume ratio calculation with gradual increasing volume trend."""
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         starting_volume = 5_000_000
 
         # Create 60 bars with gradually increasing volume (simulate growing interest)
@@ -206,11 +210,11 @@ class TestVolumeAnalysisRealisticData:
 
         # Compare early vs late ratios (skip transition period)
         early_avg = sum(ratios[20:25]) / 5  # Days 20-24
-        late_avg = sum(ratios[50:55]) / 5   # Days 50-54
+        late_avg = sum(ratios[50:55]) / 5  # Days 50-54
 
         # With 3% daily growth, late ratios should be significantly higher
         # The ratio measures current vs 20-day average, so trend should be visible
-        print(f"\nVolume trend test:")
+        print("\nVolume trend test:")
         print(f"  Early average ratio (bars 20-24): {early_avg:.4f}")
         print(f"  Late average ratio (bars 50-54): {late_avg:.4f}")
         print(f"  Ratio increase: {((late_avg / early_avg) - 1) * 100:.1f}%")
@@ -226,16 +230,14 @@ class TestVolumeAnalysisRealisticData:
 
         for symbol in symbols:
             bars = []
-            base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
             # Different base volumes for different symbols
             base_volume = random.randint(5_000_000, 50_000_000)
 
             for i in range(30):
                 volume = int(base_volume * random.uniform(0.8, 1.2))
                 timestamp = base_timestamp + timedelta(days=i)
-                bars.append(
-                    create_realistic_bar(volume, symbol=symbol, timestamp=timestamp)
-                )
+                bars.append(create_realistic_bar(volume, symbol=symbol, timestamp=timestamp))
 
             ratios = calculate_volume_ratios_batch(bars)
             all_ratios[symbol] = [r for r in ratios[20:] if r is not None]
@@ -254,7 +256,7 @@ class TestVolumeAnalysisRealisticData:
         so weekend gaps should not affect results.
         """
         bars = []
-        current_date = datetime(2024, 1, 1, tzinfo=timezone.utc)  # Monday
+        current_date = datetime(2024, 1, 1, tzinfo=UTC)  # Monday
         base_volume = 10_000_000
 
         # Create 30 trading days (skip weekends)
@@ -288,7 +290,7 @@ class TestSpreadAnalysisRealisticData:
         """
         # Generate 252 bars (1 trading year)
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_spread = Decimal("2.0")  # $2 average spread
 
@@ -312,20 +314,22 @@ class TestSpreadAnalysisRealisticData:
             volume = int(base_volume * random.uniform(0.7, 1.3))
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=Decimal(str(price + 0.5)),
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=Decimal(str(price + 0.5)),
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate spread ratios for entire year
         ratios = calculate_spread_ratios_batch(bars)
@@ -337,10 +341,12 @@ class TestSpreadAnalysisRealisticData:
         assert all(r is None for r in ratios[:20])
 
         # Identify wide spread bars (ratio >= 2.0)
-        wide_bars_detected = [i for i, r in enumerate(ratios[20:], start=20) if r is not None and r >= 2.0]
+        wide_bars_detected = [
+            i for i, r in enumerate(ratios[20:], start=20) if r is not None and r >= 2.0
+        ]
 
         # Log statistics
-        print(f"\nWide Spread Detection (252 trading days):")
+        print("\nWide Spread Detection (252 trading days):")
         print(f"  Wide spread bars expected: {len([i for i in wide_spread_indices if i >= 20])}")
         print(f"  Wide spread bars detected (ratio >= 2.0): {len(wide_bars_detected)}")
         print(f"  Detected indices: {wide_bars_detected}")
@@ -364,7 +370,7 @@ class TestSpreadAnalysisRealisticData:
         """
         # Generate 252 bars
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_spread = Decimal("2.0")
 
@@ -388,30 +394,36 @@ class TestSpreadAnalysisRealisticData:
             volume = int(base_volume * random.uniform(0.7, 1.3))
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=Decimal(str(price + 0.2)),
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=Decimal(str(price + 0.2)),
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate spread ratios
         ratios = calculate_spread_ratios_batch(bars)
 
         # Identify narrow spread bars (ratio <= 0.5)
-        narrow_bars_detected = [i for i, r in enumerate(ratios[20:], start=20) if r is not None and r <= 0.5]
+        narrow_bars_detected = [
+            i for i, r in enumerate(ratios[20:], start=20) if r is not None and r <= 0.5
+        ]
 
         # Log statistics
-        print(f"\nNarrow Spread Detection (252 trading days):")
-        print(f"  Narrow spread bars expected: {len([i for i in narrow_spread_indices if i >= 20])}")
+        print("\nNarrow Spread Detection (252 trading days):")
+        print(
+            f"  Narrow spread bars expected: {len([i for i in narrow_spread_indices if i >= 20])}"
+        )
         print(f"  Narrow spread bars detected (ratio <= 0.5): {len(narrow_bars_detected)}")
         print(f"  Detected indices: {narrow_bars_detected}")
 
@@ -435,14 +447,14 @@ class TestSpreadAnalysisRealisticData:
         - No demand: low volume + narrow spread
         """
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_spread = Decimal("2.0")
 
         # Define pattern bars
-        climax_idx = 40       # High volume (2.5x) + wide spread (2.5x)
-        absorption_idx = 80   # High volume (2.0x) + narrow spread (0.4x)
-        no_demand_idx = 120   # Low volume (0.4x) + narrow spread (0.4x)
+        climax_idx = 40  # High volume (2.5x) + wide spread (2.5x)
+        absorption_idx = 80  # High volume (2.0x) + narrow spread (0.4x)
+        no_demand_idx = 120  # Low volume (0.4x) + narrow spread (0.4x)
 
         for i in range(150):
             timestamp = base_timestamp + timedelta(days=i)
@@ -466,49 +478,69 @@ class TestSpreadAnalysisRealisticData:
             low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=Decimal(str(price + 0.3)),
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=Decimal(str(price + 0.3)),
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate both ratios
         volume_ratios = calculate_volume_ratios_batch(bars)
         spread_ratios = calculate_spread_ratios_batch(bars)
 
         # Verify climax pattern (high volume + wide spread)
-        assert volume_ratios[climax_idx] >= 2.0, f"Climax volume ratio too low: {volume_ratios[climax_idx]}"
-        assert spread_ratios[climax_idx] >= 2.0, f"Climax spread ratio too low: {spread_ratios[climax_idx]}"
+        assert (
+            volume_ratios[climax_idx] >= 2.0
+        ), f"Climax volume ratio too low: {volume_ratios[climax_idx]}"
+        assert (
+            spread_ratios[climax_idx] >= 2.0
+        ), f"Climax spread ratio too low: {spread_ratios[climax_idx]}"
 
         # Verify absorption pattern (high volume + narrow spread)
-        assert volume_ratios[absorption_idx] >= 1.5, f"Absorption volume ratio too low: {volume_ratios[absorption_idx]}"
-        assert spread_ratios[absorption_idx] <= 0.5, f"Absorption spread ratio too high: {spread_ratios[absorption_idx]}"
+        assert (
+            volume_ratios[absorption_idx] >= 1.5
+        ), f"Absorption volume ratio too low: {volume_ratios[absorption_idx]}"
+        assert (
+            spread_ratios[absorption_idx] <= 0.5
+        ), f"Absorption spread ratio too high: {spread_ratios[absorption_idx]}"
 
         # Verify no demand pattern (low volume + narrow spread)
-        assert volume_ratios[no_demand_idx] <= 0.5, f"No demand volume ratio too high: {volume_ratios[no_demand_idx]}"
-        assert spread_ratios[no_demand_idx] <= 0.5, f"No demand spread ratio too high: {spread_ratios[no_demand_idx]}"
+        assert (
+            volume_ratios[no_demand_idx] <= 0.5
+        ), f"No demand volume ratio too high: {volume_ratios[no_demand_idx]}"
+        assert (
+            spread_ratios[no_demand_idx] <= 0.5
+        ), f"No demand spread ratio too high: {spread_ratios[no_demand_idx]}"
 
-        print(f"\nCombined Volume/Spread Analysis:")
+        print("\nCombined Volume/Spread Analysis:")
         print(f"  Climax (bar {climax_idx}):")
-        print(f"    Volume ratio: {volume_ratios[climax_idx]:.4f}, Spread ratio: {spread_ratios[climax_idx]:.4f}")
+        print(
+            f"    Volume ratio: {volume_ratios[climax_idx]:.4f}, Spread ratio: {spread_ratios[climax_idx]:.4f}"
+        )
         print(f"  Absorption (bar {absorption_idx}):")
-        print(f"    Volume ratio: {volume_ratios[absorption_idx]:.4f}, Spread ratio: {spread_ratios[absorption_idx]:.4f}")
+        print(
+            f"    Volume ratio: {volume_ratios[absorption_idx]:.4f}, Spread ratio: {spread_ratios[absorption_idx]:.4f}"
+        )
         print(f"  No Demand (bar {no_demand_idx}):")
-        print(f"    Volume ratio: {volume_ratios[no_demand_idx]:.4f}, Spread ratio: {spread_ratios[no_demand_idx]:.4f}")
+        print(
+            f"    Volume ratio: {volume_ratios[no_demand_idx]:.4f}, Spread ratio: {spread_ratios[no_demand_idx]:.4f}"
+        )
 
     def test_spread_ratio_statistics_252_bars(self):
         """Test spread ratio calculation for 252 trading days and log statistics."""
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_spread = Decimal("2.0")
 
         for i in range(252):
@@ -522,20 +554,22 @@ class TestSpreadAnalysisRealisticData:
             volume = int(10_000_000 * random.uniform(0.7, 1.3))
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=Decimal(str(price + 0.3)),
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=Decimal(str(price + 0.3)),
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate spread ratios
         ratios = calculate_spread_ratios_batch(bars)
@@ -558,7 +592,7 @@ class TestSpreadAnalysisRealisticData:
         narrow_count = len([r for r in valid_ratios if r <= 0.5])
         normal_count = len([r for r in valid_ratios if 0.5 < r < 2.0])
 
-        print(f"\nSpread Ratio Statistics (252 trading days):")
+        print("\nSpread Ratio Statistics (252 trading days):")
         print(f"  Min: {min_ratio:.4f}")
         print(f"  Max: {max_ratio:.4f}")
         print(f"  Mean: {avg_ratio:.4f}")
@@ -582,7 +616,7 @@ class TestClosePositionAnalysisRealisticData:
         identify bars with close in upper 30% (close_position >= 0.7).
         """
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_spread = Decimal("2.0")
 
@@ -606,28 +640,36 @@ class TestClosePositionAnalysisRealisticData:
                 # Normal bars with random close positions
                 volume = int(base_volume * random.uniform(0.8, 1.2))
                 spread = base_spread * Decimal(str(random.uniform(0.8, 1.2)))
-                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
-                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(
+                    Decimal("0.00000001")
+                )
+                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(
+                    Decimal("0.00000001")
+                )
                 # Random close position
                 close_pct = random.uniform(0.2, 0.8)
-                close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
+                close = (low + (high - low) * Decimal(str(close_pct))).quantize(
+                    Decimal("0.00000001")
+                )
 
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=close,
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate close positions
         close_positions = calculate_close_positions_batch(bars)
@@ -636,7 +678,7 @@ class TestClosePositionAnalysisRealisticData:
         bullish_detected = [i for i, cp in enumerate(close_positions) if cp >= 0.7]
 
         # Log statistics
-        print(f"\nBullish Absorption Detection (252 trading days):")
+        print("\nBullish Absorption Detection (252 trading days):")
         print(f"  Bullish bars expected: {len(bullish_indices)}")
         print(f"  Bars with close >= 0.7: {len(bullish_detected)}")
         print(f"  Detected indices: {bullish_detected}")
@@ -644,7 +686,9 @@ class TestClosePositionAnalysisRealisticData:
         # All intentional bullish bars should be detected
         for idx in bullish_indices:
             assert idx in bullish_detected, f"Bullish bar at {idx} not detected"
-            assert close_positions[idx] >= 0.7, f"Expected close >= 0.7 at {idx}, got {close_positions[idx]}"
+            assert (
+                close_positions[idx] >= 0.7
+            ), f"Expected close >= 0.7 at {idx}, got {close_positions[idx]}"
 
         # Percentage of bullish bars
         bullish_pct = (len(bullish_detected) / len(close_positions)) * 100
@@ -658,7 +702,7 @@ class TestClosePositionAnalysisRealisticData:
         identify bars with close in lower 30% (close_position <= 0.3).
         """
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_spread = Decimal("2.0")
 
@@ -682,28 +726,36 @@ class TestClosePositionAnalysisRealisticData:
                 # Normal bars with random close positions
                 volume = int(base_volume * random.uniform(0.8, 1.2))
                 spread = base_spread * Decimal(str(random.uniform(0.8, 1.2)))
-                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
-                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(
+                    Decimal("0.00000001")
+                )
+                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(
+                    Decimal("0.00000001")
+                )
                 # Random close position
                 close_pct = random.uniform(0.2, 0.8)
-                close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
+                close = (low + (high - low) * Decimal(str(close_pct))).quantize(
+                    Decimal("0.00000001")
+                )
 
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=close,
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate close positions
         close_positions = calculate_close_positions_batch(bars)
@@ -712,7 +764,7 @@ class TestClosePositionAnalysisRealisticData:
         bearish_detected = [i for i, cp in enumerate(close_positions) if cp <= 0.3]
 
         # Log statistics
-        print(f"\nBearish Distribution Detection (252 trading days):")
+        print("\nBearish Distribution Detection (252 trading days):")
         print(f"  Bearish bars expected: {len(bearish_indices)}")
         print(f"  Bars with close <= 0.3: {len(bearish_detected)}")
         print(f"  Detected indices: {bearish_detected}")
@@ -720,7 +772,9 @@ class TestClosePositionAnalysisRealisticData:
         # All intentional bearish bars should be detected
         for idx in bearish_indices:
             assert idx in bearish_detected, f"Bearish bar at {idx} not detected"
-            assert close_positions[idx] <= 0.3, f"Expected close <= 0.3 at {idx}, got {close_positions[idx]}"
+            assert (
+                close_positions[idx] <= 0.3
+            ), f"Expected close <= 0.3 at {idx}, got {close_positions[idx]}"
 
         # Percentage of bearish bars
         bearish_pct = (len(bearish_detected) / len(close_positions)) * 100
@@ -738,7 +792,7 @@ class TestClosePositionAnalysisRealisticData:
         Acceptance Criteria 8, 9, 10: Calculate statistics and verify realistic distribution.
         """
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_spread = Decimal("2.0")
 
@@ -755,20 +809,22 @@ class TestClosePositionAnalysisRealisticData:
             close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=close,
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate close positions
         close_positions = calculate_close_positions_batch(bars)
@@ -785,16 +841,26 @@ class TestClosePositionAnalysisRealisticData:
         median_close_position = sorted(close_positions)[len(close_positions) // 2]
 
         # Log statistics
-        print(f"\nPressure Analysis (252 trading days):")
-        print(f"  Strong buying pressure (>= 0.7): {len(buying_pressure)} bars ({len(buying_pressure)/252*100:.1f}%)")
-        print(f"  Neutral pressure (0.3-0.7): {len(neutral_pressure)} bars ({len(neutral_pressure)/252*100:.1f}%)")
-        print(f"  Strong selling pressure (<= 0.3): {len(selling_pressure)} bars ({len(selling_pressure)/252*100:.1f}%)")
+        print("\nPressure Analysis (252 trading days):")
+        print(
+            f"  Strong buying pressure (>= 0.7): {len(buying_pressure)} bars ({len(buying_pressure)/252*100:.1f}%)"
+        )
+        print(
+            f"  Neutral pressure (0.3-0.7): {len(neutral_pressure)} bars ({len(neutral_pressure)/252*100:.1f}%)"
+        )
+        print(
+            f"  Strong selling pressure (<= 0.3): {len(selling_pressure)} bars ({len(selling_pressure)/252*100:.1f}%)"
+        )
         print(f"  Average close position: {avg_close_position:.4f}")
-        print(f"  Min: {min_close_position:.4f}, Max: {max_close_position:.4f}, Median: {median_close_position:.4f}")
+        print(
+            f"  Min: {min_close_position:.4f}, Max: {max_close_position:.4f}, Median: {median_close_position:.4f}"
+        )
 
         # Validate results
         assert len(close_positions) == 252
-        assert all(0.0 <= cp <= 1.0 for cp in close_positions), "All positions must be in [0.0, 1.0]"
+        assert all(
+            0.0 <= cp <= 1.0 for cp in close_positions
+        ), "All positions must be in [0.0, 1.0]"
 
         # Verify distribution is realistic (not all extremes)
         # With random data, we expect significant neutral bars
@@ -813,15 +879,15 @@ class TestClosePositionAnalysisRealisticData:
         - Climax: high volume + wide spread + extreme close position
         """
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_spread = Decimal("2.0")
 
         # Define pattern bars
-        bullish_absorption_idx = 40    # High vol + narrow spread + high close
+        bullish_absorption_idx = 40  # High vol + narrow spread + high close
         bearish_distribution_idx = 80  # High vol + narrow spread + low close
-        buying_climax_idx = 120        # High vol + wide spread + high close
-        selling_climax_idx = 160       # High vol + wide spread + low close
+        buying_climax_idx = 120  # High vol + wide spread + high close
+        selling_climax_idx = 160  # High vol + wide spread + low close
 
         for i in range(200):
             timestamp = base_timestamp + timedelta(days=i)
@@ -854,27 +920,35 @@ class TestClosePositionAnalysisRealisticData:
             else:
                 volume = int(base_volume * random.uniform(0.9, 1.1))
                 spread = base_spread * Decimal(str(random.uniform(0.9, 1.1)))
-                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
-                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
+                high = (Decimal(str(price)) + spread * Decimal("0.6")).quantize(
+                    Decimal("0.00000001")
+                )
+                low = (Decimal(str(price)) - spread * Decimal("0.4")).quantize(
+                    Decimal("0.00000001")
+                )
                 close_pct = random.uniform(0.3, 0.7)
-                close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
+                close = (low + (high - low) * Decimal(str(close_pct))).quantize(
+                    Decimal("0.00000001")
+                )
 
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=close,
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate all metrics
         volume_ratios = calculate_volume_ratios_batch(bars)
@@ -901,20 +975,28 @@ class TestClosePositionAnalysisRealisticData:
         assert spread_ratios[selling_climax_idx] >= 2.0
         assert close_positions[selling_climax_idx] <= 0.3
 
-        print(f"\nCombined Volume/Spread/Close Analysis:")
+        print("\nCombined Volume/Spread/Close Analysis:")
         print(f"  Bullish Absorption (bar {bullish_absorption_idx}):")
-        print(f"    Vol: {volume_ratios[bullish_absorption_idx]:.2f}x, Spread: {spread_ratios[bullish_absorption_idx]:.2f}x, Close: {close_positions[bullish_absorption_idx]:.2f}")
+        print(
+            f"    Vol: {volume_ratios[bullish_absorption_idx]:.2f}x, Spread: {spread_ratios[bullish_absorption_idx]:.2f}x, Close: {close_positions[bullish_absorption_idx]:.2f}"
+        )
         print(f"  Bearish Distribution (bar {bearish_distribution_idx}):")
-        print(f"    Vol: {volume_ratios[bearish_distribution_idx]:.2f}x, Spread: {spread_ratios[bearish_distribution_idx]:.2f}x, Close: {close_positions[bearish_distribution_idx]:.2f}")
+        print(
+            f"    Vol: {volume_ratios[bearish_distribution_idx]:.2f}x, Spread: {spread_ratios[bearish_distribution_idx]:.2f}x, Close: {close_positions[bearish_distribution_idx]:.2f}"
+        )
         print(f"  Buying Climax (bar {buying_climax_idx}):")
-        print(f"    Vol: {volume_ratios[buying_climax_idx]:.2f}x, Spread: {spread_ratios[buying_climax_idx]:.2f}x, Close: {close_positions[buying_climax_idx]:.2f}")
+        print(
+            f"    Vol: {volume_ratios[buying_climax_idx]:.2f}x, Spread: {spread_ratios[buying_climax_idx]:.2f}x, Close: {close_positions[buying_climax_idx]:.2f}"
+        )
         print(f"  Selling Climax (bar {selling_climax_idx}):")
-        print(f"    Vol: {volume_ratios[selling_climax_idx]:.2f}x, Spread: {spread_ratios[selling_climax_idx]:.2f}x, Close: {close_positions[selling_climax_idx]:.2f}")
+        print(
+            f"    Vol: {volume_ratios[selling_climax_idx]:.2f}x, Spread: {spread_ratios[selling_climax_idx]:.2f}x, Close: {close_positions[selling_climax_idx]:.2f}"
+        )
 
     def test_close_position_statistics_252_bars(self):
         """Test close position calculation for 252 trading days and log statistics."""
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_spread = Decimal("2.0")
 
         for i in range(252):
@@ -931,20 +1013,22 @@ class TestClosePositionAnalysisRealisticData:
             close = (low + (high - low) * Decimal(str(close_pct))).quantize(Decimal("0.00000001"))
             spread = spread.quantize(Decimal("0.00000001"))
 
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=timestamp,
-                open=Decimal(str(price)),
-                high=high,
-                low=low,
-                close=close,
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=timestamp,
+                    open=Decimal(str(price)),
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Calculate close positions
         close_positions = calculate_close_positions_batch(bars)
@@ -966,15 +1050,19 @@ class TestClosePositionAnalysisRealisticData:
         moderate_selling = len([cp for cp in close_positions if 0.3 < cp <= 0.4])
         strong_selling = len([cp for cp in close_positions if cp <= 0.3])
 
-        print(f"\nClose Position Statistics (252 trading days):")
+        print("\nClose Position Statistics (252 trading days):")
         print(f"  Min: {min_pos:.4f}")
         print(f"  Max: {max_pos:.4f}")
         print(f"  Mean: {avg_pos:.4f}")
         print(f"  Median: {median_pos:.4f}")
         print(f"  Strong buying (>= 0.7): {strong_buying} bars ({strong_buying/252*100:.1f}%)")
-        print(f"  Moderate buying (0.6-0.7): {moderate_buying} bars ({moderate_buying/252*100:.1f}%)")
+        print(
+            f"  Moderate buying (0.6-0.7): {moderate_buying} bars ({moderate_buying/252*100:.1f}%)"
+        )
         print(f"  Neutral (0.4-0.6): {neutral} bars ({neutral/252*100:.1f}%)")
-        print(f"  Moderate selling (0.3-0.4): {moderate_selling} bars ({moderate_selling/252*100:.1f}%)")
+        print(
+            f"  Moderate selling (0.3-0.4): {moderate_selling} bars ({moderate_selling/252*100:.1f}%)"
+        )
         print(f"  Strong selling (<= 0.3): {strong_selling} bars ({strong_selling/252*100:.1f}%)")
 
         # Validate expected ranges (with random data, average should be near 0.5)
@@ -991,7 +1079,7 @@ class TestEffortResultClassificationIntegration:
         """
         # Generate 252 bars with a Selling Climax pattern at bar 100
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_price = 150.0
 
@@ -1002,17 +1090,27 @@ class TestEffortResultClassificationIntegration:
             if i == 100:
                 # SC: volume=2.5x, spread=2.0x, close at low (selling pressure)
                 volume = int(base_volume * 2.5)
-                spread = Decimal(str(base_price * 0.06)).quantize(Decimal("0.00000001"))  # 6% spread (2x normal 3%)
+                spread = Decimal(str(base_price * 0.06)).quantize(
+                    Decimal("0.00000001")
+                )  # 6% spread (2x normal 3%)
                 high = Decimal(str(base_price + 2.0)).quantize(Decimal("0.00000001"))
                 low = Decimal(str(base_price - 4.0)).quantize(Decimal("0.00000001"))
-                close = Decimal(str(base_price - 3.5)).quantize(Decimal("0.00000001"))  # Close near low
+                close = Decimal(str(base_price - 3.5)).quantize(
+                    Decimal("0.00000001")
+                )  # Close near low
             else:
                 # Normal bars
                 volume = int(base_volume * random.uniform(0.8, 1.2))
                 spread = Decimal(str(base_price * 0.03)).quantize(Decimal("0.00000001"))
-                high = Decimal(str(base_price + random.uniform(0.5, 1.5))).quantize(Decimal("0.00000001"))
-                low = Decimal(str(base_price - random.uniform(0.5, 1.5))).quantize(Decimal("0.00000001"))
-                close = Decimal(str(base_price + random.uniform(-1.0, 1.0))).quantize(Decimal("0.00000001"))
+                high = Decimal(str(base_price + random.uniform(0.5, 1.5))).quantize(
+                    Decimal("0.00000001")
+                )
+                low = Decimal(str(base_price - random.uniform(0.5, 1.5))).quantize(
+                    Decimal("0.00000001")
+                )
+                close = Decimal(str(base_price + random.uniform(-1.0, 1.0))).quantize(
+                    Decimal("0.00000001")
+                )
 
             bar = OHLCVBar(
                 id=uuid4(),
@@ -1041,7 +1139,7 @@ class TestEffortResultClassificationIntegration:
         sc_close_position = close_positions[100]
         sc_classification = classify_effort_result(sc_volume_ratio, sc_spread_ratio)
 
-        print(f"\nSelling Climax Detection (bar 100):")
+        print("\nSelling Climax Detection (bar 100):")
         print(f"  Volume Ratio: {sc_volume_ratio:.4f}")
         print(f"  Spread Ratio: {sc_spread_ratio:.4f}")
         print(f"  Close Position: {sc_close_position:.4f}")
@@ -1070,7 +1168,7 @@ class TestEffortResultClassificationIntegration:
         """
         # Generate 252 bars with accumulation patterns (high volume + narrow spread + high close)
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_price = 150.0
 
@@ -1083,17 +1181,27 @@ class TestEffortResultClassificationIntegration:
             if i in accumulation_indices:
                 # Accumulation: volume=1.6x, spread=0.5x, close at high (bullish absorption)
                 volume = int(base_volume * 1.6)
-                spread = Decimal(str(base_price * 0.015)).quantize(Decimal("0.00000001"))  # 1.5% spread (0.5x normal 3%)
+                spread = Decimal(str(base_price * 0.015)).quantize(
+                    Decimal("0.00000001")
+                )  # 1.5% spread (0.5x normal 3%)
                 high = Decimal(str(base_price + 0.75)).quantize(Decimal("0.00000001"))
                 low = Decimal(str(base_price - 0.75)).quantize(Decimal("0.00000001"))
-                close = Decimal(str(base_price + 0.7)).quantize(Decimal("0.00000001"))  # Close near high
+                close = Decimal(str(base_price + 0.7)).quantize(
+                    Decimal("0.00000001")
+                )  # Close near high
             else:
                 # Normal bars
                 volume = int(base_volume * random.uniform(0.8, 1.2))
                 spread = Decimal(str(base_price * 0.03)).quantize(Decimal("0.00000001"))
-                high = Decimal(str(base_price + random.uniform(0.5, 1.5))).quantize(Decimal("0.00000001"))
-                low = Decimal(str(base_price - random.uniform(0.5, 1.5))).quantize(Decimal("0.00000001"))
-                close = Decimal(str(base_price + random.uniform(-1.0, 1.0))).quantize(Decimal("0.00000001"))
+                high = Decimal(str(base_price + random.uniform(0.5, 1.5))).quantize(
+                    Decimal("0.00000001")
+                )
+                low = Decimal(str(base_price - random.uniform(0.5, 1.5))).quantize(
+                    Decimal("0.00000001")
+                )
+                close = Decimal(str(base_price + random.uniform(-1.0, 1.0))).quantize(
+                    Decimal("0.00000001")
+                )
 
             bar = OHLCVBar(
                 id=uuid4(),
@@ -1139,11 +1247,13 @@ class TestEffortResultClassificationIntegration:
             if close_pos >= 0.7:
                 bullish_absorption_count += 1
 
-        print(f"\nAccumulation Summary:")
+        print("\nAccumulation Summary:")
         print(f"  ABSORPTION bars: {absorption_count}")
         print(f"  Bullish absorption (close >= 0.7): {bullish_absorption_count}")
 
-        assert bullish_absorption_count == len(accumulation_indices), "All should be bullish absorption"
+        assert bullish_absorption_count == len(
+            accumulation_indices
+        ), "All should be bullish absorption"
 
     def test_no_demand_test_bar_detection(self):
         """
@@ -1152,7 +1262,7 @@ class TestEffortResultClassificationIntegration:
         """
         # Generate 252 bars with test patterns (low volume + narrow spread)
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_price = 150.0
 
@@ -1165,17 +1275,27 @@ class TestEffortResultClassificationIntegration:
             if i in test_bar_indices:
                 # Test bar: volume=0.4x, spread=0.5x (no demand)
                 volume = int(base_volume * 0.4)
-                spread = Decimal(str(base_price * 0.015)).quantize(Decimal("0.00000001"))  # 1.5% spread (0.5x normal)
+                spread = Decimal(str(base_price * 0.015)).quantize(
+                    Decimal("0.00000001")
+                )  # 1.5% spread (0.5x normal)
                 high = Decimal(str(base_price + 0.75)).quantize(Decimal("0.00000001"))
                 low = Decimal(str(base_price - 0.75)).quantize(Decimal("0.00000001"))
-                close = Decimal(str(base_price + random.uniform(-0.5, 0.5))).quantize(Decimal("0.00000001"))
+                close = Decimal(str(base_price + random.uniform(-0.5, 0.5))).quantize(
+                    Decimal("0.00000001")
+                )
             else:
                 # Normal bars
                 volume = int(base_volume * random.uniform(0.8, 1.2))
                 spread = Decimal(str(base_price * 0.03)).quantize(Decimal("0.00000001"))
-                high = Decimal(str(base_price + random.uniform(0.5, 1.5))).quantize(Decimal("0.00000001"))
-                low = Decimal(str(base_price - random.uniform(0.5, 1.5))).quantize(Decimal("0.00000001"))
-                close = Decimal(str(base_price + random.uniform(-1.0, 1.0))).quantize(Decimal("0.00000001"))
+                high = Decimal(str(base_price + random.uniform(0.5, 1.5))).quantize(
+                    Decimal("0.00000001")
+                )
+                low = Decimal(str(base_price - random.uniform(0.5, 1.5))).quantize(
+                    Decimal("0.00000001")
+                )
+                close = Decimal(str(base_price + random.uniform(-1.0, 1.0))).quantize(
+                    Decimal("0.00000001")
+                )
 
             bar = OHLCVBar(
                 id=uuid4(),
@@ -1217,7 +1337,7 @@ class TestEffortResultClassificationIntegration:
             if classification == EffortResult.NO_DEMAND:
                 no_demand_count += 1
 
-        print(f"\nTest Bar Summary:")
+        print("\nTest Bar Summary:")
         print(f"  NO_DEMAND or NORMAL (low volume) bars: {len(test_bar_indices)}")
         print(f"  NO_DEMAND bars: {no_demand_count}/{len(test_bar_indices)}")
 
@@ -1231,7 +1351,7 @@ class TestEffortResultClassificationIntegration:
         """
         # Generate 252 bars with mixed patterns
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_price = 150.0
 
@@ -1242,9 +1362,15 @@ class TestEffortResultClassificationIntegration:
             volume = int(base_volume * random.uniform(0.5, 2.5))
             spread_pct = random.uniform(0.01, 0.05)  # 1-5% spread
             spread = Decimal(str(base_price * spread_pct)).quantize(Decimal("0.00000001"))
-            high = Decimal(str(base_price + random.uniform(0.5, 2.5))).quantize(Decimal("0.00000001"))
-            low = Decimal(str(base_price - random.uniform(0.5, 2.5))).quantize(Decimal("0.00000001"))
-            close = Decimal(str(base_price + random.uniform(-1.5, 1.5))).quantize(Decimal("0.00000001"))
+            high = Decimal(str(base_price + random.uniform(0.5, 2.5))).quantize(
+                Decimal("0.00000001")
+            )
+            low = Decimal(str(base_price - random.uniform(0.5, 2.5))).quantize(
+                Decimal("0.00000001")
+            )
+            close = Decimal(str(base_price + random.uniform(-1.5, 1.5))).quantize(
+                Decimal("0.00000001")
+            )
 
             bar = OHLCVBar(
                 id=uuid4(),
@@ -1291,7 +1417,7 @@ class TestEffortResultClassificationIntegration:
         no_demand_pct = (no_demand_count / total_classified) * 100
         normal_pct = (normal_count / total_classified) * 100
 
-        print(f"\nClassification Statistics (252 bars, 232 classified):")
+        print("\nClassification Statistics (252 bars, 232 classified):")
         print(f"  CLIMACTIC: {climactic_count} bars ({climactic_pct:.1f}%)")
         print(f"  ABSORPTION: {absorption_count} bars ({absorption_pct:.1f}%)")
         print(f"  NO_DEMAND: {no_demand_count} bars ({no_demand_pct:.1f}%)")
@@ -1299,8 +1425,12 @@ class TestEffortResultClassificationIntegration:
         print(f"  Total: {climactic_count + absorption_count + no_demand_count + normal_count}")
 
         # Assertions - realistic distribution
-        assert total_classified == climactic_count + absorption_count + no_demand_count + normal_count, "All bars should be classified"
-        assert normal_pct >= 40, "Most bars should be NORMAL (at least 40%)"  # Relaxed for random data
+        assert (
+            total_classified == climactic_count + absorption_count + no_demand_count + normal_count
+        ), "All bars should be classified"
+        assert (
+            normal_pct >= 40
+        ), "Most bars should be NORMAL (at least 40%)"  # Relaxed for random data
         assert climactic_pct < 30, "CLIMACTIC should be rare (<30%)"
         assert absorption_pct < 30, "ABSORPTION should be uncommon (<30%)"
         assert no_demand_pct < 30, "NO_DEMAND should be uncommon (<30%)"
@@ -1326,7 +1456,7 @@ class TestVolumeAnalyzerIntegration:
         """
         # Generate 252 bars (1 year) of realistic AAPL data
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 50_000_000  # 50M shares (typical AAPL daily volume)
         base_price = 180.0  # Typical AAPL price
 
@@ -1339,7 +1469,7 @@ class TestVolumeAnalyzerIntegration:
             # Realistic price and spread
             price_variation = base_price + random.uniform(-20, 20)
             spread_pct = random.uniform(0.01, 0.04)  # 1-4% daily range
-            spread = Decimal(str(price_variation * spread_pct)).quantize(Decimal("0.00000001"))
+            Decimal(str(price_variation * spread_pct)).quantize(Decimal("0.00000001"))
 
             bar = create_realistic_bar(volume, timestamp=timestamp, price=price_variation)
             bars.append(bar)
@@ -1379,13 +1509,15 @@ class TestVolumeAnalyzerIntegration:
 
         # Most volume ratios should be 0.5x-2.0x
         within_range = [r for r in volume_ratios_valid if 0.5 <= r <= 2.0]
-        assert len(within_range) / len(volume_ratios_valid) > 0.7, \
-            "At least 70% of volume ratios should be in 0.5x-2.0x range"
+        assert (
+            len(within_range) / len(volume_ratios_valid) > 0.7
+        ), "At least 70% of volume ratios should be in 0.5x-2.0x range"
 
         # Most spread ratios should be 0.5x-2.0x
         within_range = [r for r in spread_ratios_valid if 0.5 <= r <= 2.0]
-        assert len(within_range) / len(spread_ratios_valid) > 0.7, \
-            "At least 70% of spread ratios should be in 0.5x-2.0x range"
+        assert (
+            len(within_range) / len(spread_ratios_valid) > 0.7
+        ), "At least 70% of spread ratios should be in 0.5x-2.0x range"
 
         # Close positions should be distributed across 0.0-1.0
         avg_close = sum(close_positions_valid) / len(close_positions_valid)
@@ -1403,14 +1535,20 @@ class TestVolumeAnalyzerIntegration:
 
         normal_pct = 100 * effort_counts[EffortResult.NORMAL] / 232
 
-        print(f"\nAAP L Data Analysis (252 bars):")
+        print("\nAAP L Data Analysis (252 bars):")
         print(f"  Volume ratio avg: {sum(volume_ratios_valid)/len(volume_ratios_valid):.4f}")
         print(f"  Spread ratio avg: {sum(spread_ratios_valid)/len(spread_ratios_valid):.4f}")
         print(f"  Close position avg: {avg_close:.4f}")
-        print(f"  Effort distribution:")
-        print(f"    CLIMACTIC: {effort_counts[EffortResult.CLIMACTIC]} ({100*effort_counts[EffortResult.CLIMACTIC]/232:.1f}%)")
-        print(f"    ABSORPTION: {effort_counts[EffortResult.ABSORPTION]} ({100*effort_counts[EffortResult.ABSORPTION]/232:.1f}%)")
-        print(f"    NO_DEMAND: {effort_counts[EffortResult.NO_DEMAND]} ({100*effort_counts[EffortResult.NO_DEMAND]/232:.1f}%)")
+        print("  Effort distribution:")
+        print(
+            f"    CLIMACTIC: {effort_counts[EffortResult.CLIMACTIC]} ({100*effort_counts[EffortResult.CLIMACTIC]/232:.1f}%)"
+        )
+        print(
+            f"    ABSORPTION: {effort_counts[EffortResult.ABSORPTION]} ({100*effort_counts[EffortResult.ABSORPTION]/232:.1f}%)"
+        )
+        print(
+            f"    NO_DEMAND: {effort_counts[EffortResult.NO_DEMAND]} ({100*effort_counts[EffortResult.NO_DEMAND]/232:.1f}%)"
+        )
         print(f"    NORMAL: {effort_counts[EffortResult.NORMAL]} ({normal_pct:.1f}%)")
 
         # Majority should be NORMAL (60-80%)
@@ -1423,15 +1561,15 @@ class TestVolumeAnalyzerIntegration:
         Generates bars with known patterns and verifies correct classification.
         """
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         base_volume = 10_000_000
         base_spread = Decimal("2.0")
         base_price = 150.0
 
         # Define pattern indices
-        selling_climax_idx = 40       # CLIMACTIC: vol=2.5x, spread=2.0x
-        spring_idx = 80                # ABSORPTION: vol=1.6x, spread=0.5x, close=0.8
-        test_idx = 120                 # NO_DEMAND: vol=0.4x, spread=0.5x
+        selling_climax_idx = 40  # CLIMACTIC: vol=2.5x, spread=2.0x
+        spring_idx = 80  # ABSORPTION: vol=1.6x, spread=0.5x, close=0.8
+        test_idx = 120  # NO_DEMAND: vol=0.4x, spread=0.5x
 
         for i in range(150):
             timestamp = base_timestamp + timedelta(days=i)
@@ -1459,7 +1597,9 @@ class TestVolumeAnalyzerIntegration:
                 spread = base_spread * Decimal(str(random.uniform(0.9, 1.1)))
                 high = Decimal(str(base_price + 1.0)).quantize(Decimal("0.00000001"))
                 low = Decimal(str(base_price - 1.0)).quantize(Decimal("0.00000001"))
-                close = Decimal(str(base_price + random.uniform(-0.5, 0.5))).quantize(Decimal("0.00000001"))
+                close = Decimal(str(base_price + random.uniform(-0.5, 0.5))).quantize(
+                    Decimal("0.00000001")
+                )
 
             spread = spread.quantize(Decimal("0.00000001"))
 
@@ -1503,13 +1643,19 @@ class TestVolumeAnalyzerIntegration:
         assert float(test_result.volume_ratio) < 0.6
         assert float(test_result.spread_ratio) < 0.8
 
-        print(f"\nWyckoff Pattern Detection:")
+        print("\nWyckoff Pattern Detection:")
         print(f"  Selling Climax (bar {selling_climax_idx}): {sc_result.effort_result.value}")
-        print(f"    Vol: {float(sc_result.volume_ratio):.2f}x, Spread: {float(sc_result.spread_ratio):.2f}x, Close: {float(sc_result.close_position):.2f}")
+        print(
+            f"    Vol: {float(sc_result.volume_ratio):.2f}x, Spread: {float(sc_result.spread_ratio):.2f}x, Close: {float(sc_result.close_position):.2f}"
+        )
         print(f"  Spring (bar {spring_idx}): {spring_result.effort_result.value}")
-        print(f"    Vol: {float(spring_result.volume_ratio):.2f}x, Spread: {float(spring_result.spread_ratio):.2f}x, Close: {float(spring_result.close_position):.2f}")
+        print(
+            f"    Vol: {float(spring_result.volume_ratio):.2f}x, Spread: {float(spring_result.spread_ratio):.2f}x, Close: {float(spring_result.close_position):.2f}"
+        )
         print(f"  Test (bar {test_idx}): {test_result.effort_result.value}")
-        print(f"    Vol: {float(test_result.volume_ratio):.2f}x, Spread: {float(test_result.spread_ratio):.2f}x, Close: {float(test_result.close_position):.2f}")
+        print(
+            f"    Vol: {float(test_result.volume_ratio):.2f}x, Spread: {float(test_result.spread_ratio):.2f}x, Close: {float(test_result.close_position):.2f}"
+        )
 
     def test_analyzer_json_serialization(self):
         """
@@ -1517,7 +1663,7 @@ class TestVolumeAnalyzerIntegration:
 
         AC 10: Verify results serializable to JSON for API responses.
         """
-        bars = [create_realistic_bar(volume=1000000 + i*1000) for i in range(30)]
+        bars = [create_realistic_bar(volume=1000000 + i * 1000) for i in range(30)]
 
         analyzer = VolumeAnalyzer()
         results = analyzer.analyze(bars)
@@ -1535,6 +1681,6 @@ class TestVolumeAnalyzerIntegration:
             assert '"close_position":' in json_str
             assert '"effort_result":' in json_str
 
-        print(f"\nJSON Serialization Test:")
+        print("\nJSON Serialization Test:")
         print(f"  Sample JSON: {results[22].model_dump_json()[:200]}...")
-        print(f"  All fields serializable: PASSED")
+        print("  All fields serializable: PASSED")

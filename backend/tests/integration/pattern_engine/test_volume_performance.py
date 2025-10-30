@@ -7,7 +7,7 @@ Tests that volume ratio calculations meet performance requirements:
 """
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -15,11 +15,11 @@ import pytest
 
 from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.volume_analyzer import (
-    calculate_volume_ratio,
-    calculate_volume_ratios_batch,
+    VolumeAnalyzer,
     calculate_spread_ratio,
     calculate_spread_ratios_batch,
-    VolumeAnalyzer,
+    calculate_volume_ratio,
+    calculate_volume_ratios_batch,
 )
 
 
@@ -34,7 +34,7 @@ def create_test_bar(volume: int, index: int = 0) -> OHLCVBar:
     Returns:
         OHLCVBar instance
     """
-    base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
     timestamp = base_timestamp + timedelta(days=index)
 
     return OHLCVBar(
@@ -181,7 +181,7 @@ class TestVolumeAnalyzerPerformance:
         assert speedup > 2.0, f"Batch processing not faster enough: {speedup:.1f}x"
 
         # Verify results match
-        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios)):
+        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios, strict=False)):
             if batch is None and individual is None:
                 continue
             assert batch is not None and individual is not None
@@ -234,7 +234,7 @@ class TestVolumeAnalyzerPerformance:
 
         # Validate result
         assert len(result) == 1000
-        print(f"\nBenchmark completed - see pytest-benchmark output for stats")
+        print("\nBenchmark completed - see pytest-benchmark output for stats")
 
 
 class TestSpreadAnalyzerPerformance:
@@ -250,23 +250,27 @@ class TestSpreadAnalyzerPerformance:
         # Generate 1000 bars with varying spreads
         bars = []
         for i in range(1000):
-            spread = (Decimal("5.0") + Decimal(str((i % 100) * 0.05))).quantize(Decimal("0.00000001"))
+            spread = (Decimal("5.0") + Decimal(str((i % 100) * 0.05))).quantize(
+                Decimal("0.00000001")
+            )
             high = (Decimal("150.0") + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
             low = (Decimal("150.0") - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
-                open=Decimal("150.0"),
-                high=high,
-                low=low,
-                close=Decimal("151.0"),
-                volume=10_000_000,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i),
+                    open=Decimal("150.0"),
+                    high=high,
+                    low=low,
+                    close=Decimal("151.0"),
+                    volume=10_000_000,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Measure batch processing time
         start_time = time.perf_counter()
@@ -297,23 +301,27 @@ class TestSpreadAnalyzerPerformance:
         # Generate 10,000 bars
         bars = []
         for i in range(10_000):
-            spread = (Decimal("5.0") + Decimal(str((i % 1000) * 0.01))).quantize(Decimal("0.00000001"))
+            spread = (Decimal("5.0") + Decimal(str((i % 1000) * 0.01))).quantize(
+                Decimal("0.00000001")
+            )
             high = (Decimal("150.0") + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
             low = (Decimal("150.0") - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
-                open=Decimal("150.0"),
-                high=high,
-                low=low,
-                close=Decimal("151.0"),
-                volume=10_000_000,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i),
+                    open=Decimal("150.0"),
+                    high=high,
+                    low=low,
+                    close=Decimal("151.0"),
+                    volume=10_000_000,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Measure batch processing time
         start_time = time.perf_counter()
@@ -349,20 +357,22 @@ class TestSpreadAnalyzerPerformance:
             spread = (Decimal("5.0") + Decimal(str(i * 0.01))).quantize(Decimal("0.00000001"))
             high = (Decimal("150.0") + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
             low = (Decimal("150.0") - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
-                open=Decimal("150.0"),
-                high=high,
-                low=low,
-                close=Decimal("151.0"),
-                volume=10_000_000,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i),
+                    open=Decimal("150.0"),
+                    high=high,
+                    low=low,
+                    close=Decimal("151.0"),
+                    volume=10_000_000,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Measure batch processing
         start_batch = time.perf_counter()
@@ -387,7 +397,7 @@ class TestSpreadAnalyzerPerformance:
         assert speedup > 2.0, f"Batch processing not fast enough: {speedup:.1f}x"
 
         # Verify results match
-        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios)):
+        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios, strict=False)):
             if batch is None and individual is None:
                 continue
             if batch == 0.0 and individual == 0.0:
@@ -405,41 +415,45 @@ class TestSpreadAnalyzerPerformance:
         # Generate 5000 bars
         bars = []
         for i in range(5000):
-            spread = (Decimal("5.0") + Decimal(str((i % 500) * 0.01))).quantize(Decimal("0.00000001"))
+            spread = (Decimal("5.0") + Decimal(str((i % 500) * 0.01))).quantize(
+                Decimal("0.00000001")
+            )
             high = (Decimal("150.0") + spread * Decimal("0.6")).quantize(Decimal("0.00000001"))
             low = (Decimal("150.0") - spread * Decimal("0.4")).quantize(Decimal("0.00000001"))
             volume = 10_000_000 + (i % 500) * 10_000
-            bars.append(OHLCVBar(
-                id=uuid4(),
-                symbol="AAPL",
-                timeframe="1d",
-                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
-                open=Decimal("150.0"),
-                high=high,
-                low=low,
-                close=Decimal("151.0"),
-                volume=volume,
-                spread=spread,
-                spread_ratio=Decimal("1.0"),
-                volume_ratio=Decimal("1.0"),
-            ))
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol="AAPL",
+                    timeframe="1d",
+                    timestamp=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i),
+                    open=Decimal("150.0"),
+                    high=high,
+                    low=low,
+                    close=Decimal("151.0"),
+                    volume=volume,
+                    spread=spread,
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
 
         # Measure volume ratio performance
         start_volume = time.perf_counter()
-        volume_ratios = calculate_volume_ratios_batch(bars)
+        calculate_volume_ratios_batch(bars)
         end_volume = time.perf_counter()
         volume_time_ms = (end_volume - start_volume) * 1000
 
         # Measure spread ratio performance
         start_spread = time.perf_counter()
-        spread_ratios = calculate_spread_ratios_batch(bars)
+        calculate_spread_ratios_batch(bars)
         end_spread = time.perf_counter()
         spread_time_ms = (end_spread - start_spread) * 1000
 
         # Calculate ratio
         time_ratio = spread_time_ms / volume_time_ms
 
-        print(f"\nPerformance Comparison (5000 bars):")
+        print("\nPerformance Comparison (5000 bars):")
         print(f"  Volume ratio: {volume_time_ms:.2f}ms")
         print(f"  Spread ratio: {spread_time_ms:.2f}ms")
         print(f"  Ratio: {time_ratio:.2f}x")
@@ -458,7 +472,7 @@ class TestSpreadAnalyzerPerformance:
 # ============================================================
 
 
-class TestVolumeAnalyzerPerformance:
+class TestVolumeAnalyzerPerformanceStory25:
     """
     Performance tests for VolumeAnalyzer class (Story 2.5).
 
@@ -472,7 +486,7 @@ class TestVolumeAnalyzerPerformance:
         AC 9: Performance test - 10,000 bars in <500ms.
         """
         # Generate 10,000 bars
-        bars = [create_test_bar(volume=10_000_000 + i*1000, index=i) for i in range(10_000)]
+        bars = [create_test_bar(volume=10_000_000 + i * 1000, index=i) for i in range(10_000)]
 
         # Measure processing time
         analyzer = VolumeAnalyzer()
@@ -504,7 +518,7 @@ class TestVolumeAnalyzerPerformance:
         Typical use case: analyze 1 year of daily bars.
         """
         # Generate 252 bars (1 trading year)
-        bars = [create_test_bar(volume=10_000_000 + i*10000, index=i) for i in range(252)]
+        bars = [create_test_bar(volume=10_000_000 + i * 10000, index=i) for i in range(252)]
 
         analyzer = VolumeAnalyzer()
 
@@ -534,12 +548,12 @@ class TestVolumeAnalyzerPerformance:
         throughputs = []
 
         for size in test_sizes:
-            bars = [create_test_bar(volume=10_000_000 + i*1000, index=i) for i in range(size)]
+            bars = [create_test_bar(volume=10_000_000 + i * 1000, index=i) for i in range(size)]
 
             analyzer = VolumeAnalyzer()
 
             start_time = time.perf_counter()
-            results = analyzer.analyze(bars)
+            analyzer.analyze(bars)
             end_time = time.perf_counter()
 
             elapsed_ms = (end_time - start_time) * 1000
@@ -565,19 +579,19 @@ class TestVolumeAnalyzerPerformance:
 
         VolumeAnalyzer adds convenience but should not add significant overhead.
         """
-        bars = [create_test_bar(volume=10_000_000 + i*1000, index=i) for i in range(1000)]
+        bars = [create_test_bar(volume=10_000_000 + i * 1000, index=i) for i in range(1000)]
 
         # Measure VolumeAnalyzer
         analyzer = VolumeAnalyzer()
         start_analyzer = time.perf_counter()
-        analyzer_results = analyzer.analyze(bars)
+        analyzer.analyze(bars)
         end_analyzer = time.perf_counter()
         analyzer_time_ms = (end_analyzer - start_analyzer) * 1000
 
         # Measure individual batch functions
         start_individual = time.perf_counter()
-        volume_ratios = calculate_volume_ratios_batch(bars)
-        spread_ratios = calculate_spread_ratios_batch(bars)
+        calculate_volume_ratios_batch(bars)
+        calculate_spread_ratios_batch(bars)
         # Note: Not including close_position and classify_effort_result for fair comparison
         end_individual = time.perf_counter()
         individual_time_ms = (end_individual - start_individual) * 1000

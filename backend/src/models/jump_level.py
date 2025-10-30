@@ -8,9 +8,10 @@ is the upside projection after SOS breakout, proportional to accumulation durati
 
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator, field_serializer, model_validator
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 
 class JumpLevel(BaseModel):
@@ -71,66 +72,49 @@ class JumpLevel(BaseModel):
         ...,
         decimal_places=8,
         max_digits=18,
-        description="Aggressive jump target (cause_factor × range_width projection)"
+        description="Aggressive jump target (cause_factor × range_width projection)",
     )
     conservative_price: Decimal = Field(
         ...,
         decimal_places=8,
         max_digits=18,
-        description="Conservative target (1x range_width projection)"
+        description="Conservative target (1x range_width projection)",
     )
     range_width: Decimal = Field(
         ...,
         decimal_places=8,
         max_digits=18,
         gt=0,
-        description="Ice - Creek (accumulation zone size)"
+        description="Ice - Creek (accumulation zone size)",
     )
     cause_factor: Decimal = Field(
-        ...,
-        decimal_places=1,
-        max_digits=3,
-        description="2.0x, 2.5x, or 3.0x based on duration"
+        ..., decimal_places=1, max_digits=3, description="2.0x, 2.5x, or 3.0x based on duration"
     )
     range_duration: int = Field(
-        ...,
-        ge=15,
-        description="Number of bars in accumulation (minimum 15)"
+        ..., ge=15, description="Number of bars in accumulation (minimum 15)"
     )
-    confidence: str = Field(
-        ...,
-        description="HIGH/MEDIUM/LOW confidence"
-    )
+    confidence: str = Field(..., description="HIGH/MEDIUM/LOW confidence")
     risk_reward_ratio: Decimal = Field(
         ...,
         decimal_places=2,
         max_digits=5,
-        description="Aggressive RR: (jump - ice) / (ice - creek)"
+        description="Aggressive RR: (jump - ice) / (ice - creek)",
     )
     conservative_risk_reward: Decimal = Field(
         ...,
         decimal_places=2,
         max_digits=5,
-        description="Conservative RR: (conservative - ice) / (ice - creek)"
+        description="Conservative RR: (conservative - ice) / (ice - creek)",
     )
     ice_price: Decimal = Field(
-        ...,
-        decimal_places=8,
-        max_digits=18,
-        description="Resistance breakout point (reference)"
+        ..., decimal_places=8, max_digits=18, description="Resistance breakout point (reference)"
     )
     creek_price: Decimal = Field(
-        ...,
-        decimal_places=8,
-        max_digits=18,
-        description="Support level (reference)"
+        ..., decimal_places=8, max_digits=18, description="Support level (reference)"
     )
-    calculated_at: datetime = Field(
-        ...,
-        description="Timestamp of calculation"
-    )
+    calculated_at: datetime = Field(..., description="Timestamp of calculation")
 
-    @field_validator('price', 'conservative_price', 'ice_price', 'creek_price')
+    @field_validator("price", "conservative_price", "ice_price", "creek_price")
     @classmethod
     def validate_price_positive(cls, v):
         """Ensure prices are positive"""
@@ -138,7 +122,7 @@ class JumpLevel(BaseModel):
             raise ValueError(f"Price {v} must be positive")
         return v
 
-    @field_validator('range_width')
+    @field_validator("range_width")
     @classmethod
     def validate_range_width_positive(cls, v):
         """Ensure range width is positive"""
@@ -146,7 +130,7 @@ class JumpLevel(BaseModel):
             raise ValueError(f"Range width {v} must be positive (ice > creek)")
         return v
 
-    @field_validator('cause_factor')
+    @field_validator("cause_factor")
     @classmethod
     def validate_cause_factor(cls, v):
         """Ensure cause factor is 2.0, 2.5, or 3.0"""
@@ -155,7 +139,7 @@ class JumpLevel(BaseModel):
             raise ValueError(f"Cause factor {v} must be one of {valid_factors}")
         return v
 
-    @field_validator('range_duration')
+    @field_validator("range_duration")
     @classmethod
     def validate_minimum_duration(cls, v):
         """Ensure minimum 15 bars (AC 2 requirement)"""
@@ -163,7 +147,7 @@ class JumpLevel(BaseModel):
             raise ValueError(f"Range duration {v} < 15 bars, insufficient cause")
         return v
 
-    @field_validator('confidence')
+    @field_validator("confidence")
     @classmethod
     def validate_confidence(cls, v):
         """Ensure valid confidence level"""
@@ -172,14 +156,12 @@ class JumpLevel(BaseModel):
             raise ValueError(f"Confidence '{v}' must be one of {valid_confidence}")
         return v
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_jump_relationships(self):
         """Validate jump price relationships (AC 10)"""
         # Aggressive jump must be above ice
         if self.price <= self.ice_price:
-            raise ValueError(
-                f"Aggressive jump {self.price} must be above ice {self.ice_price}"
-            )
+            raise ValueError(f"Aggressive jump {self.price} must be above ice {self.ice_price}")
 
         # Conservative jump must be above ice
         if self.conservative_price <= self.ice_price:
@@ -195,9 +177,7 @@ class JumpLevel(BaseModel):
 
         # Ice must be above creek
         if self.ice_price <= self.creek_price:
-            raise ValueError(
-                f"Ice {self.ice_price} must be above creek {self.creek_price}"
-            )
+            raise ValueError(f"Ice {self.ice_price} must be above creek {self.creek_price}")
 
         # Range width should match ice - creek
         expected_width = self.ice_price - self.creek_price
@@ -216,7 +196,7 @@ class JumpLevel(BaseModel):
         "risk_reward_ratio",
         "conservative_risk_reward",
         "ice_price",
-        "creek_price"
+        "creek_price",
     )
     def serialize_decimal(self, value: Decimal) -> str:
         """Serialize Decimal fields as strings to preserve precision."""

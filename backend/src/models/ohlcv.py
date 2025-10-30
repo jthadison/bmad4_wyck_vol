@@ -7,7 +7,7 @@ price bars used throughout the system.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID, uuid4
@@ -28,9 +28,7 @@ class OHLCVBar(BaseModel):
 
     id: UUID = Field(default_factory=uuid4, description="Unique identifier")
     symbol: str = Field(..., max_length=20, description="Stock symbol (e.g., AAPL)")
-    timeframe: Literal["1m", "5m", "15m", "1h", "1d"] = Field(
-        ..., description="Bar timeframe"
-    )
+    timeframe: Literal["1m", "5m", "15m", "1h", "1d"] = Field(..., description="Bar timeframe")
     timestamp: datetime = Field(..., description="Bar timestamp (UTC)")
     open: Decimal = Field(..., description="Opening price", decimal_places=8)
     high: Decimal = Field(..., description="High price", decimal_places=8)
@@ -49,7 +47,7 @@ class OHLCVBar(BaseModel):
         decimal_places=4,
     )
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Record creation timestamp",
     )
 
@@ -70,8 +68,8 @@ class OHLCVBar(BaseModel):
         """
         if isinstance(v, datetime):
             if v.tzinfo is None:
-                return v.replace(tzinfo=timezone.utc)
-            return v.astimezone(timezone.utc)
+                return v.replace(tzinfo=UTC)
+            return v.astimezone(UTC)
         return v
 
     @field_validator("open", "high", "low", "close", "spread", mode="before")

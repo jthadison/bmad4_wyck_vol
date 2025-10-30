@@ -5,33 +5,29 @@ Tests quality scoring across realistic market scenarios including high-quality
 accumulation zones, noisy consolidations, and various range characteristics.
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
-from typing import List
+
+import pytest
 
 from src.models.ohlcv import OHLCVBar
+from src.models.pivot import PivotType
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.effort_result import EffortResult
-from src.models.trading_range import TradingRange
-from src.models.price_cluster import PriceCluster
-from src.models.pivot import Pivot, PivotType
 from src.pattern_engine.pivot_detector import detect_pivots
 from src.pattern_engine.range_cluster import cluster_pivots, form_trading_range
 from src.pattern_engine.range_quality import (
     calculate_range_quality,
     filter_quality_ranges,
-    get_quality_ranges
+    get_quality_ranges,
 )
-from src.pattern_engine.volume_analyzer import VolumeAnalyzer
-
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
-def realistic_aapl_accumulation_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
+def realistic_aapl_accumulation_data() -> tuple[list[OHLCVBar], list[VolumeAnalysis]]:
     """
     Generate realistic AAPL accumulation period data (simulated).
 
@@ -43,7 +39,7 @@ def realistic_aapl_accumulation_data() -> tuple[List[OHLCVBar], List[VolumeAnaly
     - Volume: Decreasing on tests (smart money absorption)
     - Expected score: 85+ (high quality)
     """
-    base_date = datetime(2023, 10, 1, 9, 30, 0, tzinfo=timezone.utc)
+    base_date = datetime(2023, 10, 1, 9, 30, 0, tzinfo=UTC)
     bars = []
     volume_analysis = []
 
@@ -85,20 +81,17 @@ def realistic_aapl_accumulation_data() -> tuple[List[OHLCVBar], List[VolumeAnaly
             close=close_price,
             volume=base_volume * volume_ratio,
             timeframe="1d",
-            spread=high - low
+            spread=high - low,
         )
         bars.append(bar)
 
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=volume_ratio
-        ))
+        volume_analysis.append(VolumeAnalysis(bar=bar, volume_ratio=volume_ratio))
 
     return bars, volume_analysis
 
 
 @pytest.fixture
-def noisy_range_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
+def noisy_range_data() -> tuple[list[OHLCVBar], list[VolumeAnalysis]]:
     """
     Generate noisy/low-quality range data.
 
@@ -110,7 +103,7 @@ def noisy_range_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
     - Volume: Increasing on tests (no absorption)
     - Expected score: <70 (low quality, rejected)
     """
-    base_date = datetime(2024, 1, 1, 9, 30, 0, tzinfo=timezone.utc)
+    base_date = datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC)
     bars = []
     volume_analysis = []
 
@@ -152,20 +145,17 @@ def noisy_range_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
             close=close_price,
             volume=base_volume * volume_ratio,
             timeframe="1d",
-            spread=high - low
+            spread=high - low,
         )
         bars.append(bar)
 
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=volume_ratio
-        ))
+        volume_analysis.append(VolumeAnalysis(bar=bar, volume_ratio=volume_ratio))
 
     return bars, volume_analysis
 
 
 @pytest.fixture
-def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
+def standard_aapl_data() -> tuple[list[OHLCVBar], list[VolumeAnalysis]]:
     """
     Generate standard AAPL data with multiple ranges of varying quality.
 
@@ -174,7 +164,7 @@ def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
     - 1-2 marginal ranges (score < 70)
     - Realistic price and volume patterns
     """
-    base_date = datetime(2024, 1, 1, 9, 30, 0, tzinfo=timezone.utc)
+    base_date = datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC)
     bars = []
     volume_analysis = []
     base_volume = Decimal("60000000")
@@ -237,14 +227,11 @@ def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
             close=close_price,
             volume=base_volume * volume_ratio,
             timeframe="1d",
-            spread=high - low
+            spread=high - low,
         )
         bars.append(bar)
 
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=volume_ratio
-        ))
+        volume_analysis.append(VolumeAnalysis(bar=bar, volume_ratio=volume_ratio))
 
     return bars, volume_analysis
 
@@ -252,6 +239,7 @@ def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
 # ============================================================================
 # Task 14: Integration Test with AAPL Data
 # ============================================================================
+
 
 class TestQualityIntegrationWithAAPL:
     """Integration tests with standard AAPL data (AC 9)."""
@@ -299,10 +287,12 @@ class TestQualityIntegrationWithAAPL:
 
         # Filter for quality ranges
         quality_ranges = filter_quality_ranges(ranges, min_score=70)
-        rejected_ranges = [r for r in ranges if r.quality_score is not None and r.quality_score < 70]
+        rejected_ranges = [
+            r for r in ranges if r.quality_score is not None and r.quality_score < 70
+        ]
 
         # Log results for manual verification
-        print(f"\nAAPL Quality Scoring Results:")
+        print("\nAAPL Quality Scoring Results:")
         print(f"Total ranges: {len(ranges)}")
         print(f"Quality ranges (>= 70): {len(quality_ranges)}")
         print(f"Rejected ranges (< 70): {len(rejected_ranges)}")
@@ -315,6 +305,7 @@ class TestQualityIntegrationWithAAPL:
 # ============================================================================
 # Task 15: Integration Test with Known Accumulation Zone
 # ============================================================================
+
 
 class TestKnownAccumulationZone:
     """Integration test with known high-quality AAPL accumulation (AC 9)."""
@@ -358,16 +349,21 @@ class TestKnownAccumulationZone:
         # Verify high quality score
         print(f"\nKnown Accumulation Quality Score: {best_range.quality_score}")
         print(f"Duration: {best_range.duration} bars")
-        print(f"Touches: {best_range.total_touches} ({best_range.support_cluster.touch_count}+{best_range.resistance_cluster.touch_count})")
+        print(
+            f"Touches: {best_range.total_touches} ({best_range.support_cluster.touch_count}+{best_range.resistance_cluster.touch_count})"
+        )
         print(f"Support: {best_range.support}, Resistance: {best_range.resistance}")
 
         # Assert quality score is high (may not reach 85+ with simulated data, but should be good)
-        assert best_range.quality_score >= 60, f"Known accumulation scored {best_range.quality_score}, expected >= 60"
+        assert (
+            best_range.quality_score >= 60
+        ), f"Known accumulation scored {best_range.quality_score}, expected >= 60"
 
 
 # ============================================================================
 # Task 16: Integration Test with Noisy/Low-Quality Range
 # ============================================================================
+
 
 class TestNoisyLowQualityRange:
     """Integration test with noisy/low-quality range (AC 9)."""
@@ -384,7 +380,9 @@ class TestNoisyLowQualityRange:
             pytest.skip("Noisy data didn't form enough pivots for range")
 
         # Cluster pivots
-        clusters = cluster_pivots(pivots, tolerance_pct=Decimal("0.03"))  # Wider tolerance for noisy data
+        clusters = cluster_pivots(
+            pivots, tolerance_pct=Decimal("0.03")
+        )  # Wider tolerance for noisy data
 
         if len(clusters) < 2:
             pytest.skip("Noisy data didn't form enough clusters for range")
@@ -432,6 +430,7 @@ class TestNoisyLowQualityRange:
 # Task 20: Integration Pattern for Stories 3.4-3.6
 # ============================================================================
 
+
 class TestStory34Through36Integration:
     """Test integration pattern for Stories 3.4-3.6 (Creek, Ice, Jump levels)."""
 
@@ -465,7 +464,7 @@ class TestStory34Through36Integration:
         # Get quality ranges for Stories 3.4-3.6 (sorted by score)
         quality_ranges = get_quality_ranges(ranges)
 
-        print(f"\nStory 3.4-3.6 Integration:")
+        print("\nStory 3.4-3.6 Integration:")
         print(f"Total ranges detected: {len(ranges)}")
         print(f"Quality ranges (>= 70): {len(quality_ranges)}")
 

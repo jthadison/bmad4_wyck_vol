@@ -2,7 +2,6 @@
 Unit tests for retry logic with exponential backoff.
 """
 
-import asyncio
 from datetime import datetime
 
 import httpx
@@ -206,6 +205,7 @@ class TestRetryLogic:
 
     async def test_retry_preserves_function_name(self):
         """Test that decorator preserves function metadata."""
+
         # Arrange
         @with_retry(max_retries=3)
         async def my_function():

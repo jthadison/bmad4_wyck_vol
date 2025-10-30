@@ -8,7 +8,7 @@ Tests the complete end-to-end workflow:
 - Data quality verification
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -130,7 +130,7 @@ class TestHistoricalIngestion:
         invalid_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=Decimal("100.0"),
             high=Decimal("105.0"),
             low=Decimal("99.0"),
@@ -160,7 +160,7 @@ class TestHistoricalIngestion:
         timeframe = "1d"
 
         # Act - Ingest data
-        result = await service.ingest_historical_data(
+        await service.ingest_historical_data(
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
@@ -217,7 +217,7 @@ class TestHistoricalIngestion:
         bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 15, 0, 0, 0, tzinfo=UTC),
             open=Decimal("100.0"),
             high=Decimal("105.0"),
             low=Decimal("99.0"),

@@ -8,7 +8,7 @@ all bars into memory at once. Uses keyset pagination for efficiency.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -63,14 +63,14 @@ class BarIterator:
         self.start_date = start_date
         self.end_date = end_date
         self.batch_size = batch_size
-        self.last_timestamp: Optional[datetime] = None
+        self.last_timestamp: datetime | None = None
         self.exhausted = False
 
     def __aiter__(self):
         """Return self as async iterator."""
         return self
 
-    async def __anext__(self) -> List[OHLCVBar]:
+    async def __anext__(self) -> list[OHLCVBar]:
         """
         Fetch next batch of bars.
 
@@ -84,7 +84,11 @@ class BarIterator:
             raise StopAsyncIteration
 
         # Determine query start date (either initial start or after last timestamp)
-        query_start = self.start_date if self.last_timestamp is None else self.last_timestamp + timedelta(seconds=1)
+        query_start = (
+            self.start_date
+            if self.last_timestamp is None
+            else self.last_timestamp + timedelta(seconds=1)
+        )
 
         # Check if we've passed end date
         if query_start > self.end_date:
@@ -112,7 +116,7 @@ class BarIterator:
 
         return bars
 
-    async def _fetch_batch(self, start_date: datetime, end_date: datetime) -> List[OHLCVBar]:
+    async def _fetch_batch(self, start_date: datetime, end_date: datetime) -> list[OHLCVBar]:
         """
         Fetch a batch of bars using repository.
 
@@ -136,4 +140,4 @@ class BarIterator:
         )
 
         # Limit to batch size
-        return bars[:self.batch_size]
+        return bars[: self.batch_size]

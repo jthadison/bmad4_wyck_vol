@@ -12,8 +12,8 @@ supports fallback on provider failure, and enables multi-asset class support
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import date
-from typing import Callable, List
 
 from src.models.ohlcv import OHLCVBar
 
@@ -45,7 +45,7 @@ class MarketDataProvider(ABC):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
-    ) -> List[OHLCVBar]:
+    ) -> list[OHLCVBar]:
         """
         Fetch historical OHLCV bars for a symbol within a date range.
 
@@ -80,7 +80,7 @@ class MarketDataProvider(ABC):
         pass
 
     @abstractmethod
-    async def subscribe(self, symbols: List[str], timeframe: str = "1m") -> None:
+    async def subscribe(self, symbols: list[str], timeframe: str = "1m") -> None:
         """
         Subscribe to real-time bar updates for specified symbols.
 

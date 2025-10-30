@@ -5,12 +5,10 @@ This module provides functions to calculate volume-related metrics for OHLCV bar
 Primary function is calculate_volume_ratio which computes current volume / 20-bar average.
 """
 
-from typing import List, Optional
 import time
 
 import numpy as np
 import structlog
-from decimal import Decimal
 
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
@@ -19,7 +17,7 @@ from src.models.volume_analysis import VolumeAnalysis
 logger = structlog.get_logger(__name__)
 
 
-def calculate_volume_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
+def calculate_volume_ratio(bars: list[OHLCVBar], index: int) -> float | None:
     """
     Calculate volume ratio: current bar volume / 20-bar average volume.
 
@@ -98,7 +96,7 @@ def calculate_volume_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
     return volume_ratio
 
 
-def calculate_volume_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]:
+def calculate_volume_ratios_batch(bars: list[OHLCVBar]) -> list[float | None]:
     """
     Calculate volume ratios for all bars in a sequence using vectorized operations.
 
@@ -138,7 +136,7 @@ def calculate_volume_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
     volumes = np.array([bar.volume for bar in bars], dtype=np.float64)
 
     # Initialize result array with None for first 20 bars
-    results: List[Optional[float]] = [None] * len(bars)
+    results: list[float | None] = [None] * len(bars)
 
     # Calculate 20-bar rolling average using NumPy convolution
     # This is the key optimization: vectorized rolling window computation
@@ -147,7 +145,7 @@ def calculate_volume_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
     # Use uniform filter (moving average kernel) for rolling computation
     # np.convolve with 'valid' mode computes sum for each 20-bar window
     ones = np.ones(window_size)
-    rolling_sums = np.convolve(volumes, ones, mode='valid')
+    rolling_sums = np.convolve(volumes, ones, mode="valid")
     rolling_avgs = rolling_sums / window_size
 
     # Calculate ratios for bars with sufficient history (index >= 20)
@@ -187,7 +185,7 @@ def calculate_volume_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
     return results
 
 
-def calculate_spread_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
+def calculate_spread_ratio(bars: list[OHLCVBar], index: int) -> float | None:
     """
     Calculate spread ratio: current bar spread / 20-bar average spread.
 
@@ -275,7 +273,7 @@ def calculate_spread_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
     return spread_ratio
 
 
-def calculate_spread_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]:
+def calculate_spread_ratios_batch(bars: list[OHLCVBar]) -> list[float | None]:
     """
     Calculate spread ratios for all bars in a sequence using vectorized operations.
 
@@ -320,14 +318,14 @@ def calculate_spread_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
     spreads = np.subtract(highs, lows)
 
     # Initialize result array with None for first 20 bars
-    results: List[Optional[float]] = [None] * len(bars)
+    results: list[float | None] = [None] * len(bars)
 
     # Calculate 20-bar rolling average using NumPy convolution
     window_size = 20
 
     # Use uniform filter (moving average kernel) for rolling computation
     ones = np.ones(window_size)
-    rolling_sums = np.convolve(spreads, ones, mode='valid')
+    rolling_sums = np.convolve(spreads, ones, mode="valid")
     rolling_avgs = rolling_sums / window_size
 
     # Calculate ratios for bars with sufficient history (index >= 20)
@@ -437,7 +435,7 @@ def calculate_close_position(bar: OHLCVBar) -> float:
             symbol=bar.symbol,
             timestamp=bar.timestamp.isoformat(),
             price=close,
-            message="Doji bar detected (high == low), returning neutral position 0.5"
+            message="Doji bar detected (high == low), returning neutral position 0.5",
         )
         return 0.5
 
@@ -450,7 +448,7 @@ def calculate_close_position(bar: OHLCVBar) -> float:
             close=close,
             low=low,
             high=high,
-            message="Close is outside [low, high] range, data quality issue. Clamping value."
+            message="Close is outside [low, high] range, data quality issue. Clamping value.",
         )
         # Clamp close to [low, high] range
         close = max(low, min(close, high))
@@ -465,7 +463,7 @@ def calculate_close_position(bar: OHLCVBar) -> float:
     return close_position
 
 
-def calculate_close_positions_batch(bars: List[OHLCVBar]) -> List[float]:
+def calculate_close_positions_batch(bars: list[OHLCVBar]) -> list[float]:
     """
     Calculate close positions for all bars in a sequence using vectorized operations.
 
@@ -537,7 +535,7 @@ def calculate_close_positions_batch(bars: List[OHLCVBar]) -> List[float]:
             "invalid_close_position_data_in_batch",
             num_bars=len(bars),
             invalid_count=int(invalid_data_count),
-            message=f"Found {invalid_data_count} bars with close outside [low, high] range. Values clamped."
+            message=f"Found {invalid_data_count} bars with close outside [low, high] range. Values clamped.",
         )
 
     # Log batch completion summary
@@ -552,9 +550,7 @@ def calculate_close_positions_batch(bars: List[OHLCVBar]) -> List[float]:
     return results.tolist()
 
 
-def classify_effort_result(
-    volume_ratio: Optional[float], spread_ratio: Optional[float]
-) -> EffortResult:
+def classify_effort_result(volume_ratio: float | None, spread_ratio: float | None) -> EffortResult:
     """
     Classify bar based on effort (volume) vs. result (spread).
 
@@ -743,7 +739,7 @@ class VolumeAnalyzer:
         """
         pass
 
-    def analyze(self, bars: List[OHLCVBar]) -> List[VolumeAnalysis]:
+    def analyze(self, bars: list[OHLCVBar]) -> list[VolumeAnalysis]:
         """
         Analyze a sequence of OHLCV bars and produce complete volume analysis.
 
@@ -831,7 +827,7 @@ class VolumeAnalyzer:
         close_positions = calculate_close_positions_batch(bars)
 
         # Step 4: Build VolumeAnalysis objects with effort_result classification
-        results: List[VolumeAnalysis] = []
+        results: list[VolumeAnalysis] = []
 
         for i, bar in enumerate(bars):
             # Get calculated values for this bar
@@ -841,12 +837,8 @@ class VolumeAnalyzer:
 
             # Round ratios to 4 decimal places for Pydantic validation
             # (Pydantic decimal_places constraint requires max 4 decimal places)
-            volume_ratio = (
-                round(volume_ratio_raw, 4) if volume_ratio_raw is not None else None
-            )
-            spread_ratio = (
-                round(spread_ratio_raw, 4) if spread_ratio_raw is not None else None
-            )
+            volume_ratio = round(volume_ratio_raw, 4) if volume_ratio_raw is not None else None
+            spread_ratio = round(spread_ratio_raw, 4) if spread_ratio_raw is not None else None
             close_position = round(close_position_raw, 4)
 
             # Classify effort_result based on volume/spread ratios
@@ -886,18 +878,14 @@ class VolumeAnalyzer:
 
         # Calculate statistics
         total_bars = len(results)
-        bars_with_ratios = sum(
-            1 for r in results if r.volume_ratio is not None
-        )
+        bars_with_ratios = sum(1 for r in results if r.volume_ratio is not None)
 
         # Log abnormal conditions
         extreme_volume_count = sum(
-            1 for r in results
-            if r.volume_ratio and float(r.volume_ratio) > 5.0
+            1 for r in results if r.volume_ratio and float(r.volume_ratio) > 5.0
         )
         extreme_spread_count = sum(
-            1 for r in results
-            if r.spread_ratio and float(r.spread_ratio) > 3.0
+            1 for r in results if r.spread_ratio and float(r.spread_ratio) > 3.0
         )
 
         if extreme_volume_count > 0:
@@ -915,19 +903,11 @@ class VolumeAnalyzer:
             )
 
         # Calculate average ratios (excluding None values)
-        volume_ratios_valid = [
-            float(r.volume_ratio) for r in results if r.volume_ratio is not None
-        ]
-        spread_ratios_valid = [
-            float(r.spread_ratio) for r in results if r.spread_ratio is not None
-        ]
+        volume_ratios_valid = [float(r.volume_ratio) for r in results if r.volume_ratio is not None]
+        spread_ratios_valid = [float(r.spread_ratio) for r in results if r.spread_ratio is not None]
 
-        avg_volume_ratio = (
-            np.mean(volume_ratios_valid) if volume_ratios_valid else None
-        )
-        avg_spread_ratio = (
-            np.mean(spread_ratios_valid) if spread_ratios_valid else None
-        )
+        avg_volume_ratio = np.mean(volume_ratios_valid) if volume_ratios_valid else None
+        avg_spread_ratio = np.mean(spread_ratios_valid) if spread_ratios_valid else None
 
         # Log completion with statistics
         logger.info(

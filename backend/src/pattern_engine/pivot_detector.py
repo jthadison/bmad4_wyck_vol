@@ -23,8 +23,6 @@ Example:
 
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 import structlog
 
@@ -34,7 +32,7 @@ from src.models.pivot import Pivot, PivotType
 logger = structlog.get_logger(__name__)
 
 
-def detect_pivots(bars: List[OHLCVBar], lookback: int = 5) -> List[Pivot]:
+def detect_pivots(bars: list[OHLCVBar], lookback: int = 5) -> list[Pivot]:
     """
     Detect swing highs and swing lows (pivot points) in price action.
 
@@ -92,9 +90,7 @@ def detect_pivots(bars: List[OHLCVBar], lookback: int = 5) -> List[Pivot]:
 
     # Input validation
     if not bars:
-        logger.warning(
-            "empty_bars_list", message="Cannot detect pivots on empty bar list"
-        )
+        logger.warning("empty_bars_list", message="Cannot detect pivots on empty bar list")
         return []
 
     if lookback < 1:
@@ -129,7 +125,7 @@ def detect_pivots(bars: List[OHLCVBar], lookback: int = 5) -> List[Pivot]:
     highs = np.array([float(bar.high) for bar in bars])
     lows = np.array([float(bar.low) for bar in bars])
 
-    pivots: List[Pivot] = []
+    pivots: list[Pivot] = []
 
     # Loop through candidate bars (skip first and last lookback bars)
     for i in range(lookback, len(bars) - lookback):
@@ -199,7 +195,7 @@ def detect_pivots(bars: List[OHLCVBar], lookback: int = 5) -> List[Pivot]:
     return pivots
 
 
-def get_pivot_highs(pivots: List[Pivot]) -> List[Pivot]:
+def get_pivot_highs(pivots: list[Pivot]) -> list[Pivot]:
     """
     Filter pivots to return only HIGH pivots (resistance candidates).
 
@@ -217,7 +213,7 @@ def get_pivot_highs(pivots: List[Pivot]) -> List[Pivot]:
     return [p for p in pivots if p.type == PivotType.HIGH]
 
 
-def get_pivot_lows(pivots: List[Pivot]) -> List[Pivot]:
+def get_pivot_lows(pivots: list[Pivot]) -> list[Pivot]:
     """
     Filter pivots to return only LOW pivots (support candidates).
 
@@ -235,7 +231,7 @@ def get_pivot_lows(pivots: List[Pivot]) -> List[Pivot]:
     return [p for p in pivots if p.type == PivotType.LOW]
 
 
-def get_pivot_prices(pivots: List[Pivot]) -> List[float]:
+def get_pivot_prices(pivots: list[Pivot]) -> list[float]:
     """
     Extract pivot prices as a list of floats.
 

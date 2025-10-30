@@ -7,9 +7,8 @@ VolumeAnalysis contains calculated volume metrics for a single OHLCV bar.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
@@ -29,33 +28,33 @@ class VolumeAnalysis(BaseModel):
     """
 
     bar: OHLCVBar = Field(..., description="The OHLCV bar being analyzed")
-    volume_ratio: Optional[Decimal] = Field(
+    volume_ratio: Decimal | None = Field(
         None,
         description="Current volume / 20-bar average volume (None for first 20 bars)",
         decimal_places=4,
     )
-    spread_ratio: Optional[Decimal] = Field(
+    spread_ratio: Decimal | None = Field(
         None,
         description="Current spread / 20-bar average spread (Story 2.2)",
         decimal_places=4,
     )
-    close_position: Optional[Decimal] = Field(
+    close_position: Decimal | None = Field(
         None,
         description="Position of close within bar range: (close - low) / (high - low) (Story 2.3)",
         decimal_places=4,
     )
-    effort_result: Optional[EffortResult] = Field(
+    effort_result: EffortResult | None = Field(
         None,
         description="Effort vs. Result classification based on volume/spread relationship (Story 2.4)",
     )
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Analysis creation timestamp (UTC)",
     )
 
     @field_validator("volume_ratio", "spread_ratio", "close_position", mode="before")
     @classmethod
-    def convert_to_decimal(cls, v) -> Optional[Decimal]:
+    def convert_to_decimal(cls, v) -> Decimal | None:
         """
         Convert numeric values to Decimal for precision.
 
@@ -76,7 +75,7 @@ class VolumeAnalysis(BaseModel):
 
     @field_validator("volume_ratio", "spread_ratio", "close_position", mode="after")
     @classmethod
-    def validate_reasonable_range(cls, v: Optional[Decimal], info) -> Optional[Decimal]:
+    def validate_reasonable_range(cls, v: Decimal | None, info) -> Decimal | None:
         """
         Validate that ratios fall within reasonable bounds.
 
@@ -102,9 +101,7 @@ class VolumeAnalysis(BaseModel):
         # Close position must be 0.0-1.0 (position within bar range)
         if field_name == "close_position":
             if v < Decimal("0.0") or v > Decimal("1.0"):
-                raise ValueError(
-                    f"close_position must be between 0.0 and 1.0, got {v}"
-                )
+                raise ValueError(f"close_position must be between 0.0 and 1.0, got {v}")
 
         # Volume and spread ratios: warn if outside typical range but don't reject
         # (extreme market conditions can produce valid extreme ratios)
@@ -132,12 +129,12 @@ class VolumeAnalysis(BaseModel):
         """
         if isinstance(v, datetime):
             if v.tzinfo is None:
-                return v.replace(tzinfo=timezone.utc)
-            return v.astimezone(timezone.utc)
+                return v.replace(tzinfo=UTC)
+            return v.astimezone(UTC)
         return v
 
     @field_serializer("volume_ratio", "spread_ratio", "close_position")
-    def serialize_decimal(self, value: Optional[Decimal]) -> Optional[str]:
+    def serialize_decimal(self, value: Decimal | None) -> str | None:
         """Serialize Decimal fields as strings to preserve precision."""
         return str(value) if value is not None else None
 
@@ -147,6 +144,6 @@ class VolumeAnalysis(BaseModel):
         return value.isoformat()
 
     @field_serializer("effort_result")
-    def serialize_effort_result(self, value: Optional[EffortResult]) -> Optional[str]:
+    def serialize_effort_result(self, value: EffortResult | None) -> str | None:
         """Serialize EffortResult enum as string value."""
         return value.value if value is not None else None

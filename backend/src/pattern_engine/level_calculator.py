@@ -68,20 +68,19 @@ Example:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from typing import List, Tuple
 from statistics import mean
 
 import structlog
 
-from src.models.ohlcv import OHLCVBar
-from src.models.trading_range import TradingRange
-from src.models.volume_analysis import VolumeAnalysis
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
 from src.models.jump_level import JumpLevel
+from src.models.ohlcv import OHLCVBar
 from src.models.touch_detail import TouchDetail
+from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
 
 logger = structlog.get_logger(__name__)
 
@@ -100,9 +99,7 @@ MIN_RANGE_DURATION = 15  # Minimum bars for Jump calculation (AC 2)
 
 
 def calculate_creek_level(
-    trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    trading_range: TradingRange, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
 ) -> CreekLevel:
     """
     Calculate Creek level (volume-weighted support) for a trading range.
@@ -140,7 +137,11 @@ def calculate_creek_level(
     # Validate inputs
     _validate_inputs(trading_range, bars, volume_analysis)
 
-    symbol = bars[trading_range.start_index].symbol if trading_range.start_index < len(bars) else "UNKNOWN"
+    symbol = (
+        bars[trading_range.start_index].symbol
+        if trading_range.start_index < len(bars)
+        else "UNKNOWN"
+    )
     support_cluster = trading_range.support_cluster
     cluster_avg = support_cluster.average_price
 
@@ -149,7 +150,7 @@ def calculate_creek_level(
         symbol=symbol,
         range_id=str(trading_range.id),
         cluster_avg=str(cluster_avg),
-        cluster_touches=support_cluster.touch_count
+        cluster_touches=support_cluster.touch_count,
     )
 
     # Task 4: Collect pivot lows within tolerance
@@ -157,14 +158,14 @@ def calculate_creek_level(
         support_cluster=support_cluster,
         bars=bars,
         volume_analysis=volume_analysis,
-        cluster_avg=cluster_avg
+        cluster_avg=cluster_avg,
     )
 
     logger.info(
         "creek_touches_collected",
         symbol=symbol,
         total_pivots=support_cluster.touch_count,
-        creek_touches=len(creek_touches)
+        creek_touches=len(creek_touches),
     )
 
     # Task 5: Calculate volume-weighted average
@@ -202,7 +203,7 @@ def calculate_creek_level(
         wick_score=wick_score,
         duration_score=duration_score,
         total_strength=strength_score,
-        strength_rating=strength_rating
+        strength_rating=strength_rating,
     )
 
     # Task 14: Validate creek level within tolerance
@@ -215,9 +216,11 @@ def calculate_creek_level(
             symbol=symbol,
             strength_score=strength_score,
             minimum_required=MIN_CREEK_STRENGTH,
-            message=f"Creek level strength {strength_score} below minimum {MIN_CREEK_STRENGTH} (FR9)"
+            message=f"Creek level strength {strength_score} below minimum {MIN_CREEK_STRENGTH} (FR9)",
         )
-        raise ValueError(f"Creek level strength {strength_score} below minimum {MIN_CREEK_STRENGTH} (FR9)")
+        raise ValueError(
+            f"Creek level strength {strength_score} below minimum {MIN_CREEK_STRENGTH} (FR9)"
+        )
 
     # Task 15: Create CreekLevel object and return
     creek_level = CreekLevel(
@@ -231,7 +234,7 @@ def calculate_creek_level(
         first_test_timestamp=first_test_timestamp,
         hold_duration=hold_duration,
         confidence=confidence,
-        volume_trend=volume_trend
+        volume_trend=volume_trend,
     )
 
     logger.info(
@@ -244,16 +247,14 @@ def calculate_creek_level(
         strength_rating=strength_rating,
         volume_trend=volume_trend,
         confidence=confidence,
-        hold_duration=hold_duration
+        hold_duration=hold_duration,
     )
 
     return creek_level
 
 
 def _validate_inputs(
-    trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    trading_range: TradingRange, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
 ) -> None:
     """
     Validate inputs for creek calculation.
@@ -271,18 +272,22 @@ def _validate_inputs(
             "low_quality_range",
             range_id=str(trading_range.id),
             quality_score=trading_range.quality_score,
-            message="Creek calculation requires quality score >= 70"
+            message="Creek calculation requires quality score >= 70",
         )
-        raise ValueError(f"Cannot calculate creek for range with quality score {trading_range.quality_score} (minimum 70)")
+        raise ValueError(
+            f"Cannot calculate creek for range with quality score {trading_range.quality_score} (minimum 70)"
+        )
 
     # Validate support cluster exists
     if not trading_range.support_cluster or trading_range.support_cluster.touch_count < 2:
         logger.error(
             "invalid_support_cluster",
             range_id=str(trading_range.id),
-            message="Support cluster missing or insufficient touches"
+            message="Support cluster missing or insufficient touches",
         )
-        raise ValueError("Invalid support cluster for creek calculation (minimum 2 touches required)")
+        raise ValueError(
+            "Invalid support cluster for creek calculation (minimum 2 touches required)"
+        )
 
     # Validate bars not empty
     if not bars:
@@ -291,19 +296,19 @@ def _validate_inputs(
     # Validate volume_analysis matches bars
     if len(volume_analysis) != len(bars):
         logger.error(
-            "bars_volume_mismatch",
-            bars_count=len(bars),
-            volume_count=len(volume_analysis)
+            "bars_volume_mismatch", bars_count=len(bars), volume_count=len(volume_analysis)
         )
-        raise ValueError(f"Bars and volume_analysis length mismatch ({len(bars)} vs {len(volume_analysis)})")
+        raise ValueError(
+            f"Bars and volume_analysis length mismatch ({len(bars)} vs {len(volume_analysis)})"
+        )
 
 
 def _collect_creek_touches(
     support_cluster,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis],
-    cluster_avg: Decimal
-) -> List[TouchDetail]:
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis],
+    cluster_avg: Decimal,
+) -> list[TouchDetail]:
     """
     Collect pivot lows within tolerance of cluster average.
 
@@ -341,14 +346,14 @@ def _collect_creek_touches(
                 volume_ratio=vol_analysis.volume_ratio,
                 close_position=vol_analysis.close_position,
                 rejection_wick=rejection_wick,
-                timestamp=bar.timestamp
+                timestamp=bar.timestamp,
             )
             creek_touches.append(touch)
 
     return creek_touches
 
 
-def _calculate_weighted_price(creek_touches: List[TouchDetail]) -> Decimal:
+def _calculate_weighted_price(creek_touches: list[TouchDetail]) -> Decimal:
     """
     Calculate volume-weighted average price.
 
@@ -391,7 +396,7 @@ def _assess_confidence(touch_count: int) -> str:
         return "LOW"
 
 
-def _score_touch_count(creek_touches: List[TouchDetail]) -> int:
+def _score_touch_count(creek_touches: list[TouchDetail]) -> int:
     """
     Score touch count component (0-40 points).
 
@@ -415,7 +420,7 @@ def _score_touch_count(creek_touches: List[TouchDetail]) -> int:
         return 10  # Adequate
 
 
-def _score_volume_trend(creek_touches: List[TouchDetail]) -> Tuple[int, str]:
+def _score_volume_trend(creek_touches: list[TouchDetail]) -> tuple[int, str]:
     """
     Score volume trend component (0-30 points) - decreasing = absorption.
 
@@ -455,7 +460,7 @@ def _score_volume_trend(creek_touches: List[TouchDetail]) -> Tuple[int, str]:
         return 0, "INCREASING"
 
 
-def _score_rejection_wicks(creek_touches: List[TouchDetail]) -> int:
+def _score_rejection_wicks(creek_touches: list[TouchDetail]) -> int:
     """
     Score rejection wick component (0-20 points) - large wicks = strong rejection.
 
@@ -545,14 +550,10 @@ def _validate_creek_deviation(creek_price: Decimal, cluster_avg: Decimal, symbol
             creek_price=str(creek_price),
             cluster_avg=str(cluster_avg),
             deviation_pct=str(deviation_pct),
-            message=f"Creek level deviated {float(deviation_pct)*100:.2f}% from cluster average, exceeds 0.5% tolerance"
+            message=f"Creek level deviated {float(deviation_pct)*100:.2f}% from cluster average, exceeds 0.5% tolerance",
         )
     else:
-        logger.info(
-            "creek_validation_passed",
-            symbol=symbol,
-            deviation_pct=str(deviation_pct)
-        )
+        logger.info("creek_validation_passed", symbol=symbol, deviation_pct=str(deviation_pct))
 
 
 # ============================================================================
@@ -561,9 +562,7 @@ def _validate_creek_deviation(creek_price: Decimal, cluster_avg: Decimal, symbol
 
 
 def calculate_ice_level(
-    trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    trading_range: TradingRange, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
 ) -> IceLevel:
     """
     Calculate Ice level (volume-weighted resistance) for a trading range.
@@ -608,7 +607,11 @@ def calculate_ice_level(
     # Validate inputs
     _validate_ice_inputs(trading_range, bars, volume_analysis)
 
-    symbol = bars[trading_range.start_index].symbol if trading_range.start_index < len(bars) else "UNKNOWN"
+    symbol = (
+        bars[trading_range.start_index].symbol
+        if trading_range.start_index < len(bars)
+        else "UNKNOWN"
+    )
     resistance_cluster = trading_range.resistance_cluster
     cluster_avg = resistance_cluster.average_price
 
@@ -617,7 +620,7 @@ def calculate_ice_level(
         symbol=symbol,
         range_id=str(trading_range.id),
         cluster_avg=str(cluster_avg),
-        cluster_touches=resistance_cluster.touch_count
+        cluster_touches=resistance_cluster.touch_count,
     )
 
     # Task 4: Collect pivot highs within tolerance
@@ -625,14 +628,14 @@ def calculate_ice_level(
         resistance_cluster=resistance_cluster,
         bars=bars,
         volume_analysis=volume_analysis,
-        cluster_avg=cluster_avg
+        cluster_avg=cluster_avg,
     )
 
     logger.info(
         "ice_touches_collected",
         symbol=symbol,
         total_pivots=resistance_cluster.touch_count,
-        ice_touches=len(ice_touches)
+        ice_touches=len(ice_touches),
     )
 
     # Task 5: Calculate volume-weighted average
@@ -670,7 +673,7 @@ def calculate_ice_level(
         wick_score=wick_score,
         duration_score=duration_score,
         total_strength=strength_score,
-        strength_rating=strength_rating
+        strength_rating=strength_rating,
     )
 
     # Task 16: Validate ice level within tolerance
@@ -683,9 +686,11 @@ def calculate_ice_level(
             symbol=symbol,
             strength_score=strength_score,
             minimum_required=MIN_ICE_STRENGTH,
-            message=f"Ice level strength {strength_score} below minimum {MIN_ICE_STRENGTH} (AC 5)"
+            message=f"Ice level strength {strength_score} below minimum {MIN_ICE_STRENGTH} (AC 5)",
         )
-        raise ValueError(f"Ice level strength {strength_score} below minimum {MIN_ICE_STRENGTH} (AC 5)")
+        raise ValueError(
+            f"Ice level strength {strength_score} below minimum {MIN_ICE_STRENGTH} (AC 5)"
+        )
 
     # Task 17: Create IceLevel object and return
     ice_level = IceLevel(
@@ -699,7 +704,7 @@ def calculate_ice_level(
         first_test_timestamp=first_test_timestamp,
         hold_duration=hold_duration,
         confidence=confidence,
-        volume_trend=volume_trend
+        volume_trend=volume_trend,
     )
 
     logger.info(
@@ -712,16 +717,14 @@ def calculate_ice_level(
         strength_rating=strength_rating,
         volume_trend=volume_trend,
         confidence=confidence,
-        hold_duration=hold_duration
+        hold_duration=hold_duration,
     )
 
     return ice_level
 
 
 def _validate_ice_inputs(
-    trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    trading_range: TradingRange, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
 ) -> None:
     """
     Validate inputs for ice calculation.
@@ -739,18 +742,22 @@ def _validate_ice_inputs(
             "low_quality_range",
             range_id=str(trading_range.id),
             quality_score=trading_range.quality_score,
-            message="Ice calculation requires quality score >= 70"
+            message="Ice calculation requires quality score >= 70",
         )
-        raise ValueError(f"Cannot calculate ice for range with quality score {trading_range.quality_score} (minimum 70)")
+        raise ValueError(
+            f"Cannot calculate ice for range with quality score {trading_range.quality_score} (minimum 70)"
+        )
 
     # Validate resistance cluster exists
     if not trading_range.resistance_cluster or trading_range.resistance_cluster.touch_count < 2:
         logger.error(
             "invalid_resistance_cluster",
             range_id=str(trading_range.id),
-            message="Resistance cluster missing or insufficient touches"
+            message="Resistance cluster missing or insufficient touches",
         )
-        raise ValueError("Invalid resistance cluster for ice calculation (minimum 2 touches required)")
+        raise ValueError(
+            "Invalid resistance cluster for ice calculation (minimum 2 touches required)"
+        )
 
     # Validate bars not empty
     if not bars:
@@ -759,19 +766,19 @@ def _validate_ice_inputs(
     # Validate volume_analysis matches bars
     if len(volume_analysis) != len(bars):
         logger.error(
-            "bars_volume_mismatch",
-            bars_count=len(bars),
-            volume_count=len(volume_analysis)
+            "bars_volume_mismatch", bars_count=len(bars), volume_count=len(volume_analysis)
         )
-        raise ValueError(f"Bars and volume_analysis length mismatch ({len(bars)} vs {len(volume_analysis)})")
+        raise ValueError(
+            f"Bars and volume_analysis length mismatch ({len(bars)} vs {len(volume_analysis)})"
+        )
 
 
 def _collect_ice_touches(
     resistance_cluster,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis],
-    cluster_avg: Decimal
-) -> List[TouchDetail]:
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis],
+    cluster_avg: Decimal,
+) -> list[TouchDetail]:
     """
     Collect pivot highs within tolerance of cluster average.
 
@@ -810,14 +817,14 @@ def _collect_ice_touches(
                 volume_ratio=vol_analysis.volume_ratio,
                 close_position=vol_analysis.close_position,
                 rejection_wick=rejection_wick,  # UPPER wick for Ice
-                timestamp=bar.timestamp
+                timestamp=bar.timestamp,
             )
             ice_touches.append(touch)
 
     return ice_touches
 
 
-def _score_rejection_wicks_ice(ice_touches: List[TouchDetail]) -> int:
+def _score_rejection_wicks_ice(ice_touches: list[TouchDetail]) -> int:
     """
     Score rejection wick component for Ice (0-20 points) - large upper wicks = strong rejection.
 
@@ -865,14 +872,10 @@ def _validate_ice_deviation(ice_price: Decimal, cluster_avg: Decimal, symbol: st
             ice_price=str(ice_price),
             cluster_avg=str(cluster_avg),
             deviation_pct=str(deviation_pct),
-            message=f"Ice level deviated {float(deviation_pct)*100:.2f}% from cluster average, exceeds 0.5% tolerance"
+            message=f"Ice level deviated {float(deviation_pct)*100:.2f}% from cluster average, exceeds 0.5% tolerance",
         )
     else:
-        logger.info(
-            "ice_validation_passed",
-            symbol=symbol,
-            deviation_pct=str(deviation_pct)
-        )
+        logger.info("ice_validation_passed", symbol=symbol, deviation_pct=str(deviation_pct))
 
 
 # ============================================================================
@@ -881,9 +884,7 @@ def _validate_ice_deviation(ice_price: Decimal, cluster_avg: Decimal, symbol: st
 
 
 def calculate_jump_level(
-    trading_range: TradingRange,
-    creek: CreekLevel,
-    ice: IceLevel
+    trading_range: TradingRange, creek: CreekLevel, ice: IceLevel
 ) -> JumpLevel:
     """
     Calculate Jump level (price target) using Wyckoff Point & Figure cause-effect method.
@@ -951,9 +952,11 @@ def calculate_jump_level(
             range_id=str(trading_range.id),
             duration=range_duration,
             minimum=MIN_RANGE_DURATION,
-            message=f"Range duration {range_duration} < {MIN_RANGE_DURATION} bars minimum"
+            message=f"Range duration {range_duration} < {MIN_RANGE_DURATION} bars minimum",
         )
-        raise ValueError(f"Insufficient cause: {range_duration} bars < {MIN_RANGE_DURATION} minimum")
+        raise ValueError(
+            f"Insufficient cause: {range_duration} bars < {MIN_RANGE_DURATION} minimum"
+        )
 
     # Defensive validation: ice > creek (should be validated by Story 3.8)
     if ice.price <= creek.price:
@@ -961,11 +964,11 @@ def calculate_jump_level(
             "invalid_range",
             ice_price=str(ice.price),
             creek_price=str(creek.price),
-            message="Ice must be above Creek"
+            message="Ice must be above Creek",
         )
         raise ValueError(f"Invalid range: Ice {ice.price} <= Creek {creek.price}")
 
-    symbol = trading_range.symbol if hasattr(trading_range, 'symbol') else "UNKNOWN"
+    symbol = trading_range.symbol if hasattr(trading_range, "symbol") else "UNKNOWN"
 
     logger.info(
         "jump_calculation_start",
@@ -973,7 +976,7 @@ def calculate_jump_level(
         range_id=str(trading_range.id),
         range_duration=range_duration,
         creek_price=str(creek.price),
-        ice_price=str(ice.price)
+        ice_price=str(ice.price),
     )
 
     # Calculate range width (AC 4)
@@ -984,7 +987,7 @@ def calculate_jump_level(
         logger.error(
             "invalid_range_width",
             range_width=str(range_width),
-            message="Range width must be positive"
+            message="Range width must be positive",
         )
         raise ValueError(f"Invalid range width: {range_width}")
 
@@ -1007,7 +1010,7 @@ def calculate_jump_level(
         symbol=symbol,
         duration=range_duration,
         cause_factor=str(cause_factor),
-        confidence=confidence
+        confidence=confidence,
     )
 
     # Calculate aggressive jump target (AC 3)
@@ -1033,7 +1036,7 @@ def calculate_jump_level(
         aggressive_jump=str(jump_price),
         conservative_jump=str(conservative_price),
         aggressive_rr=str(risk_reward_ratio),
-        conservative_rr=str(conservative_risk_reward)
+        conservative_rr=str(conservative_risk_reward),
     )
 
     # Validate jump > ice (AC 10) - defensive check
@@ -1042,7 +1045,7 @@ def calculate_jump_level(
             "invalid_jump_calculation",
             jump_price=str(jump_price),
             ice_price=str(ice.price),
-            message="Jump must be above Ice"
+            message="Jump must be above Ice",
         )
         raise ValueError(f"Invalid jump calculation: {jump_price} <= {ice.price}")
 
@@ -1051,7 +1054,7 @@ def calculate_jump_level(
             "invalid_conservative_jump",
             conservative_price=str(conservative_price),
             ice_price=str(ice.price),
-            message="Conservative jump must be above Ice"
+            message="Conservative jump must be above Ice",
         )
         raise ValueError(f"Invalid conservative jump: {conservative_price} <= {ice.price}")
 
@@ -1067,7 +1070,7 @@ def calculate_jump_level(
         conservative_risk_reward=conservative_risk_reward,
         ice_price=ice.price,
         creek_price=creek.price,
-        calculated_at=datetime.now(timezone.utc)
+        calculated_at=datetime.now(UTC),
     )
 
     logger.info(
@@ -1079,7 +1082,7 @@ def calculate_jump_level(
         confidence=confidence,
         range_duration=range_duration,
         aggressive_rr=str(risk_reward_ratio),
-        conservative_rr=str(conservative_risk_reward)
+        conservative_rr=str(conservative_risk_reward),
     )
 
     return jump_level

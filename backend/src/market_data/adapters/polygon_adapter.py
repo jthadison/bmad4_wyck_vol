@@ -8,9 +8,9 @@ serving as the primary data source for historical OHLCV data.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any
 
 import httpx
 import structlog
@@ -58,7 +58,7 @@ class PolygonAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
-    ) -> List[OHLCVBar]:
+    ) -> list[OHLCVBar]:
         """
         Fetch historical OHLCV bars from Polygon.io.
 
@@ -162,7 +162,7 @@ class PolygonAdapter(MarketDataProvider):
             log.error("http_error", error=str(e))
             raise
 
-    def _parse_bar(self, symbol: str, timeframe: str, data: Dict[str, Any]) -> OHLCVBar:
+    def _parse_bar(self, symbol: str, timeframe: str, data: dict[str, Any]) -> OHLCVBar:
         """
         Parse Polygon.io bar data to OHLCVBar model.
 
@@ -188,7 +188,7 @@ class PolygonAdapter(MarketDataProvider):
         """
         # Convert Unix millisecond timestamp to UTC datetime
         timestamp_ms = data["t"]
-        timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+        timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=UTC)
 
         # Extract OHLCV values
         open_price = Decimal(str(data["o"]))

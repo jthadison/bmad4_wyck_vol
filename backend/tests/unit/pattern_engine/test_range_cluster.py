@@ -7,29 +7,27 @@ with synthetic test data.
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
-from typing import List
-from src.models.pivot import Pivot, PivotType
-from src.models.ohlcv import OHLCVBar
-from src.models.price_cluster import PriceCluster
-from src.models.trading_range import TradingRange
-from src.pattern_engine.range_cluster import (
-    cluster_pivots,
-    form_trading_range,
-    calculate_preliminary_quality_score,
-    find_best_support_cluster,
-    find_best_resistance_cluster,
-    find_potential_ranges,
-    _cluster_by_proximity,
-    _create_price_cluster
-)
 
+import pytest
+
+from src.models.ohlcv import OHLCVBar
+from src.models.pivot import Pivot, PivotType
+from src.pattern_engine.range_cluster import (
+    _create_price_cluster,
+    calculate_preliminary_quality_score,
+    cluster_pivots,
+    find_best_resistance_cluster,
+    find_best_support_cluster,
+    find_potential_ranges,
+    form_trading_range,
+)
 
 # ============================================================================
 # Test Fixtures and Helpers
 # ============================================================================
+
 
 def create_test_bar(
     symbol: str = "TEST",
@@ -40,11 +38,11 @@ def create_test_bar(
     close: Decimal = Decimal("100.00"),
     volume: int = 1000000,
     timestamp: datetime = None,
-    index: int = 0
+    index: int = 0,
 ) -> OHLCVBar:
     """Create test OHLCV bar"""
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     return OHLCVBar(
         symbol=symbol,
@@ -55,16 +53,12 @@ def create_test_bar(
         low=low,
         close=close,
         volume=volume,
-        spread=high - low  # Required field: high - low
+        spread=high - low,  # Required field: high - low
     )
 
 
 def create_test_pivot(
-    price: Decimal,
-    pivot_type: PivotType,
-    index: int,
-    symbol: str = "TEST",
-    timeframe: str = "1d"
+    price: Decimal, pivot_type: PivotType, index: int, symbol: str = "TEST", timeframe: str = "1d"
 ) -> Pivot:
     """Create test Pivot object"""
     # Create bar with appropriate high/low based on pivot type
@@ -74,7 +68,7 @@ def create_test_pivot(
             timeframe=timeframe,
             high=price,
             low=price - Decimal("5.00"),
-            timestamp=datetime.now(timezone.utc) + timedelta(days=index)
+            timestamp=datetime.now(UTC) + timedelta(days=index),
         )
     else:
         bar = create_test_bar(
@@ -82,20 +76,15 @@ def create_test_pivot(
             timeframe=timeframe,
             high=price + Decimal("5.00"),
             low=price,
-            timestamp=datetime.now(timezone.utc) + timedelta(days=index)
+            timestamp=datetime.now(UTC) + timedelta(days=index),
         )
 
     return Pivot(
-        bar=bar,
-        price=price,
-        type=pivot_type,
-        strength=5,
-        timestamp=bar.timestamp,
-        index=index
+        bar=bar, price=price, type=pivot_type, strength=5, timestamp=bar.timestamp, index=index
     )
 
 
-def generate_clustered_pivots() -> List[Pivot]:
+def generate_clustered_pivots() -> list[Pivot]:
     """
     Generate synthetic pivots with known clusters for testing.
 
@@ -124,24 +113,26 @@ def generate_clustered_pivots() -> List[Pivot]:
         pivots.append(create_test_pivot(price, PivotType.HIGH, 15 + i * 5))
 
     # Resistance cluster 2: 4 pivots near $130
-    resistance_2_prices = [Decimal("130.00"), Decimal("130.80"), Decimal("129.50"), Decimal("130.40")]
+    resistance_2_prices = [
+        Decimal("130.00"),
+        Decimal("130.80"),
+        Decimal("129.50"),
+        Decimal("130.40"),
+    ]
     for i, price in enumerate(resistance_2_prices):
         pivots.append(create_test_pivot(price, PivotType.HIGH, 35 + i * 5))
 
     return pivots
 
 
-def generate_test_bars(count: int, symbol: str = "TEST", timeframe: str = "1d") -> List[OHLCVBar]:
+def generate_test_bars(count: int, symbol: str = "TEST", timeframe: str = "1d") -> list[OHLCVBar]:
     """Generate test OHLCV bars"""
     bars = []
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
     for i in range(count):
         bar = create_test_bar(
-            symbol=symbol,
-            timeframe=timeframe,
-            timestamp=base_time + timedelta(days=i),
-            index=i
+            symbol=symbol, timeframe=timeframe, timestamp=base_time + timedelta(days=i), index=i
         )
         bars.append(bar)
 
@@ -151,6 +142,7 @@ def generate_test_bars(count: int, symbol: str = "TEST", timeframe: str = "1d") 
 # ============================================================================
 # Task 10: Test Pivot Clustering (AC 9)
 # ============================================================================
+
 
 class TestPivotClustering:
     """Test scenario: Synthetic pivots with tight clusters"""
@@ -209,7 +201,9 @@ class TestPivotClustering:
         clusters = cluster_pivots(pivots, tolerance_pct=0.02)
 
         # Find the support cluster near $100 (should have 4 pivots)
-        support_cluster = [c for c in clusters if c.cluster_type == PivotType.LOW and c.touch_count == 4]
+        support_cluster = [
+            c for c in clusters if c.cluster_type == PivotType.LOW and c.touch_count == 4
+        ]
         assert len(support_cluster) == 1
 
         cluster = support_cluster[0]
@@ -240,6 +234,7 @@ class TestPivotClustering:
 # ============================================================================
 # Task 11: Test Minimum Touch Validation (AC 5)
 # ============================================================================
+
 
 class TestMinimumTouchValidation:
     """Test scenario: Cluster with minimum touch requirements"""
@@ -289,6 +284,7 @@ class TestMinimumTouchValidation:
 # ============================================================================
 # Task 12: Test Trading Range Formation (AC 6, 7)
 # ============================================================================
+
 
 class TestTradingRangeFormation:
     """Test scenario: Valid and invalid trading range formation"""
@@ -395,6 +391,7 @@ class TestTradingRangeFormation:
 # Task 13: Test Quality Scoring (AC 8)
 # ============================================================================
 
+
 class TestQualityScoring:
     """Test scenario: Quality scoring with different range characteristics"""
 
@@ -425,9 +422,7 @@ class TestQualityScoring:
 
         duration = 40
 
-        score = calculate_preliminary_quality_score(
-            support_cluster, resistance_cluster, duration
-        )
+        score = calculate_preliminary_quality_score(support_cluster, resistance_cluster, duration)
 
         # Should score very high (near 100)
         assert score >= 90
@@ -455,9 +450,7 @@ class TestQualityScoring:
 
         duration = 25
 
-        score = calculate_preliminary_quality_score(
-            support_cluster, resistance_cluster, duration
-        )
+        score = calculate_preliminary_quality_score(support_cluster, resistance_cluster, duration)
 
         # Should score moderate
         assert 40 <= score <= 80
@@ -483,9 +476,7 @@ class TestQualityScoring:
 
         duration = 12
 
-        score = calculate_preliminary_quality_score(
-            support_cluster, resistance_cluster, duration
-        )
+        score = calculate_preliminary_quality_score(support_cluster, resistance_cluster, duration)
 
         # Should score low
         assert score < 50
@@ -507,9 +498,7 @@ class TestQualityScoring:
 
         duration = 100  # Very long
 
-        score = calculate_preliminary_quality_score(
-            support_cluster, resistance_cluster, duration
-        )
+        score = calculate_preliminary_quality_score(support_cluster, resistance_cluster, duration)
 
         # Should be capped at 100
         assert score <= 100
@@ -518,6 +507,7 @@ class TestQualityScoring:
 # ============================================================================
 # Test Helper Functions
 # ============================================================================
+
 
 class TestHelperFunctions:
     """Test helper functions for cluster selection"""

@@ -8,8 +8,9 @@ failures in API calls and database operations.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, List, Type
+from typing import Any
 
 import httpx
 import structlog
@@ -20,8 +21,8 @@ logger = structlog.get_logger(__name__)
 async def retry_with_backoff(
     func: Callable,
     max_retries: int = 3,
-    delays: List[float] | None = None,
-    exceptions: tuple[Type[Exception], ...] | None = None,
+    delays: list[float] | None = None,
+    exceptions: tuple[type[Exception], ...] | None = None,
     **kwargs: Any,
 ) -> Any:
     """
@@ -101,8 +102,8 @@ async def retry_with_backoff(
 
 def with_retry(
     max_retries: int = 3,
-    delays: List[float] | None = None,
-    exceptions: tuple[Type[Exception], ...] | None = None,
+    delays: list[float] | None = None,
+    exceptions: tuple[type[Exception], ...] | None = None,
 ):
     """
     Decorator to add retry logic to async functions.

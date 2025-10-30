@@ -8,9 +8,10 @@ and IceLevel (resistance) calculations.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator, field_serializer
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 class TouchDetail(BaseModel):
@@ -40,7 +41,7 @@ class TouchDetail(BaseModel):
     rejection_wick: Decimal = Field(..., ge=0, le=1, description="Rejection wick size (0-1)")
     timestamp: datetime = Field(..., description="Bar timestamp")
 
-    @field_validator('price')
+    @field_validator("price")
     @classmethod
     def validate_price_positive(cls, v):
         """Ensure price is positive"""

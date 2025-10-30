@@ -15,7 +15,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from sqlalchemy import event, pool
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,

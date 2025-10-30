@@ -4,7 +4,7 @@ Unit tests for pandas DataFrame conversion utilities.
 Tests cover bars_to_dataframe and dataframe_to_bars conversions.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pandas as pd
@@ -21,7 +21,7 @@ def sample_bars():
         OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -34,7 +34,7 @@ def sample_bars():
         OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("153.00"),
             high=Decimal("158.00"),
             low=Decimal("152.00"),
@@ -47,7 +47,7 @@ def sample_bars():
         OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 3, tzinfo=UTC),
             open=Decimal("157.00"),
             high=Decimal("160.00"),
             low=Decimal("156.00"),
@@ -78,8 +78,18 @@ class TestBarsToDataFrame:
 
         # Should have expected columns
         expected_cols = [
-            'id', 'symbol', 'timeframe', 'open', 'high', 'low', 'close',
-            'volume', 'spread', 'spread_ratio', 'volume_ratio', 'created_at'
+            "id",
+            "symbol",
+            "timeframe",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "spread",
+            "spread_ratio",
+            "volume_ratio",
+            "created_at",
         ]
         for col in expected_cols:
             assert col in df.columns
@@ -101,15 +111,15 @@ class TestBarsToDataFrame:
         df = bars_to_dataframe(sample_bars)
 
         # Price columns should be float
-        assert df['open'].dtype == float
-        assert df['high'].dtype == float
-        assert df['low'].dtype == float
-        assert df['close'].dtype == float
-        assert df['spread'].dtype == float
+        assert df["open"].dtype == float
+        assert df["high"].dtype == float
+        assert df["low"].dtype == float
+        assert df["close"].dtype == float
+        assert df["spread"].dtype == float
 
         # Verify values are correct
-        assert df['open'].iloc[0] == 150.00
-        assert df['close'].iloc[0] == 153.00
+        assert df["open"].iloc[0] == 150.00
+        assert df["close"].iloc[0] == 153.00
 
     def test_sorted_by_timestamp(self):
         """Test DataFrame is sorted by timestamp."""
@@ -118,7 +128,7 @@ class TestBarsToDataFrame:
             OHLCVBar(
                 symbol="AAPL",
                 timeframe="1d",
-                timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+                timestamp=datetime(2024, 1, 3, tzinfo=UTC),
                 open=Decimal("157.00"),
                 high=Decimal("160.00"),
                 low=Decimal("156.00"),
@@ -129,7 +139,7 @@ class TestBarsToDataFrame:
             OHLCVBar(
                 symbol="AAPL",
                 timeframe="1d",
-                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
                 open=Decimal("150.00"),
                 high=Decimal("155.00"),
                 low=Decimal("148.00"),
@@ -142,15 +152,15 @@ class TestBarsToDataFrame:
         df = bars_to_dataframe(bars)
 
         # Should be sorted by timestamp
-        assert df.index[0] == datetime(2024, 1, 1, tzinfo=timezone.utc)
-        assert df.index[1] == datetime(2024, 1, 3, tzinfo=timezone.utc)
+        assert df.index[0] == datetime(2024, 1, 1, tzinfo=UTC)
+        assert df.index[1] == datetime(2024, 1, 3, tzinfo=UTC)
 
     def test_preserves_symbol_and_timeframe(self, sample_bars):
         """Test that symbol and timeframe are preserved."""
         df = bars_to_dataframe(sample_bars)
 
-        assert all(df['symbol'] == 'AAPL')
-        assert all(df['timeframe'] == '1d')
+        assert all(df["symbol"] == "AAPL")
+        assert all(df["timeframe"] == "1d")
 
 
 class TestDataFrameToBars:
@@ -198,7 +208,7 @@ class TestDataFrameToBars:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("150.12345678"),
             high=Decimal("155.87654321"),
             low=Decimal("148.11111111"),
@@ -223,21 +233,21 @@ class TestDataFrameOperations:
         df = bars_to_dataframe(sample_bars)
 
         # Calculate 2-bar rolling average for volume
-        df['volume_avg_2'] = df['volume'].rolling(2).mean()
+        df["volume_avg_2"] = df["volume"].rolling(2).mean()
 
         # First value should be NaN (not enough data)
-        assert pd.isna(df['volume_avg_2'].iloc[0])
+        assert pd.isna(df["volume_avg_2"].iloc[0])
 
         # Second value should be average of first two
         expected_avg = (1000000 + 1200000) / 2
-        assert df['volume_avg_2'].iloc[1] == expected_avg
+        assert df["volume_avg_2"].iloc[1] == expected_avg
 
     def test_dataframe_slicing(self, sample_bars):
         """Test slicing DataFrame by date range."""
         df = bars_to_dataframe(sample_bars)
 
         # Slice to get only Jan 2
-        jan2 = df[df.index == datetime(2024, 1, 2, tzinfo=timezone.utc)]
+        jan2 = df[df.index == datetime(2024, 1, 2, tzinfo=UTC)]
 
         assert len(jan2) == 1
-        assert jan2['close'].iloc[0] == 157.00
+        assert jan2["close"].iloc[0] == 157.00

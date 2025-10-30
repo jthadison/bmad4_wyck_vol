@@ -20,19 +20,18 @@ Performance:
     - Batch zone mapping (10 ranges): <200ms
 """
 
-from decimal import Decimal
 from datetime import datetime
-from typing import List, Optional, Tuple
+from decimal import Decimal
 from uuid import uuid4
 
 import structlog
 
-from src.models.ohlcv import OHLCVBar
-from src.models.volume_analysis import VolumeAnalysis
-from src.models.trading_range import TradingRange
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
-from src.models.zone import Zone, ZoneType, ZoneStrength, PriceRange
+from src.models.ohlcv import OHLCVBar
+from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
+from src.models.zone import PriceRange, Zone, ZoneStrength, ZoneType
 
 # Rebuild TradingRange model after Zone is imported to resolve forward references
 TradingRange.model_rebuild()
@@ -46,10 +45,7 @@ PROXIMITY_THRESHOLD_PCT = Decimal("0.02")  # AC 7: 2% proximity for significance
 INVALIDATION_VOLUME_THRESHOLD = Decimal("1.5")  # High volume for zone breaks
 
 
-def detect_demand_zones(
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
-) -> List[Zone]:
+def detect_demand_zones(bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]) -> list[Zone]:
     """
     Identify bullish absorption zones (demand zones).
 
@@ -99,13 +95,13 @@ def detect_demand_zones(
         "demand_zone_detection_start",
         bar_count=len(bars),
         symbol=bars[0].symbol if bars else None,
-        timeframe=bars[0].timeframe if bars else None
+        timeframe=bars[0].timeframe if bars else None,
     )
 
-    demand_zones: List[Zone] = []
+    demand_zones: list[Zone] = []
 
     # Iterate through bars checking demand zone conditions
-    for i, (bar, vol_analysis) in enumerate(zip(bars, volume_analysis)):
+    for i, (bar, vol_analysis) in enumerate(zip(bars, volume_analysis, strict=False)):
         # Check all three conditions for demand zone (AC 2, 3)
         if vol_analysis.volume_ratio is None or vol_analysis.spread_ratio is None:
             continue  # Skip bars without complete volume analysis
@@ -123,10 +119,7 @@ def detect_demand_zones(
 
             # Create PriceRange
             price_range = PriceRange(
-                low=zone_low,
-                high=zone_high,
-                midpoint=midpoint,
-                width_pct=width_pct
+                low=zone_low, high=zone_high, midpoint=midpoint, width_pct=width_pct
             )
 
             # Calculate average volume for context
@@ -151,7 +144,7 @@ def detect_demand_zones(
                 significance_score=0,  # Will be calculated later
                 is_active=True,
                 last_touch_timestamp=None,
-                invalidation_timestamp=None
+                invalidation_timestamp=None,
             )
 
             demand_zones.append(zone)
@@ -164,21 +157,15 @@ def detect_demand_zones(
                 price_range_high=str(zone_high),
                 volume_ratio=str(vol_analysis.volume_ratio),
                 spread_ratio=str(vol_analysis.spread_ratio),
-                close_position=str(vol_analysis.close_position)
+                close_position=str(vol_analysis.close_position),
             )
 
-    logger.info(
-        "demand_zone_detection_complete",
-        zones_detected=len(demand_zones)
-    )
+    logger.info("demand_zone_detection_complete", zones_detected=len(demand_zones))
 
     return demand_zones
 
 
-def detect_supply_zones(
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
-) -> List[Zone]:
+def detect_supply_zones(bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]) -> list[Zone]:
     """
     Identify bearish distribution zones (supply zones).
 
@@ -228,13 +215,13 @@ def detect_supply_zones(
         "supply_zone_detection_start",
         bar_count=len(bars),
         symbol=bars[0].symbol if bars else None,
-        timeframe=bars[0].timeframe if bars else None
+        timeframe=bars[0].timeframe if bars else None,
     )
 
-    supply_zones: List[Zone] = []
+    supply_zones: list[Zone] = []
 
     # Iterate through bars checking supply zone conditions
-    for i, (bar, vol_analysis) in enumerate(zip(bars, volume_analysis)):
+    for i, (bar, vol_analysis) in enumerate(zip(bars, volume_analysis, strict=False)):
         # Check all three conditions for supply zone (AC 4)
         if vol_analysis.volume_ratio is None or vol_analysis.spread_ratio is None:
             continue  # Skip bars without complete volume analysis
@@ -252,10 +239,7 @@ def detect_supply_zones(
 
             # Create PriceRange
             price_range = PriceRange(
-                low=zone_low,
-                high=zone_high,
-                midpoint=midpoint,
-                width_pct=width_pct
+                low=zone_low, high=zone_high, midpoint=midpoint, width_pct=width_pct
             )
 
             # Calculate average volume for context
@@ -280,7 +264,7 @@ def detect_supply_zones(
                 significance_score=0,  # Will be calculated later
                 is_active=True,
                 last_touch_timestamp=None,
-                invalidation_timestamp=None
+                invalidation_timestamp=None,
             )
 
             supply_zones.append(zone)
@@ -293,22 +277,17 @@ def detect_supply_zones(
                 price_range_high=str(zone_high),
                 volume_ratio=str(vol_analysis.volume_ratio),
                 spread_ratio=str(vol_analysis.spread_ratio),
-                close_position=str(vol_analysis.close_position)
+                close_position=str(vol_analysis.close_position),
             )
 
-    logger.info(
-        "supply_zone_detection_complete",
-        zones_detected=len(supply_zones)
-    )
+    logger.info("supply_zone_detection_complete", zones_detected=len(supply_zones))
 
     return supply_zones
 
 
 def count_zone_touches(
-    zone: Zone,
-    bars: List[OHLCVBar],
-    start_index: int
-) -> Tuple[int, Optional[datetime]]:
+    zone: Zone, bars: list[OHLCVBar], start_index: int
+) -> tuple[int, datetime | None]:
     """
     Count how many times price returned to a zone after formation.
 
@@ -331,7 +310,7 @@ def count_zone_touches(
         >>> print(f"Zone touched {touch_count} times")
     """
     touch_count = 0
-    last_touch_timestamp: Optional[datetime] = None
+    last_touch_timestamp: datetime | None = None
 
     # Iterate through bars after zone formation
     for i in range(start_index, len(bars)):
@@ -348,7 +327,7 @@ def count_zone_touches(
                 zone_type=zone.zone_type.value,
                 bar_index=i,
                 bar_timestamp=bar.timestamp.isoformat(),
-                touch_count=touch_count
+                touch_count=touch_count,
             )
 
     return touch_count, last_touch_timestamp
@@ -386,10 +365,8 @@ def classify_zone_strength(touch_count: int) -> ZoneStrength:
 
 
 def calculate_zone_proximity(
-    zone: Zone,
-    creek_level: Optional[CreekLevel],
-    ice_level: Optional[IceLevel]
-) -> Tuple[Optional[str], Optional[Decimal]]:
+    zone: Zone, creek_level: CreekLevel | None, ice_level: IceLevel | None
+) -> tuple[str | None, Decimal | None]:
     """
     Calculate zone proximity to Creek or Ice levels.
 
@@ -426,7 +403,7 @@ def calculate_zone_proximity(
                 zone_id=str(zone.id),
                 zone_midpoint=str(zone_mid),
                 creek_price=str(creek_level.price),
-                distance_pct=str(distance_pct)
+                distance_pct=str(distance_pct),
             )
             return "NEAR_CREEK", distance_pct
 
@@ -439,7 +416,7 @@ def calculate_zone_proximity(
                 zone_id=str(zone.id),
                 zone_midpoint=str(zone_mid),
                 ice_price=str(ice_level.price),
-                distance_pct=str(distance_pct)
+                distance_pct=str(distance_pct),
             )
             return "NEAR_ICE", distance_pct
 
@@ -489,8 +466,7 @@ def calculate_significance_score(zone: Zone) -> int:
     # Formation quality component (30 points)
     # Volume ratio: higher is better (1.3 = min, 3.3+ = max 15 pts)
     volume_component = min(
-        float((zone.formation_volume_ratio - Decimal("1.3")) / Decimal("2.0")) * 15,
-        15
+        float((zone.formation_volume_ratio - Decimal("1.3")) / Decimal("2.0")) * 15, 15
     )
     score += int(volume_component)
 
@@ -508,17 +484,13 @@ def calculate_significance_score(zone: Zone) -> int:
         proximity=zone.proximity_to_level,
         volume_ratio=str(zone.formation_volume_ratio),
         spread_ratio=str(zone.formation_spread_ratio),
-        final_score=final_score
+        final_score=final_score,
     )
 
     return final_score
 
 
-def check_zone_invalidation(
-    zone: Zone,
-    bars: List[OHLCVBar],
-    current_index: int
-) -> bool:
+def check_zone_invalidation(zone: Zone, bars: list[OHLCVBar], current_index: int) -> bool:
     """
     Check if zone has been invalidated (broken).
 
@@ -554,7 +526,7 @@ def check_zone_invalidation(
                 bar_index=current_index,
                 bar_close=str(bar.close),
                 zone_low=str(zone.price_range.low),
-                volume_ratio=str(bar.volume_ratio)
+                volume_ratio=str(bar.volume_ratio),
             )
             return True
 
@@ -567,7 +539,7 @@ def check_zone_invalidation(
                 bar_index=current_index,
                 bar_close=str(bar.close),
                 zone_high=str(zone.price_range.high),
-                volume_ratio=str(bar.volume_ratio)
+                volume_ratio=str(bar.volume_ratio),
             )
             return True
 
@@ -576,11 +548,11 @@ def check_zone_invalidation(
 
 def map_supply_demand_zones(
     trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis],
-    creek_level: Optional[CreekLevel] = None,
-    ice_level: Optional[IceLevel] = None
-) -> List[Zone]:
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis],
+    creek_level: CreekLevel | None = None,
+    ice_level: IceLevel | None = None,
+) -> list[Zone]:
     """
     Map supply and demand zones within a trading range.
 
@@ -632,7 +604,7 @@ def map_supply_demand_zones(
             "low_quality_range",
             range_id=str(trading_range.id),
             quality_score=trading_range.quality_score,
-            message="Zone mapping requires quality score >= 70"
+            message="Zone mapping requires quality score >= 70",
         )
         raise ValueError(
             f"Cannot map zones for low-quality range "
@@ -657,18 +629,18 @@ def map_supply_demand_zones(
         start_index=trading_range.start_index,
         end_index=trading_range.end_index,
         quality_score=trading_range.quality_score,
-        total_bars=len(bars)
+        total_bars=len(bars),
     )
 
     # Extract bars within trading range
-    range_bars = bars[trading_range.start_index:trading_range.end_index + 1]
-    range_volume_analysis = volume_analysis[trading_range.start_index:trading_range.end_index + 1]
+    range_bars = bars[trading_range.start_index : trading_range.end_index + 1]
+    range_volume_analysis = volume_analysis[trading_range.start_index : trading_range.end_index + 1]
 
     logger.info(
         "range_bars_extracted",
         range_bar_count=len(range_bars),
         start_index=trading_range.start_index,
-        end_index=trading_range.end_index
+        end_index=trading_range.end_index,
     )
 
     # Detect zones
@@ -680,7 +652,7 @@ def map_supply_demand_zones(
         "zones_detected",
         demand_zones=len(demand_zones),
         supply_zones=len(supply_zones),
-        total_zones=len(all_zones)
+        total_zones=len(all_zones),
     )
 
     # Process each zone: count touches, classify strength, calculate proximity and significance
@@ -714,7 +686,7 @@ def map_supply_demand_zones(
             touch_count=touch_count,
             proximity=proximity_label,
             significance_score=zone.significance_score,
-            is_active=zone.is_active
+            is_active=zone.is_active,
         )
 
     # Filter out exhausted zones (keep only FRESH and TESTED)
@@ -724,7 +696,7 @@ def map_supply_demand_zones(
         "zones_filtered",
         total_zones=len(all_zones),
         active_zones=len(active_zones),
-        exhausted_removed=len(all_zones) - len(active_zones)
+        exhausted_removed=len(all_zones) - len(active_zones),
     )
 
     # Sort zones by significance score (highest first)
@@ -742,10 +714,10 @@ def map_supply_demand_zones(
                     "strength": z.strength.value,
                     "proximity": z.proximity_to_level,
                     "significance": z.significance_score,
-                    "price_range": f"{z.price_range.low}-{z.price_range.high}"
+                    "price_range": f"{z.price_range.low}-{z.price_range.high}",
                 }
                 for z in top_zones
-            ]
+            ],
         )
 
     logger.info(
@@ -753,7 +725,7 @@ def map_supply_demand_zones(
         range_id=str(trading_range.id),
         active_zones=len(active_zones),
         demand_zones_active=len([z for z in active_zones if z.zone_type == ZoneType.DEMAND]),
-        supply_zones_active=len([z for z in active_zones if z.zone_type == ZoneType.SUPPLY])
+        supply_zones_active=len([z for z in active_zones if z.zone_type == ZoneType.SUPPLY]),
     )
 
     return active_zones

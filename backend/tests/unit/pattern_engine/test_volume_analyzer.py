@@ -5,7 +5,7 @@ Tests the calculate_volume_ratio function with synthetic data, edge cases,
 and boundary conditions.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -13,17 +13,17 @@ import pytest
 
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
+from src.models.volume_analysis import VolumeAnalysis
 from src.pattern_engine.volume_analyzer import (
-    calculate_volume_ratio,
-    calculate_volume_ratios_batch,
-    calculate_spread_ratio,
-    calculate_spread_ratios_batch,
+    VolumeAnalyzer,
     calculate_close_position,
     calculate_close_positions_batch,
+    calculate_spread_ratio,
+    calculate_spread_ratios_batch,
+    calculate_volume_ratio,
+    calculate_volume_ratios_batch,
     classify_effort_result,
-    VolumeAnalyzer,
 )
-from src.models.volume_analysis import VolumeAnalysis
 
 
 def create_test_bar(
@@ -47,7 +47,7 @@ def create_test_bar(
         OHLCVBar instance for testing
     """
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     spread = high - low
 
@@ -198,7 +198,7 @@ class TestCalculateVolumeRatiosBatch:
 
         # Compare results
         assert len(batch_ratios) == len(individual_ratios)
-        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios)):
+        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios, strict=False)):
             if batch is None and individual is None:
                 continue
             assert batch is not None and individual is not None
@@ -258,7 +258,10 @@ class TestCalculateSpreadRatio:
     def test_basic_spread_ratio_calculation(self):
         """Test basic spread ratio calculation with known values."""
         # Create 20 bars with spread 10 each (high=110, low=100)
-        bars = [create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0")) for _ in range(20)]
+        bars = [
+            create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0"))
+            for _ in range(20)
+        ]
         # Add bar with spread 20 (high=120, low=100)
         bars.append(create_test_bar(volume=100, high=Decimal("120.0"), low=Decimal("100.0")))
 
@@ -274,11 +277,9 @@ class TestCalculateSpreadRatio:
         bars = []
         spreads = [10, 15, 20, 15, 10] * 4
         for spread in spreads:
-            bars.append(create_test_bar(
-                volume=100,
-                high=Decimal(str(100 + spread)),
-                low=Decimal("100.0")
-            ))
+            bars.append(
+                create_test_bar(volume=100, high=Decimal(str(100 + spread)), low=Decimal("100.0"))
+            )
         # Current bar with spread 28
         bars.append(create_test_bar(volume=100, high=Decimal("128.0"), low=Decimal("100.0")))
 
@@ -298,7 +299,10 @@ class TestCalculateSpreadRatio:
 
     def test_bar_exactly_at_index_20(self):
         """Test boundary condition: bar at exactly index 20."""
-        bars = [create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0")) for _ in range(20)]
+        bars = [
+            create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0"))
+            for _ in range(20)
+        ]
         bars.append(create_test_bar(volume=100, high=Decimal("115.0"), low=Decimal("100.0")))
 
         ratio = calculate_spread_ratio(bars, 20)
@@ -308,7 +312,10 @@ class TestCalculateSpreadRatio:
 
     def test_zero_spread_average_returns_zero(self):
         """Test edge case: all historical bars have zero spread (high == low)."""
-        bars = [create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("100.0")) for _ in range(20)]
+        bars = [
+            create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("100.0"))
+            for _ in range(20)
+        ]
         bars.append(create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0")))
 
         ratio = calculate_spread_ratio(bars, 20)
@@ -316,7 +323,10 @@ class TestCalculateSpreadRatio:
 
     def test_zero_current_spread_returns_zero(self):
         """Test edge case: current bar has zero spread (high == low)."""
-        bars = [create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0")) for _ in range(20)]
+        bars = [
+            create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0"))
+            for _ in range(20)
+        ]
         bars.append(create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("100.0")))
 
         ratio = calculate_spread_ratio(bars, 20)
@@ -346,7 +356,10 @@ class TestCalculateSpreadRatio:
 
     def test_spread_ratio_at_end_of_long_sequence(self):
         """Test spread ratio calculation at the end of a long bar sequence."""
-        bars = [create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0")) for _ in range(100)]
+        bars = [
+            create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0"))
+            for _ in range(100)
+        ]
         bars.append(create_test_bar(volume=100, high=Decimal("130.0"), low=Decimal("100.0")))
 
         ratio = calculate_spread_ratio(bars, 100)
@@ -358,10 +371,10 @@ class TestCalculateSpreadRatio:
         "historical_spread,current_spread,expected_ratio",
         [
             (10, 20, 2.0),  # Double spread (wide)
-            (10, 5, 0.5),   # Half spread (narrow)
+            (10, 5, 0.5),  # Half spread (narrow)
             (10, 10, 1.0),  # Same spread (normal)
             (10, 25, 2.5),  # 2.5x spread (climactic)
-            (10, 4, 0.4),   # 0.4x spread (absorption)
+            (10, 4, 0.4),  # 0.4x spread (absorption)
             (20, 40, 2.0),  # Different base spread
         ],
     )
@@ -371,17 +384,13 @@ class TestCalculateSpreadRatio:
         """Parametrized test for various spread ratio scenarios."""
         bars = [
             create_test_bar(
-                volume=100,
-                high=Decimal(str(100 + historical_spread)),
-                low=Decimal("100.0")
+                volume=100, high=Decimal(str(100 + historical_spread)), low=Decimal("100.0")
             )
             for _ in range(20)
         ]
         bars.append(
             create_test_bar(
-                volume=100,
-                high=Decimal(str(100 + current_spread)),
-                low=Decimal("100.0")
+                volume=100, high=Decimal(str(100 + current_spread)), low=Decimal("100.0")
             )
         )
 
@@ -395,11 +404,16 @@ class TestCalculateSpreadRatiosBatch:
 
     def test_batch_calculation_matches_individual(self):
         """Test that batch calculation produces same results as individual calls."""
-        bars = [create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0")) for _ in range(20)]
-        bars.extend([
-            create_test_bar(volume=100, high=Decimal("120.0"), low=Decimal("100.0")),
-            create_test_bar(volume=100, high=Decimal("115.0"), low=Decimal("100.0"))
-        ])
+        bars = [
+            create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0"))
+            for _ in range(20)
+        ]
+        bars.extend(
+            [
+                create_test_bar(volume=100, high=Decimal("120.0"), low=Decimal("100.0")),
+                create_test_bar(volume=100, high=Decimal("115.0"), low=Decimal("100.0")),
+            ]
+        )
 
         # Calculate using batch function
         batch_ratios = calculate_spread_ratios_batch(bars)
@@ -409,13 +423,15 @@ class TestCalculateSpreadRatiosBatch:
 
         # Compare results
         assert len(batch_ratios) == len(individual_ratios)
-        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios)):
+        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios, strict=False)):
             if batch is None and individual is None:
                 continue
             if batch == 0.0 and individual == 0.0:
                 continue
             assert batch is not None and individual is not None
-            assert abs(batch - individual) < 0.0001, f"Mismatch at index {i}: batch={batch}, individual={individual}"
+            assert (
+                abs(batch - individual) < 0.0001
+            ), f"Mismatch at index {i}: batch={batch}, individual={individual}"
 
     def test_batch_first_20_bars_are_none(self):
         """Test that batch function returns None for first 20 bars."""
@@ -441,11 +457,9 @@ class TestCalculateSpreadRatiosBatch:
         bars = []
         for i in range(1000):
             spread = 10 + (i % 5)  # Varying spreads: 10-14
-            bars.append(create_test_bar(
-                volume=100,
-                high=Decimal(str(100 + spread)),
-                low=Decimal("100.0")
-            ))
+            bars.append(
+                create_test_bar(volume=100, high=Decimal(str(100 + spread)), low=Decimal("100.0"))
+            )
 
         ratios = calculate_spread_ratios_batch(bars)
 
@@ -456,7 +470,10 @@ class TestCalculateSpreadRatiosBatch:
     def test_batch_zero_spread_handling(self):
         """Test batch function handles zero spreads correctly."""
         # Create 25 bars all with zero spread (high == low)
-        bars = [create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("100.0")) for _ in range(25)]
+        bars = [
+            create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("100.0"))
+            for _ in range(25)
+        ]
 
         ratios = calculate_spread_ratios_batch(bars)
 
@@ -471,11 +488,19 @@ class TestCalculateSpreadRatiosBatch:
     def test_batch_mixed_zero_and_normal_spreads(self):
         """Test batch function with mix of zero and normal spreads."""
         # 20 bars with normal spread
-        bars = [create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0")) for _ in range(20)]
+        bars = [
+            create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0"))
+            for _ in range(20)
+        ]
         # Add a bar with zero spread
         bars.append(create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("100.0")))
         # Add more bars with normal spread
-        bars.extend([create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0")) for _ in range(4)])
+        bars.extend(
+            [
+                create_test_bar(volume=100, high=Decimal("110.0"), low=Decimal("100.0"))
+                for _ in range(4)
+            ]
+        )
 
         ratios = calculate_spread_ratios_batch(bars)
 
@@ -492,11 +517,7 @@ class TestCalculateClosePosition:
 
     def test_close_at_high(self):
         """Test close position when bar closes at high (maximum buying pressure)."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0"),
-            low=Decimal("90.0")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
         # Set close at high
         bar.close = Decimal("100.0")
 
@@ -505,11 +526,7 @@ class TestCalculateClosePosition:
 
     def test_close_at_low(self):
         """Test close position when bar closes at low (maximum selling pressure)."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0"),
-            low=Decimal("90.0")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
         # Set close at low
         bar.close = Decimal("90.0")
 
@@ -518,11 +535,7 @@ class TestCalculateClosePosition:
 
     def test_close_at_midpoint(self):
         """Test close position when bar closes at midpoint (neutral pressure)."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0"),
-            low=Decimal("90.0")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
         # Set close at midpoint: (100 + 90) / 2 = 95
         bar.close = Decimal("95.0")
 
@@ -531,11 +544,7 @@ class TestCalculateClosePosition:
 
     def test_close_at_75_percent(self):
         """Test close position when bar closes at 75% of range (strong buying pressure)."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0"),
-            low=Decimal("90.0")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
         # Set close at 75%: low + 0.75 * (high - low) = 90 + 0.75 * 10 = 97.5
         bar.close = Decimal("97.5")
 
@@ -544,11 +553,7 @@ class TestCalculateClosePosition:
 
     def test_close_at_25_percent(self):
         """Test close position when bar closes at 25% of range (strong selling pressure)."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0"),
-            low=Decimal("90.0")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
         # Set close at 25%: low + 0.25 * (high - low) = 90 + 0.25 * 10 = 92.5
         bar.close = Decimal("92.5")
 
@@ -557,11 +562,7 @@ class TestCalculateClosePosition:
 
     def test_zero_spread_returns_neutral(self):
         """Test edge case: zero spread (doji bar) returns 0.5 (neutral)."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0"),
-            low=Decimal("100.0")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("100.0"))
         bar.close = Decimal("100.0")
 
         position = calculate_close_position(bar)
@@ -580,11 +581,7 @@ class TestCalculateClosePosition:
 
     def test_very_small_spread(self):
         """Test close position with very small spread (precision test)."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0001"),
-            low=Decimal("100.0000")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0001"), low=Decimal("100.0000"))
         bar.close = Decimal("100.0001")  # Close at high
 
         position = calculate_close_position(bar)
@@ -592,11 +589,7 @@ class TestCalculateClosePosition:
 
     def test_close_above_high_clamped(self):
         """Test data integrity: close above high is clamped to valid range."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0"),
-            low=Decimal("90.0")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
         # Invalid data: close > high
         bar.close = Decimal("105.0")
 
@@ -606,11 +599,7 @@ class TestCalculateClosePosition:
 
     def test_close_below_low_clamped(self):
         """Test data integrity: close below low is clamped to valid range."""
-        bar = create_test_bar(
-            volume=100,
-            high=Decimal("100.0"),
-            low=Decimal("90.0")
-        )
+        bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
         # Invalid data: close < low
         bar.close = Decimal("85.0")
 
@@ -627,10 +616,10 @@ class TestCalculateClosePosition:
         """Test that result is always in [0.0, 1.0] range."""
         # Test various close positions
         test_cases = [
-            (Decimal("90.0"), Decimal("100.0"), Decimal("90.0")),   # 0.0
-            (Decimal("90.0"), Decimal("100.0"), Decimal("92.0")),   # 0.2
-            (Decimal("90.0"), Decimal("100.0"), Decimal("95.0")),   # 0.5
-            (Decimal("90.0"), Decimal("100.0"), Decimal("98.0")),   # 0.8
+            (Decimal("90.0"), Decimal("100.0"), Decimal("90.0")),  # 0.0
+            (Decimal("90.0"), Decimal("100.0"), Decimal("92.0")),  # 0.2
+            (Decimal("90.0"), Decimal("100.0"), Decimal("95.0")),  # 0.5
+            (Decimal("90.0"), Decimal("100.0"), Decimal("98.0")),  # 0.8
             (Decimal("90.0"), Decimal("100.0"), Decimal("100.0")),  # 1.0
         ]
 
@@ -644,14 +633,14 @@ class TestCalculateClosePosition:
     @pytest.mark.parametrize(
         "low,high,close,expected_position",
         [
-            (Decimal("90.0"), Decimal("100.0"), Decimal("100.0"), 1.0),    # Close at high
-            (Decimal("90.0"), Decimal("100.0"), Decimal("90.0"), 0.0),     # Close at low
-            (Decimal("90.0"), Decimal("100.0"), Decimal("95.0"), 0.5),     # Midpoint
-            (Decimal("90.0"), Decimal("100.0"), Decimal("97.0"), 0.7),     # 70% (bullish)
-            (Decimal("90.0"), Decimal("100.0"), Decimal("93.0"), 0.3),     # 30% (bearish)
-            (Decimal("100.0"), Decimal("200.0"), Decimal("150.0"), 0.5),   # Different range
-            (Decimal("50.0"), Decimal("60.0"), Decimal("58.0"), 0.8),      # 80% (strong buying)
-            (Decimal("50.0"), Decimal("60.0"), Decimal("52.0"), 0.2),      # 20% (strong selling)
+            (Decimal("90.0"), Decimal("100.0"), Decimal("100.0"), 1.0),  # Close at high
+            (Decimal("90.0"), Decimal("100.0"), Decimal("90.0"), 0.0),  # Close at low
+            (Decimal("90.0"), Decimal("100.0"), Decimal("95.0"), 0.5),  # Midpoint
+            (Decimal("90.0"), Decimal("100.0"), Decimal("97.0"), 0.7),  # 70% (bullish)
+            (Decimal("90.0"), Decimal("100.0"), Decimal("93.0"), 0.3),  # 30% (bearish)
+            (Decimal("100.0"), Decimal("200.0"), Decimal("150.0"), 0.5),  # Different range
+            (Decimal("50.0"), Decimal("60.0"), Decimal("58.0"), 0.8),  # 80% (strong buying)
+            (Decimal("50.0"), Decimal("60.0"), Decimal("52.0"), 0.2),  # 20% (strong selling)
         ],
     )
     def test_parametrized_close_positions(
@@ -662,7 +651,9 @@ class TestCalculateClosePosition:
         bar.close = close
 
         position = calculate_close_position(bar)
-        assert abs(position - expected_position) < 0.0001, f"Expected {expected_position}, got {position}"
+        assert (
+            abs(position - expected_position) < 0.0001
+        ), f"Expected {expected_position}, got {position}"
 
 
 class TestCalculateClosePositionsBatch:
@@ -671,7 +662,13 @@ class TestCalculateClosePositionsBatch:
     def test_batch_calculation_matches_individual(self):
         """Test that batch calculation produces same results as individual calls."""
         bars = []
-        closes = [Decimal("90.0"), Decimal("95.0"), Decimal("100.0"), Decimal("97.0"), Decimal("92.0")]
+        closes = [
+            Decimal("90.0"),
+            Decimal("95.0"),
+            Decimal("100.0"),
+            Decimal("97.0"),
+            Decimal("92.0"),
+        ]
 
         for close in closes:
             bar = create_test_bar(volume=100, high=Decimal("100.0"), low=Decimal("90.0"))
@@ -686,8 +683,12 @@ class TestCalculateClosePositionsBatch:
 
         # Compare results
         assert len(batch_positions) == len(individual_positions)
-        for i, (batch, individual) in enumerate(zip(batch_positions, individual_positions)):
-            assert abs(batch - individual) < 0.0001, f"Mismatch at index {i}: batch={batch}, individual={individual}"
+        for i, (batch, individual) in enumerate(
+            zip(batch_positions, individual_positions, strict=False)
+        ):
+            assert (
+                abs(batch - individual) < 0.0001
+            ), f"Mismatch at index {i}: batch={batch}, individual={individual}"
 
     def test_batch_empty_list(self):
         """Test batch function with empty list."""
@@ -763,8 +764,10 @@ class TestCalculateClosePositionsBatch:
         positions = calculate_close_positions_batch(bars)
 
         # Verify each position matches expected
-        for i, (position, expected) in enumerate(zip(positions, expected_positions)):
-            assert abs(position - expected) < 0.0001, f"Mismatch at index {i}: got {position}, expected {expected}"
+        for i, (position, expected) in enumerate(zip(positions, expected_positions, strict=False)):
+            assert (
+                abs(position - expected) < 0.0001
+            ), f"Mismatch at index {i}: got {position}, expected {expected}"
 
     def test_batch_invalid_data_clamped(self):
         """Test batch function clamps invalid data (close outside [low, high])."""
@@ -876,13 +879,13 @@ class TestClassifyEffortResult:
             (2.0, 1.0, EffortResult.CLIMACTIC),  # Boundary
             (2.5, 1.1, EffortResult.CLIMACTIC),  # Ultra-high volume
             (3.0, 1.2, EffortResult.CLIMACTIC),  # Extreme volume
-            (1.9, 1.0, EffortResult.NORMAL),     # Below Path 1 volume
+            (1.9, 1.0, EffortResult.NORMAL),  # Below Path 1 volume
             # Path 2 tests
             (1.5, 1.5, EffortResult.CLIMACTIC),  # Boundary
             (1.6, 1.6, EffortResult.CLIMACTIC),  # Balanced
             (2.0, 2.0, EffortResult.CLIMACTIC),  # Strong
-            (1.5, 1.4, EffortResult.NORMAL),     # Below Path 2 spread
-            (1.4, 1.6, EffortResult.NORMAL),     # Below Path 2 volume
+            (1.5, 1.4, EffortResult.NORMAL),  # Below Path 2 spread
+            (1.4, 1.6, EffortResult.NORMAL),  # Below Path 2 volume
         ],
     )
     def test_climactic_parametrized(self, volume_ratio, spread_ratio, expected):
@@ -925,12 +928,12 @@ class TestClassifyEffortResult:
     @pytest.mark.parametrize(
         "volume_ratio,spread_ratio,expected",
         [
-            (1.5, 0.5, EffortResult.ABSORPTION),   # Basic
-            (1.4, 0.8, EffortResult.ABSORPTION),   # Boundary (updated threshold)
-            (1.4, 0.9, EffortResult.NORMAL),       # Above spread threshold
-            (1.3, 0.5, EffortResult.NORMAL),       # Below volume threshold
-            (3.0, 0.2, EffortResult.ABSORPTION),   # Very high volume, very narrow
-            (2.1, 0.7, EffortResult.ABSORPTION),   # Not CLIMACTIC
+            (1.5, 0.5, EffortResult.ABSORPTION),  # Basic
+            (1.4, 0.8, EffortResult.ABSORPTION),  # Boundary (updated threshold)
+            (1.4, 0.9, EffortResult.NORMAL),  # Above spread threshold
+            (1.3, 0.5, EffortResult.NORMAL),  # Below volume threshold
+            (3.0, 0.2, EffortResult.ABSORPTION),  # Very high volume, very narrow
+            (2.1, 0.7, EffortResult.ABSORPTION),  # Not CLIMACTIC
         ],
     )
     def test_absorption_parametrized(self, volume_ratio, spread_ratio, expected):
@@ -970,8 +973,8 @@ class TestClassifyEffortResult:
         [
             (0.4, 0.5, EffortResult.NO_DEMAND),  # Basic
             (0.6, 0.8, EffortResult.NO_DEMAND),  # Boundary
-            (0.7, 0.5, EffortResult.NORMAL),     # Above volume threshold
-            (0.4, 0.9, EffortResult.NORMAL),     # Above spread threshold
+            (0.7, 0.5, EffortResult.NORMAL),  # Above volume threshold
+            (0.4, 0.9, EffortResult.NORMAL),  # Above spread threshold
             (0.1, 0.1, EffortResult.NO_DEMAND),  # Very low
         ],
     )
@@ -1010,13 +1013,13 @@ class TestClassifyEffortResult:
     @pytest.mark.parametrize(
         "volume_ratio,spread_ratio",
         [
-            (1.0, 1.0),    # Average
-            (0.8, 0.9),    # Mid-range
-            (1.2, 1.3),    # Slightly above average
-            (0.7, 1.0),    # Mixed
-            (1.0, 0.9),    # Mixed
-            (None, 1.0),   # None volume
-            (1.0, None),   # None spread
+            (1.0, 1.0),  # Average
+            (0.8, 0.9),  # Mid-range
+            (1.2, 1.3),  # Slightly above average
+            (0.7, 1.0),  # Mixed
+            (1.0, 0.9),  # Mixed
+            (None, 1.0),  # None volume
+            (1.0, None),  # None spread
             (None, None),  # Both None
         ],
     )
@@ -1034,16 +1037,18 @@ class TestClassifyEffortResult:
             # Between CLIMACTIC Path 1 and ABSORPTION
             (2.1, 0.7, EffortResult.ABSORPTION),  # High vol, narrow spread
             # Between CLIMACTIC paths (1.9, 1.6 actually qualifies for Path 2)
-            (1.4, 1.4, EffortResult.NORMAL),      # Below both paths
+            (1.4, 1.4, EffortResult.NORMAL),  # Below both paths
             # Between ABSORPTION and NO_DEMAND
-            (1.3, 0.7, EffortResult.NORMAL),      # Between thresholds
+            (1.3, 0.7, EffortResult.NORMAL),  # Between thresholds
             # Between NO_DEMAND and NORMAL
-            (0.7, 0.7, EffortResult.NORMAL),      # Just above NO_DEMAND volume
+            (0.7, 0.7, EffortResult.NORMAL),  # Just above NO_DEMAND volume
         ]
 
         for volume_ratio, spread_ratio, expected in test_cases:
             result = classify_effort_result(volume_ratio, spread_ratio)
-            assert result == expected, f"Overlap detected for vol={volume_ratio}, spread={spread_ratio}"
+            assert (
+                result == expected
+            ), f"Overlap detected for vol={volume_ratio}, spread={spread_ratio}"
 
     def test_decision_tree_deterministic(self):
         """Test that classification is deterministic (same inputs = same output)."""
@@ -1266,11 +1271,13 @@ class TestVolumeAnalyzer:
 
         # Create 20 normal bars (average volume 100, average spread 10)
         for _ in range(20):
-            bars.append(create_test_bar(
-                volume=100,
-                high=Decimal("105.0"),
-                low=Decimal("95.0"),
-            ))
+            bars.append(
+                create_test_bar(
+                    volume=100,
+                    high=Decimal("105.0"),
+                    low=Decimal("95.0"),
+                )
+            )
 
         # Add absorption bar: high volume (150 = 1.5x) + narrow spread (0.5x)
         absorption_bar = create_test_bar(
@@ -1296,11 +1303,13 @@ class TestVolumeAnalyzer:
 
         # Create 20 normal bars
         for _ in range(20):
-            bars.append(create_test_bar(
-                volume=100,
-                high=Decimal("105.0"),
-                low=Decimal("95.0"),
-            ))
+            bars.append(
+                create_test_bar(
+                    volume=100,
+                    high=Decimal("105.0"),
+                    low=Decimal("95.0"),
+                )
+            )
 
         # Add no demand bar: low volume (50 = 0.5x) + narrow spread (0.6x)
         no_demand_bar = create_test_bar(
@@ -1328,7 +1337,7 @@ class TestVolumeAnalyzer:
 
         # Create bars with different close positions
         test_cases = [
-            (Decimal("90.0"), 0.0),   # Close at low
+            (Decimal("90.0"), 0.0),  # Close at low
             (Decimal("100.0"), 0.5),  # Close at mid
             (Decimal("110.0"), 1.0),  # Close at high
         ]
@@ -1336,12 +1345,12 @@ class TestVolumeAnalyzer:
         for _ in range(20):
             bars.append(create_test_bar(volume=100))
 
-        for close_price, expected_position in test_cases:
+        for close_price, _ in test_cases:
             bar = OHLCVBar(
                 id=uuid4(),
                 symbol="AAPL",
                 timeframe="1d",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 open=Decimal("100.0"),
                 high=Decimal("110.0"),
                 low=Decimal("90.0"),
@@ -1359,8 +1368,9 @@ class TestVolumeAnalyzer:
         # Check last 3 bars have correct close positions
         for i, (_, expected_position) in enumerate(test_cases, start=20):
             actual_position = float(results[i].close_position)
-            assert abs(actual_position - expected_position) < 0.01, \
-                f"Bar {i}: expected {expected_position}, got {actual_position}"
+            assert (
+                abs(actual_position - expected_position) < 0.01
+            ), f"Bar {i}: expected {expected_position}, got {actual_position}"
 
     def test_batch_processing_efficiency(self):
         """
@@ -1375,9 +1385,9 @@ class TestVolumeAnalyzer:
 
         # Results should match individual batch function calls
         from src.pattern_engine.volume_analyzer import (
-            calculate_volume_ratios_batch,
-            calculate_spread_ratios_batch,
             calculate_close_positions_batch,
+            calculate_spread_ratios_batch,
+            calculate_volume_ratios_batch,
         )
 
         volume_ratios = calculate_volume_ratios_batch(bars)

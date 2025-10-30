@@ -8,7 +8,6 @@ Cache is optional and disabled by default for MVP (controlled by settings).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
 
 import structlog
 from redis.asyncio import Redis
@@ -84,7 +83,7 @@ class BarCache:
         timeframe: str,
         start_date: datetime,
         end_date: datetime,
-    ) -> Optional[List[OHLCVBar]]:
+    ) -> list[OHLCVBar] | None:
         """
         Get bars from cache if available.
 
@@ -116,6 +115,7 @@ class BarCache:
 
             # Deserialize JSON to list of Pydantic models
             import json
+
             bars_list = json.loads(cached_data)
             bars = [OHLCVBar.model_validate(bar_dict) for bar_dict in bars_list]
 
@@ -136,7 +136,7 @@ class BarCache:
         timeframe: str,
         start_date: datetime,
         end_date: datetime,
-        bars: List[OHLCVBar],
+        bars: list[OHLCVBar],
     ) -> bool:
         """
         Store bars in cache with TTL.
@@ -163,7 +163,8 @@ class BarCache:
         try:
             # Serialize Pydantic models to JSON
             import json
-            bars_list = [bar.model_dump(mode='json') for bar in bars]
+
+            bars_list = [bar.model_dump(mode="json") for bar in bars]
             cached_data = json.dumps(bars_list)
 
             # Store with TTL

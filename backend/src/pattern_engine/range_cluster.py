@@ -24,15 +24,16 @@ Example:
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
-from typing import List, Optional
+import statistics
+from decimal import ROUND_HALF_UP, Decimal
+
+import structlog
+
+from src.models.ohlcv import OHLCVBar
 from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
 from src.models.trading_range import TradingRange
-from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.pivot_detector import get_pivot_highs, get_pivot_lows
-import statistics
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -57,7 +58,7 @@ def _quantize_decimal(value: Decimal, decimal_places: int = 8) -> Decimal:
     return value.quantize(quantizer, rounding=ROUND_HALF_UP)
 
 
-def cluster_pivots(pivots: List[Pivot], tolerance_pct: float = 0.02) -> List[PriceCluster]:
+def cluster_pivots(pivots: list[Pivot], tolerance_pct: float = 0.02) -> list[PriceCluster]:
     """
     Cluster pivot points within price tolerance to identify support/resistance zones.
 
@@ -100,16 +101,21 @@ def cluster_pivots(pivots: List[Pivot], tolerance_pct: float = 0.02) -> List[Pri
         raise ValueError(f"tolerance_pct must be > 0, got {tolerance_pct}")
 
     if tolerance_pct > 0.5:
-        logger.warning("large_tolerance", tolerance_pct=tolerance_pct,
-                      message="Tolerance > 50% may cluster unrelated pivots")
+        logger.warning(
+            "large_tolerance",
+            tolerance_pct=tolerance_pct,
+            message="Tolerance > 50% may cluster unrelated pivots",
+        )
 
     # Extract symbol for logging (if available)
-    symbol = pivots[0].bar.symbol if pivots and hasattr(pivots[0].bar, 'symbol') else "UNKNOWN"
+    symbol = pivots[0].bar.symbol if pivots and hasattr(pivots[0].bar, "symbol") else "UNKNOWN"
 
-    logger.info("pivot_clustering_start",
-               symbol=symbol,
-               pivot_count=len(pivots),
-               tolerance_pct=tolerance_pct)
+    logger.info(
+        "pivot_clustering_start",
+        symbol=symbol,
+        pivot_count=len(pivots),
+        tolerance_pct=tolerance_pct,
+    )
 
     # Separate pivots by type
     pivot_highs = get_pivot_highs(pivots)
@@ -122,16 +128,18 @@ def cluster_pivots(pivots: List[Pivot], tolerance_pct: float = 0.02) -> List[Pri
     # Combine results
     all_clusters = high_clusters + low_clusters
 
-    logger.info("pivot_clustering_complete",
-               symbol=symbol,
-               cluster_count=len(all_clusters),
-               high_clusters=len(high_clusters),
-               low_clusters=len(low_clusters))
+    logger.info(
+        "pivot_clustering_complete",
+        symbol=symbol,
+        cluster_count=len(all_clusters),
+        high_clusters=len(high_clusters),
+        low_clusters=len(low_clusters),
+    )
 
     return all_clusters
 
 
-def _cluster_by_proximity(pivots: List[Pivot], tolerance_pct: float) -> List[PriceCluster]:
+def _cluster_by_proximity(pivots: list[Pivot], tolerance_pct: float) -> list[PriceCluster]:
     """
     Internal helper: cluster pivots of same type by price proximity.
 
@@ -179,7 +187,7 @@ def _cluster_by_proximity(pivots: List[Pivot], tolerance_pct: float) -> List[Pri
     return clusters
 
 
-def _create_price_cluster(pivots: List[Pivot]) -> PriceCluster:
+def _create_price_cluster(pivots: list[Pivot]) -> PriceCluster:
     """
     Internal helper: create PriceCluster object from list of pivots.
 
@@ -216,17 +224,17 @@ def _create_price_cluster(pivots: List[Pivot]) -> PriceCluster:
         touch_count=len(pivots),
         cluster_type=pivots[0].type,  # All same type
         std_deviation=std_dev,
-        timestamp_range=timestamp_range
+        timestamp_range=timestamp_range,
     )
 
 
 def form_trading_range(
     support_cluster: PriceCluster,
     resistance_cluster: PriceCluster,
-    bars: List[OHLCVBar],
-    symbol: Optional[str] = None,
-    timeframe: Optional[str] = None
-) -> Optional[TradingRange]:
+    bars: list[OHLCVBar],
+    symbol: str | None = None,
+    timeframe: str | None = None,
+) -> TradingRange | None:
     """
     Form a TradingRange from support and resistance clusters.
 
@@ -262,17 +270,19 @@ def form_trading_range(
 
     # Extract symbol and timeframe
     if symbol is None:
-        symbol = bars[0].symbol if bars and hasattr(bars[0], 'symbol') else "UNKNOWN"
+        symbol = bars[0].symbol if bars and hasattr(bars[0], "symbol") else "UNKNOWN"
     if timeframe is None:
-        timeframe = bars[0].timeframe if bars and hasattr(bars[0], 'timeframe') else "UNKNOWN"
+        timeframe = bars[0].timeframe if bars and hasattr(bars[0], "timeframe") else "UNKNOWN"
 
     # Validate: support < resistance
     if resistance <= support:
-        logger.warning("invalid_range_order",
-                      symbol=symbol,
-                      support=float(support),
-                      resistance=float(resistance),
-                      message="Resistance must be > support")
+        logger.warning(
+            "invalid_range_order",
+            symbol=symbol,
+            support=float(support),
+            resistance=float(resistance),
+            message="Resistance must be > support",
+        )
         return None
 
     # Calculate range metrics
@@ -282,11 +292,13 @@ def form_trading_range(
 
     # Validate: minimum 3% range size
     if range_width_pct < Decimal("0.03"):
-        logger.warning("range_too_narrow",
-                      symbol=symbol,
-                      range_width_pct=float(range_width_pct),
-                      min_required=0.03,
-                      message="Range below 3% minimum (FR1)")
+        logger.warning(
+            "range_too_narrow",
+            symbol=symbol,
+            range_width_pct=float(range_width_pct),
+            min_required=0.03,
+            message="Range below 3% minimum (FR1)",
+        )
         return None
 
     # Calculate duration (number of bars from first to last pivot)
@@ -298,18 +310,18 @@ def form_trading_range(
 
     # Validate: minimum 10 bars duration
     if duration < 10:
-        logger.warning("insufficient_duration",
-                      symbol=symbol,
-                      duration=duration,
-                      min_required=10,
-                      message="Duration below 10 bars minimum")
+        logger.warning(
+            "insufficient_duration",
+            symbol=symbol,
+            duration=duration,
+            min_required=10,
+            message="Duration below 10 bars minimum",
+        )
         return None
 
     # Calculate preliminary quality score
     quality_score = calculate_preliminary_quality_score(
-        support_cluster=support_cluster,
-        resistance_cluster=resistance_cluster,
-        duration=duration
+        support_cluster=support_cluster, resistance_cluster=resistance_cluster, duration=duration
     )
 
     # Create TradingRange object
@@ -326,25 +338,25 @@ def form_trading_range(
         start_index=start_index,
         end_index=end_index,
         duration=duration,
-        quality_score=quality_score
+        quality_score=quality_score,
     )
 
-    logger.info("trading_range_formed",
-               symbol=symbol,
-               support=float(support),
-               resistance=float(resistance),
-               range_width_pct=float(range_width_pct),
-               duration=duration,
-               quality_score=quality_score,
-               total_touches=trading_range.total_touches)
+    logger.info(
+        "trading_range_formed",
+        symbol=symbol,
+        support=float(support),
+        resistance=float(resistance),
+        range_width_pct=float(range_width_pct),
+        duration=duration,
+        quality_score=quality_score,
+        total_touches=trading_range.total_touches,
+    )
 
     return trading_range
 
 
 def calculate_preliminary_quality_score(
-    support_cluster: PriceCluster,
-    resistance_cluster: PriceCluster,
-    duration: int
+    support_cluster: PriceCluster, resistance_cluster: PriceCluster, duration: int
 ) -> int:
     """
     Calculate preliminary quality score for a trading range.
@@ -420,7 +432,7 @@ def calculate_preliminary_quality_score(
     return min(score, 100)
 
 
-def find_best_support_cluster(clusters: List[PriceCluster]) -> Optional[PriceCluster]:
+def find_best_support_cluster(clusters: list[PriceCluster]) -> PriceCluster | None:
     """
     Find the best support cluster from a list of clusters.
 
@@ -448,7 +460,7 @@ def find_best_support_cluster(clusters: List[PriceCluster]) -> Optional[PriceClu
     return support_clusters[0]
 
 
-def find_best_resistance_cluster(clusters: List[PriceCluster]) -> Optional[PriceCluster]:
+def find_best_resistance_cluster(clusters: list[PriceCluster]) -> PriceCluster | None:
     """
     Find the best resistance cluster from a list of clusters.
 
@@ -477,10 +489,8 @@ def find_best_resistance_cluster(clusters: List[PriceCluster]) -> Optional[Price
 
 
 def find_potential_ranges(
-    pivots: List[Pivot],
-    bars: List[OHLCVBar],
-    tolerance_pct: float = 0.02
-) -> List[TradingRange]:
+    pivots: list[Pivot], bars: list[OHLCVBar], tolerance_pct: float = 0.02
+) -> list[TradingRange]:
     """
     Find all potential trading ranges from pivot points.
 
@@ -508,8 +518,8 @@ def find_potential_ranges(
     resistance_clusters = [c for c in clusters if c.cluster_type == PivotType.HIGH]
 
     # Extract symbol and timeframe for logging
-    symbol = bars[0].symbol if bars and hasattr(bars[0], 'symbol') else "UNKNOWN"
-    timeframe = bars[0].timeframe if bars and hasattr(bars[0], 'timeframe') else "UNKNOWN"
+    symbol = bars[0].symbol if bars and hasattr(bars[0], "symbol") else "UNKNOWN"
+    timeframe = bars[0].timeframe if bars and hasattr(bars[0], "timeframe") else "UNKNOWN"
 
     # Try all combinations of support and resistance clusters
     valid_ranges = []
@@ -520,7 +530,7 @@ def find_potential_ranges(
                 resistance_cluster=resistance,
                 bars=bars,
                 symbol=symbol,
-                timeframe=timeframe
+                timeframe=timeframe,
             )
             if trading_range and trading_range.is_valid:
                 valid_ranges.append(trading_range)
@@ -528,11 +538,13 @@ def find_potential_ranges(
     # Sort by quality score (descending - best first)
     valid_ranges.sort(key=lambda r: r.quality_score or 0, reverse=True)
 
-    logger.info("potential_ranges_found",
-               symbol=symbol,
-               timeframe=timeframe,
-               range_count=len(valid_ranges),
-               support_cluster_count=len(support_clusters),
-               resistance_cluster_count=len(resistance_clusters))
+    logger.info(
+        "potential_ranges_found",
+        symbol=symbol,
+        timeframe=timeframe,
+        range_count=len(valid_ranges),
+        support_cluster_count=len(support_clusters),
+        resistance_cluster_count=len(resistance_clusters),
+    )
 
     return valid_ranges

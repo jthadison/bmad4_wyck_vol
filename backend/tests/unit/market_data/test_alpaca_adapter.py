@@ -7,10 +7,9 @@ and graceful shutdown using mocked WebSocket connections.
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock, patch
-from uuid import uuid4
 
 import pytest
 
@@ -55,10 +54,16 @@ async def test_connect_success(alpaca_adapter):
     """Test successful WebSocket connection and authentication."""
     # Mock WebSocket connection
     mock_ws = AsyncMock()
-    mock_ws.recv = AsyncMock(return_value=json.dumps([{
-        "T": "success",
-        "msg": "authenticated",
-    }]))
+    mock_ws.recv = AsyncMock(
+        return_value=json.dumps(
+            [
+                {
+                    "T": "success",
+                    "msg": "authenticated",
+                }
+            ]
+        )
+    )
 
     async def mock_connect(*args, **kwargs):
         return mock_ws
@@ -84,10 +89,16 @@ async def test_connect_authentication_failure(alpaca_adapter):
     """Test connection failure due to authentication error."""
     # Mock WebSocket with auth failure
     mock_ws = AsyncMock()
-    mock_ws.recv = AsyncMock(return_value=json.dumps([{
-        "T": "error",
-        "msg": "authentication failed",
-    }]))
+    mock_ws.recv = AsyncMock(
+        return_value=json.dumps(
+            [
+                {
+                    "T": "error",
+                    "msg": "authentication failed",
+                }
+            ]
+        )
+    )
 
     async def mock_connect(*args, **kwargs):
         return mock_ws
@@ -216,9 +227,7 @@ async def test_latency_warning(alpaca_adapter, caplog):
     alpaca_adapter.on_bar_received(lambda bar: None)
 
     # Mock bar with old timestamp (high latency)
-    old_timestamp = datetime.now(timezone.utc).replace(
-        year=2024, month=1, day=1, hour=0, minute=0
-    )
+    old_timestamp = datetime.now(UTC).replace(year=2024, month=1, day=1, hour=0, minute=0)
 
     bar_data = {
         "T": "b",
@@ -347,9 +356,7 @@ async def test_heartbeat_stale_data_alert(alpaca_adapter, mock_settings):
     alpaca_adapter._alert_threshold = 0.2  # 200ms for testing
 
     # Set old last received time
-    old_time = datetime.now(timezone.utc).replace(
-        year=2024, month=1, day=1
-    )
+    old_time = datetime.now(UTC).replace(year=2024, month=1, day=1)
     alpaca_adapter._last_bar_received["AAPL"] = old_time
 
     # Run heartbeat for short time
@@ -457,7 +464,7 @@ async def test_timestamp_parsing_rfc3339(alpaca_adapter):
 
     # Verify timestamp parsed correctly
     assert captured_bar is not None
-    assert captured_bar.timestamp.tzinfo == timezone.utc
+    assert captured_bar.timestamp.tzinfo == UTC
     assert captured_bar.timestamp.year == 2024
     assert captured_bar.timestamp.month == 3
     assert captured_bar.timestamp.day == 13

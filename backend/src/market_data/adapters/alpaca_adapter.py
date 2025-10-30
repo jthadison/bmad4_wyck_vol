@@ -10,9 +10,9 @@ from __future__ import annotations
 import asyncio
 import json
 import signal
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Callable, List, Optional
 from uuid import uuid4
 
 import structlog
@@ -55,8 +55,8 @@ class AlpacaAdapter(MarketDataProvider):
         self.use_paper = use_paper
         self.ws_url = self.ALPACA_PAPER_URL if use_paper else self.ALPACA_STREAM_URL
 
-        self._websocket: Optional[WebSocketClientProtocol] = None
-        self._callback: Optional[Callable[[OHLCVBar], None]] = None
+        self._websocket: WebSocketClientProtocol | None = None
+        self._callback: Callable[[OHLCVBar], None] | None = None
         self._is_connected: bool = False
         self._should_reconnect: bool = True
         self._reconnect_delay: float = 1.0
@@ -71,8 +71,8 @@ class AlpacaAdapter(MarketDataProvider):
 
         # Graceful shutdown
         self._shutdown_event = asyncio.Event()
-        self._receiver_task: Optional[asyncio.Task] = None
-        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._receiver_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
         self._signal_handlers_registered: bool = False
 
         # Try to register signal handlers (only works in main thread)
@@ -171,16 +171,14 @@ class AlpacaAdapter(MarketDataProvider):
                 self._receiver_task = asyncio.create_task(self._receive_messages())
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
             else:
-                raise RuntimeError(
-                    f"Alpaca authentication failed: {auth_data}"
-                )
+                raise RuntimeError(f"Alpaca authentication failed: {auth_data}")
 
         except asyncio.TimeoutError:
             logger.error(
                 "alpaca_auth_timeout",
                 correlation_id=correlation_id,
             )
-            raise RuntimeError("Alpaca authentication timeout")
+            raise RuntimeError("Alpaca authentication timeout") from None
 
         except Exception as e:
             logger.error(
@@ -188,9 +186,9 @@ class AlpacaAdapter(MarketDataProvider):
                 error=str(e),
                 correlation_id=correlation_id,
             )
-            raise ConnectionError(f"Failed to connect to Alpaca: {e}")
+            raise ConnectionError(f"Failed to connect to Alpaca: {e}") from e
 
-    async def subscribe(self, symbols: List[str], timeframe: str = "1m") -> None:
+    async def subscribe(self, symbols: list[str], timeframe: str = "1m") -> None:
         """
         Subscribe to real-time bar updates for symbols.
 
@@ -239,7 +237,7 @@ class AlpacaAdapter(MarketDataProvider):
                 error=str(e),
                 correlation_id=correlation_id,
             )
-            raise RuntimeError(f"Failed to subscribe to symbols: {e}")
+            raise RuntimeError(f"Failed to subscribe to symbols: {e}") from e
 
     async def disconnect(self) -> None:
         """Close WebSocket connection cleanly."""
@@ -366,9 +364,9 @@ class AlpacaAdapter(MarketDataProvider):
             # Parse timestamp (Alpaca uses RFC3339 format)
             timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
             if timestamp.tzinfo is None:
-                timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.replace(tzinfo=UTC)
             else:
-                timestamp = timestamp.astimezone(timezone.utc)
+                timestamp = timestamp.astimezone(UTC)
 
             # Calculate spread
             spread = high_price - low_price
@@ -387,7 +385,7 @@ class AlpacaAdapter(MarketDataProvider):
                 spread=spread,
                 spread_ratio=Decimal("1.0"),  # Will be calculated later
                 volume_ratio=Decimal("1.0"),  # Will be calculated later
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
 
             # Validate bar
@@ -404,7 +402,7 @@ class AlpacaAdapter(MarketDataProvider):
                 return
 
             # Calculate latency
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             latency = (now - timestamp).total_seconds()
 
             logger.info(
@@ -503,7 +501,7 @@ class AlpacaAdapter(MarketDataProvider):
                 )
 
                 # Check for stale data (no bars received for 2 minutes)
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 for symbol in self.settings.watchlist_symbols:
                     last_received = self._last_bar_received.get(symbol)
                     if last_received:
@@ -533,7 +531,7 @@ class AlpacaAdapter(MarketDataProvider):
         start_date,
         end_date,
         timeframe: str = "1d",
-    ) -> List[OHLCVBar]:
+    ) -> list[OHLCVBar]:
         """Not implemented for Alpaca adapter in this story."""
         raise NotImplementedError(
             "Historical data fetching not implemented for Alpaca adapter. "

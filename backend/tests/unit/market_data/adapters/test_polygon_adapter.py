@@ -4,7 +4,7 @@ Unit tests for PolygonAdapter.
 Tests Polygon.io API integration with mocked HTTP responses.
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -72,7 +72,7 @@ class TestPolygonAdapter:
         assert bars[0].close == Decimal("151.00")
         assert bars[0].volume == 120000000
         assert bars[0].spread == Decimal("3.00")  # high - low
-        assert bars[0].timestamp == datetime(2021, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        assert bars[0].timestamp == datetime(2021, 1, 1, 0, 0, 0, tzinfo=UTC)
 
         # Check second bar
         assert bars[1].volume == 130000000
@@ -251,7 +251,6 @@ class TestPolygonAdapter:
 
         # Assert
         assert is_healthy is False
-
 
     async def test_close(self):
         """Test closing the HTTP client."""

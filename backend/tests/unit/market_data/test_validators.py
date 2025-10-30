@@ -2,10 +2,8 @@
 Unit tests for OHLCV data validators.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-
-import pytest
 
 from src.market_data.validators import (
     get_validation_stats,
@@ -26,7 +24,7 @@ def create_test_bar(
 ):
     """Helper to create test bars."""
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     return OHLCVBar(
         symbol=symbol,
@@ -67,7 +65,6 @@ class TestValidateBar:
         # Assert
         assert is_valid is False
         assert "Zero volume" in reason
-
 
     def test_invalid_ohlc_open_below_low(self):
         """Test that open < low is rejected."""
@@ -120,8 +117,8 @@ class TestValidateBar:
     def test_timestamp_gap_daily_within_tolerance(self):
         """Test that daily bars with 1-day gap are valid."""
         # Arrange
-        timestamp1 = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
-        timestamp2 = datetime(2024, 1, 16, 0, 0, 0, tzinfo=timezone.utc)
+        timestamp1 = datetime(2024, 1, 15, 0, 0, 0, tzinfo=UTC)
+        timestamp2 = datetime(2024, 1, 16, 0, 0, 0, tzinfo=UTC)
 
         bar1 = create_test_bar(timestamp=timestamp1)
         bar2 = create_test_bar(timestamp=timestamp2)
@@ -136,8 +133,8 @@ class TestValidateBar:
     def test_timestamp_gap_daily_weekend_allowed(self):
         """Test that weekend gaps (3 days) are allowed for daily bars."""
         # Arrange
-        friday = datetime(2024, 1, 12, 0, 0, 0, tzinfo=timezone.utc)  # Friday
-        monday = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)  # Monday
+        friday = datetime(2024, 1, 12, 0, 0, 0, tzinfo=UTC)  # Friday
+        monday = datetime(2024, 1, 15, 0, 0, 0, tzinfo=UTC)  # Monday
 
         bar1 = create_test_bar(timestamp=friday)
         bar2 = create_test_bar(timestamp=monday)
@@ -151,8 +148,8 @@ class TestValidateBar:
     def test_timestamp_gap_too_large(self):
         """Test that large timestamp gaps are rejected."""
         # Arrange
-        timestamp1 = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-        timestamp2 = datetime(2024, 1, 10, 0, 0, 0, tzinfo=timezone.utc)  # 9 days
+        timestamp1 = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        timestamp2 = datetime(2024, 1, 10, 0, 0, 0, tzinfo=UTC)  # 9 days
 
         bar1 = create_test_bar(timestamp=timestamp1)
         bar2 = create_test_bar(timestamp=timestamp2)
@@ -167,8 +164,8 @@ class TestValidateBar:
     def test_negative_timestamp_gap_rejected(self):
         """Test that bars out of order are rejected."""
         # Arrange
-        timestamp1 = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
-        timestamp2 = datetime(2024, 1, 14, 0, 0, 0, tzinfo=timezone.utc)  # Earlier
+        timestamp1 = datetime(2024, 1, 15, 0, 0, 0, tzinfo=UTC)
+        timestamp2 = datetime(2024, 1, 14, 0, 0, 0, tzinfo=UTC)  # Earlier
 
         bar1 = create_test_bar(timestamp=timestamp1)
         bar2 = create_test_bar(timestamp=timestamp2)
@@ -188,9 +185,9 @@ class TestValidateBarBatch:
         """Test batch validation with all valid bars."""
         # Arrange
         bars = [
-            create_test_bar(timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc)),
-            create_test_bar(timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc)),
-            create_test_bar(timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc)),
+            create_test_bar(timestamp=datetime(2024, 1, 1, tzinfo=UTC)),
+            create_test_bar(timestamp=datetime(2024, 1, 2, tzinfo=UTC)),
+            create_test_bar(timestamp=datetime(2024, 1, 3, tzinfo=UTC)),
         ]
 
         # Act
@@ -204,13 +201,13 @@ class TestValidateBarBatch:
         """Test batch validation with mixed valid/invalid bars."""
         # Arrange
         bars = [
-            create_test_bar(timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc)),
+            create_test_bar(timestamp=datetime(2024, 1, 1, tzinfo=UTC)),
             create_test_bar(  # Invalid: zero volume
-                timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc), volume=0
+                timestamp=datetime(2024, 1, 2, tzinfo=UTC), volume=0
             ),
-            create_test_bar(timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc)),
+            create_test_bar(timestamp=datetime(2024, 1, 3, tzinfo=UTC)),
             create_test_bar(  # Invalid: close > high
-                timestamp=datetime(2024, 1, 4, tzinfo=timezone.utc),
+                timestamp=datetime(2024, 1, 4, tzinfo=UTC),
                 close=110.0,
                 high=105.0,
             ),

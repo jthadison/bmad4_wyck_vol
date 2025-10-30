@@ -7,15 +7,41 @@ trading ranges with support and resistance levels.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from typing import Optional, List, TYPE_CHECKING
+from enum import Enum
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field, field_validator, field_serializer
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
+
 from src.models.price_cluster import PriceCluster
 
 if TYPE_CHECKING:
     from src.models.zone import Zone
+
+# Import level models directly (not TYPE_CHECKING) to avoid forward reference issues
+from src.models.creek_level import CreekLevel
+from src.models.ice_level import IceLevel
+from src.models.jump_level import JumpLevel
+
+
+class RangeStatus(str, Enum):
+    """
+    Lifecycle status of a trading range in Wyckoff analysis.
+
+    FORMING: Range detected but not yet confirmed (< 15 bars duration)
+    ACTIVE: Range confirmed and valid for pattern detection (15-100 bars, quality >= 70)
+    BREAKOUT: Price closed above Ice or below Creek (range invalidated)
+    COMPLETED: Range ended naturally in historical analysis (old data)
+    ARCHIVED: Range replaced by newer overlapping range
+    """
+
+    FORMING = "FORMING"
+    ACTIVE = "ACTIVE"
+    BREAKOUT = "BREAKOUT"
+    COMPLETED = "COMPLETED"
+    ARCHIVED = "ARCHIVED"
 
 
 class TradingRange(BaseModel):
@@ -70,27 +96,42 @@ class TradingRange(BaseModel):
     support_cluster: PriceCluster = Field(..., description="Support level cluster")
     resistance_cluster: PriceCluster = Field(..., description="Resistance level cluster")
     support: Decimal = Field(..., decimal_places=8, max_digits=18, description="Support price")
-    resistance: Decimal = Field(..., decimal_places=8, max_digits=18, description="Resistance price")
+    resistance: Decimal = Field(
+        ..., decimal_places=8, max_digits=18, description="Resistance price"
+    )
     midpoint: Decimal = Field(..., decimal_places=8, max_digits=18, description="Range midpoint")
-    range_width: Decimal = Field(..., decimal_places=8, max_digits=18, description="Resistance - support")
-    range_width_pct: Decimal = Field(..., decimal_places=4, max_digits=10, description="Range width percentage")
+    range_width: Decimal = Field(
+        ..., decimal_places=8, max_digits=18, description="Resistance - support"
+    )
+    range_width_pct: Decimal = Field(
+        ..., decimal_places=4, max_digits=10, description="Range width percentage"
+    )
     start_index: int = Field(..., ge=0, description="Earliest pivot index")
     end_index: int = Field(..., ge=0, description="Latest pivot index")
     duration: int = Field(..., ge=10, description="Range duration in bars")
-    quality_score: Optional[int] = Field(None, ge=0, le=100, description="Quality score 0-100")
-    supply_zones: List["Zone"] = Field(default_factory=list, description="Supply zones in range")
-    demand_zones: List["Zone"] = Field(default_factory=list, description="Demand zones in range")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    quality_score: int | None = Field(None, ge=0, le=100, description="Quality score 0-100")
+    supply_zones: list[Zone] = Field(default_factory=list, description="Supply zones in range")
+    demand_zones: list[Zone] = Field(default_factory=list, description="Demand zones in range")
 
-    @field_validator('resistance')
+    # Epic 3.8: Creek, Ice, Jump levels and lifecycle status
+    creek: CreekLevel | None = Field(None, description="Support level (Story 3.4)")
+    ice: IceLevel | None = Field(None, description="Resistance level (Story 3.5)")
+    jump: JumpLevel | None = Field(None, description="Price target (Story 3.6)")
+    status: RangeStatus = Field(default=RangeStatus.FORMING, description="Range lifecycle status")
+    start_timestamp: datetime | None = Field(None, description="First bar timestamp")
+    end_timestamp: datetime | None = Field(None, description="Last bar timestamp")
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @field_validator("resistance")
     @classmethod
     def validate_resistance_gt_support(cls, v, info):
         """Ensure resistance > support"""
-        if 'support' in info.data and v <= info.data['support']:
+        if "support" in info.data and v <= info.data["support"]:
             raise ValueError(f"Resistance {v} must be greater than support {info.data['support']}")
         return v
 
-    @field_validator('range_width_pct')
+    @field_validator("range_width_pct")
     @classmethod
     def validate_minimum_range_size(cls, v):
         """Ensure minimum 3% range size (FR1 requirement)"""
@@ -98,7 +139,7 @@ class TradingRange(BaseModel):
             raise ValueError(f"Range width {v*100}% below minimum 3% (FR1 requirement)")
         return v
 
-    @field_validator('duration')
+    @field_validator("duration")
     @classmethod
     def validate_minimum_duration(cls, v):
         """Ensure minimum 10 bars duration"""
@@ -122,11 +163,11 @@ class TradingRange(BaseModel):
             - Resistance cluster has >= 2 touches
         """
         return (
-            self.resistance > self.support and
-            self.range_width_pct >= Decimal("0.03") and
-            self.duration >= 10 and
-            self.support_cluster.touch_count >= 2 and
-            self.resistance_cluster.touch_count >= 2
+            self.resistance > self.support
+            and self.range_width_pct >= Decimal("0.03")
+            and self.duration >= 10
+            and self.support_cluster.touch_count >= 2
+            and self.resistance_cluster.touch_count >= 2
         )
 
     @property
@@ -169,7 +210,7 @@ class TradingRange(BaseModel):
         return str(value)
 
     @property
-    def all_zones(self) -> List["Zone"]:
+    def all_zones(self) -> list[Zone]:
         """
         Get all zones (supply + demand) sorted by significance score.
 
@@ -185,7 +226,7 @@ class TradingRange(BaseModel):
         return sorted(all_zones_list, key=lambda z: z.significance_score, reverse=True)
 
     @property
-    def fresh_zones(self) -> List["Zone"]:
+    def fresh_zones(self) -> list[Zone]:
         """
         Get only FRESH zones (untested, 0 touches).
 
@@ -198,11 +239,12 @@ class TradingRange(BaseModel):
             >>> print(f"Found {len(fresh_zones)} fresh zones")
         """
         from src.models.zone import ZoneStrength
+
         fresh = [z for z in self.all_zones if z.strength == ZoneStrength.FRESH]
         return sorted(fresh, key=lambda z: z.significance_score, reverse=True)
 
     @property
-    def zones_near_creek(self) -> List["Zone"]:
+    def zones_near_creek(self) -> list[Zone]:
         """
         Get zones near Creek level (demand zones within 2%).
 
@@ -218,7 +260,7 @@ class TradingRange(BaseModel):
         return sorted(near_creek, key=lambda z: z.significance_score, reverse=True)
 
     @property
-    def zones_near_ice(self) -> List["Zone"]:
+    def zones_near_ice(self) -> list[Zone]:
         """
         Get zones near Ice level (supply zones within 2%).
 
@@ -232,3 +274,18 @@ class TradingRange(BaseModel):
         """
         near_ice = [z for z in self.all_zones if z.proximity_to_level == "NEAR_ICE"]
         return sorted(near_ice, key=lambda z: z.significance_score, reverse=True)
+
+    @property
+    def is_active(self) -> bool:
+        """
+        Whether range is currently active for pattern detection.
+
+        Returns:
+            bool: True if status is ACTIVE, False otherwise
+
+        Example:
+            >>> trading_range = TradingRange(...)
+            >>> if trading_range.is_active:
+            ...     print("Range can be used for pattern detection")
+        """
+        return self.status == RangeStatus.ACTIVE
