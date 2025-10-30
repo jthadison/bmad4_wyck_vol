@@ -985,7 +985,7 @@ def detect_secondary_test(
     )
 
     # Step 3: Scan for ST candidates
-    MIN_ST_VOLUME_REDUCTION = Decimal("0.10")  # 10% minimum per AC 4
+    MIN_ST_VOLUME_REDUCTION = Decimal("0.20")  # 20% minimum (increased from 10% per expert feedback - more accurate filtering)
     MAX_ST_DISTANCE = Decimal("0.02")  # 2% tolerance per AC 3
 
     for i in range(search_start, search_end + 1):
@@ -1069,9 +1069,25 @@ def detect_secondary_test(
             penetration=float(penetration),
         )
 
+        # Calculate close position for ST bar (Wyckoff critical signal)
+        st_close_position = Decimal(str(test_bar.close_position))  # Property from OHLCVBar
+
+        # Calculate spread ratio (ST spread vs SC spread)
+        # Find SC bar by timestamp
+        sc_bar_data = None
+        for bar in bars:
+            if bar.timestamp.isoformat() == sc.bar["timestamp"]:
+                sc_bar_data = bar
+                break
+
+        if sc_bar_data and sc_bar_data.spread > 0:
+            st_spread_ratio = test_bar.spread / sc_bar_data.spread
+        else:
+            st_spread_ratio = Decimal("1.0")
+
         # Calculate confidence score
         confidence = _calculate_st_confidence(
-            volume_reduction_pct, distance, penetration
+            volume_reduction_pct, distance, penetration, st_close_position, st_spread_ratio
         )
 
         logger.info(
@@ -1134,61 +1150,101 @@ def detect_secondary_test(
 
 
 def _calculate_st_confidence(
-    volume_reduction_pct: Decimal, distance: Decimal, penetration: Decimal
+    volume_reduction_pct: Decimal,
+    distance: Decimal,
+    penetration: Decimal,
+    close_position: Decimal,
+    spread_ratio: Decimal,
 ) -> int:
     """
     Calculate confidence score for Secondary Test detection.
 
-    Confidence is scored 0-100 based on three components:
-    - Volume reduction (40 points): Higher reduction = stronger absorption signal
-    - Price proximity (30 points): Closer to SC low = better test
-    - Holding action (30 points): Less penetration = stronger support
+    Enhanced confidence scoring based on Wyckoff principles with 5 components:
+    - Volume reduction (45 points): Higher reduction = stronger absorption signal
+    - Price proximity (27 points): Closer to SC low = better test
+    - Holding action (18 points): Less penetration = stronger support
+    - Close position (10 points): CRITICAL - Where bar closes in range (Wyckoff emphasized this)
+    - Spread analysis (optional bonus): Narrow spread confirms no selling pressure
+
+    Reweighted from original 40/30/30 to 45/27/18/10 per expert feedback.
+    Volume reduction threshold increased from 10% to 20% minimum.
 
     Args:
-        volume_reduction_pct: Volume reduction from SC as percentage (0.10+ minimum)
+        volume_reduction_pct: Volume reduction from SC as percentage (0.20+ minimum)
         distance: Distance from SC low as percentage (0.0-0.02)
         penetration: Penetration below SC low as percentage (0.0 = no penetration)
+        close_position: Where bar closes in its range (0.0=low, 1.0=high)
+        spread_ratio: ST spread vs SC spread (narrow=good, wide=concerning)
 
     Returns:
         Confidence score 0-100
 
     Expected Confidence Ranges:
-        90-100: Excellent ST (50%+ volume reduction, very close, no penetration)
-        80-89: Strong ST (40%+ volume reduction, close, minor penetration)
+        90-100: Excellent ST (50%+ volume reduction, very close, no penetration, bullish close)
+        80-89: Strong ST (40%+ volume reduction, close, minor penetration, good close)
         70-79: Good ST (30%+ volume reduction, within 1%, acceptable penetration)
-        60-69: Acceptable ST (10%+ volume reduction, within 2%, some penetration)
+        60-69: Acceptable ST (20%+ volume reduction, within 2%, some penetration)
         <60: Marginal ST (borderline characteristics)
     """
-    # Volume reduction component (40 points)
-    if volume_reduction_pct >= Decimal("0.50"):  # 50%+
+    # Volume reduction component (45 points) - PRIMARY SIGNAL
+    if volume_reduction_pct >= Decimal("0.60"):  # 60%+ (very strong)
+        volume_pts = 45
+    elif volume_reduction_pct >= Decimal("0.50"):  # 50-59%
         volume_pts = 40
-    elif volume_reduction_pct >= Decimal("0.30"):  # 30-49%
-        volume_pts = 30
-    elif volume_reduction_pct >= Decimal("0.10"):  # 10-29%
+    elif volume_reduction_pct >= Decimal("0.40"):  # 40-49%
+        volume_pts = 35
+    elif volume_reduction_pct >= Decimal("0.30"):  # 30-39%
+        volume_pts = 28
+    elif volume_reduction_pct >= Decimal("0.20"):  # 20-29% (minimum threshold)
         volume_pts = 20
     else:
-        # Below 10% should have been rejected, but safety check
+        # Below 20% should have been rejected, but safety check
         volume_pts = 10
 
-    # Price proximity component (30 points)
+    # Price proximity component (27 points)
     if distance <= Decimal("0.005"):  # 0.5%
-        proximity_pts = 30
+        proximity_pts = 27
     elif distance <= Decimal("0.01"):  # 1.0%
-        proximity_pts = 25
+        proximity_pts = 22
+    elif distance <= Decimal("0.015"):  # 1.5%
+        proximity_pts = 18
     else:  # <= 0.02 (2.0%)
-        proximity_pts = 20
+        proximity_pts = 15
 
-    # Holding action component (30 points)
+    # Holding action component (18 points)
     if penetration == Decimal("0.0"):  # No penetration (holds perfectly)
-        holding_pts = 30
+        holding_pts = 18
     elif penetration < Decimal("0.005"):  # <0.5% penetration
-        holding_pts = 25
+        holding_pts = 15
     elif penetration <= Decimal("0.01"):  # <=1.0% penetration
-        holding_pts = 20
+        holding_pts = 12
     else:  # >1.0% penetration (weak hold, possible spring)
-        holding_pts = 10
+        holding_pts = 6
 
-    total = volume_pts + proximity_pts + holding_pts
+    # Close position component (10 points) - CRITICAL WYCKOFF SIGNAL
+    # Wyckoff emphasized WHERE the bar closes in its range
+    # Strong ST: Closes in upper 70% (bulls absorbed selling)
+    # Weak ST: Closes in lower 30% (still under pressure)
+    if close_position >= Decimal("0.70"):  # Upper 30% - bullish close
+        close_pts = 10
+    elif close_position >= Decimal("0.50"):  # Upper half - neutral/moderate
+        close_pts = 5
+    else:  # Lower half - bearish close (concerning)
+        close_pts = 0
+
+    # Spread analysis bonus (up to +5 points, doesn't count against 100 cap)
+    # Narrow spread + low volume = ideal ST (no supply)
+    # Wide spread + low volume = questionable (hidden distribution?)
+    if spread_ratio < Decimal("0.40"):  # Narrow spread (<40% of SC)
+        spread_bonus = 5  # Excellent - tight range, no volatility
+    elif spread_ratio < Decimal("0.70"):  # Moderate spread
+        spread_bonus = 2
+    else:  # Wide spread relative to SC
+        spread_bonus = 0  # Concerning - still volatility
+
+    # Base total (capped at 100)
+    base_total = volume_pts + proximity_pts + holding_pts + close_pts
+    total = min(base_total + spread_bonus, 100)
 
     logger.debug(
         "st_confidence_calculation",
@@ -1198,7 +1254,12 @@ def _calculate_st_confidence(
         proximity_pts=proximity_pts,
         penetration=float(penetration),
         holding_pts=holding_pts,
+        close_position=float(close_position),
+        close_pts=close_pts,
+        spread_ratio=float(spread_ratio),
+        spread_bonus=spread_bonus,
+        base_total=base_total,
         total_confidence=total,
     )
 
-    return min(total, 100)  # Cap at 100
+    return total
