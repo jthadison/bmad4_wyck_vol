@@ -8,22 +8,16 @@ Acceptance Criteria #9 (Story 3.6): Integration tests demonstrating Jump levels
 for known AAPL ranges produce realistic targets.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import numpy as np
-import pytest
 
 from src.models.ohlcv import OHLCVBar
 from src.models.pivot import PivotType
 from src.models.volume_analysis import VolumeAnalysis
-from src.pattern_engine.pivot_detector import detect_pivots
-from src.pattern_engine.range_cluster import cluster_pivots, form_trading_range
-from src.pattern_engine.range_quality import calculate_range_quality
 from src.pattern_engine.level_calculator import (
-    calculate_creek_level,
-    calculate_ice_level,
-    calculate_jump_level
+    calculate_jump_level,
 )
 
 
@@ -46,7 +40,7 @@ def generate_aapl_accumulation_for_jump(num_bars: int = 50, base_price: float = 
         List of OHLCVBar objects simulating accumulation
     """
     bars = []
-    base_timestamp = datetime(2023, 10, 1, tzinfo=timezone.utc)
+    base_timestamp = datetime(2023, 10, 1, tzinfo=UTC)
 
     np.random.seed(42)  # For reproducibility
 
@@ -106,7 +100,7 @@ def create_volume_analysis(bars: list[OHLCVBar]) -> list[VolumeAnalysis]:
     """
     volume_analysis = []
 
-    for i, bar in enumerate(bars):
+    for _i, bar in enumerate(bars):
         # Simple volume ratio calculation (relative to average)
         avg_volume = sum(b.volume for b in bars) / len(bars)
         volume_ratio = Decimal(str(round(bar.volume / avg_volume, 4)))
@@ -141,8 +135,8 @@ class TestJumpLevelIntegration:
         produces realistic targets for a 37-bar range (MEDIUM confidence).
         """
         # Arrange: Create mock trading range (37 bars, MEDIUM tier)
+        from src.models.pivot import PivotType
         from src.models.price_cluster import PriceCluster
-        from src.models.pivot import Pivot, PivotType
         from src.models.touch_detail import TouchDetail
 
         # Create test pivots for clusters
@@ -165,7 +159,7 @@ class TestJumpLevelIntegration:
             touch_count=2,
             cluster_type=PivotType.LOW,
             std_deviation=Decimal("0.50"),
-            timestamp_range=(datetime.now(timezone.utc), datetime.now(timezone.utc))
+            timestamp_range=(datetime.now(UTC), datetime.now(UTC))
         )
 
         resistance_cluster = PriceCluster(
@@ -177,7 +171,7 @@ class TestJumpLevelIntegration:
             touch_count=2,
             cluster_type=PivotType.HIGH,
             std_deviation=Decimal("0.50"),
-            timestamp_range=(datetime.now(timezone.utc), datetime.now(timezone.utc))
+            timestamp_range=(datetime.now(UTC), datetime.now(UTC))
         )
 
         # Create trading range with 37 bars (MEDIUM tier)
@@ -214,14 +208,14 @@ class TestJumpLevelIntegration:
                     volume_ratio=Decimal("1.0"),
                     close_position=Decimal("0.7"),
                     rejection_wick=Decimal("0.7"),
-                    timestamp=datetime.now(timezone.utc)
+                    timestamp=datetime.now(UTC)
                 )
                 for i in range(4)
             ],
             strength_score=85,
             strength_rating="EXCELLENT",
-            last_test_timestamp=datetime.now(timezone.utc),
-            first_test_timestamp=datetime.now(timezone.utc),
+            last_test_timestamp=datetime.now(UTC),
+            first_test_timestamp=datetime.now(UTC),
             hold_duration=36,
             confidence="HIGH",
             volume_trend="DECREASING"
@@ -239,14 +233,14 @@ class TestJumpLevelIntegration:
                     volume_ratio=Decimal("1.0"),
                     close_position=Decimal("0.3"),
                     rejection_wick=Decimal("0.7"),
-                    timestamp=datetime.now(timezone.utc)
+                    timestamp=datetime.now(UTC)
                 )
                 for i in range(4)
             ],
             strength_score=85,
             strength_rating="EXCELLENT",
-            last_test_timestamp=datetime.now(timezone.utc),
-            first_test_timestamp=datetime.now(timezone.utc),
+            last_test_timestamp=datetime.now(UTC),
+            first_test_timestamp=datetime.now(UTC),
             hold_duration=37,
             confidence="HIGH",
             volume_trend="DECREASING"
@@ -307,7 +301,7 @@ class TestJumpLevelIntegration:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=price,
             high=price + Decimal("1.00") if pivot_type == PivotType.LOW else price,
             low=price if pivot_type == PivotType.LOW else price - Decimal("1.00"),
@@ -333,9 +327,9 @@ class TestJumpLevelIntegration:
         """
         # Arrange: Create mock 45-bar range
         from tests.unit.pattern_engine.test_jump_calculator import (
-            create_test_trading_range,
             create_test_creek,
-            create_test_ice
+            create_test_ice,
+            create_test_trading_range,
         )
 
         trading_range = create_test_trading_range(duration=45, quality_score=85)
@@ -368,9 +362,9 @@ class TestJumpLevelIntegration:
         """
         # Arrange: Use mock data with 30-bar range (MEDIUM)
         from tests.unit.pattern_engine.test_jump_calculator import (
-            create_test_trading_range,
             create_test_creek,
-            create_test_ice
+            create_test_ice,
+            create_test_trading_range,
         )
 
         trading_range = create_test_trading_range(duration=30, quality_score=85)

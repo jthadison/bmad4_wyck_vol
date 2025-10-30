@@ -7,31 +7,28 @@ with synthetic test data.
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
-from typing import List
 
-from src.models.pivot import Pivot, PivotType
+import pytest
+
 from src.models.ohlcv import OHLCVBar
+from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
+from src.models.touch_detail import TouchDetail
 from src.models.trading_range import TradingRange
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.creek_level import CreekLevel
-from src.models.ice_level import IceLevel
-from src.models.touch_detail import TouchDetail
 from src.pattern_engine.level_calculator import (
-    calculate_creek_level,
-    calculate_ice_level,
-    _score_touch_count,
-    _score_volume_trend,
+    _assess_confidence,
+    _calculate_weighted_price,
+    _score_hold_duration,
     _score_rejection_wicks,
     _score_rejection_wicks_ice,
-    _score_hold_duration,
-    _calculate_weighted_price,
-    _assess_confidence
+    _score_touch_count,
+    _score_volume_trend,
+    calculate_creek_level,
+    calculate_ice_level,
 )
-
 
 # ============================================================================
 # Test Fixtures and Helpers
@@ -50,7 +47,7 @@ def create_test_bar(
 ) -> OHLCVBar:
     """Create test OHLCV bar"""
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc) + timedelta(days=index)
+        timestamp = datetime.now(UTC) + timedelta(days=index)
 
     return OHLCVBar(
         symbol=symbol,
@@ -78,7 +75,7 @@ def create_test_pivot(
         high=price + Decimal("5.00"),
         low=price,
         close=price + Decimal("3.50"),  # Upper half close (70% rejection wick)
-        timestamp=datetime.now(timezone.utc) + timedelta(days=index),
+        timestamp=datetime.now(UTC) + timedelta(days=index),
         index=index
     )
 
@@ -105,7 +102,7 @@ def create_test_pivot_high(
         high=price,
         low=price - Decimal("5.00"),
         close=price - Decimal("3.50"),  # Lower 30% close (70% upper wick rejection)
-        timestamp=datetime.now(timezone.utc) + timedelta(days=index),
+        timestamp=datetime.now(UTC) + timedelta(days=index),
         index=index
     )
 
@@ -134,13 +131,13 @@ def create_touch_detail(
         volume_ratio=volume_ratio,
         close_position=Decimal("0.7"),
         rejection_wick=rejection_wick,
-        timestamp=datetime.now(timezone.utc) + timedelta(days=index)
+        timestamp=datetime.now(UTC) + timedelta(days=index)
     )
 
 
 def create_test_trading_range(
-    support_pivots: List[Pivot],
-    resistance_pivots: List[Pivot],
+    support_pivots: list[Pivot],
+    resistance_pivots: list[Pivot],
     quality_score: int = 80
 ) -> TradingRange:
     """Create test TradingRange with support and resistance clusters"""

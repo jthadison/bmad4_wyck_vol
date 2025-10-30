@@ -11,9 +11,8 @@ This adapter should only be used as a fallback.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import UTC, date
 from decimal import Decimal
-from typing import List
 
 import pandas as pd
 import structlog
@@ -49,7 +48,7 @@ class YahooAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
-    ) -> List[OHLCVBar]:
+    ) -> list[OHLCVBar]:
         """
         Fetch historical OHLCV bars from Yahoo Finance.
 
@@ -125,7 +124,7 @@ class YahooAdapter(MarketDataProvider):
 
         except Exception as e:
             log.error("fetch_error", error=str(e))
-            raise RuntimeError(f"Yahoo Finance fetch failed: {e}")
+            raise RuntimeError(f"Yahoo Finance fetch failed: {e}") from e
 
     def _parse_bar(
         self,
@@ -156,9 +155,9 @@ class YahooAdapter(MarketDataProvider):
         # Convert pandas Timestamp to UTC datetime
         if timestamp.tzinfo is None:
             # Assume UTC if no timezone
-            dt = timestamp.to_pydatetime().replace(tzinfo=timezone.utc)
+            dt = timestamp.to_pydatetime().replace(tzinfo=UTC)
         else:
-            dt = timestamp.to_pydatetime().astimezone(timezone.utc)
+            dt = timestamp.to_pydatetime().astimezone(UTC)
 
         # Extract OHLCV values
         open_price = Decimal(str(row["Open"]))

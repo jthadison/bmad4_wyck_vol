@@ -6,7 +6,7 @@ and validating query performance (AC: 10).
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -45,7 +45,7 @@ async def generate_ohlcv_sample_data(
 
     bars_data = []
 
-    for day in range(num_days):
+    for _day in range(num_days):
         # Skip weekends (simplistic approach)
         while current_date.weekday() >= 5:  # Saturday=5, Sunday=6
             current_date += timedelta(days=1)
@@ -75,7 +75,7 @@ async def generate_ohlcv_sample_data(
             'id': str(uuid4()),
             'symbol': symbol,
             'timeframe': '1d',
-            'timestamp': current_date.replace(hour=16, minute=0, second=0, microsecond=0, tzinfo=timezone.utc),
+            'timestamp': current_date.replace(hour=16, minute=0, second=0, microsecond=0, tzinfo=UTC),
             'open': round(open_price, 8),
             'high': round(high_price, 8),
             'low': round(low_price, 8),
@@ -124,7 +124,7 @@ async def seed_sample_data() -> None:
             print("Existing data cleared.")
 
         # Generate 1 year of data starting from 2024-01-02
-        start_date = datetime(2024, 1, 2, tzinfo=timezone.utc)
+        start_date = datetime(2024, 1, 2, tzinfo=UTC)
 
         symbols = [
             ("AAPL", Decimal("150.00")),

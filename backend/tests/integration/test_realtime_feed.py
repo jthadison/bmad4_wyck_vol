@@ -13,7 +13,7 @@ if credentials are not available.
 
 import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -23,7 +23,6 @@ from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
 from src.models.ohlcv import OHLCVBar
 from src.repositories.ohlcv_repository import OHLCVRepository
-
 
 # Skip integration tests if credentials not available
 pytestmark = pytest.mark.skipif(
@@ -145,7 +144,7 @@ async def test_receive_realtime_bars(alpaca_adapter_live, integration_settings):
     assert bar.low <= bar.open
     assert bar.close > 0
     assert bar.volume > 0
-    assert bar.timestamp.tzinfo == timezone.utc
+    assert bar.timestamp.tzinfo == UTC
 
 
 @pytest.mark.asyncio
@@ -160,7 +159,7 @@ async def test_latency_measurement(alpaca_adapter_live, integration_settings):
     latencies = []
 
     def bar_callback(bar: OHLCVBar):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         latency = (now - bar.timestamp).total_seconds()
         received_bars.append(bar)
         latencies.append(latency)
@@ -303,7 +302,7 @@ async def test_stability_6_hour_run():
     # Track metrics
     bars_received = []
     disconnect_count = 0
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
 
     def bar_callback(bar: OHLCVBar):
         bars_received.append(bar)
@@ -344,7 +343,7 @@ async def test_stability_6_hour_run():
         await coordinator.stop()
 
     # Calculate results
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     total_duration = (end_time - start_time).total_seconds()
 
     # Assertions

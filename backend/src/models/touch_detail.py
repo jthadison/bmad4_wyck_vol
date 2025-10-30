@@ -8,9 +8,10 @@ and IceLevel (resistance) calculations.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator, field_serializer
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 class TouchDetail(BaseModel):

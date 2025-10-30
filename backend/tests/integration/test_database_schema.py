@@ -15,9 +15,6 @@ These tests validate all acceptance criteria from Story 1.2:
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-from uuid import uuid4
 
 import pytest
 from sqlalchemy import text

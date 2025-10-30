@@ -4,7 +4,7 @@ Unit tests for pandas DataFrame conversion utilities.
 Tests cover bars_to_dataframe and dataframe_to_bars conversions.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pandas as pd
@@ -21,7 +21,7 @@ def sample_bars():
         OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -34,7 +34,7 @@ def sample_bars():
         OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("153.00"),
             high=Decimal("158.00"),
             low=Decimal("152.00"),
@@ -47,7 +47,7 @@ def sample_bars():
         OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 3, tzinfo=UTC),
             open=Decimal("157.00"),
             high=Decimal("160.00"),
             low=Decimal("156.00"),
@@ -118,7 +118,7 @@ class TestBarsToDataFrame:
             OHLCVBar(
                 symbol="AAPL",
                 timeframe="1d",
-                timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+                timestamp=datetime(2024, 1, 3, tzinfo=UTC),
                 open=Decimal("157.00"),
                 high=Decimal("160.00"),
                 low=Decimal("156.00"),
@@ -129,7 +129,7 @@ class TestBarsToDataFrame:
             OHLCVBar(
                 symbol="AAPL",
                 timeframe="1d",
-                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
                 open=Decimal("150.00"),
                 high=Decimal("155.00"),
                 low=Decimal("148.00"),
@@ -142,8 +142,8 @@ class TestBarsToDataFrame:
         df = bars_to_dataframe(bars)
 
         # Should be sorted by timestamp
-        assert df.index[0] == datetime(2024, 1, 1, tzinfo=timezone.utc)
-        assert df.index[1] == datetime(2024, 1, 3, tzinfo=timezone.utc)
+        assert df.index[0] == datetime(2024, 1, 1, tzinfo=UTC)
+        assert df.index[1] == datetime(2024, 1, 3, tzinfo=UTC)
 
     def test_preserves_symbol_and_timeframe(self, sample_bars):
         """Test that symbol and timeframe are preserved."""
@@ -198,7 +198,7 @@ class TestDataFrameToBars:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("150.12345678"),
             high=Decimal("155.87654321"),
             low=Decimal("148.11111111"),
@@ -237,7 +237,7 @@ class TestDataFrameOperations:
         df = bars_to_dataframe(sample_bars)
 
         # Slice to get only Jan 2
-        jan2 = df[df.index == datetime(2024, 1, 2, tzinfo=timezone.utc)]
+        jan2 = df[df.index == datetime(2024, 1, 2, tzinfo=UTC)]
 
         assert len(jan2) == 1
         assert jan2['close'].iloc[0] == 157.00

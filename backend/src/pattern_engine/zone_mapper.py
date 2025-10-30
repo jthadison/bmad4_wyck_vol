@@ -20,19 +20,18 @@ Performance:
     - Batch zone mapping (10 ranges): <200ms
 """
 
-from decimal import Decimal
 from datetime import datetime
-from typing import List, Optional, Tuple
+from decimal import Decimal
 from uuid import uuid4
 
 import structlog
 
-from src.models.ohlcv import OHLCVBar
-from src.models.volume_analysis import VolumeAnalysis
-from src.models.trading_range import TradingRange
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
-from src.models.zone import Zone, ZoneType, ZoneStrength, PriceRange
+from src.models.ohlcv import OHLCVBar
+from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
+from src.models.zone import PriceRange, Zone, ZoneStrength, ZoneType
 
 # Rebuild TradingRange model after Zone is imported to resolve forward references
 TradingRange.model_rebuild()
@@ -47,9 +46,9 @@ INVALIDATION_VOLUME_THRESHOLD = Decimal("1.5")  # High volume for zone breaks
 
 
 def detect_demand_zones(
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
-) -> List[Zone]:
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis]
+) -> list[Zone]:
     """
     Identify bullish absorption zones (demand zones).
 
@@ -102,10 +101,10 @@ def detect_demand_zones(
         timeframe=bars[0].timeframe if bars else None
     )
 
-    demand_zones: List[Zone] = []
+    demand_zones: list[Zone] = []
 
     # Iterate through bars checking demand zone conditions
-    for i, (bar, vol_analysis) in enumerate(zip(bars, volume_analysis)):
+    for i, (bar, vol_analysis) in enumerate(zip(bars, volume_analysis, strict=False)):
         # Check all three conditions for demand zone (AC 2, 3)
         if vol_analysis.volume_ratio is None or vol_analysis.spread_ratio is None:
             continue  # Skip bars without complete volume analysis
@@ -176,9 +175,9 @@ def detect_demand_zones(
 
 
 def detect_supply_zones(
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
-) -> List[Zone]:
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis]
+) -> list[Zone]:
     """
     Identify bearish distribution zones (supply zones).
 
@@ -231,10 +230,10 @@ def detect_supply_zones(
         timeframe=bars[0].timeframe if bars else None
     )
 
-    supply_zones: List[Zone] = []
+    supply_zones: list[Zone] = []
 
     # Iterate through bars checking supply zone conditions
-    for i, (bar, vol_analysis) in enumerate(zip(bars, volume_analysis)):
+    for i, (bar, vol_analysis) in enumerate(zip(bars, volume_analysis, strict=False)):
         # Check all three conditions for supply zone (AC 4)
         if vol_analysis.volume_ratio is None or vol_analysis.spread_ratio is None:
             continue  # Skip bars without complete volume analysis
@@ -306,9 +305,9 @@ def detect_supply_zones(
 
 def count_zone_touches(
     zone: Zone,
-    bars: List[OHLCVBar],
+    bars: list[OHLCVBar],
     start_index: int
-) -> Tuple[int, Optional[datetime]]:
+) -> tuple[int, datetime | None]:
     """
     Count how many times price returned to a zone after formation.
 
@@ -331,7 +330,7 @@ def count_zone_touches(
         >>> print(f"Zone touched {touch_count} times")
     """
     touch_count = 0
-    last_touch_timestamp: Optional[datetime] = None
+    last_touch_timestamp: datetime | None = None
 
     # Iterate through bars after zone formation
     for i in range(start_index, len(bars)):
@@ -387,9 +386,9 @@ def classify_zone_strength(touch_count: int) -> ZoneStrength:
 
 def calculate_zone_proximity(
     zone: Zone,
-    creek_level: Optional[CreekLevel],
-    ice_level: Optional[IceLevel]
-) -> Tuple[Optional[str], Optional[Decimal]]:
+    creek_level: CreekLevel | None,
+    ice_level: IceLevel | None
+) -> tuple[str | None, Decimal | None]:
     """
     Calculate zone proximity to Creek or Ice levels.
 
@@ -516,7 +515,7 @@ def calculate_significance_score(zone: Zone) -> int:
 
 def check_zone_invalidation(
     zone: Zone,
-    bars: List[OHLCVBar],
+    bars: list[OHLCVBar],
     current_index: int
 ) -> bool:
     """
@@ -576,11 +575,11 @@ def check_zone_invalidation(
 
 def map_supply_demand_zones(
     trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis],
-    creek_level: Optional[CreekLevel] = None,
-    ice_level: Optional[IceLevel] = None
-) -> List[Zone]:
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis],
+    creek_level: CreekLevel | None = None,
+    ice_level: IceLevel | None = None
+) -> list[Zone]:
     """
     Map supply and demand zones within a trading range.
 

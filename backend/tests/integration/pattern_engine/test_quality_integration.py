@@ -5,33 +5,28 @@ Tests quality scoring across realistic market scenarios including high-quality
 accumulation zones, noisy consolidations, and various range characteristics.
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
-from typing import List
+
+import pytest
 
 from src.models.ohlcv import OHLCVBar
+from src.models.pivot import PivotType
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.effort_result import EffortResult
-from src.models.trading_range import TradingRange
-from src.models.price_cluster import PriceCluster
-from src.models.pivot import Pivot, PivotType
 from src.pattern_engine.pivot_detector import detect_pivots
 from src.pattern_engine.range_cluster import cluster_pivots, form_trading_range
 from src.pattern_engine.range_quality import (
     calculate_range_quality,
     filter_quality_ranges,
-    get_quality_ranges
+    get_quality_ranges,
 )
-from src.pattern_engine.volume_analyzer import VolumeAnalyzer
-
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
 
 @pytest.fixture
-def realistic_aapl_accumulation_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
+def realistic_aapl_accumulation_data() -> tuple[list[OHLCVBar], list[VolumeAnalysis]]:
     """
     Generate realistic AAPL accumulation period data (simulated).
 
@@ -43,7 +38,7 @@ def realistic_aapl_accumulation_data() -> tuple[List[OHLCVBar], List[VolumeAnaly
     - Volume: Decreasing on tests (smart money absorption)
     - Expected score: 85+ (high quality)
     """
-    base_date = datetime(2023, 10, 1, 9, 30, 0, tzinfo=timezone.utc)
+    base_date = datetime(2023, 10, 1, 9, 30, 0, tzinfo=UTC)
     bars = []
     volume_analysis = []
 
@@ -98,7 +93,7 @@ def realistic_aapl_accumulation_data() -> tuple[List[OHLCVBar], List[VolumeAnaly
 
 
 @pytest.fixture
-def noisy_range_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
+def noisy_range_data() -> tuple[list[OHLCVBar], list[VolumeAnalysis]]:
     """
     Generate noisy/low-quality range data.
 
@@ -110,7 +105,7 @@ def noisy_range_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
     - Volume: Increasing on tests (no absorption)
     - Expected score: <70 (low quality, rejected)
     """
-    base_date = datetime(2024, 1, 1, 9, 30, 0, tzinfo=timezone.utc)
+    base_date = datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC)
     bars = []
     volume_analysis = []
 
@@ -165,7 +160,7 @@ def noisy_range_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
 
 
 @pytest.fixture
-def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
+def standard_aapl_data() -> tuple[list[OHLCVBar], list[VolumeAnalysis]]:
     """
     Generate standard AAPL data with multiple ranges of varying quality.
 
@@ -174,7 +169,7 @@ def standard_aapl_data() -> tuple[List[OHLCVBar], List[VolumeAnalysis]]:
     - 1-2 marginal ranges (score < 70)
     - Realistic price and volume patterns
     """
-    base_date = datetime(2024, 1, 1, 9, 30, 0, tzinfo=timezone.utc)
+    base_date = datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC)
     bars = []
     volume_analysis = []
     base_volume = Decimal("60000000")
@@ -302,7 +297,7 @@ class TestQualityIntegrationWithAAPL:
         rejected_ranges = [r for r in ranges if r.quality_score is not None and r.quality_score < 70]
 
         # Log results for manual verification
-        print(f"\nAAPL Quality Scoring Results:")
+        print("\nAAPL Quality Scoring Results:")
         print(f"Total ranges: {len(ranges)}")
         print(f"Quality ranges (>= 70): {len(quality_ranges)}")
         print(f"Rejected ranges (< 70): {len(rejected_ranges)}")
@@ -465,7 +460,7 @@ class TestStory34Through36Integration:
         # Get quality ranges for Stories 3.4-3.6 (sorted by score)
         quality_ranges = get_quality_ranges(ranges)
 
-        print(f"\nStory 3.4-3.6 Integration:")
+        print("\nStory 3.4-3.6 Integration:")
         print(f"Total ranges detected: {len(ranges)}")
         print(f"Quality ranges (>= 70): {len(quality_ranges)}")
 

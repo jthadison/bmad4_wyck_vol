@@ -11,16 +11,16 @@ Tests the complete end-to-end workflow with real market data to validate:
 This test suite validates AC9: Integration test with 2-year AAPL data.
 """
 
-import pytest
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from src.models.ohlcv import OHLCVBar
-from src.models.volume_analysis import VolumeAnalysis
 from src.models.trading_range import RangeStatus
+from src.models.volume_analysis import VolumeAnalysis
 from src.pattern_engine.trading_range_detector import TradingRangeDetector
 from src.pattern_engine.volume_analyzer import VolumeAnalyzer
-
 
 # ============================================================================
 # Helper Functions
@@ -429,7 +429,7 @@ class TestRangeDetectorIntegration:
         ranges = detector.detect_ranges(bars, volume_analysis)
 
         # AC9: Verify at least 1 significant range detected
-        print(f"\n=== AAPL 2-Year Range Detection Results ===")
+        print("\n=== AAPL 2-Year Range Detection Results ===")
         print(f"Total ranges detected: {len(ranges)}")
         print(f"Bar count: {len(bars)}")
         print(f"Date range: {bars[0].timestamp} to {bars[-1].timestamp}")
@@ -511,7 +511,7 @@ class TestRangeDetectorIntegration:
             )
 
         # Verify range distribution across 2-year period
-        print(f"\n=== Range Distribution Analysis ===")
+        print("\n=== Range Distribution Analysis ===")
         avg_duration = sum(r.duration for r in ranges) / len(ranges)
         avg_quality = sum(r.quality_score for r in ranges) / len(ranges)
 
@@ -565,7 +565,7 @@ class TestRangeDetectorIntegration:
 
         ranges = detector.detect_ranges(bars, volume_analysis)
 
-        print(f"\n=== SPY 2-Year Range Detection Results ===")
+        print("\n=== SPY 2-Year Range Detection Results ===")
         print(f"Total ranges detected: {len(ranges)}")
 
         assert len(ranges) >= 1, (
@@ -601,7 +601,7 @@ class TestRangeDetectorIntegration:
 
         ranges = detector.detect_ranges(bars, volume_analysis)
 
-        print(f"\n=== QQQ 2-Year Range Detection Results ===")
+        print("\n=== QQQ 2-Year Range Detection Results ===")
         print(f"Total ranges detected: {len(ranges)}")
 
         assert len(ranges) >= 1, (
@@ -636,7 +636,7 @@ class TestRangeDetectorIntegration:
 
         ranges = detector.detect_ranges(bars, volume_analysis)
 
-        print(f"\n=== Range Lifecycle Status Analysis ===")
+        print("\n=== Range Lifecycle Status Analysis ===")
 
         for idx, trading_range in enumerate(ranges):
             print(f"Range {idx + 1}: duration={trading_range.duration}, "
@@ -684,7 +684,7 @@ class TestRangeDetectorIntegration:
         ranges1 = detector.detect_ranges(bars, volume_analysis)
         duration1 = (time.perf_counter() - start1) * 1000
 
-        print(f"\n=== Caching Performance Test ===")
+        print("\n=== Caching Performance Test ===")
         print(f"First call (cache miss): {duration1:.2f}ms")
         print(f"Ranges detected: {len(ranges1)}")
         print(f"Cache hits: {detector._cache_hits}")
@@ -713,7 +713,7 @@ class TestRangeDetectorIntegration:
         detector.clear_cache()
 
         start3 = time.perf_counter()
-        ranges3 = detector.detect_ranges(bars, volume_analysis)
+        detector.detect_ranges(bars, volume_analysis)
         duration3 = (time.perf_counter() - start3) * 1000
 
         print(f"Third call after clear (cache miss): {duration3:.2f}ms")
@@ -744,7 +744,7 @@ class TestRangeDetectorIntegration:
         ranges = detector.detect_ranges(bars, volume_analysis)
         duration = (time.perf_counter() - start) * 1000
 
-        print(f"\n=== 2-Year Data Performance Test ===")
+        print("\n=== 2-Year Data Performance Test ===")
         print(f"Bars: {len(bars)}")
         print(f"Ranges detected: {len(ranges)}")
         print(f"Execution time: {duration:.2f}ms")

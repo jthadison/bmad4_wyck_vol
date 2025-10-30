@@ -7,25 +7,22 @@ with synthetic test data.
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
-from typing import List
-from src.models.pivot import Pivot, PivotType
-from src.models.ohlcv import OHLCVBar
-from src.models.price_cluster import PriceCluster
-from src.models.trading_range import TradingRange
-from src.pattern_engine.range_cluster import (
-    cluster_pivots,
-    form_trading_range,
-    calculate_preliminary_quality_score,
-    find_best_support_cluster,
-    find_best_resistance_cluster,
-    find_potential_ranges,
-    _cluster_by_proximity,
-    _create_price_cluster
-)
 
+import pytest
+
+from src.models.ohlcv import OHLCVBar
+from src.models.pivot import Pivot, PivotType
+from src.pattern_engine.range_cluster import (
+    _create_price_cluster,
+    calculate_preliminary_quality_score,
+    cluster_pivots,
+    find_best_resistance_cluster,
+    find_best_support_cluster,
+    find_potential_ranges,
+    form_trading_range,
+)
 
 # ============================================================================
 # Test Fixtures and Helpers
@@ -44,7 +41,7 @@ def create_test_bar(
 ) -> OHLCVBar:
     """Create test OHLCV bar"""
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     return OHLCVBar(
         symbol=symbol,
@@ -74,7 +71,7 @@ def create_test_pivot(
             timeframe=timeframe,
             high=price,
             low=price - Decimal("5.00"),
-            timestamp=datetime.now(timezone.utc) + timedelta(days=index)
+            timestamp=datetime.now(UTC) + timedelta(days=index)
         )
     else:
         bar = create_test_bar(
@@ -82,7 +79,7 @@ def create_test_pivot(
             timeframe=timeframe,
             high=price + Decimal("5.00"),
             low=price,
-            timestamp=datetime.now(timezone.utc) + timedelta(days=index)
+            timestamp=datetime.now(UTC) + timedelta(days=index)
         )
 
     return Pivot(
@@ -95,7 +92,7 @@ def create_test_pivot(
     )
 
 
-def generate_clustered_pivots() -> List[Pivot]:
+def generate_clustered_pivots() -> list[Pivot]:
     """
     Generate synthetic pivots with known clusters for testing.
 
@@ -131,10 +128,10 @@ def generate_clustered_pivots() -> List[Pivot]:
     return pivots
 
 
-def generate_test_bars(count: int, symbol: str = "TEST", timeframe: str = "1d") -> List[OHLCVBar]:
+def generate_test_bars(count: int, symbol: str = "TEST", timeframe: str = "1d") -> list[OHLCVBar]:
     """Generate test OHLCV bars"""
     bars = []
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
     for i in range(count):
         bar = create_test_bar(

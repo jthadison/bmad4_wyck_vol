@@ -52,7 +52,6 @@ from decimal import Decimal
 import structlog
 
 from src.models.ohlcv import OHLCVBar
-from src.models.pivot import Pivot, PivotType
 from src.models.trading_range import RangeStatus, TradingRange
 from src.models.volume_analysis import VolumeAnalysis
 from src.models.zone import ZoneStrength, ZoneType

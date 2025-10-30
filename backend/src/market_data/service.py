@@ -12,8 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
-from typing import Deque, List, Optional
+from datetime import UTC, date, datetime
 
 import structlog
 
@@ -43,7 +42,7 @@ class IngestionResult:
     inserted: int
     duplicates: int
     rejected: int
-    errors: List[str]
+    errors: list[str]
     success: bool
 
     @property
@@ -115,7 +114,7 @@ class MarketDataService:
             timeframe=timeframe,
         )
 
-        errors: List[str] = []
+        errors: list[str] = []
 
         try:
             # Step 1: Fetch bars from provider
@@ -323,12 +322,12 @@ class MarketDataCoordinator:
         self.adapter = adapter
         self.settings = settings
         self._is_running: bool = False
-        self._start_time: Optional[datetime] = None
+        self._start_time: datetime | None = None
 
         # Insertion failure tracking (REL-002)
         self._insertion_failures: int = 0
         self._insertion_successes: int = 0
-        self._failed_bars: Deque[OHLCVBar] = deque(maxlen=100)  # Dead letter queue
+        self._failed_bars: deque[OHLCVBar] = deque(maxlen=100)  # Dead letter queue
         self._failure_alert_threshold: int = 10  # Alert after N consecutive failures
         self._consecutive_failures: int = 0
 
@@ -368,7 +367,7 @@ class MarketDataCoordinator:
             )
 
             self._is_running = True
-            self._start_time = datetime.now(timezone.utc)
+            self._start_time = datetime.now(UTC)
 
             logger.info(
                 "realtime_feed_started",
@@ -399,7 +398,7 @@ class MarketDataCoordinator:
             # Calculate uptime
             uptime = None
             if self._start_time:
-                uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds()
+                uptime = (datetime.now(UTC) - self._start_time).total_seconds()
 
             # Disconnect from provider
             await self.adapter.disconnect()
@@ -437,7 +436,7 @@ class MarketDataCoordinator:
         Args:
             bar: OHLCVBar to insert
         """
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         try:
             # Calculate ratios before insertion
@@ -468,7 +467,7 @@ class MarketDataCoordinator:
                 inserted_count = await repo.insert_bars([bar])
 
                 # Calculate insertion latency
-                end_time = datetime.now(timezone.utc)
+                end_time = datetime.now(UTC)
                 insertion_latency = (end_time - start_time).total_seconds()
 
                 if inserted_count > 0:
@@ -530,7 +529,7 @@ class MarketDataCoordinator:
 
         uptime = None
         if self._start_time:
-            uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds()
+            uptime = (datetime.now(UTC) - self._start_time).total_seconds()
 
         # Calculate insertion success rate (REL-002)
         total_insertions = self._insertion_successes + self._insertion_failures
@@ -553,7 +552,7 @@ class MarketDataCoordinator:
             "failed_queue_size": len(self._failed_bars),
         }
 
-    def get_failed_bars(self) -> List[OHLCVBar]:
+    def get_failed_bars(self) -> list[OHLCVBar]:
         """
         Get failed bars from dead letter queue (REL-002).
 

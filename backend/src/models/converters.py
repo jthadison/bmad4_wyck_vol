@@ -8,14 +8,13 @@ and pandas DataFrames for vectorized operations like rolling averages.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List
 
 import pandas as pd
 
 from src.models.ohlcv import OHLCVBar
 
 
-def bars_to_dataframe(bars: List[OHLCVBar]) -> pd.DataFrame:
+def bars_to_dataframe(bars: list[OHLCVBar]) -> pd.DataFrame:
     """
     Convert OHLCV bars to pandas DataFrame for vectorized operations.
 
@@ -83,7 +82,7 @@ def bars_to_dataframe(bars: List[OHLCVBar]) -> pd.DataFrame:
     return df
 
 
-def dataframe_to_bars(df: pd.DataFrame) -> List[OHLCVBar]:
+def dataframe_to_bars(df: pd.DataFrame) -> list[OHLCVBar]:
     """
     Convert pandas DataFrame back to list of OHLCVBar models.
 

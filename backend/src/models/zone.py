@@ -8,12 +8,12 @@ within trading ranges. Zones represent areas where smart money absorbed supply
 
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
-from typing import Optional
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field, field_validator, field_serializer, model_validator
+
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 
 class ZoneType(str, Enum):
@@ -160,12 +160,12 @@ class Zone(BaseModel):
     formation_spread_ratio: Decimal = Field(..., le=Decimal("0.8"), description="Formation bar spread ratio")
     volume_avg: Decimal = Field(..., ge=0, description="Average volume when zone formed")
     close_position: Decimal = Field(..., ge=0, le=1, description="Close position in bar (0.0-1.0)")
-    proximity_to_level: Optional[str] = Field(None, description="NEAR_CREEK or NEAR_ICE or None")
-    proximity_distance_pct: Optional[Decimal] = Field(None, description="Distance to nearest level as %")
+    proximity_to_level: str | None = Field(None, description="NEAR_CREEK or NEAR_ICE or None")
+    proximity_distance_pct: Decimal | None = Field(None, description="Distance to nearest level as %")
     significance_score: int = Field(..., ge=0, le=100, description="0-100 significance score")
     is_active: bool = Field(True, description="Whether zone is still valid")
-    last_touch_timestamp: Optional[datetime] = Field(None, description="Most recent price test")
-    invalidation_timestamp: Optional[datetime] = Field(None, description="When zone was broken")
+    last_touch_timestamp: datetime | None = Field(None, description="Most recent price test")
+    invalidation_timestamp: datetime | None = Field(None, description="When zone was broken")
 
     @field_validator('formation_volume_ratio')
     @classmethod
@@ -219,12 +219,12 @@ class Zone(BaseModel):
 
     @field_serializer("formation_volume_ratio", "formation_spread_ratio", "volume_avg",
                       "close_position", "proximity_distance_pct")
-    def serialize_decimal(self, value: Optional[Decimal]) -> Optional[str]:
+    def serialize_decimal(self, value: Decimal | None) -> str | None:
         """Serialize Decimal fields as strings to preserve precision."""
         return str(value) if value is not None else None
 
     @field_serializer("formation_timestamp", "last_touch_timestamp", "invalidation_timestamp")
-    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
+    def serialize_datetime(self, value: datetime | None) -> str | None:
         """Serialize datetime fields as ISO format strings."""
         return value.isoformat() if value is not None else None
 

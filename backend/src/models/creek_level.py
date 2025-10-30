@@ -8,10 +8,10 @@ smart money accumulates shares with decreasing volume.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
-from typing import List
-from pydantic import BaseModel, Field, field_validator, field_serializer
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from src.models.touch_detail import TouchDetail
 
@@ -61,7 +61,7 @@ class CreekLevel(BaseModel):
     price: Decimal = Field(..., decimal_places=8, max_digits=18, description="Volume-weighted support price")
     absolute_low: Decimal = Field(..., decimal_places=8, max_digits=18, description="Lowest pivot low (spring ref)")
     touch_count: int = Field(..., ge=2, description="Number of pivot lows in cluster")
-    touch_details: List[TouchDetail] = Field(..., description="Metadata for each touch")
+    touch_details: list[TouchDetail] = Field(..., description="Metadata for each touch")
     strength_score: int = Field(..., ge=0, le=100, description="0-100 strength score")
     strength_rating: str = Field(..., description="EXCELLENT/STRONG/MODERATE/WEAK")
     last_test_timestamp: datetime = Field(..., description="Most recent test of support")

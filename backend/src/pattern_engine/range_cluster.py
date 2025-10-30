@@ -24,15 +24,16 @@ Example:
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
-from typing import List, Optional
+import statistics
+from decimal import ROUND_HALF_UP, Decimal
+
+import structlog
+
+from src.models.ohlcv import OHLCVBar
 from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
 from src.models.trading_range import TradingRange
-from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.pivot_detector import get_pivot_highs, get_pivot_lows
-import statistics
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -57,7 +58,7 @@ def _quantize_decimal(value: Decimal, decimal_places: int = 8) -> Decimal:
     return value.quantize(quantizer, rounding=ROUND_HALF_UP)
 
 
-def cluster_pivots(pivots: List[Pivot], tolerance_pct: float = 0.02) -> List[PriceCluster]:
+def cluster_pivots(pivots: list[Pivot], tolerance_pct: float = 0.02) -> list[PriceCluster]:
     """
     Cluster pivot points within price tolerance to identify support/resistance zones.
 
@@ -131,7 +132,7 @@ def cluster_pivots(pivots: List[Pivot], tolerance_pct: float = 0.02) -> List[Pri
     return all_clusters
 
 
-def _cluster_by_proximity(pivots: List[Pivot], tolerance_pct: float) -> List[PriceCluster]:
+def _cluster_by_proximity(pivots: list[Pivot], tolerance_pct: float) -> list[PriceCluster]:
     """
     Internal helper: cluster pivots of same type by price proximity.
 
@@ -179,7 +180,7 @@ def _cluster_by_proximity(pivots: List[Pivot], tolerance_pct: float) -> List[Pri
     return clusters
 
 
-def _create_price_cluster(pivots: List[Pivot]) -> PriceCluster:
+def _create_price_cluster(pivots: list[Pivot]) -> PriceCluster:
     """
     Internal helper: create PriceCluster object from list of pivots.
 
@@ -223,10 +224,10 @@ def _create_price_cluster(pivots: List[Pivot]) -> PriceCluster:
 def form_trading_range(
     support_cluster: PriceCluster,
     resistance_cluster: PriceCluster,
-    bars: List[OHLCVBar],
-    symbol: Optional[str] = None,
-    timeframe: Optional[str] = None
-) -> Optional[TradingRange]:
+    bars: list[OHLCVBar],
+    symbol: str | None = None,
+    timeframe: str | None = None
+) -> TradingRange | None:
     """
     Form a TradingRange from support and resistance clusters.
 
@@ -420,7 +421,7 @@ def calculate_preliminary_quality_score(
     return min(score, 100)
 
 
-def find_best_support_cluster(clusters: List[PriceCluster]) -> Optional[PriceCluster]:
+def find_best_support_cluster(clusters: list[PriceCluster]) -> PriceCluster | None:
     """
     Find the best support cluster from a list of clusters.
 
@@ -448,7 +449,7 @@ def find_best_support_cluster(clusters: List[PriceCluster]) -> Optional[PriceClu
     return support_clusters[0]
 
 
-def find_best_resistance_cluster(clusters: List[PriceCluster]) -> Optional[PriceCluster]:
+def find_best_resistance_cluster(clusters: list[PriceCluster]) -> PriceCluster | None:
     """
     Find the best resistance cluster from a list of clusters.
 
@@ -477,10 +478,10 @@ def find_best_resistance_cluster(clusters: List[PriceCluster]) -> Optional[Price
 
 
 def find_potential_ranges(
-    pivots: List[Pivot],
-    bars: List[OHLCVBar],
+    pivots: list[Pivot],
+    bars: list[OHLCVBar],
     tolerance_pct: float = 0.02
-) -> List[TradingRange]:
+) -> list[TradingRange]:
     """
     Find all potential trading ranges from pivot points.
 

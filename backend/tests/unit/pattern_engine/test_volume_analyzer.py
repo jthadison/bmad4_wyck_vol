@@ -5,7 +5,7 @@ Tests the calculate_volume_ratio function with synthetic data, edge cases,
 and boundary conditions.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -13,17 +13,17 @@ import pytest
 
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
+from src.models.volume_analysis import VolumeAnalysis
 from src.pattern_engine.volume_analyzer import (
-    calculate_volume_ratio,
-    calculate_volume_ratios_batch,
-    calculate_spread_ratio,
-    calculate_spread_ratios_batch,
+    VolumeAnalyzer,
     calculate_close_position,
     calculate_close_positions_batch,
+    calculate_spread_ratio,
+    calculate_spread_ratios_batch,
+    calculate_volume_ratio,
+    calculate_volume_ratios_batch,
     classify_effort_result,
-    VolumeAnalyzer,
 )
-from src.models.volume_analysis import VolumeAnalysis
 
 
 def create_test_bar(
@@ -47,7 +47,7 @@ def create_test_bar(
         OHLCVBar instance for testing
     """
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     spread = high - low
 
@@ -198,7 +198,7 @@ class TestCalculateVolumeRatiosBatch:
 
         # Compare results
         assert len(batch_ratios) == len(individual_ratios)
-        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios)):
+        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios, strict=False)):
             if batch is None and individual is None:
                 continue
             assert batch is not None and individual is not None
@@ -409,7 +409,7 @@ class TestCalculateSpreadRatiosBatch:
 
         # Compare results
         assert len(batch_ratios) == len(individual_ratios)
-        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios)):
+        for i, (batch, individual) in enumerate(zip(batch_ratios, individual_ratios, strict=False)):
             if batch is None and individual is None:
                 continue
             if batch == 0.0 and individual == 0.0:
@@ -686,7 +686,7 @@ class TestCalculateClosePositionsBatch:
 
         # Compare results
         assert len(batch_positions) == len(individual_positions)
-        for i, (batch, individual) in enumerate(zip(batch_positions, individual_positions)):
+        for i, (batch, individual) in enumerate(zip(batch_positions, individual_positions, strict=False)):
             assert abs(batch - individual) < 0.0001, f"Mismatch at index {i}: batch={batch}, individual={individual}"
 
     def test_batch_empty_list(self):
@@ -763,7 +763,7 @@ class TestCalculateClosePositionsBatch:
         positions = calculate_close_positions_batch(bars)
 
         # Verify each position matches expected
-        for i, (position, expected) in enumerate(zip(positions, expected_positions)):
+        for i, (position, expected) in enumerate(zip(positions, expected_positions, strict=False)):
             assert abs(position - expected) < 0.0001, f"Mismatch at index {i}: got {position}, expected {expected}"
 
     def test_batch_invalid_data_clamped(self):
@@ -1336,12 +1336,12 @@ class TestVolumeAnalyzer:
         for _ in range(20):
             bars.append(create_test_bar(volume=100))
 
-        for close_price, expected_position in test_cases:
+        for close_price, _ in test_cases:
             bar = OHLCVBar(
                 id=uuid4(),
                 symbol="AAPL",
                 timeframe="1d",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 open=Decimal("100.0"),
                 high=Decimal("110.0"),
                 low=Decimal("90.0"),
@@ -1375,9 +1375,9 @@ class TestVolumeAnalyzer:
 
         # Results should match individual batch function calls
         from src.pattern_engine.volume_analyzer import (
-            calculate_volume_ratios_batch,
-            calculate_spread_ratios_batch,
             calculate_close_positions_batch,
+            calculate_spread_ratios_batch,
+            calculate_volume_ratios_batch,
         )
 
         volume_ratios = calculate_volume_ratios_batch(bars)

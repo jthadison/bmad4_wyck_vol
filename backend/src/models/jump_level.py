@@ -8,9 +8,10 @@ is the upside projection after SOS breakout, proportional to accumulation durati
 
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator, field_serializer, model_validator
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 
 class JumpLevel(BaseModel):

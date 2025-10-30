@@ -6,28 +6,25 @@ in isolation and in combination, including perfect range (100 score), edge cases
 and quality threshold validation.
 """
 
-import pytest
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from typing import List
 
-from src.models.trading_range import TradingRange
-from src.models.price_cluster import PriceCluster
-from src.models.pivot import Pivot, PivotType
+import pytest
+
 from src.models.ohlcv import OHLCVBar
+from src.models.pivot import Pivot, PivotType
+from src.models.price_cluster import PriceCluster
+from src.models.trading_range import TradingRange
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.effort_result import EffortResult
 from src.pattern_engine.range_quality import (
-    calculate_range_quality,
     _score_duration,
-    _score_touch_count,
     _score_price_tightness,
-    _score_volume_confirmation,
-    is_quality_range,
+    _score_touch_count,
+    calculate_range_quality,
     filter_quality_ranges,
-    get_quality_ranges
+    get_quality_ranges,
+    is_quality_range,
 )
-
 
 # ============================================================================
 # Test Fixtures
@@ -36,11 +33,11 @@ from src.pattern_engine.range_quality import (
 @pytest.fixture
 def base_timestamp():
     """Base timestamp for test data."""
-    return datetime(2024, 1, 1, 9, 30, 0, tzinfo=timezone.utc)
+    return datetime(2024, 1, 1, 9, 30, 0, tzinfo=UTC)
 
 
 @pytest.fixture
-def sample_bars(base_timestamp) -> List[OHLCVBar]:
+def sample_bars(base_timestamp) -> list[OHLCVBar]:
     """Generate 50 OHLCV bars for testing."""
     from datetime import timedelta
     bars = []
@@ -63,7 +60,7 @@ def sample_bars(base_timestamp) -> List[OHLCVBar]:
 
 
 @pytest.fixture
-def sample_volume_analysis(sample_bars) -> List[VolumeAnalysis]:
+def sample_volume_analysis(sample_bars) -> list[VolumeAnalysis]:
     """Generate VolumeAnalysis matching sample_bars with neutral volume."""
     return [
         VolumeAnalysis(

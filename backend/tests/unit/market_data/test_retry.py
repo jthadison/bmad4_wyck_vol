@@ -2,7 +2,6 @@
 Unit tests for retry logic with exponential backoff.
 """
 
-import asyncio
 from datetime import datetime
 
 import httpx

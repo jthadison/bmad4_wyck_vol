@@ -8,7 +8,6 @@ Cache is optional and disabled by default for MVP (controlled by settings).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
 
 import structlog
 from redis.asyncio import Redis
@@ -84,7 +83,7 @@ class BarCache:
         timeframe: str,
         start_date: datetime,
         end_date: datetime,
-    ) -> Optional[List[OHLCVBar]]:
+    ) -> list[OHLCVBar] | None:
         """
         Get bars from cache if available.
 
@@ -136,7 +135,7 @@ class BarCache:
         timeframe: str,
         start_date: datetime,
         end_date: datetime,
-        bars: List[OHLCVBar],
+        bars: list[OHLCVBar],
     ) -> bool:
         """
         Store bars in cache with TTL.

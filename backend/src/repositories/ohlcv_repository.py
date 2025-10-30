@@ -8,7 +8,6 @@ including bulk insert, duplicate detection, and data quality queries.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
 
 import structlog
 from sqlalchemy import and_, exists, func, select
@@ -39,7 +38,7 @@ class OHLCVRepository:
         """
         self.session = session
 
-    async def insert_bar(self, bar: OHLCVBar) -> Optional[str]:
+    async def insert_bar(self, bar: OHLCVBar) -> str | None:
         """
         Insert a single OHLCV bar into the database.
 
@@ -107,7 +106,7 @@ class OHLCVRepository:
             logger.error("insert_bar_failed", error=str(e), symbol=bar.symbol)
             raise
 
-    async def insert_bars(self, bars: List[OHLCVBar]) -> int:
+    async def insert_bars(self, bars: list[OHLCVBar]) -> int:
         """
         Bulk insert OHLCV bars into database.
 
@@ -221,7 +220,7 @@ class OHLCVRepository:
         timeframe: str,
         start_date: datetime,
         end_date: datetime,
-    ) -> List[OHLCVBar]:
+    ) -> list[OHLCVBar]:
         """
         Retrieve OHLCV bars for a symbol within a date range.
 
@@ -263,7 +262,7 @@ class OHLCVRepository:
         symbol: str,
         timeframe: str,
         count: int = 100,
-    ) -> List[OHLCVBar]:
+    ) -> list[OHLCVBar]:
         """
         Retrieve the most recent N bars for a symbol.
 
@@ -333,7 +332,7 @@ class OHLCVRepository:
         self,
         symbol: str,
         timeframe: str,
-    ) -> tuple[Optional[datetime], Optional[datetime]]:
+    ) -> tuple[datetime | None, datetime | None]:
         """
         Get min and max timestamp for a symbol and timeframe.
 
@@ -373,7 +372,7 @@ class OHLCVRepository:
         self,
         symbol: str,
         timeframe: str,
-        timestamps: List[datetime],
+        timestamps: list[datetime],
     ) -> set[datetime]:
         """
         Get which timestamps already exist in the database.

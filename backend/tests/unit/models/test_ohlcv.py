@@ -5,7 +5,7 @@ Tests cover validation, calculated properties, serialization, and timezone handl
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -23,7 +23,7 @@ class TestOHLCVBarCreation:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -43,14 +43,14 @@ class TestOHLCVBarCreation:
         assert bar.volume == 10000000
         assert bar.spread == Decimal("7.00")
         assert isinstance(bar.id, UUID)
-        assert bar.timestamp.tzinfo == timezone.utc
+        assert bar.timestamp.tzinfo == UTC
 
     def test_decimal_precision_preserved(self):
         """Test that Decimal precision (8 decimal places) is preserved."""
         bar = OHLCVBar(
             symbol="BTC",
             timeframe="1h",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=Decimal("45123.12345678"),
             high=Decimal("45200.87654321"),
             low=Decimal("45000.11111111"),
@@ -84,8 +84,8 @@ class TestOHLCVBarCreation:
         )
 
         # Verify converted to UTC
-        assert bar.timestamp.tzinfo == timezone.utc
-        assert bar.created_at.tzinfo == timezone.utc
+        assert bar.timestamp.tzinfo == UTC
+        assert bar.created_at.tzinfo == UTC
 
 
 class TestOHLCVBarCalculatedProperties:
@@ -96,7 +96,7 @@ class TestOHLCVBarCalculatedProperties:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -112,7 +112,7 @@ class TestOHLCVBarCalculatedProperties:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -129,7 +129,7 @@ class TestOHLCVBarCalculatedProperties:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -145,7 +145,7 @@ class TestOHLCVBarCalculatedProperties:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -161,7 +161,7 @@ class TestOHLCVBarCalculatedProperties:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=Decimal("150.00"),
             high=Decimal("150.00"),
             low=Decimal("150.00"),
@@ -183,7 +183,7 @@ class TestOHLCVBarValidation:
             OHLCVBar(
                 symbol="AAPL",
                 timeframe="1d",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 open=Decimal("150.00"),
                 high=Decimal("155.00"),
                 low=Decimal("148.00"),
@@ -204,7 +204,7 @@ class TestOHLCVBarValidation:
             bar = OHLCVBar(
                 symbol="AAPL",
                 timeframe=tf,
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 open=Decimal("150.00"),
                 high=Decimal("155.00"),
                 low=Decimal("148.00"),
@@ -220,7 +220,7 @@ class TestOHLCVBarValidation:
             OHLCVBar(
                 symbol="AAPL",
                 timeframe="2h",  # Invalid timeframe
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 open=Decimal("150.00"),
                 high=Decimal("155.00"),
                 low=Decimal("148.00"),
@@ -239,7 +239,7 @@ class TestOHLCVBarValidation:
         bar = OHLCVBar(
             symbol="A" * 20,  # Exactly 20 chars
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -254,7 +254,7 @@ class TestOHLCVBarValidation:
             OHLCVBar(
                 symbol="A" * 21,  # 21 chars - too long
                 timeframe="1d",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 open=Decimal("150.00"),
                 high=Decimal("155.00"),
                 low=Decimal("148.00"),
@@ -272,7 +272,7 @@ class TestOHLCVBarSerialization:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
             open=Decimal("150.12345678"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -316,7 +316,7 @@ class TestOHLCVBarSerialization:
         original_bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
             open=Decimal("150.12345678"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -350,7 +350,7 @@ class TestOHLCVBarConversion:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open=150.00,  # Float input
             high=155.00,
             low=148.00,
@@ -369,7 +369,7 @@ class TestOHLCVBarConversion:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             open="150.00",  # String input
             high="155.00",
             low="148.00",

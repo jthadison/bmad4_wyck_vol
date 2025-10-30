@@ -8,7 +8,7 @@ all bars into memory at once. Uses keyset pagination for efficiency.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -63,14 +63,14 @@ class BarIterator:
         self.start_date = start_date
         self.end_date = end_date
         self.batch_size = batch_size
-        self.last_timestamp: Optional[datetime] = None
+        self.last_timestamp: datetime | None = None
         self.exhausted = False
 
     def __aiter__(self):
         """Return self as async iterator."""
         return self
 
-    async def __anext__(self) -> List[OHLCVBar]:
+    async def __anext__(self) -> list[OHLCVBar]:
         """
         Fetch next batch of bars.
 
@@ -112,7 +112,7 @@ class BarIterator:
 
         return bars
 
-    async def _fetch_batch(self, start_date: datetime, end_date: datetime) -> List[OHLCVBar]:
+    async def _fetch_batch(self, start_date: datetime, end_date: datetime) -> list[OHLCVBar]:
         """
         Fetch a batch of bars using repository.
 

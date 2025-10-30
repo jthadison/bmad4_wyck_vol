@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime
 
 import click
 import structlog
@@ -106,7 +105,7 @@ async def ingest_async(symbols, start, end, timeframe, provider):
     )
 
     click.echo(f"\n{'='*60}")
-    click.echo(f"BMAD Wyckoff Historical Data Ingestion")
+    click.echo("BMAD Wyckoff Historical Data Ingestion")
     click.echo(f"{'='*60}")
     click.echo(f"Provider: {provider_name}")
     click.echo(f"Symbols: {', '.join(symbols)}")
@@ -207,7 +206,7 @@ async def ingest_async(symbols, start, end, timeframe, provider):
     click.echo(f"Total Symbols: {total_symbols}")
     click.echo(f"Successful: {len(successful_symbols)}")
     click.echo(f"Failed: {len(failed_symbols)}")
-    click.echo(f"\nData Statistics:")
+    click.echo("\nData Statistics:")
     click.echo(f"  Total Bars Fetched: {total_bars_fetched:,}")
     click.echo(f"  Total Bars Inserted: {total_bars_inserted:,}")
     click.echo(f"  Duplicates Skipped: {total_duplicates:,}")
@@ -217,7 +216,7 @@ async def ingest_async(symbols, start, end, timeframe, provider):
         click.echo(f"\n✓ Successfully ingested: {', '.join(successful_symbols)}")
 
     if failed_symbols:
-        click.echo(f"\n✗ Failed symbols:")
+        click.echo("\n✗ Failed symbols:")
         for sym, error in failed_symbols:
             click.echo(f"  - {sym}: {error}")
 

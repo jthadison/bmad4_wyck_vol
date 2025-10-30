@@ -11,31 +11,30 @@ Tests cover:
 - Zone filtering validation (Task 18)
 """
 
-import pytest
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from uuid import uuid4
 
-from src.models.ohlcv import OHLCVBar
-from src.models.volume_analysis import VolumeAnalysis
-from src.models.trading_range import TradingRange
-from src.models.price_cluster import PriceCluster
-from src.models.pivot import Pivot, PivotType
+import pytest
+
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
+from src.models.ohlcv import OHLCVBar
+from src.models.pivot import Pivot, PivotType
+from src.models.price_cluster import PriceCluster
 from src.models.touch_detail import TouchDetail
-from src.models.zone import Zone, ZoneType, ZoneStrength, PriceRange
+from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
+from src.models.zone import PriceRange, Zone, ZoneStrength, ZoneType
 from src.pattern_engine.zone_mapper import (
+    calculate_significance_score,
+    calculate_zone_proximity,
+    check_zone_invalidation,
+    classify_zone_strength,
+    count_zone_touches,
     detect_demand_zones,
     detect_supply_zones,
-    count_zone_touches,
-    classify_zone_strength,
-    calculate_zone_proximity,
-    calculate_significance_score,
     map_supply_demand_zones,
-    check_zone_invalidation
 )
-
 
 # Test Fixtures
 
@@ -44,7 +43,7 @@ def sample_bars():
     """Create sample OHLCV bars for testing."""
     from datetime import timedelta
     bars = []
-    base_timestamp = datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc)
+    base_timestamp = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
 
     for i in range(50):
         bar = OHLCVBar(
@@ -76,7 +75,7 @@ def demand_zone_bar():
     return OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
         open=Decimal("100.00"),
         high=Decimal("105.00"),
         low=Decimal("100.00"),  # Narrow spread
@@ -99,7 +98,7 @@ def supply_zone_bar():
     return OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
         open=Decimal("100.00"),
         high=Decimal("105.00"),
         low=Decimal("100.00"),  # Narrow spread
@@ -140,7 +139,7 @@ def quality_trading_range():
     bar_low = OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         open=Decimal("96.00"),
         high=Decimal("97.00"),
         low=Decimal("95.00"),
@@ -151,7 +150,7 @@ def quality_trading_range():
     bar_high = OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=UTC),
         open=Decimal("104.00"),
         high=Decimal("105.00"),
         low=Decimal("103.00"),
@@ -166,7 +165,7 @@ def quality_trading_range():
         price=Decimal("95.00"),
         type=PivotType.LOW,
         strength=5,
-        timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         index=10
     )
     pivot_low_2 = Pivot(
@@ -174,7 +173,7 @@ def quality_trading_range():
         price=Decimal("94.80"),
         type=PivotType.LOW,
         strength=5,
-        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
         index=15
     )
     pivot_high_1 = Pivot(
@@ -182,7 +181,7 @@ def quality_trading_range():
         price=Decimal("105.00"),
         type=PivotType.HIGH,
         strength=5,
-        timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=UTC),
         index=20
     )
     pivot_high_2 = Pivot(
@@ -190,7 +189,7 @@ def quality_trading_range():
         price=Decimal("105.20"),
         type=PivotType.HIGH,
         strength=5,
-        timestamp=datetime(2024, 1, 25, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 25, 9, 30, tzinfo=UTC),
         index=25
     )
 
@@ -203,8 +202,8 @@ def quality_trading_range():
         touch_count=2,
         cluster_type=PivotType.LOW,
         std_deviation=Decimal("0.10"),
-        timestamp_range=(datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
-                        datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc))
+        timestamp_range=(datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
+                        datetime(2024, 1, 15, 9, 30, tzinfo=UTC))
     )
     resistance_cluster = PriceCluster(
         pivots=[pivot_high_1, pivot_high_2],
@@ -215,8 +214,8 @@ def quality_trading_range():
         touch_count=2,
         cluster_type=PivotType.HIGH,
         std_deviation=Decimal("0.10"),
-        timestamp_range=(datetime(2024, 1, 20, 9, 30, tzinfo=timezone.utc),
-                        datetime(2024, 1, 25, 9, 30, tzinfo=timezone.utc))
+        timestamp_range=(datetime(2024, 1, 20, 9, 30, tzinfo=UTC),
+                        datetime(2024, 1, 25, 9, 30, tzinfo=UTC))
     )
 
     return TradingRange(
@@ -241,7 +240,7 @@ def creek_level():
     """Create a Creek level for proximity testing."""
     touch_detail = TouchDetail(
         index=10,
-        timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         price=Decimal("95.00"),
         volume=1000000,
         volume_ratio=Decimal("1.0"),
@@ -256,8 +255,8 @@ def creek_level():
         touch_details=[touch_detail, touch_detail, touch_detail],
         strength_score=80,
         strength_rating="STRONG",
-        last_test_timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=timezone.utc),
-        first_test_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        last_test_timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=UTC),
+        first_test_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         hold_duration=10,
         confidence="HIGH",
         volume_trend="DECREASING"
@@ -269,7 +268,7 @@ def ice_level():
     """Create an Ice level for proximity testing."""
     touch_detail = TouchDetail(
         index=10,
-        timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         price=Decimal("105.00"),
         volume=1000000,
         volume_ratio=Decimal("1.0"),
@@ -284,8 +283,8 @@ def ice_level():
         touch_details=[touch_detail, touch_detail, touch_detail],
         strength_score=80,
         strength_rating="STRONG",
-        last_test_timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=timezone.utc),
-        first_test_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        last_test_timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=UTC),
+        first_test_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         hold_duration=10,
         confidence="HIGH",
         volume_trend="DECREASING"
@@ -323,7 +322,7 @@ def test_detect_demand_zones_close_position_requirement():
     bar = OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
         open=Decimal("100.00"),
         high=Decimal("105.00"),
         low=Decimal("100.00"),
@@ -377,7 +376,7 @@ def test_detect_supply_zones_close_position_requirement():
     bar = OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
         open=Decimal("100.00"),
         high=Decimal("105.00"),
         low=Decimal("100.00"),
@@ -435,7 +434,7 @@ def test_count_zone_touches_with_overlaps():
             width_pct=Decimal("0.05")
         ),
         formation_bar_index=0,
-        formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc),
+        formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
         strength=ZoneStrength.FRESH,
         touch_count=0,
         formation_volume=1000000,
@@ -451,7 +450,7 @@ def test_count_zone_touches_with_overlaps():
         # Bar 0: formation bar (not counted)
         OHLCVBar(
             symbol="TEST", timeframe="1d",
-            timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
             open=Decimal("102.00"), high=Decimal("105.00"),
             low=Decimal("100.00"), close=Decimal("103.00"),
             volume=1000000, spread=Decimal("5.00")
@@ -459,7 +458,7 @@ def test_count_zone_touches_with_overlaps():
         # Bar 1: Overlaps zone (low=98 <= zone_high=105 AND high=102 >= zone_low=100)
         OHLCVBar(
             symbol="TEST", timeframe="1d",
-            timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=UTC),
             open=Decimal("100.00"), high=Decimal("102.00"),
             low=Decimal("98.00"), close=Decimal("101.00"),
             volume=1000000, spread=Decimal("4.00")
@@ -467,7 +466,7 @@ def test_count_zone_touches_with_overlaps():
         # Bar 2: Does NOT overlap zone (high=97 < zone_low=100)
         OHLCVBar(
             symbol="TEST", timeframe="1d",
-            timestamp=datetime(2024, 1, 3, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 3, 9, 30, tzinfo=UTC),
             open=Decimal("95.00"), high=Decimal("97.00"),
             low=Decimal("93.00"), close=Decimal("96.00"),
             volume=1000000, spread=Decimal("4.00")
@@ -475,7 +474,7 @@ def test_count_zone_touches_with_overlaps():
         # Bar 3: Overlaps zone (enters from below)
         OHLCVBar(
             symbol="TEST", timeframe="1d",
-            timestamp=datetime(2024, 1, 4, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 4, 9, 30, tzinfo=UTC),
             open=Decimal("97.00"), high=Decimal("103.00"),
             low=Decimal("96.00"), close=Decimal("102.00"),
             volume=1000000, spread=Decimal("7.00")
@@ -502,7 +501,7 @@ def test_calculate_zone_proximity_near_creek(creek_level):
             width_pct=Decimal("0.0105")
         ),
         formation_bar_index=10,
-        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         strength=ZoneStrength.FRESH,
         touch_count=0,
         formation_volume=1000000,
@@ -532,7 +531,7 @@ def test_calculate_zone_proximity_near_ice(ice_level):
             width_pct=Decimal("0.0095")
         ),
         formation_bar_index=10,
-        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         strength=ZoneStrength.FRESH,
         touch_count=0,
         formation_volume=1000000,
@@ -562,7 +561,7 @@ def test_calculate_zone_proximity_not_near_level(creek_level, ice_level):
             width_pct=Decimal("0.0125")
         ),
         formation_bar_index=10,
-        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         strength=ZoneStrength.FRESH,
         touch_count=0,
         formation_volume=1000000,
@@ -592,7 +591,7 @@ def test_calculate_significance_score_perfect_zone():
             width_pct=Decimal("0.0105")
         ),
         formation_bar_index=10,
-        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         strength=ZoneStrength.FRESH,  # 40 pts
         touch_count=0,
         formation_volume=1000000,
@@ -623,7 +622,7 @@ def test_calculate_significance_score_weak_zone():
             width_pct=Decimal("0.0105")
         ),
         formation_bar_index=10,
-        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc),
+        formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         strength=ZoneStrength.EXHAUSTED,  # 0 pts
         touch_count=5,
         formation_volume=1000000,
@@ -649,7 +648,7 @@ def test_zone_detection_rejects_low_volume():
     bar = OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
         open=Decimal("100.00"),
         high=Decimal("105.00"),
         low=Decimal("100.00"),
@@ -677,7 +676,7 @@ def test_zone_detection_rejects_wide_spread():
     bar = OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
         open=Decimal("100.00"),
         high=Decimal("105.00"),
         low=Decimal("100.00"),
@@ -728,7 +727,7 @@ def test_map_supply_demand_zones_filters_exhausted(
         bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, i+1, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, i+1, 9, 30, tzinfo=UTC),
             open=Decimal("100.00"),
             high=Decimal("104.00"),  # Overlaps zone
             low=Decimal("99.00"),
@@ -802,7 +801,7 @@ def test_check_zone_invalidation_demand_zone():
             width_pct=Decimal("0.05")
         ),
         formation_bar_index=0,
-        formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc),
+        formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
         strength=ZoneStrength.FRESH,
         touch_count=0,
         formation_volume=1000000,
@@ -818,7 +817,7 @@ def test_check_zone_invalidation_demand_zone():
         OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=UTC),
             open=Decimal("102.00"),
             high=Decimal("103.00"),
             low=Decimal("95.00"),
@@ -846,7 +845,7 @@ def test_check_zone_invalidation_supply_zone():
             width_pct=Decimal("0.05")
         ),
         formation_bar_index=0,
-        formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc),
+        formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
         strength=ZoneStrength.FRESH,
         touch_count=0,
         formation_volume=1000000,
@@ -862,7 +861,7 @@ def test_check_zone_invalidation_supply_zone():
         OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=UTC),
             open=Decimal("103.00"),
             high=Decimal("110.00"),
             low=Decimal("102.00"),

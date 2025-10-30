@@ -7,20 +7,19 @@ edge cases, and validation with synthetic test data.
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
 from uuid import uuid4
 
-from src.models.trading_range import TradingRange
+import pytest
+
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
-from src.models.jump_level import JumpLevel
-from src.models.touch_detail import TouchDetail
 from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
+from src.models.touch_detail import TouchDetail
+from src.models.trading_range import TradingRange
 from src.pattern_engine.level_calculator import calculate_jump_level
-
 
 # ============================================================================
 # Test Fixtures
@@ -33,7 +32,7 @@ def create_test_pivot(price: Decimal, index: int, pivot_type: PivotType) -> Pivo
     bar = OHLCVBar(
         symbol="TEST",
         timeframe="1d",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         open=price,
         high=price + Decimal("1.00") if pivot_type == PivotType.LOW else price,
         low=price if pivot_type == PivotType.LOW else price - Decimal("1.00"),
@@ -69,14 +68,14 @@ def create_test_creek(
                 volume_ratio=Decimal("1.0"),
                 close_position=Decimal("0.7"),
                 rejection_wick=Decimal("0.7"),
-                timestamp=datetime.now(timezone.utc)
+                timestamp=datetime.now(UTC)
             )
             for i in range(4)
         ],
         strength_score=85,
         strength_rating="EXCELLENT",
-        last_test_timestamp=datetime.now(timezone.utc),
-        first_test_timestamp=datetime.now(timezone.utc),
+        last_test_timestamp=datetime.now(UTC),
+        first_test_timestamp=datetime.now(UTC),
         hold_duration=36,
         confidence="HIGH",
         volume_trend="DECREASING"
@@ -100,14 +99,14 @@ def create_test_ice(
                 volume_ratio=Decimal("1.0"),
                 close_position=Decimal("0.3"),
                 rejection_wick=Decimal("0.7"),
-                timestamp=datetime.now(timezone.utc)
+                timestamp=datetime.now(UTC)
             )
             for i in range(4)
         ],
         strength_score=85,
         strength_rating="EXCELLENT",
-        last_test_timestamp=datetime.now(timezone.utc),
-        first_test_timestamp=datetime.now(timezone.utc),
+        last_test_timestamp=datetime.now(UTC),
+        first_test_timestamp=datetime.now(UTC),
         hold_duration=37,
         confidence="HIGH",
         volume_trend="DECREASING"

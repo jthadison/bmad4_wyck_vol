@@ -8,10 +8,10 @@ supply melts away as smart money absorbs shares, broken on SOS with high volume.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
-from typing import List
-from pydantic import BaseModel, Field, field_validator, field_serializer
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from src.models.touch_detail import TouchDetail
 
@@ -65,7 +65,7 @@ class IceLevel(BaseModel):
     price: Decimal = Field(..., decimal_places=8, max_digits=18, description="Volume-weighted resistance price")
     absolute_high: Decimal = Field(..., decimal_places=8, max_digits=18, description="Highest pivot high (UTAD ref)")
     touch_count: int = Field(..., ge=2, description="Number of pivot highs in cluster")
-    touch_details: List[TouchDetail] = Field(..., description="Metadata for each touch")
+    touch_details: list[TouchDetail] = Field(..., description="Metadata for each touch")
     strength_score: int = Field(..., ge=0, le=100, description="0-100 strength score")
     strength_rating: str = Field(..., description="EXCELLENT/STRONG/MODERATE/WEAK")
     last_test_timestamp: datetime = Field(..., description="Most recent test of resistance")

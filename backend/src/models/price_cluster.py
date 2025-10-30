@@ -8,12 +8,12 @@ within a price tolerance.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
-from typing import List, Tuple
-from pydantic import BaseModel, Field, field_validator, field_serializer
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
+
 from src.models.pivot import Pivot, PivotType
-import statistics
 
 
 class PriceCluster(BaseModel):
@@ -49,7 +49,7 @@ class PriceCluster(BaseModel):
         >>> print(f"Tightness: {support_cluster.tightness_pct}%")
     """
 
-    pivots: List[Pivot] = Field(..., min_length=2, description="Pivots in cluster (minimum 2)")
+    pivots: list[Pivot] = Field(..., min_length=2, description="Pivots in cluster (minimum 2)")
     average_price: Decimal = Field(..., decimal_places=8, max_digits=18, description="Mean pivot price")
     min_price: Decimal = Field(..., decimal_places=8, max_digits=18, description="Lowest pivot price")
     max_price: Decimal = Field(..., decimal_places=8, max_digits=18, description="Highest pivot price")
@@ -57,7 +57,7 @@ class PriceCluster(BaseModel):
     touch_count: int = Field(..., ge=2, description="Number of pivots in cluster")
     cluster_type: PivotType = Field(..., description="HIGH or LOW")
     std_deviation: Decimal = Field(..., decimal_places=8, max_digits=18, description="Price standard deviation")
-    timestamp_range: Tuple[datetime, datetime] = Field(..., description="First and last pivot timestamps")
+    timestamp_range: tuple[datetime, datetime] = Field(..., description="First and last pivot timestamps")
 
     @field_validator('touch_count')
     @classmethod
@@ -100,6 +100,6 @@ class PriceCluster(BaseModel):
         return str(value)
 
     @field_serializer("timestamp_range")
-    def serialize_timestamp_range(self, value: Tuple[datetime, datetime]) -> list[str]:
+    def serialize_timestamp_range(self, value: tuple[datetime, datetime]) -> list[str]:
         """Serialize timestamp range as ISO format strings."""
         return [value[0].isoformat(), value[1].isoformat()]

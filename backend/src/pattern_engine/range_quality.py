@@ -34,23 +34,21 @@ Example:
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List
 from statistics import mean
 
 import structlog
 
-from src.models.trading_range import TradingRange
 from src.models.ohlcv import OHLCVBar
+from src.models.trading_range import TradingRange
 from src.models.volume_analysis import VolumeAnalysis
-
 
 logger = structlog.get_logger(__name__)
 
 
 def calculate_range_quality(
     trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis]
 ) -> int:
     """
     Calculate comprehensive quality score for trading range (0-100 points).
@@ -331,8 +329,8 @@ def _score_price_tightness(trading_range: TradingRange) -> int:
 
 def _score_volume_confirmation(
     trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis]
 ) -> int:
     """
     Score volume confirmation (0-20 points based on volume behavior on tests).
@@ -362,7 +360,7 @@ def _score_volume_confirmation(
         - Increasing volume: Distribution (acc) or absorption (dist), phase-dependent
     """
     # Extract bars and volume for range period
-    range_bars = bars[trading_range.start_index:trading_range.end_index + 1]
+    bars[trading_range.start_index:trading_range.end_index + 1]
     range_vol = volume_analysis[trading_range.start_index:trading_range.end_index + 1]
 
     # Identify support test bars (low within 2% of support)
@@ -467,9 +465,9 @@ def is_quality_range(trading_range: TradingRange) -> bool:
 
 
 def filter_quality_ranges(
-    ranges: List[TradingRange],
+    ranges: list[TradingRange],
     min_score: int = 70
-) -> List[TradingRange]:
+) -> list[TradingRange]:
     """
     Filter ranges by quality score.
 
@@ -492,7 +490,7 @@ def filter_quality_ranges(
     ]
 
 
-def get_quality_ranges(ranges: List[TradingRange]) -> List[TradingRange]:
+def get_quality_ranges(ranges: list[TradingRange]) -> list[TradingRange]:
     """
     Get quality ranges (score >= 70) sorted by quality score descending.
 

@@ -8,11 +8,10 @@ Acceptance Criteria #10 (Story 3.2): Integration tests demonstrating clustering
 with 252-bar AAPL daily data sequence.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import numpy as np
-import pytest
 
 from src.models.ohlcv import OHLCVBar
 from src.models.pivot import PivotType
@@ -41,7 +40,7 @@ def generate_aapl_accumulation_phase(num_bars: int = 50, base_price: float = 170
         List of OHLCVBar objects simulating accumulation
     """
     bars = []
-    base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
 
     np.random.seed(42)  # For reproducibility
 
@@ -103,7 +102,7 @@ def generate_aapl_trending_with_ranges(num_bars: int = 252) -> list[OHLCVBar]:
     """
     bars = []
     base_price = 170.0
-    base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
 
     np.random.seed(100)
 
@@ -177,7 +176,7 @@ class TestRangeClusteringIntegration:
         # Assert - verify algorithm completes
         # Note: May not find ranges if market is strongly trending
         # The key is that the algorithm completes without errors
-        print(f"Pipeline completed successfully for 252-bar AAPL sequence")
+        print("Pipeline completed successfully for 252-bar AAPL sequence")
 
         # If ranges found, verify they're valid
         for r in ranges:

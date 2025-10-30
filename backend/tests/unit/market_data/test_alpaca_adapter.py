@@ -7,10 +7,9 @@ and graceful shutdown using mocked WebSocket connections.
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock, patch
-from uuid import uuid4
 
 import pytest
 
@@ -216,7 +215,7 @@ async def test_latency_warning(alpaca_adapter, caplog):
     alpaca_adapter.on_bar_received(lambda bar: None)
 
     # Mock bar with old timestamp (high latency)
-    old_timestamp = datetime.now(timezone.utc).replace(
+    old_timestamp = datetime.now(UTC).replace(
         year=2024, month=1, day=1, hour=0, minute=0
     )
 
@@ -347,7 +346,7 @@ async def test_heartbeat_stale_data_alert(alpaca_adapter, mock_settings):
     alpaca_adapter._alert_threshold = 0.2  # 200ms for testing
 
     # Set old last received time
-    old_time = datetime.now(timezone.utc).replace(
+    old_time = datetime.now(UTC).replace(
         year=2024, month=1, day=1
     )
     alpaca_adapter._last_bar_received["AAPL"] = old_time
@@ -457,7 +456,7 @@ async def test_timestamp_parsing_rfc3339(alpaca_adapter):
 
     # Verify timestamp parsed correctly
     assert captured_bar is not None
-    assert captured_bar.timestamp.tzinfo == timezone.utc
+    assert captured_bar.timestamp.tzinfo == UTC
     assert captured_bar.timestamp.year == 2024
     assert captured_bar.timestamp.month == 3
     assert captured_bar.timestamp.day == 13

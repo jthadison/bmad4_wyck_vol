@@ -10,7 +10,7 @@ They verify end-to-end functionality including:
 """
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pandas as pd
@@ -36,7 +36,7 @@ def generate_test_bars(symbol: str, count: int, timeframe: str = "1d") -> list[O
     """
     bars = []
     base_price = Decimal("150.00")
-    base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
 
     for i in range(count):
         # Generate realistic OHLC values
@@ -94,8 +94,8 @@ class TestBulkInsertAndQuery:
         await repository.insert_bars(bars)
 
         # Fetch all bars
-        start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        end_date = datetime(2024, 12, 31, tzinfo=timezone.utc)
+        start_date = datetime(2024, 1, 1, tzinfo=UTC)
+        end_date = datetime(2024, 12, 31, tzinfo=UTC)
 
         fetched_bars = await repository.get_bars("TEST_FETCH", "1d", start_date, end_date)
 
@@ -117,8 +117,8 @@ class TestBulkInsertAndQuery:
         await repository.insert_bars(bars)
 
         # Measure query performance
-        start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        end_date = datetime(2024, 12, 31, tzinfo=timezone.utc)
+        start_date = datetime(2024, 1, 1, tzinfo=UTC)
+        end_date = datetime(2024, 12, 31, tzinfo=UTC)
 
         start_time = time.time()
         fetched_bars = await repository.get_bars("TEST_PERF", "1d", start_date, end_date)
@@ -145,8 +145,8 @@ class TestDataFrameConversion:
         await repository.insert_bars(bars)
 
         # Fetch bars
-        start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        end_date = datetime(2024, 12, 31, tzinfo=timezone.utc)
+        start_date = datetime(2024, 1, 1, tzinfo=UTC)
+        end_date = datetime(2024, 12, 31, tzinfo=UTC)
         fetched_bars = await repository.get_bars("TEST_DF", "1d", start_date, end_date)
 
         # Convert to DataFrame (AC 10)
@@ -175,8 +175,8 @@ class TestDataFrameConversion:
         await repository.insert_bars(bars)
 
         # Fetch bars
-        start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        end_date = datetime(2024, 12, 31, tzinfo=timezone.utc)
+        start_date = datetime(2024, 1, 1, tzinfo=UTC)
+        end_date = datetime(2024, 12, 31, tzinfo=UTC)
         original_bars = await repository.get_bars("TEST_ROUNDTRIP", "1d", start_date, end_date)
 
         # Convert to DataFrame and back
@@ -204,8 +204,8 @@ class TestLazyLoading:
         await repository.insert_bars(bars)
 
         # Iterate with batch size 100
-        start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        end_date = datetime(2024, 12, 31, tzinfo=timezone.utc)
+        start_date = datetime(2024, 1, 1, tzinfo=UTC)
+        end_date = datetime(2024, 12, 31, tzinfo=UTC)
 
         total_bars = 0
         batch_count = 0
@@ -233,7 +233,7 @@ class TestRepositoryMethods:
         bar = OHLCVBar(
             symbol="TEST_SINGLE",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -252,7 +252,7 @@ class TestRepositoryMethods:
         bar = OHLCVBar(
             symbol="TEST_DUP",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),
@@ -293,7 +293,7 @@ class TestRepositoryMethods:
         bar = OHLCVBar(
             symbol="TEST_EXISTS",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("150.00"),
             high=Decimal("155.00"),
             low=Decimal("148.00"),

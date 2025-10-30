@@ -5,7 +5,7 @@ Tests the detect_pivots function with synthetic data, edge cases,
 and different lookback values.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -41,7 +41,7 @@ def create_test_bar(
         OHLCVBar instance for testing
     """
     if base_timestamp is None:
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
 
     timestamp = base_timestamp + timedelta(days=index)
     open_price = (high + low) / 2
@@ -77,7 +77,7 @@ def generate_pivot_test_data(num_bars: int = 21) -> list[OHLCVBar]:
         List of OHLCVBar objects with known pivots
     """
     bars = []
-    base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
 
     for i in range(num_bars):
         if i == 10:
@@ -237,7 +237,7 @@ class TestDetectPivotsEdgeCases:
         """Test that flat price action (all same high/low) returns no pivots."""
         # Arrange - all bars with same high/low
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         for i in range(20):
             bar = create_test_bar(
                 index=i,
@@ -331,7 +331,7 @@ class TestDetectPivotsDifferentLookback:
         """Test that smaller lookback (more sensitive) finds more pivots."""
         # Arrange - create data with varying highs/lows
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         for i in range(30):
             # Create zig-zag pattern
             if i % 2 == 0:
@@ -356,7 +356,7 @@ class TestDetectPivotsDifferentLookback:
         """Test that lookback=1 is very sensitive and finds many pivots."""
         # Arrange - create zig-zag data
         bars = []
-        base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
         for i in range(20):
             if i % 2 == 0:
                 high = Decimal("105.00")

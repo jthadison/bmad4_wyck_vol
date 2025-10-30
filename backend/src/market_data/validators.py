@@ -7,8 +7,7 @@ before insertion into the database.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import timedelta
 
 import structlog
 
@@ -19,8 +18,8 @@ logger = structlog.get_logger(__name__)
 
 def validate_bar(
     bar: OHLCVBar,
-    previous_bar: Optional[OHLCVBar] = None,
-) -> tuple[bool, Optional[str]]:
+    previous_bar: OHLCVBar | None = None,
+) -> tuple[bool, str | None]:
     """
     Validate an OHLCV bar for data quality.
 
@@ -76,7 +75,7 @@ def validate_bar(
 def _validate_timestamp_gap(
     bar: OHLCVBar,
     previous_bar: OHLCVBar,
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Validate timestamp gap between consecutive bars.
 
@@ -158,7 +157,7 @@ def validate_bar_batch(
     valid_bars: list[OHLCVBar] = []
     rejected_bars: list[tuple[OHLCVBar, str]] = []
 
-    previous_bar: Optional[OHLCVBar] = None
+    previous_bar: OHLCVBar | None = None
 
     for bar in bars:
         is_valid, reason = validate_bar(bar, previous_bar)

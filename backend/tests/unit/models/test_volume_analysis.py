@@ -5,7 +5,7 @@ Tests Pydantic validation, field serialization, type conversions,
 and validator behavior for the VolumeAnalysis data model.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -21,7 +21,7 @@ def create_test_bar() -> OHLCVBar:
         id=uuid4(),
         symbol="AAPL",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 1, tzinfo=UTC),
         open=Decimal("150.0"),
         high=Decimal("155.0"),
         low=Decimal("148.0"),
@@ -47,12 +47,12 @@ class TestVolumeAnalysisBasicCreation:
         assert analysis.close_position is None
         assert analysis.effort_result is None
         assert isinstance(analysis.created_at, datetime)
-        assert analysis.created_at.tzinfo == timezone.utc
+        assert analysis.created_at.tzinfo == UTC
 
     def test_create_with_all_fields(self):
         """Test creating VolumeAnalysis with all fields populated."""
         bar = create_test_bar()
-        created_at = datetime(2024, 1, 15, 12, 30, tzinfo=timezone.utc)
+        created_at = datetime(2024, 1, 15, 12, 30, tzinfo=UTC)
 
         analysis = VolumeAnalysis(
             bar=bar,
@@ -73,12 +73,12 @@ class TestVolumeAnalysisBasicCreation:
     def test_auto_created_at_timestamp(self):
         """Test that created_at is auto-generated with UTC timezone."""
         bar = create_test_bar()
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         analysis = VolumeAnalysis(bar=bar)
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         assert before <= analysis.created_at <= after
-        assert analysis.created_at.tzinfo == timezone.utc
+        assert analysis.created_at.tzinfo == UTC
 
 
 class TestVolumeAnalysisFloatToDecimalConversion:
@@ -265,11 +265,11 @@ class TestVolumeAnalysisTimestampHandling:
     def test_created_at_with_utc_timezone(self):
         """Test that UTC timestamp is preserved."""
         bar = create_test_bar()
-        timestamp = datetime(2024, 6, 15, 14, 30, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 6, 15, 14, 30, tzinfo=UTC)
 
         analysis = VolumeAnalysis(bar=bar, created_at=timestamp)
         assert analysis.created_at == timestamp
-        assert analysis.created_at.tzinfo == timezone.utc
+        assert analysis.created_at.tzinfo == UTC
 
     def test_created_at_without_timezone_adds_utc(self):
         """Test that naive datetime gets UTC timezone added."""
@@ -280,7 +280,7 @@ class TestVolumeAnalysisTimestampHandling:
         assert analysis.created_at.year == 2024
         assert analysis.created_at.month == 6
         assert analysis.created_at.day == 15
-        assert analysis.created_at.tzinfo == timezone.utc
+        assert analysis.created_at.tzinfo == UTC
 
     def test_created_at_with_other_timezone_converts_to_utc(self):
         """Test that non-UTC timezone is converted to UTC."""
@@ -294,7 +294,7 @@ class TestVolumeAnalysisTimestampHandling:
         analysis = VolumeAnalysis(bar=bar, created_at=est_timestamp)
 
         # Should be converted to UTC (19:30 UTC = 14:30 EST)
-        assert analysis.created_at.tzinfo == timezone.utc
+        assert analysis.created_at.tzinfo == UTC
         assert analysis.created_at.hour == 19  # 14:30 EST = 19:30 UTC
         assert analysis.created_at.minute == 30
 
@@ -311,7 +311,7 @@ class TestVolumeAnalysisSerialization:
             spread_ratio=Decimal("1.8"),
             close_position=Decimal("0.75"),
             effort_result="High Volume Test",
-            created_at=datetime(2024, 1, 15, 12, 30, tzinfo=timezone.utc),
+            created_at=datetime(2024, 1, 15, 12, 30, tzinfo=UTC),
         )
 
         # Serialize to dict
@@ -431,7 +431,7 @@ class TestVolumeAnalysisEdgeCases:
     def test_model_equality(self):
         """Test that two models with same data are equal."""
         bar = create_test_bar()
-        timestamp = datetime(2024, 1, 15, 12, 30, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 15, 12, 30, tzinfo=UTC)
 
         analysis1 = VolumeAnalysis(
             bar=bar,

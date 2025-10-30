@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 
 from src.models.ohlcv import OHLCVBar
-from src.models.trading_range import RangeStatus, TradingRange
+from src.models.trading_range import RangeStatus
 from src.models.volume_analysis import VolumeAnalysis
 from src.pattern_engine.trading_range_detector import (
     TradingRangeDetector,
@@ -482,15 +482,15 @@ class TestTradingRangeDetector:
         detector = TradingRangeDetector(cache_enabled=True)
 
         # Act - Cache both symbols
-        ranges_aapl1 = detector.detect_ranges(bars_aapl, volume_aapl)
-        ranges_spy1 = detector.detect_ranges(bars_spy, volume_spy)
+        detector.detect_ranges(bars_aapl, volume_aapl)
+        detector.detect_ranges(bars_spy, volume_spy)
 
         # Invalidate AAPL only
         detector.invalidate_symbol("AAPL")
 
         # Second calls
-        ranges_aapl2 = detector.detect_ranges(bars_aapl, volume_aapl)  # Should miss cache
-        ranges_spy2 = detector.detect_ranges(bars_spy, volume_spy)  # Should hit cache
+        detector.detect_ranges(bars_aapl, volume_aapl)  # Should miss cache
+        detector.detect_ranges(bars_spy, volume_spy)  # Should hit cache
 
         # Assert
         assert detector._cache_hits == 1, "SPY should hit cache"

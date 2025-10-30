@@ -5,12 +5,10 @@ This module provides functions to calculate volume-related metrics for OHLCV bar
 Primary function is calculate_volume_ratio which computes current volume / 20-bar average.
 """
 
-from typing import List, Optional
 import time
 
 import numpy as np
 import structlog
-from decimal import Decimal
 
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
@@ -19,7 +17,7 @@ from src.models.volume_analysis import VolumeAnalysis
 logger = structlog.get_logger(__name__)
 
 
-def calculate_volume_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
+def calculate_volume_ratio(bars: list[OHLCVBar], index: int) -> float | None:
     """
     Calculate volume ratio: current bar volume / 20-bar average volume.
 
@@ -98,7 +96,7 @@ def calculate_volume_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
     return volume_ratio
 
 
-def calculate_volume_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]:
+def calculate_volume_ratios_batch(bars: list[OHLCVBar]) -> list[float | None]:
     """
     Calculate volume ratios for all bars in a sequence using vectorized operations.
 
@@ -138,7 +136,7 @@ def calculate_volume_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
     volumes = np.array([bar.volume for bar in bars], dtype=np.float64)
 
     # Initialize result array with None for first 20 bars
-    results: List[Optional[float]] = [None] * len(bars)
+    results: list[float | None] = [None] * len(bars)
 
     # Calculate 20-bar rolling average using NumPy convolution
     # This is the key optimization: vectorized rolling window computation
@@ -187,7 +185,7 @@ def calculate_volume_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
     return results
 
 
-def calculate_spread_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
+def calculate_spread_ratio(bars: list[OHLCVBar], index: int) -> float | None:
     """
     Calculate spread ratio: current bar spread / 20-bar average spread.
 
@@ -275,7 +273,7 @@ def calculate_spread_ratio(bars: List[OHLCVBar], index: int) -> Optional[float]:
     return spread_ratio
 
 
-def calculate_spread_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]:
+def calculate_spread_ratios_batch(bars: list[OHLCVBar]) -> list[float | None]:
     """
     Calculate spread ratios for all bars in a sequence using vectorized operations.
 
@@ -320,7 +318,7 @@ def calculate_spread_ratios_batch(bars: List[OHLCVBar]) -> List[Optional[float]]
     spreads = np.subtract(highs, lows)
 
     # Initialize result array with None for first 20 bars
-    results: List[Optional[float]] = [None] * len(bars)
+    results: list[float | None] = [None] * len(bars)
 
     # Calculate 20-bar rolling average using NumPy convolution
     window_size = 20
@@ -465,7 +463,7 @@ def calculate_close_position(bar: OHLCVBar) -> float:
     return close_position
 
 
-def calculate_close_positions_batch(bars: List[OHLCVBar]) -> List[float]:
+def calculate_close_positions_batch(bars: list[OHLCVBar]) -> list[float]:
     """
     Calculate close positions for all bars in a sequence using vectorized operations.
 
@@ -553,7 +551,7 @@ def calculate_close_positions_batch(bars: List[OHLCVBar]) -> List[float]:
 
 
 def classify_effort_result(
-    volume_ratio: Optional[float], spread_ratio: Optional[float]
+    volume_ratio: float | None, spread_ratio: float | None
 ) -> EffortResult:
     """
     Classify bar based on effort (volume) vs. result (spread).
@@ -743,7 +741,7 @@ class VolumeAnalyzer:
         """
         pass
 
-    def analyze(self, bars: List[OHLCVBar]) -> List[VolumeAnalysis]:
+    def analyze(self, bars: list[OHLCVBar]) -> list[VolumeAnalysis]:
         """
         Analyze a sequence of OHLCV bars and produce complete volume analysis.
 
@@ -831,7 +829,7 @@ class VolumeAnalyzer:
         close_positions = calculate_close_positions_batch(bars)
 
         # Step 4: Build VolumeAnalysis objects with effort_result classification
-        results: List[VolumeAnalysis] = []
+        results: list[VolumeAnalysis] = []
 
         for i, bar in enumerate(bars):
             # Get calculated values for this bar

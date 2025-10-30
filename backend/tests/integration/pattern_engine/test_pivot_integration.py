@@ -6,14 +6,13 @@ verifying reasonable pivot counts and distributions.
 """
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import numpy as np
 import pytest
 
 from src.models.ohlcv import OHLCVBar
-from src.models.pivot import PivotType
 from src.pattern_engine.pivot_detector import (
     detect_pivots,
     get_pivot_highs,
@@ -39,7 +38,7 @@ def generate_realistic_bars(num_bars: int, symbol: str = "AAPL") -> list[OHLCVBa
     """
     bars = []
     base_price = 170.0
-    base_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
 
     np.random.seed(42)  # For reproducibility
 

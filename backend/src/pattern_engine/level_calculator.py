@@ -68,20 +68,19 @@ Example:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from typing import List, Tuple
 from statistics import mean
 
 import structlog
 
-from src.models.ohlcv import OHLCVBar
-from src.models.trading_range import TradingRange
-from src.models.volume_analysis import VolumeAnalysis
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
 from src.models.jump_level import JumpLevel
+from src.models.ohlcv import OHLCVBar
 from src.models.touch_detail import TouchDetail
+from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
 
 logger = structlog.get_logger(__name__)
 
@@ -101,8 +100,8 @@ MIN_RANGE_DURATION = 15  # Minimum bars for Jump calculation (AC 2)
 
 def calculate_creek_level(
     trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis]
 ) -> CreekLevel:
     """
     Calculate Creek level (volume-weighted support) for a trading range.
@@ -252,8 +251,8 @@ def calculate_creek_level(
 
 def _validate_inputs(
     trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis]
 ) -> None:
     """
     Validate inputs for creek calculation.
@@ -300,10 +299,10 @@ def _validate_inputs(
 
 def _collect_creek_touches(
     support_cluster,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis],
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis],
     cluster_avg: Decimal
-) -> List[TouchDetail]:
+) -> list[TouchDetail]:
     """
     Collect pivot lows within tolerance of cluster average.
 
@@ -348,7 +347,7 @@ def _collect_creek_touches(
     return creek_touches
 
 
-def _calculate_weighted_price(creek_touches: List[TouchDetail]) -> Decimal:
+def _calculate_weighted_price(creek_touches: list[TouchDetail]) -> Decimal:
     """
     Calculate volume-weighted average price.
 
@@ -391,7 +390,7 @@ def _assess_confidence(touch_count: int) -> str:
         return "LOW"
 
 
-def _score_touch_count(creek_touches: List[TouchDetail]) -> int:
+def _score_touch_count(creek_touches: list[TouchDetail]) -> int:
     """
     Score touch count component (0-40 points).
 
@@ -415,7 +414,7 @@ def _score_touch_count(creek_touches: List[TouchDetail]) -> int:
         return 10  # Adequate
 
 
-def _score_volume_trend(creek_touches: List[TouchDetail]) -> Tuple[int, str]:
+def _score_volume_trend(creek_touches: list[TouchDetail]) -> tuple[int, str]:
     """
     Score volume trend component (0-30 points) - decreasing = absorption.
 
@@ -455,7 +454,7 @@ def _score_volume_trend(creek_touches: List[TouchDetail]) -> Tuple[int, str]:
         return 0, "INCREASING"
 
 
-def _score_rejection_wicks(creek_touches: List[TouchDetail]) -> int:
+def _score_rejection_wicks(creek_touches: list[TouchDetail]) -> int:
     """
     Score rejection wick component (0-20 points) - large wicks = strong rejection.
 
@@ -562,8 +561,8 @@ def _validate_creek_deviation(creek_price: Decimal, cluster_avg: Decimal, symbol
 
 def calculate_ice_level(
     trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis]
 ) -> IceLevel:
     """
     Calculate Ice level (volume-weighted resistance) for a trading range.
@@ -720,8 +719,8 @@ def calculate_ice_level(
 
 def _validate_ice_inputs(
     trading_range: TradingRange,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis]
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis]
 ) -> None:
     """
     Validate inputs for ice calculation.
@@ -768,10 +767,10 @@ def _validate_ice_inputs(
 
 def _collect_ice_touches(
     resistance_cluster,
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis],
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis],
     cluster_avg: Decimal
-) -> List[TouchDetail]:
+) -> list[TouchDetail]:
     """
     Collect pivot highs within tolerance of cluster average.
 
@@ -817,7 +816,7 @@ def _collect_ice_touches(
     return ice_touches
 
 
-def _score_rejection_wicks_ice(ice_touches: List[TouchDetail]) -> int:
+def _score_rejection_wicks_ice(ice_touches: list[TouchDetail]) -> int:
     """
     Score rejection wick component for Ice (0-20 points) - large upper wicks = strong rejection.
 
@@ -1067,7 +1066,7 @@ def calculate_jump_level(
         conservative_risk_reward=conservative_risk_reward,
         ice_price=ice.price,
         creek_price=creek.price,
-        calculated_at=datetime.now(timezone.utc)
+        calculated_at=datetime.now(UTC)
     )
 
     logger.info(

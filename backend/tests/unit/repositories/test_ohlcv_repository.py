@@ -4,9 +4,9 @@ Unit tests for OHLCVRepository.
 Uses mocked database session to test repository methods without actual database.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -39,7 +39,7 @@ def sample_bar():
         id=uuid4(),
         symbol="AAPL",
         timeframe="1d",
-        timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 1, tzinfo=UTC),
         open=Decimal("150.00"),
         high=Decimal("155.00"),
         low=Decimal("148.00"),
@@ -156,8 +156,8 @@ class TestGetBars:
         bars = await repository.get_bars(
             "AAPL",
             "1d",
-            datetime(2024, 1, 1, tzinfo=timezone.utc),
-            datetime(2024, 1, 31, tzinfo=timezone.utc),
+            datetime(2024, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 31, tzinfo=UTC),
         )
 
         assert bars == []
@@ -189,8 +189,8 @@ class TestGetBars:
         bars = await repository.get_bars(
             "AAPL",
             "1d",
-            datetime(2024, 1, 1, tzinfo=timezone.utc),
-            datetime(2024, 1, 31, tzinfo=timezone.utc),
+            datetime(2024, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 31, tzinfo=UTC),
         )
 
         assert len(bars) == 1
@@ -210,7 +210,7 @@ class TestGetLatestBars:
             mock_bar.id = uuid4()
             mock_bar.symbol = "AAPL"
             mock_bar.timeframe = "1d"
-            mock_bar.timestamp = datetime(2024, 1, i, tzinfo=timezone.utc)
+            mock_bar.timestamp = datetime(2024, 1, i, tzinfo=UTC)
             mock_bar.open = Decimal("150.00")
             mock_bar.high = Decimal("155.00")
             mock_bar.low = Decimal("148.00")
@@ -219,7 +219,7 @@ class TestGetLatestBars:
             mock_bar.spread = Decimal("7.00")
             mock_bar.spread_ratio = Decimal("1.0")
             mock_bar.volume_ratio = Decimal("1.0")
-            mock_bar.created_at = datetime.now(timezone.utc)
+            mock_bar.created_at = datetime.now(UTC)
             mock_bars.append(mock_bar)
 
         mock_result = MagicMock()
@@ -230,9 +230,9 @@ class TestGetLatestBars:
 
         # Should be reversed to chronological order
         assert len(bars) == 3
-        assert bars[0].timestamp == datetime(2024, 1, 1, tzinfo=timezone.utc)
-        assert bars[1].timestamp == datetime(2024, 1, 2, tzinfo=timezone.utc)
-        assert bars[2].timestamp == datetime(2024, 1, 3, tzinfo=timezone.utc)
+        assert bars[0].timestamp == datetime(2024, 1, 1, tzinfo=UTC)
+        assert bars[1].timestamp == datetime(2024, 1, 2, tzinfo=UTC)
+        assert bars[2].timestamp == datetime(2024, 1, 3, tzinfo=UTC)
 
 
 class TestBarExists:
@@ -249,7 +249,7 @@ class TestBarExists:
         exists = await repository.bar_exists(
             "AAPL",
             "1d",
-            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            datetime(2024, 1, 1, tzinfo=UTC),
         )
 
         assert exists is True
@@ -265,7 +265,7 @@ class TestBarExists:
         exists = await repository.bar_exists(
             "AAPL",
             "1d",
-            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            datetime(2024, 1, 1, tzinfo=UTC),
         )
 
         assert exists is False
@@ -309,8 +309,8 @@ class TestIterBars:
         iterator = repository.iter_bars(
             "AAPL",
             "1d",
-            datetime(2024, 1, 1, tzinfo=timezone.utc),
-            datetime(2024, 12, 31, tzinfo=timezone.utc),
+            datetime(2024, 1, 1, tzinfo=UTC),
+            datetime(2024, 12, 31, tzinfo=UTC),
             batch_size=100,
         )
 

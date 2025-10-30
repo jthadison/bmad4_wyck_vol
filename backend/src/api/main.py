@@ -1,6 +1,5 @@
 """FastAPI application entry point for BMAD Wyckoff system."""
 
-from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +24,7 @@ app.add_middleware(
 )
 
 # Global coordinator instance
-_coordinator: Optional[MarketDataCoordinator] = None
+_coordinator: MarketDataCoordinator | None = None
 
 
 @app.on_event("startup")
