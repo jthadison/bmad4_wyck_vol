@@ -54,8 +54,8 @@ yarn-debug.log*
 yarn-error.log*
 .npm
 .yarn-integrity
-package-lock.json
-yarn.lock
+# Note: package-lock.json should be committed for reproducible builds
+# yarn.lock should be committed if using yarn
 .pnp.*
 .yarn/*
 !.yarn/patches

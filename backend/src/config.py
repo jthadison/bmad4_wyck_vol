@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     )
 
     # Environment
-    environment: Literal["development", "staging", "production"] = Field(
+    environment: Literal["development", "staging", "production", "test"] = Field(
         default="development",
         description="Application environment",
     )

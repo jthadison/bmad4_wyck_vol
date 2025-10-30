@@ -8,11 +8,10 @@
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "format": "prettier --write src/"
   },
   "dependencies": {
-    "@rollup/rollup-win32-x64-msvc": "^4.52.5",
     "lightweight-charts": "^4.1.0",
     "pinia": "^2.1.0",
     "primeicons": "^7.0.0",
