@@ -63,9 +63,7 @@ class Pivot(BaseModel):
     """
 
     bar: OHLCVBar = Field(..., description="OHLCV bar at pivot point")
-    price: Decimal = Field(
-        ..., decimal_places=8, max_digits=18, description="Pivot price"
-    )
+    price: Decimal = Field(..., decimal_places=8, max_digits=18, description="Pivot price")
     type: PivotType = Field(..., description="HIGH or LOW pivot")
     strength: int = Field(..., ge=1, le=100, description="Lookback value (1-100)")
     timestamp: datetime = Field(..., description="Pivot bar timestamp")
@@ -98,9 +96,7 @@ class Pivot(BaseModel):
             pivot_type = data["type"]
 
             if pivot_type == PivotType.HIGH and v != bar.high:
-                raise ValueError(
-                    f"HIGH pivot price {v} must equal bar.high {bar.high}"
-                )
+                raise ValueError(f"HIGH pivot price {v} must equal bar.high {bar.high}")
             if pivot_type == PivotType.LOW and v != bar.low:
                 raise ValueError(f"LOW pivot price {v} must equal bar.low {bar.low}")
 

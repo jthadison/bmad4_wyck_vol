@@ -46,9 +46,7 @@ logger = structlog.get_logger(__name__)
 
 
 def calculate_range_quality(
-    trading_range: TradingRange,
-    bars: list[OHLCVBar],
-    volume_analysis: list[VolumeAnalysis]
+    trading_range: TradingRange, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
 ) -> int:
     """
     Calculate comprehensive quality score for trading range (0-100 points).
@@ -97,7 +95,7 @@ def calculate_range_quality(
             "volume_bars_mismatch",
             bars_count=len(bars),
             volume_count=len(volume_analysis),
-            message="Volume analysis length must match bars length"
+            message="Volume analysis length must match bars length",
         )
         return 0
 
@@ -107,7 +105,7 @@ def calculate_range_quality(
             "invalid_start_index",
             start_index=trading_range.start_index,
             bars_length=len(bars),
-            message="Range start_index out of bounds"
+            message="Range start_index out of bounds",
         )
         return 0
 
@@ -116,7 +114,7 @@ def calculate_range_quality(
             "invalid_end_index",
             end_index=trading_range.end_index,
             bars_length=len(bars),
-            message="Range end_index out of bounds"
+            message="Range end_index out of bounds",
         )
         return 0
 
@@ -125,12 +123,16 @@ def calculate_range_quality(
             "invalid_range_indices",
             start_index=trading_range.start_index,
             end_index=trading_range.end_index,
-            message="Range start_index must be <= end_index"
+            message="Range start_index must be <= end_index",
         )
         return 0
 
     # Extract symbol for logging
-    symbol = volume_analysis[trading_range.start_index].bar.symbol if trading_range.start_index < len(volume_analysis) else "UNKNOWN"
+    symbol = (
+        volume_analysis[trading_range.start_index].bar.symbol
+        if trading_range.start_index < len(volume_analysis)
+        else "UNKNOWN"
+    )
 
     logger.info(
         "quality_scoring_start",
@@ -138,7 +140,7 @@ def calculate_range_quality(
         range_id=str(trading_range.id),
         support=float(trading_range.support),
         resistance=float(trading_range.resistance),
-        duration=trading_range.duration
+        duration=trading_range.duration,
     )
 
     # Calculate component scores
@@ -160,12 +162,14 @@ def calculate_range_quality(
         touch_score=touch_score,
         tightness_score=tightness_score,
         volume_score=volume_score,
-        total_score=total_score
+        total_score=total_score,
     )
 
     # Log rejection for low-quality ranges (AC 10)
     if total_score < 70:
-        recommendation = _get_rejection_reason(duration_score, touch_score, tightness_score, volume_score)
+        recommendation = _get_rejection_reason(
+            duration_score, touch_score, tightness_score, volume_score
+        )
         logger.debug(
             "range_rejected_low_quality",
             symbol=symbol,
@@ -177,12 +181,17 @@ def calculate_range_quality(
             touch_count=trading_range.total_touches,
             touch_score=touch_score,
             tightness_pct=float(
-                (trading_range.support_cluster.std_deviation / trading_range.support_cluster.average_price +
-                 trading_range.resistance_cluster.std_deviation / trading_range.resistance_cluster.average_price) / 2
+                (
+                    trading_range.support_cluster.std_deviation
+                    / trading_range.support_cluster.average_price
+                    + trading_range.resistance_cluster.std_deviation
+                    / trading_range.resistance_cluster.average_price
+                )
+                / 2
             ),
             tightness_score=tightness_score,
             volume_score=volume_score,
-            recommendation=recommendation
+            recommendation=recommendation,
         )
 
     logger.info(
@@ -190,7 +199,7 @@ def calculate_range_quality(
         symbol=symbol,
         range_id=str(trading_range.id),
         total_score=total_score,
-        status="PASS" if total_score >= 70 else "REJECT"
+        status="PASS" if total_score >= 70 else "REJECT",
     )
 
     return total_score
@@ -230,7 +239,7 @@ def _score_duration(duration: int) -> int:
     elif duration >= 10:
         return 10  # Minimal cause
     else:
-        return 0   # Insufficient cause
+        return 0  # Insufficient cause
 
 
 def _score_touch_count(trading_range: TradingRange) -> int:
@@ -270,7 +279,7 @@ def _score_touch_count(trading_range: TradingRange) -> int:
     elif total_touches >= 4:
         score = 15  # Adequate levels
     else:
-        score = 5   # Weak levels
+        score = 5  # Weak levels
 
     # Symmetry bonus: balanced touches indicate well-defined range
     max_touches = max(support_touches, resistance_touches)
@@ -307,30 +316,27 @@ def _score_price_tightness(trading_range: TradingRange) -> int:
     """
     # Calculate tightness as std_deviation / average_price (percentage)
     support_tightness = (
-        trading_range.support_cluster.std_deviation /
-        trading_range.support_cluster.average_price
+        trading_range.support_cluster.std_deviation / trading_range.support_cluster.average_price
     )
     resistance_tightness = (
-        trading_range.resistance_cluster.std_deviation /
-        trading_range.resistance_cluster.average_price
+        trading_range.resistance_cluster.std_deviation
+        / trading_range.resistance_cluster.average_price
     )
     avg_tightness = (support_tightness + resistance_tightness) / 2
 
     # Score based on tightness
-    if avg_tightness < Decimal("0.01"):    # <1%
+    if avg_tightness < Decimal("0.01"):  # <1%
         return 20  # Very tight, precise levels
-    elif avg_tightness < Decimal("0.015"): # 1-1.5%
+    elif avg_tightness < Decimal("0.015"):  # 1-1.5%
         return 15  # Tight clusters
     elif avg_tightness < Decimal("0.02"):  # 1.5-2%
         return 10  # Acceptable
-    else:                                  # >2%
-        return 0   # Loose clusters, imprecise
+    else:  # >2%
+        return 0  # Loose clusters, imprecise
 
 
 def _score_volume_confirmation(
-    trading_range: TradingRange,
-    bars: list[OHLCVBar],
-    volume_analysis: list[VolumeAnalysis]
+    trading_range: TradingRange, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
 ) -> int:
     """
     Score volume confirmation (0-20 points based on volume behavior on tests).
@@ -360,20 +366,23 @@ def _score_volume_confirmation(
         - Increasing volume: Distribution (acc) or absorption (dist), phase-dependent
     """
     # Extract bars and volume for range period
-    bars[trading_range.start_index:trading_range.end_index + 1]
-    range_vol = volume_analysis[trading_range.start_index:trading_range.end_index + 1]
+    bars[trading_range.start_index : trading_range.end_index + 1]
+    range_vol = volume_analysis[trading_range.start_index : trading_range.end_index + 1]
 
     # Identify support test bars (low within 2% of support)
     support_tests = [
-        vol for vol in range_vol
+        vol
+        for vol in range_vol
         if abs(float(vol.bar.low - trading_range.support)) / float(trading_range.support) < 0.02
         and vol.volume_ratio is not None
     ]
 
     # Identify resistance test bars (high within 2% of resistance)
     resistance_tests = [
-        vol for vol in range_vol
-        if abs(float(vol.bar.high - trading_range.resistance)) / float(trading_range.resistance) < 0.02
+        vol
+        for vol in range_vol
+        if abs(float(vol.bar.high - trading_range.resistance)) / float(trading_range.resistance)
+        < 0.02
         and vol.volume_ratio is not None
     ]
 
@@ -407,10 +416,7 @@ def _score_volume_confirmation(
 
 
 def _get_rejection_reason(
-    duration_score: int,
-    touch_score: int,
-    tightness_score: int,
-    volume_score: int
+    duration_score: int, touch_score: int, tightness_score: int, volume_score: int
 ) -> str:
     """
     Generate recommendation for rejected range based on component scores.
@@ -464,10 +470,7 @@ def is_quality_range(trading_range: TradingRange) -> bool:
     return trading_range.quality_score is not None and trading_range.quality_score >= 70
 
 
-def filter_quality_ranges(
-    ranges: list[TradingRange],
-    min_score: int = 70
-) -> list[TradingRange]:
+def filter_quality_ranges(ranges: list[TradingRange], min_score: int = 70) -> list[TradingRange]:
     """
     Filter ranges by quality score.
 
@@ -484,10 +487,7 @@ def filter_quality_ranges(
         >>> len(quality_ranges)  # 2 (scores 85 and 75)
         2
     """
-    return [
-        r for r in ranges
-        if r.quality_score is not None and r.quality_score >= min_score
-    ]
+    return [r for r in ranges if r.quality_score is not None and r.quality_score >= min_score]
 
 
 def get_quality_ranges(ranges: list[TradingRange]) -> list[TradingRange]:

@@ -61,24 +61,24 @@ class OHLCVRepository:
             ```
         """
         try:
-            stmt = insert(OHLCVBarModel).values({
-                "id": bar.id,
-                "symbol": bar.symbol,
-                "timeframe": bar.timeframe,
-                "timestamp": bar.timestamp,
-                "open": bar.open,
-                "high": bar.high,
-                "low": bar.low,
-                "close": bar.close,
-                "volume": bar.volume,
-                "spread": bar.spread,
-                "spread_ratio": bar.spread_ratio,
-                "volume_ratio": bar.volume_ratio,
-                "created_at": bar.created_at,
-            })
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=["symbol", "timeframe", "timestamp"]
+            stmt = insert(OHLCVBarModel).values(
+                {
+                    "id": bar.id,
+                    "symbol": bar.symbol,
+                    "timeframe": bar.timeframe,
+                    "timestamp": bar.timestamp,
+                    "open": bar.open,
+                    "high": bar.high,
+                    "low": bar.low,
+                    "close": bar.close,
+                    "volume": bar.volume,
+                    "spread": bar.spread,
+                    "spread_ratio": bar.spread_ratio,
+                    "volume_ratio": bar.volume_ratio,
+                    "created_at": bar.created_at,
+                }
             )
+            stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "timestamp"])
 
             result = await self.session.execute(stmt)
             await self.session.commit()
@@ -131,28 +131,28 @@ class OHLCVRepository:
         # Convert Pydantic models to dict for bulk insert
         bars_dict = []
         for bar in bars:
-            bars_dict.append({
-                "id": bar.id,
-                "symbol": bar.symbol,
-                "timeframe": bar.timeframe,
-                "timestamp": bar.timestamp,
-                "open": bar.open,
-                "high": bar.high,
-                "low": bar.low,
-                "close": bar.close,
-                "volume": bar.volume,
-                "spread": bar.spread,
-                "spread_ratio": bar.spread_ratio,
-                "volume_ratio": bar.volume_ratio,
-                "created_at": bar.created_at,
-            })
+            bars_dict.append(
+                {
+                    "id": bar.id,
+                    "symbol": bar.symbol,
+                    "timeframe": bar.timeframe,
+                    "timestamp": bar.timestamp,
+                    "open": bar.open,
+                    "high": bar.high,
+                    "low": bar.low,
+                    "close": bar.close,
+                    "volume": bar.volume,
+                    "spread": bar.spread,
+                    "spread_ratio": bar.spread_ratio,
+                    "volume_ratio": bar.volume_ratio,
+                    "created_at": bar.created_at,
+                }
+            )
 
         try:
             # Use PostgreSQL INSERT ... ON CONFLICT DO NOTHING for idempotency
             stmt = insert(OHLCVBarModel).values(bars_dict)
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=["symbol", "timeframe", "timestamp"]
-            )
+            stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "timestamp"])
 
             result = await self.session.execute(stmt)
             await self.session.commit()

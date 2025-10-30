@@ -340,9 +340,7 @@ class TestDetectPivotsDifferentLookback:
             else:
                 high = Decimal(f"{103 + i % 4}.00")
                 low = Decimal(f"{98 + i % 4}.00")
-            bar = create_test_bar(
-                index=i, high=high, low=low, base_timestamp=base_timestamp
-            )
+            bar = create_test_bar(index=i, high=high, low=low, base_timestamp=base_timestamp)
             bars.append(bar)
 
         # Act
@@ -364,9 +362,7 @@ class TestDetectPivotsDifferentLookback:
             else:
                 high = Decimal("103.00")
                 low = Decimal("98.00")
-            bar = create_test_bar(
-                index=i, high=high, low=low, base_timestamp=base_timestamp
-            )
+            bar = create_test_bar(index=i, high=high, low=low, base_timestamp=base_timestamp)
             bars.append(bar)
 
         # Act
@@ -530,6 +526,6 @@ class TestPivotModelSerialization:
         assert reconstructed_pivot.strength == original_pivot.strength
         assert reconstructed_pivot.index == original_pivot.index
         # Timestamps should be equal (accounting for microsecond precision)
-        assert abs(
-            (reconstructed_pivot.timestamp - original_pivot.timestamp).total_seconds()
-        ) < 0.001
+        assert (
+            abs((reconstructed_pivot.timestamp - original_pivot.timestamp).total_seconds()) < 0.001
+        )

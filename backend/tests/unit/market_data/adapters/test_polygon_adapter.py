@@ -252,7 +252,6 @@ class TestPolygonAdapter:
         # Assert
         assert is_healthy is False
 
-
     async def test_close(self):
         """Test closing the HTTP client."""
         # Arrange

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Fix for Windows: psycopg async requires SelectorEventLoop, not ProactorEventLoop
-if sys.platform == 'win32':
+if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Import application config and database base

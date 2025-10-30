@@ -23,7 +23,9 @@ from src.pattern_engine.range_cluster import (
 )
 
 
-def generate_aapl_accumulation_phase(num_bars: int = 50, base_price: float = 170.0) -> list[OHLCVBar]:
+def generate_aapl_accumulation_phase(
+    num_bars: int = 50, base_price: float = 170.0
+) -> list[OHLCVBar]:
     """
     Generate AAPL bars simulating Wyckoff accumulation phase.
 
@@ -183,7 +185,9 @@ class TestRangeClusteringIntegration:
             assert r.support < r.resistance, "Support must be < resistance"
             assert r.duration >= 10, "Duration must be >= 10 bars"
             assert r.range_width_pct >= Decimal("0.03"), "Range width must be >= 3%"
-            print(f"  Range: ${r.support} - ${r.resistance} ({r.range_width_pct:.2%}), {r.duration} bars, quality={r.quality_score}")
+            print(
+                f"  Range: ${r.support} - ${r.resistance} ({r.range_width_pct:.2%}), {r.duration} bars, quality={r.quality_score}"
+            )
 
     def test_accumulation_phase_detects_range(self):
         """
@@ -246,8 +250,10 @@ class TestRangeClusteringIntegration:
             assert cluster.std_deviation >= Decimal("0")
             assert cluster.std_deviation <= cluster.price_range
 
-            print(f"  {cluster.cluster_type.value}: avg=${cluster.average_price:.2f}, "
-                  f"touches={cluster.touch_count}, std=${cluster.std_deviation:.2f}")
+            print(
+                f"  {cluster.cluster_type.value}: avg=${cluster.average_price:.2f}, "
+                f"touches={cluster.touch_count}, std=${cluster.std_deviation:.2f}"
+            )
 
     def test_quality_score_distribution(self):
         """
@@ -296,8 +302,10 @@ class TestRangeClusteringIntegration:
         clusters_loose = cluster_pivots(pivots, tolerance_pct=0.03)  # 3%
 
         # Assert
-        print(f"\nClusters by tolerance: 1%={len(clusters_tight)}, "
-              f"2%={len(clusters_normal)}, 3%={len(clusters_loose)}")
+        print(
+            f"\nClusters by tolerance: 1%={len(clusters_tight)}, "
+            f"2%={len(clusters_normal)}, 3%={len(clusters_loose)}"
+        )
 
         # Tighter tolerance should produce more or equal clusters
         assert len(clusters_tight) >= len(clusters_normal)
@@ -330,15 +338,15 @@ class TestRangeFormationIntegration:
             resistance_cluster = resistance_clusters[0]
 
             trading_range = form_trading_range(
-                support_cluster=support_cluster,
-                resistance_cluster=resistance_cluster,
-                bars=bars
+                support_cluster=support_cluster, resistance_cluster=resistance_cluster, bars=bars
             )
 
             # Assert
             if trading_range:
                 print(f"Formed range: ${trading_range.support} - ${trading_range.resistance}")
-                print(f"Width: {trading_range.range_width_pct:.2%}, Duration: {trading_range.duration} bars")
+                print(
+                    f"Width: {trading_range.range_width_pct:.2%}, Duration: {trading_range.duration} bars"
+                )
 
                 # Verify range properties
                 assert trading_range.support < trading_range.resistance
@@ -390,8 +398,10 @@ class TestRangeClusteringPerformance:
         elapsed = (time.perf_counter() - start) * 1000
 
         # Assert
-        print(f"\n252 bars: {len(pivots)} pivots, {len(clusters)} clusters, "
-              f"{len(ranges)} ranges in {elapsed:.2f}ms")
+        print(
+            f"\n252 bars: {len(pivots)} pivots, {len(clusters)} clusters, "
+            f"{len(ranges)} ranges in {elapsed:.2f}ms"
+        )
         assert elapsed < 100, f"Should complete in <100ms, took {elapsed:.2f}ms"
 
     def test_1000_bars_completes_quickly(self):

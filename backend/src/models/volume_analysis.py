@@ -101,9 +101,7 @@ class VolumeAnalysis(BaseModel):
         # Close position must be 0.0-1.0 (position within bar range)
         if field_name == "close_position":
             if v < Decimal("0.0") or v > Decimal("1.0"):
-                raise ValueError(
-                    f"close_position must be between 0.0 and 1.0, got {v}"
-                )
+                raise ValueError(f"close_position must be between 0.0 and 1.0, got {v}")
 
         # Volume and spread ratios: warn if outside typical range but don't reject
         # (extreme market conditions can produce valid extreme ratios)

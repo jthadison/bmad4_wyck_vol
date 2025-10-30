@@ -90,9 +90,7 @@ def detect_pivots(bars: list[OHLCVBar], lookback: int = 5) -> list[Pivot]:
 
     # Input validation
     if not bars:
-        logger.warning(
-            "empty_bars_list", message="Cannot detect pivots on empty bar list"
-        )
+        logger.warning("empty_bars_list", message="Cannot detect pivots on empty bar list")
         return []
 
     if lookback < 1:

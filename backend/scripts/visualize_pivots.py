@@ -77,9 +77,7 @@ def generate_realistic_bars(num_bars: int = 252, symbol: str = "AAPL") -> list[O
     return bars
 
 
-def visualize_pivots(
-    bars: list[OHLCVBar], lookback: int = 5, save_path: str = None
-) -> None:
+def visualize_pivots(bars: list[OHLCVBar], lookback: int = 5, save_path: str = None) -> None:
     """
     Visualize pivot points on a price chart.
 
@@ -116,9 +114,7 @@ def visualize_pivots(
 
     # Plot price data
     ax.plot(indices, closes, label="Close Price", color="#2E86DE", linewidth=1.5, alpha=0.8)
-    ax.fill_between(
-        indices, lows, highs, alpha=0.1, color="#2E86DE", label="High-Low Range"
-    )
+    ax.fill_between(indices, lows, highs, alpha=0.1, color="#2E86DE", label="High-Low Range")
 
     # Mark pivot highs (resistance)
     for p in pivot_highs:
@@ -210,9 +206,7 @@ def visualize_pivots(
         # Create output directory if it doesn't exist
         output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "output")
         os.makedirs(output_dir, exist_ok=True)
-        save_path = os.path.join(
-            output_dir, f"pivot_validation_{symbol}_lb{lookback}.png"
-        )
+        save_path = os.path.join(output_dir, f"pivot_validation_{symbol}_lb{lookback}.png")
 
     plt.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"Chart saved to: {save_path}")

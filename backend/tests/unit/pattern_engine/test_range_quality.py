@@ -30,6 +30,7 @@ from src.pattern_engine.range_quality import (
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def base_timestamp():
     """Base timestamp for test data."""
@@ -40,35 +41,32 @@ def base_timestamp():
 def sample_bars(base_timestamp) -> list[OHLCVBar]:
     """Generate 50 OHLCV bars for testing."""
     from datetime import timedelta
+
     bars = []
     for i in range(50):
         timestamp = base_timestamp + timedelta(days=i)  # Use timedelta instead of replace
         high = Decimal("110.00")
         low = Decimal("99.00")
-        bars.append(OHLCVBar(
-            symbol="TEST",
-            timestamp=timestamp,
-            open=Decimal("100.00"),
-            high=high,
-            low=low,
-            close=Decimal("105.00"),
-            volume=Decimal("1000000"),
-            timeframe="1d",
-            spread=high - low  # Add spread field
-        ))
+        bars.append(
+            OHLCVBar(
+                symbol="TEST",
+                timestamp=timestamp,
+                open=Decimal("100.00"),
+                high=high,
+                low=low,
+                close=Decimal("105.00"),
+                volume=Decimal("1000000"),
+                timeframe="1d",
+                spread=high - low,  # Add spread field
+            )
+        )
     return bars
 
 
 @pytest.fixture
 def sample_volume_analysis(sample_bars) -> list[VolumeAnalysis]:
     """Generate VolumeAnalysis matching sample_bars with neutral volume."""
-    return [
-        VolumeAnalysis(
-            bar=bar,
-            volume_ratio=Decimal("1.0")
-        )
-        for bar in sample_bars
-    ]
+    return [VolumeAnalysis(bar=bar, volume_ratio=Decimal("1.0")) for bar in sample_bars]
 
 
 def create_pivot_cluster(
@@ -76,7 +74,7 @@ def create_pivot_cluster(
     touch_count: int,
     std_dev_pct: Decimal,
     pivot_type: PivotType,
-    base_timestamp: datetime
+    base_timestamp: datetime,
 ) -> PriceCluster:
     """
     Create a PriceCluster with specified characteristics.
@@ -95,9 +93,14 @@ def create_pivot_cluster(
     std_dev = base_price * std_dev_pct
 
     from datetime import timedelta
+
     for i in range(touch_count):
         # Distribute pivots around base_price within std_dev
-        offset = (Decimal(i) - Decimal(touch_count) / Decimal(2)) * (std_dev / Decimal(touch_count)) * Decimal(2)
+        offset = (
+            (Decimal(i) - Decimal(touch_count) / Decimal(2))
+            * (std_dev / Decimal(touch_count))
+            * Decimal(2)
+        )
         price = base_price + offset
         timestamp = base_timestamp + timedelta(days=i * 3)  # Use timedelta
 
@@ -108,22 +111,28 @@ def create_pivot_cluster(
             symbol="TEST",
             timestamp=timestamp,
             open=price_rounded,
-            high=(price_rounded + Decimal("1.00")) if pivot_type == PivotType.HIGH else (price_rounded + Decimal("0.50")),
-            low=(price_rounded - Decimal("0.50")) if pivot_type == PivotType.LOW else (price_rounded - Decimal("1.00")),
+            high=(price_rounded + Decimal("1.00"))
+            if pivot_type == PivotType.HIGH
+            else (price_rounded + Decimal("0.50")),
+            low=(price_rounded - Decimal("0.50"))
+            if pivot_type == PivotType.LOW
+            else (price_rounded - Decimal("1.00")),
             close=price_rounded,
             volume=Decimal("1000000"),
             timeframe="1d",
-            spread=Decimal("1.50")
+            spread=Decimal("1.50"),
         )
 
-        pivots.append(Pivot(
-            bar=bar,
-            price=price_rounded,  # Use rounded price
-            type=pivot_type,
-            strength=1,
-            timestamp=timestamp,
-            index=i * 3
-        ))
+        pivots.append(
+            Pivot(
+                bar=bar,
+                price=price_rounded,  # Use rounded price
+                type=pivot_type,
+                strength=1,
+                timestamp=timestamp,
+                index=i * 3,
+            )
+        )
 
     min_price = min(p.price for p in pivots)
     max_price = max(p.price for p in pivots)
@@ -137,7 +146,7 @@ def create_pivot_cluster(
         touch_count=touch_count,
         cluster_type=pivot_type,
         std_deviation=std_dev,
-        timestamp_range=(pivots[0].timestamp, pivots[-1].timestamp)
+        timestamp_range=(pivots[0].timestamp, pivots[-1].timestamp),
     )
 
 
@@ -146,7 +155,7 @@ def create_trading_range(
     support_cluster: PriceCluster,
     resistance_cluster: PriceCluster,
     duration: int,
-    start_index: int = 10
+    start_index: int = 10,
 ) -> TradingRange:
     """
     Create a TradingRange from clusters.
@@ -164,7 +173,9 @@ def create_trading_range(
     support = support_cluster.average_price
     resistance = resistance_cluster.average_price
     range_width = resistance - support
-    range_width_pct = (range_width / support).quantize(Decimal("0.0001"))  # Round to 4 decimal places
+    range_width_pct = (range_width / support).quantize(
+        Decimal("0.0001")
+    )  # Round to 4 decimal places
 
     return TradingRange(
         symbol=symbol,
@@ -178,7 +189,7 @@ def create_trading_range(
         range_width_pct=range_width_pct,
         start_index=start_index,
         end_index=start_index + duration - 1,
-        duration=duration
+        duration=duration,
     )
 
 
@@ -186,43 +197,48 @@ def create_trading_range(
 # Task 12: Test Component Scoring in Isolation
 # ============================================================================
 
+
 class TestDurationScoring:
     """Test duration component scoring (AC 2)."""
 
-    @pytest.mark.parametrize("duration,expected_score", [
-        (40, 30),  # Excellent cause
-        (50, 30),  # Above excellent
-        (25, 20),  # Good cause
-        (30, 20),  # Good cause
-        (15, 15),  # Adequate cause
-        (20, 15),  # Adequate cause
-        (10, 10),  # Minimal cause
-        (12, 10),  # Minimal cause
-        (5, 0),    # Insufficient (below minimum)
-    ])
+    @pytest.mark.parametrize(
+        "duration,expected_score",
+        [
+            (40, 30),  # Excellent cause
+            (50, 30),  # Above excellent
+            (25, 20),  # Good cause
+            (30, 20),  # Good cause
+            (15, 15),  # Adequate cause
+            (20, 15),  # Adequate cause
+            (10, 10),  # Minimal cause
+            (12, 10),  # Minimal cause
+            (5, 0),  # Insufficient (below minimum)
+        ],
+    )
     def test_duration_scoring_thresholds(self, duration, expected_score):
         """Test duration scoring across all thresholds."""
         score = _score_duration(duration)
-        assert score == expected_score, f"Duration {duration} should score {expected_score}, got {score}"
+        assert (
+            score == expected_score
+        ), f"Duration {duration} should score {expected_score}, got {score}"
 
 
 class TestTouchCountScoring:
     """Test touch count component scoring (AC 3)."""
 
-    @pytest.mark.parametrize("support_touches,resistance_touches,min_expected_score", [
-        (4, 4, 30),  # 8 touches (very strong) + symmetry bonus
-        (5, 4, 30),  # 9 touches
-        (3, 3, 25),  # 6 touches (strong) + symmetry bonus
-        (4, 3, 25),  # 7 touches
-        (2, 2, 15),  # 4 touches (adequate) + symmetry bonus
-        (3, 2, 15),  # 5 touches
-    ])
+    @pytest.mark.parametrize(
+        "support_touches,resistance_touches,min_expected_score",
+        [
+            (4, 4, 30),  # 8 touches (very strong) + symmetry bonus
+            (5, 4, 30),  # 9 touches
+            (3, 3, 25),  # 6 touches (strong) + symmetry bonus
+            (4, 3, 25),  # 7 touches
+            (2, 2, 15),  # 4 touches (adequate) + symmetry bonus
+            (3, 2, 15),  # 5 touches
+        ],
+    )
     def test_touch_count_scoring(
-        self,
-        support_touches,
-        resistance_touches,
-        min_expected_score,
-        base_timestamp
+        self, support_touches, resistance_touches, min_expected_score, base_timestamp
     ):
         """Test touch count scoring."""
         support_cluster = create_pivot_cluster(
@@ -240,16 +256,19 @@ class TestTouchCountScoring:
 class TestTightnessScoring:
     """Test tightness component scoring (AC 4)."""
 
-    @pytest.mark.parametrize("std_dev_pct,expected_score", [
-        (Decimal("0.005"), 20),   # 0.5% < 1% → 20 pts
-        (Decimal("0.009"), 20),   # 0.9% < 1% → 20 pts
-        (Decimal("0.010"), 15),   # 1.0% < 1.5% → 15 pts
-        (Decimal("0.014"), 15),   # 1.4% < 1.5% → 15 pts
-        (Decimal("0.015"), 10),   # 1.5% < 2% → 10 pts
-        (Decimal("0.019"), 10),   # 1.9% < 2% → 10 pts
-        (Decimal("0.020"), 0),    # 2.0% >= 2% → 0 pts
-        (Decimal("0.025"), 0),    # 2.5% >= 2% → 0 pts
-    ])
+    @pytest.mark.parametrize(
+        "std_dev_pct,expected_score",
+        [
+            (Decimal("0.005"), 20),  # 0.5% < 1% → 20 pts
+            (Decimal("0.009"), 20),  # 0.9% < 1% → 20 pts
+            (Decimal("0.010"), 15),  # 1.0% < 1.5% → 15 pts
+            (Decimal("0.014"), 15),  # 1.4% < 1.5% → 15 pts
+            (Decimal("0.015"), 10),  # 1.5% < 2% → 10 pts
+            (Decimal("0.019"), 10),  # 1.9% < 2% → 10 pts
+            (Decimal("0.020"), 0),  # 2.0% >= 2% → 0 pts
+            (Decimal("0.025"), 0),  # 2.5% >= 2% → 0 pts
+        ],
+    )
     def test_tightness_scoring_thresholds(self, std_dev_pct, expected_score, base_timestamp):
         """Test tightness scoring across all thresholds."""
         support_cluster = create_pivot_cluster(
@@ -267,6 +286,7 @@ class TestTightnessScoring:
 # ============================================================================
 # Task 11 & 13: Test Quality Scoring
 # ============================================================================
+
 
 class TestQualityScoring:
     """Test comprehensive quality scoring."""
@@ -287,7 +307,9 @@ class TestQualityScoring:
         trading_range = create_trading_range("TEST", support_cluster, resistance_cluster, 40)
 
         # Create volume analysis with neutral volume
-        volume_analysis = [VolumeAnalysis(bar=bar, volume_ratio=Decimal("1.0")) for bar in sample_bars]
+        volume_analysis = [
+            VolumeAnalysis(bar=bar, volume_ratio=Decimal("1.0")) for bar in sample_bars
+        ]
 
         score = calculate_range_quality(trading_range, sample_bars, volume_analysis)
 
@@ -309,7 +331,9 @@ class TestQualityScoring:
         )
         trading_range = create_trading_range("TEST", support_cluster, resistance_cluster, 10)
 
-        volume_analysis = [VolumeAnalysis(bar=bar, volume_ratio=Decimal("1.0")) for bar in sample_bars]
+        volume_analysis = [
+            VolumeAnalysis(bar=bar, volume_ratio=Decimal("1.0")) for bar in sample_bars
+        ]
 
         score = calculate_range_quality(trading_range, sample_bars, volume_analysis)
         assert score < 70, f"Minimum range scored {score}, expected < 70"
@@ -353,6 +377,7 @@ class TestQualityScoring:
 # Task 8: Test Quality Threshold Validation
 # ============================================================================
 
+
 class TestQualityThreshold:
     """Test quality threshold validation (AC 6)."""
 
@@ -393,7 +418,9 @@ class TestQualityThreshold:
             resistance_cluster = create_pivot_cluster(
                 Decimal("110.00"), 4, Decimal("0.01"), PivotType.HIGH, base_timestamp
             )
-            trading_range = create_trading_range(f"TEST{i}", support_cluster, resistance_cluster, 30)
+            trading_range = create_trading_range(
+                f"TEST{i}", support_cluster, resistance_cluster, 30
+            )
             trading_range.quality_score = score
             ranges.append(trading_range)
 
@@ -415,7 +442,9 @@ class TestQualityThreshold:
             resistance_cluster = create_pivot_cluster(
                 Decimal("110.00"), 4, Decimal("0.01"), PivotType.HIGH, base_timestamp
             )
-            trading_range = create_trading_range(f"TEST{i}", support_cluster, resistance_cluster, 30)
+            trading_range = create_trading_range(
+                f"TEST{i}", support_cluster, resistance_cluster, 30
+            )
             trading_range.quality_score = score
             ranges.append(trading_range)
 
@@ -430,6 +459,7 @@ class TestQualityThreshold:
 # ============================================================================
 # Task 9: Test TradingRange Model Updates
 # ============================================================================
+
 
 class TestTradingRangeModel:
     """Test TradingRange model quality_score field and helper method."""

@@ -48,30 +48,32 @@ def bars_to_dataframe(bars: list[OHLCVBar]) -> pd.DataFrame:
     # This preserves datetime and Decimal objects as-is
     data = []
     for bar in bars:
-        data.append({
-            'id': bar.id,
-            'symbol': bar.symbol,
-            'timeframe': bar.timeframe,
-            'timestamp': bar.timestamp,
-            'open': bar.open,
-            'high': bar.high,
-            'low': bar.low,
-            'close': bar.close,
-            'volume': bar.volume,
-            'spread': bar.spread,
-            'spread_ratio': bar.spread_ratio,
-            'volume_ratio': bar.volume_ratio,
-            'created_at': bar.created_at,
-        })
+        data.append(
+            {
+                "id": bar.id,
+                "symbol": bar.symbol,
+                "timeframe": bar.timeframe,
+                "timestamp": bar.timestamp,
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+                "spread": bar.spread,
+                "spread_ratio": bar.spread_ratio,
+                "volume_ratio": bar.volume_ratio,
+                "created_at": bar.created_at,
+            }
+        )
 
     # Create DataFrame
     df = pd.DataFrame(data)
 
     # Set timestamp as index
-    df.set_index('timestamp', inplace=True)
+    df.set_index("timestamp", inplace=True)
 
     # Convert Decimal columns to float for pandas operations
-    decimal_cols = ['open', 'high', 'low', 'close', 'spread', 'spread_ratio', 'volume_ratio']
+    decimal_cols = ["open", "high", "low", "close", "spread", "spread_ratio", "volume_ratio"]
     for col in decimal_cols:
         if col in df.columns:
             df[col] = df[col].astype(float)
@@ -113,7 +115,7 @@ def dataframe_to_bars(df: pd.DataFrame) -> list[OHLCVBar]:
     df_reset = df.reset_index()
 
     # Convert float back to Decimal for price fields
-    decimal_cols = ['open', 'high', 'low', 'close', 'spread', 'spread_ratio', 'volume_ratio']
+    decimal_cols = ["open", "high", "low", "close", "spread", "spread_ratio", "volume_ratio"]
     for col in decimal_cols:
         if col in df_reset.columns:
             df_reset[col] = df_reset[col].apply(lambda x: Decimal(str(x)))

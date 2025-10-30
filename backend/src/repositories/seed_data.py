@@ -53,9 +53,15 @@ async def generate_ohlcv_sample_data(
         # Generate realistic daily bar
         daily_volatility = float(current_price) * 0.02  # 2% daily volatility
 
-        open_price = current_price + Decimal(str(random.uniform(-daily_volatility, daily_volatility)))
-        high_price = open_price + Decimal(str(abs(random.gauss(daily_volatility, daily_volatility/2))))
-        low_price = open_price - Decimal(str(abs(random.gauss(daily_volatility, daily_volatility/2))))
+        open_price = current_price + Decimal(
+            str(random.uniform(-daily_volatility, daily_volatility))
+        )
+        high_price = open_price + Decimal(
+            str(abs(random.gauss(daily_volatility, daily_volatility / 2)))
+        )
+        low_price = open_price - Decimal(
+            str(abs(random.gauss(daily_volatility, daily_volatility / 2)))
+        )
         close_price = Decimal(str(random.uniform(float(low_price), float(high_price))))
 
         # Ensure high >= open, close >= low
@@ -71,30 +77,36 @@ async def generate_ohlcv_sample_data(
         spread_ratio = Decimal(str(random.uniform(0.8, 1.5)))
         volume_ratio = Decimal(str(random.uniform(0.7, 1.8)))
 
-        bars_data.append({
-            'id': str(uuid4()),
-            'symbol': symbol,
-            'timeframe': '1d',
-            'timestamp': current_date.replace(hour=16, minute=0, second=0, microsecond=0, tzinfo=UTC),
-            'open': round(open_price, 8),
-            'high': round(high_price, 8),
-            'low': round(low_price, 8),
-            'close': round(close_price, 8),
-            'volume': volume,
-            'spread': round(spread, 8),
-            'spread_ratio': round(spread_ratio, 4),
-            'volume_ratio': round(volume_ratio, 4),
-        })
+        bars_data.append(
+            {
+                "id": str(uuid4()),
+                "symbol": symbol,
+                "timeframe": "1d",
+                "timestamp": current_date.replace(
+                    hour=16, minute=0, second=0, microsecond=0, tzinfo=UTC
+                ),
+                "open": round(open_price, 8),
+                "high": round(high_price, 8),
+                "low": round(low_price, 8),
+                "close": round(close_price, 8),
+                "volume": volume,
+                "spread": round(spread, 8),
+                "spread_ratio": round(spread_ratio, 4),
+                "volume_ratio": round(volume_ratio, 4),
+            }
+        )
 
         # Update for next day
         current_price = close_price
         current_date += timedelta(days=1)
 
     # Bulk insert using SQL for performance
-    insert_stmt = text("""
+    insert_stmt = text(
+        """
         INSERT INTO ohlcv_bars (id, symbol, timeframe, timestamp, open, high, low, close, volume, spread, spread_ratio, volume_ratio)
         VALUES (:id, :symbol, :timeframe, :timestamp, :open, :high, :low, :close, :volume, :spread, :spread_ratio, :volume_ratio)
-    """)
+    """
+    )
 
     await session.execute(insert_stmt, bars_data)
     await session.commit()
@@ -150,24 +162,32 @@ async def seed_sample_data() -> None:
         print(f"\nTotal bars in database: {total_count}")
 
         # Verify hypertable chunks were created
-        result = await session.execute(text("""
+        result = await session.execute(
+            text(
+                """
             SELECT chunk_name, range_start, range_end
             FROM timescaledb_information.chunks
             WHERE hypertable_name = 'ohlcv_bars'
             ORDER BY range_start
             LIMIT 5
-        """))
+        """
+            )
+        )
         chunks = result.fetchall()
         print(f"\nTimescaleDB chunks created: {len(list(chunks))}")
         if chunks:
             print("First 5 chunks:")
-            result2 = await session.execute(text("""
+            result2 = await session.execute(
+                text(
+                    """
                 SELECT chunk_name, range_start, range_end
                 FROM timescaledb_information.chunks
                 WHERE hypertable_name = 'ohlcv_bars'
                 ORDER BY range_start
                 LIMIT 5
-            """))
+            """
+                )
+            )
             for chunk in result2.fetchall():
                 print(f"  - {chunk[0]}: {chunk[1]} to {chunk[2]}")
 
@@ -177,21 +197,25 @@ async def test_query_performance() -> None:
     Test query performance for 1-year lookups (AC: 10 - must be <50ms).
     """
     async with async_session_maker() as session:
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("Query Performance Tests (Target: <50ms for 1-year lookups)")
-        print("="*70)
+        print("=" * 70)
 
         # Test 1: 1-year lookup for AAPL
         print("\nTest 1: 1-year lookup for AAPL...")
         start_time = asyncio.get_event_loop().time()
 
-        result = await session.execute(text("""
+        result = await session.execute(
+            text(
+                """
             EXPLAIN ANALYZE
             SELECT * FROM ohlcv_bars
             WHERE symbol = 'AAPL'
               AND timestamp >= NOW() - INTERVAL '1 year'
             ORDER BY timestamp DESC
-        """))
+        """
+            )
+        )
         explain_output = result.fetchall()
 
         end_time = asyncio.get_event_loop().time()
@@ -209,12 +233,16 @@ async def test_query_performance() -> None:
         print("\nTest 2: Recent 50 bars for AAPL...")
         start_time = asyncio.get_event_loop().time()
 
-        result = await session.execute(text("""
+        result = await session.execute(
+            text(
+                """
             SELECT * FROM ohlcv_bars
             WHERE symbol = 'AAPL' AND timeframe = '1d'
             ORDER BY timestamp DESC
             LIMIT 50
-        """))
+        """
+            )
+        )
         bars = result.fetchall()
 
         end_time = asyncio.get_event_loop().time()
@@ -222,18 +250,24 @@ async def test_query_performance() -> None:
 
         print(f"  Bars retrieved: {len(bars)}")
         print(f"  Execution time: {execution_time_ms:.2f}ms")
-        print(f"  Status: {'PASS' if execution_time_ms < 10 else 'WARN (target <10ms for recent data)'}")
+        print(
+            f"  Status: {'PASS' if execution_time_ms < 10 else 'WARN (target <10ms for recent data)'}"
+        )
 
         # Test 3: Cross-symbol aggregation
         print("\nTest 3: Count bars by symbol...")
         start_time = asyncio.get_event_loop().time()
 
-        result = await session.execute(text("""
+        result = await session.execute(
+            text(
+                """
             SELECT symbol, COUNT(*) as bar_count
             FROM ohlcv_bars
             GROUP BY symbol
             ORDER BY symbol
-        """))
+        """
+            )
+        )
         counts = result.fetchall()
 
         end_time = asyncio.get_event_loop().time()
@@ -246,9 +280,9 @@ async def test_query_performance() -> None:
 
 async def main() -> None:
     """Main entry point for seed script."""
-    print("="*70)
+    print("=" * 70)
     print("BMAD Wyckoff - Database Sample Data Seeder")
-    print("="*70)
+    print("=" * 70)
 
     # Seed data
     await seed_sample_data()
@@ -256,15 +290,16 @@ async def main() -> None:
     # Test performance
     await test_query_performance()
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Sample data generation and performance testing complete!")
-    print("="*70)
+    print("=" * 70)
 
 
 if __name__ == "__main__":
     # Fix for Windows event loop
     import sys
-    if sys.platform == 'win32':
+
+    if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     asyncio.run(main())

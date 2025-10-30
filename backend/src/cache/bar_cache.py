@@ -115,6 +115,7 @@ class BarCache:
 
             # Deserialize JSON to list of Pydantic models
             import json
+
             bars_list = json.loads(cached_data)
             bars = [OHLCVBar.model_validate(bar_dict) for bar_dict in bars_list]
 
@@ -162,7 +163,8 @@ class BarCache:
         try:
             # Serialize Pydantic models to JSON
             import json
-            bars_list = [bar.model_dump(mode='json') for bar in bars]
+
+            bars_list = [bar.model_dump(mode="json") for bar in bars]
             cached_data = json.dumps(bars_list)
 
             # Store with TTL

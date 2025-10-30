@@ -28,9 +28,7 @@ class OHLCVBar(BaseModel):
 
     id: UUID = Field(default_factory=uuid4, description="Unique identifier")
     symbol: str = Field(..., max_length=20, description="Stock symbol (e.g., AAPL)")
-    timeframe: Literal["1m", "5m", "15m", "1h", "1d"] = Field(
-        ..., description="Bar timeframe"
-    )
+    timeframe: Literal["1m", "5m", "15m", "1h", "1d"] = Field(..., description="Bar timeframe")
     timestamp: datetime = Field(..., description="Bar timestamp (UTC)")
     open: Decimal = Field(..., description="Opening price", decimal_places=8)
     high: Decimal = Field(..., description="High price", decimal_places=8)

@@ -25,6 +25,7 @@ from src.pattern_engine.level_calculator import calculate_jump_level
 # Test Fixtures
 # ============================================================================
 
+
 def create_test_pivot(price: Decimal, index: int, pivot_type: PivotType) -> Pivot:
     """Create test Pivot"""
     from src.models.ohlcv import OHLCVBar
@@ -38,22 +39,16 @@ def create_test_pivot(price: Decimal, index: int, pivot_type: PivotType) -> Pivo
         low=price if pivot_type == PivotType.LOW else price - Decimal("1.00"),
         close=price,
         volume=1000000,
-        spread=Decimal("1.00")
+        spread=Decimal("1.00"),
     )
 
     return Pivot(
-        bar=bar,
-        price=price,
-        type=pivot_type,
-        strength=5,
-        timestamp=bar.timestamp,
-        index=index
+        bar=bar, price=price, type=pivot_type, strength=5, timestamp=bar.timestamp, index=index
     )
 
 
 def create_test_creek(
-    price: Decimal = Decimal("100.00"),
-    absolute_low: Decimal = Decimal("99.00")
+    price: Decimal = Decimal("100.00"), absolute_low: Decimal = Decimal("99.00")
 ) -> CreekLevel:
     """Create test CreekLevel"""
     return CreekLevel(
@@ -68,7 +63,7 @@ def create_test_creek(
                 volume_ratio=Decimal("1.0"),
                 close_position=Decimal("0.7"),
                 rejection_wick=Decimal("0.7"),
-                timestamp=datetime.now(UTC)
+                timestamp=datetime.now(UTC),
             )
             for i in range(4)
         ],
@@ -78,13 +73,12 @@ def create_test_creek(
         first_test_timestamp=datetime.now(UTC),
         hold_duration=36,
         confidence="HIGH",
-        volume_trend="DECREASING"
+        volume_trend="DECREASING",
     )
 
 
 def create_test_ice(
-    price: Decimal = Decimal("110.00"),
-    absolute_high: Decimal = Decimal("111.00")
+    price: Decimal = Decimal("110.00"), absolute_high: Decimal = Decimal("111.00")
 ) -> IceLevel:
     """Create test IceLevel"""
     return IceLevel(
@@ -99,7 +93,7 @@ def create_test_ice(
                 volume_ratio=Decimal("1.0"),
                 close_position=Decimal("0.3"),
                 rejection_wick=Decimal("0.7"),
-                timestamp=datetime.now(UTC)
+                timestamp=datetime.now(UTC),
             )
             for i in range(4)
         ],
@@ -109,7 +103,7 @@ def create_test_ice(
         first_test_timestamp=datetime.now(UTC),
         hold_duration=37,
         confidence="HIGH",
-        volume_trend="DECREASING"
+        volume_trend="DECREASING",
     )
 
 
@@ -117,19 +111,15 @@ def create_test_trading_range(
     duration: int = 40,
     quality_score: int = 85,
     support_price: Decimal = Decimal("100.00"),
-    resistance_price: Decimal = Decimal("110.00")
+    resistance_price: Decimal = Decimal("110.00"),
 ) -> TradingRange:
     """Create test TradingRange with required clusters"""
     # Create support pivots
-    support_pivots = [
-        create_test_pivot(support_price, i * 10, PivotType.LOW)
-        for i in range(2)
-    ]
+    support_pivots = [create_test_pivot(support_price, i * 10, PivotType.LOW) for i in range(2)]
 
     # Create resistance pivots
     resistance_pivots = [
-        create_test_pivot(resistance_price, i * 10 + 5, PivotType.HIGH)
-        for i in range(2)
+        create_test_pivot(resistance_price, i * 10 + 5, PivotType.HIGH) for i in range(2)
     ]
 
     # Create support cluster
@@ -144,8 +134,8 @@ def create_test_trading_range(
         std_deviation=Decimal("0.50"),
         timestamp_range=(
             min(p.timestamp for p in support_pivots),
-            max(p.timestamp for p in support_pivots)
-        )
+            max(p.timestamp for p in support_pivots),
+        ),
     )
 
     # Create resistance cluster
@@ -160,8 +150,8 @@ def create_test_trading_range(
         std_deviation=Decimal("0.50"),
         timestamp_range=(
             min(p.timestamp for p in resistance_pivots),
-            max(p.timestamp for p in resistance_pivots)
-        )
+            max(p.timestamp for p in resistance_pivots),
+        ),
     )
 
     # Calculate range metrics
@@ -183,13 +173,14 @@ def create_test_trading_range(
         start_index=0,
         end_index=duration,
         duration=duration,
-        quality_score=quality_score
+        quality_score=quality_score,
     )
 
 
 # ============================================================================
 # Test: Cause Factor Determination (AC 2)
 # ============================================================================
+
 
 def test_cause_factor_long_accumulation():
     """Test scenario 1: Long accumulation (40+ bars) → 3.0x cause factor, HIGH confidence"""
@@ -255,6 +246,7 @@ def test_cause_factor_insufficient_accumulation():
 # Test: Jump Calculation (AC 8)
 # ============================================================================
 
+
 def test_jump_calculation_40_bar_range():
     """Test AC 8: 40-bar range with $10 width calculates jump correctly (ice + $30)"""
     # Arrange
@@ -287,6 +279,7 @@ def test_jump_calculation_40_bar_range():
 # Test: All Duration Tiers (AC 2, 7)
 # ============================================================================
 
+
 def test_all_duration_tiers():
     """Test all cause factor tiers with same base range"""
     # Base: Creek $100, Ice $105, Width $5
@@ -318,6 +311,7 @@ def test_all_duration_tiers():
 # ============================================================================
 # Test: Edge Cases (AC all)
 # ============================================================================
+
 
 def test_edge_case_minimum_duration():
     """Test edge case 1: Minimum duration (15 bars exactly)"""
@@ -389,6 +383,7 @@ def test_edge_case_very_long_accumulation():
 # Test: Validation (AC 10)
 # ============================================================================
 
+
 def test_validation_jump_above_ice():
     """Test validation: jump > ice (should always pass with correct math)"""
     # Arrange
@@ -420,6 +415,7 @@ def test_validation_ice_must_be_above_creek():
 # Test: Risk-Reward Ratios
 # ============================================================================
 
+
 def test_risk_reward_calculation():
     """Test risk-reward ratio calculation for all tiers"""
     creek = create_test_creek(price=Decimal("100.00"))
@@ -450,6 +446,7 @@ def test_risk_reward_calculation():
 # Test: JumpLevel Properties
 # ============================================================================
 
+
 def test_jump_level_properties():
     """Test JumpLevel model properties"""
     # Arrange
@@ -468,7 +465,9 @@ def test_jump_level_properties():
     range_30 = create_test_trading_range(duration=30)
     jump_30 = calculate_jump_level(range_30, creek, ice)
     assert jump_30.is_high_confidence is False
-    assert jump_30.recommended_target == jump_30.conservative_price, "MEDIUM recommends conservative"
+    assert (
+        jump_30.recommended_target == jump_30.conservative_price
+    ), "MEDIUM recommends conservative"
 
     # Test percentage moves
     expected_aggressive_pct = (Decimal("140.00") - Decimal("110.00")) / Decimal("110.00")
@@ -480,6 +479,7 @@ def test_jump_level_properties():
 # ============================================================================
 # Test: Input Validation
 # ============================================================================
+
 
 def test_input_validation_none_inputs():
     """Test input validation: None inputs should raise ValueError"""

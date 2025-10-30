@@ -446,6 +446,7 @@ class MarketDataCoordinator:
                 # Get recent bars for ratio calculation (last 20 bars)
                 # Calculate lookback period based on timeframe
                 from datetime import timedelta
+
                 lookback_days = 30  # Default lookback
                 if bar.timeframe == "1m":
                     lookback_days = 1  # 1 day for minute bars

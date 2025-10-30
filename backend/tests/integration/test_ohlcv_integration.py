@@ -156,7 +156,7 @@ class TestDataFrameConversion:
         assert df.shape[0] == 1000  # 1000 rows
 
         # Validate DataFrame columns (AC 10)
-        required_cols = ['symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume', 'spread']
+        required_cols = ["symbol", "timeframe", "open", "high", "low", "close", "volume", "spread"]
         for col in required_cols:
             assert col in df.columns, f"Missing column: {col}"
 
@@ -164,9 +164,9 @@ class TestDataFrameConversion:
         assert isinstance(df.index, pd.DatetimeIndex)
 
         # Validate price fields are float
-        assert df['open'].dtype == float
-        assert df['high'].dtype == float
-        assert df['close'].dtype == float
+        assert df["open"].dtype == float
+        assert df["high"].dtype == float
+        assert df["close"].dtype == float
 
     async def test_dataframe_roundtrip_accuracy(self, repository):
         """Test DataFrame -> bars conversion preserves data (AC 10)."""
@@ -210,7 +210,9 @@ class TestLazyLoading:
         total_bars = 0
         batch_count = 0
 
-        async for batch in repository.iter_bars("TEST_LAZY", "1d", start_date, end_date, batch_size=100):
+        async for batch in repository.iter_bars(
+            "TEST_LAZY", "1d", start_date, end_date, batch_size=100
+        ):
             batch_count += 1
             total_bars += len(batch)
 

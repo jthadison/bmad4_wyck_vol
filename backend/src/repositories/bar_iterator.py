@@ -84,7 +84,11 @@ class BarIterator:
             raise StopAsyncIteration
 
         # Determine query start date (either initial start or after last timestamp)
-        query_start = self.start_date if self.last_timestamp is None else self.last_timestamp + timedelta(seconds=1)
+        query_start = (
+            self.start_date
+            if self.last_timestamp is None
+            else self.last_timestamp + timedelta(seconds=1)
+        )
 
         # Check if we've passed end date
         if query_start > self.end_date:
@@ -136,4 +140,4 @@ class BarIterator:
         )
 
         # Limit to batch size
-        return bars[:self.batch_size]
+        return bars[: self.batch_size]

@@ -78,8 +78,18 @@ class TestBarsToDataFrame:
 
         # Should have expected columns
         expected_cols = [
-            'id', 'symbol', 'timeframe', 'open', 'high', 'low', 'close',
-            'volume', 'spread', 'spread_ratio', 'volume_ratio', 'created_at'
+            "id",
+            "symbol",
+            "timeframe",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "spread",
+            "spread_ratio",
+            "volume_ratio",
+            "created_at",
         ]
         for col in expected_cols:
             assert col in df.columns
@@ -101,15 +111,15 @@ class TestBarsToDataFrame:
         df = bars_to_dataframe(sample_bars)
 
         # Price columns should be float
-        assert df['open'].dtype == float
-        assert df['high'].dtype == float
-        assert df['low'].dtype == float
-        assert df['close'].dtype == float
-        assert df['spread'].dtype == float
+        assert df["open"].dtype == float
+        assert df["high"].dtype == float
+        assert df["low"].dtype == float
+        assert df["close"].dtype == float
+        assert df["spread"].dtype == float
 
         # Verify values are correct
-        assert df['open'].iloc[0] == 150.00
-        assert df['close'].iloc[0] == 153.00
+        assert df["open"].iloc[0] == 150.00
+        assert df["close"].iloc[0] == 153.00
 
     def test_sorted_by_timestamp(self):
         """Test DataFrame is sorted by timestamp."""
@@ -149,8 +159,8 @@ class TestBarsToDataFrame:
         """Test that symbol and timeframe are preserved."""
         df = bars_to_dataframe(sample_bars)
 
-        assert all(df['symbol'] == 'AAPL')
-        assert all(df['timeframe'] == '1d')
+        assert all(df["symbol"] == "AAPL")
+        assert all(df["timeframe"] == "1d")
 
 
 class TestDataFrameToBars:
@@ -223,14 +233,14 @@ class TestDataFrameOperations:
         df = bars_to_dataframe(sample_bars)
 
         # Calculate 2-bar rolling average for volume
-        df['volume_avg_2'] = df['volume'].rolling(2).mean()
+        df["volume_avg_2"] = df["volume"].rolling(2).mean()
 
         # First value should be NaN (not enough data)
-        assert pd.isna(df['volume_avg_2'].iloc[0])
+        assert pd.isna(df["volume_avg_2"].iloc[0])
 
         # Second value should be average of first two
         expected_avg = (1000000 + 1200000) / 2
-        assert df['volume_avg_2'].iloc[1] == expected_avg
+        assert df["volume_avg_2"].iloc[1] == expected_avg
 
     def test_dataframe_slicing(self, sample_bars):
         """Test slicing DataFrame by date range."""
@@ -240,4 +250,4 @@ class TestDataFrameOperations:
         jan2 = df[df.index == datetime(2024, 1, 2, tzinfo=UTC)]
 
         assert len(jan2) == 1
-        assert jan2['close'].iloc[0] == 157.00
+        assert jan2["close"].iloc[0] == 157.00

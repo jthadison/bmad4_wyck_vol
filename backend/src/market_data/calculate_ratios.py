@@ -163,11 +163,7 @@ async def calculate_ratios_for_all_symbols(
     """
     async with async_session_maker() as session:
         # Get distinct symbols
-        stmt = (
-            select(OHLCVBarModel.symbol)
-            .where(OHLCVBarModel.timeframe == timeframe)
-            .distinct()
-        )
+        stmt = select(OHLCVBarModel.symbol).where(OHLCVBarModel.timeframe == timeframe).distinct()
 
         result = await session.execute(stmt)
         symbols = [row[0] for row in result.all()]

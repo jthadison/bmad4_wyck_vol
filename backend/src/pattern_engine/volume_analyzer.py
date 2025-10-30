@@ -145,7 +145,7 @@ def calculate_volume_ratios_batch(bars: list[OHLCVBar]) -> list[float | None]:
     # Use uniform filter (moving average kernel) for rolling computation
     # np.convolve with 'valid' mode computes sum for each 20-bar window
     ones = np.ones(window_size)
-    rolling_sums = np.convolve(volumes, ones, mode='valid')
+    rolling_sums = np.convolve(volumes, ones, mode="valid")
     rolling_avgs = rolling_sums / window_size
 
     # Calculate ratios for bars with sufficient history (index >= 20)
@@ -325,7 +325,7 @@ def calculate_spread_ratios_batch(bars: list[OHLCVBar]) -> list[float | None]:
 
     # Use uniform filter (moving average kernel) for rolling computation
     ones = np.ones(window_size)
-    rolling_sums = np.convolve(spreads, ones, mode='valid')
+    rolling_sums = np.convolve(spreads, ones, mode="valid")
     rolling_avgs = rolling_sums / window_size
 
     # Calculate ratios for bars with sufficient history (index >= 20)
@@ -435,7 +435,7 @@ def calculate_close_position(bar: OHLCVBar) -> float:
             symbol=bar.symbol,
             timestamp=bar.timestamp.isoformat(),
             price=close,
-            message="Doji bar detected (high == low), returning neutral position 0.5"
+            message="Doji bar detected (high == low), returning neutral position 0.5",
         )
         return 0.5
 
@@ -448,7 +448,7 @@ def calculate_close_position(bar: OHLCVBar) -> float:
             close=close,
             low=low,
             high=high,
-            message="Close is outside [low, high] range, data quality issue. Clamping value."
+            message="Close is outside [low, high] range, data quality issue. Clamping value.",
         )
         # Clamp close to [low, high] range
         close = max(low, min(close, high))
@@ -535,7 +535,7 @@ def calculate_close_positions_batch(bars: list[OHLCVBar]) -> list[float]:
             "invalid_close_position_data_in_batch",
             num_bars=len(bars),
             invalid_count=int(invalid_data_count),
-            message=f"Found {invalid_data_count} bars with close outside [low, high] range. Values clamped."
+            message=f"Found {invalid_data_count} bars with close outside [low, high] range. Values clamped.",
         )
 
     # Log batch completion summary
@@ -550,9 +550,7 @@ def calculate_close_positions_batch(bars: list[OHLCVBar]) -> list[float]:
     return results.tolist()
 
 
-def classify_effort_result(
-    volume_ratio: float | None, spread_ratio: float | None
-) -> EffortResult:
+def classify_effort_result(volume_ratio: float | None, spread_ratio: float | None) -> EffortResult:
     """
     Classify bar based on effort (volume) vs. result (spread).
 
@@ -839,12 +837,8 @@ class VolumeAnalyzer:
 
             # Round ratios to 4 decimal places for Pydantic validation
             # (Pydantic decimal_places constraint requires max 4 decimal places)
-            volume_ratio = (
-                round(volume_ratio_raw, 4) if volume_ratio_raw is not None else None
-            )
-            spread_ratio = (
-                round(spread_ratio_raw, 4) if spread_ratio_raw is not None else None
-            )
+            volume_ratio = round(volume_ratio_raw, 4) if volume_ratio_raw is not None else None
+            spread_ratio = round(spread_ratio_raw, 4) if spread_ratio_raw is not None else None
             close_position = round(close_position_raw, 4)
 
             # Classify effort_result based on volume/spread ratios
@@ -884,18 +878,14 @@ class VolumeAnalyzer:
 
         # Calculate statistics
         total_bars = len(results)
-        bars_with_ratios = sum(
-            1 for r in results if r.volume_ratio is not None
-        )
+        bars_with_ratios = sum(1 for r in results if r.volume_ratio is not None)
 
         # Log abnormal conditions
         extreme_volume_count = sum(
-            1 for r in results
-            if r.volume_ratio and float(r.volume_ratio) > 5.0
+            1 for r in results if r.volume_ratio and float(r.volume_ratio) > 5.0
         )
         extreme_spread_count = sum(
-            1 for r in results
-            if r.spread_ratio and float(r.spread_ratio) > 3.0
+            1 for r in results if r.spread_ratio and float(r.spread_ratio) > 3.0
         )
 
         if extreme_volume_count > 0:
@@ -913,19 +903,11 @@ class VolumeAnalyzer:
             )
 
         # Calculate average ratios (excluding None values)
-        volume_ratios_valid = [
-            float(r.volume_ratio) for r in results if r.volume_ratio is not None
-        ]
-        spread_ratios_valid = [
-            float(r.spread_ratio) for r in results if r.spread_ratio is not None
-        ]
+        volume_ratios_valid = [float(r.volume_ratio) for r in results if r.volume_ratio is not None]
+        spread_ratios_valid = [float(r.spread_ratio) for r in results if r.spread_ratio is not None]
 
-        avg_volume_ratio = (
-            np.mean(volume_ratios_valid) if volume_ratios_valid else None
-        )
-        avg_spread_ratio = (
-            np.mean(spread_ratios_valid) if spread_ratios_valid else None
-        )
+        avg_volume_ratio = np.mean(volume_ratios_valid) if volume_ratios_valid else None
+        avg_spread_ratio = np.mean(spread_ratios_valid) if spread_ratios_valid else None
 
         # Log completion with statistics
         logger.info(

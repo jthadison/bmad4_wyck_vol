@@ -171,9 +171,7 @@ class AlpacaAdapter(MarketDataProvider):
                 self._receiver_task = asyncio.create_task(self._receive_messages())
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
             else:
-                raise RuntimeError(
-                    f"Alpaca authentication failed: {auth_data}"
-                )
+                raise RuntimeError(f"Alpaca authentication failed: {auth_data}")
 
         except asyncio.TimeoutError:
             logger.error(

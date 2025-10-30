@@ -34,6 +34,7 @@ from src.pattern_engine.level_calculator import (
 # Test Fixtures and Helpers
 # ============================================================================
 
+
 def create_test_bar(
     symbol: str = "TEST",
     timeframe: str = "1d",
@@ -43,7 +44,7 @@ def create_test_bar(
     close: Decimal = Decimal("100.00"),
     volume: int = 1000000,
     timestamp: datetime = None,
-    index: int = 0
+    index: int = 0,
 ) -> OHLCVBar:
     """Create test OHLCV bar"""
     if timestamp is None:
@@ -58,15 +59,12 @@ def create_test_bar(
         low=low,
         close=close,
         volume=volume,
-        spread=high - low
+        spread=high - low,
     )
 
 
 def create_test_pivot(
-    price: Decimal,
-    index: int,
-    symbol: str = "TEST",
-    timeframe: str = "1d"
+    price: Decimal, index: int, symbol: str = "TEST", timeframe: str = "1d"
 ) -> Pivot:
     """Create test Pivot LOW object"""
     bar = create_test_bar(
@@ -76,24 +74,16 @@ def create_test_pivot(
         low=price,
         close=price + Decimal("3.50"),  # Upper half close (70% rejection wick)
         timestamp=datetime.now(UTC) + timedelta(days=index),
-        index=index
+        index=index,
     )
 
     return Pivot(
-        bar=bar,
-        price=price,
-        type=PivotType.LOW,
-        strength=5,
-        timestamp=bar.timestamp,
-        index=index
+        bar=bar, price=price, type=PivotType.LOW, strength=5, timestamp=bar.timestamp, index=index
     )
 
 
 def create_test_pivot_high(
-    price: Decimal,
-    index: int,
-    symbol: str = "TEST",
-    timeframe: str = "1d"
+    price: Decimal, index: int, symbol: str = "TEST", timeframe: str = "1d"
 ) -> Pivot:
     """Create test Pivot HIGH object for Ice level testing"""
     bar = create_test_bar(
@@ -103,16 +93,11 @@ def create_test_pivot_high(
         low=price - Decimal("5.00"),
         close=price - Decimal("3.50"),  # Lower 30% close (70% upper wick rejection)
         timestamp=datetime.now(UTC) + timedelta(days=index),
-        index=index
+        index=index,
     )
 
     return Pivot(
-        bar=bar,
-        price=price,
-        type=PivotType.HIGH,
-        strength=5,
-        timestamp=bar.timestamp,
-        index=index
+        bar=bar, price=price, type=PivotType.HIGH, strength=5, timestamp=bar.timestamp, index=index
     )
 
 
@@ -121,7 +106,7 @@ def create_touch_detail(
     price: Decimal,
     volume: int,
     volume_ratio: Decimal,
-    rejection_wick: Decimal = Decimal("0.7")
+    rejection_wick: Decimal = Decimal("0.7"),
 ) -> TouchDetail:
     """Create TouchDetail for testing"""
     return TouchDetail(
@@ -131,14 +116,12 @@ def create_touch_detail(
         volume_ratio=volume_ratio,
         close_position=Decimal("0.7"),
         rejection_wick=rejection_wick,
-        timestamp=datetime.now(UTC) + timedelta(days=index)
+        timestamp=datetime.now(UTC) + timedelta(days=index),
     )
 
 
 def create_test_trading_range(
-    support_pivots: list[Pivot],
-    resistance_pivots: list[Pivot],
-    quality_score: int = 80
+    support_pivots: list[Pivot], resistance_pivots: list[Pivot], quality_score: int = 80
 ) -> TradingRange:
     """Create test TradingRange with support and resistance clusters"""
     # Create support cluster
@@ -157,8 +140,8 @@ def create_test_trading_range(
         std_deviation=Decimal("0.50"),
         timestamp_range=(
             min(p.timestamp for p in support_pivots),
-            max(p.timestamp for p in support_pivots)
-        )
+            max(p.timestamp for p in support_pivots),
+        ),
     )
 
     # Create resistance cluster
@@ -177,8 +160,8 @@ def create_test_trading_range(
         std_deviation=Decimal("0.50"),
         timestamp_range=(
             min(p.timestamp for p in resistance_pivots),
-            max(p.timestamp for p in resistance_pivots)
-        )
+            max(p.timestamp for p in resistance_pivots),
+        ),
     )
 
     # Calculate range metrics
@@ -204,7 +187,7 @@ def create_test_trading_range(
         start_index=start_index,
         end_index=end_index,
         duration=duration,
-        quality_score=quality_score
+        quality_score=quality_score,
     )
 
     return trading_range
@@ -213,6 +196,7 @@ def create_test_trading_range(
 # ============================================================================
 # Task 17: Test Volume-Weighted Averaging (AC 8)
 # ============================================================================
+
 
 def test_creek_volume_weighted_average():
     """
@@ -227,7 +211,7 @@ def test_creek_volume_weighted_average():
     touches = [
         create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.5")),
         create_touch_detail(18, Decimal("101.00"), 2000000, Decimal("1.0")),
-        create_touch_detail(26, Decimal("102.00"), 1000000, Decimal("0.8"))
+        create_touch_detail(26, Decimal("102.00"), 1000000, Decimal("0.8")),
     ]
 
     weighted_price = _calculate_weighted_price(touches)
@@ -241,7 +225,7 @@ def test_creek_volume_weighted_average_equal_volumes():
     touches = [
         create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0")),
         create_touch_detail(18, Decimal("101.00"), 1000000, Decimal("1.0")),
-        create_touch_detail(26, Decimal("102.00"), 1000000, Decimal("1.0"))
+        create_touch_detail(26, Decimal("102.00"), 1000000, Decimal("1.0")),
     ]
 
     weighted_price = _calculate_weighted_price(touches)
@@ -255,36 +239,47 @@ def test_creek_volume_weighted_average_high_volume_outlier():
     touches = [
         create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0")),
         create_touch_detail(18, Decimal("105.00"), 5000000, Decimal("2.0")),  # High volume
-        create_touch_detail(26, Decimal("100.00"), 1000000, Decimal("0.8"))
+        create_touch_detail(26, Decimal("100.00"), 1000000, Decimal("0.8")),
     ]
 
     weighted_price = _calculate_weighted_price(touches)
 
     # Expected: (100*1M + 105*5M + 100*1M) / 7M = 725M / 7M = 103.57
     expected = Decimal("103.571428571428571428571428571")
-    assert abs(weighted_price - expected) < Decimal("0.01"), f"Expected ~$103.57, got ${weighted_price}"
+    assert abs(weighted_price - expected) < Decimal(
+        "0.01"
+    ), f"Expected ~$103.57, got ${weighted_price}"
 
 
 # ============================================================================
 # Task 18: Test Strength Scoring Components (AC 5)
 # ============================================================================
 
+
 def test_score_touch_count():
     """Test touch count scoring: 5→40, 4→30, 3→20, 2→10"""
     # 5 touches → 40 pts
-    touches_5 = [create_touch_detail(i*8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(5)]
+    touches_5 = [
+        create_touch_detail(i * 8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(5)
+    ]
     assert _score_touch_count(touches_5) == 40
 
     # 4 touches → 30 pts
-    touches_4 = [create_touch_detail(i*8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(4)]
+    touches_4 = [
+        create_touch_detail(i * 8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(4)
+    ]
     assert _score_touch_count(touches_4) == 30
 
     # 3 touches → 20 pts
-    touches_3 = [create_touch_detail(i*8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(3)]
+    touches_3 = [
+        create_touch_detail(i * 8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(3)
+    ]
     assert _score_touch_count(touches_3) == 20
 
     # 2 touches → 10 pts (minimum)
-    touches_2 = [create_touch_detail(i*8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(2)]
+    touches_2 = [
+        create_touch_detail(i * 8, Decimal("100.00"), 1000000, Decimal("1.0")) for i in range(2)
+    ]
     assert _score_touch_count(touches_2) == 10
 
 
@@ -294,7 +289,7 @@ def test_score_volume_trend_decreasing():
         create_touch_detail(10, Decimal("100.00"), 2000000, Decimal("2.0")),
         create_touch_detail(18, Decimal("100.00"), 1500000, Decimal("1.5")),
         create_touch_detail(26, Decimal("100.00"), 1000000, Decimal("1.0")),
-        create_touch_detail(34, Decimal("100.00"), 500000, Decimal("0.5"))
+        create_touch_detail(34, Decimal("100.00"), 500000, Decimal("0.5")),
     ]
 
     score, trend = _score_volume_trend(touches)
@@ -309,7 +304,7 @@ def test_score_volume_trend_flat():
         create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0")),
         create_touch_detail(18, Decimal("100.00"), 1100000, Decimal("1.1")),
         create_touch_detail(26, Decimal("100.00"), 900000, Decimal("0.9")),
-        create_touch_detail(34, Decimal("100.00"), 1000000, Decimal("1.0"))
+        create_touch_detail(34, Decimal("100.00"), 1000000, Decimal("1.0")),
     ]
 
     score, trend = _score_volume_trend(touches)
@@ -324,7 +319,7 @@ def test_score_volume_trend_increasing():
         create_touch_detail(10, Decimal("100.00"), 500000, Decimal("0.5")),
         create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0")),
         create_touch_detail(26, Decimal("100.00"), 1500000, Decimal("1.5")),
-        create_touch_detail(34, Decimal("100.00"), 2000000, Decimal("2.0"))
+        create_touch_detail(34, Decimal("100.00"), 2000000, Decimal("2.0")),
     ]
 
     score, trend = _score_volume_trend(touches)
@@ -339,21 +334,21 @@ def test_score_rejection_wicks():
     touches_high = [
         create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.8")),
         create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.8")),
-        create_touch_detail(26, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.8"))
+        create_touch_detail(26, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.8")),
     ]
     assert _score_rejection_wicks(touches_high) == 20
 
     # Moderate rejection (avg 0.5) → 15 pts
     touches_mod = [
         create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.5")),
-        create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.5"))
+        create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.5")),
     ]
     assert _score_rejection_wicks(touches_mod) == 15
 
     # Low rejection (avg 0.2) → 5 pts
     touches_low = [
         create_touch_detail(10, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.2")),
-        create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.2"))
+        create_touch_detail(18, Decimal("100.00"), 1000000, Decimal("1.0"), Decimal("0.2")),
     ]
     assert _score_rejection_wicks(touches_low) == 5
 
@@ -361,14 +356,15 @@ def test_score_rejection_wicks():
 def test_score_hold_duration():
     """Test hold duration scoring: 30→10, 20→8, 10→5, 5→2"""
     assert _score_hold_duration(30) == 10  # Very strong
-    assert _score_hold_duration(20) == 8   # Strong
-    assert _score_hold_duration(10) == 5   # Good
-    assert _score_hold_duration(5) == 2    # Weak
+    assert _score_hold_duration(20) == 8  # Strong
+    assert _score_hold_duration(10) == 5  # Good
+    assert _score_hold_duration(5) == 2  # Weak
 
 
 # ============================================================================
 # Task 19: Test Perfect Creek (100 score) (AC 5, 6)
 # ============================================================================
+
 
 def test_perfect_creek_100_score():
     """
@@ -387,7 +383,7 @@ def test_perfect_creek_100_score():
         create_test_pivot(Decimal("100.50"), 18),
         create_test_pivot(Decimal("100.20"), 26),
         create_test_pivot(Decimal("100.80"), 34),
-        create_test_pivot(Decimal("100.30"), 40)  # 30 bars duration
+        create_test_pivot(Decimal("100.30"), 40),  # 30 bars duration
     ]
 
     # Create resistance pivots (need 2 minimum) - using HIGH type
@@ -398,7 +394,7 @@ def test_perfect_creek_100_score():
         type=PivotType.HIGH,
         strength=5,
         timestamp=resistance_bar_15.timestamp,
-        index=15
+        index=15,
     )
 
     resistance_bar_30 = create_test_bar(low=Decimal("105.50"), high=Decimal("110.50"), index=30)
@@ -408,7 +404,7 @@ def test_perfect_creek_100_score():
         type=PivotType.HIGH,
         strength=5,
         timestamp=resistance_bar_30.timestamp,
-        index=30
+        index=30,
     )
 
     resistance_pivots = [resistance_pivot_15, resistance_pivot_30]
@@ -435,7 +431,7 @@ def test_perfect_creek_100_score():
                 low=pivot.price,
                 close=pivot.price + Decimal("4.00"),  # 80% rejection wick
                 volume=int(1000000 * float(pivot_volume_map[idx])),
-                index=idx
+                index=idx,
             )
             vol_ratio = pivot_volume_map[idx]
         else:
@@ -444,13 +440,15 @@ def test_perfect_creek_100_score():
             vol_ratio = Decimal("1.0")
 
         bars.append(bar)
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=vol_ratio,
-            spread_ratio=Decimal("1.0"),
-            close_position=Decimal("0.8") if idx in pivot_volume_map else Decimal("0.5"),
-            effort_result=None
-        ))
+        volume_analysis.append(
+            VolumeAnalysis(
+                bar=bar,
+                volume_ratio=vol_ratio,
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.8") if idx in pivot_volume_map else Decimal("0.5"),
+                effort_result=None,
+            )
+        )
 
     # Calculate creek
     creek = calculate_creek_level(trading_range, bars, volume_analysis)
@@ -467,6 +465,7 @@ def test_perfect_creek_100_score():
 # Task 20: Test Minimum Strength Threshold (AC 6)
 # ============================================================================
 
+
 def test_weak_creek_below_minimum_strength():
     """
     Test weak creek scenario below minimum strength (< 60).
@@ -482,7 +481,7 @@ def test_weak_creek_below_minimum_strength():
     # Create 2 support pivots with increasing volume (extended duration for min 10 bars)
     support_pivots = [
         create_test_pivot(Decimal("100.00"), 10),
-        create_test_pivot(Decimal("100.50"), 22)  # 12 bars duration (meets minimum)
+        create_test_pivot(Decimal("100.50"), 22),  # 12 bars duration (meets minimum)
     ]
 
     # Create resistance pivots - using HIGH type
@@ -493,7 +492,7 @@ def test_weak_creek_below_minimum_strength():
         type=PivotType.HIGH,
         strength=5,
         timestamp=resistance_bar_15.timestamp,
-        index=15
+        index=15,
     )
 
     resistance_bar_20 = create_test_bar(low=Decimal("105.50"), high=Decimal("110.50"), index=20)
@@ -503,7 +502,7 @@ def test_weak_creek_below_minimum_strength():
         type=PivotType.HIGH,
         strength=5,
         timestamp=resistance_bar_20.timestamp,
-        index=20
+        index=20,
     )
 
     resistance_pivots = [resistance_pivot_15, resistance_pivot_20]
@@ -517,7 +516,9 @@ def test_weak_creek_below_minimum_strength():
     volume_analysis = []
 
     # Create a mapping of pivot index to volume ratio
-    pivot_volume_map = {pivot.index: Decimal(str(0.5 * (i + 1))) for i, pivot in enumerate(support_pivots)}
+    pivot_volume_map = {
+        pivot.index: Decimal(str(0.5 * (i + 1))) for i, pivot in enumerate(support_pivots)
+    }
 
     for idx in range(max_index):
         # Check if this index is a support pivot
@@ -529,7 +530,7 @@ def test_weak_creek_below_minimum_strength():
                 low=pivot.price,
                 close=pivot.price + Decimal("1.00"),  # 20% rejection wick (weak)
                 volume=int(500000 * (list(pivot_volume_map.keys()).index(idx) + 1)),
-                index=idx
+                index=idx,
             )
             vol_ratio = pivot_volume_map[idx]
             close_pos = Decimal("0.2")  # Weak close position
@@ -540,13 +541,15 @@ def test_weak_creek_below_minimum_strength():
             close_pos = Decimal("0.5")
 
         bars.append(bar)
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=vol_ratio,
-            spread_ratio=Decimal("1.0"),
-            close_position=close_pos,
-            effort_result=None
-        ))
+        volume_analysis.append(
+            VolumeAnalysis(
+                bar=bar,
+                volume_ratio=vol_ratio,
+                spread_ratio=Decimal("1.0"),
+                close_position=close_pos,
+                effort_result=None,
+            )
+        )
 
     # Should raise ValueError for weak creek
     with pytest.raises(ValueError, match="strength.*below minimum"):
@@ -556,6 +559,7 @@ def test_weak_creek_below_minimum_strength():
 # ============================================================================
 # Additional Tests
 # ============================================================================
+
 
 def test_assess_confidence():
     """Test confidence level assessment"""
@@ -569,7 +573,7 @@ def test_creek_validation_low_quality_range():
     """Test that creek calculation requires quality_score >= 70"""
     support_pivots = [
         create_test_pivot(Decimal("100.00"), 10),
-        create_test_pivot(Decimal("100.50"), 20)
+        create_test_pivot(Decimal("100.50"), 20),
     ]
 
     # Create resistance pivots - using HIGH type
@@ -580,7 +584,7 @@ def test_creek_validation_low_quality_range():
         type=PivotType.HIGH,
         strength=5,
         timestamp=resistance_bar_15.timestamp,
-        index=15
+        index=15,
     )
 
     resistance_bar_25 = create_test_bar(low=Decimal("105.50"), high=Decimal("110.50"), index=25)
@@ -590,7 +594,7 @@ def test_creek_validation_low_quality_range():
         type=PivotType.HIGH,
         strength=5,
         timestamp=resistance_bar_25.timestamp,
-        index=25
+        index=25,
     )
 
     resistance_pivots = [resistance_pivot_15, resistance_pivot_25]
@@ -599,13 +603,16 @@ def test_creek_validation_low_quality_range():
     trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=50)
 
     bars = [create_test_bar(index=i) for i in range(30)]
-    volume_analysis = [VolumeAnalysis(
-        bar=bars[i],
-        volume_ratio=Decimal("1.0"),
-        spread_ratio=Decimal("1.0"),
-        close_position=Decimal("0.5"),
-        effort_result=None
-    ) for i in range(30)]
+    volume_analysis = [
+        VolumeAnalysis(
+            bar=bars[i],
+            volume_ratio=Decimal("1.0"),
+            spread_ratio=Decimal("1.0"),
+            close_position=Decimal("0.5"),
+            effort_result=None,
+        )
+        for i in range(30)
+    ]
 
     # Should raise ValueError for low quality
     with pytest.raises(ValueError, match="quality score"):
@@ -616,7 +623,7 @@ def test_creek_validation_bars_volume_mismatch():
     """Test that bars and volume_analysis must match in length"""
     support_pivots = [
         create_test_pivot(Decimal("100.00"), 10),
-        create_test_pivot(Decimal("100.50"), 20)
+        create_test_pivot(Decimal("100.50"), 20),
     ]
 
     # Create resistance pivots - using HIGH type
@@ -627,7 +634,7 @@ def test_creek_validation_bars_volume_mismatch():
         type=PivotType.HIGH,
         strength=5,
         timestamp=resistance_bar_15.timestamp,
-        index=15
+        index=15,
     )
 
     resistance_bar_25 = create_test_bar(low=Decimal("105.50"), high=Decimal("110.50"), index=25)
@@ -637,7 +644,7 @@ def test_creek_validation_bars_volume_mismatch():
         type=PivotType.HIGH,
         strength=5,
         timestamp=resistance_bar_25.timestamp,
-        index=25
+        index=25,
     )
 
     resistance_pivots = [resistance_pivot_15, resistance_pivot_25]
@@ -645,13 +652,16 @@ def test_creek_validation_bars_volume_mismatch():
     trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=80)
 
     bars = [create_test_bar(index=i) for i in range(30)]
-    volume_analysis = [VolumeAnalysis(
-        bar=bars[i],
-        volume_ratio=Decimal("1.0"),
-        spread_ratio=Decimal("1.0"),
-        close_position=Decimal("0.5"),
-        effort_result=None
-    ) for i in range(20)]  # Mismatch: 20 vs 30
+    volume_analysis = [
+        VolumeAnalysis(
+            bar=bars[i],
+            volume_ratio=Decimal("1.0"),
+            spread_ratio=Decimal("1.0"),
+            close_position=Decimal("0.5"),
+            effort_result=None,
+        )
+        for i in range(20)
+    ]  # Mismatch: 20 vs 30
 
     # Should raise ValueError for mismatch
     with pytest.raises(ValueError, match="length mismatch"):
@@ -666,6 +676,7 @@ def test_creek_validation_bars_volume_mismatch():
 # Task 19: Test Ice Volume-Weighted Averaging (AC 8)
 # ============================================================================
 
+
 def test_ice_volume_weighted_average():
     """
     Test ice volume-weighted average with known volumes and prices.
@@ -679,7 +690,7 @@ def test_ice_volume_weighted_average():
     touches = [
         create_touch_detail(10, Decimal("200.00"), 1000000, Decimal("1.5")),
         create_touch_detail(18, Decimal("201.00"), 2000000, Decimal("1.0")),
-        create_touch_detail(26, Decimal("202.00"), 1000000, Decimal("0.8"))
+        create_touch_detail(26, Decimal("202.00"), 1000000, Decimal("0.8")),
     ]
 
     weighted_price = _calculate_weighted_price(touches)
@@ -692,14 +703,21 @@ def test_ice_volume_weighted_average():
 # Task 20: Test Ice Strength Scoring Components (AC 4, 5)
 # ============================================================================
 
+
 def test_score_rejection_wicks_ice_strong():
     """Test ice rejection wick scoring: high upper wick (avg 0.8) → 20 pts"""
     # Upper wick = (high - close) / (high - low)
     # High upper wick = close near low = strong downward rejection
     touches = [
-        create_touch_detail(10, Decimal("200.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.8")),
-        create_touch_detail(18, Decimal("201.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.75")),
-        create_touch_detail(26, Decimal("202.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.85"))
+        create_touch_detail(
+            10, Decimal("200.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.8")
+        ),
+        create_touch_detail(
+            18, Decimal("201.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.75")
+        ),
+        create_touch_detail(
+            26, Decimal("202.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.85")
+        ),
     ]
 
     score = _score_rejection_wicks_ice(touches)
@@ -711,9 +729,15 @@ def test_score_rejection_wicks_ice_strong():
 def test_score_rejection_wicks_ice_moderate():
     """Test ice rejection wick scoring: moderate upper wick (avg 0.5) → 15 pts"""
     touches = [
-        create_touch_detail(10, Decimal("200.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.5")),
-        create_touch_detail(18, Decimal("201.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.55")),
-        create_touch_detail(26, Decimal("202.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.45"))
+        create_touch_detail(
+            10, Decimal("200.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.5")
+        ),
+        create_touch_detail(
+            18, Decimal("201.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.55")
+        ),
+        create_touch_detail(
+            26, Decimal("202.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.45")
+        ),
     ]
 
     score = _score_rejection_wicks_ice(touches)
@@ -725,9 +749,15 @@ def test_score_rejection_wicks_ice_moderate():
 def test_score_rejection_wicks_ice_weak():
     """Test ice rejection wick scoring: low upper wick (avg 0.2) → 5 pts"""
     touches = [
-        create_touch_detail(10, Decimal("200.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.2")),
-        create_touch_detail(18, Decimal("201.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.15")),
-        create_touch_detail(26, Decimal("202.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.25"))
+        create_touch_detail(
+            10, Decimal("200.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.2")
+        ),
+        create_touch_detail(
+            18, Decimal("201.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.15")
+        ),
+        create_touch_detail(
+            26, Decimal("202.00"), 1000000, Decimal("1.0"), rejection_wick=Decimal("0.25")
+        ),
     ]
 
     score = _score_rejection_wicks_ice(touches)
@@ -739,6 +769,7 @@ def test_score_rejection_wicks_ice_weak():
 # ============================================================================
 # Task 21: Test Perfect Ice (100 score) (AC 4, 5)
 # ============================================================================
+
 
 def test_ice_perfect_score():
     """
@@ -757,7 +788,7 @@ def test_ice_perfect_score():
         create_test_pivot_high(Decimal("200.20"), 18),
         create_test_pivot_high(Decimal("200.40"), 26),
         create_test_pivot_high(Decimal("200.30"), 34),
-        create_test_pivot_high(Decimal("200.10"), 40)  # Last test at index 40 (30 bars duration)
+        create_test_pivot_high(Decimal("200.10"), 40),  # Last test at index 40 (30 bars duration)
     ]
 
     # Create support pivots (required for TradingRange) - need strong support to avoid creek failure
@@ -765,7 +796,7 @@ def test_ice_perfect_score():
         create_test_pivot(Decimal("190.00"), 12),
         create_test_pivot(Decimal("190.25"), 20),
         create_test_pivot(Decimal("190.10"), 28),
-        create_test_pivot(Decimal("190.40"), 36)
+        create_test_pivot(Decimal("190.40"), 36),
     ]
 
     trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=90)
@@ -781,7 +812,7 @@ def test_ice_perfect_score():
         18: Decimal("1.5"),
         26: Decimal("1.0"),
         34: Decimal("0.8"),
-        40: Decimal("0.5")
+        40: Decimal("0.5"),
     }
 
     for idx in range(45):
@@ -793,7 +824,7 @@ def test_ice_perfect_score():
                 low=pivot.price - Decimal("5.00"),
                 close=pivot.price - Decimal("4.00"),  # 80% upper wick
                 volume=int(1000000 * float(pivot_volume_map[idx])),
-                index=idx
+                index=idx,
             )
             vol_ratio = pivot_volume_map[idx]
             close_pos = Decimal("0.2")  # Close near low
@@ -804,13 +835,15 @@ def test_ice_perfect_score():
             close_pos = Decimal("0.5")
 
         bars.append(bar)
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=vol_ratio,
-            spread_ratio=Decimal("1.0"),
-            close_position=close_pos,
-            effort_result=None
-        ))
+        volume_analysis.append(
+            VolumeAnalysis(
+                bar=bar,
+                volume_ratio=vol_ratio,
+                spread_ratio=Decimal("1.0"),
+                close_position=close_pos,
+                effort_result=None,
+            )
+        )
 
     ice = calculate_ice_level(trading_range, bars, volume_analysis)
 
@@ -824,6 +857,7 @@ def test_ice_perfect_score():
 # ============================================================================
 # Task 22: Test Minimum Strength Threshold (AC 5)
 # ============================================================================
+
 
 def test_ice_minimum_strength_threshold():
     """
@@ -839,7 +873,7 @@ def test_ice_minimum_strength_threshold():
     # Create 2 resistance pivots with increasing volume (tight cluster within 1.5% tolerance)
     resistance_pivots = [
         create_test_pivot_high(Decimal("200.00"), 15),
-        create_test_pivot_high(Decimal("200.20"), 25)  # 10 bars apart (minimum duration)
+        create_test_pivot_high(Decimal("200.20"), 25),  # 10 bars apart (minimum duration)
     ]
 
     # Create support pivots (required for TradingRange) - need strong support to avoid creek failure
@@ -847,7 +881,7 @@ def test_ice_minimum_strength_threshold():
         create_test_pivot(Decimal("190.00"), 10),
         create_test_pivot(Decimal("190.25"), 18),
         create_test_pivot(Decimal("190.10"), 22),
-        create_test_pivot(Decimal("190.40"), 30)
+        create_test_pivot(Decimal("190.40"), 30),
     ]
 
     trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=70)
@@ -858,10 +892,7 @@ def test_ice_minimum_strength_threshold():
     pivot_indices = {p.index for p in resistance_pivots}
 
     # Increasing volume ratios for resistance touches
-    pivot_volume_map = {
-        15: Decimal("1.0"),
-        25: Decimal("2.0")
-    }
+    pivot_volume_map = {15: Decimal("1.0"), 25: Decimal("2.0")}
 
     for idx in range(35):
         if idx in pivot_indices:
@@ -872,7 +903,7 @@ def test_ice_minimum_strength_threshold():
                 low=pivot.price - Decimal("5.00"),
                 close=pivot.price - Decimal("1.00"),  # 20% upper wick (weak)
                 volume=int(500000 * float(pivot_volume_map[idx])),
-                index=idx
+                index=idx,
             )
             vol_ratio = pivot_volume_map[idx]
             close_pos = Decimal("0.8")  # Close near high
@@ -883,13 +914,15 @@ def test_ice_minimum_strength_threshold():
             close_pos = Decimal("0.5")
 
         bars.append(bar)
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=vol_ratio,
-            spread_ratio=Decimal("1.0"),
-            close_position=close_pos,
-            effort_result=None
-        ))
+        volume_analysis.append(
+            VolumeAnalysis(
+                bar=bar,
+                volume_ratio=vol_ratio,
+                spread_ratio=Decimal("1.0"),
+                close_position=close_pos,
+                effort_result=None,
+            )
+        )
 
     # Should raise ValueError for weak ice
     with pytest.raises(ValueError, match="strength.*below minimum"):
@@ -899,6 +932,7 @@ def test_ice_minimum_strength_threshold():
 # ============================================================================
 # Task 24: Test Ice > Creek Validation (AC 7)
 # ============================================================================
+
 
 def test_ice_above_creek_valid():
     """
@@ -911,7 +945,7 @@ def test_ice_above_creek_valid():
         create_test_pivot(Decimal("100.00"), 10),
         create_test_pivot(Decimal("100.50"), 18),
         create_test_pivot(Decimal("100.25"), 26),
-        create_test_pivot(Decimal("100.10"), 34)
+        create_test_pivot(Decimal("100.10"), 34),
     ]
 
     # Create resistance pivots (Ice will be ~$105, 5% above Creek) - tight cluster within 1.5% tolerance
@@ -919,7 +953,7 @@ def test_ice_above_creek_valid():
         create_test_pivot_high(Decimal("105.00"), 15),
         create_test_pivot_high(Decimal("105.30"), 23),
         create_test_pivot_high(Decimal("105.15"), 31),
-        create_test_pivot_high(Decimal("105.40"), 37)
+        create_test_pivot_high(Decimal("105.40"), 37),
     ]
 
     trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=80)
@@ -931,13 +965,15 @@ def test_ice_above_creek_valid():
     for idx in range(40):
         bar = create_test_bar(index=idx)
         bars.append(bar)
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=Decimal("1.0"),
-            spread_ratio=Decimal("1.0"),
-            close_position=Decimal("0.5"),
-            effort_result=None
-        ))
+        volume_analysis.append(
+            VolumeAnalysis(
+                bar=bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.5"),
+                effort_result=None,
+            )
+        )
 
     # Calculate both levels
     creek = calculate_creek_level(trading_range, bars, volume_analysis)
@@ -951,6 +987,7 @@ def test_ice_above_creek_valid():
 # Task 25: Test Range Width Minimum (AC 10)
 # ============================================================================
 
+
 def test_ice_range_width_valid():
     """
     Test valid range width: >= 3% (per FR1).
@@ -962,7 +999,7 @@ def test_ice_range_width_valid():
         create_test_pivot(Decimal("100.00"), 10),
         create_test_pivot(Decimal("100.50"), 18),
         create_test_pivot(Decimal("100.25"), 26),
-        create_test_pivot(Decimal("100.10"), 34)
+        create_test_pivot(Decimal("100.10"), 34),
     ]
 
     # Create resistance pivots (Ice ~$103.50, 3.5% above Creek) - tight cluster within 1.5% tolerance
@@ -970,7 +1007,7 @@ def test_ice_range_width_valid():
         create_test_pivot_high(Decimal("103.50"), 15),
         create_test_pivot_high(Decimal("103.80"), 23),
         create_test_pivot_high(Decimal("103.65"), 31),
-        create_test_pivot_high(Decimal("103.90"), 37)
+        create_test_pivot_high(Decimal("103.90"), 37),
     ]
 
     trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=80)
@@ -982,13 +1019,15 @@ def test_ice_range_width_valid():
     for idx in range(40):
         bar = create_test_bar(index=idx)
         bars.append(bar)
-        volume_analysis.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=Decimal("1.0"),
-            spread_ratio=Decimal("1.0"),
-            close_position=Decimal("0.5"),
-            effort_result=None
-        ))
+        volume_analysis.append(
+            VolumeAnalysis(
+                bar=bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.5"),
+                effort_result=None,
+            )
+        )
 
     # Calculate both levels
     creek = calculate_creek_level(trading_range, bars, volume_analysis)
@@ -996,36 +1035,42 @@ def test_ice_range_width_valid():
 
     # Document expected behavior: range width >= 3%
     range_width_pct = (ice.price - creek.price) / creek.price
-    assert range_width_pct >= Decimal("0.03"), f"Range width {range_width_pct*100:.1f}% must be >= 3%"
+    assert range_width_pct >= Decimal(
+        "0.03"
+    ), f"Range width {range_width_pct*100:.1f}% must be >= 3%"
 
 
 # ============================================================================
 # Test Ice Input Validation
 # ============================================================================
 
+
 def test_ice_validation_low_quality_range():
     """Test that ice calculation requires quality_score >= 70"""
     support_pivots = [
         create_test_pivot(Decimal("100.00"), 10),
-        create_test_pivot(Decimal("100.50"), 20)
+        create_test_pivot(Decimal("100.50"), 20),
     ]
 
     resistance_pivots = [
         create_test_pivot_high(Decimal("110.00"), 15),
-        create_test_pivot_high(Decimal("110.50"), 25)
+        create_test_pivot_high(Decimal("110.50"), 25),
     ]
 
     # Create low-quality range (score 50)
     trading_range = create_test_trading_range(support_pivots, resistance_pivots, quality_score=50)
 
     bars = [create_test_bar(index=i) for i in range(30)]
-    volume_analysis = [VolumeAnalysis(
-        bar=bars[i],
-        volume_ratio=Decimal("1.0"),
-        spread_ratio=Decimal("1.0"),
-        close_position=Decimal("0.5"),
-        effort_result=None
-    ) for i in range(30)]
+    volume_analysis = [
+        VolumeAnalysis(
+            bar=bars[i],
+            volume_ratio=Decimal("1.0"),
+            spread_ratio=Decimal("1.0"),
+            close_position=Decimal("0.5"),
+            effort_result=None,
+        )
+        for i in range(30)
+    ]
 
     # Should raise ValueError for low quality
     with pytest.raises(ValueError, match="quality score"):

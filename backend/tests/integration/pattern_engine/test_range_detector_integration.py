@@ -26,6 +26,7 @@ from src.pattern_engine.volume_analyzer import VolumeAnalyzer
 # Helper Functions
 # ============================================================================
 
+
 def quantize_price(value: Decimal) -> Decimal:
     """
     Quantize Decimal to 8 decimal places to match OHLCVBar validation.
@@ -57,7 +58,10 @@ def to_volume(base: Decimal, ratio: Decimal) -> int:
 # Test Fixtures - Realistic Multi-Year Market Data
 # ============================================================================
 
-def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[list[OHLCVBar], list[VolumeAnalysis]]:
+
+def generate_realistic_2year_data(
+    symbol: str, start_date: datetime
+) -> tuple[list[OHLCVBar], list[VolumeAnalysis]]:
     """
     Generate realistic 2-year daily market data with 3-5 embedded trading ranges.
 
@@ -79,11 +83,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
     base_volume = Decimal("75000000") if symbol == "AAPL" else Decimal("50000000")
 
     # Starting price varies by symbol
-    price_map = {
-        "AAPL": Decimal("150.00"),
-        "SPY": Decimal("400.00"),
-        "QQQ": Decimal("350.00")
-    }
+    price_map = {"AAPL": Decimal("150.00"), "SPY": Decimal("400.00"), "QQQ": Decimal("350.00")}
     current_price = price_map.get(symbol, Decimal("150.00"))
 
     # Generate 504 trading days (2 years)
@@ -129,7 +129,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
             close=quantize_price(close_price),
             volume=to_volume(base_volume, volume_ratio),
             timeframe="1d",
-            spread=quantize_price(high - low)
+            spread=quantize_price(high - low),
         )
         bars.append(bar)
         bar_index += 1
@@ -157,7 +157,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
             close=quantize_price(close_price),
             volume=to_volume(base_volume, volume_ratio),
             timeframe="1d",
-            spread=quantize_price(high - low)
+            spread=quantize_price(high - low),
         )
         bars.append(bar)
         bar_index += 1
@@ -197,7 +197,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
             close=quantize_price(close_price),
             volume=to_volume(base_volume, volume_ratio),
             timeframe="1d",
-            spread=quantize_price(high - low)
+            spread=quantize_price(high - low),
         )
         bars.append(bar)
         bar_index += 1
@@ -225,7 +225,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
             close=quantize_price(close_price),
             volume=to_volume(base_volume, volume_ratio),
             timeframe="1d",
-            spread=quantize_price(high - low)
+            spread=quantize_price(high - low),
         )
         bars.append(bar)
         bar_index += 1
@@ -265,7 +265,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
             close=quantize_price(close_price),
             volume=to_volume(base_volume, volume_ratio),
             timeframe="1d",
-            spread=quantize_price(high - low)
+            spread=quantize_price(high - low),
         )
         bars.append(bar)
         bar_index += 1
@@ -292,7 +292,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
             close=quantize_price(close_price),
             volume=to_volume(base_volume, volume_ratio),
             timeframe="1d",
-            spread=quantize_price(high - low)
+            spread=quantize_price(high - low),
         )
         bars.append(bar)
         bar_index += 1
@@ -332,7 +332,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
             close=quantize_price(close_price),
             volume=to_volume(base_volume, volume_ratio),
             timeframe="1d",
-            spread=quantize_price(high - low)
+            spread=quantize_price(high - low),
         )
         bars.append(bar)
         bar_index += 1
@@ -360,7 +360,7 @@ def generate_realistic_2year_data(symbol: str, start_date: datetime) -> tuple[li
             close=quantize_price(close_price),
             volume=to_volume(base_volume, volume_ratio),
             timeframe="1d",
-            spread=quantize_price(high - low)
+            spread=quantize_price(high - low),
         )
         bars.append(bar)
         bar_index += 1
@@ -397,6 +397,7 @@ def qqq_2year_data():
 # AC9: Integration Test with 2-Year AAPL Data
 # ============================================================================
 
+
 class TestRangeDetectorIntegration:
     """Integration tests with 2-year market data (AC9)."""
 
@@ -419,11 +420,7 @@ class TestRangeDetectorIntegration:
         assert len(volume_analysis) == len(bars), "Volume analysis length mismatch"
 
         # Create detector with standard configuration
-        detector = TradingRangeDetector(
-            lookback=5,
-            min_quality_threshold=70,
-            cache_enabled=True
-        )
+        detector = TradingRangeDetector(lookback=5, min_quality_threshold=70, cache_enabled=True)
 
         # Detect ranges
         ranges = detector.detect_ranges(bars, volume_analysis)
@@ -455,37 +452,43 @@ class TestRangeDetectorIntegration:
             # Creek level validation
             assert trading_range.creek is not None, f"Range {idx + 1} missing Creek level"
             assert trading_range.creek.price > 0, f"Range {idx + 1} Creek price invalid"
-            assert trading_range.creek.strength_score >= 60, (
-                f"Range {idx + 1} Creek strength {trading_range.creek.strength_score} below minimum 60 (FR9)"
+            assert (
+                trading_range.creek.strength_score >= 60
+            ), f"Range {idx + 1} Creek strength {trading_range.creek.strength_score} below minimum 60 (FR9)"
+            print(
+                f"  Creek: ${trading_range.creek.price} (strength: {trading_range.creek.strength_score})"
             )
-            print(f"  Creek: ${trading_range.creek.price} (strength: {trading_range.creek.strength_score})")
 
             # Ice level validation
             assert trading_range.ice is not None, f"Range {idx + 1} missing Ice level"
             assert trading_range.ice.price > 0, f"Range {idx + 1} Ice price invalid"
-            assert trading_range.ice.strength_score >= 60, (
-                f"Range {idx + 1} Ice strength {trading_range.ice.strength_score} below minimum 60 (FR9)"
+            assert (
+                trading_range.ice.strength_score >= 60
+            ), f"Range {idx + 1} Ice strength {trading_range.ice.strength_score} below minimum 60 (FR9)"
+            print(
+                f"  Ice: ${trading_range.ice.price} (strength: {trading_range.ice.strength_score})"
             )
-            print(f"  Ice: ${trading_range.ice.price} (strength: {trading_range.ice.strength_score})")
 
             # Jump level validation
             assert trading_range.jump is not None, f"Range {idx + 1} missing Jump level"
             assert trading_range.jump.price > 0, f"Range {idx + 1} Jump price invalid"
-            print(f"  Jump: ${trading_range.jump.price} (cause factor: {trading_range.jump.cause_factor})")
+            print(
+                f"  Jump: ${trading_range.jump.price} (cause factor: {trading_range.jump.cause_factor})"
+            )
 
             # Verify level ordering: Creek < Ice < Jump
-            assert trading_range.creek.price < trading_range.ice.price, (
-                f"Range {idx + 1}: Creek ${trading_range.creek.price} must be < Ice ${trading_range.ice.price}"
-            )
-            assert trading_range.ice.price < trading_range.jump.price, (
-                f"Range {idx + 1}: Ice ${trading_range.ice.price} must be < Jump ${trading_range.jump.price}"
-            )
+            assert (
+                trading_range.creek.price < trading_range.ice.price
+            ), f"Range {idx + 1}: Creek ${trading_range.creek.price} must be < Ice ${trading_range.ice.price}"
+            assert (
+                trading_range.ice.price < trading_range.jump.price
+            ), f"Range {idx + 1}: Ice ${trading_range.ice.price} must be < Jump ${trading_range.jump.price}"
 
             # Midpoint validation
             expected_midpoint = (trading_range.creek.price + trading_range.ice.price) / Decimal("2")
-            assert abs(trading_range.midpoint - expected_midpoint) < Decimal("0.01"), (
-                f"Range {idx + 1}: Midpoint ${trading_range.midpoint} doesn't match (creek + ice) / 2 = ${expected_midpoint}"
-            )
+            assert (
+                abs(trading_range.midpoint - expected_midpoint) < Decimal("0.01")
+            ), f"Range {idx + 1}: Midpoint ${trading_range.midpoint} doesn't match (creek + ice) / 2 = ${expected_midpoint}"
             print(f"  Midpoint: ${trading_range.midpoint}")
 
             # Supply/Demand zones validation
@@ -496,19 +499,21 @@ class TestRangeDetectorIntegration:
 
             # Note: Zone mapping may fail with synthetic data due to precision issues,
             # but supply_zones and demand_zones lists should at least exist
-            assert isinstance(trading_range.supply_zones, list), (
-                f"Range {idx + 1} supply_zones is not a list"
-            )
-            assert isinstance(trading_range.demand_zones, list), (
-                f"Range {idx + 1} demand_zones is not a list"
-            )
+            assert isinstance(
+                trading_range.supply_zones, list
+            ), f"Range {idx + 1} supply_zones is not a list"
+            assert isinstance(
+                trading_range.demand_zones, list
+            ), f"Range {idx + 1} demand_zones is not a list"
 
             # Verify range width is adequate (>= 3% per FR1)
-            range_width_pct = (trading_range.ice.price - trading_range.creek.price) / trading_range.creek.price
+            range_width_pct = (
+                trading_range.ice.price - trading_range.creek.price
+            ) / trading_range.creek.price
             print(f"  Range width: {range_width_pct * 100:.2f}%")
-            assert range_width_pct >= Decimal("0.03"), (
-                f"Range {idx + 1} width {range_width_pct * 100:.2f}% below minimum 3% (FR1)"
-            )
+            assert range_width_pct >= Decimal(
+                "0.03"
+            ), f"Range {idx + 1} width {range_width_pct * 100:.2f}% below minimum 3% (FR1)"
 
         # Verify range distribution across 2-year period
         print("\n=== Range Distribution Analysis ===")
@@ -520,14 +525,12 @@ class TestRangeDetectorIntegration:
 
         # With synthetic data, ranges may be larger than real market data
         # The key validation is that duration is at least 15 bars (minimum for ACTIVE status)
-        assert avg_duration >= 15, (
-            f"Average duration {avg_duration:.1f} bars below minimum 15 bars"
-        )
+        assert avg_duration >= 15, f"Average duration {avg_duration:.1f} bars below minimum 15 bars"
 
         # Expect average quality >= 75 for significant ranges
-        assert avg_quality >= 75, (
-            f"Average quality score {avg_quality:.1f} below expected 75+ for significant ranges"
-        )
+        assert (
+            avg_quality >= 75
+        ), f"Average quality score {avg_quality:.1f} below expected 75+ for significant ranges"
 
         # Verify ranges spread throughout period (not clustered)
         # Only check if multiple ranges detected
@@ -557,20 +560,16 @@ class TestRangeDetectorIntegration:
         assert len(bars) == 504
         assert bars[0].symbol == "SPY"
 
-        detector = TradingRangeDetector(
-            lookback=5,
-            min_quality_threshold=70,
-            cache_enabled=True
-        )
+        detector = TradingRangeDetector(lookback=5, min_quality_threshold=70, cache_enabled=True)
 
         ranges = detector.detect_ranges(bars, volume_analysis)
 
         print("\n=== SPY 2-Year Range Detection Results ===")
         print(f"Total ranges detected: {len(ranges)}")
 
-        assert len(ranges) >= 1, (
-            f"Expected at least 1 significant range in 2-year SPY data, got {len(ranges)}"
-        )
+        assert (
+            len(ranges) >= 1
+        ), f"Expected at least 1 significant range in 2-year SPY data, got {len(ranges)}"
 
         # Basic validation (detailed validation in AAPL test)
         for trading_range in ranges:
@@ -593,20 +592,16 @@ class TestRangeDetectorIntegration:
         assert len(bars) == 504
         assert bars[0].symbol == "QQQ"
 
-        detector = TradingRangeDetector(
-            lookback=5,
-            min_quality_threshold=70,
-            cache_enabled=True
-        )
+        detector = TradingRangeDetector(lookback=5, min_quality_threshold=70, cache_enabled=True)
 
         ranges = detector.detect_ranges(bars, volume_analysis)
 
         print("\n=== QQQ 2-Year Range Detection Results ===")
         print(f"Total ranges detected: {len(ranges)}")
 
-        assert len(ranges) >= 1, (
-            f"Expected at least 1 significant range in 2-year QQQ data, got {len(ranges)}"
-        )
+        assert (
+            len(ranges) >= 1
+        ), f"Expected at least 1 significant range in 2-year QQQ data, got {len(ranges)}"
 
         # Basic validation
         for trading_range in ranges:
@@ -629,19 +624,18 @@ class TestRangeDetectorIntegration:
         """
         bars, volume_analysis = aapl_2year_data
 
-        detector = TradingRangeDetector(
-            lookback=5,
-            min_quality_threshold=70
-        )
+        detector = TradingRangeDetector(lookback=5, min_quality_threshold=70)
 
         ranges = detector.detect_ranges(bars, volume_analysis)
 
         print("\n=== Range Lifecycle Status Analysis ===")
 
         for idx, trading_range in enumerate(ranges):
-            print(f"Range {idx + 1}: duration={trading_range.duration}, "
-                  f"quality={trading_range.quality_score}, "
-                  f"status={trading_range.status.value}")
+            print(
+                f"Range {idx + 1}: duration={trading_range.duration}, "
+                f"quality={trading_range.quality_score}, "
+                f"status={trading_range.status.value}"
+            )
 
             # Verify status logic
             if trading_range.duration >= 15 and trading_range.quality_score >= 70:
@@ -672,14 +666,11 @@ class TestRangeDetectorIntegration:
         """
         bars, volume_analysis = aapl_2year_data
 
-        detector = TradingRangeDetector(
-            lookback=5,
-            min_quality_threshold=70,
-            cache_enabled=True
-        )
+        detector = TradingRangeDetector(lookback=5, min_quality_threshold=70, cache_enabled=True)
 
         # First call - cache miss
         import time
+
         start1 = time.perf_counter()
         ranges1 = detector.detect_ranges(bars, volume_analysis)
         duration1 = (time.perf_counter() - start1) * 1000
@@ -721,9 +712,9 @@ class TestRangeDetectorIntegration:
         print(f"Cache misses: {detector._cache_misses}")
 
         # Note: clear_cache() resets hit/miss counters, so we expect cache_misses == 1 again
-        assert detector._cache_misses == 1, (
-            "After clear_cache(), counters reset and next call should register as cache miss"
-        )
+        assert (
+            detector._cache_misses == 1
+        ), "After clear_cache(), counters reset and next call should register as cache miss"
 
     def test_performance_with_2year_data(self, aapl_2year_data):
         """
@@ -734,12 +725,10 @@ class TestRangeDetectorIntegration:
         """
         bars, volume_analysis = aapl_2year_data
 
-        detector = TradingRangeDetector(
-            lookback=5,
-            min_quality_threshold=70
-        )
+        detector = TradingRangeDetector(lookback=5, min_quality_threshold=70)
 
         import time
+
         start = time.perf_counter()
         ranges = detector.detect_ranges(bars, volume_analysis)
         duration = (time.perf_counter() - start) * 1000

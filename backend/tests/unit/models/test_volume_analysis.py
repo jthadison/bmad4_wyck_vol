@@ -288,6 +288,7 @@ class TestVolumeAnalysisTimestampHandling:
 
         # Create timestamp in EST (UTC-5)
         from datetime import timedelta
+
         est = timezone(timedelta(hours=-5))
         est_timestamp = datetime(2024, 6, 15, 14, 30, tzinfo=est)
 

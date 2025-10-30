@@ -38,10 +38,12 @@ from src.pattern_engine.zone_mapper import (
 
 # Test Fixtures
 
+
 @pytest.fixture
 def sample_bars():
     """Create sample OHLCV bars for testing."""
     from datetime import timedelta
+
     bars = []
     base_timestamp = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
 
@@ -57,7 +59,7 @@ def sample_bars():
             volume=1000000,
             spread=Decimal("10.00"),
             spread_ratio=Decimal("1.0"),
-            volume_ratio=Decimal("1.0")
+            volume_ratio=Decimal("1.0"),
         )
         bars.append(bar)
 
@@ -83,7 +85,7 @@ def demand_zone_bar():
         volume=1800000,
         spread=Decimal("5.00"),
         spread_ratio=Decimal("0.6"),
-        volume_ratio=Decimal("1.8")
+        volume_ratio=Decimal("1.8"),
     )
 
 
@@ -106,7 +108,7 @@ def supply_zone_bar():
         volume=2000000,
         spread=Decimal("5.00"),
         spread_ratio=Decimal("0.5"),
-        volume_ratio=Decimal("2.0")
+        volume_ratio=Decimal("2.0"),
     )
 
 
@@ -117,7 +119,7 @@ def demand_zone_volume_analysis(demand_zone_bar):
         bar=demand_zone_bar,
         volume_ratio=Decimal("1.8"),
         spread_ratio=Decimal("0.6"),
-        close_position=Decimal("0.75")
+        close_position=Decimal("0.75"),
     )
 
 
@@ -128,7 +130,7 @@ def supply_zone_volume_analysis(supply_zone_bar):
         bar=supply_zone_bar,
         volume_ratio=Decimal("2.0"),
         spread_ratio=Decimal("0.5"),
-        close_position=Decimal("0.3")
+        close_position=Decimal("0.3"),
     )
 
 
@@ -145,7 +147,7 @@ def quality_trading_range():
         low=Decimal("95.00"),
         close=Decimal("96.50"),
         volume=1000000,
-        spread=Decimal("2.00")
+        spread=Decimal("2.00"),
     )
     bar_high = OHLCVBar(
         symbol="TEST",
@@ -156,7 +158,7 @@ def quality_trading_range():
         low=Decimal("103.00"),
         close=Decimal("104.50"),
         volume=1000000,
-        spread=Decimal("2.00")
+        spread=Decimal("2.00"),
     )
 
     # Create pivots
@@ -166,7 +168,7 @@ def quality_trading_range():
         type=PivotType.LOW,
         strength=5,
         timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
-        index=10
+        index=10,
     )
     pivot_low_2 = Pivot(
         bar=bar_low,
@@ -174,7 +176,7 @@ def quality_trading_range():
         type=PivotType.LOW,
         strength=5,
         timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
-        index=15
+        index=15,
     )
     pivot_high_1 = Pivot(
         bar=bar_high,
@@ -182,7 +184,7 @@ def quality_trading_range():
         type=PivotType.HIGH,
         strength=5,
         timestamp=datetime(2024, 1, 20, 9, 30, tzinfo=UTC),
-        index=20
+        index=20,
     )
     pivot_high_2 = Pivot(
         bar=bar_high,
@@ -190,7 +192,7 @@ def quality_trading_range():
         type=PivotType.HIGH,
         strength=5,
         timestamp=datetime(2024, 1, 25, 9, 30, tzinfo=UTC),
-        index=25
+        index=25,
     )
 
     support_cluster = PriceCluster(
@@ -202,8 +204,10 @@ def quality_trading_range():
         touch_count=2,
         cluster_type=PivotType.LOW,
         std_deviation=Decimal("0.10"),
-        timestamp_range=(datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
-                        datetime(2024, 1, 15, 9, 30, tzinfo=UTC))
+        timestamp_range=(
+            datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
+            datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+        ),
     )
     resistance_cluster = PriceCluster(
         pivots=[pivot_high_1, pivot_high_2],
@@ -214,8 +218,10 @@ def quality_trading_range():
         touch_count=2,
         cluster_type=PivotType.HIGH,
         std_deviation=Decimal("0.10"),
-        timestamp_range=(datetime(2024, 1, 20, 9, 30, tzinfo=UTC),
-                        datetime(2024, 1, 25, 9, 30, tzinfo=UTC))
+        timestamp_range=(
+            datetime(2024, 1, 20, 9, 30, tzinfo=UTC),
+            datetime(2024, 1, 25, 9, 30, tzinfo=UTC),
+        ),
     )
 
     return TradingRange(
@@ -231,7 +237,7 @@ def quality_trading_range():
         start_index=0,
         end_index=40,
         duration=41,
-        quality_score=85  # Quality range
+        quality_score=85,  # Quality range
     )
 
 
@@ -245,7 +251,7 @@ def creek_level():
         volume=1000000,
         volume_ratio=Decimal("1.0"),
         close_position=Decimal("0.6"),
-        rejection_wick=Decimal("0.5")
+        rejection_wick=Decimal("0.5"),
     )
 
     return CreekLevel(
@@ -259,7 +265,7 @@ def creek_level():
         first_test_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         hold_duration=10,
         confidence="HIGH",
-        volume_trend="DECREASING"
+        volume_trend="DECREASING",
     )
 
 
@@ -273,7 +279,7 @@ def ice_level():
         volume=1000000,
         volume_ratio=Decimal("1.0"),
         close_position=Decimal("0.4"),
-        rejection_wick=Decimal("0.5")
+        rejection_wick=Decimal("0.5"),
     )
 
     return IceLevel(
@@ -287,11 +293,12 @@ def ice_level():
         first_test_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
         hold_duration=10,
         confidence="HIGH",
-        volume_trend="DECREASING"
+        volume_trend="DECREASING",
     )
 
 
 # Task 11: Unit test for demand zone detection (AC 8)
+
 
 def test_detect_demand_zones_with_synthetic_data(demand_zone_bar, demand_zone_volume_analysis):
     """
@@ -330,14 +337,14 @@ def test_detect_demand_zones_close_position_requirement():
         volume=1800000,
         spread=Decimal("5.00"),
         spread_ratio=Decimal("0.6"),
-        volume_ratio=Decimal("1.8")
+        volume_ratio=Decimal("1.8"),
     )
 
     vol_analysis = VolumeAnalysis(
         bar=bar,
         volume_ratio=Decimal("1.8"),
         spread_ratio=Decimal("0.6"),
-        close_position=Decimal("0.2")  # Lower half
+        close_position=Decimal("0.2"),  # Lower half
     )
 
     demand_zones = detect_demand_zones([bar], [vol_analysis])
@@ -346,6 +353,7 @@ def test_detect_demand_zones_close_position_requirement():
 
 
 # Task 12: Unit test for supply zone detection (AC 4)
+
 
 def test_detect_supply_zones_with_synthetic_data(supply_zone_bar, supply_zone_volume_analysis):
     """
@@ -384,14 +392,14 @@ def test_detect_supply_zones_close_position_requirement():
         volume=2000000,
         spread=Decimal("5.00"),
         spread_ratio=Decimal("0.5"),
-        volume_ratio=Decimal("2.0")
+        volume_ratio=Decimal("2.0"),
     )
 
     vol_analysis = VolumeAnalysis(
         bar=bar,
         volume_ratio=Decimal("2.0"),
         spread_ratio=Decimal("0.5"),
-        close_position=Decimal("0.8")  # Upper half
+        close_position=Decimal("0.8"),  # Upper half
     )
 
     supply_zones = detect_supply_zones([bar], [vol_analysis])
@@ -400,6 +408,7 @@ def test_detect_supply_zones_close_position_requirement():
 
 
 # Task 13: Unit test for zone strength classification (AC 5)
+
 
 def test_classify_zone_strength_fresh():
     """Test FRESH zone classification (0 touches)."""
@@ -422,6 +431,7 @@ def test_classify_zone_strength_exhausted():
 
 # Task 14: Unit test for zone touch counting (AC 5)
 
+
 def test_count_zone_touches_with_overlaps():
     """Test zone touch counting with known overlaps."""
     # Create zone at price range 100-105
@@ -431,7 +441,7 @@ def test_count_zone_touches_with_overlaps():
             low=Decimal("100.00"),
             high=Decimal("105.00"),
             midpoint=Decimal("102.50"),
-            width_pct=Decimal("0.05")
+            width_pct=Decimal("0.05"),
         ),
         formation_bar_index=0,
         formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
@@ -442,42 +452,58 @@ def test_count_zone_touches_with_overlaps():
         formation_spread_ratio=Decimal("0.6"),
         volume_avg=Decimal("1000000"),
         close_position=Decimal("0.75"),
-        significance_score=50
+        significance_score=50,
     )
 
     # Create bars: some overlap, some don't
     bars = [
         # Bar 0: formation bar (not counted)
         OHLCVBar(
-            symbol="TEST", timeframe="1d",
+            symbol="TEST",
+            timeframe="1d",
             timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
-            open=Decimal("102.00"), high=Decimal("105.00"),
-            low=Decimal("100.00"), close=Decimal("103.00"),
-            volume=1000000, spread=Decimal("5.00")
+            open=Decimal("102.00"),
+            high=Decimal("105.00"),
+            low=Decimal("100.00"),
+            close=Decimal("103.00"),
+            volume=1000000,
+            spread=Decimal("5.00"),
         ),
         # Bar 1: Overlaps zone (low=98 <= zone_high=105 AND high=102 >= zone_low=100)
         OHLCVBar(
-            symbol="TEST", timeframe="1d",
+            symbol="TEST",
+            timeframe="1d",
             timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=UTC),
-            open=Decimal("100.00"), high=Decimal("102.00"),
-            low=Decimal("98.00"), close=Decimal("101.00"),
-            volume=1000000, spread=Decimal("4.00")
+            open=Decimal("100.00"),
+            high=Decimal("102.00"),
+            low=Decimal("98.00"),
+            close=Decimal("101.00"),
+            volume=1000000,
+            spread=Decimal("4.00"),
         ),
         # Bar 2: Does NOT overlap zone (high=97 < zone_low=100)
         OHLCVBar(
-            symbol="TEST", timeframe="1d",
+            symbol="TEST",
+            timeframe="1d",
             timestamp=datetime(2024, 1, 3, 9, 30, tzinfo=UTC),
-            open=Decimal("95.00"), high=Decimal("97.00"),
-            low=Decimal("93.00"), close=Decimal("96.00"),
-            volume=1000000, spread=Decimal("4.00")
+            open=Decimal("95.00"),
+            high=Decimal("97.00"),
+            low=Decimal("93.00"),
+            close=Decimal("96.00"),
+            volume=1000000,
+            spread=Decimal("4.00"),
         ),
         # Bar 3: Overlaps zone (enters from below)
         OHLCVBar(
-            symbol="TEST", timeframe="1d",
+            symbol="TEST",
+            timeframe="1d",
             timestamp=datetime(2024, 1, 4, 9, 30, tzinfo=UTC),
-            open=Decimal("97.00"), high=Decimal("103.00"),
-            low=Decimal("96.00"), close=Decimal("102.00"),
-            volume=1000000, spread=Decimal("7.00")
+            open=Decimal("97.00"),
+            high=Decimal("103.00"),
+            low=Decimal("96.00"),
+            close=Decimal("102.00"),
+            volume=1000000,
+            spread=Decimal("7.00"),
         ),
     ]
 
@@ -489,6 +515,7 @@ def test_count_zone_touches_with_overlaps():
 
 # Task 15: Unit test for proximity calculation (AC 7)
 
+
 def test_calculate_zone_proximity_near_creek(creek_level):
     """Test demand zone near Creek (within 2%)."""
     # Create demand zone at 95.50 (Creek is at 95.00, distance = 0.5/95 = 0.53%)
@@ -498,7 +525,7 @@ def test_calculate_zone_proximity_near_creek(creek_level):
             low=Decimal("95.00"),
             high=Decimal("96.00"),
             midpoint=Decimal("95.50"),
-            width_pct=Decimal("0.0105")
+            width_pct=Decimal("0.0105"),
         ),
         formation_bar_index=10,
         formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
@@ -509,7 +536,7 @@ def test_calculate_zone_proximity_near_creek(creek_level):
         formation_spread_ratio=Decimal("0.6"),
         volume_avg=Decimal("1000000"),
         close_position=Decimal("0.75"),
-        significance_score=0
+        significance_score=0,
     )
 
     proximity_label, distance_pct = calculate_zone_proximity(zone, creek_level, None)
@@ -528,7 +555,7 @@ def test_calculate_zone_proximity_near_ice(ice_level):
             low=Decimal("105.00"),
             high=Decimal("106.00"),
             midpoint=Decimal("105.50"),
-            width_pct=Decimal("0.0095")
+            width_pct=Decimal("0.0095"),
         ),
         formation_bar_index=10,
         formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
@@ -539,7 +566,7 @@ def test_calculate_zone_proximity_near_ice(ice_level):
         formation_spread_ratio=Decimal("0.6"),
         volume_avg=Decimal("1000000"),
         close_position=Decimal("0.3"),
-        significance_score=0
+        significance_score=0,
     )
 
     proximity_label, distance_pct = calculate_zone_proximity(zone, None, ice_level)
@@ -558,7 +585,7 @@ def test_calculate_zone_proximity_not_near_level(creek_level, ice_level):
             low=Decimal("80.00"),
             high=Decimal("81.00"),
             midpoint=Decimal("80.50"),
-            width_pct=Decimal("0.0125")
+            width_pct=Decimal("0.0125"),
         ),
         formation_bar_index=10,
         formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
@@ -569,7 +596,7 @@ def test_calculate_zone_proximity_not_near_level(creek_level, ice_level):
         formation_spread_ratio=Decimal("0.6"),
         volume_avg=Decimal("1000000"),
         close_position=Decimal("0.75"),
-        significance_score=0
+        significance_score=0,
     )
 
     proximity_label, distance_pct = calculate_zone_proximity(zone, creek_level, ice_level)
@@ -580,6 +607,7 @@ def test_calculate_zone_proximity_not_near_level(creek_level, ice_level):
 
 # Task 16: Unit test for significance scoring (AC 7)
 
+
 def test_calculate_significance_score_perfect_zone():
     """Test perfect demand zone: FRESH + NEAR_CREEK + max quality = ~100 pts."""
     zone = Zone(
@@ -588,7 +616,7 @@ def test_calculate_significance_score_perfect_zone():
             low=Decimal("95.00"),
             high=Decimal("96.00"),
             midpoint=Decimal("95.50"),
-            width_pct=Decimal("0.0105")
+            width_pct=Decimal("0.0105"),
         ),
         formation_bar_index=10,
         formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
@@ -601,7 +629,7 @@ def test_calculate_significance_score_perfect_zone():
         close_position=Decimal("0.9"),
         proximity_to_level="NEAR_CREEK",  # 30 pts
         proximity_distance_pct=Decimal("0.01"),
-        significance_score=0
+        significance_score=0,
     )
 
     score = calculate_significance_score(zone)
@@ -619,7 +647,7 @@ def test_calculate_significance_score_weak_zone():
             low=Decimal("95.00"),
             high=Decimal("96.00"),
             midpoint=Decimal("95.50"),
-            width_pct=Decimal("0.0105")
+            width_pct=Decimal("0.0105"),
         ),
         formation_bar_index=10,
         formation_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
@@ -632,7 +660,7 @@ def test_calculate_significance_score_weak_zone():
         close_position=Decimal("0.5"),
         proximity_to_level=None,  # 0 pts
         proximity_distance_pct=None,
-        significance_score=0
+        significance_score=0,
     )
 
     score = calculate_significance_score(zone)
@@ -642,6 +670,7 @@ def test_calculate_significance_score_weak_zone():
 
 
 # Task 18: Validation tests for zone filtering
+
 
 def test_zone_detection_rejects_low_volume():
     """Test that bars with low volume don't create zones."""
@@ -656,14 +685,14 @@ def test_zone_detection_rejects_low_volume():
         volume=1000000,
         spread=Decimal("5.00"),
         spread_ratio=Decimal("0.6"),  # Narrow spread ✓
-        volume_ratio=Decimal("1.0")  # Low volume ✗ (need >= 1.3)
+        volume_ratio=Decimal("1.0"),  # Low volume ✗ (need >= 1.3)
     )
 
     vol_analysis = VolumeAnalysis(
         bar=bar,
         volume_ratio=Decimal("1.0"),
         spread_ratio=Decimal("0.6"),
-        close_position=Decimal("0.75")
+        close_position=Decimal("0.75"),
     )
 
     demand_zones = detect_demand_zones([bar], [vol_analysis])
@@ -684,14 +713,14 @@ def test_zone_detection_rejects_wide_spread():
         volume=1800000,
         spread=Decimal("5.00"),
         spread_ratio=Decimal("1.5"),  # Wide spread ✗ (need <= 0.8)
-        volume_ratio=Decimal("1.8")  # High volume ✓
+        volume_ratio=Decimal("1.8"),  # High volume ✓
     )
 
     vol_analysis = VolumeAnalysis(
         bar=bar,
         volume_ratio=Decimal("1.8"),
         spread_ratio=Decimal("1.5"),
-        close_position=Decimal("0.75")
+        close_position=Decimal("0.75"),
     )
 
     demand_zones = detect_demand_zones([bar], [vol_analysis])
@@ -701,21 +730,20 @@ def test_zone_detection_rejects_wide_spread():
 
 @pytest.mark.skip(reason="Complex fixture setup - core filtering tested in other tests")
 def test_map_supply_demand_zones_filters_exhausted(
-    quality_trading_range,
-    sample_bars,
-    demand_zone_bar,
-    demand_zone_volume_analysis
+    quality_trading_range, sample_bars, demand_zone_bar, demand_zone_volume_analysis
 ):
     """Test that exhausted zones (3+ touches) are filtered out."""
     # Create volume analysis list with one demand zone bar
     vol_analysis_list = []
     for bar in sample_bars[:15]:
-        vol_analysis_list.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=Decimal("1.0"),
-            spread_ratio=Decimal("1.0"),
-            close_position=Decimal("0.5")
-        ))
+        vol_analysis_list.append(
+            VolumeAnalysis(
+                bar=bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.5"),
+            )
+        )
 
     # Add demand zone bar at index 15
     sample_bars[15] = demand_zone_bar
@@ -727,7 +755,7 @@ def test_map_supply_demand_zones_filters_exhausted(
         bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, i+1, 9, 30, tzinfo=UTC),
+            timestamp=datetime(2024, 1, i + 1, 9, 30, tzinfo=UTC),
             open=Decimal("100.00"),
             high=Decimal("104.00"),  # Overlaps zone
             low=Decimal("99.00"),
@@ -735,39 +763,36 @@ def test_map_supply_demand_zones_filters_exhausted(
             volume=1000000,
             spread=Decimal("5.00"),
             spread_ratio=Decimal("1.0"),
-            volume_ratio=Decimal("1.0")
+            volume_ratio=Decimal("1.0"),
         )
         sample_bars[i] = bar
-        vol_analysis_list.append(VolumeAnalysis(
-            bar=bar,
-            volume_ratio=Decimal("1.0"),
-            spread_ratio=Decimal("1.0"),
-            close_position=Decimal("0.6")
-        ))
+        vol_analysis_list.append(
+            VolumeAnalysis(
+                bar=bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.6"),
+            )
+        )
 
     # Add remaining bars
     for i in range(20, 41):
-        vol_analysis_list.append(VolumeAnalysis(
-            bar=sample_bars[i],
-            volume_ratio=Decimal("1.0"),
-            spread_ratio=Decimal("1.0"),
-            close_position=Decimal("0.5")
-        ))
+        vol_analysis_list.append(
+            VolumeAnalysis(
+                bar=sample_bars[i],
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.5"),
+            )
+        )
 
-    zones = map_supply_demand_zones(
-        quality_trading_range,
-        sample_bars,
-        vol_analysis_list
-    )
+    zones = map_supply_demand_zones(quality_trading_range, sample_bars, vol_analysis_list)
 
     # Zone should have 4 touches (bars 16-19) -> EXHAUSTED -> filtered out
     assert len(zones) == 0, "EXHAUSTED zones should be filtered out"
 
 
-def test_map_supply_demand_zones_rejects_low_quality_range(
-    quality_trading_range,
-    sample_bars
-):
+def test_map_supply_demand_zones_rejects_low_quality_range(quality_trading_range, sample_bars):
     """Test that low-quality ranges (score < 70) are rejected."""
     # Set quality score below threshold
     quality_trading_range.quality_score = 65
@@ -777,17 +802,13 @@ def test_map_supply_demand_zones_rejects_low_quality_range(
             bar=bar,
             volume_ratio=Decimal("1.0"),
             spread_ratio=Decimal("1.0"),
-            close_position=Decimal("0.5")
+            close_position=Decimal("0.5"),
         )
         for bar in sample_bars[:41]
     ]
 
     with pytest.raises(ValueError, match="low-quality range"):
-        map_supply_demand_zones(
-            quality_trading_range,
-            sample_bars,
-            vol_analysis_list
-        )
+        map_supply_demand_zones(quality_trading_range, sample_bars, vol_analysis_list)
 
 
 def test_check_zone_invalidation_demand_zone():
@@ -798,7 +819,7 @@ def test_check_zone_invalidation_demand_zone():
             low=Decimal("100.00"),
             high=Decimal("105.00"),
             midpoint=Decimal("102.50"),
-            width_pct=Decimal("0.05")
+            width_pct=Decimal("0.05"),
         ),
         formation_bar_index=0,
         formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
@@ -809,7 +830,7 @@ def test_check_zone_invalidation_demand_zone():
         formation_spread_ratio=Decimal("0.6"),
         volume_avg=Decimal("1000000"),
         close_position=Decimal("0.75"),
-        significance_score=50
+        significance_score=50,
     )
 
     # Bar that breaks below zone with high volume
@@ -825,7 +846,7 @@ def test_check_zone_invalidation_demand_zone():
             volume=2000000,
             spread=Decimal("8.00"),
             spread_ratio=Decimal("1.0"),
-            volume_ratio=Decimal("2.0")  # High volume (>1.5x)
+            volume_ratio=Decimal("2.0"),  # High volume (>1.5x)
         )
     ]
 
@@ -842,7 +863,7 @@ def test_check_zone_invalidation_supply_zone():
             low=Decimal("100.00"),
             high=Decimal("105.00"),
             midpoint=Decimal("102.50"),
-            width_pct=Decimal("0.05")
+            width_pct=Decimal("0.05"),
         ),
         formation_bar_index=0,
         formation_timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
@@ -853,7 +874,7 @@ def test_check_zone_invalidation_supply_zone():
         formation_spread_ratio=Decimal("0.6"),
         volume_avg=Decimal("1000000"),
         close_position=Decimal("0.3"),
-        significance_score=50
+        significance_score=50,
     )
 
     # Bar that breaks above zone with high volume
@@ -869,7 +890,7 @@ def test_check_zone_invalidation_supply_zone():
             volume=2000000,
             spread=Decimal("8.00"),
             spread_ratio=Decimal("1.0"),
-            volume_ratio=Decimal("2.0")  # High volume (>1.5x)
+            volume_ratio=Decimal("2.0"),  # High volume (>1.5x)
         )
     ]
 

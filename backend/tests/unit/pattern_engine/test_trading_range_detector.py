@@ -460,7 +460,9 @@ class TestTradingRangeDetector:
 
         assert len(ranges3) == len(ranges1), "Results after cache clear should match"
         assert duration3 > duration2, "After cache clear, should recompute"
-        assert detector._cache_misses == 1, "Should register cache miss after clear (counters reset)"
+        assert (
+            detector._cache_misses == 1
+        ), "Should register cache miss after clear (counters reset)"
 
     def test_symbol_cache_invalidation(self):
         """Test symbol-specific cache invalidation."""

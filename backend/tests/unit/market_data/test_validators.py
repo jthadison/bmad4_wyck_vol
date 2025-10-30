@@ -66,7 +66,6 @@ class TestValidateBar:
         assert is_valid is False
         assert "Zero volume" in reason
 
-
     def test_invalid_ohlc_open_below_low(self):
         """Test that open < low is rejected."""
         # Arrange

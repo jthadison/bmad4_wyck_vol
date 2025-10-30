@@ -92,9 +92,9 @@ class TestPivotDetectionIntegration:
 
         # Assert - verify reasonable pivot count
         print(f"\nFound {len(pivots)} pivots in 252 bars")
-        assert 15 <= len(pivots) <= 50, (
-            f"Expected 15-50 pivots for realistic data, found {len(pivots)}"
-        )
+        assert (
+            15 <= len(pivots) <= 50
+        ), f"Expected 15-50 pivots for realistic data, found {len(pivots)}"
 
         # Log details
         pivot_highs = get_pivot_highs(pivots)
@@ -120,9 +120,9 @@ class TestPivotDetectionIntegration:
         if len(pivot_highs) > 0 and len(pivot_lows) > 0:
             ratio = len(pivot_highs) / len(pivot_lows)
             print(f"\nHigh/Low ratio: {ratio:.2f}")
-            assert 0.5 <= ratio <= 2.0, (
-                f"Pivot distribution too imbalanced: {len(pivot_highs)} highs, {len(pivot_lows)} lows"
-            )
+            assert (
+                0.5 <= ratio <= 2.0
+            ), f"Pivot distribution too imbalanced: {len(pivot_highs)} highs, {len(pivot_lows)} lows"
         else:
             pytest.skip("No pivots found in test data")
 
@@ -161,9 +161,9 @@ class TestPivotDetectionIntegration:
                     len(quarter_4) > 0,
                 ]
             )
-            assert quarters_with_pivots >= 3, (
-                f"Pivots too clustered, only {quarters_with_pivots}/4 quarters have pivots"
-            )
+            assert (
+                quarters_with_pivots >= 3
+            ), f"Pivots too clustered, only {quarters_with_pivots}/4 quarters have pivots"
 
     def test_no_pivots_in_first_last_lookback_bars(self):
         """
@@ -180,12 +180,10 @@ class TestPivotDetectionIntegration:
 
         # Assert
         for pivot in pivots:
-            assert pivot.index >= lookback, (
-                f"Pivot found at index {pivot.index} < {lookback}"
-            )
-            assert pivot.index <= len(bars) - lookback - 1, (
-                f"Pivot found at index {pivot.index} > {len(bars) - lookback - 1}"
-            )
+            assert pivot.index >= lookback, f"Pivot found at index {pivot.index} < {lookback}"
+            assert (
+                pivot.index <= len(bars) - lookback - 1
+            ), f"Pivot found at index {pivot.index} > {len(bars) - lookback - 1}"
 
     def test_pivot_timestamps_match_bars(self):
         """Test that all pivot timestamps match their corresponding bars."""
@@ -216,9 +214,9 @@ class TestPivotDetectionIntegration:
 
         for pivot in pivots:
             price = float(pivot.price)
-            assert min_low <= price <= max_high, (
-                f"Pivot price {price} outside range [{min_low}, {max_high}]"
-            )
+            assert (
+                min_low <= price <= max_high
+            ), f"Pivot price {price} outside range [{min_low}, {max_high}]"
 
     def test_different_symbols_same_algorithm(self):
         """Test that pivot detection works consistently for different symbols."""
@@ -271,9 +269,9 @@ class TestPivotDetectionIntegration:
             print(f"\nAverage distance between pivots: {avg_distance:.1f} bars")
 
             # Assert - average distance should be reasonable (not too tight, not too sparse)
-            assert 2 <= avg_distance <= 50, (
-                f"Average pivot distance {avg_distance:.1f} outside reasonable range"
-            )
+            assert (
+                2 <= avg_distance <= 50
+            ), f"Average pivot distance {avg_distance:.1f} outside reasonable range"
 
 
 class TestPivotDetectionPerformance:
@@ -357,6 +355,4 @@ class TestPivotDetectionPerformance:
 
         # Assert - should still be fast regardless of lookback
         print(f"\nLookback={lookback}: {elapsed_ms:.2f}ms, {len(pivots)} pivots")
-        assert elapsed_ms < 50, (
-            f"Lookback={lookback}: Expected <50ms, took {elapsed_ms:.2f}ms"
-        )
+        assert elapsed_ms < 50, f"Lookback={lookback}: Expected <50ms, took {elapsed_ms:.2f}ms"

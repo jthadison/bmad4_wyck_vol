@@ -62,8 +62,12 @@ class IceLevel(BaseModel):
         >>> utad = bar.high > ice.absolute_high and bar.close < ice.price
     """
 
-    price: Decimal = Field(..., decimal_places=8, max_digits=18, description="Volume-weighted resistance price")
-    absolute_high: Decimal = Field(..., decimal_places=8, max_digits=18, description="Highest pivot high (UTAD ref)")
+    price: Decimal = Field(
+        ..., decimal_places=8, max_digits=18, description="Volume-weighted resistance price"
+    )
+    absolute_high: Decimal = Field(
+        ..., decimal_places=8, max_digits=18, description="Highest pivot high (UTAD ref)"
+    )
     touch_count: int = Field(..., ge=2, description="Number of pivot highs in cluster")
     touch_details: list[TouchDetail] = Field(..., description="Metadata for each touch")
     strength_score: int = Field(..., ge=0, le=100, description="0-100 strength score")
@@ -74,7 +78,7 @@ class IceLevel(BaseModel):
     confidence: str = Field(..., description="HIGH/MEDIUM/LOW confidence")
     volume_trend: str = Field(..., description="DECREASING/FLAT/INCREASING volume trend")
 
-    @field_validator('price', 'absolute_high')
+    @field_validator("price", "absolute_high")
     @classmethod
     def validate_price_positive(cls, v):
         """Ensure price is positive"""
@@ -82,7 +86,7 @@ class IceLevel(BaseModel):
             raise ValueError(f"Price {v} must be positive")
         return v
 
-    @field_validator('touch_count')
+    @field_validator("touch_count")
     @classmethod
     def validate_minimum_touches(cls, v):
         """Ensure minimum 2 touches (from Story 3.2 requirement)"""
@@ -90,7 +94,7 @@ class IceLevel(BaseModel):
             raise ValueError(f"Touch count {v} below minimum 2 touches")
         return v
 
-    @field_validator('strength_score')
+    @field_validator("strength_score")
     @classmethod
     def validate_strength_score(cls, v):
         """Ensure strength score 0-100"""
@@ -98,7 +102,7 @@ class IceLevel(BaseModel):
             raise ValueError(f"Strength score {v} must be between 0 and 100")
         return v
 
-    @field_validator('strength_rating')
+    @field_validator("strength_rating")
     @classmethod
     def validate_strength_rating(cls, v):
         """Ensure valid strength rating"""
@@ -107,7 +111,7 @@ class IceLevel(BaseModel):
             raise ValueError(f"Strength rating '{v}' must be one of {valid_ratings}")
         return v
 
-    @field_validator('confidence')
+    @field_validator("confidence")
     @classmethod
     def validate_confidence(cls, v):
         """Ensure valid confidence level"""
@@ -116,7 +120,7 @@ class IceLevel(BaseModel):
             raise ValueError(f"Confidence '{v}' must be one of {valid_confidence}")
         return v
 
-    @field_validator('volume_trend')
+    @field_validator("volume_trend")
     @classmethod
     def validate_volume_trend(cls, v):
         """Ensure valid volume trend"""
