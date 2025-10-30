@@ -13,6 +13,7 @@ from typing import List, Optional
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
 from src.models.selling_climax import SellingClimax, SellingClimaxZone
+from src.models.automatic_rally import AutomaticRally
 from src.models.effort_result import EffortResult
 
 logger = structlog.get_logger(__name__)
@@ -518,3 +519,304 @@ def detect_sc_zone(
     )
 
     return zone
+
+
+def detect_automatic_rally(
+    bars: List[OHLCVBar],
+    sc: SellingClimax,
+    volume_analysis: List[VolumeAnalysis],
+) -> Optional[AutomaticRally]:
+    """
+    Detect Automatic Rally (AR) following Selling Climax (SC).
+
+    An Automatic Rally is the relief rally that follows a Selling Climax. It occurs
+    as demand steps in to absorb panic selling. The AR must show a rally of 3%+ from
+    the SC low, occurring within 5 bars (ideal) or up to 10 bars (timeout).
+
+    Algorithm:
+    1. Locate SC bar in bars list by timestamp
+    2. Define search window: bars after SC (ideal: 5 bars, timeout: 10 bars)
+    3. Find highest high in search window
+    4. Calculate rally percentage: (ar_high - sc_low) / sc_low
+    5. Validate rally meets 3% threshold
+    6. Validate AR occurs within timing window
+    7. Analyze volume profile (HIGH or NORMAL)
+    8. Create AutomaticRally instance
+
+    Wyckoff Context:
+    - AR is natural bounce after panic selling (SC)
+    - Shows demand stepping in after exhaustion
+    - HIGH volume AR indicates strong absorption (bullish)
+    - NORMAL volume AR indicates weak relief rally (less bullish)
+    - AR + SC = Phase A confirmed (stopping action complete)
+    - Next event: Secondary Test (ST) retesting SC low
+
+    Args:
+        bars: List of OHLCV bars to analyze (must contain SC bar and bars after)
+        sc: Detected SellingClimax to find AR from
+        volume_analysis: List of VolumeAnalysis results matching bars
+
+    Returns:
+        AutomaticRally if detected (3%+ rally within 10 bars), None otherwise
+
+    Raises:
+        ValueError: If bars is empty, sc is None, or bars/volume_analysis lengths don't match
+
+    Example:
+        >>> from src.pattern_engine.volume_analyzer import VolumeAnalyzer
+        >>> volume_analyzer = VolumeAnalyzer()
+        >>> volume_analysis = volume_analyzer.analyze(bars)
+        >>> sc = detect_selling_climax(bars, volume_analysis)
+        >>> if sc:
+        ...     ar = detect_automatic_rally(bars, sc, volume_analysis)
+        ...     if ar:
+        ...         print(f"AR detected: {ar.rally_pct * 100:.1f}% rally")
+        ...         print(f"From ${ar.sc_low} to ${ar.ar_high}")
+        ...         print(f"Volume profile: {ar.volume_profile}")
+    """
+    # Validate inputs
+    if not bars:
+        logger.error("empty_bars_list", message="Bars list is empty")
+        raise ValueError("Bars list cannot be empty")
+
+    if sc is None:
+        logger.error("sc_is_none", message="SC is required for AR detection")
+        raise ValueError("SC cannot be None")
+
+    if len(volume_analysis) != len(bars):
+        logger.error(
+            "bars_volume_mismatch",
+            bars_count=len(bars),
+            volume_count=len(volume_analysis),
+        )
+        raise ValueError(
+            f"Bars and volume_analysis length mismatch: {len(bars)} bars vs {len(volume_analysis)} volume_analysis"
+        )
+
+    symbol = bars[0].symbol if bars else "UNKNOWN"
+    sc_timestamp = datetime.fromisoformat(sc.bar["timestamp"])
+    sc_low = Decimal(sc.bar["low"])
+
+    logger.info(
+        "ar_detection_start",
+        symbol=symbol,
+        sc_timestamp=sc.bar["timestamp"],
+        sc_low=float(sc_low),
+    )
+
+    # Step 1: Find SC bar index in bars list
+    sc_index = None
+    for i, bar in enumerate(bars):
+        if bar.timestamp == sc_timestamp:
+            sc_index = i
+            break
+
+    if sc_index is None:
+        logger.error(
+            "sc_bar_not_found",
+            sc_timestamp=sc.bar["timestamp"],
+            message="SC bar not found in bars list",
+        )
+        return None
+
+    # Validate bars exist after SC
+    if sc_index >= len(bars) - 1:
+        logger.warning(
+            "sc_at_end", message="SC is last bar, no bars for AR detection"
+        )
+        return None
+
+    # Step 2: Define search window (ideal: 5 bars, timeout: 10 bars)
+    start_index = sc_index + 1  # Bar immediately after SC
+    ideal_end_index = sc_index + 5  # AR within 5 bars (AC 2)
+    timeout_end_index = sc_index + 10  # Timeout at 10 bars (AC 10)
+    end_index = min(timeout_end_index, len(bars) - 1)
+
+    search_bars = bars[start_index : end_index + 1]
+
+    logger.info(
+        "ar_search_window",
+        sc_low=float(sc_low),
+        start_index=start_index,
+        end_index=end_index,
+        search_bars_count=len(search_bars),
+    )
+
+    if not search_bars:
+        logger.warning("ar_no_search_bars", message="No bars to search for AR")
+        return None
+
+    # Step 3: Find highest high in search window
+    ar_high = Decimal("0")
+    ar_bar = None
+    ar_bar_index = None
+
+    for i, bar in enumerate(search_bars):
+        if bar.high > ar_high:
+            ar_high = bar.high
+            ar_bar = bar
+            ar_bar_index = start_index + i
+
+    # Calculate rally percentage (round to 4 decimal places for Pydantic validation)
+    rally_pct = ((ar_high - sc_low) / sc_low).quantize(Decimal("0.0001"))
+
+    logger.info(
+        "ar_peak_found",
+        ar_high=float(ar_high),
+        sc_low=float(sc_low),
+        rally_pct=float(rally_pct),
+        bars_after_sc=ar_bar_index - sc_index if ar_bar_index else 0,
+    )
+
+    # Step 4: Validate rally meets 3% threshold
+    MIN_RALLY_PCT = Decimal("0.03")  # 3% minimum
+
+    if rally_pct < MIN_RALLY_PCT:
+        # Rally insufficient
+        bars_searched = ar_bar_index - sc_index if ar_bar_index else end_index - sc_index
+
+        if bars_searched >= 10:
+            # Timeout: searched full 10 bars, no 3%+ rally
+            logger.warning(
+                "ar_timeout",
+                rally_pct=float(rally_pct),
+                bars_searched=bars_searched,
+                message="No AR within 10 bars, SC invalidated (no demand)",
+            )
+        else:
+            # Not enough bars searched yet
+            logger.info(
+                "ar_insufficient_rally",
+                rally_pct=float(rally_pct),
+                bars_searched=bars_searched,
+                message="Rally < 3%, need more bars or timeout",
+            )
+
+        return None  # No AR detected
+
+    # Step 5: Validate AR timing
+    bars_after_sc = ar_bar_index - sc_index
+
+    if bars_after_sc <= 5:
+        # Ideal: AR within 5 bars
+        logger.info(
+            "ar_within_ideal_window",
+            bars_after_sc=bars_after_sc,
+            message="AR occurred within ideal 5-bar window",
+        )
+    else:
+        # Delayed: AR after 5 bars but within timeout (10 bars)
+        logger.warning(
+            "ar_delayed",
+            bars_after_sc=bars_after_sc,
+            message=f"AR detected at {bars_after_sc} bars (ideal ≤5)",
+        )
+
+    # Step 6: Analyze volume profile
+    ar_volume_analysis = volume_analysis[ar_bar_index]
+
+    # Classify volume profile
+    if ar_volume_analysis.volume_ratio and ar_volume_analysis.volume_ratio >= Decimal("1.2"):
+        volume_profile = "HIGH"
+        interpretation = "Strong demand absorption (bullish)"
+    else:
+        volume_profile = "NORMAL"
+        interpretation = "Weak relief rally (less bullish)"
+
+    logger.info(
+        "ar_volume_profile",
+        volume_ratio=float(ar_volume_analysis.volume_ratio) if ar_volume_analysis.volume_ratio else None,
+        volume_profile=volume_profile,
+        interpretation=interpretation,
+    )
+
+    # Step 7: Create AutomaticRally instance
+    ar = AutomaticRally(
+        bar={
+            "symbol": ar_bar.symbol,
+            "timestamp": ar_bar.timestamp.isoformat(),
+            "open": str(ar_bar.open),
+            "high": str(ar_bar.high),
+            "low": str(ar_bar.low),
+            "close": str(ar_bar.close),
+            "volume": ar_bar.volume,
+            "spread": str(ar_bar.spread),
+        },
+        rally_pct=rally_pct,
+        bars_after_sc=bars_after_sc,
+        sc_reference=sc.model_dump(),  # Convert SellingClimax to dict
+        sc_low=sc_low,
+        ar_high=ar_high,
+        volume_profile=volume_profile,
+        detection_timestamp=datetime.now(timezone.utc),
+    )
+
+    logger.info(
+        "ar_detected",
+        symbol=symbol,
+        rally_pct=float(ar.rally_pct),
+        bars_after_sc=ar.bars_after_sc,
+        volume_profile=ar.volume_profile,
+        sc_low=float(ar.sc_low),
+        ar_high=float(ar.ar_high),
+        message="Automatic Rally detected - demand stepping in",
+    )
+
+    return ar
+
+
+def is_phase_a_confirmed(
+    sc: Optional[SellingClimax], ar: Optional[AutomaticRally]
+) -> bool:
+    """
+    Check if Phase A is confirmed (SC + AR both present).
+
+    Phase A = Stopping Action
+    - SC: Climactic selling exhausted
+    - AR: Demand steps in, relief rally
+    - SC + AR together = bottom established, accumulation can begin
+
+    Args:
+        sc: Detected SellingClimax (or None)
+        ar: Detected AutomaticRally (or None)
+
+    Returns:
+        True if both SC and AR present (Phase A confirmed), False otherwise
+
+    Example:
+        >>> sc = detect_selling_climax(bars, volume_analysis)
+        >>> ar = detect_automatic_rally(bars, sc, volume_analysis)
+        >>> if is_phase_a_confirmed(sc, ar):
+        ...     print("✓ Phase A Confirmed (SC + AR)")
+        ...     print("Stopping action complete, watch for Secondary Test (ST)")
+    """
+    if sc is None or ar is None:
+        logger.debug(
+            "phase_a_not_confirmed",
+            sc_present=sc is not None,
+            ar_present=ar is not None,
+            message="Phase A not confirmed - missing SC or AR",
+        )
+        return False
+
+    # Validate AR references the same SC (check timestamp match)
+    sc_timestamp = sc.bar["timestamp"]
+    ar_sc_timestamp = ar.sc_reference["bar"]["timestamp"]
+
+    if ar_sc_timestamp != sc_timestamp:
+        logger.warning(
+            "ar_sc_mismatch",
+            sc_timestamp=sc_timestamp,
+            ar_sc_timestamp=ar_sc_timestamp,
+            message="AR does not reference the provided SC",
+        )
+        return False
+
+    logger.info(
+        "phase_a_confirmed",
+        sc_timestamp=sc.bar["timestamp"],
+        ar_timestamp=ar.bar["timestamp"],
+        message="Phase A confirmed: SC + AR present - stopping action complete",
+    )
+
+    return True
