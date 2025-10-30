@@ -20,6 +20,7 @@ from src.pattern_engine.phase_detector import (
     detect_selling_climax,
     detect_sc_zone,
     detect_automatic_rally,
+    detect_secondary_test,
     is_phase_a_confirmed,
 )
 
