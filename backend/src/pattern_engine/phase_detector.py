@@ -16,8 +16,14 @@ from src.models.selling_climax import SellingClimax, SellingClimaxZone
 from src.models.automatic_rally import AutomaticRally
 from src.models.secondary_test import SecondaryTest
 from src.models.effort_result import EffortResult
+from src.models.wyckoff_phase import WyckoffPhase
+from src.models.phase_events import PhaseEvents
+from src.models.trading_range import TradingRange
 
 logger = structlog.get_logger(__name__)
+
+# FR3 requirement: minimum 70% confidence for trading
+MIN_PHASE_CONFIDENCE = 70
 
 
 def detect_selling_climax(
@@ -1263,3 +1269,625 @@ def _calculate_st_confidence(
     )
 
     return total
+
+
+def calculate_phase_confidence(
+    phase: WyckoffPhase, events: PhaseEvents, trading_range: Optional[TradingRange] = None
+) -> int:
+    """
+    Calculate confidence score (0-100) for phase classification.
+
+    Implements Story 4.5 confidence scoring algorithm enforcing FR3 requirement
+    (70% minimum confidence for trading). Confidence based on 4 components:
+
+    1. Event Presence (40 points): Are all required events detected?
+    2. Event Quality (30 points): How strong are the individual events?
+    3. Sequence Validity (20 points): Are events in correct order/timing?
+    4. Range Context (10 points): Does phase fit trading range structure?
+
+    Total: 100 points maximum
+    FR3 Threshold: 70 points minimum for trading
+
+    Wyckoff Context:
+    - Only high-confidence phase classifications (70%+) used for trading
+    - Low-confidence phases (<70%) rejected with detailed logging
+    - Protects against false signals and premature trades
+
+    Args:
+        phase: Wyckoff phase being scored (A, B, C, D, or E)
+        events: Detected events (SC, AR, ST list, Spring, SOS, LPS)
+        trading_range: Trading range context (optional, needed for range context scoring)
+
+    Returns:
+        Confidence score 0-100 (integer)
+
+    Raises:
+        ValueError: If phase is not WyckoffPhase enum or events is None
+
+    Expected Confidence Ranges:
+        90-100: Excellent phase (textbook pattern, all events perfect)
+        80-89: Strong phase (high confidence, good event quality)
+        70-79: Good phase (acceptable, meets FR3 threshold)
+        60-69: Marginal phase (rejected, below FR3)
+        <60: Weak phase (rejected, low confidence)
+
+    Example:
+        >>> from backend.src.pattern_engine.phase_detector import (
+        ...     calculate_phase_confidence,
+        ...     should_reject_phase
+        ... )
+        >>> from backend.src.models.phase_events import PhaseEvents
+        >>> from backend.src.models.wyckoff_phase import WyckoffPhase
+        >>>
+        >>> # Detected events
+        >>> events = PhaseEvents(
+        ...     sc=detected_sc,  # From detect_selling_climax()
+        ...     ar=detected_ar   # From detect_automatic_rally()
+        ... )
+        >>>
+        >>> # Calculate Phase A confidence
+        >>> confidence = calculate_phase_confidence(
+        ...     phase=WyckoffPhase.A,
+        ...     events=events,
+        ...     trading_range=trading_range
+        ... )
+        >>>
+        >>> print(f"Phase A Confidence: {confidence}%")
+        >>>
+        >>> if should_reject_phase(confidence):
+        ...     print(f"⚠️ Phase rejected (confidence {confidence}% < 70%)")
+        ... else:
+        ...     print(f"✓ Phase accepted (confidence {confidence}% >= 70%)")
+    """
+    # Validate inputs
+    if not isinstance(phase, WyckoffPhase):
+        logger.error("invalid_phase_type", phase_type=type(phase).__name__)
+        raise ValueError(f"phase must be WyckoffPhase enum, got {type(phase).__name__}")
+
+    if events is None:
+        logger.error("events_is_none")
+        raise ValueError("events cannot be None")
+
+    if trading_range is None:
+        logger.warning(
+            "trading_range_is_none",
+            message="Range context scoring will be skipped (0 points for context)",
+        )
+
+    logger.info(
+        "phase_confidence_start",
+        phase=phase.value,
+        has_sc=events.sc is not None,
+        has_ar=events.ar is not None,
+        st_count=len(events.st_list),
+        has_spring=events.spring is not None,
+        has_sos=events.sos is not None,
+    )
+
+    # Calculate 4 scoring components
+    event_score = _score_event_presence(phase, events)
+    quality_score = _score_event_quality(phase, events)
+    sequence_score = _score_sequence_validity(phase, events, trading_range)
+    context_score = _score_range_context(phase, events, trading_range)
+
+    # Calculate total confidence
+    total_confidence = event_score + quality_score + sequence_score + context_score
+
+    # Cap at 100 (shouldn't exceed, but safety)
+    total_confidence = min(total_confidence, 100)
+
+    logger.info(
+        "phase_confidence_calculated",
+        phase=phase.value,
+        total_confidence=total_confidence,
+        event_score=event_score,
+        quality_score=quality_score,
+        sequence_score=sequence_score,
+        context_score=context_score,
+        passes_fr3=total_confidence >= MIN_PHASE_CONFIDENCE,
+    )
+
+    # Log low-confidence rejections with detailed reasons
+    if total_confidence < MIN_PHASE_CONFIDENCE:
+        reasons = {}
+        if event_score < 30:
+            reasons["missing_events"] = f"Event presence score {event_score}/40 (missing required events)"
+        if quality_score < 20:
+            reasons["low_quality"] = f"Event quality score {quality_score}/30 (weak signals)"
+        if sequence_score < 10:
+            reasons["invalid_sequence"] = f"Sequence validity score {sequence_score}/20 (timing issues)"
+        if context_score < 5:
+            reasons["poor_context"] = f"Range context score {context_score}/10 (doesn't fit range)"
+
+        logger.warning(
+            "low_confidence_phase_rejected",
+            phase=phase.value,
+            confidence=total_confidence,
+            min_required=MIN_PHASE_CONFIDENCE,
+            event_score=event_score,
+            quality_score=quality_score,
+            sequence_score=sequence_score,
+            context_score=context_score,
+            rejection_reasons=reasons,
+            message=f"Phase confidence {total_confidence}% below FR3 minimum 70%, will be rejected",
+        )
+
+    return total_confidence
+
+
+def should_reject_phase(confidence: int) -> bool:
+    """
+    Check if phase should be rejected based on confidence score.
+
+    Implements FR3 requirement: only phases with 70%+ confidence
+    used for trading decisions.
+
+    Args:
+        confidence: Confidence score 0-100
+
+    Returns:
+        True if confidence < 70% (reject phase), False if >= 70% (accept phase)
+
+    Example:
+        >>> confidence = calculate_phase_confidence(phase, events, trading_range)
+        >>> if should_reject_phase(confidence):
+        ...     print("Phase rejected - not safe for trading per FR3")
+        ... else:
+        ...     print("Phase accepted - can use for trading")
+    """
+    return confidence < MIN_PHASE_CONFIDENCE
+
+
+def _score_event_presence(phase: WyckoffPhase, events: PhaseEvents) -> int:
+    """
+    Score event presence (0-40 points).
+
+    Checks if all required events for the phase are detected.
+    Missing events = incomplete phase = low confidence.
+
+    Phase Requirements:
+    - Phase A: SC + AR (20pts each)
+    - Phase B: Phase A + STs (20pts for Phase A, 20pts for 2+ STs)
+    - Phase C: Phase B + Spring (20pts for Phase B, 20pts for Spring)
+    - Phase D: SOS (40pts, LPS optional)
+    - Phase E: Phase D + continuation (20pts + 20pts for price above Ice)
+
+    Args:
+        phase: Wyckoff phase
+        events: Detected events
+
+    Returns:
+        Event presence score 0-40
+    """
+    score = 0
+
+    if phase == WyckoffPhase.A:
+        # Phase A requires SC + AR
+        if events.sc is not None:
+            score += 20
+        if events.ar is not None:
+            score += 20
+
+    elif phase == WyckoffPhase.B:
+        # Phase B requires Phase A + at least 1 ST
+        if events.has_phase_a():
+            score += 20
+
+        st_count = events.get_st_count()
+        if st_count >= 2:
+            score += 20  # Strong cause building (2+ STs)
+        elif st_count == 1:
+            score += 10  # Minimal cause (1 ST)
+        # else: 0 points (no STs, can't be Phase B)
+
+    elif phase == WyckoffPhase.C:
+        # Phase C requires Phase B + Spring
+        if events.has_phase_b():
+            score += 20
+        if events.spring is not None:
+            score += 20
+
+    elif phase == WyckoffPhase.D:
+        # Phase D requires SOS (SOS alone defines Phase D)
+        if events.sos is not None:
+            score += 40  # SOS is primary signal
+        # Note: LPS adds quality, not presence (covered in quality scoring)
+
+    elif phase == WyckoffPhase.E:
+        # Phase E requires Phase D + continuation
+        if events.has_phase_d():
+            score += 20
+        # Additional 20 points if price above Ice (continuation confirmed)
+        # This would need current price context, for now just give 20pts for Phase D
+        score += 20  # Placeholder for continuation metrics
+
+    logger.debug(
+        "event_presence_scored",
+        phase=phase.value,
+        score=score,
+        has_sc=events.sc is not None,
+        has_ar=events.ar is not None,
+        st_count=events.get_st_count(),
+        has_spring=events.spring is not None,
+        has_sos=events.sos is not None,
+    )
+
+    return score
+
+
+def _score_event_quality(phase: WyckoffPhase, events: PhaseEvents) -> int:
+    """
+    Score event quality (0-30 points).
+
+    Assesses quality of detected events based on their confidence scores
+    or derived characteristics. Higher quality events = higher confidence.
+
+    Event Quality Sources:
+    - SC: explicit confidence (0-100) from Story 4.1
+    - AR: derived from rally %, timing, volume profile
+    - ST: derived from volume reduction, proximity, holding
+    - Spring/SOS/LPS: will have confidence from Epic 5
+
+    Formula:
+    1. Extract quality (0-100) for each relevant event
+    2. Calculate average quality
+    3. Scale to 30 points: (avg_quality / 100) * 30
+
+    Args:
+        phase: Wyckoff phase
+        events: Detected events
+
+    Returns:
+        Event quality score 0-30
+    """
+    qualities = []
+
+    if phase == WyckoffPhase.A:
+        # Phase A quality: SC + AR
+        if events.sc:
+            qualities.append(events.sc.confidence)  # 0-100
+
+        if events.ar:
+            ar_quality = _calculate_ar_quality(events.ar)
+            qualities.append(ar_quality)
+
+    elif phase == WyckoffPhase.B:
+        # Phase B quality: all Phase A events + STs
+        if events.sc:
+            qualities.append(events.sc.confidence)
+
+        if events.ar:
+            qualities.append(_calculate_ar_quality(events.ar))
+
+        # ST quality: average of all STs
+        for st in events.st_list:
+            st_quality = st.confidence  # ST already has confidence from detection
+            qualities.append(st_quality)
+
+    elif phase == WyckoffPhase.C:
+        # Phase C quality: Phase B events + Spring
+        if events.sc:
+            qualities.append(events.sc.confidence)
+        if events.ar:
+            qualities.append(_calculate_ar_quality(events.ar))
+        for st in events.st_list:
+            qualities.append(st.confidence)
+
+        if events.spring:
+            # Spring will have confidence from Epic 5
+            # For now, assume it has .confidence attribute
+            if hasattr(events.spring, 'confidence'):
+                qualities.append(events.spring.confidence)
+            else:
+                qualities.append(80)  # Placeholder for Epic 5
+
+    elif phase == WyckoffPhase.D:
+        # Phase D quality: SOS (primary), optionally LPS
+        if events.sos:
+            if hasattr(events.sos, 'confidence'):
+                qualities.append(events.sos.confidence)
+            else:
+                qualities.append(85)  # Placeholder for Epic 5
+
+        if events.lps:
+            if hasattr(events.lps, 'confidence'):
+                qualities.append(events.lps.confidence)
+            else:
+                qualities.append(80)  # Placeholder for Epic 5
+
+    elif phase == WyckoffPhase.E:
+        # Phase E quality: Phase D events + continuation metrics
+        if events.sos:
+            if hasattr(events.sos, 'confidence'):
+                qualities.append(events.sos.confidence)
+            else:
+                qualities.append(85)
+
+        if events.lps:
+            if hasattr(events.lps, 'confidence'):
+                qualities.append(events.lps.confidence)
+            else:
+                qualities.append(80)
+
+        # Add continuation quality (placeholder for now)
+        qualities.append(75)  # Placeholder for continuation assessment
+
+    # Calculate average quality
+    if not qualities:
+        logger.debug("event_quality_no_events", phase=phase.value, message="No events to score quality")
+        return 0
+
+    avg_quality = sum(qualities) / len(qualities)
+
+    # Scale to 30 points
+    quality_score = int((avg_quality / 100.0) * 30)
+
+    logger.debug(
+        "event_quality_scored",
+        phase=phase.value,
+        score=quality_score,
+        avg_quality=avg_quality,
+        quality_count=len(qualities),
+        individual_qualities=qualities,
+    )
+
+    return quality_score
+
+
+def _calculate_ar_quality(ar: AutomaticRally) -> int:
+    """
+    Derive AR quality from rally %, timing, and volume.
+
+    Quality factors:
+    - Rally %: >5% (high), 3-5% (medium), exactly 3% (low)
+    - Timing: ≤5 bars (ideal), 6-10 bars (delayed)
+    - Volume: HIGH (better), NORMAL (acceptable)
+
+    Returns:
+        Quality score 0-100
+    """
+    quality = 50  # Base
+
+    # Rally percentage component (0-30 points)
+    rally_pct = ar.rally_pct
+    if rally_pct >= Decimal("0.05"):  # 5%+
+        quality += 30
+    elif rally_pct >= Decimal("0.04"):  # 4-5%
+        quality += 20
+    elif rally_pct >= Decimal("0.03"):  # 3-4%
+        quality += 10
+    # else: exactly 3% = +0
+
+    # Timing component (0-15 points)
+    if ar.bars_after_sc <= 5:
+        quality += 15  # Ideal timing
+    elif ar.bars_after_sc <= 8:
+        quality += 8   # Acceptable
+    else:
+        quality += 2   # Delayed
+
+    # Volume component (0-5 points)
+    if ar.volume_profile == "HIGH":
+        quality += 5
+    else:
+        quality += 0
+
+    return min(quality, 100)
+
+
+def _score_sequence_validity(
+    phase: WyckoffPhase, events: PhaseEvents, trading_range: Optional[TradingRange]
+) -> int:
+    """
+    Score sequence validity (0-20 points).
+
+    Validates event sequence timing and order. Events must occur in
+    logical Wyckoff sequence with proper timing windows.
+
+    Sequence Checks:
+    - Phase A: SC before AR, AR within 10 bars of SC
+    - Phase B: Phase A complete, STs spaced reasonably, duration 10-40 bars
+    - Phase C: Phase B complete, Spring after adequate Phase B duration
+    - Phase D: SOS breaks Ice, ideally after Phase C
+    - Phase E: Phase D complete, price trending above Ice
+
+    Args:
+        phase: Wyckoff phase
+        events: Detected events
+        trading_range: Trading range context (optional)
+
+    Returns:
+        Sequence validity score 0-20
+    """
+    score = 0
+
+    if phase == WyckoffPhase.A:
+        # SC must come before AR, AR within 10 bars
+        if events.sc and events.ar:
+            # Check order
+            sc_timestamp = datetime.fromisoformat(events.sc.bar["timestamp"])
+            ar_timestamp = datetime.fromisoformat(events.ar.bar["timestamp"])
+
+            if sc_timestamp < ar_timestamp:
+                score += 10  # Correct order
+
+            # Check timing (AR should be within 10 bars)
+            if events.ar.bars_after_sc <= 5:
+                score += 10  # Ideal timing
+            elif events.ar.bars_after_sc <= 10:
+                score += 5   # Acceptable timing
+            # else: 0 points (too late, shouldn't happen but defensive)
+
+    elif phase == WyckoffPhase.B:
+        # Phase A must be complete
+        if events.has_phase_a():
+            score += 10
+
+        # STs should be spaced reasonably (not all in 1-2 bars)
+        if len(events.st_list) >= 2:
+            # Check if STs are distributed
+            st_timestamps = [datetime.fromisoformat(st.bar["timestamp"]) for st in events.st_list]
+            st_timestamps_sorted = sorted(st_timestamps)
+
+            # Calculate gaps between STs
+            gaps = []
+            for i in range(1, len(st_timestamps_sorted)):
+                gap = (st_timestamps_sorted[i] - st_timestamps_sorted[i-1]).days
+                gaps.append(gap)
+
+            avg_gap = sum(gaps) / len(gaps) if gaps else 0
+
+            if avg_gap >= 3:  # Good spacing (at least 3 days between STs)
+                score += 5
+            elif avg_gap >= 1:  # Acceptable spacing
+                score += 2
+            # else: 0 points (STs too close together)
+
+        # Phase B duration (should be 10-40 bars per Story 4.4)
+        # This would require calculating duration from events
+        # For now, give 5 points if we have STs (implies some duration)
+        if len(events.st_list) >= 1:
+            score += 5
+
+    elif phase == WyckoffPhase.C:
+        # Phase B must be complete
+        if events.has_phase_b():
+            score += 10
+
+        # Spring should come after adequate Phase B duration
+        if events.spring is not None:
+            score += 10  # Spring present (timing validation would need more context)
+
+    elif phase == WyckoffPhase.D:
+        # Ideally SOS comes after Phase C
+        if events.has_phase_c():
+            score += 20  # Full sequence A→B→C→D (ideal)
+        elif events.has_phase_b():
+            score += 15  # Phase B confirmed but no Spring (acceptable)
+        elif events.has_phase_a():
+            score += 10  # Phase A confirmed but limited cause building
+        else:
+            score += 5   # SOS without prior phases (valid but less confidence)
+
+    elif phase == WyckoffPhase.E:
+        # Must have Phase D (SOS breakout)
+        if events.has_phase_d():
+            score += 20  # Valid continuation
+
+    logger.debug(
+        "sequence_validity_scored",
+        phase=phase.value,
+        score=score,
+    )
+
+    return score
+
+
+def _score_range_context(
+    phase: WyckoffPhase, events: PhaseEvents, trading_range: Optional[TradingRange]
+) -> int:
+    """
+    Score range context (0-10 points).
+
+    Checks if phase makes sense given trading range structure.
+    Events should align with range levels (Creek, Ice) and respect
+    range boundaries.
+
+    Context Checks:
+    - Phase A: SC aligns with support, AR stays within range
+    - Phase B: STs oscillate within range (Creek to Ice)
+    - Phase C: Spring tests Creek or SC low
+    - Phase D: SOS breaks above Ice
+    - Phase E: Price above Ice, trending continuation
+
+    Args:
+        phase: Wyckoff phase
+        events: Detected events
+        trading_range: Trading range context (optional)
+
+    Returns:
+        Range context score 0-10
+    """
+    if trading_range is None:
+        logger.debug("range_context_no_range", message="No trading range provided, context score = 0")
+        return 0
+
+    score = 0
+
+    # Check if range has required levels
+    if not hasattr(trading_range, 'creek') or trading_range.creek is None:
+        logger.debug("range_context_no_creek", message="Trading range missing creek level")
+        return 0
+
+    if not hasattr(trading_range, 'ice') or trading_range.ice is None:
+        logger.debug("range_context_no_ice", message="Trading range missing ice level")
+        return 0
+
+    creek_price = trading_range.creek.price if hasattr(trading_range.creek, 'price') else trading_range.support
+    ice_price = trading_range.ice.price if hasattr(trading_range.ice, 'price') else trading_range.resistance
+
+    if phase == WyckoffPhase.A:
+        # SC should align with range support
+        if events.sc:
+            sc_low = Decimal(events.sc.bar["low"])
+            # Check if SC low near Creek (within 2%)
+            if abs(sc_low - creek_price) / creek_price <= Decimal("0.02"):
+                score += 5  # Good alignment
+
+        # AR should stay within range
+        if events.ar:
+            ar_high = events.ar.ar_high
+            if ar_high < ice_price:
+                score += 5  # AR respects resistance
+            elif ar_high < ice_price * Decimal("1.02"):
+                score += 3  # Close to resistance (acceptable)
+            # else: 0 (AR broke resistance, unusual for Phase A)
+
+    elif phase == WyckoffPhase.B:
+        # STs should oscillate within range
+        if events.st_list:
+            sts_in_range = 0
+            for st in events.st_list:
+                st_low = Decimal(st.bar["low"])
+                if creek_price <= st_low <= ice_price:
+                    sts_in_range += 1
+
+            if sts_in_range == len(events.st_list):
+                score += 5  # All STs within range
+            elif sts_in_range >= len(events.st_list) * 0.7:
+                score += 3  # Most STs within range
+
+        # Range duration appropriate for Phase B (10-40 bars)
+        if hasattr(trading_range, 'duration') and 10 <= trading_range.duration <= 40:
+            score += 5
+
+    elif phase == WyckoffPhase.C:
+        # Spring should test Creek or SC low
+        if events.spring is not None and events.sc is not None:
+            # This would need Spring model with price info
+            # For now, give 10 points if Spring present (Epic 5 will validate)
+            score += 10
+
+    elif phase == WyckoffPhase.D:
+        # SOS should break above Ice
+        if events.sos is not None:
+            # This would need SOS model with price info
+            # For now, give 10 points if SOS present (Epic 5 will validate breakout)
+            score += 10
+
+    elif phase == WyckoffPhase.E:
+        # Price should be well above Ice
+        # This would need current price context
+        # For now, give 10 points if Phase D confirmed
+        if events.has_phase_d():
+            score += 10
+
+    logger.debug(
+        "range_context_scored",
+        phase=phase.value,
+        score=score,
+        creek_price=float(creek_price) if creek_price else None,
+        ice_price=float(ice_price) if ice_price else None,
+    )
+
+    return score
