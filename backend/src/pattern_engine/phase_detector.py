@@ -14,6 +14,7 @@ from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
 from src.models.selling_climax import SellingClimax, SellingClimaxZone
 from src.models.automatic_rally import AutomaticRally
+from src.models.secondary_test import SecondaryTest
 from src.models.effort_result import EffortResult
 
 logger = structlog.get_logger(__name__)
@@ -829,3 +830,436 @@ def is_phase_a_confirmed(
     )
 
     return True
+
+
+def detect_secondary_test(
+    bars: List[OHLCVBar],
+    sc: SellingClimax,
+    ar: AutomaticRally,
+    volume_analysis: List[VolumeAnalysis],
+    existing_sts: Optional[List[SecondaryTest]] = None,
+) -> Optional[SecondaryTest]:
+    """
+    Detect Secondary Test (ST) of the Selling Climax low after Automatic Rally.
+
+    A Secondary Test retests the SC low on reduced volume, confirming that support
+    is established and selling pressure has been absorbed. The ST marks the completion
+    of Phase A (stopping action) and the beginning of Phase B (building cause).
+
+    Algorithm:
+    1. Validate inputs (SC, AR, bars, volume_analysis)
+    2. Determine search window: starts after AR, scans up to 40 bars (Phase B typical duration)
+    3. For each bar in search window:
+       - Check price proximity to SC low (within 2% tolerance)
+       - Check volume reduction from SC (10%+ minimum to filter noise)
+       - Check holding action (ideally holds above SC low, <1% penetration allowed)
+    4. Calculate confidence score (0-100):
+       - Volume reduction component (40 points): 50%+ = 40pts, 30%+ = 30pts, 10%+ = 20pts
+       - Price proximity component (30 points): ≤0.5% = 30pts, ≤1% = 25pts, ≤2% = 20pts
+       - Holding action component (30 points): no penetration = 30pts, <0.5% = 25pts, <1% = 20pts
+    5. Return first valid ST found, or None if no ST detected
+
+    Wyckoff Context:
+    - ST retests SC low from above (after AR rally)
+    - Reduced volume (10%+ minimum) confirms sellers exhausted
+    - Holds above SC low (minor penetration <1% acceptable)
+    - 1st ST confirms Phase B entry (accumulation beginning)
+    - Multiple STs build stronger cause → higher Jump potential
+    - ST vs Spring: ST has minor penetration (<1%), Spring has significant penetration (>1%)
+
+    Args:
+        bars: List of OHLCV bars to analyze (must contain SC, AR, and subsequent bars)
+        sc: Detected SellingClimax to test
+        ar: Detected AutomaticRally that preceded the test
+        volume_analysis: List of VolumeAnalysis results matching bars
+        existing_sts: Previously detected STs for test numbering (default: None = empty list)
+
+    Returns:
+        SecondaryTest if detected, None otherwise
+
+    Raises:
+        ValueError: If bars is empty, sc/ar is None, or bars/volume_analysis lengths don't match
+
+    Example:
+        >>> # Detect Phase A events
+        >>> sc = detect_selling_climax(bars, volume_analysis)
+        >>> if sc:
+        ...     ar = detect_automatic_rally(bars, sc, volume_analysis)
+        ...     if ar:
+        ...         # Detect first ST
+        ...         st1 = detect_secondary_test(bars, sc, ar, volume_analysis)
+        ...         if st1:
+        ...             print(f"1st Secondary Test detected!")
+        ...             print(f"Distance from SC Low: {st1.distance_from_sc_low:.2%}")
+        ...             print(f"Volume Reduction: {st1.volume_reduction_pct:.1%}")
+        ...             print(f"Confidence: {st1.confidence}%")
+        ...             print("Phase A complete, Phase B beginning")
+        ...
+        ...             # Detect subsequent STs
+        ...             st2 = detect_secondary_test(bars, sc, ar, volume_analysis, [st1])
+        ...             if st2:
+        ...                 print(f"2nd Secondary Test - building more cause")
+    """
+    # Validate inputs
+    if not bars:
+        logger.error("empty_bars_list", message="Bars list is empty")
+        raise ValueError("Bars list cannot be empty")
+
+    if sc is None:
+        logger.error("sc_is_none", message="SC is required for ST detection")
+        raise ValueError("SC cannot be None")
+
+    if ar is None:
+        logger.error("ar_is_none", message="AR is required for ST detection")
+        raise ValueError("AR cannot be None")
+
+    if len(volume_analysis) != len(bars):
+        logger.error(
+            "bars_volume_mismatch",
+            bars_count=len(bars),
+            volume_count=len(volume_analysis),
+        )
+        raise ValueError(
+            f"Bars and volume_analysis length mismatch: {len(bars)} bars "
+            f"vs {len(volume_analysis)} volume_analysis"
+        )
+
+    # Default existing_sts to empty list
+    if existing_sts is None:
+        existing_sts = []
+
+    if not isinstance(existing_sts, list):
+        logger.error("existing_sts_not_list", message="existing_sts must be a list")
+        raise ValueError("existing_sts must be a list")
+
+    # Determine test number
+    test_number = len(existing_sts) + 1
+
+    symbol = bars[0].symbol if bars else "UNKNOWN"
+    sc_timestamp = datetime.fromisoformat(sc.bar["timestamp"])
+    ar_timestamp = datetime.fromisoformat(ar.bar["timestamp"])
+    sc_low = Decimal(sc.bar["low"])
+    sc_volume_ratio = sc.volume_ratio
+
+    logger.info(
+        "st_detection_start",
+        symbol=symbol,
+        sc_timestamp=sc.bar["timestamp"],
+        ar_timestamp=ar.bar["timestamp"],
+        sc_low=float(sc_low),
+        sc_volume_ratio=float(sc_volume_ratio),
+        test_number=test_number,
+    )
+
+    # Step 1: Find AR bar index
+    ar_index = None
+    for i, bar in enumerate(bars):
+        if bar.timestamp == ar_timestamp:
+            ar_index = i
+            break
+
+    if ar_index is None:
+        logger.error(
+            "ar_bar_not_found",
+            ar_timestamp=ar.bar["timestamp"],
+            message="AR bar not found in bars list",
+        )
+        return None
+
+    # Validate bars exist after AR
+    if ar_index >= len(bars) - 1:
+        logger.warning(
+            "ar_at_end", message="AR is last bar, no bars for ST detection"
+        )
+        return None
+
+    # Step 2: Determine search window (after AR, up to 40 bars per Story 4.3 AC)
+    search_start = ar_index + 1
+    search_end = min(ar_index + 40, len(bars) - 1)
+
+    logger.info(
+        "st_search_window",
+        search_start=search_start,
+        search_end=search_end,
+        search_bars_count=search_end - search_start + 1,
+    )
+
+    # Step 3: Scan for ST candidates
+    MIN_ST_VOLUME_REDUCTION = Decimal("0.20")  # 20% minimum (increased from 10% per expert feedback - more accurate filtering)
+    MAX_ST_DISTANCE = Decimal("0.02")  # 2% tolerance per AC 3
+
+    for i in range(search_start, search_end + 1):
+        test_bar = bars[i]
+        test_low = test_bar.low
+
+        # Check price proximity to SC low (AC 3)
+        distance = abs(test_low - sc_low) / sc_low
+
+        if distance > MAX_ST_DISTANCE:
+            # Not close enough to SC low
+            continue
+
+        logger.debug(
+            "st_candidate_proximity_pass",
+            index=i,
+            timestamp=test_bar.timestamp.isoformat(),
+            test_low=float(test_low),
+            sc_low=float(sc_low),
+            distance=float(distance),
+        )
+
+        # Check volume reduction (AC 4)
+        test_analysis = volume_analysis[i]
+        test_volume_ratio = test_analysis.volume_ratio
+
+        if test_volume_ratio is None:
+            logger.debug(
+                "st_skip_missing_volume",
+                index=i,
+                message="Volume ratio is None (insufficient data)",
+            )
+            continue
+
+        # ST requires test volume < SC volume
+        if test_volume_ratio >= sc_volume_ratio:
+            logger.debug(
+                "st_reject_volume_not_reduced",
+                index=i,
+                test_volume_ratio=float(test_volume_ratio),
+                sc_volume_ratio=float(sc_volume_ratio),
+                message="Volume not reduced (test volume >= SC volume)",
+            )
+            continue
+
+        # Calculate volume reduction percentage
+        volume_reduction_pct = (sc_volume_ratio - test_volume_ratio) / sc_volume_ratio
+
+        # Check minimum volume reduction threshold (10% minimum)
+        if volume_reduction_pct < MIN_ST_VOLUME_REDUCTION:
+            logger.debug(
+                "st_reject_volume_reduction_insufficient",
+                index=i,
+                volume_reduction_pct=float(volume_reduction_pct),
+                threshold=float(MIN_ST_VOLUME_REDUCTION),
+                message=f"Volume reduction {float(volume_reduction_pct):.1%} < 10% minimum threshold",
+            )
+            continue
+
+        logger.debug(
+            "st_candidate_volume_pass",
+            index=i,
+            test_volume_ratio=float(test_volume_ratio),
+            sc_volume_ratio=float(sc_volume_ratio),
+            volume_reduction_pct=float(volume_reduction_pct),
+        )
+
+        # Check holding action (AC 5)
+        if test_low < sc_low:
+            # Penetration below SC low
+            penetration = (sc_low - test_low) / sc_low
+        else:
+            # No penetration (holds above)
+            penetration = Decimal("0.0")
+
+        logger.debug(
+            "st_candidate_penetration",
+            index=i,
+            test_low=float(test_low),
+            sc_low=float(sc_low),
+            penetration=float(penetration),
+        )
+
+        # Calculate close position for ST bar (Wyckoff critical signal)
+        st_close_position = Decimal(str(test_bar.close_position))  # Property from OHLCVBar
+
+        # Calculate spread ratio (ST spread vs SC spread)
+        # Find SC bar by timestamp
+        sc_bar_data = None
+        for bar in bars:
+            if bar.timestamp.isoformat() == sc.bar["timestamp"]:
+                sc_bar_data = bar
+                break
+
+        if sc_bar_data and sc_bar_data.spread > 0:
+            st_spread_ratio = test_bar.spread / sc_bar_data.spread
+        else:
+            st_spread_ratio = Decimal("1.0")
+
+        # Calculate confidence score
+        confidence = _calculate_st_confidence(
+            volume_reduction_pct, distance, penetration, st_close_position, st_spread_ratio
+        )
+
+        logger.info(
+            "st_candidate_found",
+            symbol=symbol,
+            index=i,
+            timestamp=test_bar.timestamp.isoformat(),
+            distance_from_sc_low=float(distance),
+            volume_reduction_pct=float(volume_reduction_pct),
+            penetration=float(penetration),
+            confidence=confidence,
+        )
+
+        # Create SecondaryTest instance
+        st = SecondaryTest(
+            bar={
+                "symbol": test_bar.symbol,
+                "timestamp": test_bar.timestamp.isoformat(),
+                "open": str(test_bar.open),
+                "high": str(test_bar.high),
+                "low": str(test_bar.low),
+                "close": str(test_bar.close),
+                "volume": test_bar.volume,
+                "spread": str(test_bar.spread),
+            },
+            distance_from_sc_low=distance,
+            volume_reduction_pct=volume_reduction_pct,
+            test_volume_ratio=test_volume_ratio,
+            sc_volume_ratio=sc_volume_ratio,
+            penetration=penetration,
+            confidence=confidence,
+            sc_reference=sc.model_dump(),
+            ar_reference=ar.model_dump(),
+            test_number=test_number,
+            detection_timestamp=datetime.now(timezone.utc),
+        )
+
+        logger.info(
+            "st_detected",
+            symbol=symbol,
+            timestamp=test_bar.timestamp.isoformat(),
+            test_number=st.test_number,
+            distance_from_sc_low=float(st.distance_from_sc_low),
+            volume_reduction_pct=float(st.volume_reduction_pct),
+            penetration=float(st.penetration),
+            confidence=st.confidence,
+            message=f"Secondary Test #{st.test_number} detected - Phase {'B entry' if test_number == 1 else 'B deepening'}",
+        )
+
+        return st
+
+    # No ST found
+    logger.info(
+        "st_not_detected",
+        symbol=symbol,
+        test_number=test_number,
+        message="No Secondary Test detected in search window",
+    )
+    return None
+
+
+def _calculate_st_confidence(
+    volume_reduction_pct: Decimal,
+    distance: Decimal,
+    penetration: Decimal,
+    close_position: Decimal,
+    spread_ratio: Decimal,
+) -> int:
+    """
+    Calculate confidence score for Secondary Test detection.
+
+    Enhanced confidence scoring based on Wyckoff principles with 5 components:
+    - Volume reduction (45 points): Higher reduction = stronger absorption signal
+    - Price proximity (27 points): Closer to SC low = better test
+    - Holding action (18 points): Less penetration = stronger support
+    - Close position (10 points): CRITICAL - Where bar closes in range (Wyckoff emphasized this)
+    - Spread analysis (optional bonus): Narrow spread confirms no selling pressure
+
+    Reweighted from original 40/30/30 to 45/27/18/10 per expert feedback.
+    Volume reduction threshold increased from 10% to 20% minimum.
+
+    Args:
+        volume_reduction_pct: Volume reduction from SC as percentage (0.20+ minimum)
+        distance: Distance from SC low as percentage (0.0-0.02)
+        penetration: Penetration below SC low as percentage (0.0 = no penetration)
+        close_position: Where bar closes in its range (0.0=low, 1.0=high)
+        spread_ratio: ST spread vs SC spread (narrow=good, wide=concerning)
+
+    Returns:
+        Confidence score 0-100
+
+    Expected Confidence Ranges:
+        90-100: Excellent ST (50%+ volume reduction, very close, no penetration, bullish close)
+        80-89: Strong ST (40%+ volume reduction, close, minor penetration, good close)
+        70-79: Good ST (30%+ volume reduction, within 1%, acceptable penetration)
+        60-69: Acceptable ST (20%+ volume reduction, within 2%, some penetration)
+        <60: Marginal ST (borderline characteristics)
+    """
+    # Volume reduction component (45 points) - PRIMARY SIGNAL
+    if volume_reduction_pct >= Decimal("0.60"):  # 60%+ (very strong)
+        volume_pts = 45
+    elif volume_reduction_pct >= Decimal("0.50"):  # 50-59%
+        volume_pts = 40
+    elif volume_reduction_pct >= Decimal("0.40"):  # 40-49%
+        volume_pts = 35
+    elif volume_reduction_pct >= Decimal("0.30"):  # 30-39%
+        volume_pts = 28
+    elif volume_reduction_pct >= Decimal("0.20"):  # 20-29% (minimum threshold)
+        volume_pts = 20
+    else:
+        # Below 20% should have been rejected, but safety check
+        volume_pts = 10
+
+    # Price proximity component (27 points)
+    if distance <= Decimal("0.005"):  # 0.5%
+        proximity_pts = 27
+    elif distance <= Decimal("0.01"):  # 1.0%
+        proximity_pts = 22
+    elif distance <= Decimal("0.015"):  # 1.5%
+        proximity_pts = 18
+    else:  # <= 0.02 (2.0%)
+        proximity_pts = 15
+
+    # Holding action component (18 points)
+    if penetration == Decimal("0.0"):  # No penetration (holds perfectly)
+        holding_pts = 18
+    elif penetration < Decimal("0.005"):  # <0.5% penetration
+        holding_pts = 15
+    elif penetration <= Decimal("0.01"):  # <=1.0% penetration
+        holding_pts = 12
+    else:  # >1.0% penetration (weak hold, possible spring)
+        holding_pts = 6
+
+    # Close position component (10 points) - CRITICAL WYCKOFF SIGNAL
+    # Wyckoff emphasized WHERE the bar closes in its range
+    # Strong ST: Closes in upper 70% (bulls absorbed selling)
+    # Weak ST: Closes in lower 30% (still under pressure)
+    if close_position >= Decimal("0.70"):  # Upper 30% - bullish close
+        close_pts = 10
+    elif close_position >= Decimal("0.50"):  # Upper half - neutral/moderate
+        close_pts = 5
+    else:  # Lower half - bearish close (concerning)
+        close_pts = 0
+
+    # Spread analysis bonus (up to +5 points, doesn't count against 100 cap)
+    # Narrow spread + low volume = ideal ST (no supply)
+    # Wide spread + low volume = questionable (hidden distribution?)
+    if spread_ratio < Decimal("0.40"):  # Narrow spread (<40% of SC)
+        spread_bonus = 5  # Excellent - tight range, no volatility
+    elif spread_ratio < Decimal("0.70"):  # Moderate spread
+        spread_bonus = 2
+    else:  # Wide spread relative to SC
+        spread_bonus = 0  # Concerning - still volatility
+
+    # Base total (capped at 100)
+    base_total = volume_pts + proximity_pts + holding_pts + close_pts
+    total = min(base_total + spread_bonus, 100)
+
+    logger.debug(
+        "st_confidence_calculation",
+        volume_reduction_pct=float(volume_reduction_pct),
+        volume_pts=volume_pts,
+        distance=float(distance),
+        proximity_pts=proximity_pts,
+        penetration=float(penetration),
+        holding_pts=holding_pts,
+        close_position=float(close_position),
+        close_pts=close_pts,
+        spread_ratio=float(spread_ratio),
+        spread_bonus=spread_bonus,
+        base_total=base_total,
+        total_confidence=total,
+    )
+
+    return total
