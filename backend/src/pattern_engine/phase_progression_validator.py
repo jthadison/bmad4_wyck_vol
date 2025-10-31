@@ -171,11 +171,7 @@ class PhaseTransition(BaseModel):
             raise ValueError("Reason must be non-empty")
         return v
 
-    model_config = ConfigDict(
-        json_encoders={
-            datetime: lambda v: v.isoformat(),
-        }
-    )
+    model_config = ConfigDict()
 
 
 class PhaseHistory(BaseModel):
@@ -208,10 +204,6 @@ class PhaseHistory(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
-        json_encoders={
-            datetime: lambda v: v.isoformat(),
-            uuid.UUID: lambda v: str(v),
-        },
     )
 
 
