@@ -34,7 +34,7 @@ Example:
 
 import structlog
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 
 from src.models.phase_classification import (
     WyckoffPhase,
@@ -45,13 +45,54 @@ from src.models.phase_classification import (
 logger = structlog.get_logger(__name__)
 
 
+def calculate_ar_confidence_proxy(ar: dict) -> int:
+    """
+    Calculate AR confidence proxy from rally metrics when confidence not available.
+
+    Wyckoff Principle: AR strength indicates professional interest level.
+    - Strong AR (8%+ rally, 1-3 bars): professionals stepping in aggressively
+    - Moderate AR (5-8% rally, 4-5 bars): decent support
+    - Weak AR (3-5% rally, 6-10 bars): tentative support
+
+    Args:
+        ar: AutomaticRally dict with rally_pct, bars_after_sc
+
+    Returns:
+        int: Proxy confidence score 60-95
+    """
+    rally_pct = ar.get("rally_pct", 0)
+    bars_after_sc = ar.get("bars_after_sc", 0)
+
+    # Base score: 70 (decent AR by definition if it exists)
+    confidence = 70
+
+    # Rally vigor (0-20 points)
+    if rally_pct >= 0.08:  # 8%+ rally
+        confidence += 20  # Strong professional interest
+    elif rally_pct >= 0.05:  # 5-8% rally
+        confidence += 10  # Moderate
+    else:  # 3-5% rally
+        confidence += 0  # Minimal (met 3% threshold)
+
+    # Timing quality (0-5 points)
+    if 1 <= bars_after_sc <= 3:
+        confidence += 5  # Immediate response
+    elif 4 <= bars_after_sc <= 5:
+        confidence += 3  # Good timing
+    else:
+        confidence += 0  # Slower response
+
+    return min(95, confidence)  # Cap at 95 (not perfect without explicit confidence)
+
+
 def calculate_phase_a_confidence(events: PhaseEvents) -> int:
     """
-    Calculate Phase A confidence based on SC quality, AR quality, and event sequence.
+    Calculate Phase A confidence based on SC quality, AR quality, vigor, and event sequence.
 
     Confidence Components (0-100):
     - SC quality (50 points): SC confidence / 2
-    - AR quality (30 points): AR confidence / 3.33
+    - AR quality (20 points): AR confidence / 5
+    - AR vigor (10 points): Rally strength bonus (3-5%=0, 5-8%=5, 8%+=10)
     - Event sequence (20 points): AR timing after SC
 
     Args:
@@ -70,9 +111,29 @@ def calculate_phase_a_confidence(events: PhaseEvents) -> int:
     sc_confidence = sc.get("confidence", 0)
     sc_pts = min(50, int(sc_confidence / 2))
 
-    # AR quality (30 points max)
-    ar_confidence = ar.get("confidence", 100)  # AR doesn't have confidence field yet, default high
-    ar_pts = min(30, int(ar_confidence / 3.33))
+    # AR quality (20 points max) - reduced from 30
+    if "confidence" in ar:
+        ar_confidence = ar["confidence"]
+    else:
+        # Calculate proxy confidence from rally metrics
+        ar_confidence = calculate_ar_confidence_proxy(ar)
+        logger.debug(
+            "phase_a.ar_confidence_proxy",
+            ar_confidence=ar_confidence,
+            rally_pct=ar.get("rally_pct"),
+            bars_after_sc=ar.get("bars_after_sc"),
+        )
+
+    ar_pts = min(20, int(ar_confidence / 5))
+
+    # AR vigor bonus (0-10 points) - Wyckoff principle
+    rally_pct = ar.get("rally_pct", 0)
+    if rally_pct >= 0.08:  # 8%+ rally
+        vigor_bonus = 10  # Strong professional interest
+    elif rally_pct >= 0.05:  # 5-8%
+        vigor_bonus = 5  # Moderate
+    else:  # 3-5%
+        vigor_bonus = 0  # Minimal
 
     # Event sequence (20 points max)
     # AR should occur 1-5 bars after SC for ideal sequence
@@ -84,18 +145,98 @@ def calculate_phase_a_confidence(events: PhaseEvents) -> int:
     else:
         sequence_pts = 5
 
-    total = sc_pts + ar_pts + sequence_pts
+    total = sc_pts + ar_pts + vigor_bonus + sequence_pts
+
+    logger.debug(
+        "phase_a_confidence_breakdown",
+        sc_pts=sc_pts,
+        ar_pts=ar_pts,
+        vigor_bonus=vigor_bonus,
+        sequence_pts=sequence_pts,
+        total=total,
+    )
+
     return min(100, total)
+
+
+def analyze_st_progression(secondary_tests: List[dict]) -> int:
+    """
+    Analyze Secondary Test progression quality per Wyckoff principles.
+
+    Wyckoff Teaching: Quality of cause matters. Look for:
+    1. Consistent volume absorption (50%+ reduction maintained)
+    2. Tightening to support (later STs closer to SC low)
+
+    Args:
+        secondary_tests: List of SecondaryTest dicts
+
+    Returns:
+        int: Progression quality score 0-15 points
+        - 0-8 points: Volume absorption trend
+        - 0-7 points: Distance tightening
+    """
+    if len(secondary_tests) < 2:
+        return 0  # Need multiple tests to see trend
+
+    # Volume reduction trend analysis (0-8 points)
+    volume_reductions = [st.get("volume_reduction_pct", 0) for st in secondary_tests]
+    avg_reduction = sum(volume_reductions) / len(volume_reductions)
+
+    volume_pts = 0
+    if avg_reduction >= 0.50:  # 50%+ avg reduction (excellent absorption)
+        volume_pts = 8
+    elif avg_reduction >= 0.40:  # 40-50% (good)
+        volume_pts = 6
+    elif avg_reduction >= 0.30:  # 30-40% (adequate)
+        volume_pts = 4
+    elif avg_reduction >= 0.20:  # 20-30% (weak)
+        volume_pts = 2
+
+    # Distance tightening analysis (0-7 points)
+    distances = [st.get("distance_from_sc_low", 1.0) for st in secondary_tests]
+
+    tightening_pts = 0
+    first_distance = distances[0]
+    last_distance = distances[-1]
+
+    if last_distance < first_distance:
+        # Tightening = support firming (Wyckoff excellence indicator)
+        improvement = (first_distance - last_distance) / first_distance
+
+        if improvement >= 0.40:  # 40%+ tighter
+            tightening_pts = 7  # Excellent tightening
+        elif improvement >= 0.25:  # 25-40% tighter
+            tightening_pts = 5  # Good tightening
+        elif improvement >= 0.10:  # 10-25% tighter
+            tightening_pts = 3  # Moderate tightening
+        else:
+            tightening_pts = 1  # Slight tightening
+
+    total_pts = volume_pts + tightening_pts
+
+    logger.debug(
+        "st_progression_analysis",
+        st_count=len(secondary_tests),
+        avg_volume_reduction=avg_reduction,
+        volume_pts=volume_pts,
+        tightening_pts=tightening_pts,
+        total_pts=total_pts,
+    )
+
+    return total_pts
 
 
 def calculate_phase_b_confidence(events: PhaseEvents, duration: int) -> int:
     """
-    Calculate Phase B confidence based on ST quality, ST count, and duration.
+    Calculate Phase B confidence with Wyckoff-optimized weights.
 
-    Confidence Components (0-100):
-    - ST quality (40 points): average ST confidence / 2.5
-    - ST count (30 points): more STs = stronger cause
-    - Duration (30 points): 10-40 bars typical
+    Wyckoff-Aligned Weights:
+    - ST quality (35 points): Average ST confidence quality
+    - ST count (25 points): Number of tests (cause building)
+    - Duration (20 points): Time in range (10-40+ bars)
+    - ST progression (20 points): Improving quality trend
+
+    Previous weights: 40/30/30/0 (no progression analysis)
 
     Args:
         events: PhaseEvents containing STs
@@ -107,29 +248,44 @@ def calculate_phase_b_confidence(events: PhaseEvents, duration: int) -> int:
     if not events.secondary_tests:
         return 0
 
-    # ST quality (40 points max)
+    # ST quality (35 points max) - reduced from 40
     st_confidences = [st.get("confidence", 0) for st in events.secondary_tests]
-    avg_st_confidence = sum(st_confidences) / len(st_confidences) if st_confidences else 0
-    st_quality_pts = min(40, int(avg_st_confidence / 2.5))
+    avg_st_confidence = (
+        sum(st_confidences) / len(st_confidences) if st_confidences else 0
+    )
+    st_quality_pts = min(35, int(avg_st_confidence * 0.35))
 
-    # ST count (30 points max)
+    # ST count (25 points max) - reduced from 30
     st_count = len(events.secondary_tests)
     if st_count == 1:
-        st_count_pts = 10  # Minimal cause
+        st_count_pts = 8  # Minimal cause (reduced from 10)
     elif st_count == 2:
-        st_count_pts = 20  # Moderate cause
+        st_count_pts = 17  # Moderate cause (reduced from 20)
     else:  # 3+
-        st_count_pts = 30  # Strong cause
+        st_count_pts = 25  # Strong cause (reduced from 30)
 
-    # Duration (30 points max)
+    # Duration (20 points max) - reduced from 30
     if 10 <= duration <= 20:
-        duration_pts = 15  # Minimal cause
+        duration_pts = 10  # Minimal cause (reduced from 15)
     elif 21 <= duration <= 30:
-        duration_pts = 25  # Moderate cause
+        duration_pts = 17  # Moderate cause (reduced from 25)
     else:  # 31-40+ bars
-        duration_pts = 30  # Strong/extended cause
+        duration_pts = 20  # Strong/extended cause (reduced from 30)
 
-    total = st_quality_pts + st_count_pts + duration_pts
+    # ST progression (20 points max) - NEW
+    progression_pts = analyze_st_progression(events.secondary_tests)
+
+    total = st_quality_pts + st_count_pts + duration_pts + progression_pts
+
+    logger.debug(
+        "phase_b_confidence_breakdown",
+        st_quality=st_quality_pts,
+        st_count=st_count_pts,
+        duration=duration_pts,
+        progression=progression_pts,
+        total=total,
+    )
+
     return min(100, total)
 
 
@@ -194,7 +350,9 @@ def calculate_phase_e_confidence(events: PhaseEvents) -> int:
     return 75
 
 
-def classify_phase_a(events: PhaseEvents) -> Optional[PhaseClassification]:
+def classify_phase_a(
+    events: PhaseEvents, current_bar_index: Optional[int] = None
+) -> Optional[PhaseClassification]:
     """
     Classify Phase A based on SC + AR presence.
 
@@ -210,13 +368,18 @@ def classify_phase_a(events: PhaseEvents) -> Optional[PhaseClassification]:
 
     Args:
         events: PhaseEvents containing SC and AR
+        current_bar_index: Current bar index for real-time analysis (optional).
+                          If provided, enables accurate duration calculation for
+                          phases still in progress. If None, uses historical mode.
 
     Returns:
         PhaseClassification if Phase A, None otherwise
     """
-    logger.debug("classify_phase_a.checking",
-                 has_sc=events.selling_climax is not None,
-                 has_ar=events.automatic_rally is not None)
+    logger.debug(
+        "classify_phase_a.checking",
+        has_sc=events.selling_climax is not None,
+        has_ar=events.automatic_rally is not None,
+    )
 
     if not events.selling_climax or not events.automatic_rally:
         logger.debug("classify_phase_a.failed", reason="Missing SC or AR")
@@ -228,11 +391,19 @@ def classify_phase_a(events: PhaseEvents) -> Optional[PhaseClassification]:
     # Phase A duration calculation
     sc_index = sc["bar"]["index"]
 
-    # End is first ST if available, otherwise use AR bar index as current
     if events.secondary_tests:
+        # Phase A ended when first ST appeared
         end_index = events.secondary_tests[0]["bar"]["index"]
+    elif current_bar_index is not None:
+        # Real-time: Still in Phase A, use current bar
+        end_index = current_bar_index
     else:
+        # Historical fallback: use AR bar (acknowledging limitation)
         end_index = ar["bar"]["index"]
+        logger.warning(
+            "phase_a.duration_approximation",
+            message="No ST or current bar, using AR index as fallback",
+        )
 
     duration = end_index - sc_index
 
@@ -242,11 +413,13 @@ def classify_phase_a(events: PhaseEvents) -> Optional[PhaseClassification]:
     # Get phase start timestamp from SC bar
     phase_start_timestamp = datetime.fromisoformat(sc["bar"]["timestamp"])
 
-    logger.info("classify_phase_a.success",
-                phase="A",
-                confidence=confidence,
-                duration=duration,
-                trading_allowed=False)
+    logger.info(
+        "classify_phase_a.success",
+        phase="A",
+        confidence=confidence,
+        duration=duration,
+        trading_allowed=False,
+    )
 
     return PhaseClassification(
         phase=WyckoffPhase.A,
@@ -262,7 +435,9 @@ def classify_phase_a(events: PhaseEvents) -> Optional[PhaseClassification]:
 
 
 def classify_phase_b(
-    events: PhaseEvents, trading_range: Optional[dict] = None
+    events: PhaseEvents,
+    trading_range: Optional[dict] = None,
+    current_bar_index: Optional[int] = None,
 ) -> Optional[PhaseClassification]:
     """
     Classify Phase B based on ST presence and range oscillation.
@@ -282,12 +457,14 @@ def classify_phase_b(
     Args:
         events: PhaseEvents containing STs
         trading_range: Associated trading range (optional)
+        current_bar_index: Current bar index for real-time analysis (optional).
+                          If provided, enables accurate duration calculation for
+                          phases still in progress. If None, uses historical mode.
 
     Returns:
         PhaseClassification if Phase B, None otherwise
     """
-    logger.debug("classify_phase_b.checking",
-                 st_count=len(events.secondary_tests))
+    logger.debug("classify_phase_b.checking", st_count=len(events.secondary_tests))
 
     if not events.secondary_tests:
         logger.debug("classify_phase_b.failed", reason="No STs detected")
@@ -298,16 +475,29 @@ def classify_phase_b(
 
     # Phase B duration calculation
     if events.spring:
+        # Phase B ended when Spring appeared
         end_index = events.spring["bar"]["index"]
+    elif current_bar_index is not None:
+        # Real-time: Still in Phase B, use current bar
+        end_index = current_bar_index
     else:
-        # Use last ST bar index as current
+        # Historical fallback: use last ST bar index
         end_index = events.secondary_tests[-1]["bar"]["index"]
+        if len(events.secondary_tests) == 1:
+            logger.warning(
+                "phase_b.duration_approximation",
+                message="Only 1 ST, no current bar - duration may be 0",
+            )
 
     duration = end_index - first_st_index
 
     # FR14 Trading Logic
     trading_allowed = duration >= 10
-    rejection_reason = None if trading_allowed else "Early Phase B - insufficient cause (need 10+ bars)"
+    rejection_reason = (
+        None
+        if trading_allowed
+        else "Early Phase B - insufficient cause (need 10+ bars)"
+    )
 
     # Calculate confidence
     confidence = calculate_phase_b_confidence(events, duration)
@@ -315,11 +505,13 @@ def classify_phase_b(
     # Get phase start timestamp from first ST
     phase_start_timestamp = datetime.fromisoformat(first_st["bar"]["timestamp"])
 
-    logger.info("classify_phase_b.success",
-                phase="B",
-                confidence=confidence,
-                duration=duration,
-                trading_allowed=trading_allowed)
+    logger.info(
+        "classify_phase_b.success",
+        phase="B",
+        confidence=confidence,
+        duration=duration,
+        trading_allowed=trading_allowed,
+    )
 
     return PhaseClassification(
         phase=WyckoffPhase.B,
@@ -334,7 +526,9 @@ def classify_phase_b(
     )
 
 
-def classify_phase_c(events: PhaseEvents) -> Optional[PhaseClassification]:
+def classify_phase_c(
+    events: PhaseEvents, current_bar_index: Optional[int] = None
+) -> Optional[PhaseClassification]:
     """
     Classify Phase C based on Spring detection.
 
@@ -350,12 +544,14 @@ def classify_phase_c(events: PhaseEvents) -> Optional[PhaseClassification]:
 
     Args:
         events: PhaseEvents containing Spring
+        current_bar_index: Current bar index for real-time analysis (optional).
+                          If provided, enables accurate duration calculation for
+                          phases still in progress. If None, uses historical mode.
 
     Returns:
         PhaseClassification if Phase C, None otherwise
     """
-    logger.debug("classify_phase_c.checking",
-                 has_spring=events.spring is not None)
+    logger.debug("classify_phase_c.checking", has_spring=events.spring is not None)
 
     if not events.spring:
         logger.debug("classify_phase_c.failed", reason="No Spring detected")
@@ -379,11 +575,13 @@ def classify_phase_c(events: PhaseEvents) -> Optional[PhaseClassification]:
     # Get phase start timestamp from Spring
     phase_start_timestamp = datetime.fromisoformat(spring["bar"]["timestamp"])
 
-    logger.info("classify_phase_c.success",
-                phase="C",
-                confidence=confidence,
-                duration=duration,
-                trading_allowed=True)
+    logger.info(
+        "classify_phase_c.success",
+        phase="C",
+        confidence=confidence,
+        duration=duration,
+        trading_allowed=True,
+    )
 
     return PhaseClassification(
         phase=WyckoffPhase.C,
@@ -398,7 +596,9 @@ def classify_phase_c(events: PhaseEvents) -> Optional[PhaseClassification]:
     )
 
 
-def classify_phase_d(events: PhaseEvents) -> Optional[PhaseClassification]:
+def classify_phase_d(
+    events: PhaseEvents, current_bar_index: Optional[int] = None
+) -> Optional[PhaseClassification]:
     """
     Classify Phase D based on SOS breakout detection.
 
@@ -414,12 +614,14 @@ def classify_phase_d(events: PhaseEvents) -> Optional[PhaseClassification]:
 
     Args:
         events: PhaseEvents containing SOS breakout
+        current_bar_index: Current bar index for real-time analysis (optional).
+                          If provided, enables accurate duration calculation for
+                          phases still in progress. If None, uses historical mode.
 
     Returns:
         PhaseClassification if Phase D, None otherwise
     """
-    logger.debug("classify_phase_d.checking",
-                 has_sos=events.sos_breakout is not None)
+    logger.debug("classify_phase_d.checking", has_sos=events.sos_breakout is not None)
 
     if not events.sos_breakout:
         logger.debug("classify_phase_d.failed", reason="No SOS breakout detected")
@@ -443,11 +645,13 @@ def classify_phase_d(events: PhaseEvents) -> Optional[PhaseClassification]:
     # Get phase start timestamp from SOS
     phase_start_timestamp = datetime.fromisoformat(sos["bar"]["timestamp"])
 
-    logger.info("classify_phase_d.success",
-                phase="D",
-                confidence=confidence,
-                duration=duration,
-                trading_allowed=True)
+    logger.info(
+        "classify_phase_d.success",
+        phase="D",
+        confidence=confidence,
+        duration=duration,
+        trading_allowed=True,
+    )
 
     return PhaseClassification(
         phase=WyckoffPhase.D,
@@ -463,7 +667,9 @@ def classify_phase_d(events: PhaseEvents) -> Optional[PhaseClassification]:
 
 
 def classify_phase_e(
-    events: PhaseEvents, trading_range: Optional[dict] = None
+    events: PhaseEvents,
+    trading_range: Optional[dict] = None,
+    current_bar_index: Optional[int] = None,
 ) -> Optional[PhaseClassification]:
     """
     Classify Phase E based on sustained markup above Ice.
@@ -482,13 +688,18 @@ def classify_phase_e(
     Args:
         events: PhaseEvents (may contain LPS)
         trading_range: Trading range with Ice level
+        current_bar_index: Current bar index for real-time analysis (optional).
+                          If provided, enables accurate duration calculation for
+                          phases still in progress. If None, uses historical mode.
 
     Returns:
         PhaseClassification if Phase E, None otherwise
     """
-    logger.debug("classify_phase_e.checking",
-                 has_lps=events.last_point_of_support is not None,
-                 has_sos=events.sos_breakout is not None)
+    logger.debug(
+        "classify_phase_e.checking",
+        has_lps=events.last_point_of_support is not None,
+        has_sos=events.sos_breakout is not None,
+    )
 
     # Phase E requires SOS to have occurred first
     if not events.sos_breakout:
@@ -510,17 +721,21 @@ def classify_phase_e(
         duration = 0  # Will be updated when we have current bar context
     else:
         # No Phase E without LPS or sustained move indicator
-        logger.debug("classify_phase_e.failed", reason="No sustained move above Ice detected")
+        logger.debug(
+            "classify_phase_e.failed", reason="No sustained move above Ice detected"
+        )
         return None
 
     # Calculate confidence
     confidence = calculate_phase_e_confidence(events)
 
-    logger.info("classify_phase_e.success",
-                phase="E",
-                confidence=confidence,
-                duration=duration,
-                trading_allowed=True)
+    logger.info(
+        "classify_phase_e.success",
+        phase="E",
+        confidence=confidence,
+        duration=duration,
+        trading_allowed=True,
+    )
 
     return PhaseClassification(
         phase=WyckoffPhase.E,
@@ -536,7 +751,9 @@ def classify_phase_e(
 
 
 def classify_phase(
-    events: PhaseEvents, trading_range: Optional[dict] = None
+    events: PhaseEvents,
+    trading_range: Optional[dict] = None,
+    current_bar_index: Optional[int] = None,
 ) -> PhaseClassification:
     """
     Classify current Wyckoff phase based on detected events.
@@ -552,11 +769,14 @@ def classify_phase(
     Args:
         events: PhaseEvents from Stories 4.1-4.3 + Epic 5
         trading_range: Associated trading range (optional)
+        current_bar_index: Current bar index for real-time analysis (optional).
+                          When provided, enables accurate duration calculation for phases
+                          still in progress. For historical/batch analysis, leave as None.
 
     Returns:
         PhaseClassification with phase, confidence, trading_allowed
 
-    Example:
+    Example (Historical Mode):
         >>> events = PhaseEvents(
         ...     selling_climax=sc_dict,
         ...     automatic_rally=ar_dict,
@@ -567,34 +787,45 @@ def classify_phase(
         ...     print(f"Phase {classification.phase.value} - Trading allowed")
         ... else:
         ...     print(f"Rejected: {classification.rejection_reason}")
+
+    Example (Real-time Mode):
+        >>> # Real-time streaming at bar index 125
+        >>> classification = classify_phase(events, trading_range, current_bar_index=125)
+        >>> print(f"Duration: {classification.duration} bars (still in progress)")
     """
-    logger.info("classify_phase.start",
-                has_sc=events.selling_climax is not None,
-                has_ar=events.automatic_rally is not None,
-                st_count=len(events.secondary_tests),
-                has_spring=events.spring is not None,
-                has_sos=events.sos_breakout is not None,
-                has_lps=events.last_point_of_support is not None)
+    # Log analysis mode (real-time vs historical)
+    analysis_mode = "real-time" if current_bar_index is not None else "historical"
+    logger.info(
+        "classify_phase.start",
+        mode=analysis_mode,
+        current_bar_index=current_bar_index,
+        has_sc=events.selling_climax is not None,
+        has_ar=events.automatic_rally is not None,
+        st_count=len(events.secondary_tests),
+        has_spring=events.spring is not None,
+        has_sos=events.sos_breakout is not None,
+        has_lps=events.last_point_of_support is not None,
+    )
 
     # Try phases in reverse order (most advanced first)
-    if phase_e := classify_phase_e(events, trading_range):
-        logger.info("classify_phase.result", phase="E")
+    if phase_e := classify_phase_e(events, trading_range, current_bar_index):
+        logger.info("classify_phase.result", phase="E", mode=analysis_mode)
         return phase_e
 
-    if phase_d := classify_phase_d(events):
-        logger.info("classify_phase.result", phase="D")
+    if phase_d := classify_phase_d(events, current_bar_index):
+        logger.info("classify_phase.result", phase="D", mode=analysis_mode)
         return phase_d
 
-    if phase_c := classify_phase_c(events):
-        logger.info("classify_phase.result", phase="C")
+    if phase_c := classify_phase_c(events, current_bar_index):
+        logger.info("classify_phase.result", phase="C", mode=analysis_mode)
         return phase_c
 
-    if phase_b := classify_phase_b(events, trading_range):
-        logger.info("classify_phase.result", phase="B")
+    if phase_b := classify_phase_b(events, trading_range, current_bar_index):
+        logger.info("classify_phase.result", phase="B", mode=analysis_mode)
         return phase_b
 
-    if phase_a := classify_phase_a(events):
-        logger.info("classify_phase.result", phase="A")
+    if phase_a := classify_phase_a(events, current_bar_index):
+        logger.info("classify_phase.result", phase="A", mode=analysis_mode)
         return phase_a
 
     # No phase detected
@@ -613,6 +844,7 @@ def classify_phase(
 
 
 # Helper utilities
+
 
 def get_phase_description(phase: WyckoffPhase) -> str:
     """
