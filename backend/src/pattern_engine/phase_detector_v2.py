@@ -16,6 +16,7 @@ Author: Wayne (Analyst), William (Mentor), Victoria (Volume), Rachel (Risk)
 
 import structlog
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Dict, List, Optional, Tuple, Union
 
 from src.models.ohlcv import OHLCVBar
@@ -36,6 +37,13 @@ from src.pattern_engine.phase_classifier import classify_phase
 
 # Import confidence calculator (will use existing or create wrapper)
 from src.pattern_engine.phase_detector import calculate_phase_confidence
+
+# Import Story 4.6 phase progression validator
+from src.pattern_engine.phase_progression_validator import (
+    enforce_phase_progression,
+    PhaseHistory,
+    PhaseTransition as Story46PhaseTransition,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -101,6 +109,7 @@ class PhaseDetector:
                 "symbol_timeframe": {
                     "bar_count": int,
                     "phase_info": PhaseInfo,
+                    "phase_history": PhaseHistory,  # Story 4.6 integration
                     "timestamp": datetime
                 }
             }
@@ -192,6 +201,149 @@ class PhaseDetector:
             trading_range=trading_range,
         )
 
+        # ============== Phase 2 Enhancements ==============
+        # Determine phase start index for enhancement methods
+        phase_start_index = 0
+        if events.selling_climax:
+            phase_start_index = events.selling_climax["bar"]["index"]
+
+        # Check for phase invalidations (AC 11-14)
+        invalidation = _check_phase_invalidation(
+            current_phase=phase_classification.phase,
+            bars=bars,
+            events=events,
+            trading_range=trading_range,
+            previous_invalidations=[]  # TODO: Track in cache
+        )
+
+        # Check for phase confirmations (AC 15-18)
+        confirmation = _check_phase_confirmation(
+            current_phase=phase_classification.phase,
+            bars=bars,
+            events=events,
+            trading_range=trading_range,
+            previous_confirmations=[],  # TODO: Track in cache
+            phase_start_index=phase_start_index
+        )
+
+        # Classify breakdown if applicable (AC 23-26)
+        breakdown_type = None
+        breakdown_risk_profile = None
+        if phase_classification.phase is None:  # Breakdown scenario
+            breakdown_type = _classify_breakdown(
+                bars=bars,
+                volume_analysis=volume_analysis,
+                events=events,
+                previous_phase=WyckoffPhase.C,  # TODO: Track previous phase
+                trading_range=trading_range
+            )
+            # Task 38: Create breakdown risk profile
+            if breakdown_type:
+                breakdown_risk_profile = _get_breakdown_risk_profile(
+                    breakdown_type=breakdown_type,
+                    bars=bars,
+                    trading_range=trading_range
+                )
+
+        # Validate Phase B duration (AC 27-30)
+        duration_valid = True
+        duration_warning = None
+        phase_b_context = None
+        phase_b_risk_profile = None
+        if phase_classification.phase == WyckoffPhase.B:
+            duration = len(bars) - 1 - phase_start_index
+            duration_valid, duration_warning, phase_b_context = _validate_phase_b_duration(
+                phase=phase_classification.phase,
+                duration=duration,
+                events=events,
+                bars=bars,
+                volume_analysis=volume_analysis
+            )
+
+            # Task 39: Create Phase B risk profile
+            if phase_b_context:
+                # Determine exceptional evidence
+                has_exceptional = False
+                spring_confidence = 0
+                if events.spring is not None:
+                    spring_confidence = events.spring.get("confidence", 0) if isinstance(events.spring, dict) else 0
+                st_count = len(events.secondary_tests)
+                has_exceptional = spring_confidence > 85 and st_count >= 2
+
+                # Determine minimum duration for context
+                minimum_duration_map = {
+                    "base_accumulation": 10,
+                    "reaccumulation": 5,
+                    "volatile": 8
+                }
+                minimum_duration = minimum_duration_map.get(phase_b_context, 10)
+
+                phase_b_risk_profile = _get_phase_b_risk_profile(
+                    duration=duration,
+                    context=phase_b_context,
+                    minimum_duration=minimum_duration,
+                    has_exceptional_evidence=has_exceptional
+                )
+
+        # Determine sub-phase (AC 19-22)
+        sub_phase = _determine_sub_phase(
+            phase=phase_classification.phase,
+            events=events,
+            bars=bars,
+            phase_info=None,  # First call, no existing info
+            phase_start_index=phase_start_index,
+            trading_range=trading_range
+        )
+
+        # Calculate LPS count for Phase E (placeholder until Epic 5)
+        lps_count = _count_lps_pullbacks(bars, phase_start_index) if phase_classification.phase == WyckoffPhase.E else 0
+
+        # Calculate markup slope for Phase E
+        markup_slope = _calculate_markup_slope(bars, phase_start_index) if phase_classification.phase == WyckoffPhase.E else None
+
+        # Task 40: Create Phase E risk profile
+        phase_e_risk_profile = None
+        if phase_classification.phase == WyckoffPhase.E and sub_phase:
+            from src.models.phase_info import PhaseESubState
+            if isinstance(sub_phase, PhaseESubState):
+                phase_e_risk_profile = _get_phase_e_risk_profile(sub_state=sub_phase)
+
+        logger.info(
+            "phase_2_enhancements_applied",
+            has_invalidation=invalidation is not None,
+            has_confirmation=confirmation is not None,
+            breakdown_type=breakdown_type.value if breakdown_type else None,
+            sub_phase=sub_phase.value if sub_phase else None,
+            duration_valid=duration_valid
+        )
+
+        # ============== Story 4.6 Phase Progression Validation ==============
+        # Get or create PhaseHistory for this range
+        phase_history = self._get_or_create_phase_history(cache_key, trading_range)
+
+        # Validate phase progression (Story 4.6)
+        validated_phase, updated_history = self._validate_and_update_progression(
+            phase_history=phase_history,
+            new_classification=phase_classification,
+            invalidation=invalidation,
+            confirmation=confirmation,
+            breakdown_type=breakdown_type,
+            phase_b_context=phase_b_context,
+            current_bar_index=len(bars) - 1,
+            bars=bars
+        )
+
+        # Use validated phase (may differ from classified phase if rejected)
+        final_phase = validated_phase if validated_phase is not None else phase_classification.phase
+
+        # Update phase_classification with validated phase for PhaseInfo creation
+        if final_phase != phase_classification.phase:
+            logger.info(
+                "using_validated_phase",
+                classified_phase=phase_classification.phase.value if phase_classification.phase else "None",
+                validated_phase=final_phase.value if final_phase else "None"
+            )
+
         # Create PhaseInfo (AC 1, 2)
         phase_info = self._create_phase_info(
             phase_classification=phase_classification,
@@ -199,10 +351,23 @@ class PhaseDetector:
             confidence=confidence,
             trading_range=trading_range,
             bars=bars,
+            # Phase 2 enhancement parameters
+            invalidation=invalidation,
+            confirmation=confirmation,
+            breakdown_type=breakdown_type,
+            breakdown_risk_profile=breakdown_risk_profile,
+            phase_b_context=phase_b_context,
+            phase_b_risk_profile=phase_b_risk_profile,
+            sub_phase=sub_phase,
+            phase_e_risk_profile=phase_e_risk_profile,
+            lps_count=lps_count,
+            markup_slope=markup_slope,
+            # Story 4.6 integration
+            phase_history=updated_history
         )
 
-        # Update cache
-        self._update_cache(cache_key, phase_info, bar_count)
+        # Update cache with phase_info and phase_history
+        self._update_cache(cache_key, phase_info, bar_count, updated_history)
 
         logger.info(
             "phase_detection_complete",
@@ -371,12 +536,13 @@ class PhaseDetector:
         return None
 
     def _update_cache(
-        self, cache_key: str, phase_info: PhaseInfo, bar_count: int
+        self, cache_key: str, phase_info: PhaseInfo, bar_count: int, phase_history: PhaseHistory
     ) -> None:
-        """Update cache with latest phase info."""
+        """Update cache with latest phase info and history."""
         self._cache[cache_key] = {
             "bar_count": bar_count,
             "phase_info": phase_info,
+            "phase_history": phase_history,  # Story 4.6 integration
             "timestamp": datetime.now(timezone.utc),
         }
 
@@ -385,6 +551,7 @@ class PhaseDetector:
             cache_key=cache_key,
             bar_count=bar_count,
             phase=phase_info.phase.value if phase_info.phase else None,
+            transition_count=len(phase_history.transitions)
         )
 
     def _detect_all_events(
@@ -558,6 +725,19 @@ class PhaseDetector:
         confidence: int,
         trading_range: Optional[TradingRange],
         bars: List[OHLCVBar],
+        # Phase 2 enhancement parameters
+        invalidation: Optional["PhaseInvalidation"] = None,
+        confirmation: Optional["PhaseConfirmation"] = None,
+        breakdown_type: Optional["BreakdownType"] = None,
+        breakdown_risk_profile: Optional["BreakdownRiskProfile"] = None,
+        phase_b_context: Optional[str] = None,
+        phase_b_risk_profile: Optional["PhaseBRiskProfile"] = None,
+        sub_phase: Optional[Union["PhaseCSubState", "PhaseESubState"]] = None,
+        phase_e_risk_profile: Optional["PhaseESubStateRiskProfile"] = None,
+        lps_count: int = 0,
+        markup_slope: Optional["Decimal"] = None,
+        # Story 4.6 integration
+        phase_history: Optional[PhaseHistory] = None
     ) -> PhaseInfo:
         """
         Create comprehensive PhaseInfo with all fields.
@@ -566,7 +746,7 @@ class PhaseDetector:
         - Core phase/confidence/duration
         - Event tracking
         - Progression history (basic for now, enhanced in Phase 2)
-        - Risk management fields (basic for now, enhanced in Phase 2)
+        - Risk management fields (Phase 2 enhancements)
         """
         current_bar_index = len(bars) - 1
         current_bar = bars[current_bar_index]
@@ -580,37 +760,234 @@ class PhaseDetector:
 
         duration = current_bar_index - phase_start_index
 
-        # Create PhaseInfo
+        # Convert Story 4.6 transitions to PhaseInfo transitions
+        from src.models.phase_info import PhaseTransition
+        progression_history = []
+        if phase_history:
+            for story46_transition in phase_history.transitions:
+                progression_history.append(
+                    PhaseTransition(
+                        from_phase=story46_transition.from_phase,
+                        to_phase=story46_transition.to_phase,
+                        timestamp=story46_transition.timestamp,
+                        bar_index=story46_transition.bar_index,
+                        trigger_event=story46_transition.reason,
+                        confidence=confidence  # Use current confidence
+                    )
+                )
+
+        # Create PhaseInfo with Phase 2 enhancements
         phase_info = PhaseInfo(
             # Core fields
             phase=phase_classification.phase,
-            sub_phase=None,  # Phase 3 - sub-phase state machine
+            sub_phase=sub_phase,  # Phase 2 - sub-phase state machine
             confidence=confidence,
             events=events,
             duration=duration,
-            progression_history=[],  # Phase 2 - progression tracking
+            progression_history=progression_history,  # Story 4.6 integration
             trading_range=trading_range,
             phase_start_bar_index=phase_start_index,
             current_bar_index=current_bar_index,
             last_updated=datetime.now(timezone.utc),
             # Enhancement fields (Phase 2)
-            invalidations=[],
-            confirmations=[],
-            breakdown_type=None,
-            phase_b_duration_context=None,
-            lps_count=0,
-            markup_slope=None,
+            invalidations=[invalidation] if invalidation else [],
+            confirmations=[confirmation] if confirmation else [],
+            breakdown_type=breakdown_type,
+            phase_b_duration_context=phase_b_context,
+            lps_count=lps_count,
+            markup_slope=float(markup_slope) if markup_slope else None,
             # Risk management fields (Phase 2)
-            current_risk_level="normal",
-            position_action_required="none",
-            recommended_stop_level=None,
-            risk_rationale=None,
-            phase_b_risk_profile=None,
-            breakdown_risk_profile=None,
-            phase_e_risk_profile=None,
+            current_risk_level=self._determine_risk_level(phase_classification.phase, invalidation),
+            position_action_required=self._determine_position_action(invalidation),
+            recommended_stop_level=self._calculate_stop_level(trading_range, phase_classification.phase),
+            risk_rationale=self._generate_risk_rationale(invalidation, confirmation),
+            phase_b_risk_profile=phase_b_risk_profile,  # Task 39: ✅ Complete
+            breakdown_risk_profile=breakdown_risk_profile,  # Task 38: ✅ Complete
+            phase_e_risk_profile=phase_e_risk_profile  # Task 40: ✅ Complete
         )
 
         return phase_info
+
+    def _determine_risk_level(self, phase, invalidation) -> str:
+        """Determine current risk level based on phase and invalidations."""
+        if invalidation:
+            return invalidation.risk_level
+        if phase == WyckoffPhase.A:
+            return "elevated"  # Still in stopping action
+        if phase == WyckoffPhase.B:
+            return "normal"  # Building cause
+        return "normal"
+
+    def _determine_position_action(self, invalidation) -> str:
+        """Determine required position action."""
+        if invalidation:
+            return invalidation.position_action
+        return "none"
+
+    def _calculate_stop_level(self, trading_range, phase) -> Optional[float]:
+        """Calculate structural stop level."""
+        if not trading_range:
+            return None
+        # Use Creek (support) as stop level
+        return float(trading_range.creek.price if hasattr(trading_range.creek, 'price') else trading_range.support)
+
+    def _generate_risk_rationale(self, invalidation, confirmation) -> Optional[str]:
+        """Generate risk rationale explanation."""
+        if invalidation:
+            return invalidation.rationale
+        if confirmation:
+            return f"Phase confirmed: {confirmation.confirmation_reason}"
+        return None
+
+    def _get_or_create_phase_history(
+        self, cache_key: str, trading_range: TradingRange
+    ) -> PhaseHistory:
+        """
+        Get existing PhaseHistory from cache or create new one.
+
+        Args:
+            cache_key: Cache key for this symbol/timeframe
+            trading_range: Associated trading range
+
+        Returns:
+            PhaseHistory instance
+        """
+        if cache_key in self._cache and "phase_history" in self._cache[cache_key]:
+            return self._cache[cache_key]["phase_history"]
+
+        # Create new PhaseHistory
+        import uuid
+        phase_history = PhaseHistory(
+            transitions=[],
+            current_phase=None,
+            range_id=uuid.uuid4(),  # Use trading range ID if available
+            started_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+
+        logger.info(
+            "phase_history_created",
+            cache_key=cache_key,
+            range_id=str(phase_history.range_id)
+        )
+
+        return phase_history
+
+    def _validate_and_update_progression(
+        self,
+        phase_history: PhaseHistory,
+        new_classification,
+        invalidation,
+        confirmation,
+        breakdown_type,
+        phase_b_context: Optional[str],
+        current_bar_index: int,
+        bars: List[OHLCVBar]
+    ) -> Tuple[Optional[WyckoffPhase], PhaseHistory]:
+        """
+        Validate phase progression using Story 4.6 and update history.
+
+        Integration Logic:
+            - Phase invalidation: Bypass Story 4.6, directly update phase
+            - Phase confirmation: Bypass Story 4.6, no phase change
+            - Normal transition: Call Story 4.6 enforce_phase_progression
+
+        Args:
+            phase_history: Current phase history
+            new_classification: New phase classification from Story 4.4
+            invalidation: Phase invalidation if detected
+            confirmation: Phase confirmation if detected
+            breakdown_type: Breakdown classification if applicable
+            phase_b_context: Phase B duration context
+            current_bar_index: Current bar index
+            bars: Bar sequence
+
+        Returns:
+            Tuple of (validated_phase, updated_history)
+        """
+        # Handle phase invalidation (bypass Story 4.6)
+        if invalidation:
+            logger.warning(
+                "phase_invalidation_bypass_story46",
+                invalidated_phase=invalidation.phase_invalidated.value,
+                reverted_to=invalidation.reverted_to_phase.value if invalidation.reverted_to_phase else None,
+                reason=invalidation.invalidation_reason
+            )
+            # Directly update to reverted phase
+            phase_history.current_phase = invalidation.reverted_to_phase
+            phase_history.updated_at = datetime.now(timezone.utc)
+            return invalidation.reverted_to_phase, phase_history
+
+        # Handle phase confirmation (bypass Story 4.6, no transition)
+        if confirmation:
+            logger.info(
+                "phase_confirmation_no_transition",
+                confirmed_phase=confirmation.phase_confirmed.value,
+                reason=confirmation.confirmation_reason
+            )
+            # No phase change on confirmation
+            return phase_history.current_phase, phase_history
+
+        # Normal transition - validate with Story 4.6
+        context = {
+            "bar_index": current_bar_index,
+            "reason": self._get_transition_reason(new_classification, bars),
+            "correlation_id": str(uuid.uuid4()),
+            # Phase 2 enhancement contexts
+            "phase_a_reset": invalidation and invalidation.invalidation_type == "new_evidence",
+            "stronger_climax_detected": confirmation and confirmation.confirmation_type == "stronger_climax",
+            "spring_test_detected": confirmation and confirmation.confirmation_type == "spring_test",
+            "new_range_detected": False,  # TODO: Implement range detection
+            "range_breakdown": breakdown_type is not None,
+            "breakdown_type": breakdown_type.value if breakdown_type else None,
+            "phase_b_duration": new_classification.duration if new_classification.phase == WyckoffPhase.B else None,
+            "phase_b_context": phase_b_context
+        }
+
+        # Call Story 4.6 validation
+        accepted, updated_history, rejection_reason = enforce_phase_progression(
+            history=phase_history,
+            new_classification=new_classification,
+            context=context
+        )
+
+        if accepted:
+            logger.info(
+                "phase_transition_accepted",
+                from_phase=phase_history.current_phase.value if phase_history.current_phase else "None",
+                to_phase=new_classification.phase.value if new_classification.phase else "None",
+                reason=context["reason"]
+            )
+            return new_classification.phase, updated_history
+        else:
+            logger.warning(
+                "phase_transition_rejected",
+                from_phase=phase_history.current_phase.value if phase_history.current_phase else "None",
+                attempted_to_phase=new_classification.phase.value if new_classification.phase else "None",
+                rejection_reason=rejection_reason
+            )
+            # Keep current phase
+            return phase_history.current_phase, phase_history
+
+    def _get_transition_reason(self, classification, bars: List[OHLCVBar]) -> str:
+        """Generate transition reason based on classification."""
+        if not classification.phase:
+            return "Breakdown below support"
+
+        phase_events = classification.events_detected if hasattr(classification, 'events_detected') else None
+
+        if classification.phase == WyckoffPhase.A:
+            return "Selling Climax detected"
+        elif classification.phase == WyckoffPhase.B:
+            return "Secondary Test detected, building cause"
+        elif classification.phase == WyckoffPhase.C:
+            return "Spring detected, testing support"
+        elif classification.phase == WyckoffPhase.D:
+            return "Sign of Strength breakout"
+        elif classification.phase == WyckoffPhase.E:
+            return "Markup continuation"
+        else:
+            return "Phase transition"
 
 
 # ============================================================================
@@ -1132,6 +1509,94 @@ def _classify_breakdown(
         return BreakdownType.FAILED_ACCUMULATION
 
 
+def _get_breakdown_risk_profile(
+    breakdown_type: "BreakdownType",
+    bars: List[OHLCVBar],
+    trading_range: Optional["TradingRange"]
+) -> "BreakdownRiskProfile":
+    """
+    Create risk profile for breakdown scenarios (Task 38).
+
+    Stop Placement Rules:
+        - FAILED_ACCUMULATION: 1% below breakdown low, reduce 50%
+        - DISTRIBUTION_PATTERN: 2% below Creek, exit all
+        - UTAD_REVERSAL: 2% below current low, exit all
+
+    Args:
+        breakdown_type: Classification from _classify_breakdown
+        bars: OHLCV bar data
+        trading_range: Associated trading range
+
+    Returns:
+        BreakdownRiskProfile with stop placement and position action
+
+    Example:
+        >>> profile = _get_breakdown_risk_profile(
+        ...     breakdown_type=BreakdownType.FAILED_ACCUMULATION,
+        ...     bars=bars,
+        ...     trading_range=range
+        ... )
+        >>> print(f"Stop: {profile.stop_placement}")
+        >>> print(f"Action: {profile.position_action}")
+    """
+    from src.models.phase_info import BreakdownRiskProfile
+    from decimal import Decimal
+
+    current_low = float(bars[-1].low)
+
+    # Get Creek price for reference
+    creek_price = float(
+        trading_range.creek.price
+        if trading_range and hasattr(trading_range.creek, 'price')
+        else current_low
+    )
+
+    if breakdown_type.value == "failed_accumulation":
+        # AC 36: Failed accumulation - 1% below low, reduce 50%, medium risk
+        return BreakdownRiskProfile(
+            breakdown_type=breakdown_type,
+            stop_placement=current_low * 0.99,  # 1% below breakdown low
+            stop_rationale=(
+                "Failed accumulation on low volume - weak demand but may stabilize"
+            ),
+            position_action="reduce_50",
+            risk_level="medium",
+            reentry_guidance=(
+                "Wait for new accumulation cycle with stronger Spring (confidence >85)"
+            ),
+        )
+
+    elif breakdown_type.value == "distribution_pattern":
+        # AC 36: Distribution - 2% below Creek, exit all, critical risk
+        return BreakdownRiskProfile(
+            breakdown_type=breakdown_type,
+            stop_placement=creek_price * 0.98,  # 2% below Creek
+            stop_rationale=(
+                "High volume breakdown indicates institutional selling"
+            ),
+            position_action="exit_all",
+            risk_level="critical",
+            reentry_guidance=(
+                "Pattern invalidated - wait for new trading range formation"
+            ),
+        )
+
+    else:  # UTAD_REVERSAL
+        # AC 36: UTAD - 2% below current, exit all, critical risk
+        return BreakdownRiskProfile(
+            breakdown_type=breakdown_type,
+            stop_placement=current_low * 0.98,  # 2% below current low
+            stop_rationale=(
+                "UTAD detected - Composite Operator distributed while faking accumulation"
+            ),
+            position_action="exit_all",
+            risk_level="critical",
+            reentry_guidance=(
+                "Avoid this asset - Composite Operator deception confirmed"
+            ),
+        )
+
+
 def _validate_phase_b_duration(
     phase: Optional[WyckoffPhase],
     duration: int,
@@ -1253,6 +1718,147 @@ def _validate_phase_b_duration(
         context=context_type
     )
     return (True, None, context_type)
+
+
+def _get_phase_b_risk_profile(
+    duration: int,
+    context: str,
+    minimum_duration: int,
+    has_exceptional_evidence: bool
+) -> "PhaseBRiskProfile":
+    """
+    Create Phase B risk profile based on duration validation (Task 39).
+
+    Risk Adjustment Rules:
+        - Normal duration (≥minimum): 1.0x (full position size)
+        - Short with exceptional evidence: 0.75x (reduce 25%)
+        - Very short: 0.5x (reduce 50%)
+
+    Args:
+        duration: Actual Phase B duration in bars
+        context: Accumulation context (base/reaccumulation/volatile)
+        minimum_duration: Required minimum for this context
+        has_exceptional_evidence: Spring >85 + ST >=2
+
+    Returns:
+        PhaseBRiskProfile with position size adjustment
+
+    Example:
+        >>> profile = _get_phase_b_risk_profile(
+        ...     duration=7,
+        ...     context="base_accumulation",
+        ...     minimum_duration=10,
+        ...     has_exceptional_evidence=True
+        ... )
+        >>> print(f"Adjustment: {profile.risk_adjustment_factor}")
+    """
+    from src.models.phase_info import PhaseBRiskProfile
+
+    # Determine risk adjustment factor
+    if duration >= minimum_duration:
+        # Normal duration - full position allowed
+        return PhaseBRiskProfile(
+            duration=duration,
+            context=context,
+            minimum_duration=minimum_duration,
+            has_exceptional_evidence=has_exceptional_evidence,
+            risk_adjustment_factor=1.0,
+            risk_level="normal",
+            risk_rationale="Adequate cause built - full position approved"
+        )
+    elif has_exceptional_evidence:
+        # Short but with exceptional evidence - 75% position
+        return PhaseBRiskProfile(
+            duration=duration,
+            context=context,
+            minimum_duration=minimum_duration,
+            has_exceptional_evidence=True,
+            risk_adjustment_factor=0.75,
+            risk_level="elevated",
+            risk_rationale=(
+                f"Short Phase B (duration={duration}, min={minimum_duration}) "
+                "but Spring >85 + ST >=2 - reduce to 75%"
+            )
+        )
+    else:
+        # Very short without exceptional evidence - 50% position
+        return PhaseBRiskProfile(
+            duration=duration,
+            context=context,
+            minimum_duration=minimum_duration,
+            has_exceptional_evidence=False,
+            risk_adjustment_factor=0.5,
+            risk_level="high",
+            risk_rationale=(
+                f"Very short Phase B (duration={duration}, min={minimum_duration}) - "
+                "reduce to 50% or skip"
+            )
+        )
+
+
+def _get_phase_e_risk_profile(
+    sub_state: "PhaseESubState"
+) -> "PhaseESubStateRiskProfile":
+    """
+    Create Phase E risk profile based on sub-state (Task 40).
+
+    Position Actions:
+        - EARLY: hold (strong momentum)
+        - MATURE: trail_stops (at each LPS)
+        - LATE: reduce_50 (slowing momentum)
+        - EXHAUSTION: exit_75 (distribution forming)
+
+    Args:
+        sub_state: Phase E sub-state
+
+    Returns:
+        PhaseESubStateRiskProfile with exit management
+
+    Example:
+        >>> profile = _get_phase_e_risk_profile(
+        ...     sub_state=PhaseESubState.LATE
+        ... )
+        >>> print(f"Action: {profile.position_action}")
+    """
+    from src.models.phase_info import PhaseESubStateRiskProfile, PhaseESubState
+
+    if sub_state == PhaseESubState.EARLY:
+        return PhaseESubStateRiskProfile(
+            sub_state=sub_state,
+            position_action="hold",
+            stop_adjustment="Keep stops at Ice or last LPS",
+            risk_level="low",
+            exit_rationale="Strong momentum - hold full position"
+        )
+
+    elif sub_state == PhaseESubState.MATURE:
+        return PhaseESubStateRiskProfile(
+            sub_state=sub_state,
+            position_action="trail_stops",
+            stop_adjustment="Trail stops to last LPS",
+            risk_level="normal",
+            exit_rationale="Trail stops at each LPS to lock profits"
+        )
+
+    elif sub_state == PhaseESubState.LATE:
+        return PhaseESubStateRiskProfile(
+            sub_state=sub_state,
+            position_action="reduce_50",
+            stop_adjustment="Tighten stops to recent swing low",
+            risk_level="elevated",
+            exit_rationale="Slowing momentum - take 50% profit"
+        )
+
+    else:  # EXHAUSTION
+        return PhaseESubStateRiskProfile(
+            sub_state=sub_state,
+            position_action="exit_75",
+            stop_adjustment="Aggressive stop at recent swing low",
+            risk_level="high",
+            exit_rationale="Declining volume on rallies - exit 75% immediately"
+        )
+
+
 # Temporary file for sub-phase logic - will be merged into phase_detector_v2.py
 
 def _determine_sub_phase(
@@ -1469,9 +2075,9 @@ def _calculate_markup_slope(bars: List["OHLCVBar"], phase_start_index: int) -> O
 
     # Simple linear regression
     n = len(prices)
-    x_values = list(range(n))
-    x_mean = sum(x_values) / n
-    y_mean = sum(prices) / n
+    x_values = [Decimal(str(i)) for i in range(n)]
+    x_mean = sum(x_values) / Decimal(str(n))
+    y_mean = sum(prices) / Decimal(str(n))
 
     numerator = sum((x_values[i] - x_mean) * (prices[i] - y_mean) for i in range(n))
     denominator = sum((x - x_mean) ** 2 for x in x_values)

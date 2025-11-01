@@ -554,3 +554,12 @@ class PhaseInfo(BaseModel):
         if self.phase == WyckoffPhase.B:
             return self.duration >= 10
         return True  # Phase C/D/E
+
+
+# Rebuild model to resolve forward references (Zone from TradingRange)
+try:
+    from src.models.zone import Zone  # noqa: F401
+
+    PhaseInfo.model_rebuild()
+except ImportError:
+    pass  # Zone may not be defined yet in early development
