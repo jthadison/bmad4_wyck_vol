@@ -617,10 +617,9 @@ class PhaseDetector:
         sos = None  # TODO: Epic 5 - SOS detection
         lps = None  # TODO: Epic 5 - LPS detection
 
-        # Create PhaseEvents with adapter pattern (Story 4.8 will remove this)
-        # TECHNICAL DEBT: Enriching events with bar_index until Story 4.8 refactor
-        events = self._create_phase_events_with_indices(
-            sc=sc, ar=ar, st_list=st_list, bars=bars,
+        # Create PhaseEvents directly (Story 4.8 - bar_index now in models)
+        events = self._create_phase_events(
+            sc=sc, ar=ar, st_list=st_list,
             spring=spring, sos=sos, lps=lps
         )
 
@@ -633,72 +632,38 @@ class PhaseDetector:
 
         return events
 
-    def _create_phase_events_with_indices(
+    def _create_phase_events(
         self,
         sc,
         ar,
         st_list: List,
-        bars: List[OHLCVBar],
         spring,
         sos,
         lps,
     ) -> PhaseEvents:
         """
-        Create PhaseEvents with bar indices injected (ADAPTER PATTERN).
+        Create PhaseEvents from detected event models.
 
-        TECHNICAL DEBT: This is a temporary workaround for Story 4.7.
-        Story 4.8 will refactor event models to include bar_index natively.
-
-        The issue: phase_classifier expects sc["bar"]["index"] but:
-        - Event models don't have bar_index field
-        - OHLCVBar doesn't have index field
-        - model_dump() loses index information
-
-        Solution: Inject index into bar dict before creating PhaseEvents.
-
-        TODO Story 4.8: Remove this adapter when event models have bar_index.
+        Story 4.8: Clean pipeline - event models now include bar_index natively.
+        No adapter pattern or index injection needed.
 
         Args:
             sc: SellingClimax object or None
             ar: AutomaticRally object or None
             st_list: List of SecondaryTest objects
-            bars: Full bar sequence (to find indices)
             spring: Spring object or None (Epic 5)
             sos: SOS object or None (Epic 5)
             lps: LPS object or None (Epic 5)
 
         Returns:
-            PhaseEvents with bar["index"] injected for phase_classifier compatibility
+            PhaseEvents with all event data including bar_index
         """
-        # Helper to find bar index by timestamp
-        def find_bar_index(event_bar_dict: dict) -> int:
-            """Find index of bar matching event timestamp."""
-            event_timestamp = datetime.fromisoformat(event_bar_dict["timestamp"])
-            for i, bar in enumerate(bars):
-                if bar.timestamp == event_timestamp:
-                    return i
-            return 0  # Fallback (shouldn't happen)
+        # Serialize events to dicts (bar_index preserved via model_dump)
+        sc_dict = sc.model_dump() if sc else None
+        ar_dict = ar.model_dump() if ar else None
+        st_dicts = [st.model_dump() for st in st_list]
 
-        # Enrich SC with index
-        sc_dict = None
-        if sc:
-            sc_dict = sc.model_dump()
-            sc_dict["bar"]["index"] = find_bar_index(sc_dict["bar"])
-
-        # Enrich AR with index
-        ar_dict = None
-        if ar:
-            ar_dict = ar.model_dump()
-            ar_dict["bar"]["index"] = find_bar_index(ar_dict["bar"])
-
-        # Enrich STs with index
-        st_dicts = []
-        for st in st_list:
-            st_dict = st.model_dump()
-            st_dict["bar"]["index"] = find_bar_index(st_dict["bar"])
-            st_dicts.append(st_dict)
-
-        # Create PhaseEvents with enriched dicts
+        # Create PhaseEvents with serialized dicts
         events = PhaseEvents(
             selling_climax=sc_dict,
             automatic_rally=ar_dict,
@@ -709,11 +674,11 @@ class PhaseDetector:
         )
 
         logger.debug(
-            "adapter_pattern_applied",
-            sc_index=sc_dict["bar"]["index"] if sc_dict else None,
-            ar_index=ar_dict["bar"]["index"] if ar_dict else None,
+            "phase_events_created",
+            sc_index=sc_dict["bar_index"] if sc_dict else None,
+            ar_index=ar_dict["bar_index"] if ar_dict else None,
             st_count=len(st_dicts),
-            message="Injected bar indices for phase_classifier compatibility (Story 4.8 will remove)",
+            message="PhaseEvents created with native bar_index from models",
         )
 
         return events
@@ -755,8 +720,8 @@ class PhaseDetector:
         # In Phase 2, this will use progression tracking
         phase_start_index = 0
         if events.selling_climax:
-            # Find SC bar index (using adapter-injected index)
-            phase_start_index = events.selling_climax["bar"]["index"]
+            # Get SC bar index from event model (Story 4.8)
+            phase_start_index = events.selling_climax["bar_index"]
 
         duration = current_bar_index - phase_start_index
 

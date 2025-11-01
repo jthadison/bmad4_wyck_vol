@@ -389,17 +389,17 @@ def classify_phase_a(
     ar = events.automatic_rally
 
     # Phase A duration calculation
-    sc_index = sc["bar"]["index"]
+    sc_index = sc["bar_index"]
 
     if events.secondary_tests:
         # Phase A ended when first ST appeared
-        end_index = events.secondary_tests[0]["bar"]["index"]
+        end_index = events.secondary_tests[0]["bar_index"]
     elif current_bar_index is not None:
         # Real-time: Still in Phase A, use current bar
         end_index = current_bar_index
     else:
         # Historical fallback: use AR bar (acknowledging limitation)
-        end_index = ar["bar"]["index"]
+        end_index = ar["bar_index"]
         logger.warning(
             "phase_a.duration_approximation",
             message="No ST or current bar, using AR index as fallback",
@@ -471,18 +471,18 @@ def classify_phase_b(
         return None
 
     first_st = events.secondary_tests[0]
-    first_st_index = first_st["bar"]["index"]
+    first_st_index = first_st["bar_index"]
 
     # Phase B duration calculation
     if events.spring:
         # Phase B ended when Spring appeared
-        end_index = events.spring["bar"]["index"]
+        end_index = events.spring["bar_index"]
     elif current_bar_index is not None:
         # Real-time: Still in Phase B, use current bar
         end_index = current_bar_index
     else:
         # Historical fallback: use last ST bar index
-        end_index = events.secondary_tests[-1]["bar"]["index"]
+        end_index = events.secondary_tests[-1]["bar_index"]
         if len(events.secondary_tests) == 1:
             logger.warning(
                 "phase_b.duration_approximation",
@@ -558,11 +558,11 @@ def classify_phase_c(
         return None
 
     spring = events.spring
-    spring_index = spring["bar"]["index"]
+    spring_index = spring["bar_index"]
 
     # Phase C duration calculation
     if events.sos_breakout:
-        end_index = events.sos_breakout["bar"]["index"]
+        end_index = events.sos_breakout["bar_index"]
     else:
         # Use Spring bar as current
         end_index = spring_index
@@ -628,11 +628,11 @@ def classify_phase_d(
         return None
 
     sos = events.sos_breakout
-    sos_index = sos["bar"]["index"]
+    sos_index = sos["bar_index"]
 
     # Phase D duration calculation
     if events.last_point_of_support:
-        end_index = events.last_point_of_support["bar"]["index"]
+        end_index = events.last_point_of_support["bar_index"]
     else:
         # Use SOS bar as current
         end_index = sos_index
@@ -713,7 +713,7 @@ def classify_phase_e(
     # Phase E start calculation
     if events.last_point_of_support:
         # Start from LPS
-        phase_start_index = events.last_point_of_support["bar"]["index"]
+        phase_start_index = events.last_point_of_support["bar_index"]
         phase_start_timestamp = datetime.fromisoformat(
             events.last_point_of_support["bar"]["timestamp"]
         )

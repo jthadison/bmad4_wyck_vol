@@ -24,7 +24,7 @@ from src.pattern_engine.phase_detector import (
     MIN_PHASE_CONFIDENCE,
 )
 from src.models.wyckoff_phase import WyckoffPhase
-from src.models.phase_events import PhaseEvents
+from src.models.phase_classification import PhaseEvents
 from src.models.selling_climax import SellingClimax
 from src.models.automatic_rally import AutomaticRally
 from src.models.secondary_test import SecondaryTest
