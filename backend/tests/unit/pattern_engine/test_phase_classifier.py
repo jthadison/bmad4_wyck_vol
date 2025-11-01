@@ -47,7 +47,6 @@ def sc_dict():
     """Selling Climax test data."""
     return {
         "bar": {
-            "index": 100,
             "timestamp": "2020-03-20T14:30:00+00:00",
             "open": 100.0,
             "high": 105.0,
@@ -55,6 +54,7 @@ def sc_dict():
             "close": 102.0,
             "volume": 10000000,
         },
+        "bar_index": 100,
         "volume_ratio": Decimal("2.5"),
         "spread_ratio": Decimal("1.8"),
         "close_position": Decimal("0.7"),
@@ -67,7 +67,6 @@ def ar_dict():
     """Automatic Rally test data."""
     return {
         "bar": {
-            "index": 103,
             "timestamp": "2020-03-23T14:30:00+00:00",
             "open": 102.0,
             "high": 108.0,
@@ -75,6 +74,7 @@ def ar_dict():
             "close": 107.0,
             "volume": 8000000,
         },
+        "bar_index": 103,
         "rally_pct": Decimal("0.035"),
         "bars_after_sc": 3,
         "volume_profile": "HIGH",
@@ -86,7 +86,6 @@ def st1_dict():
     """First Secondary Test test data."""
     return {
         "bar": {
-            "index": 110,
             "timestamp": "2020-03-30T14:30:00+00:00",
             "open": 104.0,
             "high": 105.0,
@@ -94,6 +93,7 @@ def st1_dict():
             "close": 97.0,
             "volume": 5000000,
         },
+        "bar_index": 110,
         "distance_from_sc_low": Decimal("0.01"),
         "volume_reduction_pct": Decimal("0.50"),
         "confidence": 80,
@@ -106,7 +106,6 @@ def st2_dict():
     """Second Secondary Test test data."""
     return {
         "bar": {
-            "index": 120,
             "timestamp": "2020-04-09T14:30:00+00:00",
             "open": 102.0,
             "high": 104.0,
@@ -114,6 +113,7 @@ def st2_dict():
             "close": 98.0,
             "volume": 4500000,
         },
+        "bar_index": 120,
         "distance_from_sc_low": Decimal("0.015"),
         "volume_reduction_pct": Decimal("0.55"),
         "confidence": 82,
@@ -126,7 +126,6 @@ def spring_dict():
     """Spring test data (Epic 5)."""
     return {
         "bar": {
-            "index": 130,
             "timestamp": "2020-04-19T14:30:00+00:00",
             "open": 97.0,
             "high": 104.0,
@@ -134,6 +133,7 @@ def spring_dict():
             "close": 102.0,
             "volume": 7000000,
         },
+        "bar_index": 130,
         "confidence": 85,
     }
 
@@ -143,7 +143,6 @@ def sos_dict():
     """SOS Breakout test data (Epic 5)."""
     return {
         "bar": {
-            "index": 140,
             "timestamp": "2020-04-29T14:30:00+00:00",
             "open": 108.0,
             "high": 115.0,
@@ -151,6 +150,7 @@ def sos_dict():
             "close": 113.0,
             "volume": 12000000,
         },
+        "bar_index": 140,
         "confidence": 88,
     }
 
@@ -160,7 +160,6 @@ def lps_dict():
     """Last Point of Support test data (Epic 5)."""
     return {
         "bar": {
-            "index": 150,
             "timestamp": "2020-05-09T14:30:00+00:00",
             "open": 110.0,
             "high": 112.0,
@@ -168,6 +167,7 @@ def lps_dict():
             "close": 111.0,
             "volume": 6000000,
         },
+        "bar_index": 150,
         "confidence": 82,
     }
 
@@ -866,7 +866,7 @@ def test_phase_b_confidence_includes_progression(st1_dict, st2_dict):
     # Create ST3 with tightening
     st3_dict = st2_dict.copy()
     st3_dict["bar"] = st2_dict["bar"].copy()
-    st3_dict["bar"]["index"] = 135
+    st3_dict["bar_index"] = 135
     st3_dict["test_number"] = 3
     st3_dict["distance_from_sc_low"] = Decimal(
         "0.005"
@@ -890,7 +890,6 @@ def test_realtime_aapl_phase_b():
     # AAPL March-April 2020
     sc = {
         "bar": {
-            "index": 100,
             "timestamp": "2020-03-20T14:30:00+00:00",
             "open": 100.0,
             "high": 105.0,
@@ -898,11 +897,11 @@ def test_realtime_aapl_phase_b():
             "close": 102.0,
             "volume": 10000000,
         },
+        "bar_index": 100,
         "confidence": 92,
     }
     ar = {
         "bar": {
-            "index": 103,
             "timestamp": "2020-03-23T14:30:00+00:00",
             "open": 102.0,
             "high": 115.0,
@@ -910,12 +909,12 @@ def test_realtime_aapl_phase_b():
             "close": 115.0,
             "volume": 9000000,
         },
+        "bar_index": 103,
         "rally_pct": 0.147,  # 14.7% rally (strong!)
         "bars_after_sc": 3,
     }
     st1 = {
         "bar": {
-            "index": 110,
             "timestamp": "2020-03-30T14:30:00+00:00",
             "open": 104.0,
             "high": 105.0,
@@ -923,6 +922,7 @@ def test_realtime_aapl_phase_b():
             "close": 97.0,
             "volume": 5000000,
         },
+        "bar_index": 110,
         "confidence": 84,
         "volume_reduction_pct": 0.54,
         "distance_from_sc_low": 0.019,
@@ -947,16 +947,19 @@ def test_realtime_aapl_full_progression():
     """Test real-time AAPL progression through all phases."""
     # Setup events
     sc = {
-        "bar": {"index": 100, "timestamp": "2020-03-20T14:30:00+00:00"},
+        "bar": {"timestamp": "2020-03-20T14:30:00+00:00"},
+        "bar_index": 100,
         "confidence": 92,
     }
     ar = {
-        "bar": {"index": 103, "timestamp": "2020-03-23T14:30:00+00:00"},
+        "bar": {"timestamp": "2020-03-23T14:30:00+00:00"},
+        "bar_index": 103,
         "rally_pct": 0.147,
         "bars_after_sc": 3,
     }
     st1 = {
-        "bar": {"index": 110, "timestamp": "2020-03-30T14:30:00+00:00"},
+        "bar": {"timestamp": "2020-03-30T14:30:00+00:00"},
+        "bar_index": 110,
         "confidence": 84,
         "volume_reduction_pct": 0.54,
         "distance_from_sc_low": 0.019,

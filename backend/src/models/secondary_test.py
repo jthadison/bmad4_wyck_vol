@@ -38,6 +38,7 @@ class SecondaryTest(BaseModel):
 
     Attributes:
         bar: The OHLCV bar where ST occurred - stored as dict
+        bar_index: Index position of the bar in the data sequence
         distance_from_sc_low: abs(test_low - sc_low) / sc_low (0.0-0.02, closer = better)
         volume_reduction_pct: (sc_vol - test_vol) / sc_vol (0.10+ minimum, higher = better)
         test_volume_ratio: Volume ratio of ST bar
@@ -52,6 +53,7 @@ class SecondaryTest(BaseModel):
 
     # Using dict for bar/references to avoid circular import issues
     bar: dict = Field(..., description="The bar where ST occurred")
+    bar_index: int = Field(..., ge=0, description="Index position of the bar in the data sequence")
     distance_from_sc_low: Decimal = Field(
         ...,
         ge=Decimal("0.0"),

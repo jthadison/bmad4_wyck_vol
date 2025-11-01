@@ -1,6 +1,22 @@
 """
 Phase Events data structure for Wyckoff phase confidence scoring.
 
+⚠️ DEPRECATED: This module is deprecated as of Story 4.8.
+Use src.models.phase_classification.PhaseEvents instead.
+
+Migration Path:
+    OLD (deprecated):
+        from src.models.phase_events import PhaseEvents
+        events = PhaseEvents(sc=sc, ar=ar, st_list=[st1, st2])
+
+    NEW (canonical):
+        from src.models.phase_classification import PhaseEvents
+        events = PhaseEvents(
+            selling_climax=sc.model_dump(),
+            automatic_rally=ar.model_dump(),
+            secondary_tests=[st1.model_dump(), st2.model_dump()]
+        )
+
 Container for all detected Wyckoff events (SC, AR, ST, Spring, SOS, LPS)
 used in phase classification and confidence scoring (Story 4.5).
 
@@ -11,6 +27,17 @@ Events are optional because not all phases require all events:
 - Phase D: requires SOS (optionally LPS)
 - Phase E: requires Phase D + continuation
 """
+
+import warnings
+
+# Issue deprecation warning on module import
+warnings.warn(
+    "src.models.phase_events is deprecated. "
+    "Use src.models.phase_classification.PhaseEvents instead. "
+    "See module docstring for migration path.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from typing import Optional, List, Any
 from pydantic import BaseModel, Field

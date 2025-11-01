@@ -567,9 +567,10 @@ class TestSecondaryTestDetection:
 
         ar = AutomaticRally(
             bar={"timestamp": "2020-03-23T00:00:00+00:00", "low": "100.00", "high": "106.00"},
+            bar_index=1,
             rally_pct=Decimal("0.06"),
             bars_after_sc=1,
-            sc_reference={"bar": {"timestamp": "2020-03-22T00:00:00+00:00", "low": "100.00"}},
+            sc_reference={"bar": {"timestamp": "2020-03-22T00:00:00+00:00", "low": "100.00"}, "bar_index": 0},
             sc_low=Decimal("100.00"),
             ar_high=Decimal("106.00"),
             volume_profile="NORMAL",
@@ -613,6 +614,7 @@ class TestSecondaryTestDetection:
 
         sc = SellingClimax(
             bar={"timestamp": "2020-03-22T00:00:00+00:00", "low": "100.00"},
+            bar_index=0,
             volume_ratio=Decimal("2.5"),
             spread_ratio=Decimal("1.8"),
             close_position=Decimal("0.73"),
