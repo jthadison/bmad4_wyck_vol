@@ -16,8 +16,7 @@ from src.models.selling_climax import SellingClimax, SellingClimaxZone
 from src.models.automatic_rally import AutomaticRally
 from src.models.secondary_test import SecondaryTest
 from src.models.effort_result import EffortResult
-from src.models.wyckoff_phase import WyckoffPhase
-from src.models.phase_events import PhaseEvents
+from src.models.phase_classification import WyckoffPhase, PhaseEvents  # Use canonical sources
 from src.models.trading_range import TradingRange
 
 logger = structlog.get_logger(__name__)
@@ -1357,11 +1356,11 @@ def calculate_phase_confidence(
     logger.info(
         "phase_confidence_start",
         phase=phase.value,
-        has_sc=events.sc is not None,
-        has_ar=events.ar is not None,
-        st_count=len(events.st_list),
+        has_sc=events.selling_climax is not None,
+        has_ar=events.automatic_rally is not None,
+        st_count=len(events.secondary_tests),
         has_spring=events.spring is not None,
-        has_sos=events.sos is not None,
+        has_sos=events.sos_breakout is not None,
     )
 
     # Calculate 4 scoring components
