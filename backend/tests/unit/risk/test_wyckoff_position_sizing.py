@@ -22,8 +22,7 @@ from src.models.phase_info import (
     PhaseESubState,
     PhaseBRiskProfile,
 )
-from src.models.phase_events import PhaseEvents
-from src.models.wyckoff_phase import WyckoffPhase
+from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.risk.wyckoff_position_sizing import (
     WyckoffPositionSize,
     calculate_wyckoff_position_size,

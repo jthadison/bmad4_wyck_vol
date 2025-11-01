@@ -21,7 +21,7 @@ from typing import Dict, List
 import numpy as np
 
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_events import PhaseEvents
+from src.models.phase_classification import PhaseEvents
 
 
 # VSA Thresholds (Victoria's specification)
@@ -222,7 +222,7 @@ def check_preliminary_supply(events: PhaseEvents, bars: List[OHLCVBar]) -> bool:
     if not events.selling_climax:
         return False
 
-    sc_index = events.selling_climax.bar_index
+    sc_index = events.selling_climax["bar_index"]
 
     # Calculate average volume 50 bars before SC
     pre_sc_region = bars[max(0, sc_index - 50) : sc_index]

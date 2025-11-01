@@ -31,7 +31,7 @@ from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
 from src.models.effort_result import EffortResult
 from src.models.trading_range import TradingRange
-from src.models.wyckoff_phase import WyckoffPhase
+from src.models.phase_classification import WyckoffPhase
 from src.pattern_engine.phase_detector_v2 import (
     PhaseDetector,
     get_current_phase,
@@ -57,16 +57,16 @@ def sample_bars() -> List[OHLCVBar]:
 
         # Simulate downtrend leading to SC at bar 20
         if i < 20:
-            base_price = Decimal("100") - Decimal(str(i * 0.5))
+            base_price = (Decimal("100") - Decimal(str(i * 0.5))).quantize(Decimal("0.00000001"))
         # SC zone at bars 20-22
         elif i in [20, 21, 22]:
-            base_price = Decimal("90")
+            base_price = Decimal("90.00000000")
         # AR rally at bars 23-25
         elif 23 <= i <= 25:
-            base_price = Decimal("90") + Decimal(str((i - 22) * 1.5))
+            base_price = (Decimal("90") + Decimal(str((i - 22) * 1.5))).quantize(Decimal("0.00000001"))
         # ST oscillation in Phase B
         else:
-            base_price = Decimal("93") + Decimal(str((i % 5) * 0.3))
+            base_price = (Decimal("93") + Decimal(str((i % 5) * 0.3))).quantize(Decimal("0.00000001"))
 
         bar = OHLCVBar(
             symbol="AAPL",
@@ -101,14 +101,8 @@ def sample_volume_analysis(sample_bars) -> List[VolumeAnalysis]:
             spread_ratio = Decimal("1.0")
 
         analysis = VolumeAnalysis(
-            symbol=bar.symbol,
-            timeframe=bar.timeframe,
-            timestamp=bar.timestamp,
-            volume=bar.volume,
-            average_volume=Decimal("1000000"),
+            bar=bar,  # Full OHLCVBar object
             volume_ratio=volume_ratio,
-            spread=bar.spread,
-            average_spread=Decimal("2.0"),
             spread_ratio=spread_ratio,
             close_position=Decimal("0.75"),  # Upper region
             effort_result=effort_result,
@@ -162,8 +156,8 @@ def test_detect_phase_with_sc_only(sample_bars, sample_volume_analysis, sample_t
     phase_info = detector.detect_phase(sample_trading_range, bars, volume_analysis)
 
     # Should detect SC but no phase yet (need AR for Phase A)
-    assert phase_info.events.sc is not None
-    assert phase_info.events.ar is None
+    assert phase_info.events.selling_climax is not None
+    assert phase_info.events.automatic_rally is None
     assert phase_info.phase is None or phase_info.phase == WyckoffPhase.A
 
 
@@ -178,8 +172,8 @@ def test_detect_phase_with_sc_and_ar(sample_bars, sample_volume_analysis, sample
     phase_info = detector.detect_phase(sample_trading_range, bars, volume_analysis)
 
     # Should detect SC + AR = Phase A
-    assert phase_info.events.sc is not None
-    assert phase_info.events.ar is not None
+    assert phase_info.events.selling_climax is not None
+    assert phase_info.events.automatic_rally is not None
     assert phase_info.phase == WyckoffPhase.A
 
 
@@ -193,11 +187,11 @@ def test_detect_phase_with_st(sample_bars, sample_volume_analysis, sample_tradin
     )
 
     # Should detect SC + AR + ST = Phase B
-    assert phase_info.events.sc is not None
-    assert phase_info.events.ar is not None
+    assert phase_info.events.selling_climax is not None
+    assert phase_info.events.automatic_rally is not None
     # ST detection depends on price action - may or may not detect
     # Just verify events structure is populated
-    assert phase_info.events.st_list is not None
+    assert phase_info.events.secondary_tests is not None
 
 
 # ============================================================================
@@ -482,14 +476,8 @@ def test_insufficient_bars_warning(sample_trading_range):
         minimal_bars.append(bar)
 
         analysis = VolumeAnalysis(
-            symbol=bar.symbol,
-            timeframe=bar.timeframe,
-            timestamp=bar.timestamp,
-            volume=bar.volume,
-            average_volume=Decimal("1000000"),
+            bar=bar,
             volume_ratio=Decimal("1.0"),
-            spread=bar.spread,
-            average_spread=Decimal("2.0"),
             spread_ratio=Decimal("1.0"),
             close_position=Decimal("0.75"),
             effort_result=EffortResult.NORMAL,
@@ -534,14 +522,8 @@ def test_no_events_detected(sample_trading_range):
         normal_bars.append(bar)
 
         analysis = VolumeAnalysis(
-            symbol=bar.symbol,
-            timeframe=bar.timeframe,
-            timestamp=bar.timestamp,
-            volume=bar.volume,
-            average_volume=Decimal("1000000"),
+            bar=bar,
             volume_ratio=Decimal("1.0"),  # Normal
-            spread=bar.spread,
-            average_spread=Decimal("2.0"),
             spread_ratio=Decimal("1.0"),  # Normal
             close_position=Decimal("0.5"),
             effort_result=EffortResult.NORMAL,
@@ -553,8 +535,8 @@ def test_no_events_detected(sample_trading_range):
     )
 
     # No events detected = no phase
-    assert phase_info.events.sc is None
-    assert phase_info.events.ar is None
+    assert phase_info.events.selling_climax is None
+    assert phase_info.events.automatic_rally is None
     assert phase_info.phase is None
 
 

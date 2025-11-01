@@ -19,11 +19,10 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_events import PhaseEvents
+from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.models.phase_info import PhaseInfo
 from src.models.trading_range import TradingRange
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.wyckoff_phase import WyckoffPhase
 
 # Import existing detectors from Stories 4.1-4.3
 from src.pattern_engine.phase_detector import (
@@ -451,14 +450,14 @@ class PhaseDetector:
         sos = None  # TODO: Epic 5 - SOS detection
         lps = None  # TODO: Epic 5 - LPS detection
 
-        # Create PhaseEvents
+        # Create PhaseEvents (using phase_classification.PhaseEvents structure)
         events = PhaseEvents(
-            sc=sc.model_dump() if sc else None,
-            ar=ar.model_dump() if ar else None,
-            st_list=[st.model_dump() for st in st_list],
+            selling_climax=sc.model_dump() if sc else None,
+            automatic_rally=ar.model_dump() if ar else None,
+            secondary_tests=[st.model_dump() for st in st_list],
             spring=spring,
-            sos=sos,
-            lps=lps,
+            sos_breakout=sos,
+            last_point_of_support=lps,
         )
 
         logger.debug(

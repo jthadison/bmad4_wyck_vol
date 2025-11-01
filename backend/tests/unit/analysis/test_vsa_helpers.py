@@ -19,7 +19,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List
 
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_events import PhaseEvents
+from src.models.phase_classification import PhaseEvents
 from src.analysis.vsa_helpers import (
     VSA_THRESHOLDS,
     get_close_position,
@@ -257,7 +257,7 @@ def test_preliminary_supply_detected(sample_bars_for_vsa):
     # Create PhaseEvents with SC at bar 20
     sc_bar = sample_bars_for_vsa[20]
     events = PhaseEvents(
-        sc={
+        selling_climax={
             "bar": {
                 "timestamp": sc_bar.timestamp.isoformat(),
                 "low": str(sc_bar.low),
@@ -275,7 +275,7 @@ def test_preliminary_supply_detected(sample_bars_for_vsa):
 
 def test_preliminary_supply_not_detected_no_sc():
     """Test PS not detected when no SC present."""
-    events = PhaseEvents(sc=None)
+    events = PhaseEvents(selling_climax=None)
     bars = []
 
     has_ps = check_preliminary_supply(events, bars)
@@ -294,7 +294,7 @@ def test_preliminary_supply_not_detected_normal_volume(create_bar):
     # SC at bar 20
     sc_bar = bars[20]
     events = PhaseEvents(
-        sc={
+        selling_climax={
             "bar": {
                 "timestamp": sc_bar.timestamp.isoformat(),
                 "low": str(sc_bar.low),

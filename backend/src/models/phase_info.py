@@ -14,8 +14,7 @@ from typing import List, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.models.phase_events import PhaseEvents
-from src.models.wyckoff_phase import WyckoffPhase
+from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.models.trading_range import TradingRange
 
 
