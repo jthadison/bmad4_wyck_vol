@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from backend.src.models.phase_classification import WyckoffPhase
-from backend.src.models.phase_info import PhaseESubState
+from src.models.wyckoff_phase import WyckoffPhase
+from src.models.phase_info import PhaseESubState
 
 if TYPE_CHECKING:
-    from backend.src.models.phase_info import PhaseInfo
+    from src.models.phase_info import PhaseInfo
 
 
 class WyckoffPositionSize(BaseModel):

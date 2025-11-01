@@ -16,15 +16,15 @@ import pytest
 from decimal import Decimal
 from datetime import datetime, timezone
 
-from backend.src.models.phase_info import (
+from src.models.phase_info import (
     PhaseInfo,
     PhaseInvalidation,
     PhaseESubState,
     PhaseBRiskProfile,
 )
-from backend.src.models.phase_events import PhaseEvents
-from backend.src.models.wyckoff_phase import WyckoffPhase
-from backend.src.risk.wyckoff_position_sizing import (
+from src.models.phase_events import PhaseEvents
+from src.models.wyckoff_phase import WyckoffPhase
+from src.risk.wyckoff_position_sizing import (
     WyckoffPositionSize,
     calculate_wyckoff_position_size,
     get_position_value,

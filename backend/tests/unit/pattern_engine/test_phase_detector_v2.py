@@ -27,11 +27,12 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import List
 
-from backend.src.models.ohlcv import OHLCVBar
-from backend.src.models.volume_analysis import VolumeAnalysis, EffortResult
-from backend.src.models.trading_range import TradingRange
-from backend.src.models.wyckoff_phase import WyckoffPhase
-from backend.src.pattern_engine.phase_detector_v2 import (
+from src.models.ohlcv import OHLCVBar
+from src.models.volume_analysis import VolumeAnalysis
+from src.models.effort_result import EffortResult
+from src.models.trading_range import TradingRange
+from src.models.wyckoff_phase import WyckoffPhase
+from src.pattern_engine.phase_detector_v2 import (
     PhaseDetector,
     get_current_phase,
     is_trading_allowed,

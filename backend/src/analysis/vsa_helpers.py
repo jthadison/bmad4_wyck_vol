@@ -20,8 +20,8 @@ from typing import Dict, List
 
 import numpy as np
 
-from backend.src.models.ohlcv import OHLCVBar
-from backend.src.models.phase_events import PhaseEvents
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_events import PhaseEvents
 
 
 # VSA Thresholds (Victoria's specification)

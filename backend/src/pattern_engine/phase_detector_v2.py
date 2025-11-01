@@ -18,25 +18,25 @@ import structlog
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-from backend.src.models.ohlcv import OHLCVBar
-from backend.src.models.phase_events import PhaseEvents
-from backend.src.models.phase_info import PhaseInfo
-from backend.src.models.trading_range import TradingRange
-from backend.src.models.volume_analysis import VolumeAnalysis
-from backend.src.models.wyckoff_phase import WyckoffPhase
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_events import PhaseEvents
+from src.models.phase_info import PhaseInfo
+from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
+from src.models.wyckoff_phase import WyckoffPhase
 
 # Import existing detectors from Stories 4.1-4.3
-from backend.src.pattern_engine.phase_detector import (
+from src.pattern_engine.phase_detector import (
     detect_selling_climax,
     detect_automatic_rally,
     detect_secondary_test,
 )
 
 # Import phase classifier from Story 4.4
-from backend.src.pattern_engine.phase_classifier import classify_phase
+from src.pattern_engine.phase_classifier import classify_phase
 
 # Import confidence calculator (will use existing or create wrapper)
-from backend.src.pattern_engine.phase_detector import calculate_phase_confidence
+from src.pattern_engine.phase_detector import calculate_phase_confidence
 
 logger = structlog.get_logger(__name__)
 

@@ -14,9 +14,9 @@ from typing import List, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.src.models.phase_events import PhaseEvents
-from backend.src.models.wyckoff_phase import WyckoffPhase
-from backend.src.models.trading_range import TradingRange
+from src.models.phase_events import PhaseEvents
+from src.models.wyckoff_phase import WyckoffPhase
+from src.models.trading_range import TradingRange
 
 
 class PhaseCSubState(str, Enum):
