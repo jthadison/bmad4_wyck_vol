@@ -1462,17 +1462,17 @@ def _score_event_presence(phase: WyckoffPhase, events: PhaseEvents) -> int:
 
     if phase == WyckoffPhase.A:
         # Phase A requires SC + AR
-        if events.sc is not None:
+        if events.selling_climax is not None:
             score += 20
-        if events.ar is not None:
+        if events.automatic_rally is not None:
             score += 20
 
     elif phase == WyckoffPhase.B:
         # Phase B requires Phase A + at least 1 ST
-        if events.has_phase_a():
+        if (events.selling_climax is not None and events.automatic_rally is not None):
             score += 20
 
-        st_count = events.get_st_count()
+        st_count = len(events.secondary_tests)
         if st_count >= 2:
             score += 20  # Strong cause building (2+ STs)
         elif st_count == 1:
@@ -1481,20 +1481,20 @@ def _score_event_presence(phase: WyckoffPhase, events: PhaseEvents) -> int:
 
     elif phase == WyckoffPhase.C:
         # Phase C requires Phase B + Spring
-        if events.has_phase_b():
+        if ((events.selling_climax is not None and events.automatic_rally is not None) and len(events.secondary_tests) > 0):
             score += 20
         if events.spring is not None:
             score += 20
 
     elif phase == WyckoffPhase.D:
         # Phase D requires SOS (SOS alone defines Phase D)
-        if events.sos is not None:
+        if events.sos_breakout is not None:
             score += 40  # SOS is primary signal
         # Note: LPS adds quality, not presence (covered in quality scoring)
 
     elif phase == WyckoffPhase.E:
         # Phase E requires Phase D + continuation
-        if events.has_phase_d():
+        if (events.sos_breakout is not None):
             score += 20
         # Additional 20 points if price above Ice (continuation confirmed)
         # This would need current price context, for now just give 20pts for Phase D
@@ -1504,11 +1504,11 @@ def _score_event_presence(phase: WyckoffPhase, events: PhaseEvents) -> int:
         "event_presence_scored",
         phase=phase.value,
         score=score,
-        has_sc=events.sc is not None,
-        has_ar=events.ar is not None,
-        st_count=events.get_st_count(),
+        has_sc=events.selling_climax is not None,
+        has_ar=events.automatic_rally is not None,
+        st_count=len(events.secondary_tests),
         has_spring=events.spring is not None,
-        has_sos=events.sos is not None,
+        has_sos=events.sos_breakout is not None,
     )
 
     return score
@@ -1543,34 +1543,87 @@ def _score_event_quality(phase: WyckoffPhase, events: PhaseEvents) -> int:
 
     if phase == WyckoffPhase.A:
         # Phase A quality: SC + AR
-        if events.sc:
-            qualities.append(events.sc.confidence)  # 0-100
+        if events.selling_climax:
+            qualities.append(events.selling_climax["confidence"])  # 0-100
 
-        if events.ar:
-            ar_quality = _calculate_ar_quality(events.ar)
-            qualities.append(ar_quality)
+        if events.automatic_rally:
+            # Calculate AR quality inline from dict (adapted from _calculate_ar_quality)
+            ar_dict = events.automatic_rally
+            ar_quality = 50  # Base
+            rally_pct = Decimal(str(ar_dict["rally_pct"]))
+            if rally_pct >= Decimal("0.05"):
+                ar_quality += 30
+            elif rally_pct >= Decimal("0.04"):
+                ar_quality += 20
+            elif rally_pct >= Decimal("0.03"):
+                ar_quality += 10
+            if ar_dict["bars_after_sc"] <= 5:
+                ar_quality += 15
+            elif ar_dict["bars_after_sc"] <= 8:
+                ar_quality += 8
+            else:
+                ar_quality += 2
+            if ar_dict["volume_profile"] == "HIGH":
+                ar_quality += 5
+            qualities.append(min(ar_quality, 100))
 
     elif phase == WyckoffPhase.B:
         # Phase B quality: all Phase A events + STs
-        if events.sc:
-            qualities.append(events.sc.confidence)
+        if events.selling_climax:
+            qualities.append(events.selling_climax["confidence"])
 
-        if events.ar:
-            qualities.append(_calculate_ar_quality(events.ar))
+        if events.automatic_rally:
+            # Calculate AR quality inline from dict
+            ar_dict = events.automatic_rally
+            ar_quality = 50  # Base
+            rally_pct = Decimal(str(ar_dict["rally_pct"]))
+            if rally_pct >= Decimal("0.05"):
+                ar_quality += 30
+            elif rally_pct >= Decimal("0.04"):
+                ar_quality += 20
+            elif rally_pct >= Decimal("0.03"):
+                ar_quality += 10
+            if ar_dict["bars_after_sc"] <= 5:
+                ar_quality += 15
+            elif ar_dict["bars_after_sc"] <= 8:
+                ar_quality += 8
+            else:
+                ar_quality += 2
+            if ar_dict["volume_profile"] == "HIGH":
+                ar_quality += 5
+            qualities.append(min(ar_quality, 100))
 
         # ST quality: average of all STs
-        for st in events.st_list:
-            st_quality = st.confidence  # ST already has confidence from detection
+        for st in events.secondary_tests:
+            st_quality = st["confidence"]  # ST already has confidence from detection
             qualities.append(st_quality)
 
     elif phase == WyckoffPhase.C:
         # Phase C quality: Phase B events + Spring
-        if events.sc:
-            qualities.append(events.sc.confidence)
-        if events.ar:
-            qualities.append(_calculate_ar_quality(events.ar))
-        for st in events.st_list:
-            qualities.append(st.confidence)
+        if events.selling_climax:
+            qualities.append(events.selling_climax["confidence"])
+        if events.automatic_rally:
+            # Calculate AR quality inline from dict
+            ar_dict = events.automatic_rally
+            ar_quality = 50  # Base
+            rally_pct = Decimal(str(ar_dict["rally_pct"]))
+            if rally_pct >= Decimal("0.05"):
+                ar_quality += 30
+            elif rally_pct >= Decimal("0.04"):
+                ar_quality += 20
+            elif rally_pct >= Decimal("0.03"):
+                ar_quality += 10
+            if ar_dict["bars_after_sc"] <= 5:
+                ar_quality += 15
+            elif ar_dict["bars_after_sc"] <= 8:
+                ar_quality += 8
+            else:
+                ar_quality += 2
+            if ar_dict["volume_profile"] == "HIGH":
+                ar_quality += 5
+            qualities.append(min(ar_quality, 100))
+        for st in events.secondary_tests:
+            qualities.append(st["confidence"])
 
         if events.spring:
             # Spring will have confidence from Epic 5
@@ -1582,29 +1635,29 @@ def _score_event_quality(phase: WyckoffPhase, events: PhaseEvents) -> int:
 
     elif phase == WyckoffPhase.D:
         # Phase D quality: SOS (primary), optionally LPS
-        if events.sos:
-            if hasattr(events.sos, 'confidence'):
-                qualities.append(events.sos.confidence)
+        if events.sos_breakout:
+            if hasattr(events.sos_breakout, 'confidence'):
+                qualities.append(events.sos_breakout.confidence)
             else:
                 qualities.append(85)  # Placeholder for Epic 5
 
-        if events.lps:
-            if hasattr(events.lps, 'confidence'):
-                qualities.append(events.lps.confidence)
+        if events.last_point_of_support:
+            if hasattr(events.last_point_of_support, 'confidence'):
+                qualities.append(events.last_point_of_support.confidence)
             else:
                 qualities.append(80)  # Placeholder for Epic 5
 
     elif phase == WyckoffPhase.E:
         # Phase E quality: Phase D events + continuation metrics
-        if events.sos:
-            if hasattr(events.sos, 'confidence'):
-                qualities.append(events.sos.confidence)
+        if events.sos_breakout:
+            if hasattr(events.sos_breakout, 'confidence'):
+                qualities.append(events.sos_breakout.confidence)
             else:
                 qualities.append(85)
 
-        if events.lps:
-            if hasattr(events.lps, 'confidence'):
-                qualities.append(events.lps.confidence)
+        if events.last_point_of_support:
+            if hasattr(events.last_point_of_support, 'confidence'):
+                qualities.append(events.last_point_of_support.confidence)
             else:
                 qualities.append(80)
 
@@ -1702,30 +1755,30 @@ def _score_sequence_validity(
 
     if phase == WyckoffPhase.A:
         # SC must come before AR, AR within 10 bars
-        if events.sc and events.ar:
+        if events.selling_climax and events.automatic_rally:
             # Check order
-            sc_timestamp = datetime.fromisoformat(events.sc.bar["timestamp"])
-            ar_timestamp = datetime.fromisoformat(events.ar.bar["timestamp"])
+            sc_timestamp = datetime.fromisoformat(events.selling_climax["bar"]["timestamp"])
+            ar_timestamp = datetime.fromisoformat(events.automatic_rally["bar"]["timestamp"])
 
             if sc_timestamp < ar_timestamp:
                 score += 10  # Correct order
 
             # Check timing (AR should be within 10 bars)
-            if events.ar.bars_after_sc <= 5:
+            if events.automatic_rally["bars_after_sc"] <= 5:
                 score += 10  # Ideal timing
-            elif events.ar.bars_after_sc <= 10:
+            elif events.automatic_rally["bars_after_sc"] <= 10:
                 score += 5   # Acceptable timing
             # else: 0 points (too late, shouldn't happen but defensive)
 
     elif phase == WyckoffPhase.B:
         # Phase A must be complete
-        if events.has_phase_a():
+        if (events.selling_climax is not None and events.automatic_rally is not None):
             score += 10
 
         # STs should be spaced reasonably (not all in 1-2 bars)
-        if len(events.st_list) >= 2:
+        if len(events.secondary_tests) >= 2:
             # Check if STs are distributed
-            st_timestamps = [datetime.fromisoformat(st.bar["timestamp"]) for st in events.st_list]
+            st_timestamps = [datetime.fromisoformat(st["bar"]["timestamp"]) for st in events.secondary_tests]
             st_timestamps_sorted = sorted(st_timestamps)
 
             # Calculate gaps between STs
@@ -1745,12 +1798,12 @@ def _score_sequence_validity(
         # Phase B duration (should be 10-40 bars per Story 4.4)
         # This would require calculating duration from events
         # For now, give 5 points if we have STs (implies some duration)
-        if len(events.st_list) >= 1:
+        if len(events.secondary_tests) >= 1:
             score += 5
 
     elif phase == WyckoffPhase.C:
         # Phase B must be complete
-        if events.has_phase_b():
+        if ((events.selling_climax is not None and events.automatic_rally is not None) and len(events.secondary_tests) > 0):
             score += 10
 
         # Spring should come after adequate Phase B duration
@@ -1759,18 +1812,18 @@ def _score_sequence_validity(
 
     elif phase == WyckoffPhase.D:
         # Ideally SOS comes after Phase C
-        if events.has_phase_c():
+        if (((events.selling_climax is not None and events.automatic_rally is not None) and len(events.secondary_tests) > 0) and events.spring is not None):
             score += 20  # Full sequence A→B→C→D (ideal)
-        elif events.has_phase_b():
+        elif ((events.selling_climax is not None and events.automatic_rally is not None) and len(events.secondary_tests) > 0):
             score += 15  # Phase B confirmed but no Spring (acceptable)
-        elif events.has_phase_a():
+        elif (events.selling_climax is not None and events.automatic_rally is not None):
             score += 10  # Phase A confirmed but limited cause building
         else:
             score += 5   # SOS without prior phases (valid but less confidence)
 
     elif phase == WyckoffPhase.E:
         # Must have Phase D (SOS breakout)
-        if events.has_phase_d():
+        if (events.sos_breakout is not None):
             score += 20  # Valid continuation
 
     logger.debug(
@@ -1827,15 +1880,15 @@ def _score_range_context(
 
     if phase == WyckoffPhase.A:
         # SC should align with range support
-        if events.sc:
-            sc_low = Decimal(events.sc.bar["low"])
+        if events.selling_climax:
+            sc_low = Decimal(events.selling_climax["bar"]["low"])
             # Check if SC low near Creek (within 2%)
             if abs(sc_low - creek_price) / creek_price <= Decimal("0.02"):
                 score += 5  # Good alignment
 
         # AR should stay within range
-        if events.ar:
-            ar_high = events.ar.ar_high
+        if events.automatic_rally:
+            ar_high = Decimal(str(events.automatic_rally["ar_high"]))
             if ar_high < ice_price:
                 score += 5  # AR respects resistance
             elif ar_high < ice_price * Decimal("1.02"):
@@ -1844,16 +1897,16 @@ def _score_range_context(
 
     elif phase == WyckoffPhase.B:
         # STs should oscillate within range
-        if events.st_list:
+        if events.secondary_tests:
             sts_in_range = 0
-            for st in events.st_list:
-                st_low = Decimal(st.bar["low"])
+            for st in events.secondary_tests:
+                st_low = Decimal(st["bar"]["low"])
                 if creek_price <= st_low <= ice_price:
                     sts_in_range += 1
 
-            if sts_in_range == len(events.st_list):
+            if sts_in_range == len(events.secondary_tests):
                 score += 5  # All STs within range
-            elif sts_in_range >= len(events.st_list) * 0.7:
+            elif sts_in_range >= len(events.secondary_tests) * 0.7:
                 score += 3  # Most STs within range
 
         # Range duration appropriate for Phase B (10-40 bars)
@@ -1862,14 +1915,14 @@ def _score_range_context(
 
     elif phase == WyckoffPhase.C:
         # Spring should test Creek or SC low
-        if events.spring is not None and events.sc is not None:
+        if events.spring is not None and events.selling_climax is not None:
             # This would need Spring model with price info
             # For now, give 10 points if Spring present (Epic 5 will validate)
             score += 10
 
     elif phase == WyckoffPhase.D:
         # SOS should break above Ice
-        if events.sos is not None:
+        if events.sos_breakout is not None:
             # This would need SOS model with price info
             # For now, give 10 points if SOS present (Epic 5 will validate breakout)
             score += 10
@@ -1878,7 +1931,7 @@ def _score_range_context(
         # Price should be well above Ice
         # This would need current price context
         # For now, give 10 points if Phase D confirmed
-        if events.has_phase_d():
+        if (events.sos_breakout is not None):
             score += 10
 
     logger.debug(
