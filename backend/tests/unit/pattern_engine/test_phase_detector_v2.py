@@ -114,17 +114,140 @@ def sample_volume_analysis(sample_bars) -> List[VolumeAnalysis]:
 
 @pytest.fixture
 def sample_trading_range() -> TradingRange:
-    """Generate sample trading range."""
-    # Simplified trading range for testing
-    # In real implementation, this would be fully populated
-    class SimpleTradingRange:
-        def __init__(self):
-            self.support = Decimal("89")
-            self.resistance = Decimal("96")
-            self.creek = type('obj', (object,), {'price': Decimal("89")})()
-            self.ice = type('obj', (object,), {'price': Decimal("96")})()
+    """Generate sample trading range with valid Pivot objects."""
+    from src.models.pivot import Pivot, PivotType
+    from src.models.price_cluster import PriceCluster
 
-    return SimpleTradingRange()
+    base_time = datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc)
+
+    # Create OHLCVBars for pivots
+    bar_sp1 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        timestamp=base_time + timedelta(days=1),
+        open=Decimal("90.00"),
+        high=Decimal("91.00"),
+        low=Decimal("89.00"),
+        close=Decimal("89.50"),
+        volume=1000000,
+        spread=Decimal("2.00")
+    )
+
+    bar_sp2 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        timestamp=base_time + timedelta(days=5),
+        open=Decimal("90.00"),
+        high=Decimal("91.00"),
+        low=Decimal("89.10"),
+        close=Decimal("89.80"),
+        volume=1000000,
+        spread=Decimal("1.90")
+    )
+
+    bar_rp1 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        timestamp=base_time + timedelta(days=3),
+        open=Decimal("94.00"),
+        high=Decimal("96.00"),
+        low=Decimal("93.50"),
+        close=Decimal("95.00"),
+        volume=1000000,
+        spread=Decimal("2.50")
+    )
+
+    bar_rp2 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        timestamp=base_time + timedelta(days=7),
+        open=Decimal("94.50"),
+        high=Decimal("96.20"),
+        low=Decimal("94.00"),
+        close=Decimal("95.50"),
+        volume=1000000,
+        spread=Decimal("2.20")
+    )
+
+    # Create Pivots with required fields
+    sp1 = Pivot(
+        bar=bar_sp1,
+        price=Decimal("89.00"),
+        type=PivotType.LOW,
+        strength=2,
+        timestamp=bar_sp1.timestamp,
+        index=11
+    )
+
+    sp2 = Pivot(
+        bar=bar_sp2,
+        price=Decimal("89.10"),
+        type=PivotType.LOW,
+        strength=2,
+        timestamp=bar_sp2.timestamp,
+        index=15
+    )
+
+    rp1 = Pivot(
+        bar=bar_rp1,
+        price=Decimal("96.00"),
+        type=PivotType.HIGH,
+        strength=2,
+        timestamp=bar_rp1.timestamp,
+        index=13
+    )
+
+    rp2 = Pivot(
+        bar=bar_rp2,
+        price=Decimal("96.20"),
+        type=PivotType.HIGH,
+        strength=2,
+        timestamp=bar_rp2.timestamp,
+        index=17
+    )
+
+    # Create PriceClusters
+    support_cluster = PriceCluster(
+        pivots=[sp1, sp2],
+        average_price=Decimal("89.05"),
+        min_price=Decimal("89.00"),
+        max_price=Decimal("89.10"),
+        price_range=Decimal("0.10"),
+        touch_count=2,
+        cluster_type=PivotType.LOW,
+        std_deviation=Decimal("0.05"),
+        timestamp_range=(sp1.timestamp, sp2.timestamp)
+    )
+
+    resistance_cluster = PriceCluster(
+        pivots=[rp1, rp2],
+        average_price=Decimal("96.10"),
+        min_price=Decimal("96.00"),
+        max_price=Decimal("96.20"),
+        price_range=Decimal("0.20"),
+        touch_count=2,
+        cluster_type=PivotType.HIGH,
+        std_deviation=Decimal("0.10"),
+        timestamp_range=(rp1.timestamp, rp2.timestamp)
+    )
+
+    # Create TradingRange (Creek and Ice are optional, so omit them for simplicity)
+    trading_range = TradingRange(
+        symbol="AAPL",
+        timeframe="1d",
+        support_cluster=support_cluster,
+        resistance_cluster=resistance_cluster,
+        support=Decimal("89.00"),
+        resistance=Decimal("96.00"),
+        midpoint=Decimal("92.50"),
+        range_width=Decimal("7.00"),
+        range_width_pct=Decimal("0.0787"),
+        start_index=11,
+        end_index=17,
+        duration=10  # Minimum 10 bars required
+    )
+
+    return trading_range
 
 
 # ============================================================================
@@ -149,9 +272,9 @@ def test_detect_phase_with_sc_only(sample_bars, sample_volume_analysis, sample_t
     """Test phase detection with only SC detected (no AR yet)."""
     detector = PhaseDetector()
 
-    # Use only bars up to SC (bar 22)
-    bars = sample_bars[:23]
-    volume_analysis = sample_volume_analysis[:23]
+    # Use only bars up to first SC bar (bar 20) to avoid detecting AR
+    bars = sample_bars[:21]
+    volume_analysis = sample_volume_analysis[:21]
 
     phase_info = detector.detect_phase(sample_trading_range, bars, volume_analysis)
 

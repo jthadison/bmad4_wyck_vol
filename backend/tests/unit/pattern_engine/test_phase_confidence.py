@@ -23,8 +23,7 @@ from src.pattern_engine.phase_detector import (
     should_reject_phase,
     MIN_PHASE_CONFIDENCE,
 )
-from src.models.wyckoff_phase import WyckoffPhase
-from src.models.phase_classification import PhaseEvents
+from src.models.phase_classification import WyckoffPhase, PhaseEvents
 from src.models.selling_climax import SellingClimax
 from src.models.automatic_rally import AutomaticRally
 from src.models.secondary_test import SecondaryTest
@@ -56,6 +55,7 @@ def perfect_sc(base_timestamp):
             "volume": 100000000,
             "spread": "6.00",
         },
+        bar_index=20,
         volume_ratio=Decimal("3.0"),  # High volume (40 pts)
         spread_ratio=Decimal("2.0"),  # Wide spread (30 pts)
         close_position=Decimal("0.92"),  # Excellent close position (30 pts)
@@ -80,6 +80,7 @@ def perfect_ar(base_timestamp, perfect_sc):
             "volume": 80000000,
             "spread": "5.75",
         },
+        bar_index=23,
         rally_pct=Decimal("0.055"),  # 5.5% rally (excellent)
         bars_after_sc=3,  # Ideal timing (≤5 bars)
         sc_reference=perfect_sc.model_dump(),
@@ -104,6 +105,7 @@ def marginal_sc(base_timestamp):
             "volume": 60000000,
             "spread": "4.50",
         },
+        bar_index=15,
         volume_ratio=Decimal("2.0"),  # Minimum volume (30 pts)
         spread_ratio=Decimal("1.5"),  # Minimum spread (20 pts)
         close_position=Decimal("0.67"),  # Marginal close position (15 pts + 7 extra = 22 pts? Let's target 72)
@@ -128,6 +130,7 @@ def marginal_ar(base_timestamp, marginal_sc):
             "volume": 40000000,
             "spread": "2.88",
         },
+        bar_index=23,
         rally_pct=Decimal("0.0300"),  # Exactly 3.0% (minimum)
         bars_after_sc=8,  # Delayed (outside ideal 5-bar window)
         sc_reference=marginal_sc.model_dump(),
@@ -153,6 +156,7 @@ def high_quality_st(base_timestamp, perfect_sc, perfect_ar):
             "volume": 30000000,
             "spread": "3.50",
         },
+        bar_index=30,
         distance_from_sc_low=Decimal("0.0053"),  # 0.53% from SC low
         volume_reduction_pct=Decimal("0.60"),  # 60% reduction (high quality)
         test_volume_ratio=Decimal("1.2"),
@@ -189,7 +193,10 @@ class TestPerfectPhaseA:
         self, perfect_sc, perfect_ar, trading_range_with_levels
     ):
         """Perfect Phase A with excellent SC and AR should score 85+."""
-        events = PhaseEvents(sc=perfect_sc, ar=perfect_ar)
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=perfect_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A,
@@ -209,7 +216,10 @@ class TestPerfectPhaseA:
 
     def test_perfect_phase_a_passes_fr3(self, perfect_sc, perfect_ar):
         """Perfect Phase A must pass FR3 threshold (70%)."""
-        events = PhaseEvents(sc=perfect_sc, ar=perfect_ar)
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=perfect_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -241,6 +251,7 @@ class TestPerfectPhaseB:
                 "volume": 28000000,
                 "spread": "3.20",
             },
+            bar_index=50,
             distance_from_sc_low=Decimal("0.0032"),
             volume_reduction_pct=Decimal("0.65"),  # 65% reduction
             test_volume_ratio=Decimal("1.1"),
@@ -266,6 +277,7 @@ class TestPerfectPhaseB:
                 "volume": 26000000,
                 "spread": "2.30",
             },
+            bar_index=70,
             distance_from_sc_low=Decimal("0.0021"),
             volume_reduction_pct=Decimal("0.70"),  # 70% reduction
             test_volume_ratio=Decimal("1.05"),
@@ -279,7 +291,9 @@ class TestPerfectPhaseB:
         )
 
         events = PhaseEvents(
-            sc=perfect_sc, ar=perfect_ar, st_list=[high_quality_st, st2, st3]
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=perfect_ar.model_dump(),
+            secondary_tests=[high_quality_st.model_dump(), st2.model_dump(), st3.model_dump()]
         )
 
         confidence = calculate_phase_confidence(
@@ -303,7 +317,10 @@ class TestAmbiguousPhase:
 
     def test_ambiguous_phase_a(self, marginal_sc, marginal_ar):
         """Marginal Phase A with borderline events should score 70-80 (passes FR3 but barely)."""
-        events = PhaseEvents(sc=marginal_sc, ar=marginal_ar)
+        events = PhaseEvents(
+            selling_climax=marginal_sc.model_dump(),
+            automatic_rally=marginal_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -322,7 +339,10 @@ class TestAmbiguousPhase:
 
     def test_marginal_confidence_logged_as_rejection(self, marginal_sc, marginal_ar, caplog):
         """Low confidence phases should log rejection warning."""
-        events = PhaseEvents(sc=marginal_sc, ar=marginal_ar)
+        events = PhaseEvents(
+            selling_climax=marginal_sc.model_dump(),
+            automatic_rally=marginal_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -339,7 +359,7 @@ class TestMissingEvents:
 
     def test_phase_a_missing_ar(self, perfect_sc):
         """Phase A with SC but no AR should score <70 and be rejected."""
-        events = PhaseEvents(sc=perfect_sc, ar=None)
+        events = PhaseEvents(selling_climax=perfect_sc.model_dump())
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -358,7 +378,7 @@ class TestMissingEvents:
 
     def test_phase_a_missing_sc(self, perfect_ar):
         """Phase A with AR but no SC should score <70 and be rejected."""
-        events = PhaseEvents(sc=None, ar=perfect_ar)
+        events = PhaseEvents(automatic_rally=perfect_ar.model_dump())
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -375,7 +395,11 @@ class TestMissingEvents:
 
     def test_phase_b_no_sts(self, perfect_sc, perfect_ar):
         """Phase B with no STs should score <70 and be rejected."""
-        events = PhaseEvents(sc=perfect_sc, ar=perfect_ar, st_list=[])
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=perfect_ar.model_dump(),
+            secondary_tests=[]
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.B, events=events, trading_range=None
@@ -396,7 +420,10 @@ class TestSequenceValidation:
 
     def test_valid_sequence_full_points(self, perfect_sc, perfect_ar):
         """Valid sequence (SC before AR, AR within 5 bars) should score 20 pts."""
-        events = PhaseEvents(sc=perfect_sc, ar=perfect_ar)
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=perfect_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -409,7 +436,10 @@ class TestSequenceValidation:
 
     def test_delayed_ar_partial_credit(self, perfect_sc, marginal_ar):
         """Delayed AR (8 bars) should get partial sequence credit."""
-        events = PhaseEvents(sc=perfect_sc, ar=marginal_ar)
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=marginal_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -436,6 +466,7 @@ class TestSequenceValidation:
                 "volume": 80000000,
                 "spread": "5.75",
             },
+            bar_index=17,
             rally_pct=Decimal("0.055"),
             bars_after_sc=3,  # Metadata says 3, but timestamp is wrong
             sc_reference=perfect_sc.model_dump(),
@@ -445,7 +476,10 @@ class TestSequenceValidation:
             detection_timestamp=early_ar_timestamp,
         )
 
-        events = PhaseEvents(sc=perfect_sc, ar=invalid_ar)
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=invalid_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -463,7 +497,10 @@ class TestRangeContext:
 
     def test_no_range_context(self, perfect_sc, perfect_ar):
         """Phase A without range should score 0 context points."""
-        events = PhaseEvents(sc=perfect_sc, ar=perfect_ar)
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=perfect_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
@@ -502,7 +539,10 @@ class TestInputValidation:
 
     def test_invalid_phase_type_raises_error(self, perfect_sc, perfect_ar):
         """Passing invalid phase type should raise ValueError."""
-        events = PhaseEvents(sc=perfect_sc, ar=perfect_ar)
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=perfect_ar.model_dump()
+        )
 
         with pytest.raises(ValueError, match="phase must be WyckoffPhase enum"):
             calculate_phase_confidence(
@@ -520,7 +560,10 @@ class TestInputValidation:
 
     def test_none_trading_range_logs_warning(self, perfect_sc, perfect_ar, caplog):
         """Passing None for trading_range should log warning but not raise error."""
-        events = PhaseEvents(sc=perfect_sc, ar=perfect_ar)
+        events = PhaseEvents(
+            selling_climax=perfect_sc.model_dump(),
+            automatic_rally=perfect_ar.model_dump()
+        )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None

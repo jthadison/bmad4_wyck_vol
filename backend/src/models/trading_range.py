@@ -17,13 +17,13 @@ from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from src.models.price_cluster import PriceCluster
 
-if TYPE_CHECKING:
-    from src.models.zone import Zone
-
 # Import level models directly (not TYPE_CHECKING) to avoid forward reference issues
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
 from src.models.jump_level import JumpLevel
+
+if TYPE_CHECKING:
+    from src.models.zone import Zone
 
 
 class RangeStatus(str, Enum):
@@ -110,8 +110,8 @@ class TradingRange(BaseModel):
     end_index: int = Field(..., ge=0, description="Latest pivot index")
     duration: int = Field(..., ge=10, description="Range duration in bars")
     quality_score: int | None = Field(None, ge=0, le=100, description="Quality score 0-100")
-    supply_zones: list[Zone] = Field(default_factory=list, description="Supply zones in range")
-    demand_zones: list[Zone] = Field(default_factory=list, description="Demand zones in range")
+    supply_zones: list["Zone"] = Field(default_factory=list, description="Supply zones in range")
+    demand_zones: list["Zone"] = Field(default_factory=list, description="Demand zones in range")
 
     # Epic 3.8: Creek, Ice, Jump levels and lifecycle status
     creek: CreekLevel | None = Field(None, description="Support level (Story 3.4)")
@@ -210,7 +210,7 @@ class TradingRange(BaseModel):
         return str(value)
 
     @property
-    def all_zones(self) -> list[Zone]:
+    def all_zones(self) -> list["Zone"]:
         """
         Get all zones (supply + demand) sorted by significance score.
 
@@ -226,7 +226,7 @@ class TradingRange(BaseModel):
         return sorted(all_zones_list, key=lambda z: z.significance_score, reverse=True)
 
     @property
-    def fresh_zones(self) -> list[Zone]:
+    def fresh_zones(self) -> list["Zone"]:
         """
         Get only FRESH zones (untested, 0 touches).
 
@@ -244,7 +244,7 @@ class TradingRange(BaseModel):
         return sorted(fresh, key=lambda z: z.significance_score, reverse=True)
 
     @property
-    def zones_near_creek(self) -> list[Zone]:
+    def zones_near_creek(self) -> list["Zone"]:
         """
         Get zones near Creek level (demand zones within 2%).
 
@@ -260,7 +260,7 @@ class TradingRange(BaseModel):
         return sorted(near_creek, key=lambda z: z.significance_score, reverse=True)
 
     @property
-    def zones_near_ice(self) -> list[Zone]:
+    def zones_near_ice(self) -> list["Zone"]:
         """
         Get zones near Ice level (supply zones within 2%).
 
@@ -289,3 +289,17 @@ class TradingRange(BaseModel):
             ...     print("Range can be used for pattern detection")
         """
         return self.status == RangeStatus.ACTIVE
+
+
+# Rebuild model after Zone is imported to resolve forward references
+def _rebuild_model():
+    """Rebuild TradingRange model after Zone is fully defined."""
+    try:
+        from src.models.zone import Zone  # noqa: F401
+        TradingRange.model_rebuild()
+    except ImportError:
+        # Zone not yet available, will be rebuilt when Zone imports TradingRange
+        pass
+
+
+_rebuild_model()
