@@ -15,6 +15,7 @@ Author: Wayne (Analyst), William (Mentor), Victoria (Volume), Rachel (Risk)
 """
 
 import structlog
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple, Union
@@ -205,7 +206,7 @@ class PhaseDetector:
         # Determine phase start index for enhancement methods
         phase_start_index = 0
         if events.selling_climax:
-            phase_start_index = events.selling_climax["bar"]["index"]
+            phase_start_index = events.selling_climax["bar_index"]
 
         # Check for phase invalidations (AC 11-14)
         invalidation = _check_phase_invalidation(
