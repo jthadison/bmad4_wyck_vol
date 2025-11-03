@@ -31,6 +31,7 @@ class SellingClimax(BaseModel):
 
     Attributes:
         bar: The OHLCV bar where SC occurred
+        bar_index: Index position of the bar in the data sequence
         volume_ratio: Volume vs. 20-bar average (must be >= 2.0)
         spread_ratio: Spread vs. 20-bar average (must be >= 1.5)
         close_position: Where close is in bar range, 0.0-1.0 (>= 0.5 acceptable, >= 0.7 ideal)
@@ -41,6 +42,7 @@ class SellingClimax(BaseModel):
 
     # Using dict for bar to avoid circular import with OHLCVBar
     bar: dict = Field(..., description="The OHLCV bar where SC occurred")
+    bar_index: int = Field(..., ge=0, description="Index position of the bar in the data sequence")
     volume_ratio: Decimal = Field(
         ...,
         ge=Decimal("2.0"),

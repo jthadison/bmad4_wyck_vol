@@ -27,6 +27,7 @@ class AutomaticRally(BaseModel):
 
     Attributes:
         bar: The OHLCV bar where AR peaked (highest high after SC) - stored as dict
+        bar_index: Index position of the bar in the data sequence
         rally_pct: Rally percentage from SC low (e.g., 0.035 = 3.5%)
         bars_after_sc: Number of bars from SC to AR peak (1-10)
         sc_reference: Reference to the SC that triggered this AR - stored as dict
@@ -38,6 +39,7 @@ class AutomaticRally(BaseModel):
 
     # Using dict for bar to avoid circular import with OHLCVBar
     bar: dict = Field(..., description="The bar where AR peaked (highest high after SC)")
+    bar_index: int = Field(..., ge=0, description="Index position of the bar in the data sequence")
     rally_pct: Decimal = Field(
         ...,
         ge=Decimal("0.03"),
