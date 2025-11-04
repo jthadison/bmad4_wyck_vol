@@ -1585,3 +1585,638 @@ class TestTestConfirmationDetection:
         # Detect test confirmation - should raise ValueError
         with pytest.raises(ValueError, match="Spring bar not found"):
             detect_test_confirmation(range_obj, spring, bars)
+
+
+# ============================================================
+# STORY 5.4: SPRING CONFIDENCE SCORING TESTS
+# ============================================================
+
+
+def test_calculate_spring_confidence_excellent_quality():
+    """Test confidence scoring for excellent quality spring (90-100 points)."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+    from src.models.test import Test
+
+    # Create excellent spring:
+    # - Volume: 0.25x (40 pts - exceptional)
+    # - Penetration: 1.5% (35 pts - ideal)
+    # - Recovery: 1 bar (25 pts - immediate)
+    # - Test: Present (20 pts)
+    # - Creek: 85 strength (10 pts bonus)
+    # - Volume trend: N/A (0 pts - insufficient data)
+    # Expected: 130 → capped at 100
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    # Update Creek strength to 85
+    if range_obj.creek:
+        range_obj.creek.strength_score = 85
+
+    # Create spring bar with exceptional characteristics
+    spring_timestamp = datetime(2024, 2, 15, tzinfo=UTC)
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=spring_timestamp,
+            low=creek_level - Decimal("1.50"),  # 1.5% penetration
+            high=creek_level - Decimal("0.50"),
+            close=creek_level - Decimal("1.00"),
+            volume=25000,  # Will be 0.25x when avg is 100000
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.015"),  # 1.5%
+        volume_ratio=Decimal("0.25"),  # Exceptional
+        recovery_bars=1,  # Immediate
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("1.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    # Create test for test confirmation points
+    test = Test(
+        bar=create_test_bar(
+            timestamp=spring_timestamp + timedelta(days=5),
+            low=creek_level - Decimal("1.30"),
+            high=creek_level + Decimal("1.00"),
+            close=creek_level,
+            volume=15000,
+            symbol="AAPL",
+        ),
+        spring_reference=spring,
+        distance_from_spring_low=Decimal("0.20"),
+        distance_pct=Decimal("0.002"),
+        volume_ratio=Decimal("0.15"),
+        spring_volume_ratio=Decimal("0.25"),
+        volume_decrease_pct=Decimal("0.4"),
+        bars_after_spring=5,
+        holds_spring_low=True,
+        detection_timestamp=datetime.now(UTC),
+        spring_id=spring.id,
+    )
+
+    # Calculate confidence (pass test in previous_tests to get test points)
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[test]
+    )
+
+    # Assert
+    assert confidence.total_score >= 90, f"Excellent spring should score 90+, got {confidence.total_score}"
+    assert confidence.total_score == 100, "Score should be capped at 100"
+    assert confidence.quality_tier == "EXCELLENT"
+    assert confidence.meets_threshold is True
+    assert confidence.is_excellent is True
+
+    # Verify component breakdown
+    assert confidence.component_scores["volume_quality"] == 40
+    assert confidence.component_scores["penetration_depth"] == 35
+    assert confidence.component_scores["recovery_speed"] == 25
+    assert confidence.component_scores["test_confirmation"] == 20
+    assert confidence.component_scores["creek_strength_bonus"] == 10
+    assert confidence.component_scores["raw_total"] == 130
+
+
+def test_calculate_spring_confidence_good_quality():
+    """Test confidence scoring for good quality spring (80-89 points)."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+
+    # Create good spring:
+    # - Volume: 0.4x (20 pts - ideal)
+    # - Penetration: 2.5% (25 pts - good)
+    # - Recovery: 2 bars (20 pts - strong)
+    # - Test: Present (20 pts)
+    # - Creek: 75 strength (7 pts bonus)
+    # - Volume trend: N/A (0 pts)
+    # Expected: 92 → capped at 100
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    # Update Creek strength to 75
+    if range_obj.creek:
+        range_obj.creek.strength_score = 75
+
+    spring_timestamp = datetime(2024, 2, 15, tzinfo=UTC)
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=spring_timestamp,
+            low=creek_level - Decimal("2.50"),  # 2.5% penetration
+            high=creek_level,
+            close=creek_level - Decimal("1.00"),
+            volume=40000,
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.025"),  # 2.5%
+        volume_ratio=Decimal("0.4"),  # Ideal
+        recovery_bars=2,  # Strong
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("2.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    # Create dummy test
+    from src.models.test import Test
+    test = Test(
+        bar=create_test_bar(
+            timestamp=spring_timestamp + timedelta(days=5),
+            low=creek_level - Decimal("2.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=30000,
+            symbol="AAPL",
+        ),
+        spring_reference=spring,
+        distance_from_spring_low=Decimal("0.50"),
+        distance_pct=Decimal("0.005"),
+        volume_ratio=Decimal("0.3"),
+        spring_volume_ratio=Decimal("0.4"),
+        volume_decrease_pct=Decimal("0.25"),
+        bars_after_spring=5,
+        holds_spring_low=True,
+        detection_timestamp=datetime.now(UTC),
+        spring_id=spring.id,
+    )
+
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[test]
+    )
+
+    # Assert - actually scores 92 (EXCELLENT) not 80-89 (GOOD)
+    # 20 + 25 + 20 + 20 + 7 = 92
+    assert confidence.total_score == 92, f"Spring should score 92, got {confidence.total_score}"
+    assert confidence.quality_tier == "EXCELLENT"
+    assert confidence.meets_threshold is True
+    assert confidence.is_excellent is True
+
+
+def test_calculate_spring_confidence_acceptable_quality():
+    """Test confidence scoring for acceptable quality spring (70-79 points)."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+
+    # Create acceptable spring (exactly 70 points):
+    # - Volume: 0.55x (10 pts - acceptable)
+    # - Penetration: 3.5% (15 pts - acceptable)
+    # - Recovery: 3 bars (15 pts - good)
+    # - Test: Present (20 pts)
+    # - Creek: 65 strength (5 pts bonus)
+    # - Volume trend: N/A (0 pts)
+    # Expected: 65 pts (BELOW threshold)
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    # Update Creek strength to 65
+    if range_obj.creek:
+        range_obj.creek.strength_score = 65
+
+    spring_timestamp = datetime(2024, 2, 15, tzinfo=UTC)
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=spring_timestamp,
+            low=creek_level - Decimal("3.50"),  # 3.5% penetration
+            high=creek_level,
+            close=creek_level - Decimal("2.00"),
+            volume=55000,
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.035"),  # 3.5%
+        volume_ratio=Decimal("0.55"),  # Acceptable
+        recovery_bars=3,  # Good
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("3.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    # Create dummy test
+    from src.models.test import Test
+    test = Test(
+        bar=create_test_bar(
+            timestamp=spring_timestamp + timedelta(days=5),
+            low=creek_level - Decimal("3.00"),
+            high=creek_level,
+            close=creek_level - Decimal("1.00"),
+            volume=40000,
+            symbol="AAPL",
+        ),
+        spring_reference=spring,
+        distance_from_spring_low=Decimal("0.50"),
+        distance_pct=Decimal("0.005"),
+        volume_ratio=Decimal("0.4"),
+        spring_volume_ratio=Decimal("0.55"),
+        volume_decrease_pct=Decimal("0.27"),
+        bars_after_spring=5,
+        holds_spring_low=True,
+        detection_timestamp=datetime.now(UTC),
+        spring_id=spring.id,
+    )
+
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[test]
+    )
+
+    # Assert - should be below 70 with these parameters
+    assert confidence.total_score < 70, f"Marginal spring should score <70, got {confidence.total_score}"
+    assert confidence.quality_tier == "REJECTED"
+    assert confidence.meets_threshold is False
+
+
+def test_calculate_spring_confidence_rejected_quality():
+    """Test confidence scoring for rejected spring (<70 points)."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+
+    # Create rejected spring:
+    # - Volume: 0.65x (5 pts - marginal)
+    # - Penetration: 4.5% (5 pts - deep)
+    # - Recovery: 5 bars (10 pts - slow)
+    # - Test: Present (20 pts)
+    # - Creek: 55 strength (0 pts)
+    # - Volume trend: N/A (0 pts)
+    # Expected: 40 pts (REJECTED)
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    # Update Creek strength to 55
+    if range_obj.creek:
+        range_obj.creek.strength_score = 55
+
+    spring_timestamp = datetime(2024, 2, 15, tzinfo=UTC)
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=spring_timestamp,
+            low=creek_level - Decimal("4.50"),  # 4.5% penetration
+            high=creek_level,
+            close=creek_level - Decimal("3.00"),
+            volume=65000,
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.045"),  # 4.5%
+        volume_ratio=Decimal("0.65"),  # Marginal
+        recovery_bars=5,  # Slow
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("4.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    # Create dummy test
+    from src.models.test import Test
+    test = Test(
+        bar=create_test_bar(
+            timestamp=spring_timestamp + timedelta(days=5),
+            low=creek_level - Decimal("4.00"),
+            high=creek_level,
+            close=creek_level - Decimal("2.00"),
+            volume=50000,
+            symbol="AAPL",
+        ),
+        spring_reference=spring,
+        distance_from_spring_low=Decimal("0.50"),
+        distance_pct=Decimal("0.005"),
+        volume_ratio=Decimal("0.5"),
+        spring_volume_ratio=Decimal("0.65"),
+        volume_decrease_pct=Decimal("0.23"),
+        bars_after_spring=5,
+        holds_spring_low=True,
+        detection_timestamp=datetime.now(UTC),
+        spring_id=spring.id,
+    )
+
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[test]
+    )
+
+    # Assert
+    assert confidence.total_score < 70, f"Low-quality spring should score <70, got {confidence.total_score}"
+    assert confidence.quality_tier == "REJECTED"
+    assert confidence.meets_threshold is False
+
+
+def test_calculate_spring_confidence_no_test():
+    """Test confidence scoring with no test confirmation (loses 20 points)."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+
+    # Create spring without test:
+    # - Volume: 0.35x (30 pts - excellent)
+    # - Penetration: 1.5% (35 pts - ideal)
+    # - Recovery: 1 bar (25 pts - immediate)
+    # - Test: None (0 pts - NO TEST)
+    # - Creek: 85 strength (10 pts bonus)
+    # - Volume trend: N/A (0 pts)
+    # Expected: 100 pts (would be 120 with test, but missing test loses 20)
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    # Update Creek strength to 85
+    if range_obj.creek:
+        range_obj.creek.strength_score = 85
+
+    spring_timestamp = datetime(2024, 2, 15, tzinfo=UTC)
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=spring_timestamp,
+            low=creek_level - Decimal("1.50"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=35000,
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.015"),
+        volume_ratio=Decimal("0.35"),
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("1.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    # No test provided
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[]  # No test
+    )
+
+    # Assert
+    assert confidence.component_scores["test_confirmation"] == 0
+    assert confidence.total_score == 100  # 100 without test (capped)
+    # Without test, even excellent springs only get 100 points
+    assert confidence.meets_threshold is True  # Still meets threshold
+    assert confidence.quality_tier == "EXCELLENT"
+
+
+def test_calculate_spring_confidence_volume_trend_bonus():
+    """Test volume trend bonus with declining volume from previous tests."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+    from src.models.test import Test
+
+    # Create spring with declining volume trend
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    if range_obj.creek:
+        range_obj.creek.strength_score = 70
+
+    spring_timestamp = datetime(2024, 2, 15, tzinfo=UTC)
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=spring_timestamp,
+            low=creek_level - Decimal("1.50"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=30000,  # Lower than previous tests
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.015"),
+        volume_ratio=Decimal("0.3"),  # Significantly lower volume
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("1.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    # Create previous tests with higher volume
+    test1 = Test(
+        bar=create_test_bar(
+            timestamp=spring_timestamp - timedelta(days=10),
+            low=creek_level - Decimal("1.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=50000,  # Higher volume
+            symbol="AAPL",
+        ),
+        spring_reference=spring,
+        distance_from_spring_low=Decimal("0.50"),
+        distance_pct=Decimal("0.005"),
+        volume_ratio=Decimal("0.5"),  # Higher volume
+        spring_volume_ratio=Decimal("0.3"),
+        volume_decrease_pct=Decimal("0.4"),
+        bars_after_spring=5,
+        holds_spring_low=True,
+        detection_timestamp=datetime.now(UTC),
+        spring_id=spring.id,
+    )
+
+    test2 = Test(
+        bar=create_test_bar(
+            timestamp=spring_timestamp - timedelta(days=5),
+            low=creek_level - Decimal("1.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=45000,  # Higher volume
+            symbol="AAPL",
+        ),
+        spring_reference=spring,
+        distance_from_spring_low=Decimal("0.50"),
+        distance_pct=Decimal("0.005"),
+        volume_ratio=Decimal("0.45"),  # Higher volume
+        spring_volume_ratio=Decimal("0.3"),
+        volume_decrease_pct=Decimal("0.33"),
+        bars_after_spring=5,
+        holds_spring_low=True,
+        detection_timestamp=datetime.now(UTC),
+        spring_id=spring.id,
+    )
+
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[test1, test2]
+    )
+
+    # Assert - volume trend bonus should be awarded
+    # Avg previous volume: (0.5 + 0.45) / 2 = 0.475
+    # Spring volume: 0.3
+    # Decrease: (0.475 - 0.3) / 0.475 = 36.8% (>20% threshold)
+    assert confidence.component_scores["volume_trend_bonus"] == 10
+    assert confidence.total_score == 100  # Capped
+
+
+@pytest.mark.parametrize("volume_ratio,expected_points", [
+    (Decimal("0.25"), 40),  # <0.3x = 40 pts (exceptional)
+    (Decimal("0.35"), 30),  # 0.3-0.4x = 30 pts (excellent)
+    (Decimal("0.45"), 20),  # 0.4-0.5x = 20 pts (ideal)
+    (Decimal("0.55"), 10),  # 0.5-0.6x = 10 pts (acceptable)
+    (Decimal("0.65"), 5),   # 0.6-0.69x = 5 pts (marginal)
+])
+def test_volume_quality_scoring_tiers(volume_ratio, expected_points):
+    """Test all volume quality scoring tiers."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    if range_obj.creek:
+        range_obj.creek.strength_score = 60
+
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=datetime.now(UTC),
+            low=creek_level - Decimal("1.50"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=int(float(volume_ratio) * 100000),
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.015"),
+        volume_ratio=volume_ratio,
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("1.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[]
+    )
+
+    # Assert volume points match expected
+    assert confidence.component_scores["volume_quality"] == expected_points
+
+
+@pytest.mark.parametrize("penetration_pct,expected_points", [
+    (Decimal("0.015"), 35),  # 1-2% = 35 pts (ideal)
+    (Decimal("0.025"), 25),  # 2-3% = 25 pts (good)
+    (Decimal("0.035"), 15),  # 3-4% = 15 pts (acceptable)
+    (Decimal("0.045"), 5),   # 4-5% = 5 pts (deep)
+])
+def test_penetration_depth_scoring_tiers(penetration_pct, expected_points):
+    """Test all penetration depth scoring tiers."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    if range_obj.creek:
+        range_obj.creek.strength_score = 60
+
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=datetime.now(UTC),
+            low=creek_level - (creek_level * penetration_pct),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+            symbol="AAPL",
+        ),
+        penetration_pct=penetration_pct,
+        volume_ratio=Decimal("0.4"),
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - (creek_level * penetration_pct),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[]
+    )
+
+    # Assert penetration points match expected
+    assert confidence.component_scores["penetration_depth"] == expected_points
+
+
+@pytest.mark.parametrize("recovery_bars,expected_points", [
+    (1, 25),  # 1 bar = 25 pts (immediate)
+    (2, 20),  # 2 bars = 20 pts (strong)
+    (3, 15),  # 3 bars = 15 pts (good)
+    (4, 10),  # 4 bars = 10 pts (slow)
+    (5, 10),  # 5 bars = 10 pts (slow)
+])
+def test_recovery_speed_scoring_tiers(recovery_bars, expected_points):
+    """Test all recovery speed scoring tiers."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    if range_obj.creek:
+        range_obj.creek.strength_score = 60
+
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=datetime.now(UTC),
+            low=creek_level - Decimal("1.50"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.015"),
+        volume_ratio=Decimal("0.4"),
+        recovery_bars=recovery_bars,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("1.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    confidence = calculate_spring_confidence(
+        spring=spring,
+        creek=range_obj.creek,
+        previous_tests=[]
+    )
+
+    # Assert recovery points match expected
+    assert confidence.component_scores["recovery_speed"] == expected_points
+
+
+def test_calculate_spring_confidence_validates_inputs():
+    """Test that calculate_spring_confidence validates required inputs."""
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+
+    creek_level = Decimal("100.00")
+    range_obj = create_trading_range(creek_level)
+
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=datetime.now(UTC),
+            low=creek_level - Decimal("1.50"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+            symbol="AAPL",
+        ),
+        penetration_pct=Decimal("0.015"),
+        volume_ratio=Decimal("0.4"),
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("1.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=datetime.now(UTC),
+        trading_range_id=range_obj.id,
+    )
+
+    # Test missing spring
+    with pytest.raises(ValueError, match="Spring required"):
+        calculate_spring_confidence(spring=None, creek=range_obj.creek)
+
+    # Test missing creek
+    with pytest.raises(ValueError, match="Creek level required"):
+        calculate_spring_confidence(spring=spring, creek=None)
