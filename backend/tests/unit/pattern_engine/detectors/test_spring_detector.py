@@ -2239,3 +2239,594 @@ def test_calculate_spring_confidence_validates_inputs():
     # Test missing creek
     with pytest.raises(ValueError, match="Creek level required"):
         calculate_spring_confidence(spring=spring, creek=None)
+
+
+# ============================================================
+# Story 5.6.2: Spring Timing Analysis Tests (AC 1)
+# ============================================================
+
+
+def test_compressed_timing_pattern():
+    """Test COMPRESSED timing classification (<10 bars avg)."""
+    from src.pattern_engine.detectors.spring_detector import analyze_spring_timing
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create 4 springs with COMPRESSED timing (5, 8, 6 bars apart = avg 6.33)
+    springs = []
+    bar_indices = [100, 105, 113, 119]  # Intervals: 5, 8, 6
+
+    for idx in bar_indices:
+        spring = Spring(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=idx),
+                low=creek_level - Decimal("1.50"),
+                high=creek_level,
+                close=creek_level - Decimal("0.50"),
+                volume=40000,
+            ),
+            bar_index=idx,
+            penetration_pct=Decimal("0.015"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=creek_level,
+            spring_low=creek_level - Decimal("1.50"),
+            recovery_price=creek_level + Decimal("0.50"),
+            detection_timestamp=base_timestamp + timedelta(days=idx),
+            trading_range_id=uuid4(),
+        )
+        springs.append(spring)
+
+    timing, intervals, avg_interval = analyze_spring_timing(springs)
+
+    assert timing == "COMPRESSED"
+    assert intervals == [5, 8, 6]
+    assert avg_interval == pytest.approx(6.33, abs=0.01)
+
+
+def test_normal_timing_pattern():
+    """Test NORMAL timing classification (10-25 bars)."""
+    from src.pattern_engine.detectors.spring_detector import analyze_spring_timing
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create 3 springs with NORMAL timing (12, 18, 15 bars apart = avg 15)
+    springs = []
+    bar_indices = [100, 112, 130, 145]  # Intervals: 12, 18, 15
+
+    for idx in bar_indices:
+        spring = Spring(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=idx),
+                low=creek_level - Decimal("1.50"),
+                high=creek_level,
+                close=creek_level - Decimal("0.50"),
+                volume=40000,
+            ),
+            bar_index=idx,
+            penetration_pct=Decimal("0.015"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=creek_level,
+            spring_low=creek_level - Decimal("1.50"),
+            recovery_price=creek_level + Decimal("0.50"),
+            detection_timestamp=base_timestamp + timedelta(days=idx),
+            trading_range_id=uuid4(),
+        )
+        springs.append(spring)
+
+    timing, intervals, avg_interval = analyze_spring_timing(springs)
+
+    assert timing == "NORMAL"
+    assert intervals == [12, 18, 15]
+    assert avg_interval == 15.0
+
+
+def test_healthy_timing_pattern():
+    """Test HEALTHY timing classification (>25 bars avg)."""
+    from src.pattern_engine.detectors.spring_detector import analyze_spring_timing
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create 3 springs with HEALTHY timing (30, 35, 28 bars apart = avg 31)
+    springs = []
+    bar_indices = [100, 130, 165, 193]  # Intervals: 30, 35, 28
+
+    for idx in bar_indices:
+        spring = Spring(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=idx),
+                low=creek_level - Decimal("1.50"),
+                high=creek_level,
+                close=creek_level - Decimal("0.50"),
+                volume=40000,
+            ),
+            bar_index=idx,
+            penetration_pct=Decimal("0.015"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=creek_level,
+            spring_low=creek_level - Decimal("1.50"),
+            recovery_price=creek_level + Decimal("0.50"),
+            detection_timestamp=base_timestamp + timedelta(days=idx),
+            trading_range_id=uuid4(),
+        )
+        springs.append(spring)
+
+    timing, intervals, avg_interval = analyze_spring_timing(springs)
+
+    assert timing == "HEALTHY"
+    assert intervals == [30, 35, 28]
+    assert avg_interval == pytest.approx(31.0, abs=0.01)
+
+
+def test_single_spring_returns_single_spring():
+    """Test SINGLE_SPRING classification when only one spring detected."""
+    from src.pattern_engine.detectors.spring_detector import analyze_spring_timing
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create single spring
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=base_timestamp,
+            low=creek_level - Decimal("1.50"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+        ),
+        bar_index=100,
+        penetration_pct=Decimal("0.015"),
+        volume_ratio=Decimal("0.4"),
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("1.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=uuid4(),
+    )
+
+    timing, intervals, avg_interval = analyze_spring_timing([spring])
+
+    assert timing == "SINGLE_SPRING"
+    assert intervals == []
+    assert avg_interval == 0.0
+
+
+# ============================================================
+# Story 5.6.2: Test Quality Progression Tests (AC 2)
+# ============================================================
+
+
+def test_improving_test_quality():
+    """Test IMPROVING test quality classification (30% → 40% → 50% volume decrease)."""
+    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
+    from src.models.test import Test
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create 3 springs with IMPROVING test quality (volume decreases: 25% → 35% → 45%)
+    springs_with_tests = []
+
+    for i, (bar_idx, vol_decrease) in enumerate([
+        (100, Decimal("0.25")),  # Test 1: 25% volume decrease
+        (130, Decimal("0.35")),  # Test 2: 35% volume decrease
+        (165, Decimal("0.45")),  # Test 3: 45% volume decrease
+    ]):
+        spring = Spring(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=bar_idx),
+                low=creek_level - Decimal("1.50"),
+                high=creek_level,
+                close=creek_level - Decimal("0.50"),
+                volume=40000,
+            ),
+            bar_index=bar_idx,
+            penetration_pct=Decimal("0.015"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=creek_level,
+            spring_low=creek_level - Decimal("1.50"),
+            recovery_price=creek_level + Decimal("0.50"),
+            detection_timestamp=base_timestamp + timedelta(days=bar_idx),
+            trading_range_id=uuid4(),
+        )
+
+        test = Test(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=bar_idx + 5),
+                low=creek_level - Decimal("1.00"),
+                high=creek_level + Decimal("1.00"),
+                close=creek_level,
+                volume=30000,
+            ),
+            spring_reference=spring,
+            distance_from_spring_low=Decimal("0.50"),
+            distance_pct=Decimal("0.005"),
+            volume_ratio=Decimal("0.3"),
+            spring_volume_ratio=Decimal("0.4"),
+            volume_decrease_pct=vol_decrease,
+            bars_after_spring=5,
+            holds_spring_low=True,
+            detection_timestamp=base_timestamp + timedelta(days=bar_idx + 5),
+            spring_id=spring.id,
+        )
+
+        springs_with_tests.append((spring, test))
+
+    trend, metrics = analyze_test_quality_progression(springs_with_tests)
+
+    assert trend == "IMPROVING"
+    assert metrics["pattern"] == "declining_volume_tests"
+    assert metrics["progression"] == [0.25, 0.35, 0.45]
+    assert "wyckoff_interpretation" in metrics
+
+
+def test_stable_test_quality():
+    """Test STABLE test quality classification (30% → 32% → 28% volume decrease)."""
+    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
+    from src.models.test import Test
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create 3 springs with STABLE test quality (volume decreases: 30% → 32% → 28%)
+    springs_with_tests = []
+
+    for i, (bar_idx, vol_decrease) in enumerate([
+        (100, Decimal("0.30")),
+        (130, Decimal("0.32")),
+        (165, Decimal("0.28")),
+    ]):
+        spring = Spring(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=bar_idx),
+                low=creek_level - Decimal("1.50"),
+                high=creek_level,
+                close=creek_level - Decimal("0.50"),
+                volume=40000,
+            ),
+            bar_index=bar_idx,
+            penetration_pct=Decimal("0.015"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=creek_level,
+            spring_low=creek_level - Decimal("1.50"),
+            recovery_price=creek_level + Decimal("0.50"),
+            detection_timestamp=base_timestamp + timedelta(days=bar_idx),
+            trading_range_id=uuid4(),
+        )
+
+        test = Test(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=bar_idx + 5),
+                low=creek_level - Decimal("1.00"),
+                high=creek_level + Decimal("1.00"),
+                close=creek_level,
+                volume=30000,
+            ),
+            spring_reference=spring,
+            distance_from_spring_low=Decimal("0.50"),
+            distance_pct=Decimal("0.005"),
+            volume_ratio=Decimal("0.3"),
+            spring_volume_ratio=Decimal("0.4"),
+            volume_decrease_pct=vol_decrease,
+            bars_after_spring=5,
+            holds_spring_low=True,
+            detection_timestamp=base_timestamp + timedelta(days=bar_idx + 5),
+            spring_id=spring.id,
+        )
+
+        springs_with_tests.append((spring, test))
+
+    trend, metrics = analyze_test_quality_progression(springs_with_tests)
+
+    assert trend == "STABLE"
+    assert metrics["pattern"] == "mixed_progression"
+
+
+def test_degrading_test_quality_with_warning():
+    """Test DEGRADING test quality classification (50% → 35% → 20% volume decrease) with warning."""
+    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
+    from src.models.test import Test
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create 3 springs with DEGRADING test quality (volume decreases: 50% → 35% → 20%)
+    springs_with_tests = []
+
+    for i, (bar_idx, vol_decrease) in enumerate([
+        (100, Decimal("0.50")),  # Test 1: 50% volume decrease
+        (130, Decimal("0.35")),  # Test 2: 35% volume decrease (degrading)
+        (165, Decimal("0.20")),  # Test 3: 20% volume decrease (degrading further)
+    ]):
+        spring = Spring(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=bar_idx),
+                low=creek_level - Decimal("1.50"),
+                high=creek_level,
+                close=creek_level - Decimal("0.50"),
+                volume=40000,
+            ),
+            bar_index=bar_idx,
+            penetration_pct=Decimal("0.015"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=creek_level,
+            spring_low=creek_level - Decimal("1.50"),
+            recovery_price=creek_level + Decimal("0.50"),
+            detection_timestamp=base_timestamp + timedelta(days=bar_idx),
+            trading_range_id=uuid4(),
+        )
+
+        test = Test(
+            bar=create_test_bar(
+                timestamp=base_timestamp + timedelta(days=bar_idx + 5),
+                low=creek_level - Decimal("1.00"),
+                high=creek_level + Decimal("1.00"),
+                close=creek_level,
+                volume=30000,
+            ),
+            spring_reference=spring,
+            distance_from_spring_low=Decimal("0.50"),
+            distance_pct=Decimal("0.005"),
+            volume_ratio=Decimal("0.3"),
+            spring_volume_ratio=Decimal("0.4"),
+            volume_decrease_pct=vol_decrease,
+            bars_after_spring=5,
+            holds_spring_low=True,
+            detection_timestamp=base_timestamp + timedelta(days=bar_idx + 5),
+            spring_id=spring.id,
+        )
+
+        springs_with_tests.append((spring, test))
+
+    trend, metrics = analyze_test_quality_progression(springs_with_tests)
+
+    assert trend == "DEGRADING"
+    assert metrics["pattern"] == "rising_volume_tests"
+    assert metrics["warning"] is True
+    assert "wyckoff_interpretation" in metrics
+
+
+def test_insufficient_data_when_few_tests():
+    """Test INSUFFICIENT_DATA classification when <2 tests available."""
+    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
+    from src.models.test import Test
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create single spring with test
+    spring = Spring(
+        bar=create_test_bar(
+            timestamp=base_timestamp,
+            low=creek_level - Decimal("1.50"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+        ),
+        bar_index=100,
+        penetration_pct=Decimal("0.015"),
+        volume_ratio=Decimal("0.4"),
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("1.50"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=uuid4(),
+    )
+
+    test = Test(
+        bar=create_test_bar(
+            timestamp=base_timestamp + timedelta(days=5),
+            low=creek_level - Decimal("1.00"),
+            high=creek_level + Decimal("1.00"),
+            close=creek_level,
+            volume=30000,
+        ),
+        spring_reference=spring,
+        distance_from_spring_low=Decimal("0.50"),
+        distance_pct=Decimal("0.005"),
+        volume_ratio=Decimal("0.3"),
+        spring_volume_ratio=Decimal("0.4"),
+        volume_decrease_pct=Decimal("0.30"),
+        bars_after_spring=5,
+        holds_spring_low=True,
+        detection_timestamp=base_timestamp + timedelta(days=5),
+        spring_id=spring.id,
+    )
+
+    springs_with_tests = [(spring, test)]
+
+    trend, metrics = analyze_test_quality_progression(springs_with_tests)
+
+    assert trend == "INSUFFICIENT_DATA"
+    assert metrics == {}
+
+
+# ============================================================
+# Story 5.6.2: Phase-Aware Selection Tests (AC 3)
+# ============================================================
+
+
+def test_phase_c_prefers_latest_spring_on_tie():
+    """Test that Phase C tie-breaking prefers latest spring with identical quality."""
+    from src.pattern_engine.detectors.spring_detector import SpringDetector
+    from src.models.spring_history import SpringHistory
+    from src.models.phase_classification import WyckoffPhase
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+    detector = SpringDetector()
+
+    # Create 2 springs with IDENTICAL quality metrics (tie scenario)
+    spring1 = Spring(
+        bar=create_test_bar(
+            timestamp=base_timestamp + timedelta(days=100),
+            low=creek_level - Decimal("2.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+        ),
+        bar_index=100,  # Earlier spring
+        penetration_pct=Decimal("0.020"),  # 2.0% penetration
+        volume_ratio=Decimal("0.4"),       # 0.4x volume
+        recovery_bars=1,                   # 1-bar recovery
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("2.00"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=base_timestamp + timedelta(days=100),
+        trading_range_id=uuid4(),
+    )
+
+    spring2 = Spring(
+        bar=create_test_bar(
+            timestamp=base_timestamp + timedelta(days=150),
+            low=creek_level - Decimal("2.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+        ),
+        bar_index=150,  # Later spring
+        penetration_pct=Decimal("0.020"),  # 2.0% penetration (SAME)
+        volume_ratio=Decimal("0.4"),       # 0.4x volume (SAME)
+        recovery_bars=1,                   # 1-bar recovery (SAME)
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("2.00"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=base_timestamp + timedelta(days=150),
+        trading_range_id=uuid4(),
+    )
+
+    # Create history with both springs
+    history = SpringHistory(symbol="AAPL", trading_range_id=uuid4())
+    history.springs = [spring1, spring2]
+
+    # Test with Phase C - should prefer latest spring (spring2)
+    best = detector.get_best_spring(history, WyckoffPhase.C)
+    assert best == spring2  # Latest spring wins in Phase C
+    assert best.bar_index == 150
+
+
+def test_phase_not_provided_uses_existing_logic():
+    """Test that without phase context, earliest spring wins on tie (backward compatible)."""
+    from src.pattern_engine.detectors.spring_detector import SpringDetector
+    from src.models.spring_history import SpringHistory
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+    detector = SpringDetector()
+
+    # Create 2 springs with IDENTICAL quality metrics
+    spring1 = Spring(
+        bar=create_test_bar(
+            timestamp=base_timestamp + timedelta(days=100),
+            low=creek_level - Decimal("2.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+        ),
+        bar_index=100,  # Earlier spring
+        penetration_pct=Decimal("0.020"),
+        volume_ratio=Decimal("0.4"),
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("2.00"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=base_timestamp + timedelta(days=100),
+        trading_range_id=uuid4(),
+    )
+
+    spring2 = Spring(
+        bar=create_test_bar(
+            timestamp=base_timestamp + timedelta(days=150),
+            low=creek_level - Decimal("2.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=40000,
+        ),
+        bar_index=150,  # Later spring
+        penetration_pct=Decimal("0.020"),
+        volume_ratio=Decimal("0.4"),
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("2.00"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=base_timestamp + timedelta(days=150),
+        trading_range_id=uuid4(),
+    )
+
+    # Create history with both springs
+    history = SpringHistory(symbol="AAPL", trading_range_id=uuid4())
+    history.springs = [spring1, spring2]
+
+    # Test without phase - should prefer earliest spring (spring1, backward compatible)
+    best = detector.get_best_spring(history, phase=None)
+    assert best == spring1  # Earliest spring wins without phase context
+    assert best.bar_index == 100
+
+
+def test_no_tie_ignores_phase_context():
+    """Test that when springs differ on primary criteria, phase context is ignored."""
+    from src.pattern_engine.detectors.spring_detector import SpringDetector
+    from src.models.spring_history import SpringHistory
+    from src.models.phase_classification import WyckoffPhase
+
+    creek_level = Decimal("100.00")
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+    detector = SpringDetector()
+
+    # Create 2 springs with DIFFERENT volume ratios (no tie)
+    spring1 = Spring(
+        bar=create_test_bar(
+            timestamp=base_timestamp + timedelta(days=100),
+            low=creek_level - Decimal("2.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=50000,
+        ),
+        bar_index=100,
+        penetration_pct=Decimal("0.020"),
+        volume_ratio=Decimal("0.5"),  # HIGHER volume (worse quality)
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("2.00"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=base_timestamp + timedelta(days=100),
+        trading_range_id=uuid4(),
+    )
+
+    spring2 = Spring(
+        bar=create_test_bar(
+            timestamp=base_timestamp + timedelta(days=150),
+            low=creek_level - Decimal("2.00"),
+            high=creek_level,
+            close=creek_level - Decimal("0.50"),
+            volume=30000,
+        ),
+        bar_index=150,
+        penetration_pct=Decimal("0.020"),
+        volume_ratio=Decimal("0.3"),  # LOWER volume (better quality)
+        recovery_bars=1,
+        creek_reference=creek_level,
+        spring_low=creek_level - Decimal("2.00"),
+        recovery_price=creek_level + Decimal("0.50"),
+        detection_timestamp=base_timestamp + timedelta(days=150),
+        trading_range_id=uuid4(),
+    )
+
+    # Create history with both springs
+    history = SpringHistory(symbol="AAPL", trading_range_id=uuid4())
+    history.springs = [spring1, spring2]
+
+    # Test with Phase C - spring2 wins on volume (0.3 < 0.5), phase ignored
+    best = detector.get_best_spring(history, WyckoffPhase.C)
+    assert best == spring2  # Lower volume wins regardless of phase
+    assert best.volume_ratio == Decimal("0.3")

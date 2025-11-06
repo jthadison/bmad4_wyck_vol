@@ -1311,33 +1311,65 @@ def analyze_spring_risk_profile(history: SpringHistory) -> str:
             )
             return "MODERATE"
 
-    # MULTI-SPRING VOLUME TREND ANALYSIS
+    # MULTI-SPRING VOLUME TREND ANALYSIS (base risk)
     volume_trend = analyze_volume_trend(history.springs)
 
+    # Start with base risk from volume trend
     if volume_trend == "DECLINING":
-        logger.info(
-            "multi_spring_low_risk",
-            spring_count=history.spring_count,
-            trend=volume_trend,
-            message="Declining volume trend = professional accumulation = LOW risk"
-        )
-        return "LOW"
+        base_risk = "LOW"
+        risk_score = 0  # LOW = 0, MODERATE = 1, HIGH = 2
     elif volume_trend == "RISING":
-        logger.warning(
-            "multi_spring_high_risk",
-            spring_count=history.spring_count,
-            trend=volume_trend,
-            message="Rising volume trend = potential distribution warning = HIGH risk"
-        )
-        return "HIGH"
+        base_risk = "HIGH"
+        risk_score = 2
     else:  # STABLE
-        logger.info(
-            "multi_spring_moderate_risk",
-            spring_count=history.spring_count,
-            trend=volume_trend,
-            message="Stable volume trend = MODERATE risk"
+        base_risk = "MODERATE"
+        risk_score = 1
+
+    # Story 5.6.2: Apply timing and test quality adjustments (AC 4)
+    risk_adjustments = []
+
+    # Timing adjustment
+    if history.spring_timing == "COMPRESSED":
+        risk_adjustments.append(("compressed_timing", +1))
+        risk_score += 1
+    elif history.spring_timing == "HEALTHY":
+        risk_adjustments.append(("healthy_timing", -1))
+        risk_score -= 1
+
+    # Test quality adjustment
+    if history.test_quality_trend == "DEGRADING":
+        risk_adjustments.append(("degrading_tests", +1))
+        risk_score += 1
+    elif history.test_quality_trend == "IMPROVING":
+        risk_adjustments.append(("improving_tests", -1))
+        risk_score -= 1
+
+    # Map adjusted score to risk level (cap at 0-2 range)
+    risk_score = max(0, min(2, risk_score))  # Clamp to [0, 2]
+
+    if risk_score == 0:
+        final_risk = "LOW"
+    elif risk_score == 1:
+        final_risk = "MODERATE"
+    else:
+        final_risk = "HIGH"
+
+    # Log risk assessment with adjustments
+    adjustment_summary = ", ".join([f"{name}: {adj:+d}" for name, adj in risk_adjustments])
+    logger.info(
+        "risk_assessment_complete",
+        spring_count=history.spring_count,
+        base_risk=base_risk,
+        adjustments=adjustment_summary if risk_adjustments else "none",
+        final_risk=final_risk,
+        risk_score=risk_score,
+        message=(
+            f"Volume={volume_trend}, Timing={history.spring_timing}, "
+            f"Tests={history.test_quality_trend} → {final_risk}"
         )
-        return "MODERATE"
+    )
+
+    return final_risk
 
 
 def analyze_volume_trend(springs: list[Spring]) -> str:
@@ -1460,6 +1492,258 @@ def analyze_volume_trend(springs: list[Spring]) -> str:
             message="STABLE volume trend"
         )
         return "STABLE"
+
+
+def analyze_spring_timing(springs: list[Spring]) -> tuple[str, list[int], float]:
+    """
+    Analyze temporal spacing between springs for campaign quality assessment.
+
+    Evaluates bar-to-bar intervals between successive springs to determine if
+    the accumulation campaign exhibits professional characteristics (healthy spacing)
+    or amateur/weak characteristics (compressed timing).
+
+    Args:
+        springs: Chronologically ordered list of detected springs
+
+    Returns:
+        tuple[timing_classification, intervals, avg_interval]
+        - timing_classification: "COMPRESSED" | "NORMAL" | "HEALTHY" | "SINGLE_SPRING"
+        - intervals: List of bar counts between successive springs
+        - avg_interval: Average spacing (bars) between springs
+
+    Timing Classifications:
+        - COMPRESSED (<10 bars avg): Warning - excessive testing, weak hands present
+        - NORMAL (10-25 bars): Standard accumulation pace
+        - HEALTHY (>25 bars): Ideal - strong absorption between tests
+        - SINGLE_SPRING: Only one spring detected (no timing analysis possible)
+
+    Wyckoff Principle:
+        Professional operators allow time for absorption between springs. Rapid
+        successive springs (compressed timing) indicate weak hands still dumping stock.
+        Healthy spacing (25+ bars) proves strong accumulation between tests.
+
+    Examples:
+        **COMPRESSED Timing (Warning Sign):**
+        >>> # Springs at bars: 100, 105, 113, 119 (avg: 6.3 bars)
+        >>> spring1 = Spring(..., bar_index=100)
+        >>> spring2 = Spring(..., bar_index=105)  # 5 bars later
+        >>> spring3 = Spring(..., bar_index=113)  # 8 bars later
+        >>> spring4 = Spring(..., bar_index=119)  # 6 bars later
+        >>> timing, intervals, avg = analyze_spring_timing([spring1, spring2, spring3, spring4])
+        >>> print(timing)  # "COMPRESSED"
+        >>> print(intervals)  # [5, 8, 6]
+        >>> print(avg)  # 6.33
+        >>> # Interpretation: Excessive testing, weak campaign ⚠️
+
+        **NORMAL Timing (Standard Accumulation):**
+        >>> # Springs at bars: 100, 112, 130, 145 (avg: 15 bars)
+        >>> spring1 = Spring(..., bar_index=100)
+        >>> spring2 = Spring(..., bar_index=112)  # 12 bars later
+        >>> spring3 = Spring(..., bar_index=130)  # 18 bars later
+        >>> spring4 = Spring(..., bar_index=145)  # 15 bars later
+        >>> timing, intervals, avg = analyze_spring_timing([spring1, spring2, spring3, spring4])
+        >>> print(timing)  # "NORMAL"
+        >>> print(avg)  # 15.0
+
+        **HEALTHY Timing (Professional Accumulation - Ideal):**
+        >>> # Springs at bars: 100, 130, 165, 197 (avg: 32.3 bars)
+        >>> spring1 = Spring(..., bar_index=100)
+        >>> spring2 = Spring(..., bar_index=130)  # 30 bars later
+        >>> spring3 = Spring(..., bar_index=165)  # 35 bars later
+        >>> spring4 = Spring(..., bar_index=197)  # 32 bars later
+        >>> timing, intervals, avg = analyze_spring_timing([spring1, spring2, spring3, spring4])
+        >>> print(timing)  # "HEALTHY"
+        >>> print(avg)  # 32.33
+        >>> # Interpretation: Professional operators allowing absorption time ✅
+
+        **SINGLE_SPRING (No Timing Analysis):**
+        >>> spring1 = Spring(..., bar_index=100)
+        >>> timing, intervals, avg = analyze_spring_timing([spring1])
+        >>> print(timing)  # "SINGLE_SPRING"
+        >>> print(intervals)  # []
+        >>> print(avg)  # 0.0
+    """
+    if len(springs) < 2:
+        logger.debug(
+            "spring_timing_single_spring",
+            spring_count=len(springs),
+            message="Single spring detected - no timing analysis possible"
+        )
+        return ("SINGLE_SPRING", [], 0.0)
+
+    # Calculate intervals between successive springs (bar indices)
+    intervals = [
+        springs[i + 1].bar_index - springs[i].bar_index
+        for i in range(len(springs) - 1)
+    ]
+
+    # Calculate average interval
+    avg_interval = sum(intervals) / len(intervals)
+
+    # Classify timing based on average interval
+    if avg_interval < 10:
+        classification = "COMPRESSED"
+        logger.warning(
+            "spring_timing_compressed",
+            spring_count=len(springs),
+            intervals=intervals,
+            avg_interval=avg_interval,
+            message="COMPRESSED timing (<10 bars avg) - excessive testing, weak campaign ⚠️"
+        )
+    elif avg_interval < 25:
+        classification = "NORMAL"
+        logger.info(
+            "spring_timing_normal",
+            spring_count=len(springs),
+            intervals=intervals,
+            avg_interval=avg_interval,
+            message="NORMAL timing (10-25 bars) - standard accumulation pace"
+        )
+    else:
+        classification = "HEALTHY"
+        logger.info(
+            "spring_timing_healthy",
+            spring_count=len(springs),
+            intervals=intervals,
+            avg_interval=avg_interval,
+            message="HEALTHY timing (>25 bars avg) - professional absorption ✅"
+        )
+
+    return (classification, intervals, avg_interval)
+
+
+def analyze_test_quality_progression(springs_with_tests: list[tuple[Spring, Test]]) -> tuple[str, dict]:
+    """
+    Analyze test confirmation quality across multiple springs.
+
+    Evaluates test metrics progression to identify campaign strength trends.
+    IMPROVING test quality (declining volume each test) indicates professional
+    accumulation. DEGRADING test quality (rising volume) warns of distribution.
+
+    Args:
+        springs_with_tests: List of (Spring, Test) tuples for springs with confirmations
+
+    Returns:
+        tuple[trend_classification, metrics_dict]
+        - trend_classification: "IMPROVING" | "STABLE" | "DEGRADING" | "INSUFFICIENT_DATA"
+        - metrics_dict: Detailed progression data
+
+    Trend Classifications:
+        - IMPROVING: Volume decrease increasing (supply exhaustion) - ideal
+        - STABLE: Volume decrease within ±10% range
+        - DEGRADING: Volume decrease decreasing (WARNING - distribution)
+        - INSUFFICIENT_DATA: <2 tests available
+
+    Wyckoff Principle:
+        In professional accumulation, successive tests should show IMPROVING
+        characteristics:
+        - Lower volume each time (supply exhaustion)
+        - Tighter support (smaller distance from previous spring low)
+        - Faster confirmation (demand strengthening)
+
+        DEGRADING test quality (rising volume, wider swings) signals distribution
+        disguised as accumulation - a bear trap.
+
+    Examples:
+        **IMPROVING Test Quality (Professional Accumulation - Ideal):**
+        >>> # 3 springs with tests: volume_decrease_pct improving (25% → 35% → 45%)
+        >>> test1 = Test(..., volume_decrease_pct=Decimal("0.25"))  # 25% decrease
+        >>> test2 = Test(..., volume_decrease_pct=Decimal("0.35"))  # 35% decrease
+        >>> test3 = Test(..., volume_decrease_pct=Decimal("0.45"))  # 45% decrease
+        >>> springs_with_tests = [(spring1, test1), (spring2, test2), (spring3, test3)]
+        >>> trend, metrics = analyze_test_quality_progression(springs_with_tests)
+        >>> print(trend)  # "IMPROVING"
+        >>> print(metrics["progression"])  # [0.25, 0.35, 0.45]
+        >>> # Interpretation: Supply exhaustion confirmed - professional accumulation ✅
+
+        **STABLE Test Quality (Consistent Campaign):**
+        >>> # 3 springs with tests: volume_decrease_pct stable (30% → 32% → 28%)
+        >>> test1 = Test(..., volume_decrease_pct=Decimal("0.30"))
+        >>> test2 = Test(..., volume_decrease_pct=Decimal("0.32"))
+        >>> test3 = Test(..., volume_decrease_pct=Decimal("0.28"))
+        >>> springs_with_tests = [(spring1, test1), (spring2, test2), (spring3, test3)]
+        >>> trend, metrics = analyze_test_quality_progression(springs_with_tests)
+        >>> print(trend)  # "STABLE"
+
+        **DEGRADING Test Quality (Distribution Warning - Avoid):**
+        >>> # 3 springs with tests: volume_decrease_pct degrading (40% → 30% → 20%)
+        >>> test1 = Test(..., volume_decrease_pct=Decimal("0.40"))
+        >>> test2 = Test(..., volume_decrease_pct=Decimal("0.30"))
+        >>> test3 = Test(..., volume_decrease_pct=Decimal("0.20"))
+        >>> springs_with_tests = [(spring1, test1), (spring2, test2), (spring3, test3)]
+        >>> trend, metrics = analyze_test_quality_progression(springs_with_tests)
+        >>> print(trend)  # "DEGRADING"
+        >>> print(metrics["warning"])  # True
+        >>> # Interpretation: Rising volume on tests = distribution disguised as accumulation ⚠️
+
+        **INSUFFICIENT_DATA (Need More Tests):**
+        >>> test1 = Test(..., volume_decrease_pct=Decimal("0.30"))
+        >>> springs_with_tests = [(spring1, test1)]
+        >>> trend, metrics = analyze_test_quality_progression(springs_with_tests)
+        >>> print(trend)  # "INSUFFICIENT_DATA"
+        >>> print(metrics)  # {}
+    """
+    if len(springs_with_tests) < 2:
+        logger.debug(
+            "test_quality_insufficient_data",
+            test_count=len(springs_with_tests),
+            message="Need 2+ tests for quality progression analysis"
+        )
+        return ("INSUFFICIENT_DATA", {})
+
+    # Extract volume decrease percentages from tests
+    volume_decreases = [float(test.volume_decrease_pct) for spring, test in springs_with_tests]
+
+    # Check for IMPROVING trend (each test has higher volume decrease than previous)
+    # Higher volume_decrease_pct = lower volume on test = better (supply exhaustion)
+    is_improving = all(
+        volume_decreases[i] < volume_decreases[i + 1]
+        for i in range(len(volume_decreases) - 1)
+    )
+
+    # Check for DEGRADING trend (each test has lower volume decrease than previous)
+    # Lower volume_decrease_pct = higher volume on test = worse (distribution warning)
+    is_degrading = all(
+        volume_decreases[i] > volume_decreases[i + 1]
+        for i in range(len(volume_decreases) - 1)
+    )
+
+    if is_improving:
+        logger.info(
+            "test_quality_improving",
+            test_count=len(springs_with_tests),
+            volume_decrease_progression=volume_decreases,
+            message="IMPROVING test quality - declining volume confirms supply exhaustion ✅"
+        )
+        return ("IMPROVING", {
+            "pattern": "declining_volume_tests",
+            "progression": volume_decreases,
+            "wyckoff_interpretation": "Professional accumulation - supply exhaustion confirmed"
+        })
+    elif is_degrading:
+        logger.warning(
+            "test_quality_degrading",
+            test_count=len(springs_with_tests),
+            volume_decrease_progression=volume_decreases,
+            message="DEGRADING test quality - rising volume WARNING ⚠️ Distribution disguised as accumulation"
+        )
+        return ("DEGRADING", {
+            "pattern": "rising_volume_tests",
+            "progression": volume_decreases,
+            "warning": True,
+            "wyckoff_interpretation": "Distribution warning - avoid setup"
+        })
+    else:
+        logger.info(
+            "test_quality_stable",
+            test_count=len(springs_with_tests),
+            volume_decrease_progression=volume_decreases,
+            message="STABLE test quality - mixed progression"
+        )
+        return ("STABLE", {
+            "pattern": "mixed_progression",
+            "progression": volume_decreases
+        })
 
 
 # ============================================================
@@ -1711,6 +1995,7 @@ class SpringDetector:
         # STEP 3: Multi-spring iteration loop
         detected_indices = set()
         start_index = 20  # Minimum for volume calculation
+        springs_with_tests: list[tuple[Spring, Test]] = []  # Story 5.6.2: Track for test quality analysis
 
         while start_index < len(bars):
             # Detect next spring from current position with VolumeCache
@@ -1776,6 +2061,9 @@ class SpringDetector:
                 volume_decrease_pct=float(test.volume_decrease_pct),
             )
 
+            # Story 5.6.2: Track spring-test pair for quality progression analysis
+            springs_with_tests.append((spring, test))
+
             # STEP 5: Calculate confidence using Story 5.4
             # Function is defined in this module at line 779
             confidence_result = calculate_spring_confidence(
@@ -1837,9 +2125,28 @@ class SpringDetector:
             # Move to next bar after this spring
             start_index = spring.bar_index + 1
 
-        # STEP 6: Update risk assessment and volume trend (Task 25)
-        history.risk_level = analyze_spring_risk_profile(history)
+        # STEP 6: Analyze volume trend (Task 25)
         history.volume_trend = analyze_volume_trend(history.springs)
+
+        # Story 5.6.2: Analyze spring timing (AC 1)
+        timing, intervals, avg_interval = analyze_spring_timing(history.springs)
+        history.spring_timing = timing
+        history.spring_intervals = intervals
+        history.avg_spring_interval = avg_interval
+
+        # Story 5.6.2: Analyze test quality progression (AC 2)
+        test_trend, test_metrics = analyze_test_quality_progression(springs_with_tests)
+        history.test_quality_trend = test_trend
+        history.test_quality_metrics = test_metrics
+
+        # Story 5.6.2: Re-select best spring with phase-aware tie-breaking (AC 3)
+        # This overrides the incremental selection done in add_spring() with phase context
+        if history.springs:
+            history.best_spring = self.get_best_spring(history, phase)
+
+        # Story 5.6.2: Calculate final risk with timing/test quality adjustments (AC 4)
+        # Must be done AFTER timing and test quality are analyzed
+        history.risk_level = analyze_spring_risk_profile(history)
 
         self.logger.info(
             "spring_detection_pipeline_completed",
@@ -1848,6 +2155,10 @@ class SpringDetector:
             signal_count=len(history.signals),
             risk_level=history.risk_level,
             volume_trend=history.volume_trend,
+            spring_timing=history.spring_timing,
+            avg_spring_interval=history.avg_spring_interval,
+            test_quality_trend=history.test_quality_trend,
+            test_count=len(springs_with_tests),
             best_spring_volume=float(history.best_spring.volume_ratio)
             if history.best_spring
             else None,
@@ -1920,6 +2231,105 @@ class SpringDetector:
         )
 
         return best_signal
+
+    def get_best_spring(
+        self, history: SpringHistory, phase: Optional[WyckoffPhase] = None
+    ) -> Optional[Spring]:
+        """
+        Select best spring with phase-aware tie-breaking (Story 5.6.2 AC 3).
+
+        Selection Logic:
+        ----------------
+        1. Volume quality (primary): Lower volume = better
+        2. Penetration depth (secondary): Deeper penetration = better
+        3. Recovery speed (tertiary): Faster recovery = better
+        4. **NEW** Phase C tie-breaker: Prefer latest spring (closer to Phase D)
+
+        Phase-Aware Tie-Breaking:
+        -------------------------
+        When multiple springs have identical quality metrics (volume, penetration,
+        recovery) and phase == WyckoffPhase.C, prefer the LATEST spring. This
+        spring occurs when accumulation is most complete, with the fewest weak
+        hands remaining. It's the "last shakeout" before markup (Phase D).
+
+        Args:
+            history: SpringHistory with detected springs
+            phase: Current Wyckoff phase (optional, for tie-breaking)
+
+        Returns:
+            Best Spring, or None if no springs in history
+
+        Wyckoff Context:
+            When multiple springs show identical quality metrics, prefer the latest
+            spring in Phase C. This spring occurs when accumulation is most complete,
+            with the fewest weak hands remaining.
+
+        Examples:
+            **No Tie - Primary Criteria Differ:**
+            >>> # Spring 1: 0.5x volume, Spring 2: 0.3x volume
+            >>> # Spring 2 wins on volume (0.3 < 0.5), phase ignored
+            >>> best = detector.get_best_spring(history, WyckoffPhase.C)
+            >>> assert best == spring2
+
+            **Tie + Phase C - Latest Spring Wins:**
+            >>> # Spring 1 (bar 100): 0.4x, 2.0%, 1bar
+            >>> # Spring 2 (bar 150): 0.4x, 2.0%, 1bar (IDENTICAL quality)
+            >>> best = detector.get_best_spring(history, WyckoffPhase.C)
+            >>> assert best == spring2  # Latest spring in Phase C
+
+            **Tie + No Phase - First Spring Wins (Backward Compatible):**
+            >>> # Spring 1 (bar 100): 0.4x, 2.0%, 1bar
+            >>> # Spring 2 (bar 150): 0.4x, 2.0%, 1bar
+            >>> best = detector.get_best_spring(history, phase=None)
+            >>> assert best == spring1  # No phase context, keep first
+        """
+        if not history.springs:
+            self.logger.debug(
+                "no_springs_in_history",
+                symbol=history.symbol,
+                message="No springs to select from"
+            )
+            return None
+
+        # Phase C tie-breaker: prefer latest spring (closer to Phase D)
+        # If phase is C, use negative bar_index to sort latest first (for ties)
+        # Otherwise, use positive bar_index to sort earliest first (existing behavior)
+        phase_multiplier = -1 if phase == WyckoffPhase.C else 1
+
+        # Sort springs by Wyckoff quality hierarchy
+        # Lower volume = better, deeper penetration = better, faster recovery = better
+        # Phase-aware: latest spring wins ties in Phase C
+        sorted_springs = sorted(
+            history.springs,
+            key=lambda s: (
+                s.volume_ratio,              # PRIMARY: Lower is better
+                -s.penetration_pct,           # SECONDARY: Deeper (higher %) is better
+                s.recovery_bars,              # TERTIARY: Faster (lower bars) is better
+                phase_multiplier * s.bar_index  # TIE-BREAKER: Latest if Phase C
+            )
+        )
+
+        best_spring = sorted_springs[0]
+
+        # Log selection rationale
+        selection_context = (
+            f"Phase C - latest spring preferred on ties (bar {best_spring.bar_index})"
+            if phase == WyckoffPhase.C
+            else f"No phase context - standard selection (bar {best_spring.bar_index})"
+        )
+
+        self.logger.info(
+            "best_spring_selected",
+            symbol=history.symbol,
+            spring_bar_index=best_spring.bar_index,
+            spring_timestamp=best_spring.bar.timestamp.isoformat(),
+            volume_ratio=float(best_spring.volume_ratio),
+            penetration_pct=float(best_spring.penetration_pct),
+            recovery_bars=best_spring.recovery_bars,
+            phase_context=selection_context,
+        )
+
+        return best_spring
 
     def detect(
         self,
