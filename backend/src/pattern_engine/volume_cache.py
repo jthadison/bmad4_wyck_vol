@@ -59,7 +59,7 @@ Author: Story 5.6 - SpringDetector Module Integration
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional
 import time
 
@@ -170,8 +170,11 @@ class VolumeCache:
                 )
                 continue
 
-            # Calculate volume ratio
-            volume_ratio = Decimal(str(current_bar.volume / avg_volume))
+            # Calculate volume ratio and quantize to 4 decimal places
+            # to match Spring model constraint (max_digits=10, decimal_places=4)
+            volume_ratio = Decimal(str(current_bar.volume / avg_volume)).quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
+            )
 
             # Store in cache (O(1) insertion)
             self.ratios[current_bar.timestamp] = volume_ratio

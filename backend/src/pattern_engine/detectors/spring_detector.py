@@ -62,7 +62,7 @@ Author: Generated for Story 5.1
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 import structlog
@@ -268,8 +268,11 @@ def detect_spring(
                 )
                 continue  # Skip candidate
 
-            # Convert float to Decimal for precise comparison
-            volume_ratio = Decimal(str(volume_ratio_float))
+            # Convert float to Decimal and quantize to 4 decimal places
+            # to match Spring model constraint (max_digits=10, decimal_places=4)
+            volume_ratio = Decimal(str(volume_ratio_float)).quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
+            )
 
         # FR12 enforcement - NON-NEGOTIABLE binary rejection (AC 5)
         if volume_ratio >= Decimal("0.7"):
@@ -1774,20 +1777,20 @@ class SpringDetector:
             )
 
             # STEP 5: Calculate confidence using Story 5.4
-            # Import here to avoid circular dependency
-            from src.pattern_engine.analyzers.spring_confidence_analyzer import (
-                calculate_spring_confidence,
+            # Function is defined in this module at line 779
+            confidence_result = calculate_spring_confidence(
+                spring=spring,
+                creek=range.creek,
+                previous_tests=[test] if test else None
             )
-
-            confidence_result = calculate_spring_confidence(spring, test)
 
             self.logger.info(
                 "confidence_calculated",
                 symbol=spring.bar.symbol,
                 confidence=confidence_result.total_score,
-                volume_score=confidence_result.volume_score,
-                penetration_score=confidence_result.penetration_score,
-                recovery_score=confidence_result.recovery_score,
+                volume_score=confidence_result.component_scores.get('volume_quality', 0),
+                penetration_score=confidence_result.component_scores.get('penetration_depth', 0),
+                recovery_score=confidence_result.component_scores.get('recovery_speed', 0),
             )
 
             # STEP 6: Generate signal using Story 5.5

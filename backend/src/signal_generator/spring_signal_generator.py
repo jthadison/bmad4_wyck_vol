@@ -556,7 +556,7 @@ def generate_spring_signal(
         # Trading range context
         trading_range_id=range.id,
         range_start_timestamp=range.start_timestamp,
-        range_bar_count=range.bar_count,
+        range_bar_count=range.duration,
         # Risk management fields (AC 11, 12) - UPDATED v2.0
         stop_distance_pct=stop_distance_pct,
         target_distance_pct=target_distance_pct,
