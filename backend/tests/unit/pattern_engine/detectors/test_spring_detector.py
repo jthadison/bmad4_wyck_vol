@@ -864,6 +864,7 @@ class TestTestConfirmationDetection:
         # Create Spring object
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.02"),  # 2%
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -952,6 +953,7 @@ class TestTestConfirmationDetection:
 
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.02"),
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -1043,6 +1045,7 @@ class TestTestConfirmationDetection:
 
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.02"),
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -1131,6 +1134,7 @@ class TestTestConfirmationDetection:
 
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.02"),
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -1224,6 +1228,7 @@ class TestTestConfirmationDetection:
 
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.00"),  # At Creek level
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -1373,6 +1378,7 @@ class TestTestConfirmationDetection:
 
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.00"),
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -1456,6 +1462,7 @@ class TestTestConfirmationDetection:
 
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.02"),
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -1515,6 +1522,7 @@ class TestTestConfirmationDetection:
 
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.02"),
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -1572,6 +1580,7 @@ class TestTestConfirmationDetection:
 
         spring = Spring(
             bar=spring_bar,
+            bar_index=20,
             penetration_pct=Decimal("0.02"),
             volume_ratio=Decimal("0.5"),
             recovery_bars=1,
@@ -1624,6 +1633,7 @@ def test_calculate_spring_confidence_excellent_quality():
             volume=25000,  # Will be 0.25x when avg is 100000
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.015"),  # 1.5%
         volume_ratio=Decimal("0.25"),  # Exceptional
         recovery_bars=1,  # Immediate
@@ -1709,6 +1719,7 @@ def test_calculate_spring_confidence_good_quality():
             volume=40000,
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.025"),  # 2.5%
         volume_ratio=Decimal("0.4"),  # Ideal
         recovery_bars=2,  # Strong
@@ -1786,6 +1797,7 @@ def test_calculate_spring_confidence_acceptable_quality():
             volume=55000,
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.035"),  # 3.5%
         volume_ratio=Decimal("0.55"),  # Acceptable
         recovery_bars=3,  # Good
@@ -1861,6 +1873,7 @@ def test_calculate_spring_confidence_rejected_quality():
             volume=65000,
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.045"),  # 4.5%
         volume_ratio=Decimal("0.65"),  # Marginal
         recovery_bars=5,  # Slow
@@ -1936,6 +1949,7 @@ def test_calculate_spring_confidence_no_test():
             volume=35000,
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.015"),
         volume_ratio=Decimal("0.35"),
         recovery_bars=1,
@@ -1983,6 +1997,7 @@ def test_calculate_spring_confidence_volume_trend_bonus():
             volume=30000,  # Lower than previous tests
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.015"),
         volume_ratio=Decimal("0.3"),  # Significantly lower volume
         recovery_bars=1,
@@ -2076,6 +2091,7 @@ def test_volume_quality_scoring_tiers(volume_ratio, expected_points):
             volume=int(float(volume_ratio) * 100000),
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.015"),
         volume_ratio=volume_ratio,
         recovery_bars=1,
@@ -2121,6 +2137,7 @@ def test_penetration_depth_scoring_tiers(penetration_pct, expected_points):
             volume=40000,
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=penetration_pct,
         volume_ratio=Decimal("0.4"),
         recovery_bars=1,
@@ -2167,6 +2184,7 @@ def test_recovery_speed_scoring_tiers(recovery_bars, expected_points):
             volume=40000,
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.015"),
         volume_ratio=Decimal("0.4"),
         recovery_bars=recovery_bars,
@@ -2203,6 +2221,7 @@ def test_calculate_spring_confidence_validates_inputs():
             volume=40000,
             symbol="AAPL",
         ),
+        bar_index=20,
         penetration_pct=Decimal("0.015"),
         volume_ratio=Decimal("0.4"),
         recovery_bars=1,

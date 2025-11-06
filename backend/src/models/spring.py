@@ -41,6 +41,7 @@ class Spring(BaseModel):
     Attributes:
         id: Unique identifier
         bar: OHLCV bar where spring occurred (penetrated below Creek)
+        bar_index: Index of the spring bar in the bar sequence
         penetration_pct: Percentage below Creek (0-5%, ideal 1-2%)
         volume_ratio: Volume relative to 20-bar average (<0.7x required by FR12)
         recovery_bars: Number of bars to recover above Creek (1-5)
@@ -66,6 +67,7 @@ class Spring(BaseModel):
 
     id: UUID = Field(default_factory=uuid4, description="Unique spring identifier")
     bar: OHLCVBar = Field(..., description="Bar where spring occurred")
+    bar_index: int = Field(..., ge=0, description="Index of spring bar in sequence")
     penetration_pct: Decimal = Field(
         ...,
         ge=Decimal("0"),
