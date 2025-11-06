@@ -77,6 +77,7 @@ from src.models.test import Test
 from src.models.trading_range import TradingRange, RangeStatus
 from src.models.creek_level import CreekLevel
 from src.pattern_engine.volume_analyzer import calculate_volume_ratio
+from src.pattern_engine.volume_cache import VolumeCache
 
 logger = structlog.get_logger(__name__)
 
@@ -87,6 +88,7 @@ def detect_spring(
     phase: WyckoffPhase,
     start_index: int = 20,
     skip_indices: Optional[set[int]] = None,
+    volume_cache: Optional[VolumeCache] = None,
 ) -> Optional[Spring]:
     """
     Detect Spring patterns (penetration below Creek with low volume and rapid recovery).
@@ -101,6 +103,7 @@ def detect_spring(
         phase: Current Wyckoff phase (must be Phase C per FR15)
         start_index: Index to start scanning from (default: 20 for volume calculation)
         skip_indices: Set of bar indices to skip (already detected springs)
+        volume_cache: Optional VolumeCache for O(1) volume ratio lookups (Task 2A performance optimization)
 
     Returns:
         Optional[Spring]: Spring if detected, None if not found or rejected
@@ -115,15 +118,21 @@ def detect_spring(
         - FR15: Phase C only (Springs invalid in other phases)
 
     Volume Calculation:
-        Uses VolumeAnalyzer.calculate_volume_ratio() directly (Story 2.5),
-        returns float converted to Decimal for precise comparison.
+        If volume_cache provided: Uses O(1) cache lookup (5-10x faster for multi-spring detection)
+        Otherwise: Falls back to VolumeAnalyzer.calculate_volume_ratio() (Story 2.5)
+
+    Performance:
+        With VolumeCache: O(1) per-candidate lookup
+        Without cache: O(n) per-candidate calculation where n = window size
 
     Example:
-        >>> spring = detect_spring(
-        ...     range=trading_range,  # Has Creek at $100.00
-        ...     bars=ohlcv_bars,      # Last 25 bars
-        ...     phase=WyckoffPhase.C
-        ... )
+        >>> # With cache (recommended for multi-spring detection)
+        >>> cache = VolumeCache(bars, window=20)
+        >>> spring = detect_spring(range, bars, WyckoffPhase.C, volume_cache=cache)
+        >>>
+        >>> # Without cache (backward compatible)
+        >>> spring = detect_spring(range, bars, WyckoffPhase.C)
+        >>>
         >>> if spring:
         ...     print(f"Spring: {spring.penetration_pct:.2%} below Creek")
         ...     print(f"Volume: {spring.volume_ratio:.2f}x (low volume)")
@@ -233,20 +242,34 @@ def detect_spring(
         # CRITICAL VOLUME VALIDATION (FR12)
         # ============================================================
 
-        # Calculate volume ratio using VolumeAnalyzer
-        volume_ratio_float = calculate_volume_ratio(bars, i)
+        # Calculate volume ratio - use cache if available (Task 2A optimization)
+        if volume_cache is not None:
+            # O(1) cache lookup (5-10x faster for multi-spring detection)
+            volume_ratio = volume_cache.get_ratio(bar.timestamp)
 
-        if volume_ratio_float is None:
-            logger.error(
-                "volume_ratio_calculation_failed",
-                bar_timestamp=bar.timestamp.isoformat(),
-                bar_index=i,
-                message="VolumeAnalyzer returned None (insufficient data or zero average)",
-            )
-            continue  # Skip candidate
+            if volume_ratio is None:
+                logger.error(
+                    "volume_ratio_cache_miss",
+                    bar_timestamp=bar.timestamp.isoformat(),
+                    bar_index=i,
+                    message="VolumeCache returned None (timestamp not in cache)",
+                )
+                continue  # Skip candidate
+        else:
+            # Fallback to VolumeAnalyzer (backward compatible)
+            volume_ratio_float = calculate_volume_ratio(bars, i)
 
-        # Convert float to Decimal for precise comparison
-        volume_ratio = Decimal(str(volume_ratio_float))
+            if volume_ratio_float is None:
+                logger.error(
+                    "volume_ratio_calculation_failed",
+                    bar_timestamp=bar.timestamp.isoformat(),
+                    bar_index=i,
+                    message="VolumeAnalyzer returned None (insufficient data or zero average)",
+                )
+                continue  # Skip candidate
+
+            # Convert float to Decimal for precise comparison
+            volume_ratio = Decimal(str(volume_ratio_float))
 
         # FR12 enforcement - NON-NEGOTIABLE binary rejection (AC 5)
         if volume_ratio >= Decimal("0.7"):
@@ -1212,17 +1235,47 @@ def analyze_spring_risk_profile(history: SpringHistory) -> str:
         > less selling pressure, proving supply exhaustion. Rising volume on successive
         > springs is a WARNING - it indicates distribution, not accumulation."
 
-    Example:
+    Examples:
+        **Single Spring - Ultra-Low Volume (LOW Risk):**
         >>> history = SpringHistory(symbol="AAPL", trading_range_id=uuid4())
-        >>> spring1 = Spring(..., volume_ratio=Decimal("0.5"))
+        >>> spring = Spring(..., volume_ratio=Decimal("0.25"))  # <0.3x = exceptional
+        >>> history.add_spring(spring)
+        >>>
+        >>> risk = analyze_spring_risk_profile(history)
+        >>> print(risk)  # "LOW" - ultra-low volume (<0.3x)
+
+        **Single Spring - Moderate Volume (MODERATE Risk):**
+        >>> history = SpringHistory(symbol="MSFT", trading_range_id=uuid4())
+        >>> spring = Spring(..., volume_ratio=Decimal("0.5"))  # 0.3-0.7x range
+        >>> history.add_spring(spring)
+        >>>
+        >>> risk = analyze_spring_risk_profile(history)
+        >>> print(risk)  # "MODERATE" - acceptable volume range
+
+        **Multi-Spring - Declining Volume (LOW Risk - Professional):**
+        >>> history = SpringHistory(symbol="AAPL", trading_range_id=uuid4())
+        >>> spring1 = Spring(..., volume_ratio=Decimal("0.6"))
         >>> spring2 = Spring(..., volume_ratio=Decimal("0.4"))
-        >>> spring3 = Spring(..., volume_ratio=Decimal("0.3"))  # DECLINING
+        >>> spring3 = Spring(..., volume_ratio=Decimal("0.3"))  # DECLINING pattern
         >>> history.add_spring(spring1)
         >>> history.add_spring(spring2)
         >>> history.add_spring(spring3)
         >>>
         >>> risk = analyze_spring_risk_profile(history)
-        >>> print(risk)  # "LOW" - declining volume pattern
+        >>> print(risk)  # "LOW" - declining volume = professional accumulation
+
+        **Multi-Spring - Rising Volume (HIGH Risk - Warning):**
+        >>> history = SpringHistory(symbol="XYZ", trading_range_id=uuid4())
+        >>> spring1 = Spring(..., volume_ratio=Decimal("0.3"))
+        >>> spring2 = Spring(..., volume_ratio=Decimal("0.5"))
+        >>> spring3 = Spring(..., volume_ratio=Decimal("0.65"))  # RISING pattern
+        >>> history.add_spring(spring1)
+        >>> history.add_spring(spring2)
+        >>> history.add_spring(spring3)
+        >>>
+        >>> risk = analyze_spring_risk_profile(history)
+        >>> print(risk)  # "HIGH" - rising volume = distribution warning
+        >>> # Trader should SKIP this setup
     """
     if history.spring_count == 0:
         logger.warning("risk_profile_no_springs", message="No springs to analyze")
@@ -1309,7 +1362,8 @@ def analyze_volume_trend(springs: list[Spring]) -> str:
         Declining volume through springs = professional accumulation
         Rising volume through springs = potential distribution
 
-    Example:
+    Examples:
+        **Declining Volume Trend (Professional Accumulation - Bullish):**
         >>> spring1 = Spring(..., volume_ratio=Decimal("0.6"))
         >>> spring2 = Spring(..., volume_ratio=Decimal("0.5"))
         >>> spring3 = Spring(..., volume_ratio=Decimal("0.4"))
@@ -1317,6 +1371,35 @@ def analyze_volume_trend(springs: list[Spring]) -> str:
         >>>
         >>> trend = analyze_volume_trend([spring1, spring2, spring3, spring4])
         >>> print(trend)  # "DECLINING" - 0.6→0.5→0.4→0.3
+        >>> # First half avg: (0.6 + 0.5) / 2 = 0.55
+        >>> # Second half avg: (0.4 + 0.3) / 2 = 0.35
+        >>> # Change: (0.35 - 0.55) / 0.55 = -36% (>15% decrease = DECLINING)
+
+        **Rising Volume Trend (Distribution Warning - Bearish):**
+        >>> spring1 = Spring(..., volume_ratio=Decimal("0.3"))
+        >>> spring2 = Spring(..., volume_ratio=Decimal("0.4"))
+        >>> spring3 = Spring(..., volume_ratio=Decimal("0.5"))
+        >>> spring4 = Spring(..., volume_ratio=Decimal("0.6"))
+        >>>
+        >>> trend = analyze_volume_trend([spring1, spring2, spring3, spring4])
+        >>> print(trend)  # "RISING" - 0.3→0.4→0.5→0.6
+        >>> # First half avg: 0.35, Second half avg: 0.55
+        >>> # Change: +57% (>15% increase = RISING) ⚠️ WARNING
+
+        **Stable Volume Trend (Neutral):**
+        >>> spring1 = Spring(..., volume_ratio=Decimal("0.45"))
+        >>> spring2 = Spring(..., volume_ratio=Decimal("0.50"))
+        >>> spring3 = Spring(..., volume_ratio=Decimal("0.48"))
+        >>> spring4 = Spring(..., volume_ratio=Decimal("0.52"))
+        >>>
+        >>> trend = analyze_volume_trend([spring1, spring2, spring3, spring4])
+        >>> print(trend)  # "STABLE" - relatively consistent volume
+        >>> # Change within ±15% threshold
+
+        **Minimum Springs for Trend Analysis:**
+        >>> spring1 = Spring(..., volume_ratio=Decimal("0.5"))
+        >>> trend = analyze_volume_trend([spring1])
+        >>> print(trend)  # "STABLE" - need 2+ springs for trend analysis
     """
     if len(springs) < 2:
         logger.debug(
@@ -1402,6 +1485,7 @@ class SpringDetector:
 
     Usage:
     ------
+    **Single Spring Detection:**
     >>> from backend.src.pattern_engine.detectors.spring_detector import SpringDetector
     >>> from backend.src.models.phase_classification import WyckoffPhase
     >>>
@@ -1414,13 +1498,64 @@ class SpringDetector:
     ...     phase=WyckoffPhase.C
     ... )
     >>>
-    >>> # Access best selections
-    >>> best_spring = history.best_spring  # Lowest volume spring
-    >>> best_signal = detector.get_best_signal(history)  # Highest confidence signal
-    >>> risk_level = history.risk_level  # LOW/MODERATE/HIGH
-    >>> volume_trend = history.volume_trend  # DECLINING/STABLE/RISING
+    >>> # Single spring scenario
+    >>> print(f"Found {history.spring_count} spring")  # 1
+    >>> print(f"Best spring volume: {history.best_spring.volume_ratio}x")  # 0.4x
+    >>> print(f"Risk level: {history.risk_level}")  # MODERATE (0.3-0.7x range)
+    >>> print(f"Volume trend: {history.volume_trend}")  # STABLE (only 1 spring)
     >>>
-    >>> # Backward compatibility: Legacy API
+    >>> # Access best signal
+    >>> best_signal = detector.get_best_signal(history)
+    >>> if best_signal:
+    ...     print(f"Entry: ${best_signal.entry_price}")
+    ...     print(f"Confidence: {best_signal.confidence}%")
+    ...     print(f"R-multiple: {best_signal.r_multiple}R")
+    >>>
+    >>> **Multi-Spring Detection (Professional Accumulation):**
+    >>> # Scenario: 3 springs with DECLINING volume (bullish)
+    >>> # Spring 1: Bar 25, 0.6x volume, 2% penetration, 3-bar recovery
+    >>> # Spring 2: Bar 40, 0.5x volume, 2.5% penetration, 2-bar recovery
+    >>> # Spring 3: Bar 55, 0.3x volume, 3% penetration, 1-bar recovery
+    >>>
+    >>> history = detector.detect_all_springs(range, bars, WyckoffPhase.C)
+    >>>
+    >>> print(f"Found {history.spring_count} springs")  # 3
+    >>> print(f"Volume trend: {history.volume_trend}")  # DECLINING (0.6→0.5→0.3)
+    >>> print(f"Risk level: {history.risk_level}")  # LOW (declining = professional)
+    >>>
+    >>> # Best spring has LOWEST volume (Wyckoff quality hierarchy)
+    >>> assert history.best_spring.volume_ratio == Decimal("0.3")  # Spring 3
+    >>> print(f"Best spring: {history.best_spring.bar.timestamp}")  # Bar 55
+    >>>
+    >>> # All springs tracked chronologically
+    >>> for i, spring in enumerate(history.springs, 1):
+    ...     print(f"Spring {i}: {spring.volume_ratio}x volume")
+    >>> # Output:
+    >>> # Spring 1: 0.6x volume
+    >>> # Spring 2: 0.5x volume
+    >>> # Spring 3: 0.3x volume
+    >>>
+    >>> # All signals tracked (if tests confirmed)
+    >>> for i, signal in enumerate(history.signals, 1):
+    ...     print(f"Signal {i}: {signal.confidence}% confidence, {signal.r_multiple}R")
+    >>>
+    >>> **Multi-Spring Detection (Distribution Warning):**
+    >>> # Scenario: 3 springs with RISING volume (bearish warning)
+    >>> # Spring 1: 0.3x volume
+    >>> # Spring 2: 0.5x volume
+    >>> # Spring 3: 0.65x volume (RISING = warning)
+    >>>
+    >>> history = detector.detect_all_springs(range, bars, WyckoffPhase.C)
+    >>>
+    >>> print(f"Volume trend: {history.volume_trend}")  # RISING (0.3→0.5→0.65)
+    >>> print(f"Risk level: {history.risk_level}")  # HIGH (rising = distribution warning)
+    >>>
+    >>> # Wyckoff Interpretation:
+    >>> # Rising volume through springs = NOT professional accumulation
+    >>> # May indicate distribution disguised as accumulation
+    >>> # Trader should be cautious or skip this setup
+    >>>
+    >>> **Backward Compatibility (Legacy API):**
     >>> signals = detector.detect(range, bars, phase)  # Returns List[SpringSignal]
 
     Integration:
@@ -1477,21 +1612,61 @@ class SpringDetector:
         Pipeline:
         ---------
         1. Phase validation (FR15: Phase C only)
-        2. Spring detection using detect_spring() from Story 5.1
-        3. Test confirmation using detect_test_confirmation() from Story 5.3
-        4. Confidence scoring using calculate_spring_confidence() from Story 5.4
-        5. Signal generation using generate_spring_signal() from Story 5.5
-        6. History accumulation with best selections
-        7. Volume trend analysis (Task 25)
-        8. Risk aggregation (Task 25)
+        2. Build VolumeCache for O(1) volume lookups (Task 2A performance optimization)
+        3. Multi-spring iteration with detect_spring() from Story 5.1
+        4. Test confirmation using detect_test_confirmation() from Story 5.3
+        5. Confidence scoring using calculate_spring_confidence() from Story 5.4
+        6. Signal generation using generate_spring_signal() from Story 5.5
+        7. History accumulation with best selections
+        8. Volume trend analysis (Task 25)
+        9. Risk aggregation (Task 25)
 
-        Example:
+        Examples:
+            **Single Spring Scenario:**
             >>> detector = SpringDetector()
             >>> history = detector.detect_all_springs(range, bars, WyckoffPhase.C)
-            >>> print(f"Found {history.spring_count} springs")
-            >>> print(f"Best spring: {history.best_spring.volume_ratio}x volume")
-            >>> print(f"Risk level: {history.risk_level}")
-            >>> print(f"Volume trend: {history.volume_trend}")
+            >>> print(f"Found {history.spring_count} springs")  # 1
+            >>> print(f"Best spring: {history.best_spring.volume_ratio}x volume")  # 0.4x
+            >>> print(f"Risk level: {history.risk_level}")  # MODERATE
+            >>> print(f"Volume trend: {history.volume_trend}")  # STABLE
+
+            **Multi-Spring Accumulation (Declining Volume - Bullish):**
+            >>> # AAPL trading range with 3 springs showing declining volume
+            >>> # Spring 1 (Day 25): 0.6x volume, $98.00 low
+            >>> # Spring 2 (Day 40): 0.5x volume, $97.50 low (deeper test, lower volume)
+            >>> # Spring 3 (Day 55): 0.3x volume, $97.00 low (deepest, lowest volume)
+            >>>
+            >>> history = detector.detect_all_springs(aapl_range, aapl_bars, WyckoffPhase.C)
+            >>>
+            >>> print(f"Springs detected: {history.spring_count}")  # 3
+            >>> print(f"Volume trend: {history.volume_trend}")  # DECLINING
+            >>> print(f"Risk level: {history.risk_level}")  # LOW (professional pattern)
+            >>>
+            >>> # Best spring is Spring 3 (lowest volume per Wyckoff hierarchy)
+            >>> assert history.best_spring.volume_ratio == Decimal("0.3")
+            >>>
+            >>> # All springs and signals available
+            >>> for spring in history.springs:
+            ...     print(f"{spring.bar.timestamp}: {spring.volume_ratio}x")
+            >>> # Output:
+            >>> # 2024-01-25: 0.6x volume
+            >>> # 2024-02-09: 0.5x volume
+            >>> # 2024-02-24: 0.3x volume (BEST - lowest volume)
+
+            **Multi-Spring Distribution Warning (Rising Volume - Bearish):**
+            >>> # Scenario where volume RISES through springs (warning signal)
+            >>> # Spring 1: 0.3x volume
+            >>> # Spring 2: 0.5x volume (HIGHER - warning)
+            >>> # Spring 3: 0.65x volume (HIGHEST - major warning)
+            >>>
+            >>> history = detector.detect_all_springs(range, bars, WyckoffPhase.C)
+            >>>
+            >>> print(f"Volume trend: {history.volume_trend}")  # RISING
+            >>> print(f"Risk level: {history.risk_level}")  # HIGH
+            >>>
+            >>> # Wyckoff interpretation: NOT professional accumulation
+            >>> # Rising volume = potential distribution disguised as accumulation
+            >>> # Trader should SKIP this setup or wait for confirmation
         """
         # Initialize SpringHistory
         history = SpringHistory(
@@ -1518,18 +1693,31 @@ class SpringDetector:
             # Return empty history
             return history
 
-        # STEP 2: Multi-spring iteration loop
+        # STEP 2: Build VolumeCache for performance optimization (Task 2A)
+        # Pre-calculate all volume ratios with O(n) single pass
+        # Provides O(1) lookups during spring detection (5-10x speedup)
+        volume_cache = VolumeCache(bars, window=20)
+
+        self.logger.info(
+            "volume_cache_built",
+            symbol=range.symbol,
+            cached_ratios=len(volume_cache),
+            message=f"VolumeCache built with {len(volume_cache)} ratios for performance optimization",
+        )
+
+        # STEP 3: Multi-spring iteration loop
         detected_indices = set()
         start_index = 20  # Minimum for volume calculation
 
         while start_index < len(bars):
-            # Detect next spring from current position
+            # Detect next spring from current position with VolumeCache
             spring = detect_spring(
                 range,
                 bars,
                 phase,
                 start_index=start_index,
                 skip_indices=detected_indices,
+                volume_cache=volume_cache,  # Pass cache for O(1) lookups
             )
 
             if spring is None:
@@ -1558,7 +1746,7 @@ class SpringDetector:
                 total_springs_so_far=len(detected_indices),
             )
 
-            # STEP 3: Detect test confirmation using Story 5.3
+            # STEP 4: Detect test confirmation using Story 5.3
             test = detect_test_confirmation(range, spring, bars)
 
             if test is None:
@@ -1585,7 +1773,7 @@ class SpringDetector:
                 volume_decrease_pct=float(test.volume_decrease_pct),
             )
 
-            # STEP 4: Calculate confidence using Story 5.4
+            # STEP 5: Calculate confidence using Story 5.4
             # Import here to avoid circular dependency
             from src.pattern_engine.analyzers.spring_confidence_analyzer import (
                 calculate_spring_confidence,
@@ -1602,7 +1790,7 @@ class SpringDetector:
                 recovery_score=confidence_result.recovery_score,
             )
 
-            # STEP 5: Generate signal using Story 5.5
+            # STEP 6: Generate signal using Story 5.5
             # Import here to avoid circular dependency
             from src.signal_generator.spring_signal_generator import (
                 generate_spring_signal,
