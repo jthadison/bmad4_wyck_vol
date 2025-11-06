@@ -448,3 +448,133 @@ def test_spring_signal_entry_stop_target_relationships():
     assert signal is not None
     assert signal.stop_loss < signal.entry_price < signal.target_price
     assert signal.r_multiple >= Decimal("2.0")
+
+
+# ============================================================================
+# FR19 Rejection Test (R-multiple < 2.0R)
+# ============================================================================
+
+
+def test_spring_signal_rejected_low_r_multiple():
+    """Test AC 7: Signal rejected when R < 2.0 (FR19 Updated)."""
+    # Arrange: Create range with Jump too close to Creek for 2.0R
+    creek = CreekLevel(
+        price=Decimal("100.00"),
+        timestamp=datetime.now(UTC),
+        absolute_low=Decimal("99.00"),
+        touch_count=5,
+        touch_details=[],
+        strength_score=Decimal("85.0"),
+        strength_rating="STRONG",
+        last_test_timestamp=datetime.now(UTC),
+        first_test_timestamp=datetime.now(UTC),
+        hold_duration=10,
+        confidence=Decimal("0.85"),
+        volume_trend="DECLINING",
+        bar_count=20,
+        volume_weight=Decimal("0.8"),
+        test_count=3,
+        strength=Decimal("85.0"),
+    )
+
+    # Jump only $2 above Creek (too close for 2.0R with adaptive stop)
+    jump = JumpLevel(
+        price=Decimal("102.00"),
+        timestamp=datetime.now(UTC),
+        absolute_high=Decimal("103.00"),
+        touch_count=3,
+        touch_details=[],
+        strength_score=Decimal("70.0"),
+        strength_rating="MODERATE",
+        last_rally_timestamp=datetime.now(UTC),
+        first_rally_timestamp=datetime.now(UTC),
+        hold_duration=8,
+        confidence=Decimal("0.70"),
+        volume_trend="INCREASING",
+        bar_count=15,
+        volume_weight=Decimal("0.75"),
+        rally_count=2,
+        strength=Decimal("70.0"),
+    )
+
+    range_low_r = TradingRange(
+        id=uuid4(),
+        symbol="TEST",
+        timeframe="1d",
+        start_timestamp=datetime.now(UTC),
+        end_timestamp=None,
+        bar_count=30,
+        creek=creek,
+        ice=creek,
+        jump=jump,
+        status=RangeStatus.ACTIVE,
+    )
+
+    spring = create_test_spring(range_low_r.id)
+    test = create_test_test(spring)
+
+    # Act
+    signal = generate_spring_signal(
+        spring=spring,
+        test=test,
+        range=range_low_r,
+        confidence=85,
+        phase=WyckoffPhase.C,
+        account_size=Decimal("100000"),
+    )
+
+    # Assert
+    # Entry ~$100.50, Stop ~$96.53 (1.5% buffer for 2% penetration), Target $102
+    # Risk: ~$3.97, Reward: ~$1.50, R-multiple: ~0.38R (well below 2.0R)
+    assert signal is None, "FR19 (Updated): Signal rejected when R-multiple < 2.0R"
+
+
+# ============================================================================
+# Signal Serialization Test
+# ============================================================================
+
+
+def test_spring_signal_serialization():
+    """Test SpringSignal JSON serialization/deserialization."""
+    # Arrange
+    range_obj = create_test_range()
+    spring = create_test_spring(range_obj.id)
+    test = create_test_test(spring)
+
+    signal = generate_spring_signal(
+        spring=spring,
+        test=test,
+        range=range_obj,
+        confidence=85,
+        phase=WyckoffPhase.C,
+        account_size=Decimal("100000"),
+    )
+
+    assert signal is not None
+
+    # Act: Serialize to JSON
+    signal_json = signal.model_dump_json()
+
+    # Deserialize back
+    from src.models.spring_signal import SpringSignal
+    signal_restored = SpringSignal.model_validate_json(signal_json)
+
+    # Assert: All critical fields preserved
+    assert signal_restored.id == signal.id
+    assert signal_restored.symbol == signal.symbol
+    assert signal_restored.entry_price == signal.entry_price
+    assert signal_restored.stop_loss == signal.stop_loss
+    assert signal_restored.target_price == signal.target_price
+    assert signal_restored.confidence == signal.confidence
+    assert signal_restored.r_multiple == signal.r_multiple
+    assert signal_restored.recommended_position_size == signal.recommended_position_size
+    assert signal_restored.urgency == signal.urgency
+    assert signal_restored.phase == signal.phase
+
+    # Verify Decimal fields serialized as strings in JSON
+    import json
+    signal_dict = json.loads(signal_json)
+    assert isinstance(signal_dict["entry_price"], str), "Decimal should serialize as string"
+    assert isinstance(signal_dict["stop_loss"], str), "Decimal should serialize as string"
+    assert isinstance(signal_dict["target_price"], str), "Decimal should serialize as string"
+    assert isinstance(signal_dict["recommended_position_size"], str), "Decimal should serialize as string"
