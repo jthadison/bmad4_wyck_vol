@@ -71,6 +71,7 @@ from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
 from src.models.spring import Spring
 from src.models.spring_confidence import SpringConfidence
+from src.models.spring_history import SpringHistory
 from src.models.test import Test
 from src.models.trading_range import TradingRange, RangeStatus
 from src.models.creek_level import CreekLevel
@@ -1162,3 +1163,199 @@ def calculate_spring_confidence(
         component_scores=component_scores,
         quality_tier=quality_tier
     )
+
+
+# ============================================================
+# TASK 25: RISK AGGREGATION FUNCTIONS (Story 5.6)
+# ============================================================
+
+
+def analyze_spring_risk_profile(history: SpringHistory) -> str:
+    """
+    Analyze risk profile for spring sequence using Wyckoff volume principles.
+
+    Wyckoff Principle:
+    ------------------
+    Professional accumulation shows DECLINING volume through successive springs.
+    Rising volume = warning signal (potential distribution, not accumulation).
+
+    Risk Levels:
+    ------------
+    - LOW: Single spring <0.3x volume OR declining multi-spring trend
+    - MODERATE: Single spring 0.3-0.7x volume OR stable trend
+    - HIGH: Single spring >=0.7x volume OR rising trend (should never happen - FR12 blocks >=0.7x)
+
+    Args:
+        history: SpringHistory with all detected springs
+
+    Returns:
+        str: "LOW" | "MODERATE" | "HIGH"
+
+    Wyckoff Context:
+        > "As accumulation progresses through multiple springs, professional operators
+        > absorb supply on progressively LOWER volume. Each spring tests lower with
+        > less selling pressure, proving supply exhaustion. Rising volume on successive
+        > springs is a WARNING - it indicates distribution, not accumulation."
+
+    Example:
+        >>> history = SpringHistory(symbol="AAPL", trading_range_id=uuid4())
+        >>> spring1 = Spring(..., volume_ratio=Decimal("0.5"))
+        >>> spring2 = Spring(..., volume_ratio=Decimal("0.4"))
+        >>> spring3 = Spring(..., volume_ratio=Decimal("0.3"))  # DECLINING
+        >>> history.add_spring(spring1)
+        >>> history.add_spring(spring2)
+        >>> history.add_spring(spring3)
+        >>>
+        >>> risk = analyze_spring_risk_profile(history)
+        >>> print(risk)  # "LOW" - declining volume pattern
+    """
+    if history.spring_count == 0:
+        logger.warning("risk_profile_no_springs", message="No springs to analyze")
+        return "MODERATE"
+
+    # SINGLE SPRING ASSESSMENT
+    if history.spring_count == 1:
+        spring = history.springs[0]
+
+        if spring.volume_ratio < Decimal("0.3"):
+            logger.info(
+                "single_spring_low_risk",
+                volume_ratio=float(spring.volume_ratio),
+                message="Ultra-low volume spring (<0.3x) = LOW risk"
+            )
+            return "LOW"
+        elif spring.volume_ratio > Decimal("0.7"):
+            # Should never happen - FR12 blocks >=0.7x
+            logger.error(
+                "single_spring_high_risk",
+                volume_ratio=float(spring.volume_ratio),
+                message="HIGH volume spring (>=0.7x) = HIGH risk (FR12 violation!)"
+            )
+            return "HIGH"
+        else:
+            logger.info(
+                "single_spring_moderate_risk",
+                volume_ratio=float(spring.volume_ratio),
+                message="Moderate volume spring (0.3-0.7x) = MODERATE risk"
+            )
+            return "MODERATE"
+
+    # MULTI-SPRING VOLUME TREND ANALYSIS
+    volume_trend = analyze_volume_trend(history.springs)
+
+    if volume_trend == "DECLINING":
+        logger.info(
+            "multi_spring_low_risk",
+            spring_count=history.spring_count,
+            trend=volume_trend,
+            message="Declining volume trend = professional accumulation = LOW risk"
+        )
+        return "LOW"
+    elif volume_trend == "RISING":
+        logger.warning(
+            "multi_spring_high_risk",
+            spring_count=history.spring_count,
+            trend=volume_trend,
+            message="Rising volume trend = potential distribution warning = HIGH risk"
+        )
+        return "HIGH"
+    else:  # STABLE
+        logger.info(
+            "multi_spring_moderate_risk",
+            spring_count=history.spring_count,
+            trend=volume_trend,
+            message="Stable volume trend = MODERATE risk"
+        )
+        return "MODERATE"
+
+
+def analyze_volume_trend(springs: list[Spring]) -> str:
+    """
+    Analyze volume progression through spring sequence.
+
+    Detects whether volume is DECLINING, STABLE, or RISING through successive springs.
+
+    Algorithm:
+    ----------
+    1. Calculate average volume of first half of springs
+    2. Calculate average volume of second half of springs
+    3. Compare: second_half_avg vs first_half_avg
+       - If second < first by >15%: DECLINING (bullish)
+       - If difference within ±15%: STABLE
+       - If second > first by >15%: RISING (warning)
+
+    Args:
+        springs: List of Spring patterns (chronologically ordered)
+
+    Returns:
+        str: "DECLINING" | "STABLE" | "RISING"
+
+    Wyckoff Principle:
+        Declining volume through springs = professional accumulation
+        Rising volume through springs = potential distribution
+
+    Example:
+        >>> spring1 = Spring(..., volume_ratio=Decimal("0.6"))
+        >>> spring2 = Spring(..., volume_ratio=Decimal("0.5"))
+        >>> spring3 = Spring(..., volume_ratio=Decimal("0.4"))
+        >>> spring4 = Spring(..., volume_ratio=Decimal("0.3"))
+        >>>
+        >>> trend = analyze_volume_trend([spring1, spring2, spring3, spring4])
+        >>> print(trend)  # "DECLINING" - 0.6→0.5→0.4→0.3
+    """
+    if len(springs) < 2:
+        logger.debug(
+            "volume_trend_insufficient_springs",
+            spring_count=len(springs),
+            message="Need 2+ springs for volume trend analysis"
+        )
+        return "STABLE"
+
+    # Split springs into first half and second half
+    midpoint = len(springs) // 2
+    first_half = springs[:midpoint]
+    second_half = springs[midpoint:]
+
+    # Calculate average volume for each half
+    first_half_avg = sum(s.volume_ratio for s in first_half) / len(first_half)
+    second_half_avg = sum(s.volume_ratio for s in second_half) / len(second_half)
+
+    # Calculate volume change percentage
+    volume_change_pct = (second_half_avg - first_half_avg) / first_half_avg
+
+    logger.debug(
+        "volume_trend_analysis",
+        spring_count=len(springs),
+        first_half_avg=float(first_half_avg),
+        second_half_avg=float(second_half_avg),
+        volume_change_pct=float(volume_change_pct),
+    )
+
+    # Determine trend (±15% threshold for STABLE)
+    if volume_change_pct < Decimal("-0.15"):  # >15% decrease
+        logger.info(
+            "volume_trend_declining",
+            first_half_avg=float(first_half_avg),
+            second_half_avg=float(second_half_avg),
+            decrease_pct=float(volume_change_pct),
+            message="DECLINING volume trend - professional accumulation ✅"
+        )
+        return "DECLINING"
+    elif volume_change_pct > Decimal("0.15"):  # >15% increase
+        logger.warning(
+            "volume_trend_rising",
+            first_half_avg=float(first_half_avg),
+            second_half_avg=float(second_half_avg),
+            increase_pct=float(volume_change_pct),
+            message="RISING volume trend - potential distribution warning ⚠️"
+        )
+        return "RISING"
+    else:  # Within ±15%
+        logger.info(
+            "volume_trend_stable",
+            first_half_avg=float(first_half_avg),
+            second_half_avg=float(second_half_avg),
+            change_pct=float(volume_change_pct),
+            message="STABLE volume trend"
+        )
+        return "STABLE"
