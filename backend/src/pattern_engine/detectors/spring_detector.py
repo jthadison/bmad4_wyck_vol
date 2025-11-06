@@ -1785,9 +1785,9 @@ class SpringDetector:
                 "confidence_calculated",
                 symbol=spring.bar.symbol,
                 confidence=confidence_result.total_score,
-                volume_score=confidence_result.volume_score,
-                penetration_score=confidence_result.penetration_score,
-                recovery_score=confidence_result.recovery_score,
+                volume_score=confidence_result.component_scores.get('volume_quality', 0),
+                penetration_score=confidence_result.component_scores.get('penetration_depth', 0),
+                recovery_score=confidence_result.component_scores.get('recovery_speed', 0),
             )
 
             # STEP 6: Generate signal using Story 5.5

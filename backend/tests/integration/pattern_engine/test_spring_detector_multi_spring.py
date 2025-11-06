@@ -34,6 +34,7 @@ from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
 from src.models.creek_level import CreekLevel
 from src.models.touch_detail import TouchDetail
+from src.models.jump_level import JumpLevel
 from src.models.trading_range import TradingRange, RangeStatus
 from src.models.phase_classification import WyckoffPhase
 from src.pattern_engine.detectors.spring_detector import SpringDetector
@@ -155,6 +156,29 @@ def create_aapl_accumulation_range(creek_level: Decimal) -> TradingRange:
         volume_trend="DECREASING",
     )
 
+    # Create Jump level (price target after breakout)
+    # Using 2.5x cause factor: jump = ice + (2.5 × range_width)
+    # Ice (resistance) = $120, Creek = $100, Range Width = $20
+    # Jump = $120 + (2.5 × $20) = $170
+    # Conservative = $120 + $20 = $140
+    ice_price = creek_level + Decimal("20.00")  # $120
+    range_width = ice_price - creek_level  # $20
+    cause_factor = Decimal("2.5")
+
+    jump = JumpLevel(
+        price=ice_price + (cause_factor * range_width),  # $120 + $50 = $170
+        conservative_price=ice_price + range_width,  # $120 + $20 = $140
+        range_width=range_width,
+        cause_factor=cause_factor,
+        range_duration=71,
+        confidence="HIGH",
+        risk_reward_ratio=cause_factor,  # 2.5
+        conservative_risk_reward=Decimal("1.0"),
+        ice_price=ice_price,
+        creek_price=creek_level,
+        calculated_at=base_timestamp,
+    )
+
     return TradingRange(
         id=uuid4(),
         symbol="AAPL",
@@ -170,7 +194,10 @@ def create_aapl_accumulation_range(creek_level: Decimal) -> TradingRange:
         end_index=70,
         duration=71,
         creek=creek,
+        jump=jump,
         status=RangeStatus.ACTIVE,
+        start_timestamp=base_timestamp,
+        end_timestamp=base_timestamp + timedelta(days=70),
     )
 
 
