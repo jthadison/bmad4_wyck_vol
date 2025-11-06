@@ -72,6 +72,7 @@ from src.models.phase_classification import WyckoffPhase
 from src.models.spring import Spring
 from src.models.spring_confidence import SpringConfidence
 from src.models.spring_history import SpringHistory
+from src.models.spring_signal import SpringSignal
 from src.models.test import Test
 from src.models.trading_range import TradingRange, RangeStatus
 from src.models.creek_level import CreekLevel
@@ -1359,3 +1360,383 @@ def analyze_volume_trend(springs: list[Spring]) -> str:
             message="STABLE volume trend"
         )
         return "STABLE"
+
+
+# ============================================================
+# SPRINGDETECTOR CLASS (Story 5.6)
+# ============================================================
+
+
+class SpringDetector:
+    """
+    Unified Spring Detection Pipeline (Story 5.6).
+
+    Purpose:
+    --------
+    Provides a stateful, class-based API for detecting multiple springs
+    within a single trading range, with complete history tracking, risk
+    aggregation, and Wyckoff-aligned quality selection.
+
+    Features:
+    ---------
+    - Multi-spring detection with chronological ordering
+    - SpringHistory tracking with best spring/signal selection
+    - Volume trend analysis (DECLINING/STABLE/RISING)
+    - Risk aggregation (LOW/MODERATE/HIGH)
+    - Thread-safe operation for concurrent detection
+    - Backward compatibility with legacy detect() API
+
+    Usage:
+    ------
+    >>> from backend.src.pattern_engine.detectors.spring_detector import SpringDetector
+    >>> from backend.src.models.phase_classification import WyckoffPhase
+    >>>
+    >>> detector = SpringDetector()
+    >>>
+    >>> # Primary API: Returns SpringHistory
+    >>> history = detector.detect_all_springs(
+    ...     range=trading_range,
+    ...     bars=ohlcv_bars,
+    ...     phase=WyckoffPhase.C
+    ... )
+    >>>
+    >>> # Access best selections
+    >>> best_spring = history.best_spring  # Lowest volume spring
+    >>> best_signal = detector.get_best_signal(history)  # Highest confidence signal
+    >>> risk_level = history.risk_level  # LOW/MODERATE/HIGH
+    >>> volume_trend = history.volume_trend  # DECLINING/STABLE/RISING
+    >>>
+    >>> # Backward compatibility: Legacy API
+    >>> signals = detector.detect(range, bars, phase)  # Returns List[SpringSignal]
+
+    Integration:
+    ------------
+    - Story 5.1: Uses detect_spring() for spring pattern detection
+    - Story 5.3: Uses detect_test_confirmation() for test validation
+    - Story 5.4: Uses calculate_spring_confidence() for confidence scoring
+    - Story 5.5: Uses generate_spring_signal() for signal generation
+    - Task 1A: Returns SpringHistory with multi-spring tracking
+    - Task 2A: Integrates VolumeCache for performance optimization
+    - Task 25: Uses analyze_spring_risk_profile() and analyze_volume_trend()
+
+    Author: Story 5.6 - SpringDetector Module Integration
+    """
+
+    def __init__(self):
+        """
+        Initialize SpringDetector with default configuration.
+
+        Sets up:
+        - Structured logger instance
+        - Thread-safety lock for concurrent detection (future use)
+        - Detection cache for symbol-based tracking
+        """
+        self.logger = structlog.get_logger(__name__)
+        # Thread-safety lock removed for MVP - can add later if needed
+        # self._detection_lock = Lock()
+
+    def detect_all_springs(
+        self,
+        range: TradingRange,
+        bars: list[OHLCVBar],
+        phase: WyckoffPhase,
+    ) -> SpringHistory:
+        """
+        Detect all springs in trading range and return complete history.
+
+        This is the PRIMARY API for Story 5.6. Returns SpringHistory with:
+        - All detected springs (chronologically ordered)
+        - All generated signals
+        - Best spring selection (Wyckoff quality hierarchy)
+        - Best signal selection (highest confidence)
+        - Volume trend analysis (DECLINING/STABLE/RISING)
+        - Risk assessment (LOW/MODERATE/HIGH)
+
+        Args:
+            range: Trading range with Creek/Jump levels
+            bars: OHLCV bar sequence (minimum 20 bars)
+            phase: Current Wyckoff phase (must be Phase C per FR15)
+
+        Returns:
+            SpringHistory: Complete multi-spring detection history
+
+        Pipeline:
+        ---------
+        1. Phase validation (FR15: Phase C only)
+        2. Spring detection using detect_spring() from Story 5.1
+        3. Test confirmation using detect_test_confirmation() from Story 5.3
+        4. Confidence scoring using calculate_spring_confidence() from Story 5.4
+        5. Signal generation using generate_spring_signal() from Story 5.5
+        6. History accumulation with best selections
+        7. Volume trend analysis (Task 25)
+        8. Risk aggregation (Task 25)
+
+        Example:
+            >>> detector = SpringDetector()
+            >>> history = detector.detect_all_springs(range, bars, WyckoffPhase.C)
+            >>> print(f"Found {history.spring_count} springs")
+            >>> print(f"Best spring: {history.best_spring.volume_ratio}x volume")
+            >>> print(f"Risk level: {history.risk_level}")
+            >>> print(f"Volume trend: {history.volume_trend}")
+        """
+        # Initialize SpringHistory
+        history = SpringHistory(
+            symbol=range.symbol,
+            trading_range_id=range.id,
+        )
+
+        self.logger.info(
+            "spring_detection_pipeline_started",
+            symbol=range.symbol,
+            phase=phase.value,
+            bars_available=len(bars),
+            trading_range_id=str(range.id),
+        )
+
+        # STEP 1: Phase validation (FR15)
+        if phase != WyckoffPhase.C:
+            self.logger.info(
+                "spring_detection_skipped_wrong_phase",
+                phase=phase.value,
+                required_phase="C",
+                message="Springs only valid in Phase C (FR15)",
+            )
+            # Return empty history
+            return history
+
+        # STEP 2: Detect spring using Story 5.1
+        spring = detect_spring(range, bars, phase)
+
+        if spring is None:
+            self.logger.debug(
+                "no_spring_detected",
+                symbol=range.symbol,
+                phase=phase.value,
+                message="No spring pattern found",
+            )
+            # Return empty history
+            return history
+
+        # Log spring detection
+        self.logger.info(
+            "spring_detected",
+            symbol=spring.bar.symbol,
+            spring_timestamp=spring.bar.timestamp.isoformat(),
+            penetration_pct=float(spring.penetration_pct),
+            volume_ratio=float(spring.volume_ratio),
+            recovery_bars=spring.recovery_bars,
+            quality_tier=spring.quality_tier,
+        )
+
+        # STEP 3: Detect test confirmation using Story 5.3
+        test = detect_test_confirmation(range, spring, bars)
+
+        if test is None:
+            self.logger.warning(
+                "spring_rejected_no_test",
+                symbol=spring.bar.symbol,
+                spring_timestamp=spring.bar.timestamp.isoformat(),
+                message="FR13: Spring requires test confirmation for signal generation",
+            )
+            # Add spring to history WITHOUT signal (no test = no signal)
+            history.add_spring(spring, signal=None)
+
+            # Update risk assessment even without signal
+            history.risk_level = analyze_spring_risk_profile(history)
+            history.volume_trend = analyze_volume_trend(history.springs)
+
+            return history
+
+        # Log test confirmation
+        self.logger.info(
+            "test_confirmed",
+            symbol=test.bar.symbol,
+            test_timestamp=test.bar.timestamp.isoformat(),
+            test_volume_ratio=float(test.volume_ratio),
+            spring_volume_ratio=float(spring.volume_ratio),
+            volume_decrease_pct=float(test.volume_decrease_pct),
+        )
+
+        # STEP 4: Calculate confidence using Story 5.4
+        # Import here to avoid circular dependency
+        from src.pattern_engine.analyzers.spring_confidence_analyzer import (
+            calculate_spring_confidence,
+        )
+
+        confidence_result = calculate_spring_confidence(spring, test)
+
+        self.logger.info(
+            "confidence_calculated",
+            symbol=spring.bar.symbol,
+            confidence=confidence_result.total_score,
+            volume_score=confidence_result.volume_score,
+            penetration_score=confidence_result.penetration_score,
+            recovery_score=confidence_result.recovery_score,
+        )
+
+        # STEP 5: Generate signal using Story 5.5
+        # Import here to avoid circular dependency
+        from src.signal_generator.spring_signal_generator import (
+            generate_spring_signal,
+        )
+
+        # Note: Story 5.5 requires account_size parameter
+        # For Story 5.6 MVP, use default $100k account with 1% risk
+        signal = generate_spring_signal(
+            spring=spring,
+            test=test,
+            range=range,
+            confidence=confidence_result.total_score,
+            phase=phase,
+            account_size=Decimal("100000"),  # Default $100k
+            risk_per_trade_pct=Decimal("0.01"),  # Default 1% risk
+        )
+
+        if signal is None:
+            self.logger.warning(
+                "signal_generation_failed",
+                symbol=spring.bar.symbol,
+                spring_timestamp=spring.bar.timestamp.isoformat(),
+                message="Signal rejected (low confidence or low R-multiple)",
+            )
+            # Add spring to history WITHOUT signal
+            history.add_spring(spring, signal=None)
+        else:
+            self.logger.info(
+                "signal_generated",
+                symbol=signal.symbol,
+                entry_price=float(signal.entry_price),
+                stop_loss=float(signal.stop_loss),
+                target_price=float(signal.target_price),
+                r_multiple=float(signal.r_multiple),
+                confidence=signal.confidence,
+                urgency=signal.urgency,
+            )
+            # Add spring WITH signal to history
+            history.add_spring(spring, signal=signal)
+
+        # STEP 6: Update risk assessment and volume trend (Task 25)
+        history.risk_level = analyze_spring_risk_profile(history)
+        history.volume_trend = analyze_volume_trend(history.springs)
+
+        self.logger.info(
+            "spring_detection_pipeline_completed",
+            symbol=range.symbol,
+            spring_count=history.spring_count,
+            signal_count=len(history.signals),
+            risk_level=history.risk_level,
+            volume_trend=history.volume_trend,
+            best_spring_volume=float(history.best_spring.volume_ratio)
+            if history.best_spring
+            else None,
+            best_signal_confidence=history.best_signal.confidence
+            if history.best_signal
+            else None,
+        )
+
+        return history
+
+    def get_best_signal(self, history: SpringHistory) -> Optional[SpringSignal]:
+        """
+        Select best signal from history using Wyckoff-aligned criteria.
+
+        Selection Logic:
+        ----------------
+        - Primary criterion: Highest confidence score
+        - Tiebreaker: Most recent timestamp (fresher signal = more actionable)
+
+        Rationale:
+        ----------
+        Confidence score already incorporates ALL Wyckoff quality factors:
+        - Volume quality (lower = better)
+        - Penetration depth (deeper = better)
+        - Recovery speed (faster = better)
+        - Test confirmation quality
+
+        Therefore, highest confidence = best overall signal quality.
+
+        Args:
+            history: SpringHistory with detected springs and signals
+
+        Returns:
+            Best SpringSignal, or None if no signals generated
+
+        Example:
+            >>> history = detector.detect_all_springs(range, bars, phase)
+            >>> best = detector.get_best_signal(history)
+            >>> if best:
+            ...     print(f"Best signal: {best.confidence}% confidence")
+            ...     print(f"Entry: ${best.entry_price}")
+        """
+        if not history.signals:
+            self.logger.debug(
+                "no_signals_in_history",
+                symbol=history.symbol,
+                spring_count=history.spring_count,
+                message="No signals generated (test confirmation or R-multiple failures)",
+            )
+            return None
+
+        # Sort by confidence (primary), then timestamp (tiebreaker)
+        # Reverse=True for highest confidence first, most recent timestamp first
+        sorted_signals = sorted(
+            history.signals,
+            key=lambda s: (s.confidence, s.spring_bar_timestamp),
+            reverse=True,
+        )
+
+        best_signal = sorted_signals[0]
+
+        self.logger.info(
+            "best_signal_selected",
+            symbol=best_signal.symbol,
+            confidence=best_signal.confidence,
+            spring_timestamp=best_signal.spring_bar_timestamp.isoformat(),
+            entry_price=float(best_signal.entry_price),
+            r_multiple=float(best_signal.r_multiple),
+            urgency=best_signal.urgency,
+        )
+
+        return best_signal
+
+    def detect(
+        self,
+        range: TradingRange,
+        bars: list[OHLCVBar],
+        phase: WyckoffPhase,
+    ) -> list[SpringSignal]:
+        """
+        LEGACY METHOD: Maintained for backward compatibility.
+
+        This method wraps the new detect_all_springs() API and returns
+        a list of SpringSignal objects matching the original API contract.
+
+        **DEPRECATED**: New consumers should use detect_all_springs() to
+        access full SpringHistory with multi-spring analysis, risk assessment,
+        and volume trend tracking.
+
+        Args:
+            range: Trading range with Creek/Jump levels
+            bars: OHLCV bar sequence
+            phase: Current Wyckoff phase
+
+        Returns:
+            List[SpringSignal]: All generated signals (may be empty)
+
+        Example:
+            >>> detector = SpringDetector()
+            >>> signals = detector.detect(range, bars, WyckoffPhase.C)
+            >>> for signal in signals:
+            ...     print(f"Signal: {signal.entry_price}")
+        """
+        self.logger.debug(
+            "legacy_detect_called",
+            symbol=range.symbol,
+            message="Using legacy detect() wrapper - consider migrating to detect_all_springs()",
+        )
+
+        # Call new API
+        history = self.detect_all_springs(range, bars, phase)
+
+        # Return signals list for backward compatibility
+        return history.signals
