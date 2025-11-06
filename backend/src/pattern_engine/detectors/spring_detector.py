@@ -1774,12 +1774,12 @@ class SpringDetector:
             )
 
             # STEP 5: Calculate confidence using Story 5.4
-            # Import here to avoid circular dependency
-            from src.pattern_engine.analyzers.spring_confidence_analyzer import (
-                calculate_spring_confidence,
+            # Function is defined in this module at line 779
+            confidence_result = calculate_spring_confidence(
+                spring=spring,
+                creek=range.creek,
+                previous_tests=[test] if test else None
             )
-
-            confidence_result = calculate_spring_confidence(spring, test)
 
             self.logger.info(
                 "confidence_calculated",
