@@ -301,6 +301,7 @@ class TestGetBestSignal:
 
         spring = Spring(
             bar=bar,
+            bar_index=20,
             penetration_pct=Decimal("0.02"),
             volume_ratio=Decimal("0.4"),
             recovery_bars=2,

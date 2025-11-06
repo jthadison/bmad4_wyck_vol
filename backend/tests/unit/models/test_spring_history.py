@@ -29,6 +29,7 @@ def create_test_spring(
     penetration_pct: Decimal = Decimal("0.02"),
     recovery_bars: int = 2,
     timestamp: datetime = None,
+    bar_index: int = 20,
 ) -> Spring:
     """Create test spring with specified characteristics."""
     if timestamp is None:
@@ -48,6 +49,7 @@ def create_test_spring(
 
     return Spring(
         bar=bar,
+        bar_index=bar_index,
         penetration_pct=penetration_pct,
         volume_ratio=volume_ratio,
         recovery_bars=recovery_bars,

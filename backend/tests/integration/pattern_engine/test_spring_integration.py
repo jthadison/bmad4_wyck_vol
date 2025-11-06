@@ -445,6 +445,7 @@ def test_test_confirmation_detection_integration():
     # Create Spring manually (simulating detect_spring output)
     spring = Spring(
         bar=spring_bar,
+        bar_index=20,
         penetration_pct=Decimal("0.02"),  # 2%
         volume_ratio=Decimal("0.4"),  # 0.4x
         recovery_bars=1,

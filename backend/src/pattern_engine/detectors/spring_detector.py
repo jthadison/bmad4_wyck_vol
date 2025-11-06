@@ -82,7 +82,11 @@ logger = structlog.get_logger(__name__)
 
 
 def detect_spring(
-    trading_range: TradingRange, bars: list[OHLCVBar], phase: WyckoffPhase
+    trading_range: TradingRange,
+    bars: list[OHLCVBar],
+    phase: WyckoffPhase,
+    start_index: int = 20,
+    skip_indices: Optional[set[int]] = None,
 ) -> Optional[Spring]:
     """
     Detect Spring patterns (penetration below Creek with low volume and rapid recovery).
@@ -95,6 +99,8 @@ def detect_spring(
         trading_range: Active trading range with Creek level (trading_range.creek must not be None)
         bars: OHLCV bars (minimum 20 bars for volume ratio calculation)
         phase: Current Wyckoff phase (must be Phase C per FR15)
+        start_index: Index to start scanning from (default: 20 for volume calculation)
+        skip_indices: Set of bar indices to skip (already detected springs)
 
     Returns:
         Optional[Spring]: Spring if detected, None if not found or rejected
@@ -184,11 +190,18 @@ def detect_spring(
     # SCAN FOR SPRING PATTERN
     # ============================================================
 
-    # Scan last 20 bars for penetration below Creek
-    # Start from earliest bar with sufficient volume history (index 20)
-    start_index = max(20, len(bars) - 20)
+    # Initialize skip_indices if None
+    if skip_indices is None:
+        skip_indices = set()
 
-    for i in range(start_index, len(bars)):
+    # Scan from start_index to end of bars for penetration below Creek
+    # Ensure start_index is at least 20 (minimum for volume calculation)
+    scan_start = max(20, start_index)
+
+    for i in range(scan_start, len(bars)):
+        # Skip if this index was already detected
+        if i in skip_indices:
+            continue
         bar = bars[i]
 
         # Check if bar penetrated below Creek
@@ -285,6 +298,7 @@ def detect_spring(
 
         spring = Spring(
             bar=bar,
+            bar_index=i,
             penetration_pct=penetration_pct,
             volume_ratio=volume_ratio,
             recovery_bars=recovery_bars,
@@ -1504,116 +1518,133 @@ class SpringDetector:
             # Return empty history
             return history
 
-        # STEP 2: Detect spring using Story 5.1
-        spring = detect_spring(range, bars, phase)
+        # STEP 2: Multi-spring iteration loop
+        detected_indices = set()
+        start_index = 20  # Minimum for volume calculation
 
-        if spring is None:
-            self.logger.debug(
-                "no_spring_detected",
-                symbol=range.symbol,
-                phase=phase.value,
-                message="No spring pattern found",
+        while start_index < len(bars):
+            # Detect next spring from current position
+            spring = detect_spring(
+                range,
+                bars,
+                phase,
+                start_index=start_index,
+                skip_indices=detected_indices,
             )
-            # Return empty history
-            return history
 
-        # Log spring detection
-        self.logger.info(
-            "spring_detected",
-            symbol=spring.bar.symbol,
-            spring_timestamp=spring.bar.timestamp.isoformat(),
-            penetration_pct=float(spring.penetration_pct),
-            volume_ratio=float(spring.volume_ratio),
-            recovery_bars=spring.recovery_bars,
-            quality_tier=spring.quality_tier,
-        )
+            if spring is None:
+                # No more springs found
+                self.logger.debug(
+                    "no_more_springs_detected",
+                    symbol=range.symbol,
+                    start_index=start_index,
+                    total_detected=len(detected_indices),
+                )
+                break
 
-        # STEP 3: Detect test confirmation using Story 5.3
-        test = detect_test_confirmation(range, spring, bars)
+            # Track detected spring index
+            detected_indices.add(spring.bar_index)
 
-        if test is None:
-            self.logger.warning(
-                "spring_rejected_no_test",
-                symbol=spring.bar.symbol,
-                spring_timestamp=spring.bar.timestamp.isoformat(),
-                message="FR13: Spring requires test confirmation for signal generation",
-            )
-            # Add spring to history WITHOUT signal (no test = no signal)
-            history.add_spring(spring, signal=None)
-
-            # Update risk assessment even without signal
-            history.risk_level = analyze_spring_risk_profile(history)
-            history.volume_trend = analyze_volume_trend(history.springs)
-
-            return history
-
-        # Log test confirmation
-        self.logger.info(
-            "test_confirmed",
-            symbol=test.bar.symbol,
-            test_timestamp=test.bar.timestamp.isoformat(),
-            test_volume_ratio=float(test.volume_ratio),
-            spring_volume_ratio=float(spring.volume_ratio),
-            volume_decrease_pct=float(test.volume_decrease_pct),
-        )
-
-        # STEP 4: Calculate confidence using Story 5.4
-        # Import here to avoid circular dependency
-        from src.pattern_engine.analyzers.spring_confidence_analyzer import (
-            calculate_spring_confidence,
-        )
-
-        confidence_result = calculate_spring_confidence(spring, test)
-
-        self.logger.info(
-            "confidence_calculated",
-            symbol=spring.bar.symbol,
-            confidence=confidence_result.total_score,
-            volume_score=confidence_result.volume_score,
-            penetration_score=confidence_result.penetration_score,
-            recovery_score=confidence_result.recovery_score,
-        )
-
-        # STEP 5: Generate signal using Story 5.5
-        # Import here to avoid circular dependency
-        from src.signal_generator.spring_signal_generator import (
-            generate_spring_signal,
-        )
-
-        # Note: Story 5.5 requires account_size parameter
-        # For Story 5.6 MVP, use default $100k account with 1% risk
-        signal = generate_spring_signal(
-            spring=spring,
-            test=test,
-            range=range,
-            confidence=confidence_result.total_score,
-            phase=phase,
-            account_size=Decimal("100000"),  # Default $100k
-            risk_per_trade_pct=Decimal("0.01"),  # Default 1% risk
-        )
-
-        if signal is None:
-            self.logger.warning(
-                "signal_generation_failed",
-                symbol=spring.bar.symbol,
-                spring_timestamp=spring.bar.timestamp.isoformat(),
-                message="Signal rejected (low confidence or low R-multiple)",
-            )
-            # Add spring to history WITHOUT signal
-            history.add_spring(spring, signal=None)
-        else:
+            # Log spring detection
             self.logger.info(
-                "signal_generated",
-                symbol=signal.symbol,
-                entry_price=float(signal.entry_price),
-                stop_loss=float(signal.stop_loss),
-                target_price=float(signal.target_price),
-                r_multiple=float(signal.r_multiple),
-                confidence=signal.confidence,
-                urgency=signal.urgency,
+                "spring_detected",
+                symbol=spring.bar.symbol,
+                spring_timestamp=spring.bar.timestamp.isoformat(),
+                spring_bar_index=spring.bar_index,
+                penetration_pct=float(spring.penetration_pct),
+                volume_ratio=float(spring.volume_ratio),
+                recovery_bars=spring.recovery_bars,
+                quality_tier=spring.quality_tier,
+                total_springs_so_far=len(detected_indices),
             )
-            # Add spring WITH signal to history
-            history.add_spring(spring, signal=signal)
+
+            # STEP 3: Detect test confirmation using Story 5.3
+            test = detect_test_confirmation(range, spring, bars)
+
+            if test is None:
+                self.logger.warning(
+                    "spring_rejected_no_test",
+                    symbol=spring.bar.symbol,
+                    spring_timestamp=spring.bar.timestamp.isoformat(),
+                    message="FR13: Spring requires test confirmation for signal generation",
+                )
+                # Add spring to history WITHOUT signal (no test = no signal)
+                history.add_spring(spring, signal=None)
+
+                # Move to next bar after this spring
+                start_index = spring.bar_index + 1
+                continue
+
+            # Log test confirmation
+            self.logger.info(
+                "test_confirmed",
+                symbol=test.bar.symbol,
+                test_timestamp=test.bar.timestamp.isoformat(),
+                test_volume_ratio=float(test.volume_ratio),
+                spring_volume_ratio=float(spring.volume_ratio),
+                volume_decrease_pct=float(test.volume_decrease_pct),
+            )
+
+            # STEP 4: Calculate confidence using Story 5.4
+            # Import here to avoid circular dependency
+            from src.pattern_engine.analyzers.spring_confidence_analyzer import (
+                calculate_spring_confidence,
+            )
+
+            confidence_result = calculate_spring_confidence(spring, test)
+
+            self.logger.info(
+                "confidence_calculated",
+                symbol=spring.bar.symbol,
+                confidence=confidence_result.total_score,
+                volume_score=confidence_result.volume_score,
+                penetration_score=confidence_result.penetration_score,
+                recovery_score=confidence_result.recovery_score,
+            )
+
+            # STEP 5: Generate signal using Story 5.5
+            # Import here to avoid circular dependency
+            from src.signal_generator.spring_signal_generator import (
+                generate_spring_signal,
+            )
+
+            # Note: Story 5.5 requires account_size parameter
+            # For Story 5.6 MVP, use default $100k account with 1% risk
+            signal = generate_spring_signal(
+                spring=spring,
+                test=test,
+                range=range,
+                confidence=confidence_result.total_score,
+                phase=phase,
+                account_size=Decimal("100000"),  # Default $100k
+                risk_per_trade_pct=Decimal("0.01"),  # Default 1% risk
+            )
+
+            if signal is None:
+                self.logger.warning(
+                    "signal_generation_failed",
+                    symbol=spring.bar.symbol,
+                    spring_timestamp=spring.bar.timestamp.isoformat(),
+                    message="Signal rejected (low confidence or low R-multiple)",
+                )
+                # Add spring to history WITHOUT signal
+                history.add_spring(spring, signal=None)
+            else:
+                self.logger.info(
+                    "signal_generated",
+                    symbol=signal.symbol,
+                    entry_price=float(signal.entry_price),
+                    stop_loss=float(signal.stop_loss),
+                    target_price=float(signal.target_price),
+                    r_multiple=float(signal.r_multiple),
+                    confidence=signal.confidence,
+                    urgency=signal.urgency,
+                )
+                # Add spring WITH signal to history
+                history.add_spring(spring, signal=signal)
+
+            # Move to next bar after this spring
+            start_index = spring.bar_index + 1
 
         # STEP 6: Update risk assessment and volume trend (Task 25)
         history.risk_level = analyze_spring_risk_profile(history)

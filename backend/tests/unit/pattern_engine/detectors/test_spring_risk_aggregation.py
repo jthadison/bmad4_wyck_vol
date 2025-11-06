@@ -43,6 +43,7 @@ def create_test_spring(volume_ratio: Decimal, timestamp: datetime = None) -> Spr
 
     return Spring(
         bar=bar,
+        bar_index=20,
         penetration_pct=Decimal("0.02"),
         volume_ratio=volume_ratio,
         recovery_bars=2,
@@ -99,6 +100,7 @@ class TestAnalyzeSpringRiskProfile:
         with pytest.raises(Exception):  # Pydantic ValidationError
             Spring(
                 bar=bar,
+                bar_index=20,
                 penetration_pct=Decimal("0.02"),
                 volume_ratio=Decimal("0.75"),  # >0.7x (violates FR12)
                 recovery_bars=2,
