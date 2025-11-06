@@ -62,7 +62,7 @@ Author: Generated for Story 5.1
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 import structlog
@@ -268,8 +268,11 @@ def detect_spring(
                 )
                 continue  # Skip candidate
 
-            # Convert float to Decimal for precise comparison
-            volume_ratio = Decimal(str(volume_ratio_float))
+            # Convert float to Decimal and quantize to 4 decimal places
+            # to match Spring model constraint (max_digits=10, decimal_places=4)
+            volume_ratio = Decimal(str(volume_ratio_float)).quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
+            )
 
         # FR12 enforcement - NON-NEGOTIABLE binary rejection (AC 5)
         if volume_ratio >= Decimal("0.7"):

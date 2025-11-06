@@ -32,6 +32,11 @@ from src.models.touch_detail import TouchDetail
 from src.models.price_cluster import PriceCluster
 from src.models.pivot import Pivot, PivotType
 
+# Import complete fixture from multi-spring tests
+from tests.integration.pattern_engine.test_spring_detector_multi_spring import (
+    create_aapl_accumulation_range,
+)
+
 
 def create_test_bar(
     timestamp: datetime,
@@ -752,10 +757,8 @@ def test_volume_cache_speedup_realistic_workload():
         num_springs=5,  # Creates ~50 candidate bars
     )
 
-    trading_range = create_test_range(
-        creek_level=creek_level,
-        jump_level=Decimal("115.00"),
-    )
+    # Use complete fixture from multi-spring tests to ensure all CreekLevel fields populated
+    trading_range = create_aapl_accumulation_range(creek_level=creek_level)
 
     detector = SpringDetector()
     phase = WyckoffPhase.C
