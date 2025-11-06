@@ -278,7 +278,7 @@ def determine_urgency(recovery_bars: int) -> str:
             "urgency_immediate",
             recovery_bars=recovery_bars,
             urgency=urgency,
-            message=f"IMMEDIATE urgency: 1-bar recovery shows aggressive accumulation",
+            message="IMMEDIATE urgency: 1-bar recovery shows aggressive accumulation",
         )
     elif recovery_bars in [2, 3]:
         urgency = "MODERATE"
@@ -446,7 +446,10 @@ def generate_spring_signal(
         stop_loss=float(stop_loss),
         stop_distance_from_entry_pct=float((entry_price - stop_loss) / entry_price),
         fr17_compliance="ADAPTIVE_ENFORCED",
-        message=f"Adaptive stop: {penetration_pct:.1%} penetration → {stop_buffer_pct:.1%} buffer → stop ${stop_loss:.2f}",
+        message=(
+            f"Adaptive stop: {penetration_pct:.1%} penetration → "
+            f"{stop_buffer_pct:.1%} buffer → stop ${stop_loss:.2f}"
+        ),
     )
 
     # STEP 4: Calculate Target Price (AC 4)
@@ -583,7 +586,11 @@ def generate_spring_signal(
         stop_buffer_pct=float(stop_buffer_pct),
         penetration_pct=float(spring.penetration_pct),
         recovery_bars=spring.recovery_bars,
-        message=f"Spring signal generated: Entry ${entry_price:.2f}, Stop ${stop_loss:.2f} ({stop_buffer_pct:.1%} buffer), Target ${target_price:.2f}, {r_multiple:.2f}R, {recommended_position_size} shares, {urgency} urgency",
+        message=(
+            f"Spring signal generated: Entry ${entry_price:.2f}, Stop ${stop_loss:.2f} "
+            f"({stop_buffer_pct:.1%} buffer), Target ${target_price:.2f}, {r_multiple:.2f}R, "
+            f"{recommended_position_size} shares, {urgency} urgency"
+        ),
     )
 
     return signal

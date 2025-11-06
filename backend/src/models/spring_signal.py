@@ -74,7 +74,7 @@ from decimal import Decimal
 from typing import Literal, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, field_serializer
 
 
 class SpringSignal(BaseModel):
@@ -237,11 +237,26 @@ class SpringSignal(BaseModel):
             )
         return v
 
-    class Config:
-        """Pydantic configuration"""
-        json_encoders = {
-            Decimal: str,
-            datetime: lambda v: v.isoformat(),
-            UUID: str,
-        }
-        validate_assignment = True
+    model_config = ConfigDict(
+        validate_assignment=True,
+    )
+
+    @field_serializer('entry_price', 'stop_loss', 'target_price', 'r_multiple',
+                      'spring_volume_ratio', 'test_volume_ratio', 'volume_decrease_pct',
+                      'penetration_pct', 'creek_level', 'jump_level', 'stop_distance_pct',
+                      'target_distance_pct', 'recommended_position_size', 'risk_per_trade_pct',
+                      'portfolio_heat', check_fields=False)
+    def serialize_decimal(self, value: Optional[Decimal]) -> Optional[str]:
+        """Serialize Decimal fields to string for JSON"""
+        return str(value) if value is not None else None
+
+    @field_serializer('signal_timestamp', 'spring_bar_timestamp',
+                      'test_bar_timestamp', 'range_start_timestamp')
+    def serialize_datetime(self, value: datetime) -> str:
+        """Serialize datetime fields to ISO format"""
+        return value.isoformat()
+
+    @field_serializer('id', 'trading_range_id')
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID fields to string"""
+        return str(value)
