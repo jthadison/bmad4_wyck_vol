@@ -92,6 +92,11 @@ class SpringHistory:
         spring_count: Total number of springs detected
         risk_level: Risk assessment ("LOW" | "MODERATE" | "HIGH")
         detection_timestamp: When history was created (UTC)
+        spring_timing: Temporal spacing classification ("COMPRESSED" | "NORMAL" | "HEALTHY" | "SINGLE_SPRING")
+        spring_intervals: Bar counts between successive springs (chronological order)
+        avg_spring_interval: Average spacing between springs for campaign quality assessment
+        test_quality_trend: Test progression classification ("IMPROVING" | "STABLE" | "DEGRADING" | "INSUFFICIENT_DATA")
+        test_quality_metrics: Detailed test quality progression data for analysis
 
     Wyckoff Quality Criteria (best spring selection):
         1. Volume quality (primary): Lower volume ratio = better
@@ -121,6 +126,15 @@ class SpringHistory:
     detection_timestamp: datetime = field(
         default_factory=lambda: datetime.now(UTC)
     )
+
+    # Story 5.6.2: Spring Timing Analysis (AC 1)
+    spring_timing: str = "SINGLE_SPRING"  # COMPRESSED | NORMAL | HEALTHY | SINGLE_SPRING
+    spring_intervals: List[int] = field(default_factory=list)  # Bar counts between springs
+    avg_spring_interval: float = 0.0  # Average spacing for campaign assessment
+
+    # Story 5.6.2: Test Quality Progression (AC 2)
+    test_quality_trend: str = "INSUFFICIENT_DATA"  # IMPROVING | STABLE | DEGRADING | INSUFFICIENT_DATA
+    test_quality_metrics: dict = field(default_factory=dict)  # Detailed progression data
 
     def add_spring(
         self, spring: Spring, signal: Optional[SpringSignal] = None
