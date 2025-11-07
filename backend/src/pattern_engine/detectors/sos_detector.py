@@ -149,31 +149,39 @@ def detect_sos_breakout(
         return None
 
     # ============================================================
-    # PHASE VALIDATION (FR15) - Task 3
+    # PHASE VALIDATION (FR15) - Task 3, Task 4 (Story 6.1B)
     # ============================================================
 
     current_phase = phase.phase
     phase_confidence = phase.confidence
 
-    # FR15: SOS in Phase D (Story 6.1A - Phase C deferred to 6.1B)
-    if current_phase != WyckoffPhase.D:
+    # AC 3: Late Phase C support (confidence >= 85)
+    # FR15: SOS in Phase D (primary) or late Phase C (85+ confidence)
+    if current_phase == WyckoffPhase.D:
+        logger.debug(
+            "sos_phase_d_validation",
+            symbol=range.symbol,
+            phase="D",
+            confidence=phase_confidence,
+            message="SOS in Phase D (ideal - markup phase)"
+        )
+    elif current_phase == WyckoffPhase.C and phase_confidence >= 85:
+        logger.debug(
+            "sos_late_phase_c_validation",
+            symbol=range.symbol,
+            phase="C",
+            confidence=phase_confidence,
+            message="SOS in late Phase C (confidence >= 85 - imminent markup)"
+        )
+    else:
         logger.debug(
             "sos_wrong_phase",
             symbol=range.symbol,
             current_phase=current_phase.value,
-            required_phase="D",
-            phase_confidence=phase_confidence,
-            message="SOS requires Phase D (FR15) - Phase C support deferred to Story 6.1B"
+            confidence=phase_confidence,
+            message=f"SOS rejected: Phase {current_phase.value} (requires Phase D or Phase C with 85+ confidence)"
         )
         return None
-
-    logger.debug(
-        "sos_phase_validation_passed",
-        symbol=range.symbol,
-        current_phase="D",
-        phase_confidence=phase_confidence,
-        message="SOS in Phase D (ideal - markup phase)"
-    )
 
     # ============================================================
     # ICE LEVEL EXTRACTION - Task 4
@@ -265,6 +273,91 @@ def detect_sos_breakout(
         )
 
         # ============================================================
+        # SPREAD EXPANSION VALIDATION (Story 6.1B) - Task 2
+        # [QUALITY GATE]
+        # ============================================================
+
+        # AC 1: Spread expansion validation (1.2x minimum)
+        # Calculate spread ratio from volume_analysis (assumes VolumeAnalyzer provides it)
+        spread_ratio = volume_data.get("spread_ratio")
+
+        if spread_ratio is None:
+            logger.error(
+                "spread_ratio_missing",
+                symbol=bar.symbol,
+                bar_timestamp=bar.timestamp.isoformat(),
+                message="Spread ratio not available in volume_analysis - required for Story 6.1B"
+            )
+            continue  # Skip candidate
+
+        if spread_ratio < Decimal("1.2"):
+            logger.warning(
+                "sos_invalid_narrow_spread",
+                symbol=bar.symbol,
+                bar_timestamp=bar.timestamp.isoformat(),
+                spread_ratio=float(spread_ratio),
+                threshold=1.2,
+                message=f"SOS INVALID: Spread {float(spread_ratio):.2f}x < 1.2x - absorption at resistance (narrow bar)"
+            )
+            continue  # REJECT - narrow spread suggests absorption
+
+        logger.debug(
+            "spread_expansion_valid",
+            symbol=bar.symbol,
+            bar_timestamp=bar.timestamp.isoformat(),
+            spread_ratio=float(spread_ratio),
+            message=f"Spread {float(spread_ratio):.2f}x >= 1.2x (wide bar shows conviction)"
+        )
+
+        # Calculate spread for model
+        spread = bar.high - bar.low
+
+        # ============================================================
+        # THREE-TIER CLOSE POSITION VALIDATION (Story 6.1B) - Task 3
+        # [QUALITY GATE]
+        # ============================================================
+
+        # AC 2: Three-tier close position handling
+        # Formula: (close - low) / (high - low)
+        if spread == 0:
+            logger.warning(
+                "zero_spread_bar",
+                symbol=bar.symbol,
+                bar_timestamp=bar.timestamp.isoformat(),
+                message="Skipping bar with zero spread (doji)"
+            )
+            continue  # Skip doji/narrow bars
+
+        close_position = ((bar.close - bar.low) / spread).quantize(Decimal("0.0001"))
+
+        # Three-tier logic
+        if close_position >= Decimal("0.7"):
+            tier = "PASS"
+            confidence_impact = "neutral"
+        elif close_position >= Decimal("0.5"):
+            tier = "MARGINAL"
+            confidence_impact = "penalty -10 (Story 6.5)"
+        else:  # < 0.5
+            logger.warning(
+                "sos_weak_close_rejected",
+                symbol=bar.symbol,
+                bar_timestamp=bar.timestamp.isoformat(),
+                close_position=float(close_position),
+                message=f"SOS REJECTED: Close position {float(close_position):.2f} < 0.5 (sellers dominating)"
+            )
+            continue  # REJECT - weak close
+
+        logger.debug(
+            "close_position_validation",
+            symbol=bar.symbol,
+            bar_timestamp=bar.timestamp.isoformat(),
+            close_position=float(close_position),
+            tier=tier,
+            confidence_impact=confidence_impact,
+            message=f"Close position {float(close_position):.2f} - {tier} tier"
+        )
+
+        # ============================================================
         # CREATE SOS BREAKOUT INSTANCE - Task 6
         # ============================================================
 
@@ -275,7 +368,11 @@ def detect_sos_breakout(
             ice_reference=ice_level,
             breakout_price=close_price,
             detection_timestamp=datetime.now(UTC),
-            trading_range_id=range.id
+            trading_range_id=range.id,
+            # New quality fields (Story 6.1B)
+            spread_ratio=spread_ratio,
+            close_position=close_position,
+            spread=spread
         )
 
         logger.info(
@@ -284,13 +381,16 @@ def detect_sos_breakout(
             breakout_timestamp=bar.timestamp.isoformat(),
             breakout_pct=float(breakout_pct),
             volume_ratio=float(volume_ratio),
+            spread_ratio=float(spread_ratio),
+            close_position=float(close_position),
+            close_tier=tier,  # PASS/MARGINAL
             ice_level=float(ice_level),
             breakout_price=float(close_price),
             phase=current_phase.value,
             phase_confidence=phase_confidence,
             quality_tier=sos_breakout.quality_tier,
             is_ideal=sos_breakout.is_ideal_sos,
-            message="SOS detected - Ice breakout with volume confirmation"
+            message="SOS detected - Ice breakout with volume/spread/close quality confirmation"
         )
 
         return sos_breakout

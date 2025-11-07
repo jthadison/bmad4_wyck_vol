@@ -306,6 +306,7 @@ def test_detect_sos_breakout_valid():
     volume_analysis = {
         bars[24].timestamp: {
             "volume_ratio": Decimal("2.0"),  # AC 7: 2.0x volume
+            "spread_ratio": Decimal("1.2"),  # Story 6.1B: spread expansion
         }
     }
 
@@ -358,6 +359,7 @@ def test_detect_sos_low_volume_rejected():
     volume_analysis = {
         bars[24].timestamp: {
             "volume_ratio": Decimal("1.4"),  # LOW VOLUME (< 1.5x)
+            "spread_ratio": Decimal("1.2"),  # Story 6.1B: spread expansion
         }
     }
 
@@ -386,7 +388,10 @@ def test_volume_boundary_149_rejects_150_passes():
         volume=149000,
     )
     volume_analysis_reject = {
-        bars_reject[24].timestamp: {"volume_ratio": Decimal("1.49")}
+        bars_reject[24].timestamp: {
+            "volume_ratio": Decimal("1.49"),
+            "spread_ratio": Decimal("1.2"),
+        }
     }
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
@@ -402,7 +407,10 @@ def test_volume_boundary_149_rejects_150_passes():
         volume=150000,
     )
     volume_analysis_pass = {
-        bars_pass[24].timestamp: {"volume_ratio": Decimal("1.50")}
+        bars_pass[24].timestamp: {
+            "volume_ratio": Decimal("1.50"),
+            "spread_ratio": Decimal("1.2"),
+        }
     }
 
     sos_pass = detect_sos_breakout(
@@ -440,7 +448,10 @@ def test_breakout_1_percent_accepted():
     )
 
     volume_analysis = {
-        bars[24].timestamp: {"volume_ratio": Decimal("2.0")}
+        bars[24].timestamp: {
+            "volume_ratio": Decimal("2.0"),
+            "spread_ratio": Decimal("1.2"),
+        }
     }
 
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
@@ -476,7 +487,10 @@ def test_breakout_below_1_percent_rejected():
     )
 
     volume_analysis = {
-        bars[24].timestamp: {"volume_ratio": Decimal("2.0")}
+        bars[24].timestamp: {
+            "volume_ratio": Decimal("2.0"),
+            "spread_ratio": Decimal("1.2"),
+        }
     }
 
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
@@ -516,7 +530,10 @@ def test_sos_in_phase_d_accepted():
     )
 
     volume_analysis = {
-        bars[24].timestamp: {"volume_ratio": Decimal("2.0")}
+        bars[24].timestamp: {
+            "volume_ratio": Decimal("2.0"),
+            "spread_ratio": Decimal("1.2"),
+        }
     }
 
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
@@ -533,7 +550,6 @@ def test_sos_in_phase_d_accepted():
     [
         WyckoffPhase.A,
         WyckoffPhase.B,
-        WyckoffPhase.C,  # Phase C deferred to Story 6.1B
         WyckoffPhase.E,
     ],
 )
@@ -541,11 +557,11 @@ def test_sos_wrong_phase_rejected(phase_value):
     """
     AC 10: Test SOS in wrong phases (rejected).
 
-    FR15: Story 6.1A only supports Phase D.
-    Phase C support deferred to Story 6.1B.
+    FR15: Story 6.1B supports Phase D (primary) and Phase C with 85+ confidence.
+    Phases A, B, E are invalid.
 
     Scenario:
-    - Phase A, B, C, or E (not Phase D)
+    - Phase A, B, or E (invalid phases)
     - Valid breakout (2% above Ice)
     - High volume (2.0x)
 
@@ -562,7 +578,10 @@ def test_sos_wrong_phase_rejected(phase_value):
     )
 
     volume_analysis = {
-        bars[24].timestamp: {"volume_ratio": Decimal("2.0")}
+        bars[24].timestamp: {
+            "volume_ratio": Decimal("2.0"),
+            "spread_ratio": Decimal("1.2"),
+        }
     }
 
     phase = create_phase_classification(phase=phase_value, confidence=85)
@@ -573,7 +592,7 @@ def test_sos_wrong_phase_rejected(phase_value):
     # Assert
     assert (
         sos is None
-    ), f"SOS should be rejected in Phase {phase_value.value} (FR15 - Story 6.1A only supports Phase D)"
+    ), f"SOS should be rejected in Phase {phase_value.value} (FR15 - only Phase D or Phase C with 85+ confidence)"
 
 
 # ============================================================
@@ -688,3 +707,484 @@ def test_missing_volume_analysis_skips_candidate():
 
     # Assert
     assert sos is None, "Missing volume analysis should skip candidate"
+
+
+# ============================================================
+# STORY 6.1B - QUALITY ENHANCEMENTS TEST HELPERS
+# ============================================================
+
+
+def create_bars_with_close_position(
+    ice_level: Decimal,
+    close_pct: Decimal,
+    symbol: str = "AAPL",
+) -> list[OHLCVBar]:
+    """
+    Create synthetic bars with specific close position.
+
+    Args:
+        ice_level: Ice price level
+        close_pct: Close position (0.0-1.0) - (close - low) / (high - low)
+        symbol: Stock symbol
+
+    Returns:
+        List of 25 OHLCV bars (24 normal + 1 breakout with specific close position)
+    """
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+    bars = []
+
+    # Create 24 normal bars
+    for i in range(24):
+        bar = create_test_bar(
+            timestamp=base_timestamp + timedelta(days=i),
+            low=ice_level - Decimal("5.00"),
+            high=ice_level - Decimal("0.50"),
+            close=ice_level - Decimal("2.00"),
+            volume=100000,
+            symbol=symbol,
+        )
+        bars.append(bar)
+
+    # Create breakout bar with specific close position
+    # Example: ice=100, breakout to 102, low=100, high=110
+    # close_pct=0.7 → close = 100 + (10 * 0.7) = 107
+    low = ice_level
+    high = ice_level + Decimal("10.00")  # Wide bar for testing
+    spread = high - low
+    close = low + (spread * close_pct)
+
+    # Ensure close is above Ice + 1%
+    if close < ice_level * Decimal("1.01"):
+        close = ice_level * Decimal("1.02")  # Force 2% breakout minimum
+
+    breakout_bar = create_test_bar(
+        timestamp=base_timestamp + timedelta(days=24),
+        low=low,
+        high=high,
+        close=close,
+        volume=200000,
+        symbol=symbol,
+    )
+    bars.append(breakout_bar)
+
+    return bars
+
+
+def create_volume_analysis_with_quality(
+    bars: list[OHLCVBar],
+    volume: Decimal,
+    spread: Decimal,
+) -> dict:
+    """
+    Create volume_analysis dict with volume_ratio and spread_ratio.
+
+    Args:
+        bars: List of bars (last bar will have quality metrics)
+        volume: Volume ratio (e.g., 2.0 for 2x)
+        spread: Spread ratio (e.g., 1.2 for 1.2x)
+
+    Returns:
+        Dict with volume_ratio and spread_ratio for last bar
+    """
+    return {
+        bars[-1].timestamp: {
+            "volume_ratio": volume,
+            "spread_ratio": spread,
+        }
+    }
+
+
+# ============================================================
+# STORY 6.1B TESTS - SPREAD EXPANSION (Task 6)
+# ============================================================
+
+
+def test_spread_expansion_minimum_accepted():
+    """
+    Story 6.1B AC 1: Test 1.2x spread (minimum) accepted.
+
+    Scenario:
+    - Valid SOS with 2.0x volume
+    - Spread ratio = 1.2x (minimum threshold)
+
+    Expected:
+    - SOS detected
+    - spread_ratio = 1.2
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_sos_breakout(
+        ice_level=ice_level,
+        breakout_pct=Decimal("0.02"),
+        volume=200000,
+    )
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.2"),  # Minimum threshold
+    )
+    phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
+
+    # Act
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+
+    # Assert
+    assert sos is not None, "1.2x spread should be accepted (AC 1)"
+    assert sos.spread_ratio == Decimal("1.2")
+
+
+def test_narrow_spread_rejected():
+    """
+    Story 6.1B AC 1, AC 5: Test narrow spread (<1.2x) rejected.
+
+    Scenario:
+    - Valid breakout with 2.0x volume (passes volume gate)
+    - Spread ratio = 1.1x (below 1.2x threshold)
+
+    Expected:
+    - SOS rejected (narrow spread suggests absorption)
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_sos_breakout(
+        ice_level=ice_level,
+        breakout_pct=Decimal("0.02"),
+        volume=200000,
+    )
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),  # Volume passes
+        spread=Decimal("1.1"),  # Spread fails
+    )
+    phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
+
+    # Act
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+
+    # Assert
+    assert sos is None, "Narrow spread (<1.2x) should be rejected"
+
+
+def test_spread_boundary():
+    """
+    Story 6.1B AC 5: Test 1.2x spread boundary.
+
+    Scenario:
+    - Test exact boundary: 1.19x rejects, 1.20x passes
+
+    Expected:
+    - 1.19x: rejected
+    - 1.20x: accepted
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
+
+    # 1.19x should reject
+    bars_reject = create_bars_with_sos_breakout(
+        ice_level=ice_level,
+        breakout_pct=Decimal("0.02"),
+        volume=200000,
+    )
+    volume_analysis_reject = create_volume_analysis_with_quality(
+        bars=bars_reject,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.19"),
+    )
+    sos_reject = detect_sos_breakout(trading_range, bars_reject, volume_analysis_reject, phase)
+    assert sos_reject is None, "1.19x spread should reject"
+
+    # 1.20x should pass
+    bars_pass = create_bars_with_sos_breakout(
+        ice_level=ice_level,
+        breakout_pct=Decimal("0.02"),
+        volume=200000,
+    )
+    volume_analysis_pass = create_volume_analysis_with_quality(
+        bars=bars_pass,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.20"),
+    )
+    sos_pass = detect_sos_breakout(trading_range, bars_pass, volume_analysis_pass, phase)
+    assert sos_pass is not None, "1.20x spread should pass"
+    assert sos_pass.spread_ratio == Decimal("1.20")
+
+
+# ============================================================
+# STORY 6.1B TESTS - THREE-TIER CLOSE POSITION (Task 7)
+# ============================================================
+
+
+def test_close_position_pass_tier():
+    """
+    Story 6.1B AC 2: Test PASS tier (close_position >= 0.7).
+
+    Scenario:
+    - Close at 70% of bar range (strong close)
+    - Volume and spread pass
+
+    Expected:
+    - SOS detected
+    - close_position >= 0.7
+    - close_position_tier = "PASS"
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.7"))
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.2"),
+    )
+    phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
+
+    # Act
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+
+    # Assert
+    assert sos is not None, "Close position 0.7 should pass (PASS tier)"
+    assert sos.close_position >= Decimal("0.7")
+    assert sos.close_position_tier == "PASS"
+
+
+def test_close_position_marginal_tier():
+    """
+    Story 6.1B AC 2: Test MARGINAL tier (0.5 <= close_position < 0.7).
+
+    Scenario:
+    - Close at 60% of bar range (marginal)
+    - Volume and spread pass
+
+    Expected:
+    - SOS detected (accepted)
+    - 0.5 <= close_position < 0.7
+    - close_position_tier = "MARGINAL"
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.6"))
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.2"),
+    )
+    phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
+
+    # Act
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+
+    # Assert
+    assert sos is not None, "Close position 0.6 should pass (MARGINAL tier)"
+    assert Decimal("0.5") <= sos.close_position < Decimal("0.7")
+    assert sos.close_position_tier == "MARGINAL"
+
+
+def test_close_position_reject_tier():
+    """
+    Story 6.1B AC 2, AC 6: Test REJECT tier (close_position < 0.5).
+
+    Scenario:
+    - Close at 40% of bar range (weak - sellers dominating)
+    - Volume and spread pass
+
+    Expected:
+    - SOS rejected (weak close)
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.4"))
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.2"),
+    )
+    phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
+
+    # Act
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+
+    # Assert
+    assert sos is None, "Close position < 0.5 should be rejected"
+
+
+def test_close_position_boundaries():
+    """
+    Story 6.1B AC 6: Test exact tier boundaries.
+
+    Scenario:
+    - Test boundaries: 0.49/0.50, 0.69/0.70
+
+    Expected:
+    - 0.49: rejected
+    - 0.50: accepted (MARGINAL)
+    - 0.69: accepted (MARGINAL)
+    - 0.70: accepted (PASS)
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
+
+    # 0.49 should reject
+    bars_049 = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.49"))
+    volume_analysis_049 = create_volume_analysis_with_quality(bars_049, Decimal("2.0"), Decimal("1.2"))
+    sos_049 = detect_sos_breakout(trading_range, bars_049, volume_analysis_049, phase)
+    assert sos_049 is None, "0.49 close position should reject"
+
+    # 0.50 should pass (MARGINAL)
+    bars_050 = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.50"))
+    volume_analysis_050 = create_volume_analysis_with_quality(bars_050, Decimal("2.0"), Decimal("1.2"))
+    sos_050 = detect_sos_breakout(trading_range, bars_050, volume_analysis_050, phase)
+    assert sos_050 is not None, "0.50 close position should pass (MARGINAL)"
+    assert sos_050.close_position_tier == "MARGINAL"
+
+    # 0.69 should pass (MARGINAL)
+    bars_069 = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.69"))
+    volume_analysis_069 = create_volume_analysis_with_quality(bars_069, Decimal("2.0"), Decimal("1.2"))
+    sos_069 = detect_sos_breakout(trading_range, bars_069, volume_analysis_069, phase)
+    assert sos_069 is not None, "0.69 close position should pass (MARGINAL)"
+    assert sos_069.close_position < Decimal("0.7")
+    assert sos_069.close_position_tier == "MARGINAL"
+
+    # 0.70 should pass (PASS)
+    bars_070 = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.70"))
+    volume_analysis_070 = create_volume_analysis_with_quality(bars_070, Decimal("2.0"), Decimal("1.2"))
+    sos_070 = detect_sos_breakout(trading_range, bars_070, volume_analysis_070, phase)
+    assert sos_070 is not None, "0.70 close position should pass (PASS)"
+    assert sos_070.close_position >= Decimal("0.7")
+    assert sos_070.close_position_tier == "PASS"
+
+
+# ============================================================
+# STORY 6.1B TESTS - PHASE C VALIDATION (Task 8)
+# ============================================================
+
+
+def test_late_phase_c_85_confidence_accepted():
+    """
+    Story 6.1B AC 3, AC 7: Test Phase C with 85+ confidence accepted.
+
+    Scenario:
+    - Phase C with confidence = 85 (imminent markup)
+    - Valid SOS pattern
+
+    Expected:
+    - SOS detected
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_sos_breakout(
+        ice_level=ice_level,
+        breakout_pct=Decimal("0.02"),
+        volume=200000,
+    )
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.2"),
+    )
+    phase_c_85 = create_phase_classification(phase=WyckoffPhase.C, confidence=85)
+
+    # Act
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_85)
+
+    # Assert
+    assert sos is not None, "Phase C with 85 confidence should be accepted"
+
+
+def test_phase_c_below_85_confidence_rejected():
+    """
+    Story 6.1B AC 3, AC 8: Test Phase C with <85 confidence rejected.
+
+    Scenario:
+    - Phase C with confidence = 84 (below threshold)
+    - Valid SOS pattern
+
+    Expected:
+    - SOS rejected (Phase C requires 85+ confidence)
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_sos_breakout(
+        ice_level=ice_level,
+        breakout_pct=Decimal("0.02"),
+        volume=200000,
+    )
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.2"),
+    )
+    phase_c_84 = create_phase_classification(phase=WyckoffPhase.C, confidence=84)
+
+    # Act
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_84)
+
+    # Assert
+    assert sos is None, "Phase C with 84 confidence should be rejected"
+
+
+def test_phase_c_confidence_boundary():
+    """
+    Story 6.1B AC 7, AC 8: Test 85 confidence boundary for Phase C.
+
+    Scenario:
+    - Test exact boundary: 84 rejects, 85 passes
+
+    Expected:
+    - 84: rejected
+    - 85: accepted
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_sos_breakout(
+        ice_level=ice_level,
+        breakout_pct=Decimal("0.02"),
+        volume=200000,
+    )
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.2"),
+    )
+
+    # 84 confidence should reject
+    phase_c_84 = create_phase_classification(phase=WyckoffPhase.C, confidence=84)
+    sos_reject = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_84)
+    assert sos_reject is None, "Phase C with 84 confidence should reject"
+
+    # 85 confidence should pass
+    phase_c_85 = create_phase_classification(phase=WyckoffPhase.C, confidence=85)
+    sos_pass = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_85)
+    assert sos_pass is not None, "Phase C with 85 confidence should pass"
+
+
+def test_phase_d_still_accepted():
+    """
+    Story 6.1B: Test Phase D still accepted (baseline from 6.1A).
+
+    Scenario:
+    - Phase D with confidence = 80
+    - Valid SOS pattern
+
+    Expected:
+    - SOS detected (Phase D is ideal phase)
+    """
+    ice_level = Decimal("100.00")
+    trading_range = create_trading_range(ice_level=ice_level)
+    bars = create_bars_with_sos_breakout(
+        ice_level=ice_level,
+        breakout_pct=Decimal("0.02"),
+        volume=200000,
+    )
+    volume_analysis = create_volume_analysis_with_quality(
+        bars=bars,
+        volume=Decimal("2.0"),
+        spread=Decimal("1.2"),
+    )
+    phase_d = create_phase_classification(phase=WyckoffPhase.D, confidence=80)
+
+    # Act
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_d)
+
+    # Assert
+    assert sos is not None, "Phase D should still be accepted (baseline from 6.1A)"
