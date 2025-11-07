@@ -47,6 +47,9 @@ class SOSBreakout(BaseModel):
         breakout_price: Closing price that broke above Ice
         detection_timestamp: When SOS was detected (UTC)
         trading_range_id: Associated trading range UUID
+        spread_ratio: Bar spread expansion relative to average (>=1.2x - Story 6.1B)
+        close_position: Close position within bar range 0.0-1.0 (>=0.5 - Story 6.1B)
+        spread: Bar spread (high - low) for quality assessment (Story 6.1B)
 
     Example:
         >>> sos = SOSBreakout(
@@ -56,7 +59,10 @@ class SOSBreakout(BaseModel):
         ...     ice_reference=Decimal("100.00"),
         ...     breakout_price=Decimal("102.00"),
         ...     detection_timestamp=datetime.now(UTC),
-        ...     trading_range_id=UUID("...")
+        ...     trading_range_id=UUID("..."),
+        ...     spread_ratio=Decimal("1.4"),  # 1.4x spread expansion (Story 6.1B)
+        ...     close_position=Decimal("0.75"),  # PASS tier (Story 6.1B)
+        ...     spread=Decimal("5.00")  # $5 bar spread
         ... )
     """
 
@@ -92,6 +98,30 @@ class SOSBreakout(BaseModel):
         ..., description="When SOS was detected (UTC)"
     )
     trading_range_id: UUID = Field(..., description="Associated trading range")
+
+    # Quality enhancement fields (Story 6.1B)
+    spread_ratio: Decimal = Field(
+        ...,
+        ge=Decimal("1.2"),
+        decimal_places=4,
+        max_digits=10,
+        description="Spread expansion (>=1.2x shows conviction - Story 6.1B)",
+    )
+    close_position: Decimal = Field(
+        ...,
+        ge=Decimal("0.0"),
+        le=Decimal("1.0"),
+        decimal_places=4,
+        max_digits=10,
+        description="Close position (close-low)/(high-low), >=0.5 required (Story 6.1B)",
+    )
+    spread: Decimal = Field(
+        ...,
+        gt=Decimal("0"),
+        decimal_places=8,
+        max_digits=18,
+        description="Bar spread (high - low) for quality assessment (Story 6.1B)",
+    )
 
     @field_validator("detection_timestamp", mode="before")
     @classmethod
@@ -157,11 +187,64 @@ class SOSBreakout(BaseModel):
             )
         return v
 
+    @field_validator("spread_ratio")
+    @classmethod
+    def validate_spread_expansion(cls, v: Decimal) -> Decimal:
+        """
+        Ensure spread ratio >= 1.2x (Story 6.1B AC 1).
+
+        Wide bars (1.2x+ spread) show conviction.
+        Narrow bars suggest absorption at resistance.
+
+        Args:
+            v: Spread ratio
+
+        Returns:
+            Validated spread ratio
+
+        Raises:
+            ValueError: If spread_ratio < 1.2x
+        """
+        if v < Decimal("1.2"):
+            raise ValueError(
+                f"Spread ratio {v}x < 1.2x threshold - narrow spread suggests absorption"
+            )
+        return v
+
+    @field_validator("close_position")
+    @classmethod
+    def validate_close_strength(cls, v: Decimal) -> Decimal:
+        """
+        Ensure close position >= 0.5 (Story 6.1B AC 2).
+
+        Three-tier logic:
+        - >=0.7: PASS (strong close - buyers in control)
+        - 0.5-0.69: MARGINAL (middling - penalty in confidence scoring)
+        - <0.5: REJECT (weak close - sellers dominating)
+
+        Args:
+            v: Close position (0.0-1.0)
+
+        Returns:
+            Validated close position
+
+        Raises:
+            ValueError: If close_position < 0.5
+        """
+        if v < Decimal("0.5"):
+            raise ValueError(
+                f"Close position {v:.2f} < 0.5 - weak close indicates sellers dominating (REJECT)"
+            )
+        return v
+
     @field_serializer(
         "breakout_pct",
         "volume_ratio",
         "ice_reference",
         "breakout_price",
+        "spread_ratio",
+        "close_position",
+        "spread",
     )
     def serialize_decimal(self, value: Decimal) -> str:
         """Serialize Decimal fields as strings to preserve precision."""
@@ -193,6 +276,23 @@ class SOSBreakout(BaseModel):
             Decimal("0.02") <= self.breakout_pct <= Decimal("0.03")
             and self.volume_ratio >= Decimal("2.0")
         )
+
+    @property
+    def close_position_tier(self) -> str:
+        """
+        Get close position tier (Story 6.1B).
+
+        Tiers:
+        - PASS: >= 0.7 (strong close - buyers in control)
+        - MARGINAL: 0.5-0.69 (middling - penalty in confidence scoring)
+
+        Returns:
+            str: Close position tier (PASS or MARGINAL)
+        """
+        if self.close_position >= Decimal("0.7"):
+            return "PASS"
+        else:
+            return "MARGINAL"
 
     @property
     def quality_tier(self) -> str:
