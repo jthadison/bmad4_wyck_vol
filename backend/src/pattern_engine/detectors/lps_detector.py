@@ -678,7 +678,7 @@ def detect_lps(
         )
         return None
 
-    spread_ratio = pullback_spread / range_avg_spread
+    spread_ratio = (pullback_spread / range_avg_spread).quantize(Decimal("0.0001"))
 
     # Classify spread
     if spread_ratio < Decimal("0.8"):

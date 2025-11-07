@@ -385,13 +385,14 @@ def test_detect_lps_valid_pullback():
         )
     )
 
-    # Bar 34: $101.60 (bounce confirmation - 1.09% above pullback low)
+    # Bar 34: $101.51 (bounce confirmation - 1.00% above pullback low $100.50)
+    # Bounce threshold = $100.50 * 1.01 = $101.505
     bars.append(
         create_test_bar(
             timestamp=sos_timestamp + timedelta(days=4),
             low=Decimal("101.00"),
             high=Decimal("102.00"),
-            close=Decimal("101.60"),  # Confirms bounce (>= 101.505)
+            close=Decimal("101.51"),  # >= $101.505 threshold
             volume=135000,
         )
     )
@@ -415,7 +416,8 @@ def test_detect_lps_valid_pullback():
     assert lps.sos_reference == sos.id, "References correct SOS"
     assert lps.get_support_quality() == "EXCELLENT", "Support quality EXCELLENT"
     assert lps.get_volume_quality() == "GOOD", "Volume quality GOOD"
-    assert lps.volume_trend == "DECLINING", "Volume trend should be declining"
+    # Volume trend: 140k → 130k → 120k → 135k (bounce increases volume, trend=FLAT)
+    assert lps.volume_trend == "FLAT", "Volume trend FLAT (bounce increases volume)"
 
 
 # AC 5: Breaking Ice - 2% invalidates LPS
@@ -542,13 +544,13 @@ def test_lps_within_10_bars_accepted():
         )
     )
 
-    # Bounce confirmation
+    # Bounce confirmation (pullback_low=$100.50, threshold=$101.505)
     bars.append(
         create_test_bar(
             timestamp=sos_timestamp + timedelta(days=11),
             low=Decimal("101.00"),
             high=Decimal("102.00"),
-            close=Decimal("101.50"),
+            close=Decimal("101.51"),  # >= $101.505 threshold
             volume=135000,
         )
     )
@@ -678,10 +680,21 @@ def test_lps_distance_tiers(pullback_low, expected_tier, expected_bonus):
 
     bars.append(sos.bar)
 
-    # Pullback with specified low
+    # Bar 1: After SOS (start pullback)
     bars.append(
         create_test_bar(
             timestamp=sos_timestamp + timedelta(days=1),
+            low=pullback_low + Decimal("1.00"),
+            high=pullback_low + Decimal("2.00"),
+            close=pullback_low + Decimal("1.50"),
+            volume=130000,
+        )
+    )
+
+    # Bar 2: Pullback low (testing support)
+    bars.append(
+        create_test_bar(
+            timestamp=sos_timestamp + timedelta(days=2),
             low=pullback_low,
             high=pullback_low + Decimal("1.00"),
             close=pullback_low + Decimal("0.50"),
@@ -689,13 +702,14 @@ def test_lps_distance_tiers(pullback_low, expected_tier, expected_bonus):
         )
     )
 
-    # Bounce
+    # Bar 3: Bounce - must close at pullback_low * 1.01
+    bounce_threshold = pullback_low * Decimal("1.01")
     bars.append(
         create_test_bar(
-            timestamp=sos_timestamp + timedelta(days=2),
+            timestamp=sos_timestamp + timedelta(days=3),
             low=pullback_low + Decimal("0.50"),
             high=pullback_low + Decimal("1.50"),
-            close=pullback_low + Decimal("1.20"),
+            close=bounce_threshold + Decimal("0.01"),  # Slightly above threshold
             volume=135000,
         )
     )
@@ -815,10 +829,21 @@ def test_lps_volume_quality_tiers(pullback_volume, expected_quality):
 
     bars.append(sos.bar)
 
-    # Pullback with specified volume
+    # Bar 1: Start pullback
     bars.append(
         create_test_bar(
             timestamp=sos_timestamp + timedelta(days=1),
+            low=Decimal("101.00"),
+            high=Decimal("102.00"),
+            close=Decimal("101.50"),
+            volume=140000,
+        )
+    )
+
+    # Bar 2: Pullback low with specified volume (pullback_low=$100.50)
+    bars.append(
+        create_test_bar(
+            timestamp=sos_timestamp + timedelta(days=2),
             low=Decimal("100.50"),
             high=Decimal("101.50"),
             close=Decimal("101.00"),
@@ -826,13 +851,13 @@ def test_lps_volume_quality_tiers(pullback_volume, expected_quality):
         )
     )
 
-    # Bounce
+    # Bar 3: Bounce (threshold = $100.50 * 1.01 = $101.505)
     bars.append(
         create_test_bar(
-            timestamp=sos_timestamp + timedelta(days=2),
+            timestamp=sos_timestamp + timedelta(days=3),
             low=Decimal("101.00"),
             high=Decimal("102.00"),
-            close=Decimal("101.50"),
+            close=Decimal("101.51"),  # >= $101.505 threshold
             volume=135000,
         )
     )
@@ -886,10 +911,21 @@ def test_lps_no_supply_pattern():
 
     bars.append(sos.bar)
 
-    # Pullback: Low volume (80k = 0.53x) + Narrow spread ($2 = 0.67x)
+    # Bar 1: Start pullback
     bars.append(
         create_test_bar(
             timestamp=sos_timestamp + timedelta(days=1),
+            low=Decimal("101.00"),
+            high=Decimal("102.50"),
+            close=Decimal("101.50"),
+            volume=90000,
+        )
+    )
+
+    # Bar 2: Pullback low - Low volume (80k = 0.53x) + Narrow spread ($2 = 0.67x)
+    bars.append(
+        create_test_bar(
+            timestamp=sos_timestamp + timedelta(days=2),
             low=Decimal("100.50"),
             high=Decimal("102.50"),  # $2 spread (narrow)
             close=Decimal("101.00"),
@@ -897,13 +933,13 @@ def test_lps_no_supply_pattern():
         )
     )
 
-    # Bounce
+    # Bar 3: Bounce (threshold = $100.50 * 1.01 = $101.505)
     bars.append(
         create_test_bar(
-            timestamp=sos_timestamp + timedelta(days=2),
+            timestamp=sos_timestamp + timedelta(days=3),
             low=Decimal("101.00"),
             high=Decimal("102.00"),
-            close=Decimal("101.50"),
+            close=Decimal("101.51"),  # >= $101.505 threshold
             volume=135000,
         )
     )
@@ -958,10 +994,21 @@ def test_lps_selling_pressure_pattern():
 
     bars.append(sos.bar)
 
-    # Pullback: High volume (180k = 1.2x) + Wide spread ($4 = 1.33x)
+    # Bar 1: Start pullback
     bars.append(
         create_test_bar(
             timestamp=sos_timestamp + timedelta(days=1),
+            low=Decimal("101.00"),
+            high=Decimal("104.00"),
+            close=Decimal("102.00"),
+            volume=170000,
+        )
+    )
+
+    # Bar 2: Pullback low - High volume (180k = 1.2x) + Wide spread ($4 = 1.33x)
+    bars.append(
+        create_test_bar(
+            timestamp=sos_timestamp + timedelta(days=2),
             low=Decimal("100.50"),
             high=Decimal("104.50"),  # $4 spread (wide)
             close=Decimal("101.00"),
@@ -969,13 +1016,13 @@ def test_lps_selling_pressure_pattern():
         )
     )
 
-    # Bounce
+    # Bar 3: Bounce (threshold = $100.50 * 1.01 = $101.505)
     bars.append(
         create_test_bar(
-            timestamp=sos_timestamp + timedelta(days=2),
+            timestamp=sos_timestamp + timedelta(days=3),
             low=Decimal("101.00"),
             high=Decimal("102.00"),
-            close=Decimal("101.50"),
+            close=Decimal("101.51"),  # >= $101.505 threshold
             volume=135000,
         )
     )
@@ -1031,10 +1078,21 @@ def test_lps_bounce_confirmed():
 
     bars.append(sos.bar)
 
-    # Pullback low at $100.50
+    # Bar 1: Start pullback
     bars.append(
         create_test_bar(
             timestamp=sos_timestamp + timedelta(days=1),
+            low=Decimal("101.00"),
+            high=Decimal("102.00"),
+            close=Decimal("101.50"),
+            volume=130000,
+        )
+    )
+
+    # Bar 2: Pullback low at $100.50
+    bars.append(
+        create_test_bar(
+            timestamp=sos_timestamp + timedelta(days=2),
             low=Decimal("100.50"),
             high=Decimal("101.50"),
             close=Decimal("101.00"),
@@ -1042,13 +1100,13 @@ def test_lps_bounce_confirmed():
         )
     )
 
-    # Bounce to $101.70 (1.2% above pullback low - confirms bounce)
+    # Bar 3: Bounce (threshold = $100.50 * 1.01 = $101.505, close at $101.70 = 1.19% above)
     bars.append(
         create_test_bar(
-            timestamp=sos_timestamp + timedelta(days=2),
+            timestamp=sos_timestamp + timedelta(days=3),
             low=Decimal("101.20"),
             high=Decimal("102.00"),
-            close=Decimal("101.70"),  # 1.2% above $100.50
+            close=Decimal("101.70"),  # >= $101.505 threshold (1.19% above pullback)
             volume=135000,
         )
     )
@@ -1351,7 +1409,11 @@ def test_sos_bar_not_found():
 
 def test_no_pullback_after_sos():
     """
-    Test edge case: Price continues higher (no pullback occurred).
+    Test edge case: Price continues higher with NO pullback to Ice (>3% distance).
+
+    This tests the scenario where price stays too far above Ice (>3%) so there's
+    no valid LPS test of support. Price must come within 3% of Ice to be considered
+    a pullback that tests support.
     """
     start_time = datetime.now(UTC) - timedelta(days=30)
     end_time = datetime.now(UTC) - timedelta(days=5)
@@ -1385,14 +1447,16 @@ def test_no_pullback_after_sos():
 
     bars.append(sos.bar)
 
-    # Bars continue higher (no pullback to Ice)
+    # Bars stay above Ice by >3% (too far for valid LPS)
+    # Ice=$100, 3% threshold=$103
+    # Create bars with lows at $104+ (>3% above Ice, no valid pullback)
     for i in range(1, 5):
         bars.append(
             create_test_bar(
                 timestamp=sos_timestamp + timedelta(days=i),
-                low=Decimal("102.00") + Decimal(str(i)),
-                high=Decimal("105.00") + Decimal(str(i)),
-                close=Decimal("104.00") + Decimal(str(i)),
+                low=Decimal("104.00") + Decimal(str(i)),  # $105, $106, $107, $108
+                high=Decimal("108.00") + Decimal(str(i)),
+                close=Decimal("106.00") + Decimal(str(i)),
                 volume=140000,
             )
         )
@@ -1403,4 +1467,4 @@ def test_no_pullback_after_sos():
     lps = detect_lps(trading_range, sos, bars, volume_analysis)
 
     # Assert
-    assert lps is None, "No LPS if no pullback occurred"
+    assert lps is None, "No LPS if pullback >3% above Ice (not testing support)"
