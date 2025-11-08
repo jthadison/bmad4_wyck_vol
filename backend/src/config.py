@@ -159,8 +159,8 @@ class Settings(BaseSettings):
 
     # Risk Management Configuration
     risk_allocation_config_path: str = Field(
-        default="backend/config/risk_allocation.yaml",
-        description="Path to risk allocation configuration file",
+        default="config/risk_allocation.yaml",
+        description="Path to risk allocation configuration file (relative to backend/)",
     )
 
     @field_validator("database_url", mode="before")
