@@ -1,0 +1,215 @@
+"""
+LPS Detector Module - Last Point of Support Detection
+
+Purpose:
+--------
+Provides unified LPS pullback detection after SOS breakouts to enable
+lower-risk Phase D entry signals with tighter stops.
+
+Components:
+-----------
+- LPSDetector: Main detector class for LPS pullback patterns
+- LPSDetectionResult: Result dataclass with pattern and rejection reason
+
+Detection Requirements (Story 6.3):
+------------------------------------
+- Pullback occurs within 10 bars after SOS
+- Price holds above Ice - 2% (support test)
+- Volume reduced vs SOS (healthy pullback, not distribution)
+- Bounce confirmation (price moves back up)
+
+Coordinated Detection (AC 3):
+------------------------------
+- Called by SOSDetector after SOS detected
+- Searches for pullback within 10-bar window
+- Returns LPS pattern if detected (enables LPS_ENTRY signal)
+
+Rejection Tracking (AC 4):
+---------------------------
+Logs specific rejection reasons:
+- "Broke Ice support: pullback_low < Ice - 2%"
+- "Pullback too late: {bars_after_sos} bars > 10-bar window"
+- "Volume too high: pullback_volume >= sos_volume (distribution concern)"
+- "No bounce confirmation: price did not recover after pullback"
+
+Usage:
+------
+>>> detector = LPSDetector()
+>>> result = detector.detect(
+>>>     range=trading_range,
+>>>     sos=sos_breakout,
+>>>     bars=ohlcv_bars,
+>>>     volume_analysis=volume_stats
+>>> )
+>>>
+>>> if result.lps_detected:
+>>>     print(f"LPS detected: {result.lps.bar.timestamp}")
+>>>     print(f"Distance from Ice: {result.lps.distance_from_ice}%")
+
+Author: Story 6.7
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+import structlog
+
+from src.models.lps import LPS
+from src.models.ohlcv import OHLCVBar
+from src.models.sos_breakout import SOSBreakout
+from src.models.trading_range import TradingRange
+from src.pattern_engine.detectors.lps_detector import detect_lps
+
+logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class LPSDetectionResult:
+    """
+    Result from LPSDetector.detect() method.
+
+    Attributes:
+    -----------
+    lps_detected : bool
+        Whether LPS pattern was detected
+    lps : Optional[LPS]
+        Detected LPS pullback pattern (None if not detected)
+    rejection_reason : Optional[str]
+        Reason for rejection if pattern invalid (AC 4)
+    """
+
+    lps_detected: bool
+    lps: Optional[LPS] = None
+    rejection_reason: Optional[str] = None
+
+
+class LPSDetector:
+    """
+    LPS (Last Point of Support) Detector - Pullback Pattern Recognition.
+
+    Purpose:
+    --------
+    Identifies LPS pullback patterns (pullback to Ice after SOS breakout) to
+    enable lower-risk Phase D entry signals with tighter stops.
+
+    Detection Requirements (Story 6.3):
+    ------------------------------------
+    - Pullback occurs within 10 bars after SOS
+    - Price holds above Ice - 2% (support test)
+    - Volume reduced vs SOS (healthy pullback, not distribution)
+    - Bounce confirmation (price moves back up)
+
+    Coordinated Detection (AC 3):
+    ------------------------------
+    - Called by SOSDetector after SOS detected
+    - Searches for pullback within 10-bar window
+    - Returns LPS pattern if detected (enables LPS_ENTRY signal)
+
+    Rejection Tracking (AC 4):
+    ---------------------------
+    Logs specific rejection reasons:
+    - "Broke Ice support: pullback_low < Ice - 2%"
+    - "Pullback too late: {bars_after_sos} bars > 10-bar window"
+    - "Volume too high: pullback_volume >= sos_volume (distribution concern)"
+    - "No bounce confirmation: price did not recover after pullback"
+
+    Usage:
+    ------
+    >>> detector = LPSDetector()
+    >>> result = detector.detect(
+    >>>     range=trading_range,
+    >>>     sos=sos_breakout,
+    >>>     bars=ohlcv_bars,
+    >>>     volume_analysis=volume_stats
+    >>> )
+    >>>
+    >>> if result.lps_detected:
+    >>>     print(f"LPS detected: {result.lps.bar.timestamp}")
+    >>>     print(f"Distance from Ice: {result.lps.distance_from_ice}%")
+
+    Author: Story 6.7
+    """
+
+    def __init__(self) -> None:
+        """Initialize LPSDetector with structured logging."""
+        self.logger = structlog.get_logger(__name__)
+
+    def detect(
+        self,
+        range: TradingRange,
+        sos: SOSBreakout,
+        bars: list[OHLCVBar],
+        volume_analysis: dict,
+    ) -> LPSDetectionResult:
+        """
+        Detect LPS pullback pattern after SOS breakout.
+
+        Parameters:
+        -----------
+        range : TradingRange
+            Trading range with Ice level (support reference)
+        sos : SOSBreakout
+            SOS breakout pattern that preceded potential LPS
+        bars : list[OHLCVBar]
+            OHLCV bar sequence for analysis (post-SOS bars)
+        volume_analysis : dict
+            Volume statistics for pullback volume comparison
+
+        Returns:
+        --------
+        LPSDetectionResult
+            Detection result with LPS pattern or rejection reason
+
+        Detection Logic (Story 6.3):
+        -----------------------------
+        1. Search for pullback within 10 bars after SOS
+        2. Validate pullback holds above Ice - 2%
+        3. Verify volume reduction vs SOS (not distribution)
+        4. Confirm bounce (price recovers after pullback)
+
+        Rejection Reasons (AC 4):
+        --------------------------
+        - Broke Ice support (pullback < Ice - 2%)
+        - Outside 10-bar window
+        - Volume too high (distribution concern)
+        - No bounce confirmation
+
+        Author: Story 6.7
+        """
+        self.logger.debug(
+            "lps_detection_start",
+            sos_timestamp=sos.bar.timestamp.isoformat(),
+            ice_level=float(range.ice.price) if range.ice else None,
+            message="Starting LPS pullback detection after SOS",
+        )
+
+        # Story 6.3: Detect LPS pullback
+        lps = detect_lps(range=range, sos=sos, bars=bars, volume_analysis=volume_analysis)
+
+        if lps is None:
+            self.logger.debug(
+                "no_lps_detected",
+                sos_timestamp=sos.bar.timestamp.isoformat(),
+                message="No LPS pullback detected within 10 bars after SOS",
+            )
+            return LPSDetectionResult(lps_detected=False)
+
+        # AC 4: Log successful LPS detection
+        self.logger.info(
+            "lps_detected",
+            lps_timestamp=lps.bar.timestamp.isoformat(),
+            pullback_low=float(lps.pullback_low),
+            distance_from_ice=float(lps.distance_from_ice),
+            volume_ratio=float(lps.volume_ratio),
+            bars_after_sos=lps.bars_after_sos,
+            held_support=lps.held_support,
+            bounce_confirmed=lps.bounce_confirmed,
+            message=(
+                f"LPS detected {lps.bars_after_sos} bars after SOS, "
+                f"held support: {lps.held_support}"
+            ),
+        )
+
+        return LPSDetectionResult(lps_detected=True, lps=lps)
