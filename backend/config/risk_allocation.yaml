@@ -1,0 +1,110 @@
+risk_allocation:
+  version: "1.2"
+  per_trade_maximum: 2.0  # FR18: Maximum risk per trade (percentage)
+  pattern_risk_percentages:
+    SPRING: 0.5  # Phase C test entry
+    ST: 0.5      # Secondary Test
+    LPS: 0.7     # Last Point of Support (HIGHEST allocation - best EV)
+    SOS: 0.8     # Sign of Strength
+    UTAD: 0.5    # Upthrust After Distribution (Phase C shorts only)
+
+  rationale:
+    SPRING: |
+      Phase C test entry with tight structural stop (2% below spring_low).
+      Win rate: ~70% with proper PS/SC/AR Phase A-B context.
+      Risk allocation: 0.5% (conservative first entry in accumulation campaign).
+
+      Wyckoff Context:
+      The Spring is your first indication that the Composite Operator has absorbed
+      supply and is ready to markup. Risk small here - you'll add at ST and LPS.
+
+      Campaign Position: FIRST entry (establish initial position, 0.5% risk)
+      Stop Structure: Spring low - 2% (tight, structural)
+      Expected Value: 0.70 × 3.5R × $500 = $1,225 gross return
+
+    ST: |
+      Secondary Test validates Spring (3% below Spring low).
+      Win rate: ~65-70% depending on context.
+      - With validated Spring (PS/SC/AR sequence): ~70% (same as Spring)
+      - Standalone ST (weak Phase C): ~60% (reduced confirmation)
+      Risk allocation: 0.5% assumes mixed scenarios across all ST detections.
+
+      Wyckoff Context:
+      The Secondary Test confirms the Spring was genuine accumulation, not a bull trap.
+      If ST holds above Spring low, accumulation structure is likely complete.
+
+      Campaign Position: SECOND entry (add to Spring position, 0.5% risk)
+      Stop Structure: Spring low - 3% (validates Spring support)
+      Expected Value: 0.65 × 3.3R × $500 = $1,073 gross return
+
+    LPS: |
+      Last Point of Support after SOS breakout (3% below Ice).
+      Win rate: ~75% (HIGHEST) - dual confirmation structure.
+      Risk allocation: 0.7% (HIGHEST despite tighter stop than SOS).
+
+      Why LPS gets MORE risk than SOS:
+      1. Higher win rate (75% vs 55%) - dual confirmation reduces failure
+      2. Better R-multiple (3.33R vs 2.5R) - tighter stop improves risk:reward
+      3. Superior expected value: $1,573 vs $740 (112% higher than SOS)
+
+      Position size auto-adjusts for stop width (Story 7.2), so 0.7% LPS risk
+      with 3% stop produces similar dollar risk per share as 0.8% SOS with 5% stop.
+
+      Wyckoff Context:
+      "The LPS is the classic 'last chance' entry before markup accelerates.
+      Old resistance (Ice) has proven itself as support. This is THE trade."
+
+      Campaign Position: THIRD/FINAL entry (maximum confirmation, 0.7% risk)
+      Stop Structure: Ice - 3% (support confirmation)
+      Expected Value: 0.75 × 3.33R × $700 = $1,573 gross return (BEST)
+
+    SOS: |
+      Sign of Strength breakout entry (5% below Ice).
+      Win rate: ~55% (false-breakout risk without pullback confirmation).
+      Risk allocation: 0.8% (reduced from 1.0% in v1.0).
+
+      Why SOS gets LESS risk than LPS despite wider stop:
+      1. Lower win rate (55% vs 75%) - no pullback confirmation, "Jump the Creek" risk
+      2. Worse R-multiple (2.5R vs 3.33R) - wider stop reduces risk:reward ratio
+      3. Inferior expected value: $740 vs $1,573 (47% of LPS expected value)
+
+      Three Wyckoff risk factors justify 0.8% (down from 1.0%):
+      1. Wider structural stop (5% vs 3% LPS) = higher dollar risk per share
+      2. Lower win rate (~55%) due to false-breakout risk (no LPS confirmation)
+      3. Single-phase validation (SOS only) vs dual-phase (SOS + LPS)
+
+      Wyckoff Context:
+      "Entering on the SOS without waiting for the LPS is impatient trading.
+      You're paying a wider stop and accepting lower probability for immediate entry."
+
+      Campaign Position: ALTERNATIVE entry if no LPS forms (10-bar window)
+      Stop Structure: Ice - 5% (wider, absorbs false-breakout risk)
+      Expected Value: 0.55 × 2.5R × $800 = $740 gross return (inferior to LPS)
+
+    UTAD: |
+      Upthrust After Distribution - Phase C short entry (2% above UTAD high).
+      Win rate: ~70% with proper Phase C validation (85+ confidence).
+      Risk allocation: 0.5% (tight stop, but REQUIRES Phase C confirmation).
+
+      CRITICAL: UTAD is Phase C ONLY. Do NOT short Phase A-B uptrusts.
+
+      Phase Validation Context:
+      - Proper Phase C + volume + 85+ confidence: ~70% win rate (excellent short)
+      - Premature UTAD in Phase B: ~40% win rate (TRAP - price may rally)
+      - Phase validation is NON-NEGOTIABLE for UTAD entries
+
+      Wyckoff Context:
+      "The Upthrust After Distribution (UTAD) is the distribution equivalent of
+      the Spring. It tests overhead supply one final time before markdown begins.
+      Short here with a tight stop above the UTAD high, but ONLY after Phase C
+      is confirmed."
+
+      Campaign Position: SHORT entry (distribution reversal, 0.5% risk)
+      Stop Structure: UTAD high + 2% (tight, structural)
+      Expected Value: 0.70 × 3.5R × $500 = $1,225 gross return
+      Phase Requirement: Phase C confidence ≥85% (NON-NEGOTIABLE)
+
+  override_allowed: true  # AC 6: Allow user to customize within limits
+  override_constraints:
+    minimum_risk_pct: 0.1
+    maximum_risk_pct: 2.0  # Enforces FR18 per-trade maximum

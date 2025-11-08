@@ -157,6 +157,12 @@ class Settings(BaseSettings):
         description="Backend API server port",
     )
 
+    # Risk Management Configuration
+    risk_allocation_config_path: str = Field(
+        default="backend/config/risk_allocation.yaml",
+        description="Path to risk allocation configuration file",
+    )
+
     @field_validator("database_url", mode="before")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
@@ -175,3 +181,15 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """
+    Get the global settings instance.
+
+    Returns
+    -------
+    Settings
+        Application settings object
+    """
+    return settings
