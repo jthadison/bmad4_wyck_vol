@@ -26,7 +26,7 @@ Author: Story 7.3
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -230,7 +230,7 @@ class PortfolioHeat(BaseModel):
     volume_multiplier: Decimal = Field(
         ..., description="Volume-based risk multiplier (0.70-1.0)"
     )
-    volume_adjusted_limit: Optional[Decimal] = Field(
+    volume_adjusted_limit: Decimal | None = Field(
         default=None, description="Limit after volume adjustment (if applied)"
     )
 

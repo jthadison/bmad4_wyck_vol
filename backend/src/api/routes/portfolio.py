@@ -12,9 +12,8 @@ GET /api/v1/portfolio/heat - Returns comprehensive portfolio heat report
 Author: Story 7.3 (AC 10)
 """
 
-from fastapi import APIRouter, HTTPException, status
-
 import structlog
+from fastapi import APIRouter, HTTPException, status
 
 from src.models.portfolio import PortfolioHeat, Position
 from src.risk_management.portfolio import build_portfolio_heat_report

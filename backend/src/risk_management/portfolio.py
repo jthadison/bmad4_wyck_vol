@@ -30,7 +30,6 @@ Author: Story 7.3
 
 from collections import defaultdict
 from decimal import Decimal
-from typing import Optional
 
 import structlog
 
@@ -649,7 +648,7 @@ def validate_portfolio_heat_capacity(
     current_heat: Decimal,
     new_position_risk: Decimal,
     positions: list[Position],
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Validate that adding a new position won't exceed portfolio heat limits.
 
