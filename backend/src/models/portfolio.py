@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 @dataclass
@@ -244,9 +244,25 @@ class PortfolioHeat(BaseModel):
         default_factory=list, description="Context-aware warnings"
     )
 
-    class Config:
-        """Pydantic configuration for JSON encoding."""
+    model_config = ConfigDict(
+        # Pydantic v2 configuration - using field_serializer instead of json_encoders
+    )
 
-        json_encoders = {
-            Decimal: str  # Serialize Decimal as string to preserve precision
-        }
+    @field_serializer(
+        "raw_heat",
+        "correlation_adjusted_heat",
+        "total_heat",
+        "available_capacity",
+        "applied_heat_limit",
+        "weighted_volume_score",
+        "volume_multiplier",
+        "volume_adjusted_limit",
+    )
+    def serialize_decimal(self, value: Decimal | None) -> str | None:
+        """Serialize Decimal fields as strings to preserve precision."""
+        return str(value) if value is not None else None
+
+    @field_serializer("risk_breakdown")
+    def serialize_risk_breakdown(self, value: dict[str, Decimal]) -> dict[str, str]:
+        """Serialize risk_breakdown Decimal values as strings."""
+        return {k: str(v) for k, v in value.items()}

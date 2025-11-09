@@ -104,7 +104,42 @@ async def get_portfolio_heat() -> PortfolioHeat:
 
         return portfolio_heat
 
+    except ValueError as e:
+        # Calculation or validation errors (e.g., invalid Decimal operations)
+        logger.error(
+            "portfolio_heat_calculation_error",
+            error=str(e),
+            error_type="ValueError",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "PORTFOLIO_HEAT_CALCULATION_ERROR",
+                    "message": "Error calculating portfolio heat",
+                    "details": {"error": str(e)},
+                }
+            },
+        )
+    except KeyError as e:
+        # Missing required data fields
+        logger.error(
+            "portfolio_data_incomplete",
+            error=str(e),
+            error_type="KeyError",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": {
+                    "code": "PORTFOLIO_DATA_INCOMPLETE",
+                    "message": "Portfolio data structure incomplete",
+                    "details": {"missing_field": str(e)},
+                }
+            },
+        )
     except Exception as e:
+        # Repository or other unexpected errors
         logger.error(
             "portfolio_heat_retrieval_failed",
             error=str(e),
@@ -115,7 +150,7 @@ async def get_portfolio_heat() -> PortfolioHeat:
             detail={
                 "error": {
                     "code": "PORTFOLIO_HEAT_RETRIEVAL_FAILED",
-                    "message": "Failed to retrieve portfolio heat",
+                    "message": "Failed to retrieve portfolio heat (repository or service error)",
                     "details": {"error": str(e)},
                 }
             },
