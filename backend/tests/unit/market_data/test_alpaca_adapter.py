@@ -50,6 +50,7 @@ async def test_alpaca_adapter_initialization(mock_settings):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(5)  # Prevent hanging in CI
 async def test_connect_success(alpaca_adapter):
     """Test successful WebSocket connection and authentication."""
     # Mock WebSocket connection
