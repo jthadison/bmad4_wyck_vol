@@ -4,6 +4,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.routes import portfolio
 from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
@@ -13,6 +14,9 @@ app = FastAPI(
     description="API for Wyckoff pattern detection and trade signal generation",
     version="0.1.0",
 )
+
+# Include routers
+app.include_router(portfolio.router)
 
 # Configure CORS
 app.add_middleware(
