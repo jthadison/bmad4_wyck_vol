@@ -70,7 +70,7 @@ def get_close_position(bar: OHLCVBar) -> float:
     if bar.high == bar.low:
         return 0.5  # Doji - no range
 
-    close_position = (bar.close - bar.low) / (bar.high - bar.low)
+    close_position = float(bar.close - bar.low) / float(bar.high - bar.low)
     return close_position
 
 
@@ -116,7 +116,7 @@ def get_volume_spread_context(
     volume_ratio = bar.volume / avg_volume if avg_volume > 0 else 1.0
 
     # Calculate result (spread)
-    spread = (bar.high - bar.low) / bar.close if bar.close > 0 else 0.0
+    spread = float(bar.high - bar.low) / float(bar.close) if bar.close > 0 else 0.0
     spread_ratio = spread / avg_spread if avg_spread > 0 else 1.0
 
     # Close position
@@ -236,7 +236,7 @@ def check_preliminary_supply(events: PhaseEvents, bars: list[OHLCVBar]) -> bool:
 
     for bar in search_range:
         volume_ratio = bar.volume / avg_volume if avg_volume > 0 else 1.0
-        spread = (bar.high - bar.low) / bar.close if bar.close > 0 else 0.0
+        spread = float(bar.high - bar.low) / float(bar.close) if bar.close > 0 else 0.0
         close_pos = get_close_position(bar)
 
         # PS criteria (VSA)
@@ -297,8 +297,8 @@ def check_distribution_volume_signature(bars: list[OHLCVBar]) -> bool:
     avg_down_volume = float(np.mean([b.volume for b in down_bars]))
 
     # Spread comparison
-    avg_up_spread = float(np.mean([(b.high - b.low) / b.close for b in up_bars if b.close > 0]))
-    avg_down_spread = float(np.mean([(b.high - b.low) / b.close for b in down_bars if b.close > 0]))
+    avg_up_spread = float(np.mean([float(b.high - b.low) / float(b.close) for b in up_bars if b.close > 0]))
+    avg_down_spread = float(np.mean([float(b.high - b.low) / float(b.close) for b in down_bars if b.close > 0]))
 
     # Distribution signs
     volume_declining_on_rallies = avg_up_volume < avg_down_volume * 0.8
@@ -431,7 +431,7 @@ def calculate_average_spread(bars: list[OHLCVBar], period: int = 20) -> float:
         return 0.0
 
     recent_bars = bars[-period:] if len(bars) >= period else bars
-    spreads = [(b.high - b.low) / b.close for b in recent_bars if b.close > 0]
+    spreads = [float(b.high - b.low) / float(b.close) for b in recent_bars if b.close > 0]
 
     if not spreads:
         return 0.0
