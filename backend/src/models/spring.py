@@ -83,9 +83,7 @@ class Spring(BaseModel):
         max_digits=10,
         description="Volume ratio (<0.7x required by FR12)",
     )
-    recovery_bars: int = Field(
-        ..., ge=1, le=5, description="Bars to recover above Creek (1-5)"
-    )
+    recovery_bars: int = Field(..., ge=1, le=5, description="Bars to recover above Creek (1-5)")
     creek_reference: Decimal = Field(
         ...,
         decimal_places=8,
@@ -104,9 +102,7 @@ class Spring(BaseModel):
         max_digits=18,
         description="Price that closed above Creek",
     )
-    detection_timestamp: datetime = Field(
-        ..., description="When spring was detected (UTC)"
-    )
+    detection_timestamp: datetime = Field(..., description="When spring was detected (UTC)")
     trading_range_id: UUID = Field(..., description="Associated trading range")
 
     @field_validator("detection_timestamp", mode="before")
@@ -248,13 +244,9 @@ class Spring(BaseModel):
         Returns:
             str: Quality tier (IDEAL, GOOD, or ACCEPTABLE)
         """
-        if self.penetration_pct <= Decimal("0.02") and self.volume_ratio < Decimal(
-            "0.3"
-        ):
+        if self.penetration_pct <= Decimal("0.02") and self.volume_ratio < Decimal("0.3"):
             return "IDEAL"
-        elif self.penetration_pct <= Decimal("0.03") and self.volume_ratio < Decimal(
-            "0.5"
-        ):
+        elif self.penetration_pct <= Decimal("0.03") and self.volume_ratio < Decimal("0.5"):
             return "GOOD"
         else:
             return "ACCEPTABLE"

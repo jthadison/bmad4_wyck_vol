@@ -16,14 +16,13 @@ from uuid import uuid4
 
 import pytest
 
-from src.models.ohlcv import OHLCVBar
-from src.models.phase_classification import WyckoffPhase, PhaseClassification
-from src.models.sos_breakout import SOSBreakout
-from src.models.trading_range import TradingRange, RangeStatus
-from src.models.price_cluster import PriceCluster
 from src.models.ice_level import IceLevel
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import PhaseClassification, WyckoffPhase
 from src.models.pivot import Pivot, PivotType
+from src.models.price_cluster import PriceCluster
 from src.models.touch_detail import TouchDetail
+from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.detectors.sos_detector import detect_sos_breakout
 
 
@@ -395,9 +394,7 @@ def test_volume_boundary_149_rejects_150_passes():
     }
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
-    sos_reject = detect_sos_breakout(
-        trading_range, bars_reject, volume_analysis_reject, phase
-    )
+    sos_reject = detect_sos_breakout(trading_range, bars_reject, volume_analysis_reject, phase)
     assert sos_reject is None, "1.49x volume should reject (< 1.5x threshold)"
 
     # Test 1.50x - should PASS
@@ -413,9 +410,7 @@ def test_volume_boundary_149_rejects_150_passes():
         }
     }
 
-    sos_pass = detect_sos_breakout(
-        trading_range, bars_pass, volume_analysis_pass, phase
-    )
+    sos_pass = detect_sos_breakout(trading_range, bars_pass, volume_analysis_pass, phase)
     assert sos_pass is not None, "1.50x volume should pass (>= 1.5x threshold, FR12)"
     assert sos_pass.volume_ratio == Decimal("1.50")
 
@@ -1026,20 +1021,26 @@ def test_close_position_boundaries():
 
     # 0.49 should reject
     bars_049 = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.49"))
-    volume_analysis_049 = create_volume_analysis_with_quality(bars_049, Decimal("2.0"), Decimal("1.2"))
+    volume_analysis_049 = create_volume_analysis_with_quality(
+        bars_049, Decimal("2.0"), Decimal("1.2")
+    )
     sos_049 = detect_sos_breakout(trading_range, bars_049, volume_analysis_049, phase)
     assert sos_049 is None, "0.49 close position should reject"
 
     # 0.50 should pass (MARGINAL)
     bars_050 = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.50"))
-    volume_analysis_050 = create_volume_analysis_with_quality(bars_050, Decimal("2.0"), Decimal("1.2"))
+    volume_analysis_050 = create_volume_analysis_with_quality(
+        bars_050, Decimal("2.0"), Decimal("1.2")
+    )
     sos_050 = detect_sos_breakout(trading_range, bars_050, volume_analysis_050, phase)
     assert sos_050 is not None, "0.50 close position should pass (MARGINAL)"
     assert sos_050.close_position_tier == "MARGINAL"
 
     # 0.69 should pass (MARGINAL)
     bars_069 = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.69"))
-    volume_analysis_069 = create_volume_analysis_with_quality(bars_069, Decimal("2.0"), Decimal("1.2"))
+    volume_analysis_069 = create_volume_analysis_with_quality(
+        bars_069, Decimal("2.0"), Decimal("1.2")
+    )
     sos_069 = detect_sos_breakout(trading_range, bars_069, volume_analysis_069, phase)
     assert sos_069 is not None, "0.69 close position should pass (MARGINAL)"
     assert sos_069.close_position < Decimal("0.7")
@@ -1047,7 +1048,9 @@ def test_close_position_boundaries():
 
     # 0.70 should pass (PASS)
     bars_070 = create_bars_with_close_position(ice_level=ice_level, close_pct=Decimal("0.70"))
-    volume_analysis_070 = create_volume_analysis_with_quality(bars_070, Decimal("2.0"), Decimal("1.2"))
+    volume_analysis_070 = create_volume_analysis_with_quality(
+        bars_070, Decimal("2.0"), Decimal("1.2")
+    )
     sos_070 = detect_sos_breakout(trading_range, bars_070, volume_analysis_070, phase)
     assert sos_070 is not None, "0.70 close position should pass (PASS)"
     assert sos_070.close_position >= Decimal("0.7")

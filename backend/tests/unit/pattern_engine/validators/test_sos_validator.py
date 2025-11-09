@@ -26,7 +26,6 @@ import pytest
 from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.validators.sos_validator import SOSValidator
 
-
 # -------------------------------------------------------------------------
 # Fixtures
 # -------------------------------------------------------------------------
@@ -149,21 +148,15 @@ def test_sos_volume_boundary_cases(
     - 1.51x: should pass
     """
     # 1.49x: reject
-    is_valid_1_49, _ = validator.validate_sos_volume(
-        sample_bar, Decimal("1.49"), correlation_id
-    )
+    is_valid_1_49, _ = validator.validate_sos_volume(sample_bar, Decimal("1.49"), correlation_id)
     assert is_valid_1_49 is False, "1.49x should reject"
 
     # 1.50x: pass
-    is_valid_1_50, _ = validator.validate_sos_volume(
-        sample_bar, Decimal("1.50"), correlation_id
-    )
+    is_valid_1_50, _ = validator.validate_sos_volume(sample_bar, Decimal("1.50"), correlation_id)
     assert is_valid_1_50 is True, "1.50x should pass"
 
     # 1.51x: pass
-    is_valid_1_51, _ = validator.validate_sos_volume(
-        sample_bar, Decimal("1.51"), correlation_id
-    )
+    is_valid_1_51, _ = validator.validate_sos_volume(sample_bar, Decimal("1.51"), correlation_id)
     assert is_valid_1_51 is True, "1.51x should pass"
 
 
@@ -193,9 +186,9 @@ def test_high_volume_narrow_spread_reduces_confidence(
     # Assert (AC 8 - REVISED)
     assert is_valid is True, "High volume (2.5x) should pass volume validation"
     # REVISED: Quality should be "suspicious" not "good"
-    assert validation_result["quality"] == "suspicious", (
-        "High volume with narrow spread should be suspicious (REVISED)"
-    )
+    assert (
+        validation_result["quality"] == "suspicious"
+    ), "High volume with narrow spread should be suspicious (REVISED)"
     assert validation_result["confidence_impact"] in ["low", "low_moderate"]
     assert warning is not None, "Should have warning about narrow spread"
     assert (
@@ -230,9 +223,9 @@ def test_spread_contraction_scenarios(
         sample_bar, Decimal("2.5"), Decimal("1.0"), correlation_id
     )
     assert is_valid_2 is True, "Should pass volume validation"
-    assert result_2["quality"] == "acceptable_with_warning", (
-        "2.5x volume + 1.0x spread = acceptable with warning (REVISED logic)"
-    )
+    assert (
+        result_2["quality"] == "acceptable_with_warning"
+    ), "2.5x volume + 1.0x spread = acceptable with warning (REVISED logic)"
     assert warning_2 is not None, "Should have warning"
 
     # 2.5x volume + 1.1x spread: ACCEPTABLE WITH WARNING
@@ -240,9 +233,9 @@ def test_spread_contraction_scenarios(
         sample_bar, Decimal("2.5"), Decimal("1.1"), correlation_id
     )
     assert is_valid_3 is True, "Should pass volume validation"
-    assert result_3["quality"] == "acceptable_with_warning", (
-        "Should be acceptable with warning (narrow but high volume)"
-    )
+    assert (
+        result_3["quality"] == "acceptable_with_warning"
+    ), "Should be acceptable with warning (narrow but high volume)"
     assert result_3["confidence_impact"] == "moderate_reduced"
 
     # 3.0x volume + 0.9x spread: SUSPICIOUS
@@ -330,9 +323,9 @@ def test_low_volume_narrow_spread_suspicious(
     assert warning is not None
     # Warning contains either spread warning or false breakout warning
     assert (
-        "false breakout" in warning.lower() or
-        "narrow" in warning.lower() or
-        "absorption" in warning.lower()
+        "false breakout" in warning.lower()
+        or "narrow" in warning.lower()
+        or "absorption" in warning.lower()
     ), "Warning should mention false breakout, narrow spread, or absorption"
 
 
@@ -392,9 +385,9 @@ def test_volume_quality_classification(
     - excellent: >=2.5x
     """
     quality = validator.classify_volume_quality(volume_ratio)
-    assert quality == expected_quality, (
-        f"Volume {volume_ratio}x should be {expected_quality}, got {quality}"
-    )
+    assert (
+        quality == expected_quality
+    ), f"Volume {volume_ratio}x should be {expected_quality}, got {quality}"
 
 
 # -------------------------------------------------------------------------
@@ -434,9 +427,9 @@ def test_spread_quality_classification(
     - wide: >=1.5x (ideal)
     """
     _, _, quality = validator.validate_sos_spread(sample_bar, spread_ratio, correlation_id)
-    assert quality == expected_quality, (
-        f"Spread {spread_ratio}x should be {expected_quality}, got {quality}"
-    )
+    assert (
+        quality == expected_quality
+    ), f"Spread {spread_ratio}x should be {expected_quality}, got {quality}"
 
 
 # -------------------------------------------------------------------------
@@ -469,14 +462,12 @@ def test_volume_rejection_logging(
     assert rejection_reason is not None
 
     # AC 6: Specific threshold violated in rejection message
-    assert "1.5" in rejection_reason, (
-        "Rejection reason should include 1.5x threshold (AC 6)"
-    )
+    assert "1.5" in rejection_reason, "Rejection reason should include 1.5x threshold (AC 6)"
 
     # AC 10: FR12 compliance marker in rejection message
-    assert "FR12" in rejection_reason, (
-        "Rejection reason should include FR12 compliance marker (AC 10)"
-    )
+    assert (
+        "FR12" in rejection_reason
+    ), "Rejection reason should include FR12 compliance marker (AC 10)"
 
     # Verify rejection reason includes key information
     assert "insufficient confirmation" in rejection_reason

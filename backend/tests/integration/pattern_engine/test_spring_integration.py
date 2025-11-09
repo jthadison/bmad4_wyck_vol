@@ -14,10 +14,11 @@ logic comprehensively. This integration test focuses specifically on verifying
 the VolumeAnalyzer integration works correctly with real volume calculations.
 """
 
-import pytest
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
+
+import pytest
 
 from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.volume_analyzer import calculate_volume_ratio
@@ -82,26 +83,31 @@ def test_volume_analyzer_integration_for_spring_detection():
     # Test bar 25 (low volume spring candidate)
     bar_25_volume_ratio = calculate_volume_ratio(bars, 25)
     assert bar_25_volume_ratio is not None, "Volume ratio should be calculated for bar 25"
-    assert 0.20 <= bar_25_volume_ratio <= 0.30, \
-        f"Bar 25 volume ratio should be ~0.25x (got {bar_25_volume_ratio:.2f}x)"
-    assert bar_25_volume_ratio < 0.7, \
-        "Bar 25 volume ratio should be <0.7x (ACCEPTED for Spring per FR12)"
+    assert (
+        0.20 <= bar_25_volume_ratio <= 0.30
+    ), f"Bar 25 volume ratio should be ~0.25x (got {bar_25_volume_ratio:.2f}x)"
+    assert (
+        bar_25_volume_ratio < 0.7
+    ), "Bar 25 volume ratio should be <0.7x (ACCEPTED for Spring per FR12)"
 
     # Test bar 26 (high volume breakdown)
     bar_26_volume_ratio = calculate_volume_ratio(bars, 26)
     assert bar_26_volume_ratio is not None, "Volume ratio should be calculated for bar 26"
-    assert 0.75 <= bar_26_volume_ratio <= 0.85, \
-        f"Bar 26 volume ratio should be ~0.8x (got {bar_26_volume_ratio:.2f}x)"
-    assert bar_26_volume_ratio >= 0.7, \
-        "Bar 26 volume ratio should be >=0.7x (REJECTED for Spring per FR12)"
+    assert (
+        0.75 <= bar_26_volume_ratio <= 0.85
+    ), f"Bar 26 volume ratio should be ~0.8x (got {bar_26_volume_ratio:.2f}x)"
+    assert (
+        bar_26_volume_ratio >= 0.7
+    ), "Bar 26 volume ratio should be >=0.7x (REJECTED for Spring per FR12)"
 
     # Validate calculation methodology (20-bar average)
     # For bar 25: avg of bars [5:25] should be ~1M, so 250K / 1M = 0.25x
     bars_for_avg = bars[5:25]
     avg_volume = sum(b.volume for b in bars_for_avg) / len(bars_for_avg)
     expected_ratio_bar_25 = bars[25].volume / avg_volume
-    assert abs(bar_25_volume_ratio - expected_ratio_bar_25) < 0.01, \
-        f"VolumeAnalyzer calculation should match manual calc (expected {expected_ratio_bar_25:.2f}, got {bar_25_volume_ratio:.2f})"
+    assert (
+        abs(bar_25_volume_ratio - expected_ratio_bar_25) < 0.01
+    ), f"VolumeAnalyzer calculation should match manual calc (expected {expected_ratio_bar_25:.2f}, got {bar_25_volume_ratio:.2f})"
 
 
 @pytest.mark.integration
@@ -143,8 +149,9 @@ def test_volume_analyzer_insufficient_bars():
     volume_ratio = calculate_volume_ratio(bars, 10)
 
     # Should return None (insufficient bars for 20-bar average)
-    assert volume_ratio is None, \
-        "VolumeAnalyzer should return None when there are <20 bars of history"
+    assert (
+        volume_ratio is None
+    ), "VolumeAnalyzer should return None when there are <20 bars of history"
 
 
 @pytest.mark.integration
@@ -194,8 +201,9 @@ def test_volume_analyzer_edge_case_zero_average():
     volume_ratio = calculate_volume_ratio(bars, 20)
 
     # Should return None (cannot divide by zero average)
-    assert volume_ratio is None, \
-        "VolumeAnalyzer should return None when average volume is zero (avoid division by zero)"
+    assert (
+        volume_ratio is None
+    ), "VolumeAnalyzer should return None when average volume is zero (avoid division by zero)"
 
 
 @pytest.mark.integration
@@ -215,12 +223,12 @@ def test_test_confirmation_detection_integration():
     This demonstrates FR13 enforcement: Springs require test confirmation
     before being tradeable.
     """
-    from src.models.spring import Spring
+    from src.models.creek_level import CreekLevel
     from src.models.pivot import Pivot, PivotType
     from src.models.price_cluster import PriceCluster
-    from src.models.creek_level import CreekLevel
+    from src.models.spring import Spring
     from src.models.touch_detail import TouchDetail
-    from src.models.trading_range import TradingRange, RangeStatus
+    from src.models.trading_range import RangeStatus, TradingRange
     from src.pattern_engine.detectors.spring_detector import detect_test_confirmation
 
     # Test parameters
@@ -466,9 +474,7 @@ def test_test_confirmation_detection_integration():
     assert test is not None, "Test confirmation should be detected (FR13)"
 
     # Validate test bar
-    assert (
-        test.bar.timestamp == test_bar.timestamp
-    ), "Test should be detected at bar 25"
+    assert test.bar.timestamp == test_bar.timestamp, "Test should be detected at bar 25"
 
     # Validate timing
     assert test.bars_after_spring == 5, "Test should be 5 bars after spring"
@@ -485,17 +491,17 @@ def test_test_confirmation_detection_integration():
     assert test.bar.low >= spring_low, "Test low should be >= spring low"
 
     # Validate distance from spring
-    assert (
-        test.distance_pct <= Decimal("0.03")
-    ), "Test should be within 3% of spring low"
+    assert test.distance_pct <= Decimal("0.03"), "Test should be within 3% of spring low"
 
     # Validate volume decrease percentage (test < spring)
     # Note: volume_decrease_pct uses actual VolumeAnalyzer calculations,
     # so expect some variance from simple ratio (0.4 - 0.25) / 0.4 = 37.5%
-    assert test.volume_decrease_pct > Decimal("0.2"), \
-        f"Volume decrease should be > 20% (got {test.volume_decrease_pct:.1%})"
-    assert test.volume_decrease_pct < Decimal("0.6"), \
-        f"Volume decrease should be < 60% (got {test.volume_decrease_pct:.1%})"
+    assert test.volume_decrease_pct > Decimal(
+        "0.2"
+    ), f"Volume decrease should be > 20% (got {test.volume_decrease_pct:.1%})"
+    assert test.volume_decrease_pct < Decimal(
+        "0.6"
+    ), f"Volume decrease should be < 60% (got {test.volume_decrease_pct:.1%})"
 
     # Validate test quality
     assert test.quality_score in [
@@ -515,7 +521,7 @@ def test_test_confirmation_detection_integration():
     # 4. Test volume < spring volume (supply exhaustion confirmed)
     # 5. FR13: Spring is now tradeable (will be used in Story 5.5 signal generation)
 
-    print(f"\n=== Test Confirmation Integration Test Results ===")
+    print("\n=== Test Confirmation Integration Test Results ===")
     print(f"Spring detected at: {spring.bar.timestamp}")
     print(f"Spring low: ${spring.spring_low}")
     print(f"Spring volume: {spring.volume_ratio}x average")
@@ -525,4 +531,4 @@ def test_test_confirmation_detection_integration():
     print(f"Volume decrease: {test.volume_decrease_pct:.1%}")
     print(f"Distance from spring: {test.distance_pct:.2%}")
     print(f"Test quality: {test.quality_score}")
-    print(f"\nFR13 Status: Spring is TRADEABLE (test confirmed)\n")
+    print("\nFR13 Status: Spring is TRADEABLE (test confirmed)\n")

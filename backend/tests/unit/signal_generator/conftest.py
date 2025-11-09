@@ -4,8 +4,8 @@ Shared test fixtures for SOS/LPS signal generator tests.
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import uuid4
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
 
@@ -14,7 +14,7 @@ from src.models.ohlcv import OHLCVBar
 from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
 from src.models.sos_breakout import SOSBreakout
-from src.models.trading_range import TradingRange, RangeStatus
+from src.models.trading_range import RangeStatus, TradingRange
 
 
 @pytest.fixture

@@ -14,31 +14,28 @@ Test Coverage:
 - Confidence threshold enforcement (70%)
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
 
+import pytest
+
+from src.models.automatic_rally import AutomaticRally
+from src.models.phase_classification import PhaseEvents, WyckoffPhase
+from src.models.secondary_test import SecondaryTest
+from src.models.selling_climax import SellingClimax
 from src.pattern_engine.phase_detector import (
+    MIN_PHASE_CONFIDENCE,
     calculate_phase_confidence,
     should_reject_phase,
-    MIN_PHASE_CONFIDENCE,
 )
-from src.models.phase_classification import WyckoffPhase, PhaseEvents
-from src.models.selling_climax import SellingClimax
-from src.models.automatic_rally import AutomaticRally
-from src.models.secondary_test import SecondaryTest
-from src.models.trading_range import TradingRange
-from src.models.price_cluster import PriceCluster
-from src.models.creek_level import CreekLevel
-from src.models.ice_level import IceLevel
-
 
 # Test Fixtures
+
 
 @pytest.fixture
 def base_timestamp():
     """Base timestamp for test data."""
-    return datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc)
+    return datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -108,7 +105,9 @@ def marginal_sc(base_timestamp):
         bar_index=15,
         volume_ratio=Decimal("2.0"),  # Minimum volume (30 pts)
         spread_ratio=Decimal("1.5"),  # Minimum spread (20 pts)
-        close_position=Decimal("0.67"),  # Marginal close position (15 pts + 7 extra = 22 pts? Let's target 72)
+        close_position=Decimal(
+            "0.67"
+        ),  # Marginal close position (15 pts + 7 extra = 22 pts? Let's target 72)
         confidence=72,  # Just above minimum 70
         prior_close=Decimal("101.00"),
         detection_timestamp=base_timestamp,
@@ -186,16 +185,14 @@ def trading_range_with_levels(base_timestamp):
 
 # Test Cases
 
+
 class TestPerfectPhaseA:
     """Test perfect Phase A sequence (should score 95+)."""
 
-    def test_perfect_phase_a_confidence(
-        self, perfect_sc, perfect_ar, trading_range_with_levels
-    ):
+    def test_perfect_phase_a_confidence(self, perfect_sc, perfect_ar, trading_range_with_levels):
         """Perfect Phase A with excellent SC and AR should score 85+."""
         events = PhaseEvents(
-            selling_climax=perfect_sc.model_dump(),
-            automatic_rally=perfect_ar.model_dump()
+            selling_climax=perfect_sc.model_dump(), automatic_rally=perfect_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(
@@ -217,17 +214,16 @@ class TestPerfectPhaseA:
     def test_perfect_phase_a_passes_fr3(self, perfect_sc, perfect_ar):
         """Perfect Phase A must pass FR3 threshold (70%)."""
         events = PhaseEvents(
-            selling_climax=perfect_sc.model_dump(),
-            automatic_rally=perfect_ar.model_dump()
+            selling_climax=perfect_sc.model_dump(), automatic_rally=perfect_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(
             phase=WyckoffPhase.A, events=events, trading_range=None
         )
 
-        assert confidence >= MIN_PHASE_CONFIDENCE, (
-            f"Perfect Phase A confidence {confidence}% below FR3 minimum {MIN_PHASE_CONFIDENCE}%"
-        )
+        assert (
+            confidence >= MIN_PHASE_CONFIDENCE
+        ), f"Perfect Phase A confidence {confidence}% below FR3 minimum {MIN_PHASE_CONFIDENCE}%"
         assert not should_reject_phase(confidence)
 
 
@@ -293,7 +289,7 @@ class TestPerfectPhaseB:
         events = PhaseEvents(
             selling_climax=perfect_sc.model_dump(),
             automatic_rally=perfect_ar.model_dump(),
-            secondary_tests=[high_quality_st.model_dump(), st2.model_dump(), st3.model_dump()]
+            secondary_tests=[high_quality_st.model_dump(), st2.model_dump(), st3.model_dump()],
         )
 
         confidence = calculate_phase_confidence(
@@ -318,8 +314,7 @@ class TestAmbiguousPhase:
     def test_ambiguous_phase_a(self, marginal_sc, marginal_ar):
         """Marginal Phase A with borderline events should score 70-80 (passes FR3 but barely)."""
         events = PhaseEvents(
-            selling_climax=marginal_sc.model_dump(),
-            automatic_rally=marginal_ar.model_dump()
+            selling_climax=marginal_sc.model_dump(), automatic_rally=marginal_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(
@@ -332,16 +327,13 @@ class TestAmbiguousPhase:
         # Sequence validity: 15 pts (valid but late AR, 8 bars)
         # Range context: 0 pts (no range provided)
         # Total: ~70-80 pts (marginal but passes FR3)
-        assert 70 <= confidence < 80, (
-            f"Expected marginal phase to score 70-79, got {confidence}"
-        )
+        assert 70 <= confidence < 80, f"Expected marginal phase to score 70-79, got {confidence}"
         assert not should_reject_phase(confidence), "Marginal phase at 70+ should pass FR3"
 
     def test_marginal_confidence_logged_as_rejection(self, marginal_sc, marginal_ar, caplog):
         """Low confidence phases should log rejection warning."""
         events = PhaseEvents(
-            selling_climax=marginal_sc.model_dump(),
-            automatic_rally=marginal_ar.model_dump()
+            selling_climax=marginal_sc.model_dump(), automatic_rally=marginal_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(
@@ -398,7 +390,7 @@ class TestMissingEvents:
         events = PhaseEvents(
             selling_climax=perfect_sc.model_dump(),
             automatic_rally=perfect_ar.model_dump(),
-            secondary_tests=[]
+            secondary_tests=[],
         )
 
         confidence = calculate_phase_confidence(
@@ -411,7 +403,9 @@ class TestMissingEvents:
         # Sequence validity: 10 pts (Phase A complete, but no STs for spacing/duration)
         # Range context: 0 pts (no range)
         # Total: ~58 pts
-        assert confidence < 70, f"Expected confidence < 70 for Phase B with no STs, got {confidence}"
+        assert (
+            confidence < 70
+        ), f"Expected confidence < 70 for Phase B with no STs, got {confidence}"
         assert should_reject_phase(confidence)
 
 
@@ -421,8 +415,7 @@ class TestSequenceValidation:
     def test_valid_sequence_full_points(self, perfect_sc, perfect_ar):
         """Valid sequence (SC before AR, AR within 5 bars) should score 20 pts."""
         events = PhaseEvents(
-            selling_climax=perfect_sc.model_dump(),
-            automatic_rally=perfect_ar.model_dump()
+            selling_climax=perfect_sc.model_dump(), automatic_rally=perfect_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(
@@ -437,8 +430,7 @@ class TestSequenceValidation:
     def test_delayed_ar_partial_credit(self, perfect_sc, marginal_ar):
         """Delayed AR (8 bars) should get partial sequence credit."""
         events = PhaseEvents(
-            selling_climax=perfect_sc.model_dump(),
-            automatic_rally=marginal_ar.model_dump()
+            selling_climax=perfect_sc.model_dump(), automatic_rally=marginal_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(
@@ -477,8 +469,7 @@ class TestSequenceValidation:
         )
 
         events = PhaseEvents(
-            selling_climax=perfect_sc.model_dump(),
-            automatic_rally=invalid_ar.model_dump()
+            selling_climax=perfect_sc.model_dump(), automatic_rally=invalid_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(
@@ -488,8 +479,12 @@ class TestSequenceValidation:
         # Event: 40, Quality: ~29, Sequence: 10 (order wrong, but timing shows 3 bars), Context: 0 = ~79
         # Invalid order deducts 10 points from sequence (gets 10 instead of 20)
         # Still passes FR3 due to high event quality
-        assert confidence >= 70, f"High quality events can pass despite sequence issues, got {confidence}"
-        assert 75 <= confidence < 85, f"Invalid sequence should reduce but not fail phase, got {confidence}"
+        assert (
+            confidence >= 70
+        ), f"High quality events can pass despite sequence issues, got {confidence}"
+        assert (
+            75 <= confidence < 85
+        ), f"Invalid sequence should reduce but not fail phase, got {confidence}"
 
 
 class TestRangeContext:
@@ -498,8 +493,7 @@ class TestRangeContext:
     def test_no_range_context(self, perfect_sc, perfect_ar):
         """Phase A without range should score 0 context points."""
         events = PhaseEvents(
-            selling_climax=perfect_sc.model_dump(),
-            automatic_rally=perfect_ar.model_dump()
+            selling_climax=perfect_sc.model_dump(), automatic_rally=perfect_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(
@@ -540,8 +534,7 @@ class TestInputValidation:
     def test_invalid_phase_type_raises_error(self, perfect_sc, perfect_ar):
         """Passing invalid phase type should raise ValueError."""
         events = PhaseEvents(
-            selling_climax=perfect_sc.model_dump(),
-            automatic_rally=perfect_ar.model_dump()
+            selling_climax=perfect_sc.model_dump(), automatic_rally=perfect_ar.model_dump()
         )
 
         with pytest.raises(ValueError, match="phase must be WyckoffPhase enum"):
@@ -554,15 +547,12 @@ class TestInputValidation:
     def test_none_events_raises_error(self):
         """Passing None for events should raise ValueError."""
         with pytest.raises(ValueError, match="events cannot be None"):
-            calculate_phase_confidence(
-                phase=WyckoffPhase.A, events=None, trading_range=None
-            )
+            calculate_phase_confidence(phase=WyckoffPhase.A, events=None, trading_range=None)
 
     def test_none_trading_range_logs_warning(self, perfect_sc, perfect_ar, caplog):
         """Passing None for trading_range should log warning but not raise error."""
         events = PhaseEvents(
-            selling_climax=perfect_sc.model_dump(),
-            automatic_rally=perfect_ar.model_dump()
+            selling_climax=perfect_sc.model_dump(), automatic_rally=perfect_ar.model_dump()
         )
 
         confidence = calculate_phase_confidence(

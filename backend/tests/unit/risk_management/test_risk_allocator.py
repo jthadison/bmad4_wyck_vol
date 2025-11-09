@@ -14,12 +14,9 @@ Test Coverage:
 Author: Story 7.1
 """
 
-import logging
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
-from pathlib import Path
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 import pytest
-import structlog
 
 from src.models.risk_allocation import PatternType
 from src.risk_management.risk_allocator import (
@@ -74,8 +71,7 @@ class TestDefaultRiskPercentages:
         for pattern_type, expected_risk in expected.items():
             actual_risk = allocator.get_pattern_risk_pct(pattern_type)
             assert actual_risk == expected_risk, (
-                f"{pattern_type} risk mismatch: "
-                f"expected {expected_risk}%, got {actual_risk}%"
+                f"{pattern_type} risk mismatch: " f"expected {expected_risk}%, got {actual_risk}%"
             )
 
 
@@ -146,9 +142,8 @@ class TestUserOverrideCapability:
         assert allocator.get_pattern_risk_pct(PatternType.SPRING) == Decimal("0.7")
 
         # Without override
-        assert (
-            allocator.get_pattern_risk_pct(PatternType.SPRING, use_override=False)
-            == Decimal("0.5")
+        assert allocator.get_pattern_risk_pct(PatternType.SPRING, use_override=False) == Decimal(
+            "0.5"
         )
 
     def test_get_all_risk_percentages(self, allocator):
@@ -206,9 +201,7 @@ class TestFixedPointArithmetic:
         """All risk percentages should be Decimal type, not float."""
         for pattern_type in PatternType:
             risk_pct = allocator.get_pattern_risk_pct(pattern_type)
-            assert isinstance(
-                risk_pct, Decimal
-            ), f"{pattern_type} risk is not Decimal"
+            assert isinstance(risk_pct, Decimal), f"{pattern_type} risk is not Decimal"
 
     def test_decimal_exact_comparison(self, allocator):
         """Decimal should allow exact comparisons without floating point errors."""
@@ -239,9 +232,7 @@ class TestFixedPointArithmetic:
         position_size = raw_position_size.quantize(Decimal("1"), rounding=ROUND_DOWN)
 
         # Verify rounded down (not up)
-        assert (
-            position_size == Decimal("155")
-        ), f"Expected 155 shares, got {position_size}"
+        assert position_size == Decimal("155"), f"Expected 155 shares, got {position_size}"
         assert position_size < raw_position_size, "Position size should round DOWN"
 
         # Verify actual risk is below target (conservative)

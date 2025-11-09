@@ -261,7 +261,9 @@ def calculate_sos_confidence(
 
     # Extract range start and end timestamps
     range_start = trading_range.start_timestamp
-    range_end = trading_range.end_timestamp or sos.bar.timestamp  # Use SOS bar if range still active
+    range_end = (
+        trading_range.end_timestamp or sos.bar.timestamp
+    )  # Use SOS bar if range still active
 
     # Calculate duration in days (simplified - assumes daily bars)
     duration_days = (range_end - range_start).days if range_start and range_end else 0
@@ -390,7 +392,7 @@ def calculate_sos_confidence(
 
     confidence += phase_bonus_points
 
-    phase_name = current_phase.value if current_phase else 'None'
+    phase_name = current_phase.value if current_phase else "None"
     logger.debug(
         "sos_confidence_phase_bonus",
         current_phase=current_phase.value if current_phase else None,
@@ -398,7 +400,7 @@ def calculate_sos_confidence(
         phase_bonus_points=phase_bonus_points,
         phase_quality=phase_quality,
         message=f"Phase {phase_name} (confidence {phase_confidence_value}) "
-                f"scored {phase_bonus_points} points ({phase_quality})",
+        f"scored {phase_bonus_points} points ({phase_quality})",
     )
 
     # AC 9: Entry type adjustment

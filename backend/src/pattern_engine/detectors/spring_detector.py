@@ -62,11 +62,12 @@ Author: Generated for Story 5.1
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 import structlog
 
+from src.models.creek_level import CreekLevel
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
 from src.models.spring import Spring
@@ -74,8 +75,7 @@ from src.models.spring_confidence import SpringConfidence
 from src.models.spring_history import SpringHistory
 from src.models.spring_signal import SpringSignal
 from src.models.test import Test
-from src.models.trading_range import TradingRange, RangeStatus
-from src.models.creek_level import CreekLevel
+from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.volume_analyzer import calculate_volume_ratio
 from src.pattern_engine.volume_cache import VolumeCache
 
@@ -578,9 +578,7 @@ def detect_test_confirmation(
 
         # Within 3% tolerance (test approaches spring from above)
         if distance_pct <= Decimal("0.03"):
-            test_candidates.append(
-                (bar_index, bar, distance_from_spring_low, distance_pct)
-            )
+            test_candidates.append((bar_index, bar, distance_from_spring_low, distance_pct))
 
             logger.debug(
                 "test_candidate_found",
@@ -638,9 +636,7 @@ def detect_test_confirmation(
     # STEP 5: VALIDATE VOLUME DECREASE REQUIREMENT (Task 6)
     # ============================================================
 
-    confirmed_tests: list[
-        tuple[int, OHLCVBar, Decimal, Decimal, Decimal, Decimal]
-    ] = []
+    confirmed_tests: list[tuple[int, OHLCVBar, Decimal, Decimal, Decimal, Decimal]] = []
 
     for bar_index, bar, distance, distance_pct in valid_candidates:
         # Get volume ratio for test bar using VolumeAnalyzer
@@ -675,9 +671,9 @@ def detect_test_confirmation(
             continue  # Not a valid test
 
         # Calculate volume decrease percentage - round to 4 decimal places
-        volume_decrease_pct = Decimal(str(round(
-            float((spring_volume_ratio - test_volume_ratio) / spring_volume_ratio), 4
-        )))
+        volume_decrease_pct = Decimal(
+            str(round(float((spring_volume_ratio - test_volume_ratio) / spring_volume_ratio), 4))
+        )
 
         logger.info(
             "valid_test_found",
@@ -780,9 +776,7 @@ def detect_test_confirmation(
 
 
 def calculate_spring_confidence(
-    spring: Spring,
-    creek: CreekLevel,
-    previous_tests: Optional[list[Test]] = None
+    spring: Spring, creek: CreekLevel, previous_tests: Optional[list[Test]] = None
 ) -> SpringConfidence:
     """
     Calculate confidence score for Spring pattern quality (FR4 requirement).
@@ -946,7 +940,7 @@ def calculate_spring_confidence(
         logger.info(
             "exceptional_volume_spring",
             volume_ratio=float(volume_ratio),
-            message=f"Exceptionally rare ultra-low volume spring (<0.3x): {volume_points} points"
+            message=f"Exceptionally rare ultra-low volume spring (<0.3x): {volume_points} points",
         )
     elif volume_ratio < Decimal("0.4"):
         volume_points = 30
@@ -968,7 +962,7 @@ def calculate_spring_confidence(
         volume_ratio=float(volume_ratio),
         volume_points=volume_points,
         volume_quality=volume_quality,
-        message=f"Volume {volume_ratio:.2f}x scored {volume_points} points"
+        message=f"Volume {volume_ratio:.2f}x scored {volume_points} points",
     )
 
     # ============================================================
@@ -999,7 +993,7 @@ def calculate_spring_confidence(
         penetration_pct=float(penetration_pct),
         penetration_points=penetration_points,
         penetration_quality=penetration_quality,
-        message=f"Penetration {penetration_pct:.1%} scored {penetration_points} points"
+        message=f"Penetration {penetration_pct:.1%} scored {penetration_points} points",
     )
 
     # ============================================================
@@ -1030,7 +1024,7 @@ def calculate_spring_confidence(
         recovery_bars=recovery_bars,
         recovery_points=recovery_points,
         recovery_quality=recovery_quality,
-        message=f"Recovery in {recovery_bars} bars scored {recovery_points} points"
+        message=f"Recovery in {recovery_bars} bars scored {recovery_points} points",
     )
 
     # ============================================================
@@ -1052,14 +1046,14 @@ def calculate_spring_confidence(
             "test_confirmation_scored",
             test_present=True,
             test_points=test_points,
-            test_quality=test_quality
+            test_quality=test_quality,
         )
     else:
         test_points = 0
         test_quality = "NONE"
         logger.warning(
             "no_test_confirmation",
-            message="No test confirmation - spring will not generate signal (FR13)"
+            message="No test confirmation - spring will not generate signal (FR13)",
         )
 
     component_scores["test_confirmation"] = test_points
@@ -1092,7 +1086,7 @@ def calculate_spring_confidence(
         creek_strength=creek_strength,
         creek_bonus=creek_bonus,
         creek_quality=creek_quality,
-        message=f"Creek strength {creek_strength} earned {creek_bonus} bonus points"
+        message=f"Creek strength {creek_strength} earned {creek_bonus} bonus points",
     )
 
     # ============================================================
@@ -1116,7 +1110,7 @@ def calculate_spring_confidence(
                 avg_prev_volume=float(avg_prev_volume),
                 spring_volume=float(spring.volume_ratio),
                 volume_decrease=float(volume_change_pct),
-                message=f"Declining volume trend earned {volume_trend_bonus} bonus points"
+                message=f"Declining volume trend earned {volume_trend_bonus} bonus points",
             )
         elif volume_change_pct >= Decimal("-0.2"):  # Stable ±20%
             volume_trend_bonus = 5
@@ -1126,7 +1120,7 @@ def calculate_spring_confidence(
                 "rising_volume_trend",
                 avg_prev_volume=float(avg_prev_volume),
                 spring_volume=float(spring.volume_ratio),
-                message="Rising volume trend - potential warning signal"
+                message="Rising volume trend - potential warning signal",
             )
     else:
         # Not enough previous tests to calculate trend
@@ -1134,7 +1128,7 @@ def calculate_spring_confidence(
         logger.debug(
             "volume_trend_insufficient_data",
             previous_tests_count=len(previous_tests),
-            message="Need 2+ previous tests for volume trend bonus"
+            message="Need 2+ previous tests for volume trend bonus",
         )
 
     component_scores["volume_trend_bonus"] = volume_trend_bonus
@@ -1180,7 +1174,7 @@ def calculate_spring_confidence(
         test_points=test_points,
         creek_bonus=creek_bonus,
         volume_trend_bonus=volume_trend_bonus,
-        meets_threshold=final_confidence >= 70
+        meets_threshold=final_confidence >= 70,
     )
 
     # Validate FR4 minimum threshold (70%)
@@ -1192,7 +1186,7 @@ def calculate_spring_confidence(
             message=(
                 f"Spring confidence {final_confidence}% below FR4 minimum "
                 "(70%) - will not generate signal"
-            )
+            ),
         )
 
     # ============================================================
@@ -1200,9 +1194,7 @@ def calculate_spring_confidence(
     # ============================================================
 
     return SpringConfidence(
-        total_score=final_confidence,
-        component_scores=component_scores,
-        quality_tier=quality_tier
+        total_score=final_confidence, component_scores=component_scores, quality_tier=quality_tier
     )
 
 
@@ -1292,7 +1284,7 @@ def analyze_spring_risk_profile(history: SpringHistory) -> str:
             logger.info(
                 "single_spring_low_risk",
                 volume_ratio=float(spring.volume_ratio),
-                message="Ultra-low volume spring (<0.3x) = LOW risk"
+                message="Ultra-low volume spring (<0.3x) = LOW risk",
             )
             return "LOW"
         elif spring.volume_ratio > Decimal("0.7"):
@@ -1300,14 +1292,14 @@ def analyze_spring_risk_profile(history: SpringHistory) -> str:
             logger.error(
                 "single_spring_high_risk",
                 volume_ratio=float(spring.volume_ratio),
-                message="HIGH volume spring (>=0.7x) = HIGH risk (FR12 violation!)"
+                message="HIGH volume spring (>=0.7x) = HIGH risk (FR12 violation!)",
             )
             return "HIGH"
         else:
             logger.info(
                 "single_spring_moderate_risk",
                 volume_ratio=float(spring.volume_ratio),
-                message="Moderate volume spring (0.3-0.7x) = MODERATE risk"
+                message="Moderate volume spring (0.3-0.7x) = MODERATE risk",
             )
             return "MODERATE"
 
@@ -1366,7 +1358,7 @@ def analyze_spring_risk_profile(history: SpringHistory) -> str:
         message=(
             f"Volume={volume_trend}, Timing={history.spring_timing}, "
             f"Tests={history.test_quality_trend} → {final_risk}"
-        )
+        ),
     )
 
     return final_risk
@@ -1440,7 +1432,7 @@ def analyze_volume_trend(springs: list[Spring]) -> str:
         logger.debug(
             "volume_trend_insufficient_springs",
             spring_count=len(springs),
-            message="Need 2+ springs for volume trend analysis"
+            message="Need 2+ springs for volume trend analysis",
         )
         return "STABLE"
 
@@ -1471,7 +1463,7 @@ def analyze_volume_trend(springs: list[Spring]) -> str:
             first_half_avg=float(first_half_avg),
             second_half_avg=float(second_half_avg),
             decrease_pct=float(volume_change_pct),
-            message="DECLINING volume trend - professional accumulation ✅"
+            message="DECLINING volume trend - professional accumulation ✅",
         )
         return "DECLINING"
     elif volume_change_pct > Decimal("0.15"):  # >15% increase
@@ -1480,7 +1472,7 @@ def analyze_volume_trend(springs: list[Spring]) -> str:
             first_half_avg=float(first_half_avg),
             second_half_avg=float(second_half_avg),
             increase_pct=float(volume_change_pct),
-            message="RISING volume trend - potential distribution warning ⚠️"
+            message="RISING volume trend - potential distribution warning ⚠️",
         )
         return "RISING"
     else:  # Within ±15%
@@ -1489,7 +1481,7 @@ def analyze_volume_trend(springs: list[Spring]) -> str:
             first_half_avg=float(first_half_avg),
             second_half_avg=float(second_half_avg),
             change_pct=float(volume_change_pct),
-            message="STABLE volume trend"
+            message="STABLE volume trend",
         )
         return "STABLE"
 
@@ -1567,15 +1559,12 @@ def analyze_spring_timing(springs: list[Spring]) -> tuple[str, list[int], float]
         logger.debug(
             "spring_timing_single_spring",
             spring_count=len(springs),
-            message="Single spring detected - no timing analysis possible"
+            message="Single spring detected - no timing analysis possible",
         )
         return ("SINGLE_SPRING", [], 0.0)
 
     # Calculate intervals between successive springs (bar indices)
-    intervals = [
-        springs[i + 1].bar_index - springs[i].bar_index
-        for i in range(len(springs) - 1)
-    ]
+    intervals = [springs[i + 1].bar_index - springs[i].bar_index for i in range(len(springs) - 1)]
 
     # Calculate average interval
     avg_interval = sum(intervals) / len(intervals)
@@ -1588,7 +1577,7 @@ def analyze_spring_timing(springs: list[Spring]) -> tuple[str, list[int], float]
             spring_count=len(springs),
             intervals=intervals,
             avg_interval=avg_interval,
-            message="COMPRESSED timing (<10 bars avg) - excessive testing, weak campaign ⚠️"
+            message="COMPRESSED timing (<10 bars avg) - excessive testing, weak campaign ⚠️",
         )
     elif avg_interval < 25:
         classification = "NORMAL"
@@ -1597,7 +1586,7 @@ def analyze_spring_timing(springs: list[Spring]) -> tuple[str, list[int], float]
             spring_count=len(springs),
             intervals=intervals,
             avg_interval=avg_interval,
-            message="NORMAL timing (10-25 bars) - standard accumulation pace"
+            message="NORMAL timing (10-25 bars) - standard accumulation pace",
         )
     else:
         classification = "HEALTHY"
@@ -1606,13 +1595,15 @@ def analyze_spring_timing(springs: list[Spring]) -> tuple[str, list[int], float]
             spring_count=len(springs),
             intervals=intervals,
             avg_interval=avg_interval,
-            message="HEALTHY timing (>25 bars avg) - professional absorption ✅"
+            message="HEALTHY timing (>25 bars avg) - professional absorption ✅",
         )
 
     return (classification, intervals, avg_interval)
 
 
-def analyze_test_quality_progression(springs_with_tests: list[tuple[Spring, Test]]) -> tuple[str, dict]:
+def analyze_test_quality_progression(
+    springs_with_tests: list[tuple[Spring, Test]],
+) -> tuple[str, dict]:
     """
     Analyze test confirmation quality across multiple springs.
 
@@ -1687,7 +1678,7 @@ def analyze_test_quality_progression(springs_with_tests: list[tuple[Spring, Test
         logger.debug(
             "test_quality_insufficient_data",
             test_count=len(springs_with_tests),
-            message="Need 2+ tests for quality progression analysis"
+            message="Need 2+ tests for quality progression analysis",
         )
         return ("INSUFFICIENT_DATA", {})
 
@@ -1697,15 +1688,13 @@ def analyze_test_quality_progression(springs_with_tests: list[tuple[Spring, Test
     # Check for IMPROVING trend (each test has higher volume decrease than previous)
     # Higher volume_decrease_pct = lower volume on test = better (supply exhaustion)
     is_improving = all(
-        volume_decreases[i] < volume_decreases[i + 1]
-        for i in range(len(volume_decreases) - 1)
+        volume_decreases[i] < volume_decreases[i + 1] for i in range(len(volume_decreases) - 1)
     )
 
     # Check for DEGRADING trend (each test has lower volume decrease than previous)
     # Lower volume_decrease_pct = higher volume on test = worse (distribution warning)
     is_degrading = all(
-        volume_decreases[i] > volume_decreases[i + 1]
-        for i in range(len(volume_decreases) - 1)
+        volume_decreases[i] > volume_decreases[i + 1] for i in range(len(volume_decreases) - 1)
     )
 
     if is_improving:
@@ -1713,37 +1702,40 @@ def analyze_test_quality_progression(springs_with_tests: list[tuple[Spring, Test
             "test_quality_improving",
             test_count=len(springs_with_tests),
             volume_decrease_progression=volume_decreases,
-            message="IMPROVING test quality - declining volume confirms supply exhaustion ✅"
+            message="IMPROVING test quality - declining volume confirms supply exhaustion ✅",
         )
-        return ("IMPROVING", {
-            "pattern": "declining_volume_tests",
-            "progression": volume_decreases,
-            "wyckoff_interpretation": "Professional accumulation - supply exhaustion confirmed"
-        })
+        return (
+            "IMPROVING",
+            {
+                "pattern": "declining_volume_tests",
+                "progression": volume_decreases,
+                "wyckoff_interpretation": "Professional accumulation - supply exhaustion confirmed",
+            },
+        )
     elif is_degrading:
         logger.warning(
             "test_quality_degrading",
             test_count=len(springs_with_tests),
             volume_decrease_progression=volume_decreases,
-            message="DEGRADING test quality - rising volume WARNING ⚠️ Distribution disguised as accumulation"
+            message="DEGRADING test quality - rising volume WARNING ⚠️ Distribution disguised as accumulation",
         )
-        return ("DEGRADING", {
-            "pattern": "rising_volume_tests",
-            "progression": volume_decreases,
-            "warning": True,
-            "wyckoff_interpretation": "Distribution warning - avoid setup"
-        })
+        return (
+            "DEGRADING",
+            {
+                "pattern": "rising_volume_tests",
+                "progression": volume_decreases,
+                "warning": True,
+                "wyckoff_interpretation": "Distribution warning - avoid setup",
+            },
+        )
     else:
         logger.info(
             "test_quality_stable",
             test_count=len(springs_with_tests),
             volume_decrease_progression=volume_decreases,
-            message="STABLE test quality - mixed progression"
+            message="STABLE test quality - mixed progression",
         )
-        return ("STABLE", {
-            "pattern": "mixed_progression",
-            "progression": volume_decreases
-        })
+        return ("STABLE", {"pattern": "mixed_progression", "progression": volume_decreases})
 
 
 # ============================================================
@@ -1995,7 +1987,9 @@ class SpringDetector:
         # STEP 3: Multi-spring iteration loop
         detected_indices = set()
         start_index = 20  # Minimum for volume calculation
-        springs_with_tests: list[tuple[Spring, Test]] = []  # Story 5.6.2: Track for test quality analysis
+        springs_with_tests: list[
+            tuple[Spring, Test]
+        ] = []  # Story 5.6.2: Track for test quality analysis
 
         while start_index < len(bars):
             # Detect next spring from current position with VolumeCache
@@ -2067,18 +2061,16 @@ class SpringDetector:
             # STEP 5: Calculate confidence using Story 5.4
             # Function is defined in this module at line 779
             confidence_result = calculate_spring_confidence(
-                spring=spring,
-                creek=range.creek,
-                previous_tests=[test] if test else None
+                spring=spring, creek=range.creek, previous_tests=[test] if test else None
             )
 
             self.logger.info(
                 "confidence_calculated",
                 symbol=spring.bar.symbol,
                 confidence=confidence_result.total_score,
-                volume_score=confidence_result.component_scores.get('volume_quality', 0),
-                penetration_score=confidence_result.component_scores.get('penetration_depth', 0),
-                recovery_score=confidence_result.component_scores.get('recovery_speed', 0),
+                volume_score=confidence_result.component_scores.get("volume_quality", 0),
+                penetration_score=confidence_result.component_scores.get("penetration_depth", 0),
+                recovery_score=confidence_result.component_scores.get("recovery_speed", 0),
             )
 
             # STEP 6: Generate signal using Story 5.5
@@ -2162,9 +2154,7 @@ class SpringDetector:
             best_spring_volume=float(history.best_spring.volume_ratio)
             if history.best_spring
             else None,
-            best_signal_confidence=history.best_signal.confidence
-            if history.best_signal
-            else None,
+            best_signal_confidence=history.best_signal.confidence if history.best_signal else None,
         )
 
         return history
@@ -2285,9 +2275,7 @@ class SpringDetector:
         """
         if not history.springs:
             self.logger.debug(
-                "no_springs_in_history",
-                symbol=history.symbol,
-                message="No springs to select from"
+                "no_springs_in_history", symbol=history.symbol, message="No springs to select from"
             )
             return None
 
@@ -2302,11 +2290,11 @@ class SpringDetector:
         sorted_springs = sorted(
             history.springs,
             key=lambda s: (
-                s.volume_ratio,              # PRIMARY: Lower is better
-                -s.penetration_pct,           # SECONDARY: Deeper (higher %) is better
-                s.recovery_bars,              # TERTIARY: Faster (lower bars) is better
-                phase_multiplier * s.bar_index  # TIE-BREAKER: Latest if Phase C
-            )
+                s.volume_ratio,  # PRIMARY: Lower is better
+                -s.penetration_pct,  # SECONDARY: Deeper (higher %) is better
+                s.recovery_bars,  # TERTIARY: Faster (lower bars) is better
+                phase_multiplier * s.bar_index,  # TIE-BREAKER: Latest if Phase C
+            ),
         )
 
         best_spring = sorted_springs[0]

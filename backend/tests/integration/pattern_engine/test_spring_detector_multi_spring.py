@@ -24,19 +24,20 @@ Integration Points:
 Author: Story 5.6.1 - SpringDetector Multi-Spring Iteration
 """
 
-import pytest
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
+from src.models.creek_level import CreekLevel
+from src.models.jump_level import JumpLevel
 from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import WyckoffPhase
 from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
-from src.models.creek_level import CreekLevel
 from src.models.touch_detail import TouchDetail
-from src.models.jump_level import JumpLevel
-from src.models.trading_range import TradingRange, RangeStatus
-from src.models.phase_classification import WyckoffPhase
+from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.detectors.spring_detector import SpringDetector
 
 
@@ -202,8 +203,7 @@ def create_aapl_accumulation_range(creek_level: Decimal) -> TradingRange:
 
 
 def create_three_spring_scenario(
-    creek_level: Decimal,
-    base_volume: int = 1_000_000
+    creek_level: Decimal, base_volume: int = 1_000_000
 ) -> list[OHLCVBar]:
     """
     Create realistic 3-spring accumulation scenario with declining volume.
@@ -563,11 +563,7 @@ def test_three_spring_accumulation_cycle():
     detector = SpringDetector()
 
     # Execute
-    history = detector.detect_all_springs(
-        range=trading_range,
-        bars=bars,
-        phase=WyckoffPhase.C
-    )
+    history = detector.detect_all_springs(range=trading_range, bars=bars, phase=WyckoffPhase.C)
 
     # ============================================================
     # VALIDATION: Spring Count (AC 1)
@@ -575,68 +571,79 @@ def test_three_spring_accumulation_cycle():
     # NOTE: Detector finds 5 valid springs in the test scenario (not 3).
     # The fixture creates additional valid spring candidates that pass all criteria.
     # This validates that multi-spring detection is working correctly.
-    assert history.spring_count >= 3, \
-        f"Should detect at least 3 springs (got {history.spring_count})"
+    assert (
+        history.spring_count >= 3
+    ), f"Should detect at least 3 springs (got {history.spring_count})"
 
     # ============================================================
     # VALIDATION: Volume Trend Analysis (AC 4)
     # ============================================================
-    assert history.volume_trend == "DECLINING", \
-        f"Volume trend should be DECLINING (got {history.volume_trend})"
+    assert (
+        history.volume_trend == "DECLINING"
+    ), f"Volume trend should be DECLINING (got {history.volume_trend})"
 
     # ============================================================
     # VALIDATION: Risk Assessment (AC 4)
     # ============================================================
-    assert history.risk_level == "LOW", \
-        f"Risk level should be LOW for declining volume (got {history.risk_level})"
+    assert (
+        history.risk_level == "LOW"
+    ), f"Risk level should be LOW for declining volume (got {history.risk_level})"
 
     # ============================================================
     # VALIDATION: Best Spring Selection (AC 4)
     # ============================================================
     assert history.best_spring is not None, "Best spring should be selected"
     # Best spring should have lowest volume (may not be exactly 0.4 due to additional springs)
-    assert history.best_spring.volume_ratio < Decimal("0.5"), \
-        f"Best spring should have low volume <0.5x (got {history.best_spring.volume_ratio}x)"
+    assert history.best_spring.volume_ratio < Decimal(
+        "0.5"
+    ), f"Best spring should have low volume <0.5x (got {history.best_spring.volume_ratio}x)"
 
     # ============================================================
     # VALIDATION: Chronological Ordering (AC 1)
     # ============================================================
-    assert len(history.springs) >= 3, f"History should contain at least 3 springs (got {len(history.springs)})"
+    assert (
+        len(history.springs) >= 3
+    ), f"History should contain at least 3 springs (got {len(history.springs)})"
 
     # Verify chronological order
     for i in range(len(history.springs) - 1):
-        assert history.springs[i].bar.timestamp < history.springs[i + 1].bar.timestamp, \
-            f"Springs should be in chronological order (spring {i} >= spring {i+1})"
+        assert (
+            history.springs[i].bar.timestamp < history.springs[i + 1].bar.timestamp
+        ), f"Springs should be in chronological order (spring {i} >= spring {i+1})"
 
     # ============================================================
     # VALIDATION: Volume Progression (AC 5)
     # ============================================================
     # Verify springs have declining volume trend (may have more than 3 springs)
     volumes = [s.volume_ratio for s in history.springs]
-    assert len(volumes) >= 3, f"Should have at least 3 springs with volume data (got {len(volumes)})"
+    assert (
+        len(volumes) >= 3
+    ), f"Should have at least 3 springs with volume data (got {len(volumes)})"
     # First spring should have reasonable volume
-    assert volumes[0] >= Decimal("0.40") and volumes[0] <= Decimal("0.70"), \
-        f"First spring volume should be in valid range (got {volumes[0]}x)"
+    assert volumes[0] >= Decimal("0.40") and volumes[0] <= Decimal(
+        "0.70"
+    ), f"First spring volume should be in valid range (got {volumes[0]}x)"
     # Verify springs have reasonable volumes (all < 0.7x to be valid springs)
     for i, vol in enumerate(volumes):
-        assert vol < Decimal("0.70"), \
-            f"Spring {i+1} volume {vol}x must be <0.7x to be valid spring"
+        assert vol < Decimal("0.70"), f"Spring {i+1} volume {vol}x must be <0.7x to be valid spring"
 
     # Verify overall declining trend (first half > second half average)
     # This allows for some variation while still validating the declining pattern
-    first_half = volumes[:len(volumes)//2]
-    second_half = volumes[len(volumes)//2:]
+    first_half = volumes[: len(volumes) // 2]
+    second_half = volumes[len(volumes) // 2 :]
     first_avg = sum(first_half) / len(first_half)
     second_avg = sum(second_half) / len(second_half)
-    assert first_avg > second_avg, \
-        f"Volume should decline on average: first_avg={first_avg:.4f} should be > second_avg={second_avg:.4f}"
+    assert (
+        first_avg > second_avg
+    ), f"Volume should decline on average: first_avg={first_avg:.4f} should be > second_avg={second_avg:.4f}"
 
     # ============================================================
     # VALIDATION: Signal Generation (AC 1)
     # ============================================================
     # At least one spring should generate a signal (has test confirmation)
-    assert len(history.signals) >= 1, \
-        f"At least 1 signal should be generated (got {len(history.signals)})"
+    assert (
+        len(history.signals) >= 1
+    ), f"At least 1 signal should be generated (got {len(history.signals)})"
 
     # ============================================================
     # VALIDATION: Best Signal Selection (AC 4)
@@ -644,8 +651,9 @@ def test_three_spring_accumulation_cycle():
     if len(history.signals) > 0:
         best_signal = detector.get_best_signal(history)
         assert best_signal is not None, "Best signal should be selected"
-        assert best_signal.confidence >= 70, \
-            f"Best signal should meet 70% confidence threshold (got {best_signal.confidence}%)"
+        assert (
+            best_signal.confidence >= 70
+        ), f"Best signal should meet 70% confidence threshold (got {best_signal.confidence}%)"
 
     # ============================================================
     # SUCCESS: Log results for verification
@@ -654,17 +662,23 @@ def test_three_spring_accumulation_cycle():
     print(f"Spring count: {history.spring_count}")
     print(f"Volume trend: {history.volume_trend}")
     print(f"Risk level: {history.risk_level}")
-    print(f"\nSpring Details:")
+    print("\nSpring Details:")
     for i, spring in enumerate(history.springs, 1):
-        print(f"  Spring {i}: {spring.volume_ratio}x volume, "
-              f"{spring.penetration_pct:.1%} penetration, "
-              f"{spring.recovery_bars} bars recovery")
-    print(f"\nBest Spring: Volume {history.best_spring.volume_ratio}x "
-          f"(Spring {history.springs.index(history.best_spring) + 1})")
+        print(
+            f"  Spring {i}: {spring.volume_ratio}x volume, "
+            f"{spring.penetration_pct:.1%} penetration, "
+            f"{spring.recovery_bars} bars recovery"
+        )
+    print(
+        f"\nBest Spring: Volume {history.best_spring.volume_ratio}x "
+        f"(Spring {history.springs.index(history.best_spring) + 1})"
+    )
     print(f"Signals generated: {len(history.signals)}")
     if history.best_signal:
-        print(f"Best signal: {history.best_signal.confidence}% confidence, "
-              f"{history.best_signal.r_multiple}R\n")
+        print(
+            f"Best signal: {history.best_signal.confidence}% confidence, "
+            f"{history.best_signal.r_multiple}R\n"
+        )
 
 
 @pytest.mark.integration
@@ -715,11 +729,7 @@ def test_multi_spring_no_springs_detected():
     detector = SpringDetector()
 
     # Execute
-    history = detector.detect_all_springs(
-        range=trading_range,
-        bars=bars,
-        phase=WyckoffPhase.C
-    )
+    history = detector.detect_all_springs(range=trading_range, bars=bars, phase=WyckoffPhase.C)
 
     # Validate
     assert history.spring_count == 0, "Should detect 0 springs"
@@ -823,23 +833,21 @@ def test_multi_spring_single_spring_no_test():
     detector = SpringDetector()
 
     # Execute
-    history = detector.detect_all_springs(
-        range=trading_range,
-        bars=bars,
-        phase=WyckoffPhase.C
-    )
+    history = detector.detect_all_springs(range=trading_range, bars=bars, phase=WyckoffPhase.C)
 
     # Validate
     assert history.spring_count == 1, "Should detect 1 spring"
-    assert len(history.signals) == 0, \
-        "No signals should be generated without test confirmation (FR13)"
+    assert (
+        len(history.signals) == 0
+    ), "No signals should be generated without test confirmation (FR13)"
     assert history.best_spring is not None, "Best spring should exist"
-    assert history.best_spring.volume_ratio == Decimal("0.4"), \
-        "Best spring should have 0.4x volume"
+    assert history.best_spring.volume_ratio == Decimal("0.4"), "Best spring should have 0.4x volume"
 
     # Risk level based on single spring volume (0.4x = MODERATE range)
-    assert history.risk_level in ["LOW", "MODERATE"], \
-        "Risk level should be LOW or MODERATE for 0.4x volume"
+    assert history.risk_level in [
+        "LOW",
+        "MODERATE",
+    ], "Risk level should be LOW or MODERATE for 0.4x volume"
 
     print("\n=== Single Spring No Test Test Results ===")
     print(f"Spring count: {history.spring_count}")
@@ -983,26 +991,24 @@ def test_spring_invalidation_by_breakdown():
     detector = SpringDetector()
 
     # Execute
-    history = detector.detect_all_springs(
-        range=trading_range,
-        bars=bars,
-        phase=WyckoffPhase.C
-    )
+    history = detector.detect_all_springs(range=trading_range, bars=bars, phase=WyckoffPhase.C)
 
     # ============================================================
     # VALIDATION: Spring Invalidation (AC 7)
     # ============================================================
 
     # Check range status
-    assert trading_range.status == RangeStatus.BREAKOUT, \
-        f"Range should be marked as BREAKOUT after breakdown (got {trading_range.status})"
+    assert (
+        trading_range.status == RangeStatus.BREAKOUT
+    ), f"Range should be marked as BREAKOUT after breakdown (got {trading_range.status})"
 
     # Should NOT detect additional springs after invalidation
-    assert history.spring_count <= 1, \
-        f"Should detect at most 1 spring before invalidation (got {history.spring_count})"
+    assert (
+        history.spring_count <= 1
+    ), f"Should detect at most 1 spring before invalidation (got {history.spring_count})"
 
     print("\n=== Spring Invalidation Test Results (Task 19 / AC 7) ===")
     print(f"Springs detected: {history.spring_count}")
     print(f"Range status: {trading_range.status}")
-    print(f"Breakdown bar: Day 30 (6% below Creek)")
-    print(f"Status: ✅ Range invalidated, no additional springs detected\n")
+    print("Breakdown bar: Day 30 (6% below Creek)")
+    print("Status: ✅ Range invalidated, no additional springs detected\n")

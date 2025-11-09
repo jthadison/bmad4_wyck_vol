@@ -8,24 +8,23 @@ Tests realistic scenarios combining all scoring components:
 - Edge cases and boundary conditions
 """
 
-import pytest
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+from src.models.lps import LPS
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import PhaseClassification, PhaseEvents, WyckoffPhase
+from src.models.price_cluster import PriceCluster
+from src.models.sos_breakout import SOSBreakout
+from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.scoring.sos_confidence_scorer import (
     calculate_sos_confidence,
     get_confidence_quality,
 )
-from src.models.sos_breakout import SOSBreakout
-from src.models.lps import LPS
-from src.models.trading_range import TradingRange, RangeStatus
-from src.models.phase_classification import PhaseClassification, WyckoffPhase, PhaseEvents
-from src.models.ohlcv import OHLCVBar
-from src.models.price_cluster import PriceCluster
-
 
 # Helper Functions
+
 
 def create_realistic_trading_range(duration_days: int = 25, quality: int = 80) -> TradingRange:
     """Create realistic trading range for integration testing."""
@@ -62,7 +61,9 @@ def create_realistic_trading_range(duration_days: int = 25, quality: int = 80) -
     )
 
 
-def create_realistic_phase(phase: WyckoffPhase = WyckoffPhase.D, confidence: int = 90) -> PhaseClassification:
+def create_realistic_phase(
+    phase: WyckoffPhase = WyckoffPhase.D, confidence: int = 90
+) -> PhaseClassification:
     """Create realistic phase classification for integration testing."""
     return PhaseClassification(
         phase=phase,
@@ -162,6 +163,7 @@ def create_realistic_lps(held_support: bool = True) -> LPS:
 
 # Integration Tests
 
+
 def test_sos_confidence_realistic_excellent():
     """
     Test excellent SOS scenario (realistic market conditions).
@@ -193,7 +195,10 @@ def test_sos_confidence_realistic_excellent():
 
     # Assert
     assert 90 <= confidence <= 100, f"Expected excellent confidence 90-100, got {confidence}"
-    assert get_confidence_quality(confidence) in ["EXCELLENT", "STRONG"], "Should be EXCELLENT or STRONG quality"
+    assert get_confidence_quality(confidence) in [
+        "EXCELLENT",
+        "STRONG",
+    ], "Should be EXCELLENT or STRONG quality"
 
 
 def test_sos_confidence_realistic_acceptable():
@@ -227,7 +232,10 @@ def test_sos_confidence_realistic_acceptable():
 
     # Assert
     assert 70 <= confidence <= 85, f"Expected acceptable confidence 70-85, got {confidence}"
-    assert get_confidence_quality(confidence) in ["ACCEPTABLE", "STRONG"], "Should be ACCEPTABLE or STRONG quality"
+    assert get_confidence_quality(confidence) in [
+        "ACCEPTABLE",
+        "STRONG",
+    ], "Should be ACCEPTABLE or STRONG quality"
 
 
 def test_sos_confidence_realistic_with_lps():
@@ -263,7 +271,10 @@ def test_sos_confidence_realistic_with_lps():
 
     # Assert
     assert confidence >= 80, f"LPS entry should have minimum 80 baseline, got {confidence}"
-    assert get_confidence_quality(confidence) in ["STRONG", "EXCELLENT"], "Should be STRONG or EXCELLENT with LPS"
+    assert get_confidence_quality(confidence) in [
+        "STRONG",
+        "EXCELLENT",
+    ], "Should be STRONG or EXCELLENT with LPS"
 
 
 def test_sos_confidence_realistic_weak_rejected():
@@ -366,7 +377,11 @@ def test_sos_confidence_realistic_late_phase_c():
 
     # Assert
     assert confidence >= 70, f"Late Phase C SOS should pass threshold, got {confidence}"
-    assert get_confidence_quality(confidence) in ["ACCEPTABLE", "STRONG", "EXCELLENT"], "Should be acceptable or better"
+    assert get_confidence_quality(confidence) in [
+        "ACCEPTABLE",
+        "STRONG",
+        "EXCELLENT",
+    ], "Should be acceptable or better"
 
 
 def test_sos_confidence_realistic_maximum_all_factors():
@@ -445,7 +460,11 @@ def test_sos_confidence_realistic_lps_saves_marginal_sos():
     assert confidence_without_lps >= 65, "SOS direct should meet 65 baseline"
     assert confidence_without_lps < 80, "SOS direct should be below LPS baseline"
     assert confidence_with_lps >= 80, "LPS entry should meet 80 baseline and pass threshold"
-    assert get_confidence_quality(confidence_with_lps) == "STRONG", "LPS entry should be STRONG quality"
+    assert (
+        get_confidence_quality(confidence_with_lps) == "STRONG"
+    ), "LPS entry should be STRONG quality"
 
     # LPS should significantly improve confidence
-    assert confidence_with_lps > confidence_without_lps, "LPS should improve confidence significantly"
+    assert (
+        confidence_with_lps > confidence_without_lps
+    ), "LPS should improve confidence significantly"

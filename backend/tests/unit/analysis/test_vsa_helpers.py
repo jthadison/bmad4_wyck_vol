@@ -13,24 +13,23 @@ VSA Principle:
     Effort (Volume) vs Result (Spread) reveals professional activity.
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
-from typing import List
 
-from src.models.ohlcv import OHLCVBar
-from src.models.phase_classification import PhaseEvents
+import pytest
+
 from src.analysis.vsa_helpers import (
     VSA_THRESHOLDS,
+    calculate_average_spread,
+    calculate_average_volume,
+    check_distribution_volume_signature,
+    check_preliminary_supply,
+    detect_volume_trend,
     get_close_position,
     get_volume_spread_context,
-    check_preliminary_supply,
-    check_distribution_volume_signature,
-    detect_volume_trend,
-    calculate_average_volume,
-    calculate_average_spread,
 )
-
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import PhaseEvents
 
 # ============================================================================
 # Test Fixtures
@@ -40,6 +39,7 @@ from src.analysis.vsa_helpers import (
 @pytest.fixture
 def create_bar():
     """Factory fixture for creating test bars."""
+
     def _create_bar(
         high: float = 105.0,
         low: float = 100.0,
@@ -47,7 +47,7 @@ def create_bar():
         volume: int = 1000000,
         index: int = 0,
     ) -> OHLCVBar:
-        base_time = datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc)
+        base_time = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
         return OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
@@ -59,11 +59,12 @@ def create_bar():
             volume=volume,
             spread=Decimal(str(high - low)),
         )
+
     return _create_bar
 
 
 @pytest.fixture
-def sample_bars_for_vsa(create_bar) -> List[OHLCVBar]:
+def sample_bars_for_vsa(create_bar) -> list[OHLCVBar]:
     """Generate sample bars for VSA testing."""
     bars = []
 
@@ -152,7 +153,7 @@ def test_vsa_context_high_effort_low_result_bullish_absorption(create_bar):
     context = get_volume_spread_context(
         bar=bar,
         avg_volume=1000000.0,
-        avg_spread=4.0  # Bar spread is 2, so ratio = 2/4 = 0.5 (narrow)
+        avg_spread=4.0,  # Bar spread is 2, so ratio = 2/4 = 0.5 (narrow)
     )
 
     assert context["effort"] == pytest.approx(2.0, abs=0.01)  # 2x volume
@@ -166,11 +167,7 @@ def test_vsa_context_high_effort_low_result_bearish_absorption(create_bar):
     # High volume, narrow spread, close lower
     bar = create_bar(high=102, low=100, close=100.2, volume=2000000)
 
-    context = get_volume_spread_context(
-        bar=bar,
-        avg_volume=1000000.0,
-        avg_spread=4.0
-    )
+    context = get_volume_spread_context(bar=bar, avg_volume=1000000.0, avg_spread=4.0)
 
     assert context["effort"] == pytest.approx(2.0, abs=0.01)
     assert context["result"] < 0.8
@@ -186,7 +183,7 @@ def test_vsa_context_low_effort_wide_result_no_demand(create_bar):
     context = get_volume_spread_context(
         bar=bar,
         avg_volume=1000000.0,
-        avg_spread=5.0  # Bar spread is 10, so ratio = 10/5 = 2.0 (wide)
+        avg_spread=5.0,  # Bar spread is 10, so ratio = 10/5 = 2.0 (wide)
     )
 
     assert context["effort"] < VSA_THRESHOLDS["low_volume"]
@@ -200,11 +197,7 @@ def test_vsa_context_low_effort_wide_result_no_supply(create_bar):
     # Low volume, wide spread, close upper
     bar = create_bar(high=110, low=100, close=108, volume=500000)
 
-    context = get_volume_spread_context(
-        bar=bar,
-        avg_volume=1000000.0,
-        avg_spread=5.0
-    )
+    context = get_volume_spread_context(bar=bar, avg_volume=1000000.0, avg_spread=5.0)
 
     assert context["effort"] < VSA_THRESHOLDS["low_volume"]
     assert context["result"] > 1.5
@@ -220,7 +213,7 @@ def test_vsa_context_harmony(create_bar):
     context = get_volume_spread_context(
         bar=bar,
         avg_volume=1000000.0,
-        avg_spread=5.0  # Bar spread is 5, so ratio = 5/5 = 1.0
+        avg_spread=5.0,  # Bar spread is 5, so ratio = 5/5 = 1.0
     )
 
     assert abs(context["effort"] - context["result"]) < 0.3
@@ -236,7 +229,7 @@ def test_vsa_context_divergence(create_bar):
     context = get_volume_spread_context(
         bar=bar,
         avg_volume=1000000.0,
-        avg_spread=5.0  # Bar spread is 6, so ratio = 6/5 = 1.2
+        avg_spread=5.0,  # Bar spread is 6, so ratio = 6/5 = 1.2
     )
 
     # Effort >> Result but not extreme enough for absorption

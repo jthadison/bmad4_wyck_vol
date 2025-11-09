@@ -17,14 +17,14 @@ from uuid import uuid4
 
 import pytest
 
+from src.models.creek_level import CreekLevel
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
-from src.models.spring import Spring
-from src.models.trading_range import TradingRange, RangeStatus
-from src.models.price_cluster import PriceCluster
-from src.models.creek_level import CreekLevel
 from src.models.pivot import Pivot, PivotType
+from src.models.price_cluster import PriceCluster
+from src.models.spring import Spring
 from src.models.touch_detail import TouchDetail
+from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.detectors.spring_detector import detect_spring
 
 
@@ -598,9 +598,7 @@ class TestDetectSpringPhaseValidation:
 
         spring = detect_spring(range_obj, bars, phase)
 
-        assert (
-            spring is None
-        ), f"Spring should be rejected in Phase {phase.value} (FR15)"
+        assert spring is None, f"Spring should be rejected in Phase {phase.value} (FR15)"
 
 
 class TestDetectSpringEdgeCases:
@@ -772,9 +770,7 @@ class TestSpringInvalidation:
 
         # Spring should be invalidated (returns None)
         assert spring is None, "Spring should be invalidated by breakdown"
-        assert (
-            range_obj.status == RangeStatus.BREAKOUT
-        ), "Range should be marked as BREAKOUT"
+        assert range_obj.status == RangeStatus.BREAKOUT, "Range should be marked as BREAKOUT"
 
 
 # ============================================================
@@ -880,22 +876,16 @@ class TestTestConfirmationDetection:
 
         # Assertions
         assert test is not None, "Test should be detected"
-        assert (
-            test.bar.timestamp == test_bar.timestamp
-        ), "Test bar should be bar 25"
+        assert test.bar.timestamp == test_bar.timestamp, "Test bar should be bar 25"
         assert test.bars_after_spring == 5, "Test should be 5 bars after spring"
         # Volume ratio is calculated by VolumeAnalyzer, so check it's in reasonable range
-        assert test.volume_ratio < test.spring_volume_ratio, "Test volume should be lower than spring volume"
-        assert test.spring_volume_ratio == Decimal(
-            "0.5"
-        ), "Spring volume ratio should be 0.5x"
-        assert test.volume_decrease_pct > Decimal(
-            "0.2"
-        ), "Volume decrease should be at least 20%"
-        assert test.holds_spring_low is True, "Test should hold spring low"
         assert (
-            test.distance_pct <= Decimal("0.03")
-        ), "Distance should be within 3%"
+            test.volume_ratio < test.spring_volume_ratio
+        ), "Test volume should be lower than spring volume"
+        assert test.spring_volume_ratio == Decimal("0.5"), "Spring volume ratio should be 0.5x"
+        assert test.volume_decrease_pct > Decimal("0.2"), "Volume decrease should be at least 20%"
+        assert test.holds_spring_low is True, "Test should hold spring low"
+        assert test.distance_pct <= Decimal("0.03"), "Distance should be within 3%"
 
     def test_test_outside_window_too_early(self):
         """
@@ -968,9 +958,7 @@ class TestTestConfirmationDetection:
         test = detect_test_confirmation(range_obj, spring, bars)
 
         # Should return None (insufficient bars after spring)
-        assert (
-            test is None
-        ), "Test should be None when insufficient bars after spring"
+        assert test is None, "Test should be None when insufficient bars after spring"
 
     def test_test_breaks_spring_low(self):
         """
@@ -1245,7 +1233,9 @@ class TestTestConfirmationDetection:
         # Assertions
         assert test is not None, "Test should be detected"
         # Volume ratio is calculated by VolumeAnalyzer - check test volume < spring volume
-        assert test.volume_ratio < test.spring_volume_ratio, "Test volume should be lower than spring volume"
+        assert (
+            test.volume_ratio < test.spring_volume_ratio
+        ), "Test volume should be lower than spring volume"
         assert test.volume_decrease_pct > Decimal("0.3"), "Volume decrease should be at least 30%"
         assert test.holds_spring_low is True, "Test should hold spring low"
         assert test.distance_pct == Decimal("0.005"), "Distance should be 0.5%"
@@ -1394,11 +1384,11 @@ class TestTestConfirmationDetection:
 
         # Should select Test 2 (lowest volume)
         assert test is not None, "Test should be detected"
-        assert (
-            test.bar.timestamp == test2_timestamp
-        ), "Should select Test 2 (lowest volume)"
+        assert test.bar.timestamp == test2_timestamp, "Should select Test 2 (lowest volume)"
         # Volume ratio calculated by VolumeAnalyzer - just verify it's the lowest
-        assert test.volume_ratio < Decimal("0.4"), "Selected test should have lower volume than spring"
+        assert test.volume_ratio < Decimal(
+            "0.4"
+        ), "Selected test should have lower volume than spring"
 
     def test_no_test_found(self):
         """
@@ -1603,8 +1593,8 @@ class TestTestConfirmationDetection:
 
 def test_calculate_spring_confidence_excellent_quality():
     """Test confidence scoring for excellent quality spring (90-100 points)."""
-    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
     from src.models.test import Test
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
 
     # Create excellent spring:
     # - Volume: 0.25x (40 pts - exceptional)
@@ -1668,13 +1658,13 @@ def test_calculate_spring_confidence_excellent_quality():
 
     # Calculate confidence (pass test in previous_tests to get test points)
     confidence = calculate_spring_confidence(
-        spring=spring,
-        creek=range_obj.creek,
-        previous_tests=[test]
+        spring=spring, creek=range_obj.creek, previous_tests=[test]
     )
 
     # Assert
-    assert confidence.total_score >= 90, f"Excellent spring should score 90+, got {confidence.total_score}"
+    assert (
+        confidence.total_score >= 90
+    ), f"Excellent spring should score 90+, got {confidence.total_score}"
     assert confidence.total_score == 100, "Score should be capped at 100"
     assert confidence.quality_tier == "EXCELLENT"
     assert confidence.meets_threshold is True
@@ -1732,6 +1722,7 @@ def test_calculate_spring_confidence_good_quality():
 
     # Create dummy test
     from src.models.test import Test
+
     test = Test(
         bar=create_test_bar(
             timestamp=spring_timestamp + timedelta(days=5),
@@ -1754,9 +1745,7 @@ def test_calculate_spring_confidence_good_quality():
     )
 
     confidence = calculate_spring_confidence(
-        spring=spring,
-        creek=range_obj.creek,
-        previous_tests=[test]
+        spring=spring, creek=range_obj.creek, previous_tests=[test]
     )
 
     # Assert - actually scores 92 (EXCELLENT) not 80-89 (GOOD)
@@ -1810,6 +1799,7 @@ def test_calculate_spring_confidence_acceptable_quality():
 
     # Create dummy test
     from src.models.test import Test
+
     test = Test(
         bar=create_test_bar(
             timestamp=spring_timestamp + timedelta(days=5),
@@ -1832,13 +1822,13 @@ def test_calculate_spring_confidence_acceptable_quality():
     )
 
     confidence = calculate_spring_confidence(
-        spring=spring,
-        creek=range_obj.creek,
-        previous_tests=[test]
+        spring=spring, creek=range_obj.creek, previous_tests=[test]
     )
 
     # Assert - should be below 70 with these parameters
-    assert confidence.total_score < 70, f"Marginal spring should score <70, got {confidence.total_score}"
+    assert (
+        confidence.total_score < 70
+    ), f"Marginal spring should score <70, got {confidence.total_score}"
     assert confidence.quality_tier == "REJECTED"
     assert confidence.meets_threshold is False
 
@@ -1886,6 +1876,7 @@ def test_calculate_spring_confidence_rejected_quality():
 
     # Create dummy test
     from src.models.test import Test
+
     test = Test(
         bar=create_test_bar(
             timestamp=spring_timestamp + timedelta(days=5),
@@ -1908,13 +1899,13 @@ def test_calculate_spring_confidence_rejected_quality():
     )
 
     confidence = calculate_spring_confidence(
-        spring=spring,
-        creek=range_obj.creek,
-        previous_tests=[test]
+        spring=spring, creek=range_obj.creek, previous_tests=[test]
     )
 
     # Assert
-    assert confidence.total_score < 70, f"Low-quality spring should score <70, got {confidence.total_score}"
+    assert (
+        confidence.total_score < 70
+    ), f"Low-quality spring should score <70, got {confidence.total_score}"
     assert confidence.quality_tier == "REJECTED"
     assert confidence.meets_threshold is False
 
@@ -1964,7 +1955,7 @@ def test_calculate_spring_confidence_no_test():
     confidence = calculate_spring_confidence(
         spring=spring,
         creek=range_obj.creek,
-        previous_tests=[]  # No test
+        previous_tests=[],  # No test
     )
 
     # Assert
@@ -1977,8 +1968,8 @@ def test_calculate_spring_confidence_no_test():
 
 def test_calculate_spring_confidence_volume_trend_bonus():
     """Test volume trend bonus with declining volume from previous tests."""
-    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
     from src.models.test import Test
+    from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
 
     # Create spring with declining volume trend
     creek_level = Decimal("100.00")
@@ -2052,9 +2043,7 @@ def test_calculate_spring_confidence_volume_trend_bonus():
     )
 
     confidence = calculate_spring_confidence(
-        spring=spring,
-        creek=range_obj.creek,
-        previous_tests=[test1, test2]
+        spring=spring, creek=range_obj.creek, previous_tests=[test1, test2]
     )
 
     # Assert - volume trend bonus should be awarded
@@ -2065,13 +2054,16 @@ def test_calculate_spring_confidence_volume_trend_bonus():
     assert confidence.total_score == 100  # Capped
 
 
-@pytest.mark.parametrize("volume_ratio,expected_points", [
-    (Decimal("0.25"), 40),  # <0.3x = 40 pts (exceptional)
-    (Decimal("0.35"), 30),  # 0.3-0.4x = 30 pts (excellent)
-    (Decimal("0.45"), 20),  # 0.4-0.5x = 20 pts (ideal)
-    (Decimal("0.55"), 10),  # 0.5-0.6x = 10 pts (acceptable)
-    (Decimal("0.65"), 5),   # 0.6-0.69x = 5 pts (marginal)
-])
+@pytest.mark.parametrize(
+    "volume_ratio,expected_points",
+    [
+        (Decimal("0.25"), 40),  # <0.3x = 40 pts (exceptional)
+        (Decimal("0.35"), 30),  # 0.3-0.4x = 30 pts (excellent)
+        (Decimal("0.45"), 20),  # 0.4-0.5x = 20 pts (ideal)
+        (Decimal("0.55"), 10),  # 0.5-0.6x = 10 pts (acceptable)
+        (Decimal("0.65"), 5),  # 0.6-0.69x = 5 pts (marginal)
+    ],
+)
 def test_volume_quality_scoring_tiers(volume_ratio, expected_points):
     """Test all volume quality scoring tiers."""
     from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
@@ -2103,21 +2095,22 @@ def test_volume_quality_scoring_tiers(volume_ratio, expected_points):
     )
 
     confidence = calculate_spring_confidence(
-        spring=spring,
-        creek=range_obj.creek,
-        previous_tests=[]
+        spring=spring, creek=range_obj.creek, previous_tests=[]
     )
 
     # Assert volume points match expected
     assert confidence.component_scores["volume_quality"] == expected_points
 
 
-@pytest.mark.parametrize("penetration_pct,expected_points", [
-    (Decimal("0.015"), 35),  # 1-2% = 35 pts (ideal)
-    (Decimal("0.025"), 25),  # 2-3% = 25 pts (good)
-    (Decimal("0.035"), 15),  # 3-4% = 15 pts (acceptable)
-    (Decimal("0.045"), 5),   # 4-5% = 5 pts (deep)
-])
+@pytest.mark.parametrize(
+    "penetration_pct,expected_points",
+    [
+        (Decimal("0.015"), 35),  # 1-2% = 35 pts (ideal)
+        (Decimal("0.025"), 25),  # 2-3% = 25 pts (good)
+        (Decimal("0.035"), 15),  # 3-4% = 15 pts (acceptable)
+        (Decimal("0.045"), 5),  # 4-5% = 5 pts (deep)
+    ],
+)
 def test_penetration_depth_scoring_tiers(penetration_pct, expected_points):
     """Test all penetration depth scoring tiers."""
     from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
@@ -2149,22 +2142,23 @@ def test_penetration_depth_scoring_tiers(penetration_pct, expected_points):
     )
 
     confidence = calculate_spring_confidence(
-        spring=spring,
-        creek=range_obj.creek,
-        previous_tests=[]
+        spring=spring, creek=range_obj.creek, previous_tests=[]
     )
 
     # Assert penetration points match expected
     assert confidence.component_scores["penetration_depth"] == expected_points
 
 
-@pytest.mark.parametrize("recovery_bars,expected_points", [
-    (1, 25),  # 1 bar = 25 pts (immediate)
-    (2, 20),  # 2 bars = 20 pts (strong)
-    (3, 15),  # 3 bars = 15 pts (good)
-    (4, 10),  # 4 bars = 10 pts (slow)
-    (5, 10),  # 5 bars = 10 pts (slow)
-])
+@pytest.mark.parametrize(
+    "recovery_bars,expected_points",
+    [
+        (1, 25),  # 1 bar = 25 pts (immediate)
+        (2, 20),  # 2 bars = 20 pts (strong)
+        (3, 15),  # 3 bars = 15 pts (good)
+        (4, 10),  # 4 bars = 10 pts (slow)
+        (5, 10),  # 5 bars = 10 pts (slow)
+    ],
+)
 def test_recovery_speed_scoring_tiers(recovery_bars, expected_points):
     """Test all recovery speed scoring tiers."""
     from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
@@ -2196,9 +2190,7 @@ def test_recovery_speed_scoring_tiers(recovery_bars, expected_points):
     )
 
     confidence = calculate_spring_confidence(
-        spring=spring,
-        creek=range_obj.creek,
-        previous_tests=[]
+        spring=spring, creek=range_obj.creek, previous_tests=[]
     )
 
     # Assert recovery points match expected
@@ -2404,8 +2396,8 @@ def test_single_spring_returns_single_spring():
 
 def test_improving_test_quality():
     """Test IMPROVING test quality classification (30% → 40% → 50% volume decrease)."""
-    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
     from src.models.test import Test
+    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
 
     creek_level = Decimal("100.00")
     base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
@@ -2413,11 +2405,13 @@ def test_improving_test_quality():
     # Create 3 springs with IMPROVING test quality (volume decreases: 25% → 35% → 45%)
     springs_with_tests = []
 
-    for i, (bar_idx, vol_decrease) in enumerate([
-        (100, Decimal("0.25")),  # Test 1: 25% volume decrease
-        (130, Decimal("0.35")),  # Test 2: 35% volume decrease
-        (165, Decimal("0.45")),  # Test 3: 45% volume decrease
-    ]):
+    for i, (bar_idx, vol_decrease) in enumerate(
+        [
+            (100, Decimal("0.25")),  # Test 1: 25% volume decrease
+            (130, Decimal("0.35")),  # Test 2: 35% volume decrease
+            (165, Decimal("0.45")),  # Test 3: 45% volume decrease
+        ]
+    ):
         spring = Spring(
             bar=create_test_bar(
                 timestamp=base_timestamp + timedelta(days=bar_idx),
@@ -2469,8 +2463,8 @@ def test_improving_test_quality():
 
 def test_stable_test_quality():
     """Test STABLE test quality classification (30% → 32% → 28% volume decrease)."""
-    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
     from src.models.test import Test
+    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
 
     creek_level = Decimal("100.00")
     base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
@@ -2478,11 +2472,13 @@ def test_stable_test_quality():
     # Create 3 springs with STABLE test quality (volume decreases: 30% → 32% → 28%)
     springs_with_tests = []
 
-    for i, (bar_idx, vol_decrease) in enumerate([
-        (100, Decimal("0.30")),
-        (130, Decimal("0.32")),
-        (165, Decimal("0.28")),
-    ]):
+    for i, (bar_idx, vol_decrease) in enumerate(
+        [
+            (100, Decimal("0.30")),
+            (130, Decimal("0.32")),
+            (165, Decimal("0.28")),
+        ]
+    ):
         spring = Spring(
             bar=create_test_bar(
                 timestamp=base_timestamp + timedelta(days=bar_idx),
@@ -2532,8 +2528,8 @@ def test_stable_test_quality():
 
 def test_degrading_test_quality_with_warning():
     """Test DEGRADING test quality classification (50% → 35% → 20% volume decrease) with warning."""
-    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
     from src.models.test import Test
+    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
 
     creek_level = Decimal("100.00")
     base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
@@ -2541,11 +2537,13 @@ def test_degrading_test_quality_with_warning():
     # Create 3 springs with DEGRADING test quality (volume decreases: 50% → 35% → 20%)
     springs_with_tests = []
 
-    for i, (bar_idx, vol_decrease) in enumerate([
-        (100, Decimal("0.50")),  # Test 1: 50% volume decrease
-        (130, Decimal("0.35")),  # Test 2: 35% volume decrease (degrading)
-        (165, Decimal("0.20")),  # Test 3: 20% volume decrease (degrading further)
-    ]):
+    for i, (bar_idx, vol_decrease) in enumerate(
+        [
+            (100, Decimal("0.50")),  # Test 1: 50% volume decrease
+            (130, Decimal("0.35")),  # Test 2: 35% volume decrease (degrading)
+            (165, Decimal("0.20")),  # Test 3: 20% volume decrease (degrading further)
+        ]
+    ):
         spring = Spring(
             bar=create_test_bar(
                 timestamp=base_timestamp + timedelta(days=bar_idx),
@@ -2597,8 +2595,8 @@ def test_degrading_test_quality_with_warning():
 
 def test_insufficient_data_when_few_tests():
     """Test INSUFFICIENT_DATA classification when <2 tests available."""
-    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
     from src.models.test import Test
+    from src.pattern_engine.detectors.spring_detector import analyze_test_quality_progression
 
     creek_level = Decimal("100.00")
     base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
@@ -2658,9 +2656,9 @@ def test_insufficient_data_when_few_tests():
 
 def test_phase_c_prefers_latest_spring_on_tie():
     """Test that Phase C tie-breaking prefers latest spring with identical quality."""
-    from src.pattern_engine.detectors.spring_detector import SpringDetector
-    from src.models.spring_history import SpringHistory
     from src.models.phase_classification import WyckoffPhase
+    from src.models.spring_history import SpringHistory
+    from src.pattern_engine.detectors.spring_detector import SpringDetector
 
     creek_level = Decimal("100.00")
     base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
@@ -2677,8 +2675,8 @@ def test_phase_c_prefers_latest_spring_on_tie():
         ),
         bar_index=100,  # Earlier spring
         penetration_pct=Decimal("0.020"),  # 2.0% penetration
-        volume_ratio=Decimal("0.4"),       # 0.4x volume
-        recovery_bars=1,                   # 1-bar recovery
+        volume_ratio=Decimal("0.4"),  # 0.4x volume
+        recovery_bars=1,  # 1-bar recovery
         creek_reference=creek_level,
         spring_low=creek_level - Decimal("2.00"),
         recovery_price=creek_level + Decimal("0.50"),
@@ -2696,8 +2694,8 @@ def test_phase_c_prefers_latest_spring_on_tie():
         ),
         bar_index=150,  # Later spring
         penetration_pct=Decimal("0.020"),  # 2.0% penetration (SAME)
-        volume_ratio=Decimal("0.4"),       # 0.4x volume (SAME)
-        recovery_bars=1,                   # 1-bar recovery (SAME)
+        volume_ratio=Decimal("0.4"),  # 0.4x volume (SAME)
+        recovery_bars=1,  # 1-bar recovery (SAME)
         creek_reference=creek_level,
         spring_low=creek_level - Decimal("2.00"),
         recovery_price=creek_level + Decimal("0.50"),
@@ -2717,8 +2715,8 @@ def test_phase_c_prefers_latest_spring_on_tie():
 
 def test_phase_not_provided_uses_existing_logic():
     """Test that without phase context, earliest spring wins on tie (backward compatible)."""
-    from src.pattern_engine.detectors.spring_detector import SpringDetector
     from src.models.spring_history import SpringHistory
+    from src.pattern_engine.detectors.spring_detector import SpringDetector
 
     creek_level = Decimal("100.00")
     base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
@@ -2775,9 +2773,9 @@ def test_phase_not_provided_uses_existing_logic():
 
 def test_no_tie_ignores_phase_context():
     """Test that when springs differ on primary criteria, phase context is ignored."""
-    from src.pattern_engine.detectors.spring_detector import SpringDetector
-    from src.models.spring_history import SpringHistory
     from src.models.phase_classification import WyckoffPhase
+    from src.models.spring_history import SpringHistory
+    from src.pattern_engine.detectors.spring_detector import SpringDetector
 
     creek_level = Decimal("100.00")
     base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)

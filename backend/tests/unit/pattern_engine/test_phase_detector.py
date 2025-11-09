@@ -8,19 +8,18 @@ Tests cover:
 - Edge cases (insufficient data, mismatches)
 """
 
-import pytest
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from uuid import uuid4
 
+import pytest
+
+from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.effort_result import EffortResult
 from src.pattern_engine.phase_detector import (
-    detect_selling_climax,
-    detect_sc_zone,
     detect_automatic_rally,
-    detect_secondary_test,
+    detect_sc_zone,
+    detect_selling_climax,
     is_phase_a_confirmed,
 )
 
@@ -48,7 +47,7 @@ class TestSellingClimaxDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -69,7 +68,7 @@ class TestSellingClimaxDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -120,7 +119,7 @@ class TestSellingClimaxDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -141,7 +140,7 @@ class TestSellingClimaxDetection:
         down_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("232.00"),
             high=Decimal("233.00"),
             low=Decimal("228.00"),
@@ -177,7 +176,7 @@ class TestSellingClimaxDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -198,7 +197,7 @@ class TestSellingClimaxDetection:
         bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("232.00"),
             high=Decimal("232.50"),
             low=Decimal("228.00"),
@@ -233,7 +232,7 @@ class TestSellingClimaxDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -254,7 +253,7 @@ class TestSellingClimaxDetection:
         bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("232.00"),
             high=Decimal("235.00"),
             low=Decimal("212.00"),
@@ -289,7 +288,7 @@ class TestSellingClimaxDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -310,7 +309,7 @@ class TestSellingClimaxDetection:
         bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("245.00"),
             low=Decimal("225.00"),
@@ -351,7 +350,7 @@ class TestSellingClimaxDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -372,7 +371,7 @@ class TestSellingClimaxDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -414,7 +413,7 @@ class TestSellingClimaxDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -435,7 +434,7 @@ class TestSellingClimaxDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -477,7 +476,7 @@ class TestSellingClimaxDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -497,7 +496,7 @@ class TestSellingClimaxDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -538,7 +537,7 @@ class TestEdgeCases:
         bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -588,7 +587,7 @@ class TestEdgeCases:
         bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -622,7 +621,7 @@ class TestEdgeCases:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -642,7 +641,7 @@ class TestEdgeCases:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -678,7 +677,7 @@ class TestEdgeCases:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -698,7 +697,7 @@ class TestEdgeCases:
         normal_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 24, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 24, tzinfo=UTC),
             open=Decimal("225.00"),
             high=Decimal("230.00"),
             low=Decimal("223.00"),
@@ -749,7 +748,7 @@ class TestSCZoneDetection:
         bar0 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 20, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 20, tzinfo=UTC),
             open=Decimal("300.00"),
             high=Decimal("305.00"),
             low=Decimal("298.00"),
@@ -772,7 +771,7 @@ class TestSCZoneDetection:
         bar1 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 21, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 21, tzinfo=UTC),
             open=Decimal("302.00"),
             high=Decimal("302.50"),
             low=Decimal("270.00"),
@@ -796,7 +795,7 @@ class TestSCZoneDetection:
             bar = OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 20 + i, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 20 + i, tzinfo=UTC),
                 open=Decimal("290.00"),
                 high=Decimal("295.00"),
                 low=Decimal("288.00"),
@@ -819,7 +818,7 @@ class TestSCZoneDetection:
         bar4 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 24, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 24, tzinfo=UTC),
             open=Decimal("292.00"),
             high=Decimal("293.00"),
             low=Decimal("265.00"),
@@ -843,7 +842,7 @@ class TestSCZoneDetection:
             bar = OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 20 + i, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 20 + i, tzinfo=UTC),
                 open=Decimal("286.00"),
                 high=Decimal("290.00"),
                 low=Decimal("283.00"),
@@ -866,7 +865,7 @@ class TestSCZoneDetection:
         bar8 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 28, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 28, tzinfo=UTC),
             open=Decimal("287.00"),
             high=Decimal("288.00"),
             low=Decimal("260.00"),
@@ -892,10 +891,16 @@ class TestSCZoneDetection:
         assert zone is not None, "SC Zone should be detected"
         assert zone.bar_count == 3, f"Expected 3 SC bars, got {zone.bar_count}"
         assert zone.duration_bars == 7, f"Expected duration 7 bars, got {zone.duration_bars}"
-        assert zone.zone_start.bar["timestamp"] == "2020-03-21T00:00:00+00:00", "Zone start should be first SC"
-        assert zone.zone_end.bar["timestamp"] == "2020-03-28T00:00:00+00:00", "Zone end should be last SC"
+        assert (
+            zone.zone_start.bar["timestamp"] == "2020-03-21T00:00:00+00:00"
+        ), "Zone start should be first SC"
+        assert (
+            zone.zone_end.bar["timestamp"] == "2020-03-28T00:00:00+00:00"
+        ), "Zone end should be last SC"
         assert zone.zone_low == Decimal("260.00"), f"Zone low should be $260, got ${zone.zone_low}"
-        assert zone.avg_confidence >= 80, f"Average confidence should be >= 80, got {zone.avg_confidence}"
+        assert (
+            zone.avg_confidence >= 80
+        ), f"Average confidence should be >= 80, got {zone.avg_confidence}"
 
     def test_single_sc_returns_none(self):
         """
@@ -907,7 +912,7 @@ class TestSCZoneDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("230.00"),
             high=Decimal("235.00"),
             low=Decimal("228.00"),
@@ -919,7 +924,7 @@ class TestSCZoneDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("228.00"),
             high=Decimal("228.50"),
             low=Decimal("212.00"),
@@ -967,7 +972,7 @@ class TestSCZoneDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 20, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 20, tzinfo=UTC),
                 open=Decimal("300.00"),
                 high=Decimal("305.00"),
                 low=Decimal("298.00"),
@@ -991,7 +996,7 @@ class TestSCZoneDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 21, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 21, tzinfo=UTC),
                 open=Decimal("302.00"),
                 high=Decimal("302.50"),
                 low=Decimal("270.00"),
@@ -1012,7 +1017,8 @@ class TestSCZoneDetection:
 
         # 15 normal bars (exceeds gap)
         from datetime import timedelta
-        base_date = datetime(2020, 3, 22, tzinfo=timezone.utc)
+
+        base_date = datetime(2020, 3, 22, tzinfo=UTC)
         for i in range(15):
             bars.append(
                 OHLCVBar(
@@ -1042,7 +1048,7 @@ class TestSCZoneDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 4, 6, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 4, 6, tzinfo=UTC),
                 open=Decimal("292.00"),
                 high=Decimal("293.00"),
                 low=Decimal("265.00"),
@@ -1094,7 +1100,7 @@ class TestAutomaticRallyDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -1107,7 +1113,7 @@ class TestAutomaticRallyDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),  # SC low
@@ -1120,7 +1126,7 @@ class TestAutomaticRallyDetection:
         bar1 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 3, tzinfo=UTC),
             open=Decimal("104.00"),
             high=Decimal("101.00"),  # 1% from SC low
             low=Decimal("100.20"),
@@ -1133,7 +1139,7 @@ class TestAutomaticRallyDetection:
         bar2 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 4, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 4, tzinfo=UTC),
             open=Decimal("100.80"),
             high=Decimal("102.50"),  # 2.5% from SC low
             low=Decimal("100.50"),
@@ -1146,7 +1152,7 @@ class TestAutomaticRallyDetection:
         bar3 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 5, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 5, tzinfo=UTC),
             open=Decimal("102.00"),
             high=Decimal("103.20"),  # 3.2% from SC low
             low=Decimal("101.80"),
@@ -1203,7 +1209,9 @@ class TestAutomaticRallyDetection:
 
         # Assert
         assert result is not None, "AR should be detected"
-        assert result.rally_pct == Decimal("0.032"), f"Expected rally_pct 0.032, got {result.rally_pct}"
+        assert result.rally_pct == Decimal(
+            "0.032"
+        ), f"Expected rally_pct 0.032, got {result.rally_pct}"
         assert result.bars_after_sc == 3, f"Expected bars_after_sc 3, got {result.bars_after_sc}"
         assert result.ar_high == Decimal("103.20"), f"Expected ar_high 103.20, got {result.ar_high}"
         assert result.sc_low == Decimal("100.00"), f"Expected sc_low 100.00, got {result.sc_low}"
@@ -1229,7 +1237,7 @@ class TestAutomaticRallyDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -1242,7 +1250,7 @@ class TestAutomaticRallyDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),
@@ -1271,11 +1279,12 @@ class TestAutomaticRallyDetection:
 
         # Add 10 bars with weak rally (max 2%)
         from datetime import timedelta
+
         for i in range(10):
             bar = OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc) + timedelta(days=i),
+                timestamp=datetime(2024, 1, 3, tzinfo=UTC) + timedelta(days=i),
                 open=Decimal("100.50"),
                 high=Decimal("102.00"),  # Only 2% rally
                 low=Decimal("100.00"),
@@ -1321,7 +1330,7 @@ class TestAutomaticRallyDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -1333,7 +1342,7 @@ class TestAutomaticRallyDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),
@@ -1345,7 +1354,7 @@ class TestAutomaticRallyDetection:
         ar_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 3, tzinfo=UTC),
             open=Decimal("103.00"),
             high=Decimal("103.50"),  # 3.5% rally
             low=Decimal("102.00"),
@@ -1402,7 +1411,7 @@ class TestAutomaticRallyDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -1414,7 +1423,7 @@ class TestAutomaticRallyDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),
@@ -1426,7 +1435,7 @@ class TestAutomaticRallyDetection:
         ar_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 3, tzinfo=UTC),
             open=Decimal("103.00"),
             high=Decimal("103.50"),
             low=Decimal("102.00"),
@@ -1483,7 +1492,7 @@ class TestAutomaticRallyDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -1495,7 +1504,7 @@ class TestAutomaticRallyDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),
@@ -1508,7 +1517,7 @@ class TestAutomaticRallyDetection:
         bar1 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 3, tzinfo=UTC),
             open=Decimal("103.00"),
             high=Decimal("102.00"),
             low=Decimal("101.00"),
@@ -1521,7 +1530,7 @@ class TestAutomaticRallyDetection:
         bar2 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 4, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 4, tzinfo=UTC),
             open=Decimal("101.50"),
             high=Decimal("102.50"),
             low=Decimal("101.00"),
@@ -1534,7 +1543,7 @@ class TestAutomaticRallyDetection:
         bar3 = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 5, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 5, tzinfo=UTC),
             open=Decimal("102.00"),
             high=Decimal("103.20"),  # 3.2% rally
             low=Decimal("101.80"),
@@ -1545,11 +1554,41 @@ class TestAutomaticRallyDetection:
 
         bars = [prior_bar, sc_bar, bar1, bar2, bar3]
         volume_analysis_list = [
-            VolumeAnalysis(bar=prior_bar, volume_ratio=Decimal("1.0"), spread_ratio=Decimal("1.0"), close_position=Decimal("0.75"), effort_result=EffortResult.NORMAL),
-            VolumeAnalysis(bar=sc_bar, volume_ratio=Decimal("2.5"), spread_ratio=Decimal("1.8"), close_position=Decimal("0.55"), effort_result=EffortResult.CLIMACTIC),
-            VolumeAnalysis(bar=bar1, volume_ratio=Decimal("1.1"), spread_ratio=Decimal("0.5"), close_position=Decimal("0.50"), effort_result=EffortResult.NORMAL),
-            VolumeAnalysis(bar=bar2, volume_ratio=Decimal("1.2"), spread_ratio=Decimal("0.75"), close_position=Decimal("0.67"), effort_result=EffortResult.NORMAL),
-            VolumeAnalysis(bar=bar3, volume_ratio=Decimal("1.3"), spread_ratio=Decimal("0.7"), close_position=Decimal("0.86"), effort_result=EffortResult.NORMAL),
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.55"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
+            VolumeAnalysis(
+                bar=bar1,
+                volume_ratio=Decimal("1.1"),
+                spread_ratio=Decimal("0.5"),
+                close_position=Decimal("0.50"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=bar2,
+                volume_ratio=Decimal("1.2"),
+                spread_ratio=Decimal("0.75"),
+                close_position=Decimal("0.67"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=bar3,
+                volume_ratio=Decimal("1.3"),
+                spread_ratio=Decimal("0.7"),
+                close_position=Decimal("0.86"),
+                effort_result=EffortResult.NORMAL,
+            ),
         ]
 
         sc = detect_selling_climax(bars, volume_analysis_list)
@@ -1574,7 +1613,7 @@ class TestAutomaticRallyDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -1586,7 +1625,7 @@ class TestAutomaticRallyDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),
@@ -1598,7 +1637,7 @@ class TestAutomaticRallyDetection:
         ar_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 3, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 3, tzinfo=UTC),
             open=Decimal("103.00"),
             high=Decimal("103.50"),
             low=Decimal("102.00"),
@@ -1609,9 +1648,27 @@ class TestAutomaticRallyDetection:
 
         bars = [prior_bar, sc_bar, ar_bar]
         volume_analysis_list = [
-            VolumeAnalysis(bar=prior_bar, volume_ratio=Decimal("1.0"), spread_ratio=Decimal("1.0"), close_position=Decimal("0.75"), effort_result=EffortResult.NORMAL),
-            VolumeAnalysis(bar=sc_bar, volume_ratio=Decimal("2.5"), spread_ratio=Decimal("1.8"), close_position=Decimal("0.55"), effort_result=EffortResult.CLIMACTIC),
-            VolumeAnalysis(bar=ar_bar, volume_ratio=Decimal("1.3"), spread_ratio=Decimal("0.75"), close_position=Decimal("0.80"), effort_result=EffortResult.NORMAL),
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.55"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
+            VolumeAnalysis(
+                bar=ar_bar,
+                volume_ratio=Decimal("1.3"),
+                spread_ratio=Decimal("0.75"),
+                close_position=Decimal("0.80"),
+                effort_result=EffortResult.NORMAL,
+            ),
         ]
 
         sc = detect_selling_climax(bars, volume_analysis_list)
@@ -1636,7 +1693,7 @@ class TestAutomaticRallyDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -1648,7 +1705,7 @@ class TestAutomaticRallyDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),
@@ -1659,8 +1716,20 @@ class TestAutomaticRallyDetection:
 
         bars = [prior_bar, sc_bar]
         volume_analysis_list = [
-            VolumeAnalysis(bar=prior_bar, volume_ratio=Decimal("1.0"), spread_ratio=Decimal("1.0"), close_position=Decimal("0.75"), effort_result=EffortResult.NORMAL),
-            VolumeAnalysis(bar=sc_bar, volume_ratio=Decimal("2.5"), spread_ratio=Decimal("1.8"), close_position=Decimal("0.55"), effort_result=EffortResult.CLIMACTIC),
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.55"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
         ]
 
         sc = detect_selling_climax(bars, volume_analysis_list)
@@ -1684,7 +1753,7 @@ class TestAutomaticRallyDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -1696,7 +1765,7 @@ class TestAutomaticRallyDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 2, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),
@@ -1707,8 +1776,20 @@ class TestAutomaticRallyDetection:
 
         bars = [prior_bar, sc_bar]
         volume_analysis_list = [
-            VolumeAnalysis(bar=prior_bar, volume_ratio=Decimal("1.0"), spread_ratio=Decimal("1.0"), close_position=Decimal("0.75"), effort_result=EffortResult.NORMAL),
-            VolumeAnalysis(bar=sc_bar, volume_ratio=Decimal("2.5"), spread_ratio=Decimal("1.8"), close_position=Decimal("0.55"), effort_result=EffortResult.CLIMACTIC),
+            VolumeAnalysis(
+                bar=prior_bar,
+                volume_ratio=Decimal("1.0"),
+                spread_ratio=Decimal("1.0"),
+                close_position=Decimal("0.75"),
+                effort_result=EffortResult.NORMAL,
+            ),
+            VolumeAnalysis(
+                bar=sc_bar,
+                volume_ratio=Decimal("2.5"),
+                spread_ratio=Decimal("1.8"),
+                close_position=Decimal("0.55"),
+                effort_result=EffortResult.CLIMACTIC,
+            ),
         ]
 
         sc = detect_selling_climax(bars, volume_analysis_list)

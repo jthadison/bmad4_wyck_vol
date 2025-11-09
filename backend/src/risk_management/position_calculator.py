@@ -47,7 +47,7 @@ Usage:
 Author: Story 7.2
 """
 
-from decimal import Decimal, ROUND_DOWN, getcontext
+from decimal import ROUND_DOWN, Decimal, getcontext
 from typing import Optional
 
 import structlog
@@ -177,9 +177,7 @@ def calculate_position_size(
         return None
 
     # Calculate position value (shares × entry)
-    position_value = (Decimal(shares) * entry).quantize(
-        Decimal("0.01"), rounding=ROUND_DOWN
-    )
+    position_value = (Decimal(shares) * entry).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
     # AC 6: Maximum position value validation (≤ 20% account equity, FR18)
     max_position_value = (account_equity * Decimal("0.20")).quantize(
@@ -203,9 +201,7 @@ def calculate_position_size(
         )
 
     # AC 7: Calculate actual risk (shares × stop_distance)
-    actual_risk = (Decimal(shares) * stop_distance).quantize(
-        Decimal("0.01"), rounding=ROUND_DOWN
-    )
+    actual_risk = (Decimal(shares) * stop_distance).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
     # AC 7: Validation - actual risk must never exceed intended risk (NFR20)
     if actual_risk > dollar_risk:

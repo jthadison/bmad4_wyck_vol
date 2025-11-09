@@ -122,12 +122,8 @@ class SOSSignal(BaseModel):
     stop_loss: Decimal = Field(
         ..., decimal_places=8, max_digits=18, description="Stop loss level (FR17)"
     )
-    target: Decimal = Field(
-        ..., decimal_places=8, max_digits=18, description="Jump level target"
-    )
-    confidence: int = Field(
-        ..., ge=0, le=100, description="Pattern confidence (Story 6.5)"
-    )
+    target: Decimal = Field(..., decimal_places=8, max_digits=18, description="Jump level target")
+    confidence: int = Field(..., ge=0, le=100, description="Pattern confidence (Story 6.5)")
     r_multiple: Decimal = Field(
         ..., decimal_places=4, max_digits=10, ge=Decimal("0"), description="Risk/reward ratio"
     )
@@ -143,9 +139,7 @@ class SOSSignal(BaseModel):
         None, decimal_places=4, max_digits=10, description="LPS pullback volume"
     )
     phase: str = Field(..., max_length=10, description="Wyckoff phase (typically D)")
-    campaign_id: Optional[UUID] = Field(
-        None, description="Campaign linkage (Spring→SOS)"
-    )
+    campaign_id: Optional[UUID] = Field(None, description="Campaign linkage (Spring→SOS)")
     trading_range_id: UUID = Field(..., description="Associated trading range")
     ice_level: Decimal = Field(
         ..., decimal_places=8, max_digits=18, description="Ice level reference"
@@ -157,9 +151,7 @@ class SOSSignal(BaseModel):
         default_factory=lambda: datetime.now(UTC),
         description="Signal generation timestamp (UTC)",
     )
-    expires_at: Optional[datetime] = Field(
-        None, description="Signal expiration timestamp"
-    )
+    expires_at: Optional[datetime] = Field(None, description="Signal expiration timestamp")
 
     @field_validator("r_multiple")
     @classmethod
@@ -183,9 +175,7 @@ class SOSSignal(BaseModel):
         """
         MIN_R_MULTIPLE = Decimal("2.0")
         if v < MIN_R_MULTIPLE:
-            raise ValueError(
-                f"R-multiple {v:.2f}R below minimum 2.0R (FR19 requirement)"
-            )
+            raise ValueError(f"R-multiple {v:.2f}R below minimum 2.0R (FR19 requirement)")
         return v
 
     @field_validator("stop_loss")
@@ -233,8 +223,8 @@ class SOSSignal(BaseModel):
             )
         return v
 
-    @model_validator(mode='after')
-    def validate_entry_type_consistency(self) -> 'SOSSignal':
+    @model_validator(mode="after")
+    def validate_entry_type_consistency(self) -> SOSSignal:
         """
         Validate entry_type consistency with lps_bar_timestamp.
 

@@ -7,11 +7,8 @@ Tests cover:
 - AC 4: Rejection tracking with specific reasons
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-import pytest
-
-from src.models.lps import LPS
 from src.pattern_engine.detectors.lps_detector_orchestrator import (
     LPSDetectionResult,
     LPSDetector,
@@ -28,9 +25,7 @@ def test_lps_detector_initialization():
 
 def test_lps_detection_result_dataclass():
     """AC 1: LPSDetectionResult dataclass structure."""
-    result = LPSDetectionResult(
-        lps_detected=True, lps=None, rejection_reason="Test rejection"
-    )
+    result = LPSDetectionResult(lps_detected=True, lps=None, rejection_reason="Test rejection")
 
     assert result.lps_detected is True
     assert result.lps is None

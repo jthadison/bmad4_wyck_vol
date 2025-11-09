@@ -14,10 +14,11 @@ Wyckoff Phase Progression:
     Phase E: Markup (sustained trend above Ice)
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class WyckoffPhase(str, Enum):
@@ -66,16 +67,12 @@ class PhaseEvents(BaseModel):
         None, description="AR confirming Phase A (from Story 4.2)"
     )
     # Using dict to avoid circular imports - will contain List[SecondaryTest] data
-    secondary_tests: List[dict] = Field(
+    secondary_tests: list[dict] = Field(
         default_factory=list, description="STs marking Phase B (from Story 4.3)"
     )
     # Epic 5 events (placeholders for future stories)
-    spring: Optional[dict] = Field(
-        None, description="Spring marking Phase C (Epic 5, future)"
-    )
-    sos_breakout: Optional[dict] = Field(
-        None, description="SOS marking Phase D (Epic 5, future)"
-    )
+    spring: Optional[dict] = Field(None, description="Spring marking Phase C (Epic 5, future)")
+    sos_breakout: Optional[dict] = Field(None, description="SOS marking Phase D (Epic 5, future)")
     last_point_of_support: Optional[dict] = Field(
         None, description="LPS in Phase D/E (Epic 5, future)"
     )
@@ -120,34 +117,22 @@ class PhaseClassification(BaseModel):
     phase: Optional[WyckoffPhase] = Field(
         None, description="Current Wyckoff phase (A, B, C, D, E) or None"
     )
-    confidence: int = Field(
-        ..., ge=0, le=100, description="Confidence score 0-100"
-    )
-    duration: int = Field(
-        ..., ge=0, description="Bars since phase began"
-    )
-    events_detected: PhaseEvents = Field(
-        ..., description="Events supporting this phase"
-    )
+    confidence: int = Field(..., ge=0, le=100, description="Confidence score 0-100")
+    duration: int = Field(..., ge=0, description="Bars since phase began")
+    events_detected: PhaseEvents = Field(..., description="Events supporting this phase")
     # Using dict to avoid circular imports - will contain TradingRange data
-    trading_range: Optional[dict] = Field(
-        None, description="Associated trading range"
-    )
+    trading_range: Optional[dict] = Field(None, description="Associated trading range")
     trading_allowed: bool = Field(
         ..., description="FR14 enforcement - trading allowed in this phase"
     )
     rejection_reason: Optional[str] = Field(
         None, description="Reason why trading is disallowed (if applicable)"
     )
-    phase_start_index: int = Field(
-        ..., ge=0, description="Bar index where phase began"
-    )
-    phase_start_timestamp: datetime = Field(
-        ..., description="When phase began (bar timestamp)"
-    )
+    phase_start_index: int = Field(..., ge=0, description="Bar index where phase began")
+    phase_start_timestamp: datetime = Field(..., description="When phase began (bar timestamp)")
     last_updated: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="When classification was last updated (UTC)"
+        default_factory=lambda: datetime.now(UTC),
+        description="When classification was last updated (UTC)",
     )
 
     @field_validator("confidence")
@@ -179,12 +164,12 @@ class PhaseClassification(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Enforce UTC timezone for timestamps."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         json_encoders={
             datetime: lambda v: v.isoformat(),
-        }
+        },
     )

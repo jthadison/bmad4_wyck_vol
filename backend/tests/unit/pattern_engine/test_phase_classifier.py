@@ -10,34 +10,34 @@ Tests cover:
 - Edge cases (missing events, invalid sequences)
 """
 
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
+
+import pytest
 from pydantic import ValidationError
 
 from src.models.phase_classification import (
-    WyckoffPhase,
-    PhaseEvents,
     PhaseClassification,
+    PhaseEvents,
+    WyckoffPhase,
 )
 from src.pattern_engine.phase_classifier import (
+    analyze_st_progression,
+    calculate_ar_confidence_proxy,
+    calculate_phase_a_confidence,
+    calculate_phase_b_confidence,
+    calculate_phase_c_confidence,
+    calculate_phase_d_confidence,
+    calculate_phase_e_confidence,
     classify_phase,
     classify_phase_a,
     classify_phase_b,
     classify_phase_c,
     classify_phase_d,
     classify_phase_e,
-    calculate_phase_a_confidence,
-    calculate_phase_b_confidence,
-    calculate_phase_c_confidence,
-    calculate_phase_d_confidence,
-    calculate_phase_e_confidence,
-    calculate_ar_confidence_proxy,
-    analyze_st_progression,
     get_phase_description,
     get_typical_duration,
 )
-
 
 # Test fixtures
 
@@ -363,9 +363,7 @@ def test_classify_phase_c_missing_spring():
 # Phase D Tests
 
 
-def test_classify_phase_d_success(
-    sc_dict, ar_dict, st1_dict, st2_dict, spring_dict, sos_dict
-):
+def test_classify_phase_d_success(sc_dict, ar_dict, st1_dict, st2_dict, spring_dict, sos_dict):
     """Test Phase D classification with SOS breakout."""
     events = PhaseEvents(
         selling_climax=sc_dict,
@@ -609,7 +607,7 @@ def test_phase_classification_validation():
             events_detected=PhaseEvents(),
             trading_allowed=False,
             phase_start_index=100,
-            phase_start_timestamp=datetime.now(timezone.utc),
+            phase_start_timestamp=datetime.now(UTC),
         )
 
 
@@ -623,7 +621,7 @@ def test_phase_classification_negative_duration():
             events_detected=PhaseEvents(),
             trading_allowed=False,
             phase_start_index=100,
-            phase_start_timestamp=datetime.now(timezone.utc),
+            phase_start_timestamp=datetime.now(UTC),
         )
 
 
@@ -868,9 +866,7 @@ def test_phase_b_confidence_includes_progression(st1_dict, st2_dict):
     st3_dict["bar"] = st2_dict["bar"].copy()
     st3_dict["bar_index"] = 135
     st3_dict["test_number"] = 3
-    st3_dict["distance_from_sc_low"] = Decimal(
-        "0.005"
-    )  # Much tighter (50% improvement)
+    st3_dict["distance_from_sc_low"] = Decimal("0.005")  # Much tighter (50% improvement)
 
     events = PhaseEvents(secondary_tests=[st1_dict, st2_dict, st3_dict])
 
@@ -973,9 +969,7 @@ def test_realtime_aapl_full_progression():
     assert classification_a.trading_allowed is False
 
     # Phase B (early) - real-time at bar 115 (5 bars after ST)
-    events_b_early = PhaseEvents(
-        selling_climax=sc, automatic_rally=ar, secondary_tests=[st1]
-    )
+    events_b_early = PhaseEvents(selling_climax=sc, automatic_rally=ar, secondary_tests=[st1])
     classification_b_early = classify_phase(events_b_early, current_bar_index=115)
     assert classification_b_early.phase == WyckoffPhase.B
     assert classification_b_early.duration == 5

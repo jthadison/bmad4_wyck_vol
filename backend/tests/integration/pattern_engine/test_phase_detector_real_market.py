@@ -11,8 +11,8 @@ Tests with actual market data to verify:
 Story 4.7, Tasks 32-35
 """
 
+
 import pytest
-from datetime import datetime
 
 # from src.pattern_engine.phase_detector_v2 import PhaseDetector
 # Load real market data utilities when available
@@ -102,12 +102,12 @@ def test_real_market_test_structure_exists():
     market data source is available.
     """
     # Verify test file imports work
-    from src.pattern_engine.phase_detector_v2 import PhaseDetector
     from src.models.phase_info import (
         BreakdownRiskProfile,
         PhaseBRiskProfile,
         PhaseESubStateRiskProfile,
     )
+    from src.pattern_engine.phase_detector_v2 import PhaseDetector
     from src.risk.wyckoff_position_sizing import calculate_wyckoff_position_size
 
     # All imports successful

@@ -14,9 +14,10 @@ Wyckoff Interpretation:
 - Multiple STs (2nd, 3rd) build stronger cause → higher Jump potential
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SecondaryTest(BaseModel):
@@ -89,17 +90,13 @@ class SecondaryTest(BaseModel):
         le=100,
         description="Confidence score 0-100 (volume 40pts + proximity 30pts + holding 30pts)",
     )
-    sc_reference: dict = Field(
-        ..., description="The SC that this ST is testing (stored as dict)"
-    )
-    ar_reference: dict = Field(
-        ..., description="The AR that preceded this ST (stored as dict)"
-    )
+    sc_reference: dict = Field(..., description="The SC that this ST is testing (stored as dict)")
+    ar_reference: dict = Field(..., description="The AR that preceded this ST (stored as dict)")
     test_number: int = Field(
         ..., ge=1, description="Sequential test number (1 = first ST, 2 = second ST, etc.)"
     )
     detection_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="When ST was detected (UTC)",
     )
 
@@ -109,9 +106,7 @@ class SecondaryTest(BaseModel):
         """Ensure ST volume is less than SC volume (material reduction required)."""
         # Access sc_volume_ratio from info.data if available
         if "sc_volume_ratio" in info.data and v >= info.data["sc_volume_ratio"]:
-            raise ValueError(
-                "ST volume must be less than SC volume (volume reduction required)"
-            )
+            raise ValueError("ST volume must be less than SC volume (volume reduction required)")
         return v
 
     @field_validator("detection_timestamp")
@@ -119,8 +114,8 @@ class SecondaryTest(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Enforce UTC timezone."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     model_config = ConfigDict(
         # Allow validation of dict for bar and reference fields

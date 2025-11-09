@@ -5,19 +5,20 @@ This module provides functionality for detecting Wyckoff phases and key events
 including Selling Climax (SC), Automatic Rally (AR), and Secondary Tests (ST).
 """
 
-import structlog
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
 
-from src.models.ohlcv import OHLCVBar
-from src.models.volume_analysis import VolumeAnalysis
-from src.models.selling_climax import SellingClimax, SellingClimaxZone
+import structlog
+
 from src.models.automatic_rally import AutomaticRally
-from src.models.secondary_test import SecondaryTest
 from src.models.effort_result import EffortResult
-from src.models.phase_classification import WyckoffPhase, PhaseEvents  # Use canonical sources
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import PhaseEvents, WyckoffPhase  # Use canonical sources
+from src.models.secondary_test import SecondaryTest
+from src.models.selling_climax import SellingClimax, SellingClimaxZone
 from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
 
 logger = structlog.get_logger(__name__)
 
@@ -26,7 +27,7 @@ MIN_PHASE_CONFIDENCE = 70
 
 
 def detect_selling_climax(
-    bars: List[OHLCVBar], volume_analysis: List[VolumeAnalysis]
+    bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
 ) -> Optional[SellingClimax]:
     """
     Detect Selling Climax (SC) marking the beginning of Wyckoff Phase A.
@@ -208,7 +209,7 @@ def detect_selling_climax(
             close_position=close_position,
             confidence=confidence,
             prior_close=prior_bar.close,
-            detection_timestamp=datetime.now(timezone.utc),
+            detection_timestamp=datetime.now(UTC),
         )
 
         logger.info(
@@ -300,8 +301,8 @@ def _calculate_sc_confidence(
 
 
 def detect_sc_zone(
-    bars: List[OHLCVBar],
-    volume_analysis: List[VolumeAnalysis],
+    bars: list[OHLCVBar],
+    volume_analysis: list[VolumeAnalysis],
     max_gap_bars: int = 10,
 ) -> Optional[SellingClimaxZone]:
     """
@@ -453,7 +454,7 @@ def detect_sc_zone(
             close_position=close_position,
             confidence=confidence,
             prior_close=prior_bar.close,
-            detection_timestamp=datetime.now(timezone.utc),
+            detection_timestamp=datetime.now(UTC),
         )
 
         climactic_bars.append(sc)
@@ -481,12 +482,8 @@ def detect_sc_zone(
     zone_end = climactic_bars[-1]
 
     # Calculate zone metrics
-    avg_volume_ratio = sum(sc.volume_ratio for sc in climactic_bars) / len(
-        climactic_bars
-    )
-    avg_confidence = sum(sc.confidence for sc in climactic_bars) // len(
-        climactic_bars
-    )
+    avg_volume_ratio = sum(sc.volume_ratio for sc in climactic_bars) / len(climactic_bars)
+    avg_confidence = sum(sc.confidence for sc in climactic_bars) // len(climactic_bars)
 
     # Find zone low (lowest price in any SC bar)
     zone_low = min(Decimal(sc.bar["low"]) for sc in climactic_bars)
@@ -511,7 +508,7 @@ def detect_sc_zone(
         avg_volume_ratio=avg_volume_ratio,
         avg_confidence=avg_confidence,
         zone_low=zone_low,
-        detection_timestamp=datetime.now(timezone.utc),
+        detection_timestamp=datetime.now(UTC),
     )
 
     logger.info(
@@ -531,9 +528,9 @@ def detect_sc_zone(
 
 
 def detect_automatic_rally(
-    bars: List[OHLCVBar],
+    bars: list[OHLCVBar],
     sc: SellingClimax,
-    volume_analysis: List[VolumeAnalysis],
+    volume_analysis: list[VolumeAnalysis],
 ) -> Optional[AutomaticRally]:
     """
     Detect Automatic Rally (AR) following Selling Climax (SC).
@@ -631,9 +628,7 @@ def detect_automatic_rally(
 
     # Validate bars exist after SC
     if sc_index >= len(bars) - 1:
-        logger.warning(
-            "sc_at_end", message="SC is last bar, no bars for AR detection"
-        )
+        logger.warning("sc_at_end", message="SC is last bar, no bars for AR detection")
         return None
 
     # Step 2: Define search window (ideal: 5 bars, timeout: 10 bars)
@@ -736,9 +731,7 @@ def detect_automatic_rally(
         interpretation = "Weak relief rally (less bullish)"
 
     volume_ratio_float = (
-        float(ar_volume_analysis.volume_ratio)
-        if ar_volume_analysis.volume_ratio
-        else None
+        float(ar_volume_analysis.volume_ratio) if ar_volume_analysis.volume_ratio else None
     )
     logger.info(
         "ar_volume_profile",
@@ -766,7 +759,7 @@ def detect_automatic_rally(
         sc_low=sc_low,
         ar_high=ar_high,
         volume_profile=volume_profile,
-        detection_timestamp=datetime.now(timezone.utc),
+        detection_timestamp=datetime.now(UTC),
     )
 
     logger.info(
@@ -783,9 +776,7 @@ def detect_automatic_rally(
     return ar
 
 
-def is_phase_a_confirmed(
-    sc: Optional[SellingClimax], ar: Optional[AutomaticRally]
-) -> bool:
+def is_phase_a_confirmed(sc: Optional[SellingClimax], ar: Optional[AutomaticRally]) -> bool:
     """
     Check if Phase A is confirmed (SC + AR both present).
 
@@ -841,11 +832,11 @@ def is_phase_a_confirmed(
 
 
 def detect_secondary_test(
-    bars: List[OHLCVBar],
+    bars: list[OHLCVBar],
     sc: SellingClimax,
     ar: AutomaticRally,
-    volume_analysis: List[VolumeAnalysis],
-    existing_sts: Optional[List[SecondaryTest]] = None,
+    volume_analysis: list[VolumeAnalysis],
+    existing_sts: Optional[list[SecondaryTest]] = None,
 ) -> Optional[SecondaryTest]:
     """
     Detect Secondary Test (ST) of the Selling Climax low after Automatic Rally.
@@ -976,9 +967,7 @@ def detect_secondary_test(
 
     # Validate bars exist after AR
     if ar_index >= len(bars) - 1:
-        logger.warning(
-            "ar_at_end", message="AR is last bar, no bars for ST detection"
-        )
+        logger.warning("ar_at_end", message="AR is last bar, no bars for ST detection")
         return None
 
     # Step 2: Determine search window (after AR, up to 40 bars per Story 4.3 AC)
@@ -993,7 +982,9 @@ def detect_secondary_test(
     )
 
     # Step 3: Scan for ST candidates
-    MIN_ST_VOLUME_REDUCTION = Decimal("0.20")  # 20% minimum (increased from 10% per expert feedback - more accurate filtering)
+    MIN_ST_VOLUME_REDUCTION = Decimal(
+        "0.20"
+    )  # 20% minimum (increased from 10% per expert feedback - more accurate filtering)
     MAX_ST_DISTANCE = Decimal("0.02")  # 2% tolerance per AC 3
 
     for i in range(search_start, search_end + 1):
@@ -1131,7 +1122,7 @@ def detect_secondary_test(
             sc_reference=sc.model_dump(),
             ar_reference=ar.model_dump(),
             test_number=test_number,
-            detection_timestamp=datetime.now(timezone.utc),
+            detection_timestamp=datetime.now(UTC),
         )
 
         logger.info(
@@ -1394,11 +1385,15 @@ def calculate_phase_confidence(
     if total_confidence < MIN_PHASE_CONFIDENCE:
         reasons = {}
         if event_score < 30:
-            reasons["missing_events"] = f"Event presence score {event_score}/40 (missing required events)"
+            reasons[
+                "missing_events"
+            ] = f"Event presence score {event_score}/40 (missing required events)"
         if quality_score < 20:
             reasons["low_quality"] = f"Event quality score {quality_score}/30 (weak signals)"
         if sequence_score < 10:
-            reasons["invalid_sequence"] = f"Sequence validity score {sequence_score}/20 (timing issues)"
+            reasons[
+                "invalid_sequence"
+            ] = f"Sequence validity score {sequence_score}/20 (timing issues)"
         if context_score < 5:
             reasons["poor_context"] = f"Range context score {context_score}/10 (doesn't fit range)"
 
@@ -1473,7 +1468,7 @@ def _score_event_presence(phase: WyckoffPhase, events: PhaseEvents) -> int:
 
     elif phase == WyckoffPhase.B:
         # Phase B requires Phase A + at least 1 ST
-        if (events.selling_climax is not None and events.automatic_rally is not None):
+        if events.selling_climax is not None and events.automatic_rally is not None:
             score += 20
 
         st_count = len(events.secondary_tests)
@@ -1485,7 +1480,9 @@ def _score_event_presence(phase: WyckoffPhase, events: PhaseEvents) -> int:
 
     elif phase == WyckoffPhase.C:
         # Phase C requires Phase B + Spring
-        if ((events.selling_climax is not None and events.automatic_rally is not None) and len(events.secondary_tests) > 0):
+        if (events.selling_climax is not None and events.automatic_rally is not None) and len(
+            events.secondary_tests
+        ) > 0:
             score += 20
         if events.spring is not None:
             score += 20
@@ -1498,7 +1495,7 @@ def _score_event_presence(phase: WyckoffPhase, events: PhaseEvents) -> int:
 
     elif phase == WyckoffPhase.E:
         # Phase E requires Phase D + continuation
-        if (events.sos_breakout is not None):
+        if events.sos_breakout is not None:
             score += 20
         # Additional 20 points if price above Ice (continuation confirmed)
         # This would need current price context, for now just give 20pts for Phase D
@@ -1632,7 +1629,7 @@ def _score_event_quality(phase: WyckoffPhase, events: PhaseEvents) -> int:
         if events.spring:
             # Spring will have confidence from Epic 5
             # For now, assume it has .confidence attribute
-            if hasattr(events.spring, 'confidence'):
+            if hasattr(events.spring, "confidence"):
                 qualities.append(events.spring.confidence)
             else:
                 qualities.append(80)  # Placeholder for Epic 5
@@ -1640,13 +1637,13 @@ def _score_event_quality(phase: WyckoffPhase, events: PhaseEvents) -> int:
     elif phase == WyckoffPhase.D:
         # Phase D quality: SOS (primary), optionally LPS
         if events.sos_breakout:
-            if hasattr(events.sos_breakout, 'confidence'):
+            if hasattr(events.sos_breakout, "confidence"):
                 qualities.append(events.sos_breakout.confidence)
             else:
                 qualities.append(85)  # Placeholder for Epic 5
 
         if events.last_point_of_support:
-            if hasattr(events.last_point_of_support, 'confidence'):
+            if hasattr(events.last_point_of_support, "confidence"):
                 qualities.append(events.last_point_of_support.confidence)
             else:
                 qualities.append(80)  # Placeholder for Epic 5
@@ -1654,13 +1651,13 @@ def _score_event_quality(phase: WyckoffPhase, events: PhaseEvents) -> int:
     elif phase == WyckoffPhase.E:
         # Phase E quality: Phase D events + continuation metrics
         if events.sos_breakout:
-            if hasattr(events.sos_breakout, 'confidence'):
+            if hasattr(events.sos_breakout, "confidence"):
                 qualities.append(events.sos_breakout.confidence)
             else:
                 qualities.append(85)
 
         if events.last_point_of_support:
-            if hasattr(events.last_point_of_support, 'confidence'):
+            if hasattr(events.last_point_of_support, "confidence"):
                 qualities.append(events.last_point_of_support.confidence)
             else:
                 qualities.append(80)
@@ -1670,7 +1667,9 @@ def _score_event_quality(phase: WyckoffPhase, events: PhaseEvents) -> int:
 
     # Calculate average quality
     if not qualities:
-        logger.debug("event_quality_no_events", phase=phase.value, message="No events to score quality")
+        logger.debug(
+            "event_quality_no_events", phase=phase.value, message="No events to score quality"
+        )
         return 0
 
     avg_quality = sum(qualities) / len(qualities)
@@ -1718,9 +1717,9 @@ def _calculate_ar_quality(ar: AutomaticRally) -> int:
     if ar.bars_after_sc <= 5:
         quality += 15  # Ideal timing
     elif ar.bars_after_sc <= 8:
-        quality += 8   # Acceptable
+        quality += 8  # Acceptable
     else:
-        quality += 2   # Delayed
+        quality += 2  # Delayed
 
     # Volume component (0-5 points)
     if ar.volume_profile == "HIGH":
@@ -1771,24 +1770,26 @@ def _score_sequence_validity(
             if events.automatic_rally["bars_after_sc"] <= 5:
                 score += 10  # Ideal timing
             elif events.automatic_rally["bars_after_sc"] <= 10:
-                score += 5   # Acceptable timing
+                score += 5  # Acceptable timing
             # else: 0 points (too late, shouldn't happen but defensive)
 
     elif phase == WyckoffPhase.B:
         # Phase A must be complete
-        if (events.selling_climax is not None and events.automatic_rally is not None):
+        if events.selling_climax is not None and events.automatic_rally is not None:
             score += 10
 
         # STs should be spaced reasonably (not all in 1-2 bars)
         if len(events.secondary_tests) >= 2:
             # Check if STs are distributed
-            st_timestamps = [datetime.fromisoformat(st["bar"]["timestamp"]) for st in events.secondary_tests]
+            st_timestamps = [
+                datetime.fromisoformat(st["bar"]["timestamp"]) for st in events.secondary_tests
+            ]
             st_timestamps_sorted = sorted(st_timestamps)
 
             # Calculate gaps between STs
             gaps = []
             for i in range(1, len(st_timestamps_sorted)):
-                gap = (st_timestamps_sorted[i] - st_timestamps_sorted[i-1]).days
+                gap = (st_timestamps_sorted[i] - st_timestamps_sorted[i - 1]).days
                 gaps.append(gap)
 
             avg_gap = sum(gaps) / len(gaps) if gaps else 0
@@ -1807,7 +1808,9 @@ def _score_sequence_validity(
 
     elif phase == WyckoffPhase.C:
         # Phase B must be complete
-        if ((events.selling_climax is not None and events.automatic_rally is not None) and len(events.secondary_tests) > 0):
+        if (events.selling_climax is not None and events.automatic_rally is not None) and len(
+            events.secondary_tests
+        ) > 0:
             score += 10
 
         # Spring should come after adequate Phase B duration
@@ -1816,18 +1819,23 @@ def _score_sequence_validity(
 
     elif phase == WyckoffPhase.D:
         # Ideally SOS comes after Phase C
-        if (((events.selling_climax is not None and events.automatic_rally is not None) and len(events.secondary_tests) > 0) and events.spring is not None):
+        if (
+            (events.selling_climax is not None and events.automatic_rally is not None)
+            and len(events.secondary_tests) > 0
+        ) and events.spring is not None:
             score += 20  # Full sequence A→B→C→D (ideal)
-        elif ((events.selling_climax is not None and events.automatic_rally is not None) and len(events.secondary_tests) > 0):
+        elif (events.selling_climax is not None and events.automatic_rally is not None) and len(
+            events.secondary_tests
+        ) > 0:
             score += 15  # Phase B confirmed but no Spring (acceptable)
-        elif (events.selling_climax is not None and events.automatic_rally is not None):
+        elif events.selling_climax is not None and events.automatic_rally is not None:
             score += 10  # Phase A confirmed but limited cause building
         else:
-            score += 5   # SOS without prior phases (valid but less confidence)
+            score += 5  # SOS without prior phases (valid but less confidence)
 
     elif phase == WyckoffPhase.E:
         # Must have Phase D (SOS breakout)
-        if (events.sos_breakout is not None):
+        if events.sos_breakout is not None:
             score += 20  # Valid continuation
 
     logger.debug(
@@ -1865,22 +1873,30 @@ def _score_range_context(
         Range context score 0-10
     """
     if trading_range is None:
-        logger.debug("range_context_no_range", message="No trading range provided, context score = 0")
+        logger.debug(
+            "range_context_no_range", message="No trading range provided, context score = 0"
+        )
         return 0
 
     score = 0
 
     # Check if range has required levels
-    if not hasattr(trading_range, 'creek') or trading_range.creek is None:
+    if not hasattr(trading_range, "creek") or trading_range.creek is None:
         logger.debug("range_context_no_creek", message="Trading range missing creek level")
         return 0
 
-    if not hasattr(trading_range, 'ice') or trading_range.ice is None:
+    if not hasattr(trading_range, "ice") or trading_range.ice is None:
         logger.debug("range_context_no_ice", message="Trading range missing ice level")
         return 0
 
-    creek_price = trading_range.creek.price if hasattr(trading_range.creek, 'price') else trading_range.support
-    ice_price = trading_range.ice.price if hasattr(trading_range.ice, 'price') else trading_range.resistance
+    creek_price = (
+        trading_range.creek.price
+        if hasattr(trading_range.creek, "price")
+        else trading_range.support
+    )
+    ice_price = (
+        trading_range.ice.price if hasattr(trading_range.ice, "price") else trading_range.resistance
+    )
 
     if phase == WyckoffPhase.A:
         # SC should align with range support
@@ -1914,7 +1930,7 @@ def _score_range_context(
                 score += 3  # Most STs within range
 
         # Range duration appropriate for Phase B (10-40 bars)
-        if hasattr(trading_range, 'duration') and 10 <= trading_range.duration <= 40:
+        if hasattr(trading_range, "duration") and 10 <= trading_range.duration <= 40:
             score += 5
 
     elif phase == WyckoffPhase.C:
@@ -1935,7 +1951,7 @@ def _score_range_context(
         # Price should be well above Ice
         # This would need current price context
         # For now, give 10 points if Phase D confirmed
-        if (events.sos_breakout is not None):
+        if events.sos_breakout is not None:
             score += 10
 
     logger.debug(

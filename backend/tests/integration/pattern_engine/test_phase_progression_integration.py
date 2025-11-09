@@ -4,18 +4,15 @@ Integration tests for Phase Progression Validator.
 Tests full A→B→C→D→E progression with PhaseDetector integration scenarios.
 """
 
-import pytest
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+from src.models.phase_classification import PhaseClassification, PhaseEvents, WyckoffPhase
 from src.pattern_engine.phase_progression_validator import (
     PhaseHistory,
-    PhaseTransition,
     enforce_phase_progression,
-    add_phase_transition,
     get_transition_summary,
 )
-from src.models.phase_classification import WyckoffPhase, PhaseClassification, PhaseEvents
-
 
 # ============================================================================
 # Test Full Accumulation Progression (AC 8)
@@ -34,8 +31,8 @@ def test_full_accumulation_progression():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Progression: None → A → B → C → D → E
@@ -57,8 +54,8 @@ def test_full_accumulation_progression():
             trading_allowed=True,
             rejection_reason=None,
             phase_start_index=bar_index,
-            phase_start_timestamp=datetime.now(timezone.utc),
-            last_updated=datetime.now(timezone.utc),
+            phase_start_timestamp=datetime.now(UTC),
+            last_updated=datetime.now(UTC),
         )
 
         # Enforce progression
@@ -67,7 +64,9 @@ def test_full_accumulation_progression():
             history, classification, context
         )
 
-        assert accepted is True, f"Transition {from_phase} → {to_phase} rejected: {rejection_reason}"
+        assert (
+            accepted is True
+        ), f"Transition {from_phase} → {to_phase} rejected: {rejection_reason}"
         assert rejection_reason is None
         assert history.current_phase == to_phase
 
@@ -98,8 +97,8 @@ def test_progression_with_invalid_attempts():
         transitions=[],
         current_phase=WyckoffPhase.B,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Attempt invalid B → A transition
@@ -111,8 +110,8 @@ def test_progression_with_invalid_attempts():
         trading_allowed=False,
         rejection_reason=None,
         phase_start_index=20,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {"bar_index": 20, "reason": "Attempted invalid reversion"}
@@ -135,8 +134,8 @@ def test_progression_with_invalid_attempts():
         trading_allowed=True,
         rejection_reason=None,
         phase_start_index=25,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {"bar_index": 25, "reason": "Spring detected"}
@@ -165,8 +164,8 @@ def test_new_range_reset_scenario():
         transitions=[],
         current_phase=WyckoffPhase.D,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # New range detected, reset to Phase A
@@ -178,8 +177,8 @@ def test_new_range_reset_scenario():
         trading_allowed=False,
         rejection_reason=None,
         phase_start_index=100,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {
@@ -214,8 +213,8 @@ def test_range_breakdown_scenario():
         transitions=[],
         current_phase=WyckoffPhase.C,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Range breakdown: C → None
@@ -227,8 +226,8 @@ def test_range_breakdown_scenario():
         trading_allowed=False,
         rejection_reason="Range breakdown",
         phase_start_index=50,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {
@@ -253,8 +252,8 @@ def test_range_breakdown_scenario():
         trading_allowed=False,
         rejection_reason=None,
         phase_start_index=60,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {"bar_index": 60, "reason": "New SC + AR detected"}
@@ -283,8 +282,8 @@ def test_multiple_accumulation_cycles():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # First cycle: None → A → B → C → D → E
@@ -305,8 +304,8 @@ def test_multiple_accumulation_cycles():
             trading_allowed=True,
             rejection_reason=None,
             phase_start_index=bar_index,
-            phase_start_timestamp=datetime.now(timezone.utc),
-            last_updated=datetime.now(timezone.utc),
+            phase_start_timestamp=datetime.now(UTC),
+            last_updated=datetime.now(UTC),
         )
         context = {"bar_index": bar_index, "reason": reason}
         accepted, history, _ = enforce_phase_progression(history, classification, context)
@@ -324,8 +323,8 @@ def test_multiple_accumulation_cycles():
         trading_allowed=False,
         rejection_reason=None,
         phase_start_index=100,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {"bar_index": 100, "reason": "New range", "trend_ended": True}
@@ -342,14 +341,12 @@ def test_multiple_accumulation_cycles():
         trading_allowed=False,
         rejection_reason=None,
         phase_start_index=105,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {"bar_index": 105, "reason": "First ST in new cycle"}
-    accepted, history, _ = enforce_phase_progression(
-        history, second_cycle_classification, context
-    )
+    accepted, history, _ = enforce_phase_progression(history, second_cycle_classification, context)
     assert accepted is True
     assert history.current_phase == WyckoffPhase.B
     assert len(history.transitions) == 7  # 5 from first cycle + 2 from second
@@ -370,8 +367,8 @@ def test_distribution_pattern():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Distribution: None → A → B → C
@@ -390,8 +387,8 @@ def test_distribution_pattern():
             trading_allowed=True,
             rejection_reason=None,
             phase_start_index=bar_index,
-            phase_start_timestamp=datetime.now(timezone.utc),
-            last_updated=datetime.now(timezone.utc),
+            phase_start_timestamp=datetime.now(UTC),
+            last_updated=datetime.now(UTC),
         )
         context = {"bar_index": bar_index, "reason": reason}
         accepted, history, _ = enforce_phase_progression(history, classification, context)
@@ -426,8 +423,8 @@ def test_rapid_phase_transitions():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Rapid progression
@@ -446,8 +443,8 @@ def test_rapid_phase_transitions():
             trading_allowed=True,
             rejection_reason=None,
             phase_start_index=bar_index,
-            phase_start_timestamp=datetime.now(timezone.utc),
-            last_updated=datetime.now(timezone.utc),
+            phase_start_timestamp=datetime.now(UTC),
+            last_updated=datetime.now(UTC),
         )
         context = {"bar_index": bar_index, "reason": reason}
         accepted, history, _ = enforce_phase_progression(history, classification, context)
@@ -477,8 +474,8 @@ def test_history_integrity_across_transitions():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     phases = [
@@ -498,8 +495,8 @@ def test_history_integrity_across_transitions():
             trading_allowed=True,
             rejection_reason=None,
             phase_start_index=bar_index,
-            phase_start_timestamp=datetime.now(timezone.utc),
-            last_updated=datetime.now(timezone.utc),
+            phase_start_timestamp=datetime.now(UTC),
+            last_updated=datetime.now(UTC),
         )
         context = {"bar_index": bar_index, "reason": f"Transition to {to_phase.value}"}
         accepted, history, _ = enforce_phase_progression(history, classification, context)

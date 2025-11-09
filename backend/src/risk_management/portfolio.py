@@ -68,9 +68,7 @@ def calculate_portfolio_heat(open_positions: list[Position]) -> Decimal:
     if not open_positions:
         return Decimal("0.0")
 
-    total_heat = sum(
-        pos.position_risk_pct for pos in open_positions if pos.status == "OPEN"
-    )
+    total_heat = sum(pos.position_risk_pct for pos in open_positions if pos.status == "OPEN")
 
     logger.debug(
         "portfolio_heat_calculated",
@@ -314,9 +312,7 @@ def identify_campaign_clusters(
         )
         clusters.append(cluster)
 
-    logger.debug(
-        "campaign_clusters_identified", cluster_count=len(clusters), clusters=clusters
-    )
+    logger.debug("campaign_clusters_identified", cluster_count=len(clusters), clusters=clusters)
 
     return clusters
 
@@ -481,10 +477,9 @@ def check_campaign_stage_warnings(
         )
 
     # 4. Volume Quality Mismatch Warning (WARNING)
-    if (
-        portfolio_heat.total_heat > Decimal("8.0")
-        and portfolio_heat.weighted_volume_score < Decimal("20.0")
-    ):
+    if portfolio_heat.total_heat > Decimal(
+        "8.0"
+    ) and portfolio_heat.weighted_volume_score < Decimal("20.0"):
         warnings.append(
             PortfolioWarning(
                 warning_type="volume_quality_mismatch",
@@ -581,14 +576,10 @@ def build_portfolio_heat_report(open_positions: list[Position]) -> PortfolioHeat
     clusters = identify_campaign_clusters(open_positions)
 
     # 6. Calculate correlation-adjusted heat
-    correlation_adjusted_heat = calculate_correlation_adjusted_heat(
-        open_positions, clusters
-    )
+    correlation_adjusted_heat = calculate_correlation_adjusted_heat(open_positions, clusters)
 
     # 7. Build risk breakdown and phase distribution
-    risk_breakdown = {
-        pos.symbol: pos.position_risk_pct for pos in open_positions
-    }
+    risk_breakdown = {pos.symbol: pos.position_risk_pct for pos in open_positions}
 
     phase_distribution = defaultdict(int)
     for pos in open_positions:

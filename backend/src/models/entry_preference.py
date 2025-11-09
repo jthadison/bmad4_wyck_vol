@@ -145,12 +145,8 @@ class EntryPreference(BaseModel):
     trading_range_id: UUID = Field(..., description="Associated trading range")
 
     # Entry and stop levels
-    entry_price: Decimal = Field(
-        ..., decimal_places=8, max_digits=18, description="Entry price"
-    )
-    stop_loss: Decimal = Field(
-        ..., decimal_places=8, max_digits=18, description="Stop loss level"
-    )
+    entry_price: Decimal = Field(..., decimal_places=8, max_digits=18, description="Entry price")
+    stop_loss: Decimal = Field(..., decimal_places=8, max_digits=18, description="Stop loss level")
     stop_distance_pct: Decimal = Field(
         ..., decimal_places=4, max_digits=10, description="Stop distance % (3% LPS, 5% SOS)"
     )
@@ -160,9 +156,7 @@ class EntryPreference(BaseModel):
 
     # Decision metadata
     bars_after_sos: int = Field(..., ge=0, description="Bars since SOS detected")
-    wait_period_complete: bool = Field(
-        ..., description="Whether 10-bar wait period completed"
-    )
+    wait_period_complete: bool = Field(..., description="Whether 10-bar wait period completed")
     sos_confidence: Optional[int] = Field(
         None, ge=0, le=100, description="SOS confidence score (0-100)"
     )

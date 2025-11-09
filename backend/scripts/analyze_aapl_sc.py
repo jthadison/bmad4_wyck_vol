@@ -4,9 +4,10 @@ This helps William (Wyckoff mentor) teach SC zone vs. multiple SC identification
 """
 
 import sys
-from pathlib import Path
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
+from pathlib import Path
+
 import pandas as pd
 
 # Add backend to path
@@ -15,8 +16,8 @@ sys.path.insert(0, str(backend_dir))
 
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
-from src.pattern_engine.volume_analyzer import VolumeAnalyzer
 from src.pattern_engine.phase_detector import detect_selling_climax
+from src.pattern_engine.volume_analyzer import VolumeAnalyzer
 
 
 def load_aapl_csv(csv_path: str) -> list[OHLCVBar]:
@@ -28,13 +29,13 @@ def load_aapl_csv(csv_path: str) -> list[OHLCVBar]:
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
-            timestamp=datetime.fromisoformat(row['timestamp']).replace(tzinfo=timezone.utc),
-            open=Decimal(str(row['open'])),
-            high=Decimal(str(row['high'])),
-            low=Decimal(str(row['low'])),
-            close=Decimal(str(row['close'])),
-            volume=int(row['volume']),
-            spread=Decimal(str(row['high'])) - Decimal(str(row['low']))
+            timestamp=datetime.fromisoformat(row["timestamp"]).replace(tzinfo=UTC),
+            open=Decimal(str(row["open"])),
+            high=Decimal(str(row["high"])),
+            low=Decimal(str(row["low"])),
+            close=Decimal(str(row["close"])),
+            volume=int(row["volume"]),
+            spread=Decimal(str(row["high"])) - Decimal(str(row["low"])),
         )
         bars.append(bar)
 
@@ -42,7 +43,9 @@ def load_aapl_csv(csv_path: str) -> list[OHLCVBar]:
     return list(reversed(bars))
 
 
-def find_all_potential_scs(bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]) -> list[dict]:
+def find_all_potential_scs(
+    bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
+) -> list[dict]:
     """
     Find ALL bars that meet SC criteria (not just first).
     This helps identify if we have multiple separate SCs or one SC zone.
@@ -59,8 +62,12 @@ def find_all_potential_scs(bars: list[OHLCVBar], volume_analysis: list[VolumeAna
         if analysis.effort_result != EffortResult.CLIMACTIC:
             continue
 
-        if (analysis.volume_ratio is None or analysis.spread_ratio is None or
-            analysis.volume_ratio < Decimal("2.0") or analysis.spread_ratio < Decimal("1.5")):
+        if (
+            analysis.volume_ratio is None
+            or analysis.spread_ratio is None
+            or analysis.volume_ratio < Decimal("2.0")
+            or analysis.spread_ratio < Decimal("1.5")
+        ):
             continue
 
         close_position = analysis.close_position
@@ -81,17 +88,19 @@ def find_all_potential_scs(bars: list[OHLCVBar], volume_analysis: list[VolumeAna
             continue
 
         # This bar meets ALL SC criteria
-        potential_scs.append({
-            'index': i,
-            'date': current_bar.timestamp.strftime('%Y-%m-%d'),
-            'low': float(current_bar.low),
-            'close': float(current_bar.close),
-            'volume': current_bar.volume,
-            'volume_ratio': float(analysis.volume_ratio),
-            'spread_ratio': float(analysis.spread_ratio),
-            'close_position': float(close_position),
-            'bars_since_previous': 0 if not potential_scs else i - potential_scs[-1]['index']
-        })
+        potential_scs.append(
+            {
+                "index": i,
+                "date": current_bar.timestamp.strftime("%Y-%m-%d"),
+                "low": float(current_bar.low),
+                "close": float(current_bar.close),
+                "volume": current_bar.volume,
+                "volume_ratio": float(analysis.volume_ratio),
+                "spread_ratio": float(analysis.spread_ratio),
+                "close_position": float(close_position),
+                "bars_since_previous": 0 if not potential_scs else i - potential_scs[-1]["index"],
+            }
+        )
 
     return potential_scs
 
@@ -119,7 +128,7 @@ def main():
     print("[*] Analyzing volume characteristics...")
     volume_analyzer = VolumeAnalyzer()
     volume_analysis = volume_analyzer.analyze(bars)
-    print(f"[OK] Volume analysis complete")
+    print("[OK] Volume analysis complete")
     print()
 
     # Find first SC (standard detection)
@@ -127,7 +136,7 @@ def main():
     sc = detect_selling_climax(bars, volume_analysis)
 
     if sc:
-        print(f"[OK] SC Detected:")
+        print("[OK] SC Detected:")
         print(f"   Date: {sc.bar['timestamp']}")
         print(f"   Low: ${sc.bar['low']}")
         print(f"   Close: ${sc.bar['close']}")
@@ -151,13 +160,17 @@ def main():
     print()
 
     # Print table
-    print(f"{'#':<4} {'Date':<12} {'Low':>10} {'Close':>10} {'Vol Ratio':>10} {'Spread':>8} {'ClosePos':>9} {'Days Gap':>9}")
+    print(
+        f"{'#':<4} {'Date':<12} {'Low':>10} {'Close':>10} {'Vol Ratio':>10} {'Spread':>8} {'ClosePos':>9} {'Days Gap':>9}"
+    )
     print("-" * 80)
 
     for i, sc_data in enumerate(all_scs, 1):
-        print(f"{i:<4} {sc_data['date']:<12} ${sc_data['low']:>9.2f} ${sc_data['close']:>9.2f} "
-              f"{sc_data['volume_ratio']:>9.2f}x {sc_data['spread_ratio']:>7.2f}x "
-              f"{sc_data['close_position']:>8.2f} {sc_data['bars_since_previous']:>9}")
+        print(
+            f"{i:<4} {sc_data['date']:<12} ${sc_data['low']:>9.2f} ${sc_data['close']:>9.2f} "
+            f"{sc_data['volume_ratio']:>9.2f}x {sc_data['spread_ratio']:>7.2f}x "
+            f"{sc_data['close_position']:>8.2f} {sc_data['bars_since_previous']:>9}"
+        )
 
     print()
     print("=" * 80)
@@ -173,7 +186,7 @@ def main():
         print()
 
         # Analyze clustering
-        max_gap = max(sc['bars_since_previous'] for sc in all_scs[1:]) if len(all_scs) > 1 else 0
+        max_gap = max(sc["bars_since_previous"] for sc in all_scs[1:]) if len(all_scs) > 1 else 0
 
         if max_gap <= 10:
             print("[WYCKOFF] ASSESSMENT: This appears to be ONE MULTI-BAR SC ZONE")
@@ -207,7 +220,9 @@ def main():
     print("=" * 80)
 
     if sc and len(all_scs) > 1:
-        first_sc_idx = next(i for i, bar in enumerate(bars) if bar.timestamp.isoformat() == sc.bar['timestamp'])
+        first_sc_idx = next(
+            i for i, bar in enumerate(bars) if bar.timestamp.isoformat() == sc.bar["timestamp"]
+        )
         print(f"[OK] AR Detection will start from: {sc.bar['timestamp']}")
         print(f"   Looking for 3%+ rally from low: ${sc.bar['low']}")
         print(f"   Window: Next 5-10 bars after index {first_sc_idx}")

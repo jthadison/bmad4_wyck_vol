@@ -114,15 +114,9 @@ class SpringSignal(BaseModel):
     target_price: Decimal = Field(
         ..., decimal_places=8, max_digits=18, description="Target price (AC 4)"
     )
-    confidence: int = Field(
-        ..., ge=0, le=100, description="Signal confidence (from Story 5.4)"
-    )
-    r_multiple: Decimal = Field(
-        ..., ge=0, decimal_places=2, description="Risk-reward ratio (AC 6)"
-    )
-    signal_type: str = Field(
-        default="LONG_ENTRY", description="Always long for springs"
-    )
+    confidence: int = Field(..., ge=0, le=100, description="Signal confidence (from Story 5.4)")
+    r_multiple: Decimal = Field(..., ge=0, decimal_places=2, description="Risk-reward ratio (AC 6)")
+    signal_type: str = Field(default="LONG_ENTRY", description="Always long for springs")
     pattern_type: str = Field(default="SPRING", description="Pattern identifier")
     signal_timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
@@ -133,13 +127,9 @@ class SpringSignal(BaseModel):
     # Pattern data fields (AC 8)
     spring_bar_timestamp: datetime = Field(..., description="Spring bar reference")
     test_bar_timestamp: datetime = Field(..., description="Test bar reference")
-    spring_volume_ratio: Decimal = Field(
-        ..., description="Spring volume (e.g., 0.45x)"
-    )
+    spring_volume_ratio: Decimal = Field(..., description="Spring volume (e.g., 0.45x)")
     test_volume_ratio: Decimal = Field(..., description="Test volume (e.g., 0.30x)")
-    volume_decrease_pct: Decimal = Field(
-        ..., description="Test volume decrease vs spring"
-    )
+    volume_decrease_pct: Decimal = Field(..., description="Test volume decrease vs spring")
     penetration_pct: Decimal = Field(..., description="Spring penetration depth")
     recovery_bars: int = Field(..., description="Bars for spring recovery")
     creek_level: Decimal = Field(..., description="Creek level reference")
@@ -156,9 +146,7 @@ class SpringSignal(BaseModel):
         ...,
         description="Percentage distance to stop (adaptive 1-2% based on penetration)",
     )
-    target_distance_pct: Decimal = Field(
-        ..., description="Percentage distance to target"
-    )
+    target_distance_pct: Decimal = Field(..., description="Percentage distance to target")
     recommended_position_size: Decimal = Field(
         ..., description="Position size in shares/contracts (whole units)"
     )
@@ -172,7 +160,9 @@ class SpringSignal(BaseModel):
         default=None, description="Calculated by Epic 7 (portfolio aggregation)"
     )
 
-    @field_validator("signal_timestamp", "spring_bar_timestamp", "test_bar_timestamp", "range_start_timestamp")
+    @field_validator(
+        "signal_timestamp", "spring_bar_timestamp", "test_bar_timestamp", "range_start_timestamp"
+    )
     @classmethod
     def ensure_utc(cls, v: datetime) -> datetime:
         """Enforce UTC timezone on all timestamps"""
@@ -201,9 +191,7 @@ class SpringSignal(BaseModel):
     def validate_minimum_r_multiple(cls, v: Decimal) -> Decimal:
         """FR19 (Updated): Minimum 2.0R required for spring signals"""
         if v < Decimal("2.0"):
-            raise ValueError(
-                f"FR19 (Updated): Spring signals require minimum 2.0R (got {v}R)"
-            )
+            raise ValueError(f"FR19 (Updated): Spring signals require minimum 2.0R (got {v}R)")
         return v
 
     @field_validator("confidence")
@@ -211,9 +199,7 @@ class SpringSignal(BaseModel):
     def validate_confidence_range(cls, v: int) -> int:
         """Confidence must be 70-100 for valid signals"""
         if v < 70:
-            raise ValueError(
-                f"Confidence must be >= 70% for signal generation (got {v}%)"
-            )
+            raise ValueError(f"Confidence must be >= 70% for signal generation (got {v}%)")
         return v
 
     @field_validator("risk_per_trade_pct")
@@ -232,13 +218,12 @@ class SpringSignal(BaseModel):
         """Urgency must be one of IMMEDIATE, MODERATE, LOW"""
         valid_urgencies = ["IMMEDIATE", "MODERATE", "LOW"]
         if v not in valid_urgencies:
-            raise ValueError(
-                f"Urgency must be one of {valid_urgencies} (got {v})"
-            )
+            raise ValueError(f"Urgency must be one of {valid_urgencies} (got {v})")
         return v
 
     class Config:
         """Pydantic configuration"""
+
         json_encoders = {
             Decimal: str,
             datetime: lambda v: v.isoformat(),

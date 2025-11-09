@@ -26,7 +26,6 @@ from decimal import Decimal
 
 import pytest
 
-from src.models.position_sizing import PositionSizing
 from src.models.risk_allocation import PatternType
 from src.risk_management.position_calculator import calculate_position_size
 from src.risk_management.risk_allocator import RiskAllocator
@@ -437,7 +436,8 @@ class TestRiskAllocatorIntegration:
         # Create custom risk allocator with override
         allocator = RiskAllocator()
         allocator.set_pattern_risk_override(
-            PatternType.SPRING, Decimal("1.0")  # Override to 1.0% (from default 0.5%)
+            PatternType.SPRING,
+            Decimal("1.0"),  # Override to 1.0% (from default 0.5%)
         )
 
         result = calculate_position_size(

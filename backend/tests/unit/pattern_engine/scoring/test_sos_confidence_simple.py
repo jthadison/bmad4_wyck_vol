@@ -4,13 +4,11 @@ Simple unit tests for SOS confidence scoring - focused on core functionality.
 Tests key scenarios without complex fixture dependencies.
 """
 
-import pytest
-from decimal import Decimal
 
 from src.pattern_engine.scoring.sos_confidence_scorer import get_confidence_quality
 
-
 # Test: get_confidence_quality helper (no dependencies)
+
 
 def test_get_confidence_quality_excellent():
     """Test EXCELLENT quality range (90-100)."""

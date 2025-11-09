@@ -12,25 +12,23 @@ Risk Management Principle:
     Position size must adapt to Wyckoff phase context, not just account risk.
 """
 
-import pytest
-from decimal import Decimal
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+import pytest
+
+from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.models.phase_info import (
+    PhaseBRiskProfile,
+    PhaseESubState,
     PhaseInfo,
     PhaseInvalidation,
-    PhaseESubState,
-    PhaseBRiskProfile,
 )
-from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.risk.wyckoff_position_sizing import (
-    WyckoffPositionSize,
     calculate_wyckoff_position_size,
+    get_position_summary,
     get_position_value,
     get_risk_amount,
-    get_position_summary,
 )
-
 
 # ============================================================================
 # Test Fixtures
@@ -49,7 +47,7 @@ def base_phase_info() -> PhaseInfo:
         trading_range=None,
         phase_start_bar_index=0,
         current_bar_index=10,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
     )
 
 
@@ -75,7 +73,7 @@ def phase_info_short_phase_b() -> PhaseInfo:
         trading_range=None,
         phase_start_bar_index=0,
         current_bar_index=7,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
         phase_b_risk_profile=phase_b_risk,
     )
 
@@ -93,7 +91,7 @@ def phase_info_exhaustion() -> PhaseInfo:
         trading_range=None,
         phase_start_bar_index=0,
         current_bar_index=50,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
     )
 
 
@@ -104,7 +102,7 @@ def phase_info_recent_invalidation() -> PhaseInfo:
         phase_invalidated=WyckoffPhase.C,
         invalidation_reason="Spring failed to hold",
         bar_index=45,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         invalidation_type="failed_event",
         reverted_to_phase=WyckoffPhase.B,
         risk_level="high",
@@ -122,7 +120,7 @@ def phase_info_recent_invalidation() -> PhaseInfo:
         trading_range=None,
         phase_start_bar_index=40,
         current_bar_index=50,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
         invalidations=[invalidation],
     )
 
@@ -235,7 +233,7 @@ def test_normal_phase_b_no_adjustment(base_phase_info):
         trading_range=None,
         phase_start_bar_index=0,
         current_bar_index=12,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
         phase_b_risk_profile=phase_b_risk,
     )
 
@@ -289,7 +287,7 @@ def test_phase_e_early_no_adjustment(base_phase_info):
         trading_range=None,
         phase_start_bar_index=0,
         current_bar_index=10,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
     )
 
     position = calculate_wyckoff_position_size(
@@ -336,7 +334,7 @@ def test_old_invalidation_no_adjustment(base_phase_info):
         phase_invalidated=WyckoffPhase.C,
         invalidation_reason="Old invalidation",
         bar_index=30,  # 20 bars ago (current bar = 50)
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         invalidation_type="failed_event",
         reverted_to_phase=WyckoffPhase.B,
         risk_level="high",
@@ -354,7 +352,7 @@ def test_old_invalidation_no_adjustment(base_phase_info):
         trading_range=None,
         phase_start_bar_index=30,
         current_bar_index=50,  # 20 bars after invalidation
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
         invalidations=[old_invalidation],
     )
 
@@ -393,7 +391,7 @@ def test_multiple_adjustments_stack():
         phase_invalidated=WyckoffPhase.C,
         invalidation_reason="Recent event",
         bar_index=45,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         invalidation_type="failed_event",
         reverted_to_phase=WyckoffPhase.B,
         risk_level="high",
@@ -411,7 +409,7 @@ def test_multiple_adjustments_stack():
         trading_range=None,
         phase_start_bar_index=43,
         current_bar_index=50,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
         phase_b_risk_profile=phase_b_risk,
         invalidations=[invalidation],
     )
@@ -543,16 +541,16 @@ def test_position_size_model_structure(base_phase_info):
     )
 
     # Verify all fields present
-    assert hasattr(position, 'account_size')
-    assert hasattr(position, 'risk_per_trade')
-    assert hasattr(position, 'entry_price')
-    assert hasattr(position, 'stop_price')
-    assert hasattr(position, 'phase')
-    assert hasattr(position, 'sub_phase')
-    assert hasattr(position, 'base_position_size')
-    assert hasattr(position, 'risk_adjusted_size')
-    assert hasattr(position, 'final_position_size')
-    assert hasattr(position, 'risk_reduction_factors')
+    assert hasattr(position, "account_size")
+    assert hasattr(position, "risk_per_trade")
+    assert hasattr(position, "entry_price")
+    assert hasattr(position, "stop_price")
+    assert hasattr(position, "phase")
+    assert hasattr(position, "sub_phase")
+    assert hasattr(position, "base_position_size")
+    assert hasattr(position, "risk_adjusted_size")
+    assert hasattr(position, "final_position_size")
+    assert hasattr(position, "risk_reduction_factors")
 
     # Verify types
     assert position.phase == WyckoffPhase.C

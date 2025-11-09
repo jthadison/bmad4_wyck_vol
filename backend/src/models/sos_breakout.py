@@ -94,9 +94,7 @@ class SOSBreakout(BaseModel):
         max_digits=18,
         description="Close price that broke above Ice",
     )
-    detection_timestamp: datetime = Field(
-        ..., description="When SOS was detected (UTC)"
-    )
+    detection_timestamp: datetime = Field(..., description="When SOS was detected (UTC)")
     trading_range_id: UUID = Field(..., description="Associated trading range")
 
     # Quality enhancement fields (Story 6.1B)
@@ -157,9 +155,7 @@ class SOSBreakout(BaseModel):
             ValueError: If breakout < 1%
         """
         if v < Decimal("0.01"):
-            raise ValueError(
-                f"Breakout {v*100:.2f}% must be >= 1% above Ice (AC 3)"
-            )
+            raise ValueError(f"Breakout {v*100:.2f}% must be >= 1% above Ice (AC 3)")
         return v
 
     @field_validator("volume_ratio")
@@ -272,10 +268,9 @@ class SOSBreakout(BaseModel):
         Returns:
             bool: True if SOS meets ideal characteristics
         """
-        return (
-            Decimal("0.02") <= self.breakout_pct <= Decimal("0.03")
-            and self.volume_ratio >= Decimal("2.0")
-        )
+        return Decimal("0.02") <= self.breakout_pct <= Decimal(
+            "0.03"
+        ) and self.volume_ratio >= Decimal("2.0")
 
     @property
     def close_position_tier(self) -> str:
@@ -307,13 +302,9 @@ class SOSBreakout(BaseModel):
         Returns:
             str: Quality tier (EXCELLENT, GOOD, or ACCEPTABLE)
         """
-        if self.breakout_pct >= Decimal("0.02") and self.volume_ratio >= Decimal(
-            "2.5"
-        ):
+        if self.breakout_pct >= Decimal("0.02") and self.volume_ratio >= Decimal("2.5"):
             return "EXCELLENT"
-        elif self.breakout_pct >= Decimal("0.02") and self.volume_ratio >= Decimal(
-            "2.0"
-        ):
+        elif self.breakout_pct >= Decimal("0.02") and self.volume_ratio >= Decimal("2.0"):
             return "GOOD"
         else:
             return "ACCEPTABLE"

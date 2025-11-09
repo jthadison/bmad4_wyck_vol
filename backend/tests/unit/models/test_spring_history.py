@@ -13,14 +13,14 @@ Tests cover:
 Author: Story 5.6 - SpringDetector Module Integration
 """
 
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from src.models.spring_history import SpringHistory
-from src.models.spring import Spring
-from src.models.spring_signal import SpringSignal
 from src.models.ohlcv import OHLCVBar
+from src.models.spring import Spring
+from src.models.spring_history import SpringHistory
+from src.models.spring_signal import SpringSignal
 
 
 def create_test_spring(

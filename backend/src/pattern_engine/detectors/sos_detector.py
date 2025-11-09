@@ -70,7 +70,7 @@ from typing import Optional
 import structlog
 
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_classification import WyckoffPhase, PhaseClassification
+from src.models.phase_classification import PhaseClassification, WyckoffPhase
 from src.models.sos_breakout import SOSBreakout
 from src.models.trading_range import TradingRange
 
@@ -133,7 +133,7 @@ def detect_sos_breakout(
             "invalid_ice_level",
             symbol=range.symbol,
             ice_level=range.ice.price if range.ice else None,
-            message="Valid Ice level required for SOS breakout detection"
+            message="Valid Ice level required for SOS breakout detection",
         )
         raise ValueError("Valid Ice level required for SOS breakout detection")
 
@@ -144,7 +144,7 @@ def detect_sos_breakout(
             bars_available=len(bars),
             bars_required=25,
             symbol=range.symbol,
-            message="Need at least 25 bars for volume average calculation"
+            message="Need at least 25 bars for volume average calculation",
         )
         return None
 
@@ -163,7 +163,7 @@ def detect_sos_breakout(
             symbol=range.symbol,
             phase="D",
             confidence=phase_confidence,
-            message="SOS in Phase D (ideal - markup phase)"
+            message="SOS in Phase D (ideal - markup phase)",
         )
     elif current_phase == WyckoffPhase.C and phase_confidence >= 85:
         logger.debug(
@@ -171,7 +171,7 @@ def detect_sos_breakout(
             symbol=range.symbol,
             phase="C",
             confidence=phase_confidence,
-            message="SOS in late Phase C (confidence >= 85 - imminent markup)"
+            message="SOS in late Phase C (confidence >= 85 - imminent markup)",
         )
     else:
         logger.debug(
@@ -179,7 +179,7 @@ def detect_sos_breakout(
             symbol=range.symbol,
             current_phase=current_phase.value,
             confidence=phase_confidence,
-            message=f"SOS rejected: Phase {current_phase.value} (requires Phase D or Phase C with 85+ confidence)"
+            message=f"SOS rejected: Phase {current_phase.value} (requires Phase D or Phase C with 85+ confidence)",
         )
         return None
 
@@ -196,7 +196,7 @@ def detect_sos_breakout(
         phase=current_phase.value,
         phase_confidence=phase_confidence,
         bars_to_scan=len(bars[-20:]),
-        message="Starting SOS breakout detection"
+        message="Starting SOS breakout detection",
     )
 
     # ============================================================
@@ -222,7 +222,7 @@ def detect_sos_breakout(
             close_price=float(close_price),
             ice_level=float(ice_level),
             breakout_pct=float(breakout_pct),
-            message=f"Potential SOS: close {breakout_pct:.2%} above Ice"
+            message=f"Potential SOS: close {breakout_pct:.2%} above Ice",
         )
 
         # ============================================================
@@ -239,7 +239,7 @@ def detect_sos_breakout(
                 "volume_analysis_missing",
                 symbol=bar.symbol,
                 bar_timestamp=bar.timestamp.isoformat(),
-                message="Volume analysis not available for breakout bar"
+                message="Volume analysis not available for breakout bar",
             )
             continue  # Skip candidate
 
@@ -258,7 +258,7 @@ def detect_sos_breakout(
                 close_price=float(close_price),
                 ice_level=float(ice_level),
                 breakout_pct=float(breakout_pct),
-                message=f"SOS INVALID: Volume {float(volume_ratio):.2f}x < 1.5x - insufficient confirmation (FR12 - LOW VOLUME = FALSE BREAKOUT)"
+                message=f"SOS INVALID: Volume {float(volume_ratio):.2f}x < 1.5x - insufficient confirmation (FR12 - LOW VOLUME = FALSE BREAKOUT)",
             )
             continue  # REJECT immediately - no further processing
 
@@ -269,7 +269,7 @@ def detect_sos_breakout(
             bar_timestamp=bar.timestamp.isoformat(),
             volume_ratio=float(volume_ratio),
             threshold=1.5,
-            message=f"Volume expansion confirmed: {float(volume_ratio):.2f}x >= 1.5x (FR12)"
+            message=f"Volume expansion confirmed: {float(volume_ratio):.2f}x >= 1.5x (FR12)",
         )
 
         # ============================================================
@@ -286,7 +286,7 @@ def detect_sos_breakout(
                 "spread_ratio_missing",
                 symbol=bar.symbol,
                 bar_timestamp=bar.timestamp.isoformat(),
-                message="Spread ratio not available in volume_analysis - required for Story 6.1B"
+                message="Spread ratio not available in volume_analysis - required for Story 6.1B",
             )
             continue  # Skip candidate
 
@@ -297,7 +297,7 @@ def detect_sos_breakout(
                 bar_timestamp=bar.timestamp.isoformat(),
                 spread_ratio=float(spread_ratio),
                 threshold=1.2,
-                message=f"SOS INVALID: Spread {float(spread_ratio):.2f}x < 1.2x - absorption at resistance (narrow bar)"
+                message=f"SOS INVALID: Spread {float(spread_ratio):.2f}x < 1.2x - absorption at resistance (narrow bar)",
             )
             continue  # REJECT - narrow spread suggests absorption
 
@@ -306,7 +306,7 @@ def detect_sos_breakout(
             symbol=bar.symbol,
             bar_timestamp=bar.timestamp.isoformat(),
             spread_ratio=float(spread_ratio),
-            message=f"Spread {float(spread_ratio):.2f}x >= 1.2x (wide bar shows conviction)"
+            message=f"Spread {float(spread_ratio):.2f}x >= 1.2x (wide bar shows conviction)",
         )
 
         # Calculate spread for model
@@ -324,7 +324,7 @@ def detect_sos_breakout(
                 "zero_spread_bar",
                 symbol=bar.symbol,
                 bar_timestamp=bar.timestamp.isoformat(),
-                message="Skipping bar with zero spread (doji)"
+                message="Skipping bar with zero spread (doji)",
             )
             continue  # Skip doji/narrow bars
 
@@ -343,7 +343,7 @@ def detect_sos_breakout(
                 symbol=bar.symbol,
                 bar_timestamp=bar.timestamp.isoformat(),
                 close_position=float(close_position),
-                message=f"SOS REJECTED: Close position {float(close_position):.2f} < 0.5 (sellers dominating)"
+                message=f"SOS REJECTED: Close position {float(close_position):.2f} < 0.5 (sellers dominating)",
             )
             continue  # REJECT - weak close
 
@@ -354,7 +354,7 @@ def detect_sos_breakout(
             close_position=float(close_position),
             tier=tier,
             confidence_impact=confidence_impact,
-            message=f"Close position {float(close_position):.2f} - {tier} tier"
+            message=f"Close position {float(close_position):.2f} - {tier} tier",
         )
 
         # ============================================================
@@ -372,7 +372,7 @@ def detect_sos_breakout(
             # New quality fields (Story 6.1B)
             spread_ratio=spread_ratio,
             close_position=close_position,
-            spread=spread
+            spread=spread,
         )
 
         logger.info(
@@ -390,7 +390,7 @@ def detect_sos_breakout(
             phase_confidence=phase_confidence,
             quality_tier=sos_breakout.quality_tier,
             is_ideal=sos_breakout.is_ideal_sos,
-            message="SOS detected - Ice breakout with volume/spread/close quality confirmation"
+            message="SOS detected - Ice breakout with volume/spread/close quality confirmation",
         )
 
         return sos_breakout
@@ -405,6 +405,6 @@ def detect_sos_breakout(
         phase=current_phase.value,
         bars_analyzed=len(bars[-20:]),
         ice_level=float(ice_level),
-        message="No valid SOS breakout found in analyzed bars"
+        message="No valid SOS breakout found in analyzed bars",
     )
     return None

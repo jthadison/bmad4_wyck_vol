@@ -16,13 +16,11 @@ Author: Victoria (Volume Specialist)
 Story 4.7: PhaseDetector Module Integration - Task 36
 """
 
-from typing import Dict, List
 
 import numpy as np
 
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import PhaseEvents
-
 
 # VSA Thresholds (Victoria's specification)
 VSA_THRESHOLDS = {
@@ -78,7 +76,7 @@ def get_close_position(bar: OHLCVBar) -> float:
 
 def get_volume_spread_context(
     bar: OHLCVBar, avg_volume: float, avg_spread: float
-) -> Dict[str, float | bool | str]:
+) -> dict[str, float | bool | str]:
     """
     Perform VSA analysis on a single bar.
 
@@ -192,7 +190,7 @@ def _interpret_vsa(effort: float, result: float, close_pos: float) -> str:
         return "divergence"
 
 
-def check_preliminary_supply(events: PhaseEvents, bars: List[OHLCVBar]) -> bool:
+def check_preliminary_supply(events: PhaseEvents, bars: list[OHLCVBar]) -> bool:
     """
     Detect Preliminary Supply using VSA for UTAD detection.
 
@@ -252,7 +250,7 @@ def check_preliminary_supply(events: PhaseEvents, bars: List[OHLCVBar]) -> bool:
     return False
 
 
-def check_distribution_volume_signature(bars: List[OHLCVBar]) -> bool:
+def check_distribution_volume_signature(bars: list[OHLCVBar]) -> bool:
     """
     Detect distribution volume signature (UTAD Sign 3).
 
@@ -299,12 +297,8 @@ def check_distribution_volume_signature(bars: List[OHLCVBar]) -> bool:
     avg_down_volume = float(np.mean([b.volume for b in down_bars]))
 
     # Spread comparison
-    avg_up_spread = float(
-        np.mean([(b.high - b.low) / b.close for b in up_bars if b.close > 0])
-    )
-    avg_down_spread = float(
-        np.mean([(b.high - b.low) / b.close for b in down_bars if b.close > 0])
-    )
+    avg_up_spread = float(np.mean([(b.high - b.low) / b.close for b in up_bars if b.close > 0]))
+    avg_down_spread = float(np.mean([(b.high - b.low) / b.close for b in down_bars if b.close > 0]))
 
     # Distribution signs
     volume_declining_on_rallies = avg_up_volume < avg_down_volume * 0.8
@@ -314,7 +308,7 @@ def check_distribution_volume_signature(bars: List[OHLCVBar]) -> bool:
     return volume_declining_on_rallies and spreads_narrow_on_rallies
 
 
-def detect_volume_trend(bars: List[OHLCVBar], phase_start_index: int) -> Dict[str, str]:
+def detect_volume_trend(bars: list[OHLCVBar], phase_start_index: int) -> dict[str, str]:
     """
     Detect volume trend with up/down bar separation for Phase E.
 
@@ -398,7 +392,7 @@ def detect_volume_trend(bars: List[OHLCVBar], phase_start_index: int) -> Dict[st
     }
 
 
-def calculate_average_volume(bars: List[OHLCVBar], period: int = 20) -> float:
+def calculate_average_volume(bars: list[OHLCVBar], period: int = 20) -> float:
     """
     Calculate average volume over period.
 
@@ -419,7 +413,7 @@ def calculate_average_volume(bars: List[OHLCVBar], period: int = 20) -> float:
     return float(np.mean([b.volume for b in recent_bars]))
 
 
-def calculate_average_spread(bars: List[OHLCVBar], period: int = 20) -> float:
+def calculate_average_spread(bars: list[OHLCVBar], period: int = 20) -> float:
     """
     Calculate average spread (as percentage of close) over period.
 
@@ -437,9 +431,7 @@ def calculate_average_spread(bars: List[OHLCVBar], period: int = 20) -> float:
         return 0.0
 
     recent_bars = bars[-period:] if len(bars) >= period else bars
-    spreads = [
-        (b.high - b.low) / b.close for b in recent_bars if b.close > 0
-    ]
+    spreads = [(b.high - b.low) / b.close for b in recent_bars if b.close > 0]
 
     if not spreads:
         return 0.0

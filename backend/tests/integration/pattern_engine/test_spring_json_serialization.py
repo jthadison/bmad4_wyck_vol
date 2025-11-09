@@ -14,23 +14,19 @@ Author: Story 5.6 - Phase 3 Integration Testing
 """
 
 import json
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import uuid4, UUID
+from uuid import UUID, uuid4
 
-import pytest
-
-from src.pattern_engine.detectors.spring_detector import SpringDetector
-from src.models.spring_history import SpringHistory
-from src.models.spring_signal import SpringSignal
-from src.models.phase_classification import WyckoffPhase
-from src.models.ohlcv import OHLCVBar
-from src.models.trading_range import TradingRange, RangeStatus
 from src.models.creek_level import CreekLevel
 from src.models.jump_level import JumpLevel
-from src.models.touch_detail import TouchDetail
-from src.models.price_cluster import PriceCluster
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import WyckoffPhase
 from src.models.pivot import Pivot, PivotType
+from src.models.price_cluster import PriceCluster
+from src.models.touch_detail import TouchDetail
+from src.models.trading_range import RangeStatus, TradingRange
+from src.pattern_engine.detectors.spring_detector import SpringDetector
 
 
 def create_test_bar(
@@ -281,14 +277,27 @@ def test_spring_signal_json_serialization_ac10():
 
     # Assert: All required fields present (AC 10)
     required_fields = [
-        "id", "symbol", "timeframe", "signal_type",
-        "entry_price", "stop_loss", "target_price",
-        "confidence", "r_multiple", "urgency",
-        "spring_bar_timestamp", "test_bar_timestamp",
-        "phase", "trading_range_id", "detection_timestamp",
-        "is_valid", "account_size", "risk_per_trade_pct",
-        "position_size_shares", "position_size_dollars",
-        "risk_amount"
+        "id",
+        "symbol",
+        "timeframe",
+        "signal_type",
+        "entry_price",
+        "stop_loss",
+        "target_price",
+        "confidence",
+        "r_multiple",
+        "urgency",
+        "spring_bar_timestamp",
+        "test_bar_timestamp",
+        "phase",
+        "trading_range_id",
+        "detection_timestamp",
+        "is_valid",
+        "account_size",
+        "risk_per_trade_pct",
+        "position_size_shares",
+        "position_size_dollars",
+        "risk_amount",
     ]
 
     for field in required_fields:
@@ -302,9 +311,9 @@ def test_spring_signal_json_serialization_ac10():
 
     # Assert: DateTime serialized as ISO 8601
     assert "T" in signal_dict["detection_timestamp"], "DateTime should be ISO 8601"
-    assert "Z" in signal_dict["detection_timestamp"] or "+" in signal_dict["detection_timestamp"], (
-        "DateTime should include timezone"
-    )
+    assert (
+        "Z" in signal_dict["detection_timestamp"] or "+" in signal_dict["detection_timestamp"]
+    ), "DateTime should include timezone"
 
     # Assert: UUID serialized as string
     assert isinstance(signal_dict["id"], str), "UUID should serialize as string"
@@ -374,78 +383,94 @@ def test_spring_history_json_serialization():
         bars.append(bar)
 
     # First spring at day 25
-    bars.append(create_test_bar(
-        timestamp=base_timestamp + timedelta(days=25),
-        low=creek_level * Decimal("0.98"),
-        high=creek_level * Decimal("1.01"),
-        close=creek_level * Decimal("0.99"),
-        volume=400000,
-    ))
+    bars.append(
+        create_test_bar(
+            timestamp=base_timestamp + timedelta(days=25),
+            low=creek_level * Decimal("0.98"),
+            high=creek_level * Decimal("1.01"),
+            close=creek_level * Decimal("0.99"),
+            volume=400000,
+        )
+    )
 
     # Recovery
-    bars.append(create_test_bar(
-        timestamp=base_timestamp + timedelta(days=26),
-        low=creek_level * Decimal("0.995"),
-        high=creek_level * Decimal("1.02"),
-        close=creek_level * Decimal("1.005"),
-        volume=900000,
-    ))
+    bars.append(
+        create_test_bar(
+            timestamp=base_timestamp + timedelta(days=26),
+            low=creek_level * Decimal("0.995"),
+            high=creek_level * Decimal("1.02"),
+            close=creek_level * Decimal("1.005"),
+            volume=900000,
+        )
+    )
 
     # Normal bars
     for i in range(3):
-        bars.append(create_test_bar(
-            timestamp=base_timestamp + timedelta(days=27 + i),
-            low=creek_level * Decimal("1.00"),
-            high=creek_level * Decimal("1.03"),
-            close=creek_level * Decimal("1.015"),
-            volume=1000000,
-        ))
+        bars.append(
+            create_test_bar(
+                timestamp=base_timestamp + timedelta(days=27 + i),
+                low=creek_level * Decimal("1.00"),
+                high=creek_level * Decimal("1.03"),
+                close=creek_level * Decimal("1.015"),
+                volume=1000000,
+            )
+        )
 
     # Test for first spring
-    bars.append(create_test_bar(
-        timestamp=base_timestamp + timedelta(days=30),
-        low=creek_level * Decimal("0.985"),
-        high=creek_level * Decimal("1.02"),
-        close=creek_level * Decimal("1.00"),
-        volume=300000,
-    ))
+    bars.append(
+        create_test_bar(
+            timestamp=base_timestamp + timedelta(days=30),
+            low=creek_level * Decimal("0.985"),
+            high=creek_level * Decimal("1.02"),
+            close=creek_level * Decimal("1.00"),
+            volume=300000,
+        )
+    )
 
     # Second spring at day 40
-    bars.append(create_test_bar(
-        timestamp=base_timestamp + timedelta(days=40),
-        low=creek_level * Decimal("0.975"),
-        high=creek_level * Decimal("1.01"),
-        close=creek_level * Decimal("0.98"),
-        volume=300000,  # Lower volume - declining trend
-    ))
+    bars.append(
+        create_test_bar(
+            timestamp=base_timestamp + timedelta(days=40),
+            low=creek_level * Decimal("0.975"),
+            high=creek_level * Decimal("1.01"),
+            close=creek_level * Decimal("0.98"),
+            volume=300000,  # Lower volume - declining trend
+        )
+    )
 
     # Recovery for second spring
-    bars.append(create_test_bar(
-        timestamp=base_timestamp + timedelta(days=41),
-        low=creek_level * Decimal("0.995"),
-        high=creek_level * Decimal("1.02"),
-        close=creek_level * Decimal("1.005"),
-        volume=850000,
-    ))
+    bars.append(
+        create_test_bar(
+            timestamp=base_timestamp + timedelta(days=41),
+            low=creek_level * Decimal("0.995"),
+            high=creek_level * Decimal("1.02"),
+            close=creek_level * Decimal("1.005"),
+            volume=850000,
+        )
+    )
 
     # Normal bars before second test
     for i in range(3):
-        bars.append(create_test_bar(
-            timestamp=base_timestamp + timedelta(days=42 + i),
-            low=creek_level * Decimal("1.00"),
-            high=creek_level * Decimal("1.03"),
-            close=creek_level * Decimal("1.015"),
-            volume=1000000,
-        ))
+        bars.append(
+            create_test_bar(
+                timestamp=base_timestamp + timedelta(days=42 + i),
+                low=creek_level * Decimal("1.00"),
+                high=creek_level * Decimal("1.03"),
+                close=creek_level * Decimal("1.015"),
+                volume=1000000,
+            )
+        )
 
     # Test for second spring
-    bars.append(create_test_bar(
-        timestamp=base_timestamp + timedelta(days=45),
-        low=creek_level * Decimal("0.982"),
-        high=creek_level * Decimal("1.02"),
-        close=creek_level * Decimal("1.00"),
-        volume=250000,  # Even lower - declining trend
-    ))
+    bars.append(
+        create_test_bar(
+            timestamp=base_timestamp + timedelta(days=45),
+            low=creek_level * Decimal("0.982"),
+            high=creek_level * Decimal("1.02"),
+            close=creek_level * Decimal("1.00"),
+            volume=250000,  # Even lower - declining trend
+        )
+    )
 
     trading_range = create_test_range(creek_level=creek_level)
     detector = SpringDetector()
@@ -455,6 +480,7 @@ def test_spring_history_json_serialization():
 
     # Serialize using dataclass asdict (SpringHistory is a dataclass)
     from dataclasses import asdict
+
     history_dict = asdict(history)
 
     # Convert to JSON
@@ -614,10 +640,7 @@ def test_multiple_signals_json_list_serialization():
     history = detector.detect_all_springs(trading_range, bars, WyckoffPhase.C)
 
     # Act: Serialize list of signals
-    signals_json = [
-        json.loads(signal.model_dump_json())
-        for signal in history.signals
-    ]
+    signals_json = [json.loads(signal.model_dump_json()) for signal in history.signals]
 
     signals_list_json = json.dumps(signals_json, indent=2)
     signals_list_parsed = json.loads(signals_list_json)
