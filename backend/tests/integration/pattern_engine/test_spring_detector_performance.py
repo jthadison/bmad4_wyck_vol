@@ -140,53 +140,87 @@ def create_test_range(
         timestamp_range=(resistance_pivots[0].timestamp, resistance_pivots[-1].timestamp),
     )
 
+    touch_details_support = [
+        TouchDetail(
+            index=pivot.index,
+            price=pivot.price,
+            volume=pivot.bar.volume,
+            volume_ratio=Decimal("1.0"),
+            close_position=Decimal("0.7"),
+            rejection_wick=Decimal("0.6"),
+            timestamp=pivot.timestamp,
+        )
+        for pivot in support_pivots
+    ]
+
     creek = CreekLevel(
         price=creek_level,
-        cluster=support_cluster,
-        touches=[
-            TouchDetail(
-                index=pivot.index,
-                price=pivot.price,
-                volume=pivot.bar.volume,
-                volume_ratio=Decimal("1.0"),
-                close_position=Decimal("0.7"),
-                rejection_wick=Decimal("0.6"),
-                timestamp=pivot.timestamp,
-            )
-            for pivot in support_pivots
-        ],
-        strength_score=85,
+        absolute_low=creek_level - Decimal("3.00"),
         touch_count=3,
+        touch_details=touch_details_support,
+        strength_score=85,
+        strength_rating="STRONG",
+        last_test_timestamp=support_pivots[-1].timestamp,
+        first_test_timestamp=support_pivots[0].timestamp,
+        hold_duration=20,
+        confidence="HIGH",
+        volume_trend="DECREASING",
     )
 
+    touch_details_resistance = [
+        TouchDetail(
+            index=pivot.index,
+            price=pivot.price,
+            volume=pivot.bar.volume,
+            volume_ratio=Decimal("1.0"),
+            close_position=Decimal("0.3"),
+            rejection_wick=Decimal("0.5"),
+            timestamp=pivot.timestamp,
+        )
+        for pivot in resistance_pivots
+    ]
+
+    # Calculate Jump target using Wyckoff Point & Figure methodology
+    range_width = jump_level - creek_level
+    ice_price = jump_level  # Ice is at resistance (Jump level)
+    cause_factor = Decimal("3.0")  # HIGH confidence (40+ bars)
+    aggressive_jump = ice_price + (cause_factor * range_width)
+    conservative_jump = ice_price + (Decimal("1.0") * range_width)
+
     jump = JumpLevel(
-        price=jump_level,
-        cluster=resistance_cluster,
-        touches=[
-            TouchDetail(
-                index=pivot.index,
-                price=pivot.price,
-                volume=pivot.bar.volume,
-                volume_ratio=Decimal("1.0"),
-                close_position=Decimal("0.3"),
-                rejection_wick=Decimal("0.5"),
-                timestamp=pivot.timestamp,
-            )
-            for pivot in resistance_pivots
-        ],
-        strength_score=82,
-        touch_count=3,
+        price=aggressive_jump,
+        conservative_price=conservative_jump,
+        range_width=range_width,
+        cause_factor=cause_factor,
+        range_duration=40,  # Duration from TradingRange
+        confidence="HIGH",
+        risk_reward_ratio=cause_factor,  # (aggressive_jump - ice) / (ice - creek)
+        conservative_risk_reward=Decimal("1.0"),  # (conservative_jump - ice) / (ice - creek)
+        ice_price=ice_price,
+        creek_price=creek_level,
+        calculated_at=base_timestamp,
     )
 
     return TradingRange(
         id=uuid4(),
         symbol=symbol,
         timeframe="1d",
+        support_cluster=support_cluster,
+        resistance_cluster=resistance_cluster,
+        support=creek_level,
+        resistance=jump_level,
+        midpoint=(creek_level + jump_level) / 2,
+        range_width=jump_level - creek_level,
+        range_width_pct=(jump_level - creek_level) / creek_level,
+        start_index=10,
+        end_index=50,
+        duration=40,
+        quality_score=85,
         creek=creek,
         jump=jump,
         status=RangeStatus.ACTIVE,
-        range_start=base_timestamp,
-        range_end=base_timestamp + timedelta(days=50),
+        start_timestamp=base_timestamp,
+        end_timestamp=base_timestamp + timedelta(days=50),
     )
 
 

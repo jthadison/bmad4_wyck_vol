@@ -15,6 +15,7 @@ from uuid import uuid4
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import PhaseClassification, PhaseEvents, WyckoffPhase
+from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
 from src.models.sos_breakout import SOSBreakout
 from src.models.trading_range import RangeStatus, TradingRange
@@ -26,19 +27,84 @@ from src.pattern_engine.scoring.sos_confidence_scorer import (
 # Helper Functions
 
 
+def create_test_pivot(
+    price: Decimal, pivot_type: PivotType, index: int, timestamp: datetime
+) -> Pivot:
+    """Create a test pivot for clustering."""
+    bar = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        timestamp=timestamp,
+        open=price,
+        high=price if pivot_type == PivotType.HIGH else price + Decimal("1.00"),
+        low=price if pivot_type == PivotType.LOW else price - Decimal("1.00"),
+        close=price,
+        volume=100000,
+        spread=Decimal("1.00"),
+    )
+    return Pivot(
+        bar=bar,
+        price=price,
+        type=pivot_type,
+        strength=5,
+        timestamp=timestamp,
+        index=index,
+    )
+
+
+def create_realistic_price_cluster(
+    base_price: Decimal, pivot_type: PivotType, touch_count: int, start_index: int = 0
+) -> PriceCluster:
+    """Create a realistic price cluster for testing."""
+    now = datetime.now(UTC)
+    pivots = []
+    prices = []
+
+    # Quantize to 8 decimal places to match OHLCVBar validation
+    quantizer = Decimal("0.00000001")
+
+    for i in range(touch_count):
+        # Create slightly varying prices around base_price
+        variation = Decimal(str(i * 0.10))  # Small variation
+        price = (base_price + variation if i % 2 == 0 else base_price - variation).quantize(
+            quantizer
+        )
+        prices.append(price)
+
+        timestamp = now - timedelta(days=(touch_count - i))
+        pivot = create_test_pivot(price, pivot_type, start_index + i, timestamp)
+        pivots.append(pivot)
+
+    # Calculate cluster statistics
+    avg_price = (sum(prices) / len(prices)).quantize(quantizer)
+    min_price = min(prices)
+    max_price = max(prices)
+    price_range = (max_price - min_price).quantize(quantizer)
+
+    # Calculate standard deviation
+    variance = sum((p - avg_price) ** 2 for p in prices) / len(prices)
+    std_dev = (variance.sqrt() if variance > 0 else Decimal("0")).quantize(quantizer)
+
+    return PriceCluster(
+        pivots=pivots,
+        average_price=avg_price,
+        min_price=min_price,
+        max_price=max_price,
+        price_range=price_range,
+        touch_count=touch_count,
+        cluster_type=pivot_type,
+        std_deviation=std_dev,
+        timestamp_range=(pivots[0].timestamp, pivots[-1].timestamp),
+    )
+
+
 def create_realistic_trading_range(duration_days: int = 25, quality: int = 80) -> TradingRange:
     """Create realistic trading range for integration testing."""
-    support_cluster = PriceCluster(
-        price_level=Decimal("95.00"),
-        pivots=[],
-        touch_count=4,
-        strength_score=quality,
+    support_cluster = create_realistic_price_cluster(
+        base_price=Decimal("95.00"), pivot_type=PivotType.LOW, touch_count=4
     )
-    resistance_cluster = PriceCluster(
-        price_level=Decimal("100.00"),
-        pivots=[],
-        touch_count=4,
-        strength_score=quality,
+    resistance_cluster = create_realistic_price_cluster(
+        base_price=Decimal("100.00"), pivot_type=PivotType.HIGH, touch_count=4
     )
 
     return TradingRange(
@@ -302,17 +368,11 @@ def test_sos_confidence_realistic_weak_rejected():
     )
 
     # Short accumulation range
-    support_cluster = PriceCluster(
-        price_level=Decimal("95.00"),
-        pivots=[],
-        touch_count=2,
-        strength_score=65,
+    support_cluster = create_realistic_price_cluster(
+        base_price=Decimal("95.00"), pivot_type=PivotType.LOW, touch_count=2
     )
-    resistance_cluster = PriceCluster(
-        price_level=Decimal("100.00"),
-        pivots=[],
-        touch_count=2,
-        strength_score=65,
+    resistance_cluster = create_realistic_price_cluster(
+        base_price=Decimal("100.00"), pivot_type=PivotType.HIGH, touch_count=2
     )
 
     trading_range = TradingRange(

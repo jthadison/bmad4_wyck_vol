@@ -7,16 +7,19 @@ Tests cover:
 - LPS vs SOS direct entry comparison across realistic scenarios
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
 from src.models.jump_level import JumpLevel
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
+from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
 from src.models.sos_breakout import SOSBreakout
+from src.models.touch_detail import TouchDetail
 from src.models.trading_range import RangeStatus, TradingRange
 from src.signal_generator.sos_signal_generator import (
     generate_lps_signal,
@@ -27,19 +30,91 @@ from src.signal_generator.sos_signal_generator import (
 def create_trading_range(ice: Decimal, jump: Decimal) -> TradingRange:
     """Create a trading range with specified Ice and Jump levels."""
     creek_price = ice * Decimal("0.95")  # Creek 5% below Ice
+    base_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+
+    # Create support pivots for PriceCluster
+    support_pivots = []
+    for i, idx in enumerate([10, 20, 30]):
+        bar = OHLCVBar(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=base_timestamp + timedelta(days=idx),
+            open=creek_price,
+            high=creek_price + Decimal("1.00"),
+            low=creek_price - Decimal("0.50"),
+            close=creek_price + Decimal("0.50"),
+            volume=1000000,
+            spread=Decimal("1.50"),
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+        pivot = Pivot(
+            bar=bar,
+            price=bar.low,
+            type=PivotType.LOW,
+            strength=5,
+            timestamp=bar.timestamp,
+            index=idx,
+        )
+        support_pivots.append(pivot)
 
     support_cluster = PriceCluster(
-        price=creek_price,
-        pivot_indices=[10, 20, 30],
+        pivots=support_pivots,
+        average_price=creek_price,
+        min_price=creek_price - Decimal("0.50"),
+        max_price=creek_price + Decimal("0.50"),
+        price_range=Decimal("1.00"),
         touch_count=3,
-    )
-    resistance_cluster = PriceCluster(
-        price=ice,
-        pivot_indices=[15, 25, 35],
-        touch_count=3,
+        cluster_type=PivotType.LOW,
+        std_deviation=Decimal("0.30"),
+        timestamp_range=(support_pivots[0].timestamp, support_pivots[-1].timestamp),
     )
 
+    # Create resistance pivots for PriceCluster
+    resistance_pivots = []
+    for i, idx in enumerate([15, 25, 35]):
+        bar = OHLCVBar(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=base_timestamp + timedelta(days=idx),
+            open=ice - Decimal("1.00"),
+            high=ice + Decimal("0.50"),
+            low=ice - Decimal("1.00"),
+            close=ice,
+            volume=1200000,
+            spread=Decimal("1.50"),
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+        pivot = Pivot(
+            bar=bar,
+            price=bar.high,
+            type=PivotType.HIGH,
+            strength=5,
+            timestamp=bar.timestamp,
+            index=idx,
+        )
+        resistance_pivots.append(pivot)
+
+    resistance_cluster = PriceCluster(
+        pivots=resistance_pivots,
+        average_price=ice,
+        min_price=ice - Decimal("0.50"),
+        max_price=ice + Decimal("0.50"),
+        price_range=Decimal("1.00"),
+        touch_count=3,
+        cluster_type=PivotType.HIGH,
+        std_deviation=Decimal("0.30"),
+        timestamp_range=(resistance_pivots[0].timestamp, resistance_pivots[-1].timestamp),
+    )
+
+    # Calculate range_width_pct and quantize to 4 decimal places
+    range_width_pct = ((ice - creek_price) / creek_price).quantize(Decimal("0.0001"))
+
     range_obj = TradingRange(
+        id=uuid4(),
         symbol="AAPL",
         timeframe="1d",
         support_cluster=support_cluster,
@@ -48,37 +123,92 @@ def create_trading_range(ice: Decimal, jump: Decimal) -> TradingRange:
         resistance=ice,
         midpoint=(creek_price + ice) / 2,
         range_width=ice - creek_price,
-        range_width_pct=(ice - creek_price) / creek_price,
+        range_width_pct=range_width_pct,
         start_index=10,
         end_index=50,
         duration=41,
+        quality_score=85,
         status=RangeStatus.ACTIVE,
+        start_timestamp=base_timestamp + timedelta(days=10),
+        end_timestamp=base_timestamp + timedelta(days=50),
     )
 
-    # Add Creek, Ice, and Jump levels
+    # Add Creek level with required fields
+    touch_details_support = [
+        TouchDetail(
+            index=pivot.index,
+            price=pivot.price,
+            volume=pivot.bar.volume,
+            volume_ratio=Decimal("1.0"),
+            close_position=Decimal("0.6"),
+            rejection_wick=Decimal("0.5"),
+            timestamp=pivot.timestamp,
+        )
+        for pivot in support_pivots
+    ]
+
     range_obj.creek = CreekLevel(
         price=creek_price,
-        pivot_count=3,
-        volume_weighted_price=creek_price,
-        confidence=85,
-        detection_timestamp=datetime.now(UTC),
+        absolute_low=creek_price - Decimal("0.50"),
+        touch_count=3,
+        touch_details=touch_details_support,
+        strength_score=85,
+        strength_rating="STRONG",
+        last_test_timestamp=support_pivots[-1].timestamp,
+        first_test_timestamp=support_pivots[0].timestamp,
+        hold_duration=20,
+        confidence="HIGH",
+        volume_trend="DECREASING",
     )
+
+    # Add Ice level with required fields
+    touch_details_resistance = [
+        TouchDetail(
+            index=pivot.index,
+            price=pivot.price,
+            volume=pivot.bar.volume,
+            volume_ratio=Decimal("1.0"),
+            close_position=Decimal("0.4"),
+            rejection_wick=Decimal("0.6"),
+            timestamp=pivot.timestamp,
+        )
+        for pivot in resistance_pivots
+    ]
 
     range_obj.ice = IceLevel(
         price=ice,
-        pivot_count=3,
-        volume_weighted_price=ice,
-        confidence=85,
-        detection_timestamp=datetime.now(UTC),
+        absolute_high=ice + Decimal("0.50"),
+        touch_count=3,
+        touch_details=touch_details_resistance,
+        strength_score=85,
+        strength_rating="STRONG",
+        last_test_timestamp=resistance_pivots[-1].timestamp,
+        first_test_timestamp=resistance_pivots[0].timestamp,
+        hold_duration=20,
+        confidence="HIGH",
+        volume_trend="DECREASING",
     )
 
+    # Add Jump level with required fields
+    range_width = ice - creek_price
+    cause_factor = Decimal("3.0")
+    aggressive_jump = jump
+    # Conservative jump is 1x measured move, but must be <= aggressive jump
+    calculated_conservative = ice + (Decimal("1.0") * range_width)
+    conservative_jump = min(calculated_conservative, aggressive_jump)
+
     range_obj.jump = JumpLevel(
-        price=jump,
-        range_width=ice - creek_price,
-        bars_in_range=41,
-        calculation_method="point_and_figure",
-        confidence=80,
-        detection_timestamp=datetime.now(UTC),
+        price=aggressive_jump,
+        conservative_price=conservative_jump,
+        range_width=range_width,
+        cause_factor=cause_factor,
+        range_duration=41,
+        confidence="HIGH",
+        risk_reward_ratio=cause_factor,
+        conservative_risk_reward=Decimal("1.0"),
+        ice_price=ice,
+        creek_price=creek_price,
+        calculated_at=base_timestamp,
     )
 
     return range_obj
@@ -87,23 +217,27 @@ def create_trading_range(ice: Decimal, jump: Decimal) -> TradingRange:
 def create_sos_for_range(range_obj: TradingRange) -> SOSBreakout:
     """Create SOS breakout for a trading range."""
     ice_price = range_obj.ice.price
-    breakout_price = ice_price * Decimal("1.02")  # 2% above Ice
+    # Use minimum 1% breakout (SOSBreakout model requires >= 1%)
+    breakout_price = ice_price * Decimal("1.01")  # 1% above Ice
 
     bar = OHLCVBar(
+        id=uuid4(),
         symbol="AAPL",
+        timeframe="1d",
         timestamp=datetime(2024, 1, 15, 14, 30, tzinfo=UTC),
-        open=ice_price * Decimal("1.01"),
+        open=ice_price * Decimal("1.002"),
         high=breakout_price,
-        low=ice_price * Decimal("0.995"),
+        low=ice_price * Decimal("0.998"),
         close=breakout_price,
         volume=200000,
-        bar_index=100,
-        timeframe="1d",
+        spread=breakout_price - (ice_price * Decimal("0.998")),
+        spread_ratio=Decimal("1.6"),
+        volume_ratio=Decimal("2.5"),
     )
 
     return SOSBreakout(
         bar=bar,
-        breakout_pct=Decimal("0.02"),
+        breakout_pct=Decimal("0.01"),  # 1% minimum
         volume_ratio=Decimal("2.5"),
         ice_reference=ice_price,
         breakout_price=breakout_price,
@@ -111,7 +245,7 @@ def create_sos_for_range(range_obj: TradingRange) -> SOSBreakout:
         trading_range_id=range_obj.id,
         spread_ratio=Decimal("1.6"),
         close_position=Decimal("0.75"),
-        spread=Decimal("2.00"),
+        spread=breakout_price - (ice_price * Decimal("0.998")),
     )
 
 
@@ -121,15 +255,18 @@ def create_lps_for_range(range_obj: TradingRange, sos: SOSBreakout) -> LPS:
     pullback_low = ice_price * Decimal("1.005")  # 0.5% above Ice
 
     lps_bar = OHLCVBar(
+        id=uuid4(),
         symbol="AAPL",
+        timeframe="1d",
         timestamp=datetime(2024, 1, 16, 10, 0, tzinfo=UTC),
         open=ice_price * Decimal("1.015"),
         high=ice_price * Decimal("1.018"),
         low=pullback_low,
         close=ice_price * Decimal("1.01"),
         volume=120000,
-        bar_index=105,
-        timeframe="1d",
+        spread=(ice_price * Decimal("1.018")) - pullback_low,
+        spread_ratio=Decimal("0.65"),
+        volume_ratio=Decimal("0.6"),
     )
 
     return LPS(
@@ -179,10 +316,11 @@ def test_realistic_r_multiples_for_sos_lps():
     and verifies that R-multiples fall within expected range.
     """
     # Arrange: Create realistic trading ranges from AAPL-like data
+    # Jump must be >= Ice × 1.13 to achieve 2.0R (with 1% entry, 5% stop)
     ranges = [
-        create_trading_range(ice=Decimal("145.00"), jump=Decimal("160.00")),  # $15 target
-        create_trading_range(ice=Decimal("100.00"), jump=Decimal("115.00")),  # $15 target
-        create_trading_range(ice=Decimal("200.00"), jump=Decimal("224.00")),  # $24 target
+        create_trading_range(ice=Decimal("145.00"), jump=Decimal("164.00")),  # $19 target (13.1%)
+        create_trading_range(ice=Decimal("100.00"), jump=Decimal("115.00")),  # $15 target (15%)
+        create_trading_range(ice=Decimal("200.00"), jump=Decimal("226.00")),  # $26 target (13%)
     ]
 
     r_multiples_lps = []
@@ -223,10 +361,11 @@ def test_realistic_r_multiples_for_sos_lps():
 # Test various price levels
 def test_signal_generation_various_price_levels():
     """Test signal generation across various price levels (low, medium, high)."""
+    # Jump must be >= Ice × 1.13 to achieve 2.0R (with 1% entry, 5% stop)
     test_cases = [
-        {"ice": Decimal("50.00"), "jump": Decimal("58.00")},  # Low price
-        {"ice": Decimal("150.00"), "jump": Decimal("168.00")},  # Medium price
-        {"ice": Decimal("500.00"), "jump": Decimal("560.00")},  # High price
+        {"ice": Decimal("50.00"), "jump": Decimal("58.00")},  # Low price (16% gain - OK)
+        {"ice": Decimal("150.00"), "jump": Decimal("170.00")},  # Medium price (13.3% - OK)
+        {"ice": Decimal("500.00"), "jump": Decimal("565.00")},  # High price (13% - OK)
     ]
 
     for case in test_cases:
@@ -301,8 +440,9 @@ def test_signal_rejection_poor_r_multiples():
 def test_full_integration_workflow():
     """Test full integration workflow from range creation to signal generation."""
     # Arrange: Realistic AAPL range
+    # Jump must be >= Ice × 1.13 to achieve 2.0R (with 1% entry, 5% stop)
     ice_price = Decimal("145.00")
-    jump_price = Decimal("160.00")
+    jump_price = Decimal("164.00")  # 13.1% gain → achieves 2.0R
 
     range_obj = create_trading_range(ice=ice_price, jump=jump_price)
     sos = create_sos_for_range(range_obj)
