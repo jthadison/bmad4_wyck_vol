@@ -6,19 +6,20 @@ Tests the AR detection following the Selling Climax (SC) during the COVID-19 cra
 AC 9: AAPL March 2020 AR detected following SC with expected characteristics.
 """
 
-import pytest
 import csv
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from src.models.ohlcv import OHLCVBar
-from src.pattern_engine.volume_analyzer import VolumeAnalyzer
 from src.pattern_engine.phase_detector import (
-    detect_selling_climax,
     detect_automatic_rally,
+    detect_selling_climax,
     is_phase_a_confirmed,
 )
+from src.pattern_engine.volume_analyzer import VolumeAnalyzer
 
 
 class TestAAPLMarch2020ARIntegration:
@@ -47,19 +48,17 @@ class TestAAPLMarch2020ARIntegration:
             pytest.skip(f"AAPL data file not found at {aapl_data_path}")
 
         bars = []
-        with open(aapl_data_path, "r") as f:
+        with open(aapl_data_path) as f:
             reader = csv.DictReader(f)
             for row in reader:
                 # Parse timestamp
-                timestamp = datetime.fromisoformat(row["timestamp"]).replace(
-                    tzinfo=timezone.utc
-                )
+                timestamp = datetime.fromisoformat(row["timestamp"]).replace(tzinfo=UTC)
 
                 # Filter for Jan-April 2020 (expanded for better baseline and AR detection)
                 if not (
-                    datetime(2020, 1, 1, tzinfo=timezone.utc)
+                    datetime(2020, 1, 1, tzinfo=UTC)
                     <= timestamp
-                    <= datetime(2020, 4, 30, 23, 59, 59, tzinfo=timezone.utc)
+                    <= datetime(2020, 4, 30, 23, 59, 59, tzinfo=UTC)
                 ):
                     continue
 
@@ -119,9 +118,7 @@ class TestAAPLMarch2020ARIntegration:
         assert ar.rally_pct >= Decimal(
             "0.03"
         ), f"Expected rally >= 3%, got {float(ar.rally_pct) * 100:.2f}%"
-        assert (
-            1 <= ar.bars_after_sc <= 10
-        ), f"Expected AR within 10 bars, got {ar.bars_after_sc}"
+        assert 1 <= ar.bars_after_sc <= 10, f"Expected AR within 10 bars, got {ar.bars_after_sc}"
         assert ar.volume_profile in [
             "HIGH",
             "NORMAL",
@@ -140,7 +137,7 @@ class TestAAPLMarch2020ARIntegration:
         print(f"Rally: {float(ar.rally_pct) * 100:.2f}%")
         print(f"Bars After SC: {ar.bars_after_sc}")
         print(f"Volume Profile: {ar.volume_profile}")
-        print(f"\nAR Bar Details:")
+        print("\nAR Bar Details:")
         print(f"Open: ${ar.bar['open']}")
         print(f"High: ${ar.bar['high']}")
         print(f"Low: ${ar.bar['low']}")
@@ -149,7 +146,7 @@ class TestAAPLMarch2020ARIntegration:
 
         # Validate timing
         if ar.bars_after_sc <= 5:
-            print(f"\n[OK] AR within ideal 5-bar window")
+            print("\n[OK] AR within ideal 5-bar window")
         else:
             print(f"\n[WARN] AR delayed: {ar.bars_after_sc} bars (ideal ≤5)")
 
@@ -196,9 +193,9 @@ class TestAAPLMarch2020ARIntegration:
         print(f"SC Timestamp: {sc.bar['timestamp']}")
         print(f"AR Timestamp: {ar.bar['timestamp']}")
         print(f"Phase A Confirmed: {phase_a_confirmed}")
-        print(f"\n[OK] Stopping Action Complete (SC + AR)")
-        print(f"[OK] Phase A confirmed - accumulation beginning")
-        print(f"Next: Watch for Secondary Test (ST) retesting SC low")
+        print("\n[OK] Stopping Action Complete (SC + AR)")
+        print("[OK] Phase A confirmed - accumulation beginning")
+        print("Next: Watch for Secondary Test (ST) retesting SC low")
 
     def test_ar_characteristics_match_manual_analysis(self, aapl_bars):
         """
@@ -252,7 +249,7 @@ class TestAAPLMarch2020ARIntegration:
             ar.sc_reference["bar"]["timestamp"] == sc.bar["timestamp"]
         ), "AR must reference correct SC"
 
-        print(f"\n[OK] All Wyckoff AR characteristics validated")
+        print("\n[OK] All Wyckoff AR characteristics validated")
         print(f"[OK] Phase A sequence: SC ({sc.bar['timestamp']}) -> AR ({ar.bar['timestamp']})")
 
     def test_ar_timing_within_10_bars(self, aapl_bars):
@@ -278,7 +275,7 @@ class TestAAPLMarch2020ARIntegration:
         assert ar is not None, "AR should be detected in March 2020 (strong demand)"
 
         # Validate timing
-        print(f"\n=== AR Timing Validation ===")
+        print("\n=== AR Timing Validation ===")
         print(f"SC Date: {sc.bar['timestamp']}")
         print(f"AR Date: {ar.bar['timestamp']}")
         print(f"Bars After SC: {ar.bars_after_sc}")
@@ -286,9 +283,9 @@ class TestAAPLMarch2020ARIntegration:
         assert ar.bars_after_sc <= 10, f"AR must occur within 10 bars, got {ar.bars_after_sc}"
 
         if ar.bars_after_sc <= 5:
-            print(f"[OK] AR within ideal window (≤5 bars)")
+            print("[OK] AR within ideal window (≤5 bars)")
         else:
-            print(f"[WARN] AR delayed but valid (6-10 bars)")
+            print("[WARN] AR delayed but valid (6-10 bars)")
 
     def test_ar_volume_profile_classification(self, aapl_bars):
         """
@@ -321,22 +318,24 @@ class TestAAPLMarch2020ARIntegration:
 
         assert ar_volume_analysis is not None, "AR volume analysis should be found"
 
-        print(f"\n=== AR Volume Profile Classification ===")
+        print("\n=== AR Volume Profile Classification ===")
         print(f"AR Date: {ar_timestamp.date()}")
-        print(f"Volume Ratio: {float(ar_volume_analysis.volume_ratio) if ar_volume_analysis.volume_ratio else 'N/A'}x")
+        print(
+            f"Volume Ratio: {float(ar_volume_analysis.volume_ratio) if ar_volume_analysis.volume_ratio else 'N/A'}x"
+        )
         print(f"Volume Profile: {ar.volume_profile}")
 
         # Validate classification
         if ar.volume_profile == "HIGH":
-            print(f"[OK] HIGH volume - Strong demand absorption (bullish)")
+            print("[OK] HIGH volume - Strong demand absorption (bullish)")
             if ar_volume_analysis.volume_ratio:
-                assert (
-                    ar_volume_analysis.volume_ratio >= Decimal("1.2")
+                assert ar_volume_analysis.volume_ratio >= Decimal(
+                    "1.2"
                 ), "HIGH profile requires volume_ratio >= 1.2"
         else:
-            print(f"[OK] NORMAL volume - Weak relief rally (less bullish)")
+            print("[OK] NORMAL volume - Weak relief rally (less bullish)")
 
-        print(f"\nInterpretation:")
+        print("\nInterpretation:")
         if ar.volume_profile == "HIGH":
             print("  -> Strong buying interest after SC")
             print("  -> Smart money accumulating")

@@ -9,18 +9,15 @@ Tests cover:
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import uuid4
-
-import pytest
 
 from src.models.creek_level import CreekLevel
 from src.models.ice_level import IceLevel
 from src.models.jump_level import JumpLevel
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
-from src.models.sos_breakout import SOSBreakout
-from src.models.trading_range import TradingRange, RangeStatus
 from src.models.price_cluster import PriceCluster
+from src.models.sos_breakout import SOSBreakout
+from src.models.trading_range import RangeStatus, TradingRange
 from src.signal_generator.sos_signal_generator import (
     generate_lps_signal,
     generate_sos_direct_signal,
@@ -355,7 +352,9 @@ def test_large_range_signal_generation():
     # Entry: $505, Stop: $485, Target: $600
     # Risk: $20, Reward: $95
     # R: 95/20 = 4.75R (excellent)
-    assert lps_signal.r_multiple >= Decimal("4.0"), "Large range should produce excellent R-multiple"
+    assert lps_signal.r_multiple >= Decimal(
+        "4.0"
+    ), "Large range should produce excellent R-multiple"
 
 
 # Test edge case: very small range

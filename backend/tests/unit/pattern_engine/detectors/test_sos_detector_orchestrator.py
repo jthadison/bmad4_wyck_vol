@@ -15,8 +15,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
-import pytest
-
 from src.models.sos_breakout import SOSBreakout
 from src.models.sos_signal import SOSSignal
 from src.pattern_engine.detectors.lps_detector_orchestrator import (

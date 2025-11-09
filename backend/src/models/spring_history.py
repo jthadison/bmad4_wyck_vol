@@ -62,7 +62,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID
 
 import structlog
@@ -116,29 +116,27 @@ class SpringHistory:
 
     symbol: str
     trading_range_id: UUID
-    springs: List[Spring] = field(default_factory=list)
-    signals: List[SpringSignal] = field(default_factory=list)
+    springs: list[Spring] = field(default_factory=list)
+    signals: list[SpringSignal] = field(default_factory=list)
     best_spring: Optional[Spring] = None
     best_signal: Optional[SpringSignal] = None
     volume_trend: str = "STABLE"  # DECLINING | STABLE | RISING
     spring_count: int = 0
     risk_level: str = "MODERATE"  # LOW | MODERATE | HIGH
-    detection_timestamp: datetime = field(
-        default_factory=lambda: datetime.now(UTC)
-    )
+    detection_timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # Story 5.6.2: Spring Timing Analysis (AC 1)
     spring_timing: str = "SINGLE_SPRING"  # COMPRESSED | NORMAL | HEALTHY | SINGLE_SPRING
-    spring_intervals: List[int] = field(default_factory=list)  # Bar counts between springs
+    spring_intervals: list[int] = field(default_factory=list)  # Bar counts between springs
     avg_spring_interval: float = 0.0  # Average spacing for campaign assessment
 
     # Story 5.6.2: Test Quality Progression (AC 2)
-    test_quality_trend: str = "INSUFFICIENT_DATA"  # IMPROVING | STABLE | DEGRADING | INSUFFICIENT_DATA
+    test_quality_trend: str = (
+        "INSUFFICIENT_DATA"  # IMPROVING | STABLE | DEGRADING | INSUFFICIENT_DATA
+    )
     test_quality_metrics: dict = field(default_factory=dict)  # Detailed progression data
 
-    def add_spring(
-        self, spring: Spring, signal: Optional[SpringSignal] = None
-    ) -> None:
+    def add_spring(self, spring: Spring, signal: Optional[SpringSignal] = None) -> None:
         """
         Add spring to history (maintains chronological order).
 

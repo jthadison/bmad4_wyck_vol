@@ -16,11 +16,11 @@ Author: Story 5.6 - SpringDetector Module Integration
 """
 
 import time
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from src.pattern_engine.volume_cache import VolumeCache
 from src.models.ohlcv import OHLCVBar
+from src.pattern_engine.volume_cache import VolumeCache
 
 
 def create_test_bars(count: int, start_date: datetime = None) -> list[OHLCVBar]:
@@ -298,7 +298,9 @@ class TestPerformance:
         # Cache should be at least 2.5x faster (conservative for CI)
         # Production speedup is typically 5-10x
         speedup = no_cache_ms / with_cache_ms
-        assert speedup > 2.5, f"Cache speedup {speedup:.2f}x, expected >2.5x (production typically 5-10x)"
+        assert (
+            speedup > 2.5
+        ), f"Cache speedup {speedup:.2f}x, expected >2.5x (production typically 5-10x)"
 
 
 class TestCacheStatistics:

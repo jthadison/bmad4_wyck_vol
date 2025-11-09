@@ -187,9 +187,7 @@ class PortfolioHeat(BaseModel):
     """
 
     # Core fields (original AC 5)
-    position_count: int = Field(
-        ..., ge=0, description="Number of open positions"
-    )
+    position_count: int = Field(..., ge=0, description="Number of open positions")
     risk_breakdown: dict[str, Decimal] = Field(
         default_factory=dict, description="Symbol -> risk_pct mapping"
     )
@@ -227,9 +225,7 @@ class PortfolioHeat(BaseModel):
     weighted_volume_score: Decimal = Field(
         ..., description="Portfolio avg volume confirmation score (0-40)"
     )
-    volume_multiplier: Decimal = Field(
-        ..., description="Volume-based risk multiplier (0.70-1.0)"
-    )
+    volume_multiplier: Decimal = Field(..., description="Volume-based risk multiplier (0.70-1.0)")
     volume_adjusted_limit: Decimal | None = Field(
         default=None, description="Limit after volume adjustment (if applied)"
     )

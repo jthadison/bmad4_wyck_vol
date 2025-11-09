@@ -806,9 +806,7 @@ def test_warning_underutilized_opportunity():
     warnings = check_campaign_stage_warnings(portfolio_heat)
     assert len(warnings) > 0
     assert any(w.warning_type == "underutilized_opportunity" for w in warnings)
-    underutilized = next(
-        w for w in warnings if w.warning_type == "underutilized_opportunity"
-    )
+    underutilized = next(w for w in warnings if w.warning_type == "underutilized_opportunity")
     assert underutilized.severity == "INFO"
 
 
@@ -833,9 +831,7 @@ def test_warning_premature_commitment():
     warnings = check_campaign_stage_warnings(portfolio_heat)
     assert len(warnings) > 0
     assert any(w.warning_type == "premature_commitment" for w in warnings)
-    premature = next(
-        w for w in warnings if w.warning_type == "premature_commitment"
-    )
+    premature = next(w for w in warnings if w.warning_type == "premature_commitment")
     assert premature.severity == "WARNING"
 
 
@@ -906,8 +902,7 @@ def test_warning_no_warnings_appropriate_sizing():
     warnings = check_campaign_stage_warnings(portfolio_heat)
     # Should have no warnings (appropriate sizing for Phase D with strong volume)
     assert all(
-        w.warning_type not in ["premature_commitment", "volume_quality_mismatch"]
-        for w in warnings
+        w.warning_type not in ["premature_commitment", "volume_quality_mismatch"] for w in warnings
     )
 
 
@@ -928,9 +923,7 @@ def test_validate_heat_capacity_passes_within_limit():
             sector="Technology",
         ),
     ]
-    is_valid, error = validate_portfolio_heat_capacity(
-        Decimal("9.5"), Decimal("0.5"), positions
-    )
+    is_valid, error = validate_portfolio_heat_capacity(Decimal("9.5"), Decimal("0.5"), positions)
     assert is_valid is True
     assert error is None
 
@@ -947,9 +940,7 @@ def test_validate_heat_capacity_fails_exceeds_limit():
             sector="Technology",
         ),
     ]
-    is_valid, error = validate_portfolio_heat_capacity(
-        Decimal("11.5"), Decimal("0.6"), positions
-    )
+    is_valid, error = validate_portfolio_heat_capacity(Decimal("11.5"), Decimal("0.6"), positions)
     assert is_valid is False
     assert error is not None
     assert "12.1" in error or "exceed" in error
@@ -975,9 +966,7 @@ def test_validate_heat_capacity_phase_a_limit():
             sector="Technology",
         ),
     ]
-    is_valid, error = validate_portfolio_heat_capacity(
-        Decimal("8.0"), Decimal("1.0"), positions
-    )
+    is_valid, error = validate_portfolio_heat_capacity(Decimal("8.0"), Decimal("1.0"), positions)
     assert is_valid is False
     assert error is not None
 
@@ -1002,9 +991,7 @@ def test_validate_heat_capacity_phase_e_limit():
             sector="Technology",
         ),
     ]
-    is_valid, error = validate_portfolio_heat_capacity(
-        Decimal("14.0"), Decimal("1.0"), positions
-    )
+    is_valid, error = validate_portfolio_heat_capacity(Decimal("14.0"), Decimal("1.0"), positions)
     assert is_valid is True
     assert error is None
 
@@ -1029,9 +1016,7 @@ def test_validate_heat_capacity_exceeds_absolute_max():
             sector="Technology",
         ),
     ]
-    is_valid, error = validate_portfolio_heat_capacity(
-        Decimal("14.5"), Decimal("0.6"), positions
-    )
+    is_valid, error = validate_portfolio_heat_capacity(Decimal("14.5"), Decimal("0.6"), positions)
     assert is_valid is False
     assert error is not None
 
@@ -1056,9 +1041,7 @@ def test_validate_heat_capacity_volume_multiplier():
             sector="Technology",
         ),
     ]
-    is_valid, error = validate_portfolio_heat_capacity(
-        Decimal("10.0"), Decimal("4.0"), positions
-    )
+    is_valid, error = validate_portfolio_heat_capacity(Decimal("10.0"), Decimal("4.0"), positions)
     assert is_valid is True
     assert error is None
 

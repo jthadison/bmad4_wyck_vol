@@ -6,19 +6,19 @@ Tests realistic scenarios with full SOS → LPS → Entry preference workflow.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 
 from src.models.entry_preference import EntryType
+from src.models.ice_level import IceLevel
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
-from src.models.sos_breakout import SOSBreakout
-from src.models.ice_level import IceLevel
 from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
+from src.models.sos_breakout import SOSBreakout
 from src.models.touch_detail import TouchDetail
 from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.entry_preference import determine_entry_preference

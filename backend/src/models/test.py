@@ -118,15 +118,9 @@ class Test(BaseModel):
         max_digits=10,
         description="How much lower test volume is vs spring",
     )
-    bars_after_spring: int = Field(
-        ..., ge=3, le=15, description="Bars after spring (3-15 window)"
-    )
-    holds_spring_low: bool = Field(
-        ..., description="Whether test_low >= spring_low (CRITICAL)"
-    )
-    detection_timestamp: datetime = Field(
-        ..., description="When test was detected (UTC)"
-    )
+    bars_after_spring: int = Field(..., ge=3, le=15, description="Bars after spring (3-15 window)")
+    holds_spring_low: bool = Field(..., description="Whether test_low >= spring_low (CRITICAL)")
+    detection_timestamp: datetime = Field(..., description="When test was detected (UTC)")
     spring_id: UUID = Field(..., description="Associated spring UUID")
 
     @field_validator("detection_timestamp", mode="before")
@@ -214,9 +208,7 @@ class Test(BaseModel):
             ValueError: If distance exceeds 3%
         """
         if v > Decimal("0.03"):
-            raise ValueError(
-                f"Distance {v*100}% exceeds 3% tolerance - not a valid retest"
-            )
+            raise ValueError(f"Distance {v*100}% exceeds 3% tolerance - not a valid retest")
         return v
 
     @field_validator("volume_decrease_pct")
@@ -302,14 +294,10 @@ class Test(BaseModel):
             str: "EXCELLENT", "GOOD", or "ACCEPTABLE"
         """
         # High volume decrease + close to spring low = excellent
-        if self.volume_decrease_pct >= Decimal("0.4") and self.distance_pct <= Decimal(
-            "0.01"
-        ):
+        if self.volume_decrease_pct >= Decimal("0.4") and self.distance_pct <= Decimal("0.01"):
             return "EXCELLENT"
         # Moderate volume decrease, reasonable distance = good
-        elif self.volume_decrease_pct >= Decimal("0.2") and self.distance_pct <= Decimal(
-            "0.02"
-        ):
+        elif self.volume_decrease_pct >= Decimal("0.2") and self.distance_pct <= Decimal("0.02"):
             return "GOOD"
         # Meets minimum requirements = acceptable
         else:

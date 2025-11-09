@@ -163,9 +163,7 @@ def calculate_wyckoff_position_size(
     """
     # Validate inputs
     if stop_price >= entry_price:
-        raise ValueError(
-            f"Stop price ({stop_price}) must be below entry price ({entry_price})"
-        )
+        raise ValueError(f"Stop price ({stop_price}) must be below entry price ({entry_price})")
 
     # Base position size calculation
     risk_amount = account_size * risk_per_trade
@@ -177,10 +175,7 @@ def calculate_wyckoff_position_size(
     final_size = base_size
 
     # Adjustment 1: Phase B duration
-    if (
-        phase_info.phase == WyckoffPhase.B
-        and phase_info.phase_b_risk_profile is not None
-    ):
+    if phase_info.phase == WyckoffPhase.B and phase_info.phase_b_risk_profile is not None:
         factor = phase_info.phase_b_risk_profile.risk_adjustment_factor
         final_size *= factor
         adjustments["phase_b_duration"] = factor
@@ -192,9 +187,7 @@ def calculate_wyckoff_position_size(
 
     # Adjustment 3: Recent invalidations (within last 10 bars)
     recent_invalidations = [
-        inv
-        for inv in phase_info.invalidations
-        if inv.bar_index > phase_info.current_bar_index - 10
+        inv for inv in phase_info.invalidations if inv.bar_index > phase_info.current_bar_index - 10
     ]
     if recent_invalidations:
         final_size *= 0.75  # Reduce 25% after recent invalidation

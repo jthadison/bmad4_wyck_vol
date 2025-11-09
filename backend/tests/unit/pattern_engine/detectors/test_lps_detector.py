@@ -20,21 +20,19 @@ from uuid import uuid4
 
 import pytest
 
-from src.models.ohlcv import OHLCVBar
-from src.models.sos_breakout import SOSBreakout
-from src.models.trading_range import TradingRange, RangeStatus
-from src.models.price_cluster import PriceCluster
-from src.models.ice_level import IceLevel
 from src.models.creek_level import CreekLevel
+from src.models.ice_level import IceLevel
+from src.models.ohlcv import OHLCVBar
 from src.models.pivot import Pivot, PivotType
+from src.models.price_cluster import PriceCluster
+from src.models.sos_breakout import SOSBreakout
 from src.models.touch_detail import TouchDetail
+from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.detectors.lps_detector import (
-    detect_lps,
-    calculate_range_average_volume,
-    calculate_range_average_spread,
-    calculate_atr,
     analyze_pullback_volume_trend,
+    calculate_atr,
     calculate_lps_position_size,
+    detect_lps,
 )
 
 
@@ -869,7 +867,9 @@ def test_lps_volume_quality_tiers(pullback_volume, expected_quality):
 
     # Assert
     assert lps is not None, f"LPS should be detected for {expected_quality} volume"
-    assert lps.get_volume_quality() == expected_quality, f"Volume quality should be {expected_quality}"
+    assert (
+        lps.get_volume_quality() == expected_quality
+    ), f"Volume quality should be {expected_quality}"
 
 
 # AC 6B: Spread analysis and Effort vs Result tests
@@ -1199,10 +1199,18 @@ def test_lps_declining_volume_trend():
     Healthy pullback: volume decreases as price falls (supply drying up).
     """
     pullback_bars = [
-        create_test_bar(datetime.now(UTC), Decimal("100.00"), Decimal("103.00"), Decimal("102.00"), 150000),
-        create_test_bar(datetime.now(UTC), Decimal("100.00"), Decimal("102.00"), Decimal("101.00"), 130000),
-        create_test_bar(datetime.now(UTC), Decimal("100.00"), Decimal("101.50"), Decimal("100.70"), 110000),
-        create_test_bar(datetime.now(UTC), Decimal("100.00"), Decimal("101.00"), Decimal("100.50"), 90000),
+        create_test_bar(
+            datetime.now(UTC), Decimal("100.00"), Decimal("103.00"), Decimal("102.00"), 150000
+        ),
+        create_test_bar(
+            datetime.now(UTC), Decimal("100.00"), Decimal("102.00"), Decimal("101.00"), 130000
+        ),
+        create_test_bar(
+            datetime.now(UTC), Decimal("100.00"), Decimal("101.50"), Decimal("100.70"), 110000
+        ),
+        create_test_bar(
+            datetime.now(UTC), Decimal("100.00"), Decimal("101.00"), Decimal("100.50"), 90000
+        ),
     ]
 
     result = analyze_pullback_volume_trend(pullback_bars)
@@ -1219,10 +1227,18 @@ def test_lps_increasing_volume_trend():
     Unhealthy pullback: volume increases as price falls (supply building).
     """
     pullback_bars = [
-        create_test_bar(datetime.now(UTC), Decimal("100.00"), Decimal("103.00"), Decimal("102.00"), 90000),
-        create_test_bar(datetime.now(UTC), Decimal("100.00"), Decimal("102.00"), Decimal("101.00"), 110000),
-        create_test_bar(datetime.now(UTC), Decimal("100.00"), Decimal("101.50"), Decimal("100.70"), 130000),
-        create_test_bar(datetime.now(UTC), Decimal("100.00"), Decimal("101.00"), Decimal("100.50"), 150000),
+        create_test_bar(
+            datetime.now(UTC), Decimal("100.00"), Decimal("103.00"), Decimal("102.00"), 90000
+        ),
+        create_test_bar(
+            datetime.now(UTC), Decimal("100.00"), Decimal("102.00"), Decimal("101.00"), 110000
+        ),
+        create_test_bar(
+            datetime.now(UTC), Decimal("100.00"), Decimal("101.50"), Decimal("100.70"), 130000
+        ),
+        create_test_bar(
+            datetime.now(UTC), Decimal("100.00"), Decimal("101.00"), Decimal("100.50"), 150000
+        ),
     ]
 
     result = analyze_pullback_volume_trend(pullback_bars)
@@ -1303,7 +1319,9 @@ def test_calculate_lps_position_size_acceptable_quality():
     # Base = 250, Campaign = 0.50, Quality = 0.50
     # Final = 250 * 0.50 * 0.50 = 62.5 → 62 shares
 
-    assert result["position_size"] == 62, "Position size should be 62 shares (50% quality reduction)"
+    assert (
+        result["position_size"] == 62
+    ), "Position size should be 62 shares (50% quality reduction)"
     assert result["quality_multiplier"] == Decimal("0.50"), "ACCEPTABLE multiplier"
 
 

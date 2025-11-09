@@ -288,7 +288,9 @@ def test_integration_default_limit_enforcement(default_limit_positions):
 
     # Test: Attempting to add enough heat to exceed limit
     is_valid, error = validate_portfolio_heat_capacity(
-        report_10.total_heat, Decimal("6.0"), ten_positions  # Would exceed 14.11% limit
+        report_10.total_heat,
+        Decimal("6.0"),
+        ten_positions,  # Would exceed 14.11% limit
     )
     assert is_valid is False, "Should reject when exceeding phase-adjusted limit"
     assert error is not None
@@ -418,9 +420,9 @@ def test_integration_correlation_adjusted_heat(clustered_positions):
     assert report.raw_heat == Decimal("16.0"), "Raw heat should be 16% (4 × 4%)"
 
     # Verify correlation adjustment applied
-    assert report.correlation_adjusted_heat < report.raw_heat, (
-        "Correlation-adjusted heat should be less than raw heat"
-    )
+    assert (
+        report.correlation_adjusted_heat < report.raw_heat
+    ), "Correlation-adjusted heat should be less than raw heat"
 
     # Verify total_heat uses correlation-adjusted value
     assert report.total_heat == report.correlation_adjusted_heat
@@ -429,21 +431,21 @@ def test_integration_correlation_adjusted_heat(clustered_positions):
     assert len(report.campaign_clusters) > 0, "Should identify at least one campaign cluster"
 
     # Find the Tech/Phase D cluster
-    tech_cluster = next(
-        (c for c in report.campaign_clusters if c.sector == "Technology"), None
-    )
+    tech_cluster = next((c for c in report.campaign_clusters if c.sector == "Technology"), None)
     assert tech_cluster is not None, "Should identify Technology/Phase D cluster"
     assert tech_cluster.position_count == 3, "Tech cluster should have 3 positions"
-    assert tech_cluster.correlation_multiplier == Decimal("0.85"), "3-position cluster should have 0.85x multiplier"
+    assert tech_cluster.correlation_multiplier == Decimal(
+        "0.85"
+    ), "3-position cluster should have 0.85x multiplier"
 
     # Verify correlation-adjusted heat calculation
     # Tech cluster: 12% * 0.85 = 10.2%
     # Healthcare isolated: 4% * 1.0 = 4.0%
     # Total: 14.2%
     expected_adjusted = Decimal("14.2")
-    assert report.correlation_adjusted_heat == expected_adjusted, (
-        f"Correlation-adjusted heat should be {expected_adjusted}%"
-    )
+    assert (
+        report.correlation_adjusted_heat == expected_adjusted
+    ), f"Correlation-adjusted heat should be {expected_adjusted}%"
 
 
 # ============================================================================
@@ -483,10 +485,14 @@ def test_integration_combined_enhancements(phase_e_strong_volume_positions):
     # Should NOT have volume_quality_mismatch (volume is strong)
     # Should NOT have premature_commitment (Phase E is late stage)
     inappropriate_warnings = [
-        w for w in report.warnings
-        if w.warning_type in ["underutilized_opportunity", "volume_quality_mismatch", "premature_commitment"]
+        w
+        for w in report.warnings
+        if w.warning_type
+        in ["underutilized_opportunity", "volume_quality_mismatch", "premature_commitment"]
     ]
-    assert len(inappropriate_warnings) == 0, "Should have no inappropriate warnings for Phase E with strong volume"
+    assert (
+        len(inappropriate_warnings) == 0
+    ), "Should have no inappropriate warnings for Phase E with strong volume"
 
     # Verify validation passes
     is_valid, error = validate_portfolio_heat_capacity(
@@ -536,9 +542,7 @@ def test_integration_exactly_at_absolute_maximum():
     assert report.applied_heat_limit == Decimal("15.0")
 
     # Verify validation passes
-    is_valid, error = validate_portfolio_heat_capacity(
-        Decimal("14.0"), Decimal("1.0"), positions
-    )
+    is_valid, error = validate_portfolio_heat_capacity(Decimal("14.0"), Decimal("1.0"), positions)
     assert is_valid is True
 
 
@@ -574,8 +578,6 @@ def test_integration_exceeds_absolute_maximum():
     ]
 
     # Try to add 0.06% to get to 15.11%
-    is_valid, error = validate_portfolio_heat_capacity(
-        Decimal("15.05"), Decimal("0.06"), positions
-    )
+    is_valid, error = validate_portfolio_heat_capacity(Decimal("15.05"), Decimal("0.06"), positions)
     assert is_valid is False
     assert error is not None

@@ -87,18 +87,13 @@ class SpringConfidence(BaseModel):
     """
 
     total_score: int = Field(
-        ...,
-        ge=0,
-        le=100,
-        description="Final confidence score 0-100 (capped from possible 120)"
+        ..., ge=0, le=100, description="Final confidence score 0-100 (capped from possible 120)"
     )
     component_scores: dict[str, int] = Field(
-        ...,
-        description="Breakdown by component (volume, penetration, recovery, test, bonuses)"
+        ..., description="Breakdown by component (volume, penetration, recovery, test, bonuses)"
     )
     quality_tier: str = Field(
-        ...,
-        description="EXCELLENT (90-100) / GOOD (80-89) / ACCEPTABLE (70-79) / REJECTED (<70)"
+        ..., description="EXCELLENT (90-100) / GOOD (80-89) / ACCEPTABLE (70-79) / REJECTED (<70)"
     )
 
     @property

@@ -36,15 +36,16 @@ warnings.warn(
     "Use src.models.phase_classification.PhaseEvents instead. "
     "See module docstring for migration path.",
     DeprecationWarning,
-    stacklevel=2
+    stacklevel=2,
 )
 
-from typing import Optional, List, Any
+from typing import Any, Optional
+
 from pydantic import BaseModel, Field
 
-from src.models.selling_climax import SellingClimax
 from src.models.automatic_rally import AutomaticRally
 from src.models.secondary_test import SecondaryTest
+from src.models.selling_climax import SellingClimax
 
 
 class PhaseEvents(BaseModel):
@@ -86,22 +87,16 @@ class PhaseEvents(BaseModel):
     )
 
     # Phase B events
-    st_list: List[SecondaryTest] = Field(
+    st_list: list[SecondaryTest] = Field(
         default_factory=list, description="Secondary Tests (Phase B cause building)"
     )
 
     # Phase C events (from Epic 5)
-    spring: Optional[Any] = Field(
-        None, description="Spring (final test, from Epic 5)"
-    )
+    spring: Optional[Any] = Field(None, description="Spring (final test, from Epic 5)")
 
     # Phase D events (from Epic 5)
-    sos: Optional[Any] = Field(
-        None, description="Sign of Strength (breakout, from Epic 5)"
-    )
-    lps: Optional[Any] = Field(
-        None, description="Last Point of Support (pullback, from Epic 5)"
-    )
+    sos: Optional[Any] = Field(None, description="Sign of Strength (breakout, from Epic 5)")
+    lps: Optional[Any] = Field(None, description="Last Point of Support (pullback, from Epic 5)")
 
     def has_phase_a(self) -> bool:
         """

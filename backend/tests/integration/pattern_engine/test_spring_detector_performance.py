@@ -16,21 +16,21 @@ Author: Story 5.6 - Phase 3 Integration Testing
 """
 
 import time
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 
-from src.pattern_engine.detectors.spring_detector import SpringDetector
-from src.models.phase_classification import WyckoffPhase
-from src.models.ohlcv import OHLCVBar
-from src.models.trading_range import TradingRange, RangeStatus
 from src.models.creek_level import CreekLevel
 from src.models.jump_level import JumpLevel
-from src.models.touch_detail import TouchDetail
-from src.models.price_cluster import PriceCluster
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import WyckoffPhase
 from src.models.pivot import Pivot, PivotType
+from src.models.price_cluster import PriceCluster
+from src.models.touch_detail import TouchDetail
+from src.models.trading_range import RangeStatus, TradingRange
+from src.pattern_engine.detectors.spring_detector import SpringDetector
 
 # Import complete fixture from multi-spring tests
 from tests.integration.pattern_engine.test_spring_detector_multi_spring import (
@@ -252,7 +252,7 @@ def create_bar_sequence_with_springs(
 
             # Add 3 more bars before test
             for j in range(3):
-                normal_timestamp = recovery_timestamp + timedelta(days=j+1)
+                normal_timestamp = recovery_timestamp + timedelta(days=j + 1)
                 normal_bar = create_test_bar(
                     timestamp=normal_timestamp,
                     low=creek_level * Decimal("1.00"),
@@ -334,8 +334,7 @@ def test_detect_all_springs_100_bars_performance_ac9():
 
     # Assert: Performance requirement
     assert elapsed_ms < 100, (
-        f"AC 9 FAILED: Detection took {elapsed_ms:.2f}ms, "
-        f"must be <100ms for 100-bar sequence"
+        f"AC 9 FAILED: Detection took {elapsed_ms:.2f}ms, " f"must be <100ms for 100-bar sequence"
     )
 
     # Assert: Detection succeeded
@@ -375,8 +374,7 @@ def test_detect_all_springs_500_bars_performance_stretch():
 
     # Assert: Stretch goal performance
     assert elapsed_ms < 500, (
-        f"Stretch goal: 500-bar detection took {elapsed_ms:.2f}ms, "
-        f"should be <500ms"
+        f"Stretch goal: 500-bar detection took {elapsed_ms:.2f}ms, " f"should be <500ms"
     )
 
     assert history.spring_count >= 1, "Should detect springs in 500-bar sequence"
@@ -413,9 +411,9 @@ def test_volume_cache_performance_benefit():
     elapsed_with_cache_ms = (end_time - start_time) * 1000
 
     # Assert: Performance is reasonable
-    assert elapsed_with_cache_ms < 200, (
-        f"200-bar detection with cache should be <200ms, got {elapsed_with_cache_ms:.2f}ms"
-    )
+    assert (
+        elapsed_with_cache_ms < 200
+    ), f"200-bar detection with cache should be <200ms, got {elapsed_with_cache_ms:.2f}ms"
 
     assert history.spring_count >= 1, "Should detect springs"
 
@@ -473,7 +471,7 @@ def test_multi_spring_accumulation_cycle_performance():
             # Normal bars before test (3 bars)
             for j in range(3):
                 normal_bar = create_test_bar(
-                    timestamp=timestamp + timedelta(days=2+j),
+                    timestamp=timestamp + timedelta(days=2 + j),
                     low=creek_level * Decimal("1.00"),
                     high=creek_level * Decimal("1.03"),
                     close=creek_level * Decimal("1.015"),
@@ -515,21 +513,21 @@ def test_multi_spring_accumulation_cycle_performance():
     elapsed_ms = (end_time - start_time) * 1000
 
     # Assert: Performance and detection quality
-    assert elapsed_ms < 150, (
-        f"150-bar accumulation cycle should complete <150ms, got {elapsed_ms:.2f}ms"
-    )
+    assert (
+        elapsed_ms < 150
+    ), f"150-bar accumulation cycle should complete <150ms, got {elapsed_ms:.2f}ms"
 
-    assert history.spring_count >= 3, (
-        f"Should detect multiple springs in accumulation, got {history.spring_count}"
-    )
+    assert (
+        history.spring_count >= 3
+    ), f"Should detect multiple springs in accumulation, got {history.spring_count}"
 
-    assert history.volume_trend == "DECLINING", (
-        f"Should detect DECLINING volume trend, got {history.volume_trend}"
-    )
+    assert (
+        history.volume_trend == "DECLINING"
+    ), f"Should detect DECLINING volume trend, got {history.volume_trend}"
 
-    assert history.risk_level == "LOW", (
-        f"Declining volume should result in LOW risk, got {history.risk_level}"
-    )
+    assert (
+        history.risk_level == "LOW"
+    ), f"Declining volume should result in LOW risk, got {history.risk_level}"
 
     print(f"✅ Multi-Spring Accumulation Performance: {elapsed_ms:.2f}ms")
     print(f"   Springs detected: {history.spring_count}")
@@ -572,9 +570,7 @@ def test_edge_case_no_springs_performance():
     elapsed_ms = (end_time - start_time) * 1000
 
     # Assert: Fast exit when no springs
-    assert elapsed_ms < 50, (
-        f"No-spring scenario should exit quickly <50ms, got {elapsed_ms:.2f}ms"
-    )
+    assert elapsed_ms < 50, f"No-spring scenario should exit quickly <50ms, got {elapsed_ms:.2f}ms"
 
     assert history.spring_count == 0, "Should detect no springs"
     assert len(history.signals) == 0, "Should generate no signals"
@@ -608,7 +604,7 @@ def test_edge_case_high_volume_rejections_performance():
     for i in range(5):
         # High-volume penetration (0.8x = rejected by FR12)
         high_vol_spring = create_test_bar(
-            timestamp=base_timestamp + timedelta(days=20 + i*10),
+            timestamp=base_timestamp + timedelta(days=20 + i * 10),
             low=creek_level * Decimal("0.98"),
             high=creek_level * Decimal("1.01"),
             close=creek_level * Decimal("0.99"),
@@ -619,7 +615,7 @@ def test_edge_case_high_volume_rejections_performance():
         # Add filler bars
         for j in range(9):
             filler = create_test_bar(
-                timestamp=base_timestamp + timedelta(days=20 + i*10 + j + 1),
+                timestamp=base_timestamp + timedelta(days=20 + i * 10 + j + 1),
                 low=creek_level * Decimal("1.00"),
                 high=creek_level * Decimal("1.05"),
                 close=creek_level * Decimal("1.025"),
@@ -639,16 +635,12 @@ def test_edge_case_high_volume_rejections_performance():
     elapsed_ms = (end_time - start_time) * 1000
 
     # Assert: Fast rejection of invalid springs
-    assert elapsed_ms < 80, (
-        f"High-volume rejection should be fast <80ms, got {elapsed_ms:.2f}ms"
-    )
+    assert elapsed_ms < 80, f"High-volume rejection should be fast <80ms, got {elapsed_ms:.2f}ms"
 
-    assert history.spring_count == 0, (
-        "All high-volume springs should be rejected by FR12"
-    )
+    assert history.spring_count == 0, "All high-volume springs should be rejected by FR12"
 
     print(f"✅ High-Volume Rejection Performance: {elapsed_ms:.2f}ms")
-    print(f"   Springs rejected: 5 (FR12 enforcement)")
+    print("   Springs rejected: 5 (FR12 enforcement)")
 
 
 # ============================================================
@@ -668,9 +660,9 @@ def test_performance_benchmark_summary():
         ("500-bar (stretch)", 500, 5, 500),
     ]
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("PERFORMANCE BENCHMARK SUMMARY")
-    print("="*70)
+    print("=" * 70)
 
     for scenario_name, num_bars, num_springs, time_limit_ms in scenarios:
         # Create bars
@@ -699,13 +691,11 @@ def test_performance_benchmark_summary():
         print(f"  Signals: {len(history.signals)}")
         print(f"  ms/bar: {elapsed_ms/num_bars:.4f}")
 
-        assert elapsed_ms < time_limit_ms, (
-            f"{scenario_name} exceeded time limit"
-        )
+        assert elapsed_ms < time_limit_ms, f"{scenario_name} exceeded time limit"
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("ALL PERFORMANCE BENCHMARKS PASSED ✅")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
 
 @pytest.mark.integration
@@ -772,22 +762,21 @@ def test_volume_cache_speedup_realistic_workload():
 
     # Assert: AC 9 performance requirement met
     assert time_with_cache < 100, (
-        f"AC 9: Detection with VolumeCache should be <100ms, "
-        f"got {time_with_cache:.2f}ms"
+        f"AC 9: Detection with VolumeCache should be <100ms, " f"got {time_with_cache:.2f}ms"
     )
 
     # Assert: Detection succeeded
     assert history.spring_count >= 1, "Should detect springs in realistic workload"
 
     # Log performance metrics
-    print(f"\n=== VolumeCache Performance Test Results (Task 18 / AC 6) ===")
-    print(f"Test scenario: 100 bars, 50 candidates")
+    print("\n=== VolumeCache Performance Test Results (Task 18 / AC 6) ===")
+    print("Test scenario: 100 bars, 50 candidates")
     print(f"Time WITH VolumeCache: {time_with_cache:.2f}ms")
     print(f"Springs detected: {history.spring_count}")
     print(f"Signals generated: {len(history.signals)}")
     print(f"Performance: {time_with_cache/100:.3f}ms per bar")
-    print(f"\nPerformance Analysis:")
-    print(f"  With Cache: O(n) pre-calc + O(1) lookups = ~100 operations")
-    print(f"  Without Cache (naive): O(n×m) = ~100,000 operations")
-    print(f"  Expected speedup: 5-10x in production")
-    print(f"  Status: ✅ AC 9 requirement met (<100ms)\n")
+    print("\nPerformance Analysis:")
+    print("  With Cache: O(n) pre-calc + O(1) lookups = ~100 operations")
+    print("  Without Cache (naive): O(n×m) = ~100,000 operations")
+    print("  Expected speedup: 5-10x in production")
+    print("  Status: ✅ AC 9 requirement met (<100ms)\n")

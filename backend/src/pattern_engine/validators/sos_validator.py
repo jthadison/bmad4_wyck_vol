@@ -87,7 +87,6 @@ Author: Story 6.2
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List, Tuple
 
 import structlog
 
@@ -143,7 +142,7 @@ class SOSValidator:
 
     def validate_sos_volume(
         self, bar: OHLCVBar, volume_ratio: Decimal, correlation_id: str
-    ) -> Tuple[bool, str | None]:
+    ) -> tuple[bool, str | None]:
         """
         Validate SOS breakout volume expansion (FR12 enforcement).
 
@@ -246,7 +245,7 @@ class SOSValidator:
 
     def validate_sos_spread(
         self, bar: OHLCVBar, spread_ratio: Decimal, correlation_id: str
-    ) -> Tuple[bool, str | None, str]:
+    ) -> tuple[bool, str | None, str]:
         """
         Validate SOS breakout spread expansion.
 
@@ -327,7 +326,7 @@ class SOSValidator:
         volume_ratio: Decimal,
         spread_ratio: Decimal,
         correlation_id: str,
-    ) -> Tuple[bool, str | None, dict]:
+    ) -> tuple[bool, str | None, dict]:
         """
         Validate SOS breakout with combined volume and spread validation (AC 5).
 
@@ -384,9 +383,7 @@ class SOSValidator:
         >>> assert result["confidence_impact"] == "high"
         """
         # STEP 1: Volume validation FIRST (CRITICAL - FR12)
-        volume_valid, volume_rejection = self.validate_sos_volume(
-            bar, volume_ratio, correlation_id
-        )
+        volume_valid, volume_rejection = self.validate_sos_volume(bar, volume_ratio, correlation_id)
 
         if not volume_valid:
             # Volume failed: immediate rejection (no need to check spread)
@@ -495,9 +492,7 @@ class SOSValidator:
         warning = warnings[0] if warnings else None
         return (True, warning, result)
 
-    def get_sos_validation_summary(
-        self, volume_ratio: Decimal, spread_ratio: Decimal
-    ) -> dict:
+    def get_sos_validation_summary(self, volume_ratio: Decimal, spread_ratio: Decimal) -> dict:
         """
         Get comprehensive validation summary for SOS breakout.
 
@@ -578,9 +573,7 @@ class SOSValidator:
         ):
             overall_quality = "acceptable_with_warning"
             confidence_impact = "moderate_reduced"
-            warnings.append(
-                "High volume with narrow spread suggests absorption at resistance"
-            )
+            warnings.append("High volume with narrow spread suggests absorption at resistance")
         elif (
             volume_ratio >= self.VOLUME_MINIMUM_THRESHOLD
             and spread_ratio >= self.SPREAD_IDEAL_THRESHOLD
@@ -731,8 +724,8 @@ class SOSValidator:
     # -------------------------------------------------------------------------
 
     def validate_sos_bar_with_context(
-        self, bars: List[OHLCVBar], bar_index: int, correlation_id: str
-    ) -> Tuple[bool, str | None, dict]:
+        self, bars: list[OHLCVBar], bar_index: int, correlation_id: str
+    ) -> tuple[bool, str | None, dict]:
         """
         Validate SOS breakout using bar context for volume/spread calculation.
 
@@ -795,9 +788,7 @@ class SOSValidator:
                 f"bar_index must be >= 20 for volume ratio calculation, got {bar_index}"
             )
         if bar_index >= len(bars):
-            raise ValueError(
-                f"bar_index {bar_index} out of bounds for bars list (len={len(bars)})"
-            )
+            raise ValueError(f"bar_index {bar_index} out of bounds for bars list (len={len(bars)})")
 
         bar = bars[bar_index]
 

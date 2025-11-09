@@ -10,7 +10,7 @@ These tests validate the core business logic functions that power signal generat
 Full integration testing is deferred - these core functions are the critical path.
 """
 
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal
 
 import pytest
 
@@ -19,7 +19,6 @@ from src.signal_generator.spring_signal_generator import (
     calculate_position_size,
     determine_urgency,
 )
-
 
 # ============================================================================
 # Task 18A: Test adaptive stop loss tiers (AC 3)

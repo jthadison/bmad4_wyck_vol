@@ -74,7 +74,7 @@ Author: Story 7.1
 
 from decimal import Decimal
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 import structlog
 import yaml
@@ -215,7 +215,7 @@ class RiskAllocator:
         self.config = self._load_config()
 
         # AC 6: User overrides (optional)
-        self._overrides: Dict[PatternType, Decimal] = {}
+        self._overrides: dict[PatternType, Decimal] = {}
 
         self.logger.info(
             "risk_allocator_initialized",
@@ -246,11 +246,9 @@ class RiskAllocator:
             If configuration validation fails
         """
         if not self.config_path.exists():
-            raise FileNotFoundError(
-                f"Risk allocation config not found: {self.config_path}"
-            )
+            raise FileNotFoundError(f"Risk allocation config not found: {self.config_path}")
 
-        with open(self.config_path, "r") as f:
+        with open(self.config_path) as f:
             raw_config = yaml.safe_load(f)
 
         # Convert float percentages to Decimal for fixed-point arithmetic (AC 10)
@@ -266,27 +264,20 @@ class RiskAllocator:
 
             # Convert per_trade_maximum to Decimal
             if "per_trade_maximum" in config_data:
-                config_data["per_trade_maximum"] = Decimal(
-                    str(config_data["per_trade_maximum"])
-                )
+                config_data["per_trade_maximum"] = Decimal(str(config_data["per_trade_maximum"]))
 
             # Convert override_constraints to Decimal
             if "override_constraints" in config_data:
                 config_data["override_constraints"] = {
-                    k: Decimal(str(v))
-                    for k, v in config_data["override_constraints"].items()
+                    k: Decimal(str(v)) for k, v in config_data["override_constraints"].items()
                 }
 
             # Pydantic validation (AC 5)
             return RiskAllocationConfig(**config_data)
         else:
-            raise ValueError(
-                "Invalid config structure: missing 'risk_allocation' key"
-            )
+            raise ValueError("Invalid config structure: missing 'risk_allocation' key")
 
-    def get_pattern_risk_pct(
-        self, pattern_type: PatternType, use_override: bool = True
-    ) -> Decimal:
+    def get_pattern_risk_pct(self, pattern_type: PatternType, use_override: bool = True) -> Decimal:
         """
         Get risk percentage for a pattern type.
 
@@ -323,9 +314,7 @@ class RiskAllocator:
             self.logger.info(
                 "non_default_risk_used",
                 pattern_type=pattern_type.value,
-                default_risk=float(
-                    self.config.pattern_risk_percentages[pattern_type]
-                ),
+                default_risk=float(self.config.pattern_risk_percentages[pattern_type]),
                 override_risk=float(override_risk),
                 message=f"Using overridden risk for {pattern_type.value}: {override_risk}%",
             )
@@ -344,9 +333,7 @@ class RiskAllocator:
 
         return default_risk
 
-    def set_pattern_risk_override(
-        self, pattern_type: PatternType, risk_pct: Decimal
-    ) -> None:
+    def set_pattern_risk_override(self, pattern_type: PatternType, risk_pct: Decimal) -> None:
         """
         Set user override for pattern risk percentage.
 
@@ -384,9 +371,7 @@ class RiskAllocator:
             raise ValueError(f"Override risk {risk_pct}% < minimum {min_risk}%")
 
         if risk_pct > max_risk:
-            raise ValueError(
-                f"Override risk {risk_pct}% > maximum {max_risk}% (FR18 violation)"
-            )
+            raise ValueError(f"Override risk {risk_pct}% > maximum {max_risk}% (FR18 violation)")
 
         # Set override
         self._overrides[pattern_type] = risk_pct
@@ -421,7 +406,7 @@ class RiskAllocator:
                 message=f"Risk override cleared for {pattern_type.value}",
             )
 
-    def get_all_risk_percentages(self) -> Dict[PatternType, Decimal]:
+    def get_all_risk_percentages(self) -> dict[PatternType, Decimal]:
         """
         Get all pattern risk percentages (with overrides applied).
 

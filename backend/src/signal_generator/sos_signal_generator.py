@@ -481,9 +481,7 @@ def generate_sos_direct_signal(
     return sos_signal
 
 
-def check_spring_campaign_linkage(
-    range: TradingRange, spring_signal_repository
-) -> Optional[UUID]:
+def check_spring_campaign_linkage(range: TradingRange, spring_signal_repository) -> Optional[UUID]:
     """
     Check if Spring signal exists for this trading range.
 

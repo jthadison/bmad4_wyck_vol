@@ -22,9 +22,9 @@ import pytest
 from src.models.sos_breakout import SOSBreakout
 from src.models.sos_signal import SOSSignal
 from src.signal_generator.sos_signal_generator import (
+    check_spring_campaign_linkage,
     generate_lps_signal,
     generate_sos_direct_signal,
-    check_spring_campaign_linkage,
 )
 
 

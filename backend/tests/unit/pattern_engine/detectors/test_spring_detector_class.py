@@ -12,19 +12,19 @@ Tests cover:
 Author: Story 5.6 - SpringDetector Module Integration
 """
 
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from src.pattern_engine.detectors.spring_detector import SpringDetector
-from src.models.spring_history import SpringHistory
-from src.models.phase_classification import WyckoffPhase
-from src.models.ohlcv import OHLCVBar
-from src.models.trading_range import TradingRange, RangeStatus
 from src.models.creek_level import CreekLevel
-from src.models.touch_detail import TouchDetail
-from src.models.price_cluster import PriceCluster
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import WyckoffPhase
 from src.models.pivot import Pivot, PivotType
+from src.models.price_cluster import PriceCluster
+from src.models.spring_history import SpringHistory
+from src.models.touch_detail import TouchDetail
+from src.models.trading_range import RangeStatus, TradingRange
+from src.pattern_engine.detectors.spring_detector import SpringDetector
 
 
 def create_test_bar(

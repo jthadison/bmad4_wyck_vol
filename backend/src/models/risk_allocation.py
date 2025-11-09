@@ -26,7 +26,6 @@ Author: Story 7.1
 
 from decimal import Decimal
 from enum import Enum
-from typing import Dict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -89,17 +88,17 @@ class RiskAllocationConfig(BaseModel):
         ge=Decimal("0.1"),
         le=Decimal("2.0"),
     )
-    pattern_risk_percentages: Dict[PatternType, Decimal] = Field(
+    pattern_risk_percentages: dict[PatternType, Decimal] = Field(
         ..., description="Risk allocation by pattern type (AC 1)"
     )
-    rationale: Dict[PatternType, str] = Field(
+    rationale: dict[PatternType, str] = Field(
         ..., description="Explanation for each risk allocation (AC 2)"
     )
     override_allowed: bool = Field(
         default=True,
         description="Whether users can override default risk percentages (AC 6)",
     )
-    override_constraints: Dict[str, Decimal] = Field(
+    override_constraints: dict[str, Decimal] = Field(
         default_factory=lambda: {
             "minimum_risk_pct": Decimal("0.1"),
             "maximum_risk_pct": Decimal("2.0"),
@@ -110,8 +109,8 @@ class RiskAllocationConfig(BaseModel):
     @field_validator("pattern_risk_percentages")
     @classmethod
     def validate_risk_percentages(
-        cls, v: Dict[PatternType, Decimal], info
-    ) -> Dict[PatternType, Decimal]:
+        cls, v: dict[PatternType, Decimal], info
+    ) -> dict[PatternType, Decimal]:
         """
         AC 5: Validate all risk percentages ≤ per_trade_maximum (2.0%).
         AC 10: Use Decimal for fixed-point arithmetic.
@@ -142,9 +141,7 @@ class RiskAllocationConfig(BaseModel):
                     f"exceeds per-trade maximum ({per_trade_max}%)"
                 )
             if risk_pct <= Decimal("0"):
-                raise ValueError(
-                    f"Risk percentage for {pattern_type} must be positive"
-                )
+                raise ValueError(f"Risk percentage for {pattern_type} must be positive")
 
         return v
 

@@ -9,9 +9,9 @@ SC Zone: Multiple consecutive climactic bars (within 5-10 bars) are grouped into
 zone representing extended exhaustion rather than separate events.
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from typing import Optional, List
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -59,14 +59,10 @@ class SellingClimax(BaseModel):
         le=Decimal("1.0"),
         description="Close position in bar range (0.5+ acceptable, 0.7+ ideal)",
     )
-    confidence: int = Field(
-        ..., ge=0, le=100, description="Confidence score 0-100"
-    )
-    prior_close: Decimal = Field(
-        ..., description="Previous bar's close for downward validation"
-    )
+    confidence: int = Field(..., ge=0, le=100, description="Confidence score 0-100")
+    prior_close: Decimal = Field(..., description="Previous bar's close for downward validation")
     detection_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="When SC was detected (UTC)",
     )
 
@@ -75,8 +71,8 @@ class SellingClimax(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Enforce UTC timezone for detection timestamp."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     class Config:
         """Pydantic model configuration."""
@@ -119,28 +115,20 @@ class SellingClimaxZone(BaseModel):
         detection_timestamp: When zone was detected (UTC)
     """
 
-    zone_start: SellingClimax = Field(
-        ..., description="First SC bar marking zone beginning"
-    )
-    zone_end: SellingClimax = Field(
-        ..., description="Last SC bar (true exhaustion point)"
-    )
-    climactic_bars: List[SellingClimax] = Field(
+    zone_start: SellingClimax = Field(..., description="First SC bar marking zone beginning")
+    zone_end: SellingClimax = Field(..., description="Last SC bar (true exhaustion point)")
+    climactic_bars: list[SellingClimax] = Field(
         ..., description="All SC bars in zone (chronologically ordered)"
     )
     bar_count: int = Field(..., ge=2, description="Number of climactic bars in zone")
     duration_bars: int = Field(
         ..., ge=0, le=10, description="Bars from zone start to zone end (0-10)"
     )
-    avg_volume_ratio: Decimal = Field(
-        ..., description="Average volume ratio across zone"
-    )
-    avg_confidence: int = Field(
-        ..., ge=0, le=100, description="Average confidence across zone"
-    )
+    avg_volume_ratio: Decimal = Field(..., description="Average volume ratio across zone")
+    avg_confidence: int = Field(..., ge=0, le=100, description="Average confidence across zone")
     zone_low: Decimal = Field(..., description="Lowest price reached in zone")
     detection_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="When zone was detected (UTC)",
     )
 
@@ -149,8 +137,8 @@ class SellingClimaxZone(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Enforce UTC timezone for detection timestamp."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     @field_validator("bar_count")
     @classmethod

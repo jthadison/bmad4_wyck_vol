@@ -8,9 +8,10 @@ the SC low. The AR, combined with the SC, confirms Phase A (stopping action) is 
 AR must occur within 5 bars (ideal) or up to 10 bars (timeout) after SC.
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AutomaticRally(BaseModel):
@@ -49,20 +50,12 @@ class AutomaticRally(BaseModel):
     bars_after_sc: int = Field(
         ..., ge=1, le=10, description="Number of bars from SC to AR peak (1-10)"
     )
-    sc_reference: dict = Field(
-        ..., description="The SC that triggered this AR (stored as dict)"
-    )
-    sc_low: Decimal = Field(
-        ..., description="SC bar low price (rally start)", decimal_places=8
-    )
-    ar_high: Decimal = Field(
-        ..., description="AR peak high price (rally end)", decimal_places=8
-    )
-    volume_profile: str = Field(
-        ..., pattern="^(HIGH|NORMAL)$", description="Volume classification"
-    )
+    sc_reference: dict = Field(..., description="The SC that triggered this AR (stored as dict)")
+    sc_low: Decimal = Field(..., description="SC bar low price (rally start)", decimal_places=8)
+    ar_high: Decimal = Field(..., description="AR peak high price (rally end)", decimal_places=8)
+    volume_profile: str = Field(..., pattern="^(HIGH|NORMAL)$", description="Volume classification")
     detection_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="When AR was detected (UTC)",
     )
 
@@ -80,8 +73,8 @@ class AutomaticRally(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Enforce UTC timezone."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     model_config = ConfigDict(
         # Allow validation of dict for bar and sc_reference fields

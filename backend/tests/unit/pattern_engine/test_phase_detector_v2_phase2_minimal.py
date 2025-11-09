@@ -5,16 +5,13 @@ These tests verify basic functionality of the Phase 2 enhancement methods.
 Full integration testing will be done with real market data in integration tests.
 """
 
-import pytest
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock
 
-from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.pattern_engine.phase_detector_v2 import (
     _calculate_markup_slope,
     _count_lps_pullbacks,
-    _detect_volume_trend
+    _detect_volume_trend,
 )
 
 
@@ -123,16 +120,16 @@ def test_count_lps_pullbacks_placeholder():
 def test_phase_2_methods_exist_and_callable():
     """Smoke test: Verify all Phase 2 enhancement methods exist."""
     from src.pattern_engine.phase_detector_v2 import (
-        _check_phase_invalidation,
+        _calculate_markup_slope,
         _check_phase_confirmation,
+        _check_phase_invalidation,
         _classify_breakdown,
-        _validate_phase_b_duration,
-        _determine_sub_phase,
+        _count_lps_pullbacks,
+        _detect_volume_trend,
         _determine_phase_c_sub_state,
         _determine_phase_e_sub_state,
-        _calculate_markup_slope,
-        _count_lps_pullbacks,
-        _detect_volume_trend
+        _determine_sub_phase,
+        _validate_phase_b_duration,
     )
 
     # Just verify they're imported successfully

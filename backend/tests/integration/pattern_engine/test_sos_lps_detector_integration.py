@@ -11,7 +11,6 @@ import time
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import Mock, patch
-from uuid import uuid4
 
 import pytest
 
@@ -100,7 +99,9 @@ def create_synthetic_bars(
     return bars
 
 
-def create_test_range(ice_price: Decimal, jump_price: Decimal, symbol: str = "TEST") -> TradingRange:
+def create_test_range(
+    ice_price: Decimal, jump_price: Decimal, symbol: str = "TEST"
+) -> TradingRange:
     """Create test trading range with Ice and Jump levels."""
     # Create minimal pivots for clusters
     test_bar = OHLCVBar(
@@ -227,7 +228,9 @@ def create_volume_analysis(bars: list[OHLCVBar]) -> dict:
 
 
 @pytest.mark.integration
-@pytest.mark.skip(reason="TODO: Add campaign_id parameter to SOSDetector.detect() method - Story 6.7+ follow-up")
+@pytest.mark.skip(
+    reason="TODO: Add campaign_id parameter to SOSDetector.detect() method - Story 6.7+ follow-up"
+)
 def test_sos_lps_detection_synthetic_data():
     """
     AC 7: Integration test with synthetic market-like data.

@@ -10,17 +10,18 @@ Tests cover:
 - Edge cases (AC 17)
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
 
+import pytest
+
+from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
-from src.models.effort_result import EffortResult
 from src.pattern_engine.phase_detector import (
-    detect_selling_climax,
     detect_automatic_rally,
     detect_secondary_test,
+    detect_selling_climax,
 )
 
 
@@ -41,7 +42,7 @@ class TestSecondaryTestDetection:
         prior_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 22, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 22, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("106.00"),
             low=Decimal("104.00"),
@@ -64,7 +65,7 @@ class TestSecondaryTestDetection:
         sc_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 23, tzinfo=UTC),
             open=Decimal("105.00"),
             high=Decimal("105.50"),
             low=Decimal("100.00"),  # SC low
@@ -87,7 +88,7 @@ class TestSecondaryTestDetection:
         ar_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 24, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 24, tzinfo=UTC),
             open=Decimal("104.00"),
             high=Decimal("106.00"),  # AR high
             low=Decimal("103.00"),
@@ -134,7 +135,7 @@ class TestSecondaryTestDetection:
             filler_bar = OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 25 + i, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 25 + i, tzinfo=UTC),
                 open=Decimal("105.00"),
                 high=Decimal("106.00"),
                 low=Decimal("104.00"),
@@ -157,7 +158,7 @@ class TestSecondaryTestDetection:
         st_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 4, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 4, 1, tzinfo=UTC),
             open=Decimal("104.00"),
             high=Decimal("104.50"),
             low=Decimal("100.50"),  # 0.5% above SC low
@@ -182,8 +183,12 @@ class TestSecondaryTestDetection:
         # Assert
         assert st is not None, "ST should be detected"
         assert st.distance_from_sc_low <= Decimal("0.02"), "Distance should be within 2%"
-        assert float(st.distance_from_sc_low) == pytest.approx(0.005, abs=0.001), "Distance should be ~0.5%"
-        assert st.volume_reduction_pct >= Decimal("0.50"), f"Volume reduction should be >=50%, got {st.volume_reduction_pct}"
+        assert float(st.distance_from_sc_low) == pytest.approx(
+            0.005, abs=0.001
+        ), "Distance should be ~0.5%"
+        assert st.volume_reduction_pct >= Decimal(
+            "0.50"
+        ), f"Volume reduction should be >=50%, got {st.volume_reduction_pct}"
         assert st.penetration == Decimal("0.0"), "Should have no penetration"
         assert st.confidence >= 80, f"Confidence should be >= 80, got {st.confidence}"
         assert st.test_number == 1, "Should be first ST"
@@ -209,7 +214,7 @@ class TestSecondaryTestDetection:
         st_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 25, tzinfo=UTC),
             open=Decimal("104.00"),
             high=Decimal("104.50"),
             low=Decimal("98.00"),  # 2% below SC low (penetration = 2%)
@@ -254,7 +259,7 @@ class TestSecondaryTestDetection:
         st_bar = OHLCVBar(
             symbol="TEST",
             timeframe="1d",
-            timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc),
+            timestamp=datetime(2020, 3, 25, tzinfo=UTC),
             open=Decimal("103.00"),
             high=Decimal("103.50"),
             low=Decimal("100.30"),  # 0.3% above SC low
@@ -302,7 +307,7 @@ class TestSecondaryTestDetection:
                 bar = OHLCVBar(
                     symbol="TEST",
                     timeframe="1d",
-                    timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc) + timedelta(days=i),
+                    timestamp=datetime(2020, 3, 25, tzinfo=UTC) + timedelta(days=i),
                     open=Decimal("103.00"),
                     high=Decimal("103.50"),
                     low=Decimal("100.30"),  # Near SC low
@@ -325,7 +330,7 @@ class TestSecondaryTestDetection:
                 bar = OHLCVBar(
                     symbol="TEST",
                     timeframe="1d",
-                    timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc) + timedelta(days=i),
+                    timestamp=datetime(2020, 3, 25, tzinfo=UTC) + timedelta(days=i),
                     open=Decimal("104.00"),
                     high=Decimal("105.00"),
                     low=Decimal("103.00"),
@@ -381,7 +386,7 @@ class TestSecondaryTestDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 25, tzinfo=UTC),
                 open=Decimal("103.00"),
                 high=Decimal("103.50"),
                 low=Decimal("99.50"),  # 0.5% below SC low
@@ -404,8 +409,12 @@ class TestSecondaryTestDetection:
 
         # Assert ST detected with minor penetration
         assert st is not None, "ST with minor penetration should be detected"
-        assert float(st.penetration) == pytest.approx(0.005, abs=0.001), "Penetration should be ~0.5%"
-        assert st.confidence >= 70, f"Expected confidence >= 70 with minor penetration, got {st.confidence}"
+        assert float(st.penetration) == pytest.approx(
+            0.005, abs=0.001
+        ), "Penetration should be ~0.5%"
+        assert (
+            st.confidence >= 70
+        ), f"Expected confidence >= 70 with minor penetration, got {st.confidence}"
 
         # Scenario 2: Possible Spring with 1.5% penetration
         bars_spring, volume_analysis_spring, sc_spring, ar_spring = self._create_sc_ar_scenario()
@@ -415,7 +424,7 @@ class TestSecondaryTestDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 25, tzinfo=UTC),
                 open=Decimal("103.00"),
                 high=Decimal("103.50"),
                 low=Decimal("98.50"),  # 1.5% below SC low
@@ -434,16 +443,25 @@ class TestSecondaryTestDetection:
             )
         )
 
-        spring_candidate = detect_secondary_test(bars_spring, sc_spring, ar_spring, volume_analysis_spring)
+        spring_candidate = detect_secondary_test(
+            bars_spring, sc_spring, ar_spring, volume_analysis_spring
+        )
 
         # Assert detected but low confidence (large penetration)
         assert spring_candidate is not None, "Spring candidate should be detected"
-        assert float(spring_candidate.penetration) == pytest.approx(0.015, abs=0.001), "Penetration should be ~1.5%"
+        assert float(spring_candidate.penetration) == pytest.approx(
+            0.015, abs=0.001
+        ), "Penetration should be ~1.5%"
         # Confidence should be lower due to large penetration (holding_pts = 6 instead of 15-18)
         # With enhanced scoring: 52% vol (40pts) + 1.5% dist (18pts) + 1.5% pen (6pts) + close/spread bonus = ~74
-        assert spring_candidate.confidence <= 75, f"Expected confidence <= 75 with large penetration, got {spring_candidate.confidence}"
+        assert (
+            spring_candidate.confidence <= 75
+        ), f"Expected confidence <= 75 with large penetration, got {spring_candidate.confidence}"
         # The key distinction is that spring has lower holding_pts (10 vs 25-30)
-        assert st.confidence > spring_candidate.confidence or st.confidence == spring_candidate.confidence, "ST should have equal or better confidence than spring"
+        assert (
+            st.confidence > spring_candidate.confidence
+            or st.confidence == spring_candidate.confidence
+        ), "ST should have equal or better confidence than spring"
 
     def test_no_st_detection_price_too_far(self):
         """
@@ -458,7 +476,7 @@ class TestSecondaryTestDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 25, tzinfo=UTC),
                 open=Decimal("110.00"),
                 high=Decimal("112.00"),
                 low=Decimal("110.00"),  # 10% above SC low
@@ -495,7 +513,7 @@ class TestSecondaryTestDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 25, tzinfo=UTC),
                 open=Decimal("103.00"),
                 high=Decimal("103.50"),
                 low=Decimal("100.20"),  # Near SC low
@@ -543,7 +561,7 @@ class TestSecondaryTestDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 23, tzinfo=UTC),
                 open=Decimal("105.00"),
                 high=Decimal("106.00"),
                 low=Decimal("104.00"),
@@ -570,7 +588,10 @@ class TestSecondaryTestDetection:
             bar_index=1,
             rally_pct=Decimal("0.06"),
             bars_after_sc=1,
-            sc_reference={"bar": {"timestamp": "2020-03-22T00:00:00+00:00", "low": "100.00"}, "bar_index": 0},
+            sc_reference={
+                "bar": {"timestamp": "2020-03-22T00:00:00+00:00", "low": "100.00"},
+                "bar_index": 0,
+            },
             sc_low=Decimal("100.00"),
             ar_high=Decimal("106.00"),
             volume_profile="NORMAL",
@@ -590,7 +611,7 @@ class TestSecondaryTestDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 23, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 23, tzinfo=UTC),
                 open=Decimal("105.00"),
                 high=Decimal("106.00"),
                 low=Decimal("104.00"),
@@ -641,7 +662,7 @@ class TestSecondaryTestDetection:
             OHLCVBar(
                 symbol="TEST",
                 timeframe="1d",
-                timestamp=datetime(2020, 3, 25, tzinfo=timezone.utc),
+                timestamp=datetime(2020, 3, 25, tzinfo=UTC),
                 open=Decimal("103.00"),
                 high=Decimal("103.50"),
                 low=Decimal("100.30"),  # Near SC low (good proximity)

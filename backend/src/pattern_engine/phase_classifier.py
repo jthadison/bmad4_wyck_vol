@@ -32,14 +32,15 @@ Example:
     >>> print(f"Trading Allowed: {classification.trading_allowed}")
 """
 
+from datetime import UTC, datetime
+from typing import Optional
+
 import structlog
-from datetime import datetime, timezone
-from typing import Optional, List
 
 from src.models.phase_classification import (
-    WyckoffPhase,
-    PhaseEvents,
     PhaseClassification,
+    PhaseEvents,
+    WyckoffPhase,
 )
 
 logger = structlog.get_logger(__name__)
@@ -159,7 +160,7 @@ def calculate_phase_a_confidence(events: PhaseEvents) -> int:
     return min(100, total)
 
 
-def analyze_st_progression(secondary_tests: List[dict]) -> int:
+def analyze_st_progression(secondary_tests: list[dict]) -> int:
     """
     Analyze Secondary Test progression quality per Wyckoff principles.
 
@@ -250,9 +251,7 @@ def calculate_phase_b_confidence(events: PhaseEvents, duration: int) -> int:
 
     # ST quality (35 points max) - reduced from 40
     st_confidences = [st.get("confidence", 0) for st in events.secondary_tests]
-    avg_st_confidence = (
-        sum(st_confidences) / len(st_confidences) if st_confidences else 0
-    )
+    avg_st_confidence = sum(st_confidences) / len(st_confidences) if st_confidences else 0
     st_quality_pts = min(35, int(avg_st_confidence * 0.35))
 
     # ST count (25 points max) - reduced from 30
@@ -494,9 +493,7 @@ def classify_phase_b(
     # FR14 Trading Logic
     trading_allowed = duration >= 10
     rejection_reason = (
-        None
-        if trading_allowed
-        else "Early Phase B - insufficient cause (need 10+ bars)"
+        None if trading_allowed else "Early Phase B - insufficient cause (need 10+ bars)"
     )
 
     # Calculate confidence
@@ -721,9 +718,7 @@ def classify_phase_e(
         duration = 0  # Will be updated when we have current bar context
     else:
         # No Phase E without LPS or sustained move indicator
-        logger.debug(
-            "classify_phase_e.failed", reason="No sustained move above Ice detected"
-        )
+        logger.debug("classify_phase_e.failed", reason="No sustained move above Ice detected")
         return None
 
     # Calculate confidence
@@ -839,7 +834,7 @@ def classify_phase(
         trading_allowed=False,
         rejection_reason="No clear Wyckoff phase detected",
         phase_start_index=0,
-        phase_start_timestamp=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
     )
 
 

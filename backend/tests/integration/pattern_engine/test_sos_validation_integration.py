@@ -20,7 +20,6 @@ import pytest
 from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.validators.sos_validator import SOSValidator
 
-
 # -------------------------------------------------------------------------
 # Fixtures
 # -------------------------------------------------------------------------
@@ -40,7 +39,7 @@ def false_breakout_fixtures() -> list[dict]:
     Returns list of dictionaries with historical false breakout data.
     """
     fixtures_path = Path(__file__).parent.parent.parent / "fixtures" / "false_breakouts.json"
-    with open(fixtures_path, "r") as f:
+    with open(fixtures_path) as f:
         return json.load(f)
 
 
@@ -109,13 +108,15 @@ def test_historical_false_breakouts_rejected(
 
         if not volume_valid:
             # AC 9: Low-volume false breakouts should be rejected
-            rejections.append({
-                "symbol": fixture_data["symbol"],
-                "description": fixture_data["description"],
-                "volume_ratio": volume_ratio,
-                "spread_ratio": spread_ratio,
-                "rejection_reason": volume_rejection,
-            })
+            rejections.append(
+                {
+                    "symbol": fixture_data["symbol"],
+                    "description": fixture_data["description"],
+                    "volume_ratio": volume_ratio,
+                    "spread_ratio": spread_ratio,
+                    "rejection_reason": volume_rejection,
+                }
+            )
             assert "insufficient confirmation" in volume_rejection
             assert "FR12" in volume_rejection
             continue
@@ -127,23 +128,27 @@ def test_historical_false_breakouts_rejected(
 
         if result.get("quality") in ["suspicious", "acceptable_with_warning"]:
             # AC 9: Patterns with warning signs should be flagged
-            suspicions.append({
-                "symbol": fixture_data["symbol"],
-                "description": fixture_data["description"],
-                "volume_ratio": volume_ratio,
-                "spread_ratio": spread_ratio,
-                "quality": result["quality"],
-                "confidence_impact": result["confidence_impact"],
-                "warnings": result["warnings"],
-            })
+            suspicions.append(
+                {
+                    "symbol": fixture_data["symbol"],
+                    "description": fixture_data["description"],
+                    "volume_ratio": volume_ratio,
+                    "spread_ratio": spread_ratio,
+                    "quality": result["quality"],
+                    "confidence_impact": result["confidence_impact"],
+                    "warnings": result["warnings"],
+                }
+            )
         else:
-            passes.append({
-                "symbol": fixture_data["symbol"],
-                "description": fixture_data["description"],
-                "volume_ratio": volume_ratio,
-                "spread_ratio": spread_ratio,
-                "quality": result["quality"],
-            })
+            passes.append(
+                {
+                    "symbol": fixture_data["symbol"],
+                    "description": fixture_data["description"],
+                    "volume_ratio": volume_ratio,
+                    "spread_ratio": spread_ratio,
+                    "quality": result["quality"],
+                }
+            )
 
     # Assertions: Verify validator correctly identified problem patterns
     print("\n=== Historical False Breakout Analysis ===")
@@ -181,10 +186,7 @@ def test_historical_false_breakouts_rejected(
         print("\n--- Passed Validation (but historically failed) ---")
         for passed in passes:
             print(f"  {passed['symbol']}: {passed['description']}")
-            print(
-                f"    Volume: {passed['volume_ratio']}x, "
-                f"Spread: {passed['spread_ratio']}x"
-            )
+            print(f"    Volume: {passed['volume_ratio']}x, " f"Spread: {passed['spread_ratio']}x")
             print(f"    Quality: {passed['quality']}")
 
     # AC 9: Most false breakouts should be either rejected or flagged
@@ -195,9 +197,9 @@ def test_historical_false_breakouts_rejected(
     print(f"Catch rate: {catch_rate:.1f}% ({total_caught}/{len(false_breakout_fixtures)})")
 
     # We expect at least 80% of false breakouts to be caught (rejected or flagged)
-    assert catch_rate >= 80.0, (
-        f"Validator should catch at least 80% of false breakouts, got {catch_rate:.1f}%"
-    )
+    assert (
+        catch_rate >= 80.0
+    ), f"Validator should catch at least 80% of false breakouts, got {catch_rate:.1f}%"
 
 
 def test_specific_false_breakout_aapl_low_volume(validator: SOSValidator) -> None:
@@ -264,9 +266,7 @@ def test_specific_false_breakout_tsla_narrow_spread(validator: SOSValidator) -> 
 
     # Assert: Should pass volume but be flagged as suspicious
     assert is_valid is True, "Should pass volume validation (1.8x > 1.5x)"
-    assert result["quality"] == "suspicious", (
-        "Narrow spread (0.9x) should flag as suspicious"
-    )
+    assert result["quality"] == "suspicious", "Narrow spread (0.9x) should flag as suspicious"
     assert warning is not None
     assert "absorption" in warning.lower() or "contraction" in warning.lower()
 
@@ -339,12 +339,15 @@ def test_specific_false_breakout_nvda_distribution_trap(validator: SOSValidator)
     # Assert: Should pass volume but be flagged with warning (REVISED logic)
     assert is_valid is True, "Should pass volume validation (2.3x > 1.5x)"
     # CRITICAL: High volume (2.3x) with narrow spread (1.1x) should be flagged
-    assert result["quality"] in ["suspicious", "acceptable_with_warning"], (
-        "High volume with narrow spread should be flagged (REVISED)"
-    )
-    assert result["confidence_impact"] in ["low", "low_moderate", "moderate_reduced"], (
-        "Confidence should be reduced for narrow spread despite high volume"
-    )
+    assert result["quality"] in [
+        "suspicious",
+        "acceptable_with_warning",
+    ], "High volume with narrow spread should be flagged (REVISED)"
+    assert result["confidence_impact"] in [
+        "low",
+        "low_moderate",
+        "moderate_reduced",
+    ], "Confidence should be reduced for narrow spread despite high volume"
     assert warning is not None, "Should have warning about narrow spread"
 
 
@@ -379,11 +382,9 @@ def test_specific_false_breakout_msft_weak_breakout(validator: SOSValidator) -> 
 
     # Assert: Should pass validation (meets minimum requirements)
     assert is_valid is True, "Should pass validation (meets minimum requirements)"
-    assert result["quality"] == "acceptable", (
-        "Barely meeting minimums should be 'acceptable' quality"
-    )
-    assert result["confidence_impact"] == "standard", (
-        "Confidence should be standard (not high)"
-    )
+    assert (
+        result["quality"] == "acceptable"
+    ), "Barely meeting minimums should be 'acceptable' quality"
+    assert result["confidence_impact"] == "standard", "Confidence should be standard (not high)"
     # Note: This demonstrates that validator allows breakouts meeting minimums,
     # but Story 6.5 (confidence scoring) will give them lower confidence scores

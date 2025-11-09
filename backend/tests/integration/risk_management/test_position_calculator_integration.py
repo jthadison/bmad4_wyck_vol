@@ -20,7 +20,6 @@ Author: Story 7.2
 
 import random
 from decimal import Decimal
-from typing import List, Tuple
 
 import pytest
 
@@ -32,7 +31,7 @@ class TestPositionCalculatorStressTest:
     """Integration tests with randomized data (AC 9)."""
 
     @pytest.fixture
-    def random_test_cases(self) -> List[Tuple[Decimal, PatternType, Decimal, Decimal]]:
+    def random_test_cases(self) -> list[tuple[Decimal, PatternType, Decimal, Decimal]]:
         """
         Generate 1000 random test cases for stress testing (AC 9).
 
@@ -68,9 +67,7 @@ class TestPositionCalculatorStressTest:
 
         return test_cases
 
-    def test_1000_random_calculations_never_exceed_risk_limits(
-        self, random_test_cases
-    ):
+    def test_1000_random_calculations_never_exceed_risk_limits(self, random_test_cases):
         """
         AC 9: Run 1000 random calculations and verify ZERO failures.
 
@@ -247,9 +244,9 @@ class TestPositionCalculatorStressTest:
 
         # Performance target: <5 seconds for 1000 calculations
         # Note: Creating RiskAllocator per call adds overhead, but acceptable for integration test
-        assert elapsed_time < 5.0, (
-            f"1000 calculations took {elapsed_time:.3f}s (exceeds 5.0s limit)"
-        )
+        assert (
+            elapsed_time < 5.0
+        ), f"1000 calculations took {elapsed_time:.3f}s (exceeds 5.0s limit)"
 
         print(f"\n1000 calculations completed in {elapsed_time:.3f}s")
 

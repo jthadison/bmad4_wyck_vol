@@ -130,9 +130,7 @@ class LPS(BaseModel):
         max_digits=10,
         description="Distance from Ice as percentage (should be <=3%)",
     )
-    distance_quality: str = Field(
-        ..., description="Distance tier: PREMIUM, QUALITY, ACCEPTABLE"
-    )
+    distance_quality: str = Field(..., description="Distance tier: PREMIUM, QUALITY, ACCEPTABLE")
     distance_confidence_bonus: int = Field(
         ..., description="Confidence bonus from distance: 10, 5, or 0"
     )
@@ -179,22 +177,16 @@ class LPS(BaseModel):
         max_digits=10,
         description="Pullback spread / range avg spread",
     )
-    spread_quality: str = Field(
-        ..., description="Spread classification: NARROW, NORMAL, WIDE"
-    )
+    spread_quality: str = Field(..., description="Spread classification: NARROW, NORMAL, WIDE")
     effort_result: str = Field(
         ...,
         description="Effort vs Result: NO_SUPPLY, HEALTHY_PULLBACK, SELLING_PRESSURE, NEUTRAL",
     )
-    effort_result_bonus: int = Field(
-        ..., description="Confidence bonus/penalty: +10, +5, 0, -15"
-    )
+    effort_result_bonus: int = Field(..., description="Confidence bonus/penalty: +10, +5, 0, -15")
 
     # Core LPS fields
     sos_reference: UUID = Field(..., description="Reference to SOS breakout")
-    held_support: bool = Field(
-        ..., description="Whether price held above Ice - 2% (CRITICAL)"
-    )
+    held_support: bool = Field(..., description="Whether price held above Ice - 2% (CRITICAL)")
     pullback_low: Decimal = Field(
         ..., decimal_places=8, max_digits=18, description="Lowest price during pullback"
     )
@@ -203,12 +195,8 @@ class LPS(BaseModel):
     )
     sos_volume: int = Field(..., ge=0, description="SOS breakout volume")
     pullback_volume: int = Field(..., ge=0, description="Pullback bar volume")
-    bars_after_sos: int = Field(
-        ..., ge=1, le=10, description="Bars between SOS and LPS (max 10)"
-    )
-    bounce_confirmed: bool = Field(
-        ..., description="Whether bounce from support confirmed"
-    )
+    bars_after_sos: int = Field(..., ge=1, le=10, description="Bars between SOS and LPS (max 10)")
+    bounce_confirmed: bool = Field(..., description="Whether bounce from support confirmed")
     bounce_bar_timestamp: Optional[datetime] = Field(
         None, description="Timestamp of bounce confirmation"
     )
@@ -245,15 +233,11 @@ class LPS(BaseModel):
     )
 
     # Volume trend analysis (AC 14)
-    volume_trend: str = Field(
-        ..., description="Volume trend: DECLINING, FLAT, INCREASING"
-    )
+    volume_trend: str = Field(..., description="Volume trend: DECLINING, FLAT, INCREASING")
     volume_trend_quality: str = Field(
         ..., description="Volume trend quality: EXCELLENT, NEUTRAL, WARNING"
     )
-    volume_trend_bonus: int = Field(
-        ..., description="Confidence bonus/penalty: +5, 0, -5"
-    )
+    volume_trend_bonus: int = Field(..., description="Confidence bonus/penalty: +5, 0, -5")
 
     @field_validator("bars_after_sos")
     @classmethod
@@ -292,12 +276,12 @@ class LPS(BaseModel):
             ValueError: If support was not held
         """
         if not v:
-            raise ValueError(
-                "LPS INVALID: Broke below Ice - 2% - SOS invalidated (false breakout)"
-            )
+            raise ValueError("LPS INVALID: Broke below Ice - 2% - SOS invalidated (false breakout)")
         return v
 
-    @field_validator("detection_timestamp", "bounce_bar_timestamp", "second_test_timestamp", mode="before")
+    @field_validator(
+        "detection_timestamp", "bounce_bar_timestamp", "second_test_timestamp", mode="before"
+    )
     @classmethod
     def ensure_utc(cls, v: Optional[datetime]) -> Optional[datetime]:
         """

@@ -11,23 +11,24 @@ Tests:
 - Edge cases (None transitions, same phase)
 """
 
-import pytest
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+import pytest
+
+from src.models.phase_classification import PhaseClassification, PhaseEvents, WyckoffPhase
 from src.pattern_engine.phase_progression_validator import (
-    validate_phase_progression,
-    can_reset_to_phase_a,
-    PhaseTransition,
+    VALID_TRANSITIONS,
     PhaseHistory,
+    PhaseTransition,
     add_phase_transition,
+    can_reset_to_phase_a,
+    enforce_phase_progression,
     get_phase_duration,
     get_transition_summary,
+    validate_phase_progression,
     visualize_phase_progression,
-    enforce_phase_progression,
-    VALID_TRANSITIONS,
 )
-from src.models.phase_classification import WyckoffPhase, PhaseClassification, PhaseEvents
-
 
 # ============================================================================
 # Test Valid Progressions (AC 1, 7)
@@ -129,7 +130,7 @@ def test_invalid_skips():
     # A → C (cannot skip Phase B)
     is_valid, reason = validate_phase_progression(WyckoffPhase.A, WyckoffPhase.C)
     assert is_valid is False
-    assert ("Phase B" in reason or "building cause" in reason.lower())
+    assert "Phase B" in reason or "building cause" in reason.lower()
 
     # A → D
     is_valid, reason = validate_phase_progression(WyckoffPhase.A, WyckoffPhase.D)
@@ -142,7 +143,7 @@ def test_invalid_skips():
     # B → D (cannot skip Phase C)
     is_valid, reason = validate_phase_progression(WyckoffPhase.B, WyckoffPhase.D)
     assert is_valid is False
-    assert ("Phase C" in reason or "test" in reason.lower())
+    assert "Phase C" in reason or "test" in reason.lower()
 
     # B → E
     is_valid, reason = validate_phase_progression(WyckoffPhase.B, WyckoffPhase.E)
@@ -249,8 +250,8 @@ def test_phase_history_creation():
         transitions=[],
         current_phase=None,
         range_id=range_id,
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     assert history.current_phase is None
@@ -265,15 +266,15 @@ def test_add_phase_transition():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Add Phase A transition
     transition_a = PhaseTransition(
         from_phase=None,
         to_phase=WyckoffPhase.A,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         bar_index=10,
         reason="SC + AR detected",
         is_valid=True,
@@ -289,7 +290,7 @@ def test_add_phase_transition():
     transition_b = PhaseTransition(
         from_phase=WyckoffPhase.A,
         to_phase=WyckoffPhase.B,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         bar_index=15,
         reason="First ST detected",
         is_valid=True,
@@ -307,15 +308,15 @@ def test_invalid_transition_rejected():
         transitions=[],
         current_phase=WyckoffPhase.B,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Attempt invalid B → A transition
     invalid_transition = PhaseTransition(
         from_phase=WyckoffPhase.B,
         to_phase=WyckoffPhase.A,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         bar_index=20,
         reason="Attempted invalid reversion",
         is_valid=False,  # Marked as invalid
@@ -337,8 +338,8 @@ def test_get_phase_duration():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Add transitions: None → A (bar 10) → B (bar 15) → C (bar 30)
@@ -346,7 +347,7 @@ def test_get_phase_duration():
         PhaseTransition(
             from_phase=None,
             to_phase=WyckoffPhase.A,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bar_index=10,
             reason="SC + AR detected",
             is_valid=True,
@@ -355,7 +356,7 @@ def test_get_phase_duration():
         PhaseTransition(
             from_phase=WyckoffPhase.A,
             to_phase=WyckoffPhase.B,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bar_index=15,
             reason="First ST detected",
             is_valid=True,
@@ -364,7 +365,7 @@ def test_get_phase_duration():
         PhaseTransition(
             from_phase=WyckoffPhase.B,
             to_phase=WyckoffPhase.C,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bar_index=30,
             reason="Spring detected",
             is_valid=True,
@@ -394,8 +395,8 @@ def test_get_transition_summary():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Add transitions
@@ -403,7 +404,7 @@ def test_get_transition_summary():
         PhaseTransition(
             from_phase=None,
             to_phase=WyckoffPhase.A,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bar_index=10,
             reason="SC + AR detected",
             is_valid=True,
@@ -412,7 +413,7 @@ def test_get_transition_summary():
         PhaseTransition(
             from_phase=WyckoffPhase.A,
             to_phase=WyckoffPhase.B,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bar_index=15,
             reason="First ST detected",
             is_valid=True,
@@ -435,15 +436,15 @@ def test_visualize_phase_progression():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Add transition
     transition = PhaseTransition(
         from_phase=None,
         to_phase=WyckoffPhase.A,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         bar_index=10,
         reason="SC + AR detected",
         is_valid=True,
@@ -470,8 +471,8 @@ def test_enforce_phase_progression_valid():
         transitions=[],
         current_phase=WyckoffPhase.A,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Create Phase B classification
@@ -483,8 +484,8 @@ def test_enforce_phase_progression_valid():
         trading_allowed=False,
         rejection_reason=None,
         phase_start_index=15,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {"bar_index": 15, "reason": "First ST detected"}
@@ -507,8 +508,8 @@ def test_enforce_phase_progression_invalid():
         transitions=[],
         current_phase=WyckoffPhase.B,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # Create invalid Phase A classification (reversion)
@@ -520,8 +521,8 @@ def test_enforce_phase_progression_invalid():
         trading_allowed=False,
         rejection_reason=None,
         phase_start_index=20,
-        phase_start_timestamp=datetime.now(timezone.utc),
-        last_updated=datetime.now(timezone.utc),
+        phase_start_timestamp=datetime.now(UTC),
+        last_updated=datetime.now(UTC),
     )
 
     context = {"bar_index": 20, "reason": "Attempted invalid reversion"}
@@ -549,7 +550,7 @@ def test_phase_transition_validation():
     transition = PhaseTransition(
         from_phase=None,
         to_phase=WyckoffPhase.A,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         bar_index=10,
         reason="SC + AR detected",
         is_valid=True,
@@ -562,7 +563,7 @@ def test_phase_transition_validation():
         PhaseTransition(
             from_phase=None,
             to_phase=WyckoffPhase.A,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bar_index=-1,
             reason="Test",
             is_valid=True,
@@ -574,7 +575,7 @@ def test_phase_transition_validation():
         PhaseTransition(
             from_phase=None,
             to_phase=WyckoffPhase.A,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bar_index=10,
             reason="",
             is_valid=True,
@@ -589,8 +590,8 @@ def test_phase_history_validation():
         transitions=[],
         current_phase=None,
         range_id=uuid.uuid4(),
-        started_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     assert history.current_phase is None
     assert len(history.transitions) == 0

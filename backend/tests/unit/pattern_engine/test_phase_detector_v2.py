@@ -22,23 +22,22 @@ Phase 2/3 will add:
 - Risk management tests
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import List
 
-from src.models.ohlcv import OHLCVBar
-from src.models.volume_analysis import VolumeAnalysis
+import pytest
+
 from src.models.effort_result import EffortResult
-from src.models.trading_range import TradingRange
+from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
+from src.models.trading_range import TradingRange
+from src.models.volume_analysis import VolumeAnalysis
 from src.pattern_engine.phase_detector_v2 import (
     PhaseDetector,
     get_current_phase,
-    is_trading_allowed,
     get_phase_description,
+    is_trading_allowed,
 )
-
 
 # ============================================================================
 # Test Fixtures
@@ -46,9 +45,9 @@ from src.pattern_engine.phase_detector_v2 import (
 
 
 @pytest.fixture
-def sample_bars() -> List[OHLCVBar]:
+def sample_bars() -> list[OHLCVBar]:
     """Generate sample OHLCV bars for testing."""
-    base_time = datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
     bars = []
 
     # Generate 50 bars with realistic price action
@@ -63,10 +62,14 @@ def sample_bars() -> List[OHLCVBar]:
             base_price = Decimal("90.00000000")
         # AR rally at bars 23-25
         elif 23 <= i <= 25:
-            base_price = (Decimal("90") + Decimal(str((i - 22) * 1.5))).quantize(Decimal("0.00000001"))
+            base_price = (Decimal("90") + Decimal(str((i - 22) * 1.5))).quantize(
+                Decimal("0.00000001")
+            )
         # ST oscillation in Phase B
         else:
-            base_price = (Decimal("93") + Decimal(str((i % 5) * 0.3))).quantize(Decimal("0.00000001"))
+            base_price = (Decimal("93") + Decimal(str((i % 5) * 0.3))).quantize(
+                Decimal("0.00000001")
+            )
 
         bar = OHLCVBar(
             symbol="AAPL",
@@ -85,7 +88,7 @@ def sample_bars() -> List[OHLCVBar]:
 
 
 @pytest.fixture
-def sample_volume_analysis(sample_bars) -> List[VolumeAnalysis]:
+def sample_volume_analysis(sample_bars) -> list[VolumeAnalysis]:
     """Generate sample volume analysis matching bars."""
     analyses = []
 
@@ -118,7 +121,7 @@ def sample_trading_range() -> TradingRange:
     from src.models.pivot import Pivot, PivotType
     from src.models.price_cluster import PriceCluster
 
-    base_time = datetime(2024, 1, 10, 9, 30, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 10, 9, 30, tzinfo=UTC)
 
     # Create OHLCVBars for pivots
     bar_sp1 = OHLCVBar(
@@ -130,7 +133,7 @@ def sample_trading_range() -> TradingRange:
         low=Decimal("89.00"),
         close=Decimal("89.50"),
         volume=1000000,
-        spread=Decimal("2.00")
+        spread=Decimal("2.00"),
     )
 
     bar_sp2 = OHLCVBar(
@@ -142,7 +145,7 @@ def sample_trading_range() -> TradingRange:
         low=Decimal("89.10"),
         close=Decimal("89.80"),
         volume=1000000,
-        spread=Decimal("1.90")
+        spread=Decimal("1.90"),
     )
 
     bar_rp1 = OHLCVBar(
@@ -154,7 +157,7 @@ def sample_trading_range() -> TradingRange:
         low=Decimal("93.50"),
         close=Decimal("95.00"),
         volume=1000000,
-        spread=Decimal("2.50")
+        spread=Decimal("2.50"),
     )
 
     bar_rp2 = OHLCVBar(
@@ -166,7 +169,7 @@ def sample_trading_range() -> TradingRange:
         low=Decimal("94.00"),
         close=Decimal("95.50"),
         volume=1000000,
-        spread=Decimal("2.20")
+        spread=Decimal("2.20"),
     )
 
     # Create Pivots with required fields
@@ -176,7 +179,7 @@ def sample_trading_range() -> TradingRange:
         type=PivotType.LOW,
         strength=2,
         timestamp=bar_sp1.timestamp,
-        index=11
+        index=11,
     )
 
     sp2 = Pivot(
@@ -185,7 +188,7 @@ def sample_trading_range() -> TradingRange:
         type=PivotType.LOW,
         strength=2,
         timestamp=bar_sp2.timestamp,
-        index=15
+        index=15,
     )
 
     rp1 = Pivot(
@@ -194,7 +197,7 @@ def sample_trading_range() -> TradingRange:
         type=PivotType.HIGH,
         strength=2,
         timestamp=bar_rp1.timestamp,
-        index=13
+        index=13,
     )
 
     rp2 = Pivot(
@@ -203,7 +206,7 @@ def sample_trading_range() -> TradingRange:
         type=PivotType.HIGH,
         strength=2,
         timestamp=bar_rp2.timestamp,
-        index=17
+        index=17,
     )
 
     # Create PriceClusters
@@ -216,7 +219,7 @@ def sample_trading_range() -> TradingRange:
         touch_count=2,
         cluster_type=PivotType.LOW,
         std_deviation=Decimal("0.05"),
-        timestamp_range=(sp1.timestamp, sp2.timestamp)
+        timestamp_range=(sp1.timestamp, sp2.timestamp),
     )
 
     resistance_cluster = PriceCluster(
@@ -228,7 +231,7 @@ def sample_trading_range() -> TradingRange:
         touch_count=2,
         cluster_type=PivotType.HIGH,
         std_deviation=Decimal("0.10"),
-        timestamp_range=(rp1.timestamp, rp2.timestamp)
+        timestamp_range=(rp1.timestamp, rp2.timestamp),
     )
 
     # Create TradingRange (Creek and Ice are optional, so omit them for simplicity)
@@ -244,7 +247,7 @@ def sample_trading_range() -> TradingRange:
         range_width_pct=Decimal("0.0787"),
         start_index=11,
         end_index=17,
-        duration=10  # Minimum 10 bars required
+        duration=10,  # Minimum 10 bars required
     )
 
     return trading_range
@@ -305,9 +308,7 @@ def test_detect_phase_with_st(sample_bars, sample_volume_analysis, sample_tradin
     detector = PhaseDetector()
 
     # Use all bars (includes ST in Phase B)
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     # Should detect SC + AR + ST = Phase B
     assert phase_info.events.selling_climax is not None
@@ -326,20 +327,18 @@ def test_phase_info_structure(sample_bars, sample_volume_analysis, sample_tradin
     """Test that PhaseInfo contains all required fields."""
     detector = PhaseDetector()
 
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     # Core fields
-    assert hasattr(phase_info, 'phase')
-    assert hasattr(phase_info, 'confidence')
-    assert hasattr(phase_info, 'events')
-    assert hasattr(phase_info, 'duration')
-    assert hasattr(phase_info, 'progression_history')
+    assert hasattr(phase_info, "phase")
+    assert hasattr(phase_info, "confidence")
+    assert hasattr(phase_info, "events")
+    assert hasattr(phase_info, "duration")
+    assert hasattr(phase_info, "progression_history")
 
     # Risk management fields
-    assert hasattr(phase_info, 'current_risk_level')
-    assert hasattr(phase_info, 'position_action_required')
+    assert hasattr(phase_info, "current_risk_level")
+    assert hasattr(phase_info, "position_action_required")
 
     # Validate types
     assert isinstance(phase_info.confidence, int)
@@ -348,13 +347,13 @@ def test_phase_info_structure(sample_bars, sample_volume_analysis, sample_tradin
     assert phase_info.duration >= 0
 
 
-def test_trading_allowed_fr14_enforcement(sample_bars, sample_volume_analysis, sample_trading_range):
+def test_trading_allowed_fr14_enforcement(
+    sample_bars, sample_volume_analysis, sample_trading_range
+):
     """Test FR14 trading restrictions enforcement."""
     detector = PhaseDetector()
 
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     # Test is_trading_allowed method
     if phase_info.phase == WyckoffPhase.A:
@@ -380,9 +379,7 @@ def test_fr15_spring_pattern_validation(sample_bars, sample_volume_analysis, sam
     """Test FR15 validation for Spring patterns (Phase C only)."""
     detector = PhaseDetector()
 
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     is_valid, reason = detector.is_valid_for_pattern(phase_info, "SPRING")
 
@@ -398,9 +395,7 @@ def test_fr15_sos_pattern_validation(sample_bars, sample_volume_analysis, sample
     """Test FR15 validation for SOS patterns (Phase D only)."""
     detector = PhaseDetector()
 
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     is_valid, reason = detector.is_valid_for_pattern(phase_info, "SOS")
 
@@ -416,9 +411,7 @@ def test_fr15_lps_pattern_validation(sample_bars, sample_volume_analysis, sample
     """Test FR15 validation for LPS patterns (Phase D or E)."""
     detector = PhaseDetector()
 
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     is_valid, reason = detector.is_valid_for_pattern(phase_info, "LPS")
 
@@ -440,14 +433,10 @@ def test_cache_hit_on_repeated_detection(sample_bars, sample_volume_analysis, sa
     detector = PhaseDetector()
 
     # First call - should populate cache
-    result1 = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    result1 = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     # Second call with same bars - should hit cache
-    result2 = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    result2 = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     # Results should be identical (same object from cache)
     assert result1.phase == result2.phase
@@ -512,9 +501,7 @@ def test_get_current_phase_helper(sample_bars, sample_volume_analysis, sample_tr
     """Test get_current_phase helper function."""
     detector = PhaseDetector()
 
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     phase = get_current_phase(phase_info)
 
@@ -526,9 +513,7 @@ def test_is_trading_allowed_helper(sample_bars, sample_volume_analysis, sample_t
     """Test is_trading_allowed helper function."""
     detector = PhaseDetector()
 
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
 
     allowed = is_trading_allowed(phase_info)
 
@@ -580,7 +565,7 @@ def test_insufficient_bars_warning(sample_trading_range):
     detector = PhaseDetector()
 
     # Create minimal bars (< 20)
-    base_time = datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
     minimal_bars = []
     minimal_volume_analysis = []
 
@@ -608,9 +593,7 @@ def test_insufficient_bars_warning(sample_trading_range):
         minimal_volume_analysis.append(analysis)
 
     # Should not raise error, just warning
-    phase_info = detector.detect_phase(
-        sample_trading_range, minimal_bars, minimal_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, minimal_bars, minimal_volume_analysis)
 
     # Should still return PhaseInfo (even if phase is None)
     assert phase_info is not None
@@ -626,7 +609,7 @@ def test_no_events_detected(sample_trading_range):
     detector = PhaseDetector()
 
     # Create bars with no climactic action
-    base_time = datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
     normal_bars = []
     normal_volume_analysis = []
 
@@ -653,9 +636,7 @@ def test_no_events_detected(sample_trading_range):
         )
         normal_volume_analysis.append(analysis)
 
-    phase_info = detector.detect_phase(
-        sample_trading_range, normal_bars, normal_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, normal_bars, normal_volume_analysis)
 
     # No events detected = no phase
     assert phase_info.events.selling_climax is None
@@ -668,16 +649,16 @@ def test_no_events_detected(sample_trading_range):
 # ============================================================================
 
 
-def test_detection_completes_in_reasonable_time(sample_bars, sample_volume_analysis, sample_trading_range):
+def test_detection_completes_in_reasonable_time(
+    sample_bars, sample_volume_analysis, sample_trading_range
+):
     """Test that phase detection completes in reasonable time (<100ms for 50 bars)."""
     import time
 
     detector = PhaseDetector()
 
     start_time = time.time()
-    phase_info = detector.detect_phase(
-        sample_trading_range, sample_bars, sample_volume_analysis
-    )
+    phase_info = detector.detect_phase(sample_trading_range, sample_bars, sample_volume_analysis)
     elapsed_ms = (time.time() - start_time) * 1000
 
     # Should complete in reasonable time (generous for unit test environment)

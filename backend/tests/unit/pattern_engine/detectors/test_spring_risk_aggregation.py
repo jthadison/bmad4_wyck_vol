@@ -10,18 +10,19 @@ Tests cover:
 Author: Story 5.6 - SpringDetector Module Integration
 """
 
-import pytest
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
+from src.models.ohlcv import OHLCVBar
+from src.models.spring import Spring
+from src.models.spring_history import SpringHistory
 from src.pattern_engine.detectors.spring_detector import (
     analyze_spring_risk_profile,
     analyze_volume_trend,
 )
-from src.models.spring_history import SpringHistory
-from src.models.spring import Spring
-from src.models.ohlcv import OHLCVBar
 
 
 def create_test_spring(volume_ratio: Decimal, timestamp: datetime = None) -> Spring:

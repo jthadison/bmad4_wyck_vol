@@ -123,9 +123,7 @@ def get_bars_for_range(range: TradingRange, all_bars: list[OHLCVBar]) -> list[OH
         return []
 
     range_bars = [
-        bar
-        for bar in all_bars
-        if range.start_timestamp <= bar.timestamp <= range.end_timestamp
+        bar for bar in all_bars if range.start_timestamp <= bar.timestamp <= range.end_timestamp
     ]
 
     logger.debug(
@@ -299,7 +297,7 @@ def analyze_pullback_volume_trend(pullback_bars: list[OHLCVBar]) -> dict[str, An
     sum_x2 = sum(x[i] ** 2 for i in range(n))
 
     # Calculate slope
-    denominator = (n * sum_x2 - sum_x**2)
+    denominator = n * sum_x2 - sum_x**2
     if denominator == 0:
         slope = 0.0
     else:
@@ -418,9 +416,7 @@ def calculate_lps_position_size(
     quality_multiplier = quality_multipliers.get(lps_quality, Decimal("0.50"))
 
     # Calculate final position size
-    final_position_size = int(
-        base_position_size * campaign_multiplier * quality_multiplier
-    )
+    final_position_size = int(base_position_size * campaign_multiplier * quality_multiplier)
 
     position_value = Decimal(final_position_size) * entry_price
 
@@ -590,9 +586,7 @@ def detect_lps(
             pullback_low=float(pullback_low_price),
             ice_level=float(ice_level),
             minimum_support=float(minimum_support_level),
-            break_distance_pct=float(
-                ((ice_level - pullback_low_price) / ice_level) * 100
-            ),
+            break_distance_pct=float(((ice_level - pullback_low_price) / ice_level) * 100),
             message="LPS INVALID: Broke below Ice - 2% - SOS breakout invalidated (false breakout)",
         )
         return None
@@ -634,10 +628,14 @@ def detect_lps(
     pullback_volume = pullback_low_bar.volume
 
     # PRIMARY evaluation (vs. range average) - quantize to 4 decimal places
-    pullback_volume_ratio_vs_avg = (Decimal(pullback_volume) / Decimal(range_avg_volume)).quantize(Decimal("0.0001"))
+    pullback_volume_ratio_vs_avg = (Decimal(pullback_volume) / Decimal(range_avg_volume)).quantize(
+        Decimal("0.0001")
+    )
 
     # SECONDARY evaluation (vs. SOS for context) - quantize to 4 decimal places
-    pullback_volume_ratio_vs_sos = (Decimal(pullback_volume) / Decimal(sos_volume)).quantize(Decimal("0.0001"))
+    pullback_volume_ratio_vs_sos = (Decimal(pullback_volume) / Decimal(sos_volume)).quantize(
+        Decimal("0.0001")
+    )
 
     logger.debug(
         "lps_volume_comparison",
@@ -758,9 +756,7 @@ def detect_lps(
                 bounce_bar_timestamp=bar.timestamp.isoformat(),
                 bounce_close=float(bar.close),
                 pullback_low=float(pullback_low_price),
-                bounce_pct=float(
-                    ((bar.close - pullback_low_price) / pullback_low_price) * 100
-                ),
+                bounce_pct=float(((bar.close - pullback_low_price) / pullback_low_price) * 100),
                 message="LPS bounce confirmed: Price rebounded from support test",
             )
             break

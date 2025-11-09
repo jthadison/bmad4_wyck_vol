@@ -33,14 +33,13 @@ from src.models.creek_level import CreekLevel
 from src.models.jump_level import JumpLevel
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
+from src.models.spring_history import SpringHistory
 from src.models.trading_range import TradingRange
 from src.pattern_engine.detectors.spring_detector import (
     SpringDetector,
     analyze_spring_risk_profile,
     analyze_volume_trend,
 )
-from src.models.spring_history import SpringHistory
-
 
 # ============================================================
 # FIXTURES - Test Data Factories
@@ -459,9 +458,7 @@ def create_bar_sequence_with_declining_volume_springs(
 # ============================================================
 
 
-def test_single_spring_detection_basic_example(
-    trading_range, base_timestamp
-):
+def test_single_spring_detection_basic_example(trading_range, base_timestamp):
     """
     Test: Single spring detection matches documentation Example 1.
 
@@ -497,9 +494,7 @@ def test_single_spring_detection_basic_example(
     assert history.best_spring.quality_tier == "IDEAL"  # 0.42x volume
 
 
-def test_single_spring_signal_generation(
-    trading_range, base_timestamp
-):
+def test_single_spring_signal_generation(trading_range, base_timestamp):
     """
     Test: Single spring generates signal matching documentation.
 
@@ -533,9 +528,7 @@ def test_single_spring_signal_generation(
 # ============================================================
 
 
-def test_multi_spring_declining_volume_detection(
-    trading_range, base_timestamp
-):
+def test_multi_spring_declining_volume_detection(trading_range, base_timestamp):
     """
     Test: Multi-spring declining volume matches documentation Example 2.
 
@@ -555,9 +548,7 @@ def test_multi_spring_declining_volume_detection(
     - best_spring = Spring 3 (lowest volume per Wyckoff hierarchy)
     """
     detector = SpringDetector()
-    bars = create_bar_sequence_with_declining_volume_springs(
-        trading_range, base_timestamp
-    )
+    bars = create_bar_sequence_with_declining_volume_springs(trading_range, base_timestamp)
 
     # Detect all springs
     history = detector.detect_all_springs(
@@ -585,9 +576,7 @@ def test_multi_spring_declining_volume_detection(
     assert history.best_spring.volume_ratio == Decimal("0.32")
 
 
-def test_multi_spring_declining_volume_all_signals_tracked(
-    trading_range, base_timestamp
-):
+def test_multi_spring_declining_volume_all_signals_tracked(trading_range, base_timestamp):
     """
     Test: All signals tracked in chronological order.
 
@@ -597,9 +586,7 @@ def test_multi_spring_declining_volume_all_signals_tracked(
     - Best signal has highest confidence
     """
     detector = SpringDetector()
-    bars = create_bar_sequence_with_declining_volume_springs(
-        trading_range, base_timestamp
-    )
+    bars = create_bar_sequence_with_declining_volume_springs(trading_range, base_timestamp)
 
     history = detector.detect_all_springs(
         range=trading_range,
@@ -613,16 +600,14 @@ def test_multi_spring_declining_volume_all_signals_tracked(
     # Signals should be in chronological order
     for i in range(len(history.signals) - 1):
         assert (
-            history.signals[i].spring_bar_timestamp
-            < history.signals[i + 1].spring_bar_timestamp
+            history.signals[i].spring_bar_timestamp < history.signals[i + 1].spring_bar_timestamp
         ), "Signals should be chronological"
 
     # Best signal has highest confidence
     best_signal = detector.get_best_signal(history)
     assert best_signal is not None
     assert all(
-        best_signal.confidence >= signal.confidence
-        for signal in history.signals
+        best_signal.confidence >= signal.confidence for signal in history.signals
     ), "Best signal should have highest confidence"
 
 
@@ -947,9 +932,7 @@ def test_analyze_risk_profile_multi_spring_declining_low_risk():
 # ============================================================
 
 
-def test_best_spring_selection_wyckoff_hierarchy(
-    trading_range, base_timestamp
-):
+def test_best_spring_selection_wyckoff_hierarchy(trading_range, base_timestamp):
     """
     Test: Best spring selected using Wyckoff quality hierarchy.
 
@@ -962,9 +945,7 @@ def test_best_spring_selection_wyckoff_hierarchy(
     - docs/examples/spring_detector_usage_examples.md Section 6
     """
     detector = SpringDetector()
-    bars = create_bar_sequence_with_declining_volume_springs(
-        trading_range, base_timestamp
-    )
+    bars = create_bar_sequence_with_declining_volume_springs(trading_range, base_timestamp)
 
     history = detector.detect_all_springs(
         range=trading_range,
@@ -974,9 +955,9 @@ def test_best_spring_selection_wyckoff_hierarchy(
 
     # Best spring should be Spring 3 (lowest volume 0.32x)
     assert history.best_spring is not None
-    assert history.best_spring.volume_ratio == Decimal("0.32"), (
-        "Best spring = lowest volume (Wyckoff primary criterion)"
-    )
+    assert history.best_spring.volume_ratio == Decimal(
+        "0.32"
+    ), "Best spring = lowest volume (Wyckoff primary criterion)"
 
 
 def test_best_signal_selection_highest_confidence():
@@ -991,8 +972,8 @@ def test_best_signal_selection_highest_confidence():
     history = SpringHistory(symbol="TEST", trading_range_id=uuid4())
 
     # Create mock signals with different confidences
-    from src.models.spring_signal import SpringSignal
     from src.models.spring import Spring
+    from src.models.spring_signal import SpringSignal
 
     base_time = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -1048,9 +1029,7 @@ def test_best_signal_selection_highest_confidence():
 # ============================================================
 
 
-def test_backward_compatibility_legacy_detect_api(
-    trading_range, base_timestamp
-):
+def test_backward_compatibility_legacy_detect_api(trading_range, base_timestamp):
     """
     Test: Legacy detect() API returns List[SpringSignal].
 
@@ -1111,26 +1090,29 @@ def test_documentation_examples_comprehensive_coverage():
 
     # Count tests for each scenario (based on test function names)
     import sys
+
     current_module = sys.modules[__name__]
 
     test_functions = [
-        name for name in dir(current_module)
+        name
+        for name in dir(current_module)
         if name.startswith("test_") and callable(getattr(current_module, name))
     ]
 
     # Verify each scenario has at least one test
     for scenario in documented_scenarios:
         matching_tests = [
-            test for test in test_functions
-            if scenario.replace("_", "") in test.replace("_", "")
+            test for test in test_functions if scenario.replace("_", "") in test.replace("_", "")
         ]
         assert len(matching_tests) > 0, (
             f"Documentation scenario '{scenario}' should have at least one test. "
             f"Found: {matching_tests}"
         )
 
-    print(f"\n✅ Documentation coverage validated: {len(test_functions)} tests covering "
-          f"{len(documented_scenarios)} scenarios")
+    print(
+        f"\n✅ Documentation coverage validated: {len(test_functions)} tests covering "
+        f"{len(documented_scenarios)} scenarios"
+    )
 
 
 if __name__ == "__main__":

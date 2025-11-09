@@ -8,9 +8,9 @@ risk management profiles.
 Story 4.7: PhaseDetector Module Integration
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import List, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -99,8 +99,8 @@ class PhaseTransition(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Ensure timestamp is UTC."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
 
 class PhaseInvalidation(BaseModel):
@@ -184,8 +184,8 @@ class PhaseInvalidation(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Ensure timestamp is UTC."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
 
 class PhaseConfirmation(BaseModel):
@@ -241,8 +241,8 @@ class PhaseConfirmation(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Ensure timestamp is UTC."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
 
 class BreakdownRiskProfile(BaseModel):
@@ -404,9 +404,7 @@ class PhaseESubStateRiskProfile(BaseModel):
     """
 
     sub_state: PhaseESubState
-    position_action: Literal[
-        "hold", "trail_stops", "reduce_50", "exit_75", "exit_all"
-    ]
+    position_action: Literal["hold", "trail_stops", "reduce_50", "exit_75", "exit_all"]
     stop_adjustment: str
     risk_level: Literal["low", "normal", "elevated", "high"]
     exit_rationale: str
@@ -492,15 +490,15 @@ class PhaseInfo(BaseModel):
     confidence: int = Field(..., ge=0, le=100)
     events: PhaseEvents
     duration: int = Field(..., ge=0)
-    progression_history: List[PhaseTransition] = Field(default_factory=list)
+    progression_history: list[PhaseTransition] = Field(default_factory=list)
     trading_range: TradingRange | None = None
     phase_start_bar_index: int = Field(..., ge=0)
     current_bar_index: int = Field(..., ge=0)
     last_updated: datetime
 
     # Enhancement fields (Wayne/William - AC 11-30)
-    invalidations: List[PhaseInvalidation] = Field(default_factory=list)
-    confirmations: List[PhaseConfirmation] = Field(default_factory=list)
+    invalidations: list[PhaseInvalidation] = Field(default_factory=list)
+    confirmations: list[PhaseConfirmation] = Field(default_factory=list)
     breakdown_type: BreakdownType | None = None
     phase_b_duration_context: Literal[
         "base_accumulation", "reaccumulation", "volatile"
@@ -509,12 +507,8 @@ class PhaseInfo(BaseModel):
     markup_slope: float | None = None
 
     # Risk management fields (Rachel - AC 35-38)
-    current_risk_level: Literal["low", "normal", "elevated", "high", "critical"] = (
-        "normal"
-    )
-    position_action_required: Literal[
-        "none", "adjust_stops", "reduce", "exit"
-    ] | None = "none"
+    current_risk_level: Literal["low", "normal", "elevated", "high", "critical"] = "normal"
+    position_action_required: Literal["none", "adjust_stops", "reduce", "exit"] | None = "none"
     recommended_stop_level: float | None = None
     risk_rationale: str | None = None
     phase_b_risk_profile: PhaseBRiskProfile | None = None
@@ -526,8 +520,8 @@ class PhaseInfo(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Ensure last_updated is UTC."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     def is_trading_allowed(self) -> bool:
         """

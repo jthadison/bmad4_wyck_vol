@@ -58,10 +58,10 @@ Author: Story 5.6 - SpringDetector Module Integration
 
 from __future__ import annotations
 
-from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, List, Optional
 import time
+from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Optional
 
 import structlog
 
@@ -92,7 +92,7 @@ class VolumeCache:
         ...     print(f"Volume: {ratio:.2f}x")
     """
 
-    def __init__(self, bars: List[OHLCVBar], window: int = 20):
+    def __init__(self, bars: list[OHLCVBar], window: int = 20):
         """
         Initialize cache with pre-calculated volume ratios.
 
@@ -107,14 +107,14 @@ class VolumeCache:
             >>> len(cache.ratios)  # Number of ratios calculated
             80  # 100 bars - 20 window = 80 ratios
         """
-        self.ratios: Dict[datetime, Decimal] = {}
+        self.ratios: dict[datetime, Decimal] = {}
         self.window: int = window
         self.logger = logger.bind(component="VolumeCache")
 
         # Build cache with O(n) single pass
         self._build_cache(bars, window)
 
-    def _build_cache(self, bars: List[OHLCVBar], window: int) -> None:
+    def _build_cache(self, bars: list[OHLCVBar], window: int) -> None:
         """
         Build volume ratio cache with O(n) single pass.
 

@@ -9,42 +9,40 @@ Tests cover:
 - Sub-phase state machines (AC 19-22)
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
+
+import pytest
 
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.models.phase_info import (
-    PhaseInvalidation,
-    PhaseConfirmation,
     BreakdownType,
     PhaseCSubState,
-    PhaseESubState
+    PhaseESubState,
 )
-from src.models.trading_range import TradingRange, IceLevel, CreekLevel
+from src.models.trading_range import CreekLevel, IceLevel, TradingRange
 from src.models.volume_analysis import VolumeAnalysis
-
 from src.pattern_engine.phase_detector_v2 import (
-    _check_phase_invalidation,
-    _check_phase_confirmation,
-    _classify_breakdown,
-    _validate_phase_b_duration,
-    _determine_sub_phase,
     _calculate_markup_slope,
+    _check_phase_confirmation,
+    _check_phase_invalidation,
+    _classify_breakdown,
     _count_lps_pullbacks,
-    _detect_volume_trend
+    _detect_volume_trend,
+    _determine_sub_phase,
+    _validate_phase_b_duration,
 )
-
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def base_timestamp():
     """Base timestamp for test data."""
-    return datetime(2024, 1, 1, 9, 30, tzinfo=timezone.utc)
+    return datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -57,14 +55,14 @@ def sample_trading_range():
         end_bar_index=50,
         resistance=100.0,
         support=90.0,
-        ice=IceLevel(price=100.0, bar_index=25, timestamp=datetime.now(timezone.utc)),
-        creek=CreekLevel(price=90.0, bar_index=10, timestamp=datetime.now(timezone.utc)),
+        ice=IceLevel(price=100.0, bar_index=25, timestamp=datetime.now(UTC)),
+        creek=CreekLevel(price=90.0, bar_index=10, timestamp=datetime.now(UTC)),
         range_height=10.0,
         midpoint=95.0,
         duration=50,
         strength_score=75,
         test_count=3,
-        identified_at=datetime.now(timezone.utc)
+        identified_at=datetime.now(UTC),
     )
 
 
@@ -75,7 +73,7 @@ def create_bar(
     low: float,
     close: float,
     volume: int,
-    symbol: str = "TEST"
+    symbol: str = "TEST",
 ) -> OHLCVBar:
     """Helper to create OHLCV bars."""
     spread = Decimal(str(high - low))
@@ -88,7 +86,7 @@ def create_bar(
         low=Decimal(str(low)),
         close=Decimal(str(close)),
         volume=volume,  # int, not Decimal
-        spread=spread
+        spread=spread,
     )
 
 
@@ -102,7 +100,7 @@ def create_volume_analysis(volume_ratio: float, spread_ratio: float = 1.0) -> Vo
         is_climactic=volume_ratio > 2.0,
         is_low_volume=volume_ratio < 0.8,
         spread=Decimal(str(spread_ratio)),
-        spread_ratio=Decimal(str(spread_ratio))
+        spread_ratio=Decimal(str(spread_ratio)),
     )
 
 
@@ -113,26 +111,37 @@ def sample_phase_events():
         selling_climax={
             "bar": {"index": 10, "timestamp": "2024-01-11T09:30:00+00:00"},
             "volume_ratio": 2.5,
-            "confidence": 85
+            "confidence": 85,
         },
         automatic_rally={
             "bar": {"index": 12, "timestamp": "2024-01-13T09:30:00+00:00"},
             "rally_pct": 3.5,
-            "confidence": 80
+            "confidence": 80,
         },
         secondary_tests=[
-            {"bar": {"index": 15, "timestamp": "2024-01-16T09:30:00+00:00"}, "test_number": 1, "confidence": 75, "volume_ratio": 1.2},
-            {"bar": {"index": 18, "timestamp": "2024-01-19T09:30:00+00:00"}, "test_number": 2, "confidence": 78, "volume_ratio": 1.1}
+            {
+                "bar": {"index": 15, "timestamp": "2024-01-16T09:30:00+00:00"},
+                "test_number": 1,
+                "confidence": 75,
+                "volume_ratio": 1.2,
+            },
+            {
+                "bar": {"index": 18, "timestamp": "2024-01-19T09:30:00+00:00"},
+                "test_number": 2,
+                "confidence": 78,
+                "volume_ratio": 1.1,
+            },
         ],
         spring=None,
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
 
 # ============================================================================
 # Phase Invalidation Tests (AC 11-14)
 # ============================================================================
+
 
 def test_failed_sos_invalidation_d_to_c(base_timestamp, sample_trading_range, sample_phase_events):
     """Test AC 11: Failed SOS causes Phase D → C reversion."""
@@ -152,7 +161,7 @@ def test_failed_sos_invalidation_d_to_c(base_timestamp, sample_trading_range, sa
         secondary_tests=sample_phase_events.secondary_tests,
         spring=None,
         sos_breakout={"bar": {"index": 25, "timestamp": "2024-01-26T09:30:00+00:00"}},
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     invalidation = _check_phase_invalidation(
@@ -160,7 +169,7 @@ def test_failed_sos_invalidation_d_to_c(base_timestamp, sample_trading_range, sa
         bars=bars,
         events=events_with_sos,
         trading_range=sample_trading_range,
-        previous_invalidations=[]
+        previous_invalidations=[],
     )
 
     assert invalidation is not None
@@ -189,7 +198,7 @@ def test_weak_spring_invalidation_c_to_b(base_timestamp, sample_trading_range):
         secondary_tests=[],
         spring={"bar": {"index": 20, "timestamp": "2024-01-21T09:30:00+00:00"}},
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     invalidation = _check_phase_invalidation(
@@ -197,7 +206,7 @@ def test_weak_spring_invalidation_c_to_b(base_timestamp, sample_trading_range):
         bars=bars,
         events=events_with_spring,
         trading_range=sample_trading_range,
-        previous_invalidations=[]
+        previous_invalidations=[],
     )
 
     assert invalidation is not None
@@ -223,13 +232,13 @@ def test_stronger_climax_phase_a_reset(base_timestamp, sample_phase_events):
         selling_climax={
             "bar": {"index": 15, "timestamp": "2024-01-16T09:30:00+00:00"},
             "volume_ratio": 3.5,  # Very high volume
-            "confidence": 90
+            "confidence": 90,
         },
         automatic_rally=None,
         secondary_tests=[],
         spring=None,
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     invalidation = _check_phase_invalidation(
@@ -237,7 +246,7 @@ def test_stronger_climax_phase_a_reset(base_timestamp, sample_phase_events):
         bars=bars,
         events=events_strong_sc,
         trading_range=None,
-        previous_invalidations=[]
+        previous_invalidations=[],
     )
 
     assert invalidation is not None
@@ -263,7 +272,7 @@ def test_no_invalidation_when_valid(base_timestamp, sample_trading_range, sample
         bars=bars,
         events=sample_phase_events,
         trading_range=sample_trading_range,
-        previous_invalidations=[]
+        previous_invalidations=[],
     )
 
     assert invalidation is None
@@ -272,6 +281,7 @@ def test_no_invalidation_when_valid(base_timestamp, sample_trading_range, sample
 # ============================================================================
 # Phase Confirmation Tests (AC 15-18)
 # ============================================================================
+
 
 def test_phase_a_confirmation_multiple_climaxes(base_timestamp, sample_phase_events):
     """Test AC 15: Multiple SC/AR events confirm Phase A."""
@@ -287,7 +297,7 @@ def test_phase_a_confirmation_multiple_climaxes(base_timestamp, sample_phase_eve
         events=sample_phase_events,
         trading_range=None,
         previous_confirmations=[],
-        phase_start_index=10  # Phase A started 15 bars ago
+        phase_start_index=10,  # Phase A started 15 bars ago
     )
 
     assert confirmation is not None
@@ -314,7 +324,7 @@ def test_phase_c_spring_test_confirmation(base_timestamp, sample_trading_range):
         secondary_tests=[],
         spring={"bar": {"index": 20, "timestamp": "2024-01-21T09:30:00+00:00"}},
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     confirmation = _check_phase_confirmation(
@@ -323,7 +333,7 @@ def test_phase_c_spring_test_confirmation(base_timestamp, sample_trading_range):
         events=events_with_spring,
         trading_range=sample_trading_range,
         previous_confirmations=[],
-        phase_start_index=20
+        phase_start_index=20,
     )
 
     assert confirmation is not None
@@ -347,7 +357,7 @@ def test_phase_b_additional_st_confirmation(base_timestamp, sample_phase_events)
         events=sample_phase_events,  # Has 2 STs
         trading_range=None,
         previous_confirmations=[],
-        phase_start_index=10
+        phase_start_index=10,
     )
 
     assert confirmation is not None
@@ -371,7 +381,7 @@ def test_no_confirmation_when_not_applicable(base_timestamp, sample_phase_events
         events=sample_phase_events,
         trading_range=None,
         previous_confirmations=[],
-        phase_start_index=10
+        phase_start_index=10,
     )
 
     assert confirmation is None
@@ -381,7 +391,10 @@ def test_no_confirmation_when_not_applicable(base_timestamp, sample_phase_events
 # Breakdown Classification Tests (AC 23-26)
 # ============================================================================
 
-def test_breakdown_failed_accumulation_low_volume(base_timestamp, sample_trading_range, sample_phase_events):
+
+def test_breakdown_failed_accumulation_low_volume(
+    base_timestamp, sample_trading_range, sample_phase_events
+):
     """Test AC 23: Low volume breakdown = Failed Accumulation."""
     # Create bars with breakdown below Creek on low volume
     bars = []
@@ -400,13 +413,15 @@ def test_breakdown_failed_accumulation_low_volume(base_timestamp, sample_trading
         volume_analysis=volume_analysis,
         events=sample_phase_events,
         previous_phase=WyckoffPhase.C,
-        trading_range=sample_trading_range
+        trading_range=sample_trading_range,
     )
 
     assert breakdown_type == BreakdownType.FAILED_ACCUMULATION
 
 
-def test_breakdown_distribution_pattern_high_volume(base_timestamp, sample_trading_range, sample_phase_events):
+def test_breakdown_distribution_pattern_high_volume(
+    base_timestamp, sample_trading_range, sample_phase_events
+):
     """Test AC 24: High volume breakdown = Distribution Pattern."""
     # Create bars with breakdown below Creek on high volume
     bars = []
@@ -424,7 +439,7 @@ def test_breakdown_distribution_pattern_high_volume(base_timestamp, sample_tradi
         volume_analysis=volume_analysis,
         events=sample_phase_events,
         previous_phase=WyckoffPhase.C,
-        trading_range=sample_trading_range
+        trading_range=sample_trading_range,
     )
 
     assert breakdown_type == BreakdownType.DISTRIBUTION_PATTERN
@@ -446,11 +461,11 @@ def test_breakdown_utad_detection_multiple_indicators(base_timestamp, sample_tra
         automatic_rally={"bar": {"index": 12, "timestamp": "2024-01-13T09:30:00+00:00"}},
         secondary_tests=[
             {"bar": {"index": 15}, "test_number": 1, "confidence": 75, "volume_ratio": 1.5},
-            {"bar": {"index": 18}, "test_number": 2, "confidence": 78, "volume_ratio": 1.4}
+            {"bar": {"index": 18}, "test_number": 2, "confidence": 78, "volume_ratio": 1.4},
         ],
         spring={"bar": {"index": 20, "timestamp": "2024-01-21T09:30:00+00:00"}},
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     # Very high volume breakdown (>2.0x)
@@ -461,7 +476,7 @@ def test_breakdown_utad_detection_multiple_indicators(base_timestamp, sample_tra
         volume_analysis=volume_analysis,
         events=events_utad,
         previous_phase=WyckoffPhase.C,
-        trading_range=sample_trading_range
+        trading_range=sample_trading_range,
     )
 
     assert breakdown_type == BreakdownType.UTAD_REVERSAL
@@ -483,7 +498,7 @@ def test_no_breakdown_when_above_creek(base_timestamp, sample_trading_range, sam
         volume_analysis=volume_analysis,
         events=sample_phase_events,
         previous_phase=WyckoffPhase.C,
-        trading_range=sample_trading_range
+        trading_range=sample_trading_range,
     )
 
     assert breakdown_type is None
@@ -493,9 +508,13 @@ def test_no_breakdown_when_above_creek(base_timestamp, sample_trading_range, sam
 # Phase B Duration Validation Tests (AC 27-30)
 # ============================================================================
 
+
 def test_phase_b_base_accumulation_minimum_valid(base_timestamp, sample_phase_events):
     """Test AC 27: Base accumulation minimum (10 bars) - valid."""
-    bars = [create_bar(base_timestamp + timedelta(days=i), 95.0, 97.0, 93.0, 95.5, 1000000) for i in range(25)]
+    bars = [
+        create_bar(base_timestamp + timedelta(days=i), 95.0, 97.0, 93.0, 95.5, 1000000)
+        for i in range(25)
+    ]
     volume_analysis = [create_volume_analysis(1.0)] * 25
 
     valid, warning, context = _validate_phase_b_duration(
@@ -503,7 +522,7 @@ def test_phase_b_base_accumulation_minimum_valid(base_timestamp, sample_phase_ev
         duration=12,  # > 10
         events=sample_phase_events,
         bars=bars,
-        volume_analysis=volume_analysis
+        volume_analysis=volume_analysis,
     )
 
     assert valid is True
@@ -513,7 +532,10 @@ def test_phase_b_base_accumulation_minimum_valid(base_timestamp, sample_phase_ev
 
 def test_phase_b_base_accumulation_minimum_invalid(base_timestamp, sample_phase_events):
     """Test AC 27: Base accumulation minimum (10 bars) - invalid."""
-    bars = [create_bar(base_timestamp + timedelta(days=i), 95.0, 97.0, 93.0, 95.5, 1000000) for i in range(25)]
+    bars = [
+        create_bar(base_timestamp + timedelta(days=i), 95.0, 97.0, 93.0, 95.5, 1000000)
+        for i in range(25)
+    ]
     volume_analysis = [create_volume_analysis(1.0)] * 25
 
     valid, warning, context = _validate_phase_b_duration(
@@ -521,7 +543,7 @@ def test_phase_b_base_accumulation_minimum_invalid(base_timestamp, sample_phase_
         duration=7,  # < 10
         events=sample_phase_events,
         bars=bars,
-        volume_analysis=volume_analysis
+        volume_analysis=volume_analysis,
     )
 
     assert valid is False
@@ -551,7 +573,7 @@ def test_phase_b_volatile_asset_adjustment(base_timestamp):
         secondary_tests=[],
         spring=None,
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     valid, warning, context = _validate_phase_b_duration(
@@ -559,7 +581,7 @@ def test_phase_b_volatile_asset_adjustment(base_timestamp):
         duration=9,  # > 8 but < 10
         events=events_no_spring,
         bars=bars,
-        volume_analysis=volume_analysis
+        volume_analysis=volume_analysis,
     )
 
     # Should be valid because volatile asset minimum is 8
@@ -569,7 +591,10 @@ def test_phase_b_volatile_asset_adjustment(base_timestamp):
 
 def test_phase_b_exceptional_evidence_override(base_timestamp):
     """Test AC 28-29: Exceptional evidence overrides minimum."""
-    bars = [create_bar(base_timestamp + timedelta(days=i), 95.0, 97.0, 93.0, 95.5, 1000000) for i in range(25)]
+    bars = [
+        create_bar(base_timestamp + timedelta(days=i), 95.0, 97.0, 93.0, 95.5, 1000000)
+        for i in range(25)
+    ]
     volume_analysis = [create_volume_analysis(1.0)] * 25
 
     # Strong Spring (>85 confidence) + 2+ STs
@@ -578,11 +603,11 @@ def test_phase_b_exceptional_evidence_override(base_timestamp):
         automatic_rally={"bar": {"index": 12}},
         secondary_tests=[
             {"bar": {"index": 15}, "test_number": 1, "confidence": 75},
-            {"bar": {"index": 18}, "test_number": 2, "confidence": 78}
+            {"bar": {"index": 18}, "test_number": 2, "confidence": 78},
         ],
         spring={"bar": {"index": 20}, "confidence": 90},  # Strong Spring
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     valid, warning, context = _validate_phase_b_duration(
@@ -590,7 +615,7 @@ def test_phase_b_exceptional_evidence_override(base_timestamp):
         duration=7,  # < 10, but exceptional evidence
         events=events_exceptional,
         bars=bars,
-        volume_analysis=volume_analysis
+        volume_analysis=volume_analysis,
     )
 
     assert valid is True  # Overridden due to exceptional evidence
@@ -601,9 +626,13 @@ def test_phase_b_exceptional_evidence_override(base_timestamp):
 # Sub-Phase State Tests (AC 19-22)
 # ============================================================================
 
+
 def test_phase_c_spring_state(base_timestamp, sample_trading_range):
     """Test AC 19: Phase C sub-state = SPRING."""
-    bars = [create_bar(base_timestamp + timedelta(days=i), 93.0, 95.0, 91.0, 93.5, 1000000) for i in range(25)]
+    bars = [
+        create_bar(base_timestamp + timedelta(days=i), 93.0, 95.0, 91.0, 93.5, 1000000)
+        for i in range(25)
+    ]
 
     events_with_spring = PhaseEvents(
         selling_climax={"bar": {"index": 10}},
@@ -611,7 +640,7 @@ def test_phase_c_spring_state(base_timestamp, sample_trading_range):
         secondary_tests=[],
         spring={"bar": {"index": 20}},
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     sub_phase = _determine_sub_phase(
@@ -620,7 +649,7 @@ def test_phase_c_spring_state(base_timestamp, sample_trading_range):
         bars=bars,
         phase_info=None,
         phase_start_index=20,  # Just started Phase C
-        trading_range=sample_trading_range
+        trading_range=sample_trading_range,
     )
 
     assert sub_phase == PhaseCSubState.SPRING
@@ -643,7 +672,7 @@ def test_phase_c_test_state(base_timestamp, sample_trading_range):
         secondary_tests=[],
         spring={"bar": {"index": 20}},
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     sub_phase = _determine_sub_phase(
@@ -652,7 +681,7 @@ def test_phase_c_test_state(base_timestamp, sample_trading_range):
         bars=bars,
         phase_info=None,
         phase_start_index=20,
-        trading_range=sample_trading_range
+        trading_range=sample_trading_range,
     )
 
     assert sub_phase == PhaseCSubState.TEST
@@ -661,7 +690,10 @@ def test_phase_c_test_state(base_timestamp, sample_trading_range):
 def test_phase_c_ready_state(base_timestamp, sample_trading_range):
     """Test AC 19: Phase C sub-state = READY."""
     # Spring held for 6+ bars
-    bars = [create_bar(base_timestamp + timedelta(days=i), 93.0, 95.0, 91.5, 93.5, 1000000) for i in range(30)]
+    bars = [
+        create_bar(base_timestamp + timedelta(days=i), 93.0, 95.0, 91.5, 93.5, 1000000)
+        for i in range(30)
+    ]
 
     events_with_spring = PhaseEvents(
         selling_climax={"bar": {"index": 10}},
@@ -669,7 +701,7 @@ def test_phase_c_ready_state(base_timestamp, sample_trading_range):
         secondary_tests=[],
         spring={"bar": {"index": 20}},
         sos_breakout=None,
-        last_point_of_support=None
+        last_point_of_support=None,
     )
 
     sub_phase = _determine_sub_phase(
@@ -678,7 +710,7 @@ def test_phase_c_ready_state(base_timestamp, sample_trading_range):
         bars=bars,
         phase_info=None,
         phase_start_index=20,  # 10 bars in Phase C
-        trading_range=sample_trading_range
+        trading_range=sample_trading_range,
     )
 
     assert sub_phase == PhaseCSubState.READY
@@ -695,18 +727,26 @@ def test_phase_e_early_state(base_timestamp):
         bar = create_bar(timestamp, close - 1, close + 1, close - 1.5, close, 1000000)
         bars.append(bar)
 
-    from src.models.phase_info import PhaseInfo, PhaseEvents
+    from src.models.phase_info import PhaseEvents, PhaseInfo
+
     phase_info = PhaseInfo(
         phase=WyckoffPhase.E,
         sub_phase=None,
         confidence=80,
-        events=PhaseEvents(selling_climax=None, automatic_rally=None, secondary_tests=[], spring=None, sos_breakout=None, last_point_of_support=None),
+        events=PhaseEvents(
+            selling_climax=None,
+            automatic_rally=None,
+            secondary_tests=[],
+            spring=None,
+            sos_breakout=None,
+            last_point_of_support=None,
+        ),
         duration=7,
         progression_history=[],
         trading_range=None,
         phase_start_bar_index=25,
         current_bar_index=32,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
         invalidations=[],
         confirmations=[],
         breakdown_type=None,
@@ -719,16 +759,23 @@ def test_phase_e_early_state(base_timestamp):
         risk_rationale=None,
         phase_b_risk_profile=None,
         breakdown_risk_profile=None,
-        phase_e_risk_profile=None
+        phase_e_risk_profile=None,
     )
 
     sub_phase = _determine_sub_phase(
         phase=WyckoffPhase.E,
-        events=PhaseEvents(selling_climax=None, automatic_rally=None, secondary_tests=[], spring=None, sos_breakout=None, last_point_of_support=None),
+        events=PhaseEvents(
+            selling_climax=None,
+            automatic_rally=None,
+            secondary_tests=[],
+            spring=None,
+            sos_breakout=None,
+            last_point_of_support=None,
+        ),
         bars=bars,
         phase_info=phase_info,
         phase_start_index=25,
-        trading_range=None
+        trading_range=None,
     )
 
     assert sub_phase == PhaseESubState.EARLY
@@ -746,18 +793,26 @@ def test_phase_e_exhaustion_state(base_timestamp):
         bar = create_bar(timestamp, close - 1, close + 1, close - 1.5, close, volume)
         bars.append(bar)
 
-    from src.models.phase_info import PhaseInfo, PhaseEvents
+    from src.models.phase_info import PhaseEvents, PhaseInfo
+
     phase_info = PhaseInfo(
         phase=WyckoffPhase.E,
         sub_phase=None,
         confidence=80,
-        events=PhaseEvents(selling_climax=None, automatic_rally=None, secondary_tests=[], spring=None, sos_breakout=None, last_point_of_support=None),
+        events=PhaseEvents(
+            selling_climax=None,
+            automatic_rally=None,
+            secondary_tests=[],
+            spring=None,
+            sos_breakout=None,
+            last_point_of_support=None,
+        ),
         duration=20,
         progression_history=[],
         trading_range=None,
         phase_start_bar_index=10,
         current_bar_index=30,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=datetime.now(UTC),
         invalidations=[],
         confirmations=[],
         breakdown_type=None,
@@ -770,16 +825,23 @@ def test_phase_e_exhaustion_state(base_timestamp):
         risk_rationale=None,
         phase_b_risk_profile=None,
         breakdown_risk_profile=None,
-        phase_e_risk_profile=None
+        phase_e_risk_profile=None,
     )
 
     sub_phase = _determine_sub_phase(
         phase=WyckoffPhase.E,
-        events=PhaseEvents(selling_climax=None, automatic_rally=None, secondary_tests=[], spring=None, sos_breakout=None, last_point_of_support=None),
+        events=PhaseEvents(
+            selling_climax=None,
+            automatic_rally=None,
+            secondary_tests=[],
+            spring=None,
+            sos_breakout=None,
+            last_point_of_support=None,
+        ),
         bars=bars,
         phase_info=phase_info,
         phase_start_index=10,
-        trading_range=None
+        trading_range=None,
     )
 
     assert sub_phase == PhaseESubState.EXHAUSTION
@@ -788,6 +850,7 @@ def test_phase_e_exhaustion_state(base_timestamp):
 # ============================================================================
 # Helper Function Tests
 # ============================================================================
+
 
 def test_calculate_markup_slope_positive(base_timestamp):
     """Test markup slope calculation - positive slope."""
@@ -853,7 +916,10 @@ def test_detect_volume_trend_increasing(base_timestamp):
 
 def test_count_lps_pullbacks_placeholder(base_timestamp):
     """Test LPS count (placeholder for Epic 5)."""
-    bars = [create_bar(base_timestamp + timedelta(days=i), 100.0, 105.0, 95.0, 100.0, 1000000) for i in range(20)]
+    bars = [
+        create_bar(base_timestamp + timedelta(days=i), 100.0, 105.0, 95.0, 100.0, 1000000)
+        for i in range(20)
+    ]
 
     lps_count = _count_lps_pullbacks(bars, phase_start_index=0)
 

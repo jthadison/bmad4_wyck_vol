@@ -38,13 +38,14 @@ Integration:
 Author: Generated for Story 4.6
 """
 
-import structlog
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple, Any
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from datetime import UTC, datetime
+from typing import Any, Optional
 
-from src.models.phase_classification import WyckoffPhase, PhaseClassification
+import structlog
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from src.models.phase_classification import PhaseClassification, WyckoffPhase
 
 logger = structlog.get_logger(__name__)
 
@@ -53,7 +54,7 @@ logger = structlog.get_logger(__name__)
 # State Machine Definition
 # ============================================================================
 
-VALID_TRANSITIONS: Dict[Optional[WyckoffPhase], List[Optional[WyckoffPhase]]] = {
+VALID_TRANSITIONS: dict[Optional[WyckoffPhase], list[Optional[WyckoffPhase]]] = {
     None: [WyckoffPhase.A],  # Can only start with Phase A
     WyckoffPhase.A: [WyckoffPhase.B, WyckoffPhase.A],  # A→B normal, A→A same phase allowed
     WyckoffPhase.B: [WyckoffPhase.C],  # B→C normal (B→A only with new_range_detected)
@@ -65,13 +66,10 @@ VALID_TRANSITIONS: Dict[Optional[WyckoffPhase], List[Optional[WyckoffPhase]]] = 
     WyckoffPhase.E: [WyckoffPhase.A],  # E→A new accumulation (always allowed as trend ends)
 }
 
-INVALID_TRANSITIONS_REASONS: Dict[
-    Tuple[Optional[WyckoffPhase], Optional[WyckoffPhase]], str
-] = {
+INVALID_TRANSITIONS_REASONS: dict[tuple[Optional[WyckoffPhase], Optional[WyckoffPhase]], str] = {
     # Reversions (AC 2)
     (WyckoffPhase.B, WyckoffPhase.A): (
-        "Cannot revert to stopping action (Phase A) once "
-        "cause building (Phase B) has begun"
+        "Cannot revert to stopping action (Phase A) once " "cause building (Phase B) has begun"
     ),
     (WyckoffPhase.C, WyckoffPhase.B): (
         "Cannot revert to building cause (Phase B) after test (Phase C) has occurred"
@@ -86,32 +84,21 @@ INVALID_TRANSITIONS_REASONS: Dict[
         "Cannot revert to building cause (Phase B) after breakout (Phase D)"
     ),
     (WyckoffPhase.D, WyckoffPhase.A): (
-        "Cannot revert to stopping action (Phase A) after "
-        "breakout (Phase D) (unless new range)"
+        "Cannot revert to stopping action (Phase A) after " "breakout (Phase D) (unless new range)"
     ),
     (WyckoffPhase.E, WyckoffPhase.D): (
         "Cannot revert to breakout (Phase D) after markup (Phase E) has begun"
     ),
-    (WyckoffPhase.E, WyckoffPhase.C): (
-        "Cannot revert to earlier phases after markup (Phase E)"
-    ),
-    (WyckoffPhase.E, WyckoffPhase.B): (
-        "Cannot revert to earlier phases after markup (Phase E)"
-    ),
+    (WyckoffPhase.E, WyckoffPhase.C): ("Cannot revert to earlier phases after markup (Phase E)"),
+    (WyckoffPhase.E, WyckoffPhase.B): ("Cannot revert to earlier phases after markup (Phase E)"),
     # Skips
     (WyckoffPhase.A, WyckoffPhase.C): (
         "Cannot skip building cause (Phase B) - must have secondary tests"
     ),
-    (WyckoffPhase.A, WyckoffPhase.D): (
-        "Cannot skip to breakout (Phase D) without test (Phase C)"
-    ),
+    (WyckoffPhase.A, WyckoffPhase.D): ("Cannot skip to breakout (Phase D) without test (Phase C)"),
     (WyckoffPhase.A, WyckoffPhase.E): "Cannot skip to markup (Phase E) directly",
-    (WyckoffPhase.B, WyckoffPhase.D): (
-        "Cannot skip test (Phase C) - must have Spring before SOS"
-    ),
-    (WyckoffPhase.B, WyckoffPhase.E): (
-        "Cannot skip to markup (Phase E) without test and breakout"
-    ),
+    (WyckoffPhase.B, WyckoffPhase.D): ("Cannot skip test (Phase C) - must have Spring before SOS"),
+    (WyckoffPhase.B, WyckoffPhase.E): ("Cannot skip to markup (Phase E) without test and breakout"),
     (WyckoffPhase.C, WyckoffPhase.E): (
         "Cannot skip breakout (Phase D) - must have SOS before markup"
     ),
@@ -152,8 +139,8 @@ class PhaseTransition(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Enforce UTC timezone for timestamps."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     @field_validator("bar_index")
     @classmethod
@@ -186,7 +173,7 @@ class PhaseHistory(BaseModel):
         updated_at: Last update timestamp (UTC)
     """
 
-    transitions: List[PhaseTransition] = Field(
+    transitions: list[PhaseTransition] = Field(
         default_factory=list, description="Ordered list of all phase transitions"
     )
     current_phase: Optional[WyckoffPhase] = Field(None, description="Current phase")
@@ -199,8 +186,8 @@ class PhaseHistory(BaseModel):
     def ensure_utc(cls, v: datetime) -> datetime:
         """Enforce UTC timezone for timestamps."""
         if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -215,8 +202,8 @@ class PhaseHistory(BaseModel):
 def validate_phase_progression(
     current_phase: Optional[WyckoffPhase],
     new_phase: Optional[WyckoffPhase],
-    context: Optional[Dict[str, Any]] = None,
-) -> Tuple[bool, Optional[str]]:
+    context: Optional[dict[str, Any]] = None,
+) -> tuple[bool, Optional[str]]:
     """
     Validate phase transition using state machine rules.
 
@@ -325,7 +312,7 @@ def validate_phase_progression(
 def can_reset_to_phase_a(
     current_phase: Optional[WyckoffPhase],
     new_phase: Optional[WyckoffPhase],
-    context: Dict[str, Any],
+    context: dict[str, Any],
 ) -> bool:
     """
     Determine if reset to Phase A is allowed (AC 5, 9).
@@ -394,9 +381,7 @@ def can_reset_to_phase_a(
 # ============================================================================
 
 
-def add_phase_transition(
-    history: PhaseHistory, transition: PhaseTransition
-) -> PhaseHistory:
+def add_phase_transition(history: PhaseHistory, transition: PhaseTransition) -> PhaseHistory:
     """
     Add phase transition to history and update current phase.
 
@@ -451,7 +436,7 @@ def add_phase_transition(
         current_phase=transition.to_phase,
         range_id=history.range_id,
         started_at=history.started_at,
-        updated_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(UTC),
     )
 
     logger.info(
@@ -610,8 +595,8 @@ def visualize_phase_progression(history: PhaseHistory) -> str:
 def enforce_phase_progression(
     history: PhaseHistory,
     new_classification: PhaseClassification,
-    context: Dict[str, Any],
-) -> Tuple[bool, PhaseHistory, Optional[str]]:
+    context: dict[str, Any],
+) -> tuple[bool, PhaseHistory, Optional[str]]:
     """
     Wrapper that validates and enforces phase progression before updating.
 
@@ -652,9 +637,7 @@ def enforce_phase_progression(
     new_phase = new_classification.phase
 
     # Validate transition
-    is_valid, rejection_reason = validate_phase_progression(
-        current_phase, new_phase, context
-    )
+    is_valid, rejection_reason = validate_phase_progression(current_phase, new_phase, context)
 
     if not is_valid:
         # Log warning
@@ -670,7 +653,7 @@ def enforce_phase_progression(
     transition = PhaseTransition(
         from_phase=current_phase,
         to_phase=new_phase,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         bar_index=context.get("bar_index", 0),
         reason=context.get("reason", "Unknown"),
         is_valid=True,

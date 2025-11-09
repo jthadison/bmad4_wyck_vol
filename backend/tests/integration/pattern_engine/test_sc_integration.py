@@ -6,15 +6,16 @@ Tests the SC detection against the known COVID-19 crash bottom on March 23, 2020
 AC 9: Known AAPL selling climax (March 2020) detected with 85+ confidence.
 """
 
-import pytest
 import csv
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from src.models.ohlcv import OHLCVBar
+from src.pattern_engine.phase_detector import detect_sc_zone, detect_selling_climax
 from src.pattern_engine.volume_analyzer import VolumeAnalyzer
-from src.pattern_engine.phase_detector import detect_selling_climax, detect_sc_zone
 
 
 class TestAAPLMarch2020Integration:
@@ -43,19 +44,17 @@ class TestAAPLMarch2020Integration:
             pytest.skip(f"AAPL data file not found at {aapl_data_path}")
 
         bars = []
-        with open(aapl_data_path, "r") as f:
+        with open(aapl_data_path) as f:
             reader = csv.DictReader(f)
             for row in reader:
                 # Parse timestamp
-                timestamp = datetime.fromisoformat(row["timestamp"]).replace(
-                    tzinfo=timezone.utc
-                )
+                timestamp = datetime.fromisoformat(row["timestamp"]).replace(tzinfo=UTC)
 
                 # Filter for Jan-April 2020 (expanded for better baseline)
                 if not (
-                    datetime(2020, 1, 1, tzinfo=timezone.utc)
+                    datetime(2020, 1, 1, tzinfo=UTC)
                     <= timestamp
-                    <= datetime(2020, 4, 30, 23, 59, 59, tzinfo=timezone.utc)
+                    <= datetime(2020, 4, 30, 23, 59, 59, tzinfo=UTC)
                 ):
                     continue
 
@@ -135,8 +134,8 @@ class TestAAPLMarch2020Integration:
         # - Feb 28: First major climax (106M volume)
         # - March 12, 16, 20, 23: Additional climactic selling
         # Algorithm returns FIRST valid SC found
-        expected_start = datetime(2020, 2, 28, tzinfo=timezone.utc)
-        expected_end = datetime(2020, 3, 26, tzinfo=timezone.utc)
+        expected_start = datetime(2020, 2, 28, tzinfo=UTC)
+        expected_end = datetime(2020, 3, 26, tzinfo=UTC)
         assert (
             expected_start <= sc_timestamp <= expected_end
         ), f"Expected SC between Feb 28 - March 26, got {sc_timestamp.date()}"
@@ -151,7 +150,7 @@ class TestAAPLMarch2020Integration:
         print(f"Close: ${sc.bar['close']}")
         print(f"Volume: {sc.bar['volume']:,}")
         print(f"Spread: ${sc.bar['spread']}")
-        print(f"\nSC Metrics:")
+        print("\nSC Metrics:")
         print(f"Volume Ratio: {sc.volume_ratio}x")
         print(f"Spread Ratio: {sc.spread_ratio}x")
         print(f"Close Position: {float(sc.close_position):.2f}")
@@ -198,9 +197,7 @@ class TestAAPLMarch2020Integration:
 
         # 2. Wide downward spread (strong selling pressure)
         print(f"2. Wide Spread: {sc.spread_ratio}x average")
-        assert (
-            float(sc.spread_ratio) >= 1.5
-        ), "Spread should be 1.5x+ for strong selling"
+        assert float(sc.spread_ratio) >= 1.5, "Spread should be 1.5x+ for strong selling"
 
         # 3. Close near high (buying absorption, exhaustion)
         close_position_pct = float(sc.close_position) * 100
@@ -214,11 +211,9 @@ class TestAAPLMarch2020Integration:
         prior_close = sc.prior_close
         movement_pct = ((sc_close - prior_close) / prior_close) * 100
         print(f"4. Downward Movement: {float(movement_pct):.2f}% from prior close")
-        assert (
-            sc_close < prior_close
-        ), "Close should be below prior close (downward movement)"
+        assert sc_close < prior_close, "Close should be below prior close (downward movement)"
 
-        print(f"\n[OK] All Wyckoff SC characteristics validated")
+        print("\n[OK] All Wyckoff SC characteristics validated")
         print(f"[OK] Confidence: {sc.confidence}%")
 
     def test_sc_followed_by_rally(self, aapl_bars):
@@ -262,20 +257,20 @@ class TestAAPLMarch2020Integration:
             if rally_pct >= 3:
                 rally_found = True
                 rally_bars = i - sc_index
-                print(f"\n=== Rally Detection (Preview for Story 4.2) ===")
+                print("\n=== Rally Detection (Preview for Story 4.2) ===")
                 print(f"SC Low: ${sc_low}")
                 print(f"Rally High: ${bar.high} on {bar.timestamp.date()}")
                 print(f"Rally: {float(rally_pct):.2f}% in {rally_bars} bars")
-                print(f"[OK] Automatic Rally (AR) detected after SC")
+                print("[OK] Automatic Rally (AR) detected after SC")
                 break
 
         # This is informational for Story 4.2 - not a strict assertion
         # But we expect AAPL March 2020 to have a strong rally after SC
         if rally_found:
-            print(f"[OK] Phase A sequence confirmed: SC -> AR")
+            print("[OK] Phase A sequence confirmed: SC -> AR")
         else:
             print(f"[WARN] Rally < 3% within 10 bars (highest: {float(rally_pct):.2f}%)")
-            print(f"  (AR detection is Story 4.2 - this is informational)")
+            print("  (AR detection is Story 4.2 - this is informational)")
 
     def test_detect_sc_zone_march_2020(self, aapl_bars):
         """
@@ -315,10 +310,12 @@ class TestAAPLMarch2020Integration:
         print()
         print("Climactic Bars in Zone:")
         for i, sc in enumerate(sc_zone.climactic_bars, 1):
-            print(f"  {i}. {sc.bar['timestamp']} - "
-                  f"Low: ${sc.bar['low']}, "
-                  f"Vol: {float(sc.volume_ratio):.2f}x, "
-                  f"Conf: {sc.confidence}%")
+            print(
+                f"  {i}. {sc.bar['timestamp']} - "
+                f"Low: ${sc.bar['low']}, "
+                f"Vol: {float(sc.volume_ratio):.2f}x, "
+                f"Conf: {sc.confidence}%"
+            )
 
         # Assertions
         assert sc_zone.bar_count >= 2, "Zone must have at least 2 climactic bars"
@@ -328,11 +325,15 @@ class TestAAPLMarch2020Integration:
 
         # Zone start should be first SC (Feb 28, 2020 or later)
         zone_start_date = datetime.fromisoformat(sc_zone.zone_start.bar["timestamp"]).date()
-        assert zone_start_date >= datetime(2020, 2, 28).date(), "Zone start should be >= Feb 28, 2020"
+        assert (
+            zone_start_date >= datetime(2020, 2, 28).date()
+        ), "Zone start should be >= Feb 28, 2020"
 
         # Zone end should be after zone start
         zone_end_date = datetime.fromisoformat(sc_zone.zone_end.bar["timestamp"]).date()
         assert zone_end_date >= zone_start_date, "Zone end should be >= zone start"
 
-        print(f"\n[OK] SC Zone validation passed")
-        print(f"[OK] For AR detection (Story 4.2), use zone_end: {sc_zone.zone_end.bar['timestamp']}")
+        print("\n[OK] SC Zone validation passed")
+        print(
+            f"[OK] For AR detection (Story 4.2), use zone_end: {sc_zone.zone_end.bar['timestamp']}"
+        )

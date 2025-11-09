@@ -6,8 +6,9 @@ accumulation period (March-May 2020). The test loads detected events from
 prior stories (4.1, 4.2, 4.3) and validates phase progression.
 """
 
-import pytest
 from decimal import Decimal
+
+import pytest
 
 from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.pattern_engine.phase_classifier import classify_phase
@@ -336,9 +337,9 @@ def test_phase_b_duration_threshold():
     durations_to_test = [
         (15, False),  # 5 bars: NOT allowed
         (19, False),  # 9 bars: NOT allowed
-        (20, True),   # 10 bars: ALLOWED (threshold)
-        (25, True),   # 15 bars: ALLOWED
-        (50, True),   # 40 bars: ALLOWED (strong cause)
+        (20, True),  # 10 bars: ALLOWED (threshold)
+        (25, True),  # 15 bars: ALLOWED
+        (50, True),  # 40 bars: ALLOWED (strong cause)
     ]
 
     for st2_index, should_allow in durations_to_test:

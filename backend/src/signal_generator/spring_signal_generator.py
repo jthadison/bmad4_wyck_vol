@@ -74,7 +74,7 @@ Author: Generated for Story 5.5
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 from typing import Optional
 
 import structlog
@@ -206,8 +206,7 @@ def calculate_position_size(
 
     if risk_per_share <= 0:
         raise ValueError(
-            f"Stop must be below entry for long signals "
-            f"(entry={entry_price}, stop={stop_loss})"
+            f"Stop must be below entry for long signals " f"(entry={entry_price}, stop={stop_loss})"
         )
 
     # Calculate total dollar risk
@@ -278,7 +277,7 @@ def determine_urgency(recovery_bars: int) -> str:
             "urgency_immediate",
             recovery_bars=recovery_bars,
             urgency=urgency,
-            message=f"IMMEDIATE urgency: 1-bar recovery shows aggressive accumulation",
+            message="IMMEDIATE urgency: 1-bar recovery shows aggressive accumulation",
         )
     elif recovery_bars in [2, 3]:
         urgency = "MODERATE"

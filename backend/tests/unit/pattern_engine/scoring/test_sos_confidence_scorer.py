@@ -10,24 +10,25 @@ Tests cover:
 - Edge cases and validation
 """
 
-import pytest
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
+from src.models.lps import LPS
+from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import PhaseClassification, PhaseEvents, WyckoffPhase
+from src.models.price_cluster import PriceCluster
+from src.models.sos_breakout import SOSBreakout
+from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.scoring.sos_confidence_scorer import (
     calculate_sos_confidence,
     get_confidence_quality,
 )
-from src.models.sos_breakout import SOSBreakout
-from src.models.lps import LPS
-from src.models.trading_range import TradingRange, RangeStatus
-from src.models.phase_classification import PhaseClassification, WyckoffPhase, PhaseEvents
-from src.models.ohlcv import OHLCVBar
-from src.models.price_cluster import PriceCluster
-
 
 # Test Fixtures
+
 
 @pytest.fixture
 def base_ohlcv_bar():
@@ -163,7 +164,10 @@ def create_lps(
 
 # Test: Maximum Confidence Scenario (Task 11)
 
-def test_calculate_sos_confidence_maximum(base_ohlcv_bar, base_trading_range, base_phase_classification):
+
+def test_calculate_sos_confidence_maximum(
+    base_ohlcv_bar, base_trading_range, base_phase_classification
+):
     """
     Test maximum confidence scenario (all ideal conditions).
 
@@ -197,6 +201,7 @@ def test_calculate_sos_confidence_maximum(base_ohlcv_bar, base_trading_range, ba
 
 
 # Test: Minimum Passing Confidence (Task 12)
+
 
 def test_calculate_sos_confidence_minimum_passing(base_ohlcv_bar, base_phase_classification):
     """
@@ -275,6 +280,7 @@ def test_calculate_sos_confidence_minimum_passing(base_ohlcv_bar, base_phase_cla
 
 
 # Test: LPS vs SOS Direct Baseline (Task 13)
+
 
 def test_lps_entry_baseline_80(base_ohlcv_bar, base_phase_classification):
     """
@@ -421,6 +427,7 @@ def test_sos_direct_baseline_65(base_ohlcv_bar, base_phase_classification):
 
 # Test: Volume Scoring Tiers (Task 14)
 
+
 @pytest.mark.parametrize(
     "volume_ratio,expected_quality",
     [
@@ -432,7 +439,9 @@ def test_sos_direct_baseline_65(base_ohlcv_bar, base_phase_classification):
         (Decimal("3.0"), "excellent"),  # Above 2.5x still capped at 35 pts
     ],
 )
-def test_volume_scoring_tiers(volume_ratio, expected_quality, base_ohlcv_bar, base_trading_range, base_phase_classification):
+def test_volume_scoring_tiers(
+    volume_ratio, expected_quality, base_ohlcv_bar, base_trading_range, base_phase_classification
+):
     """Test volume scoring at different levels (non-linear scoring)."""
     # Arrange
     sos = create_sos_breakout(
@@ -456,6 +465,7 @@ def test_volume_scoring_tiers(volume_ratio, expected_quality, base_ohlcv_bar, ba
 
 # Test: Individual Scoring Components
 
+
 def test_spread_scoring(base_ohlcv_bar, base_trading_range, base_phase_classification):
     """Test spread expansion scoring."""
     # Test narrow spread (1.2x = 15 pts)
@@ -476,8 +486,12 @@ def test_spread_scoring(base_ohlcv_bar, base_trading_range, base_phase_classific
         breakout_pct=Decimal("0.02"),
     )
 
-    confidence_narrow = calculate_sos_confidence(sos_narrow, None, base_trading_range, base_phase_classification)
-    confidence_wide = calculate_sos_confidence(sos_wide, None, base_trading_range, base_phase_classification)
+    confidence_narrow = calculate_sos_confidence(
+        sos_narrow, None, base_trading_range, base_phase_classification
+    )
+    confidence_wide = calculate_sos_confidence(
+        sos_wide, None, base_trading_range, base_phase_classification
+    )
 
     # Wide spread should score higher
     assert confidence_wide > confidence_narrow, "Wide spread should score higher than narrow spread"
@@ -503,8 +517,12 @@ def test_close_position_scoring(base_ohlcv_bar, base_trading_range, base_phase_c
         breakout_pct=Decimal("0.02"),
     )
 
-    confidence_weak = calculate_sos_confidence(sos_weak_close, None, base_trading_range, base_phase_classification)
-    confidence_strong = calculate_sos_confidence(sos_strong_close, None, base_trading_range, base_phase_classification)
+    confidence_weak = calculate_sos_confidence(
+        sos_weak_close, None, base_trading_range, base_phase_classification
+    )
+    confidence_strong = calculate_sos_confidence(
+        sos_strong_close, None, base_trading_range, base_phase_classification
+    )
 
     # Strong close should score higher
     assert confidence_strong > confidence_weak, "Strong close should score higher than weak close"
@@ -530,11 +548,17 @@ def test_breakout_size_scoring(base_ohlcv_bar, base_trading_range, base_phase_cl
         breakout_pct=Decimal("0.03"),
     )
 
-    confidence_small = calculate_sos_confidence(sos_small, None, base_trading_range, base_phase_classification)
-    confidence_large = calculate_sos_confidence(sos_large, None, base_trading_range, base_phase_classification)
+    confidence_small = calculate_sos_confidence(
+        sos_small, None, base_trading_range, base_phase_classification
+    )
+    confidence_large = calculate_sos_confidence(
+        sos_large, None, base_trading_range, base_phase_classification
+    )
 
     # Large breakout should score higher
-    assert confidence_large > confidence_small, "Large breakout should score higher than small breakout"
+    assert (
+        confidence_large > confidence_small
+    ), "Large breakout should score higher than small breakout"
 
 
 def test_phase_bonus_scoring(base_ohlcv_bar, base_trading_range):
@@ -579,11 +603,14 @@ def test_phase_bonus_scoring(base_ohlcv_bar, base_trading_range):
     confidence_c = calculate_sos_confidence(sos, None, base_trading_range, phase_c)
 
     # High confidence Phase D should score highest
-    assert confidence_d_high > confidence_d_low, "High confidence Phase D should score higher than low confidence"
+    assert (
+        confidence_d_high > confidence_d_low
+    ), "High confidence Phase D should score higher than low confidence"
     assert confidence_d_high > confidence_c, "Phase D should score higher than Phase C"
 
 
 # Test: get_confidence_quality helper
+
 
 def test_get_confidence_quality():
     """Test confidence quality helper function."""
@@ -598,6 +625,7 @@ def test_get_confidence_quality():
 
 
 # Test: Edge Cases
+
 
 def test_confidence_capped_at_100(base_ohlcv_bar, base_trading_range, base_phase_classification):
     """Test that confidence is capped at 100 even with maximum scores."""
