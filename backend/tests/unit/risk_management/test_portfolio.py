@@ -20,9 +20,7 @@ from decimal import Decimal
 import pytest
 
 from src.models.portfolio import (
-    CampaignCluster,
     PortfolioHeat,
-    PortfolioWarning,
     Position,
 )
 from src.risk_management.portfolio import (
@@ -35,7 +33,6 @@ from src.risk_management.portfolio import (
     identify_campaign_clusters,
     validate_portfolio_heat_capacity,
 )
-
 
 # ============================================================================
 # Test Fixtures
