@@ -120,7 +120,7 @@ async def get_portfolio_heat() -> PortfolioHeat:
                     "details": {"error": str(e)},
                 }
             },
-        )
+        ) from e
     except KeyError as e:
         # Missing required data fields
         logger.error(
@@ -137,7 +137,7 @@ async def get_portfolio_heat() -> PortfolioHeat:
                     "details": {"missing_field": str(e)},
                 }
             },
-        )
+        ) from e
     except Exception as e:
         # Repository or other unexpected errors
         logger.error(
@@ -154,4 +154,4 @@ async def get_portfolio_heat() -> PortfolioHeat:
                     "details": {"error": str(e)},
                 }
             },
-        )
+        ) from e
