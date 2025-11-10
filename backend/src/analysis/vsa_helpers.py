@@ -297,8 +297,12 @@ def check_distribution_volume_signature(bars: list[OHLCVBar]) -> bool:
     avg_down_volume = float(np.mean([b.volume for b in down_bars]))
 
     # Spread comparison
-    avg_up_spread = float(np.mean([float(b.high - b.low) / float(b.close) for b in up_bars if b.close > 0]))
-    avg_down_spread = float(np.mean([float(b.high - b.low) / float(b.close) for b in down_bars if b.close > 0]))
+    avg_up_spread = float(
+        np.mean([float(b.high - b.low) / float(b.close) for b in up_bars if b.close > 0])
+    )
+    avg_down_spread = float(
+        np.mean([float(b.high - b.low) / float(b.close) for b in down_bars if b.close > 0])
+    )
 
     # Distribution signs
     volume_declining_on_rallies = avg_up_volume < avg_down_volume * 0.8

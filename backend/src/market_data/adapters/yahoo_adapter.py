@@ -11,6 +11,7 @@ This adapter should only be used as a fallback.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, date
 from decimal import Decimal
 
@@ -243,3 +244,66 @@ class YahooAdapter(MarketDataProvider):
         except Exception as e:
             logger.warning("health_check_failed", error=str(e))
             return False
+
+    async def connect(self) -> None:
+        """
+        YahooAdapter uses REST API, not WebSocket.
+
+        This method is required by MarketDataProvider interface but not
+        applicable for REST-based historical data fetching.
+
+        Raises:
+            NotImplementedError: YahooAdapter is REST-only
+        """
+        raise NotImplementedError(
+            "YahooAdapter is a REST API adapter. "
+            "Real-time data not supported. Use AlpacaAdapter for WebSocket streaming."
+        )
+
+    async def disconnect(self) -> None:
+        """
+        YahooAdapter uses REST API, not WebSocket.
+
+        Raises:
+            NotImplementedError: YahooAdapter is REST-only
+        """
+        raise NotImplementedError(
+            "YahooAdapter is a REST API adapter. " "No persistent connection to disconnect."
+        )
+
+    async def subscribe(self, symbols: list[str], timeframe: str = "1m") -> None:
+        """
+        YahooAdapter uses REST API, not WebSocket.
+
+        This method is required by MarketDataProvider interface but not
+        applicable for REST-based historical data fetching.
+
+        Args:
+            symbols: List of symbols (not used)
+            timeframe: Bar timeframe (not used)
+
+        Raises:
+            NotImplementedError: YahooAdapter is REST-only
+        """
+        raise NotImplementedError(
+            "YahooAdapter is a REST API adapter. "
+            "Real-time subscriptions not supported. Use AlpacaAdapter for WebSocket streaming."
+        )
+
+    def on_bar_received(self, callback: Callable[[OHLCVBar], None]) -> None:
+        """
+        YahooAdapter uses REST API, not WebSocket.
+
+        This method is required by MarketDataProvider interface but not
+        applicable for REST-based historical data fetching.
+
+        Args:
+            callback: Callback function (not used)
+
+        Raises:
+            NotImplementedError: YahooAdapter is REST-only
+        """
+        raise NotImplementedError(
+            "YahooAdapter is a REST API adapter. "
+            "Real-time bar callbacks not supported. Use AlpacaAdapter for WebSocket streaming."
+        )

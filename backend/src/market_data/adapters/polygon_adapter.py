@@ -8,6 +8,7 @@ serving as the primary data source for historical OHLCV data.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -283,6 +284,71 @@ class PolygonAdapter(MarketDataProvider):
         except Exception as e:
             logger.warning("health_check_failed", error=str(e))
             return False
+
+    async def connect(self) -> None:
+        """
+        PolygonAdapter uses REST API, not WebSocket.
+
+        This method is required by MarketDataProvider interface but not
+        applicable for REST-based historical data fetching.
+
+        Raises:
+            NotImplementedError: PolygonAdapter is REST-only
+        """
+        raise NotImplementedError(
+            "PolygonAdapter is a REST API adapter. "
+            "Real-time data not supported. Use AlpacaAdapter for WebSocket streaming."
+        )
+
+    async def disconnect(self) -> None:
+        """
+        PolygonAdapter uses REST API, not WebSocket.
+
+        Use close() instead to close HTTP client.
+
+        Raises:
+            NotImplementedError: PolygonAdapter is REST-only
+        """
+        raise NotImplementedError(
+            "PolygonAdapter is a REST API adapter. " "Use close() to close HTTP client instead."
+        )
+
+    async def subscribe(self, symbols: list[str], timeframe: str = "1m") -> None:
+        """
+        PolygonAdapter uses REST API, not WebSocket.
+
+        This method is required by MarketDataProvider interface but not
+        applicable for REST-based historical data fetching.
+
+        Args:
+            symbols: List of symbols (not used)
+            timeframe: Bar timeframe (not used)
+
+        Raises:
+            NotImplementedError: PolygonAdapter is REST-only
+        """
+        raise NotImplementedError(
+            "PolygonAdapter is a REST API adapter. "
+            "Real-time subscriptions not supported. Use AlpacaAdapter for WebSocket streaming."
+        )
+
+    def on_bar_received(self, callback: Callable[[OHLCVBar], None]) -> None:
+        """
+        PolygonAdapter uses REST API, not WebSocket.
+
+        This method is required by MarketDataProvider interface but not
+        applicable for REST-based historical data fetching.
+
+        Args:
+            callback: Callback function (not used)
+
+        Raises:
+            NotImplementedError: PolygonAdapter is REST-only
+        """
+        raise NotImplementedError(
+            "PolygonAdapter is a REST API adapter. "
+            "Real-time bar callbacks not supported. Use AlpacaAdapter for WebSocket streaming."
+        )
 
     async def close(self) -> None:
         """Close HTTP client."""
