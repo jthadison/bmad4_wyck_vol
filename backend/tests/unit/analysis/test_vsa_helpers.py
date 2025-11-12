@@ -183,7 +183,7 @@ def test_vsa_context_low_effort_wide_result_no_demand(create_bar):
     context = get_volume_spread_context(
         bar=bar,
         avg_volume=1000000.0,
-        avg_spread=5.0,  # Bar spread is 10, so ratio = 10/5 = 2.0 (wide)
+        avg_spread=0.049,  # Bar spread is (110-100)/102 = 0.098, so ratio = 0.098/0.049 = 2.0 (wide)
     )
 
     assert context["effort"] < VSA_THRESHOLDS["low_volume"]
@@ -197,7 +197,9 @@ def test_vsa_context_low_effort_wide_result_no_supply(create_bar):
     # Low volume, wide spread, close upper
     bar = create_bar(high=110, low=100, close=108, volume=500000)
 
-    context = get_volume_spread_context(bar=bar, avg_volume=1000000.0, avg_spread=5.0)
+    context = get_volume_spread_context(
+        bar=bar, avg_volume=1000000.0, avg_spread=0.046
+    )  # Bar spread = 10/108 = 0.0926, ratio = 0.0926/0.046 = 2.0
 
     assert context["effort"] < VSA_THRESHOLDS["low_volume"]
     assert context["result"] > 1.5
@@ -213,7 +215,7 @@ def test_vsa_context_harmony(create_bar):
     context = get_volume_spread_context(
         bar=bar,
         avg_volume=1000000.0,
-        avg_spread=5.0,  # Bar spread is 5, so ratio = 5/5 = 1.0
+        avg_spread=0.0485,  # Bar spread is (105-100)/103 = 0.0485, so ratio = 0.0485/0.0485 = 1.0
     )
 
     assert abs(context["effort"] - context["result"]) < 0.3
