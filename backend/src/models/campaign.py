@@ -56,9 +56,10 @@ Author: Story 7.4
 """
 
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 
 class CampaignEntry(BaseModel):
@@ -249,12 +250,26 @@ class CampaignRisk(BaseModel):
             raise ValueError(f"Campaign risk {v}% exceeds maximum limit of 5.0% (FR18 violation)")
         return v
 
-    class Config:
-        """Pydantic configuration for JSON encoding."""
+    model_config = ConfigDict()  # Pydantic V2+ configuration
 
-        json_encoders = {
-            Decimal: str,  # Serialize Decimal as string to preserve precision
-            UUID: str,
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal and UUID as strings."""
+        return {
+            "campaign_id": str(self.campaign_id),
+            "total_risk": str(self.total_risk),
+            "available_capacity": str(self.available_capacity),
+            "position_count": self.position_count,
+            "entry_breakdown": {
+                key: {
+                    "pattern_type": entry.pattern_type,
+                    "position_risk_pct": str(entry.position_risk_pct),
+                    "allocation_percentage": str(entry.allocation_percentage),
+                    "symbol": entry.symbol,
+                    "status": entry.status,
+                }
+                for key, entry in self.entry_breakdown.items()
+            },
         }
 
 
