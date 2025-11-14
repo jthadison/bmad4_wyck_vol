@@ -42,9 +42,9 @@ Author: Story 7.2
 """
 
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 
 class PositionSizing(BaseModel):
@@ -144,7 +144,7 @@ class PositionSizing(BaseModel):
 
     @field_validator("actual_risk")
     @classmethod
-    def validate_actual_risk(cls, v: Decimal, info) -> Decimal:
+    def validate_actual_risk(cls, v: Decimal, info: Any) -> Decimal:  # type: ignore[no-untyped-def]
         """
         Ensure actual risk never exceeds intended risk (AC 7).
 
@@ -166,7 +166,7 @@ class PositionSizing(BaseModel):
 
     @field_validator("position_value")
     @classmethod
-    def validate_position_value(cls, v: Decimal, info) -> Decimal:
+    def validate_position_value(cls, v: Decimal, info: Any) -> Decimal:  # type: ignore[no-untyped-def]
         """
         Ensure position value ≤ 20% of account equity (AC 6, FR18).
 
@@ -188,9 +188,20 @@ class PositionSizing(BaseModel):
                 )
         return v
 
-    class Config:
-        """Pydantic configuration for JSON encoding."""
+    model_config = ConfigDict()  # Pydantic V2+ configuration
 
-        json_encoders = {
-            Decimal: str  # Serialize Decimal as string to preserve precision
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "shares": self.shares,
+            "entry": str(self.entry),
+            "stop": str(self.stop),
+            "target": str(self.target) if self.target else None,
+            "risk_amount": str(self.risk_amount),
+            "risk_pct": str(self.risk_pct),
+            "account_equity": str(self.account_equity),
+            "position_value": str(self.position_value),
+            "actual_risk": str(self.actual_risk),
+            "pattern_type": self.pattern_type,
         }
