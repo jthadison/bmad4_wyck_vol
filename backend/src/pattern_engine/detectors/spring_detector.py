@@ -76,16 +76,21 @@ from src.models.spring_history import SpringHistory
 from src.models.spring_signal import SpringSignal
 from src.models.test import Test
 from src.models.trading_range import RangeStatus, TradingRange
+from src.pattern_engine.scoring.scorer_factory import detect_asset_class, get_scorer
 from src.pattern_engine.volume_analyzer import calculate_volume_ratio
 from src.pattern_engine.volume_cache import VolumeCache
 
 logger = structlog.get_logger(__name__)
+
+# Minimum confidence threshold for pattern validation (Story 0.5 AC 15)
+MINIMUM_CONFIDENCE_THRESHOLD = 70
 
 
 def detect_spring(
     trading_range: TradingRange,
     bars: list[OHLCVBar],
     phase: WyckoffPhase,
+    symbol: str,
     start_index: int = 20,
     skip_indices: Optional[set[int]] = None,
     volume_cache: Optional[VolumeCache] = None,
@@ -101,6 +106,7 @@ def detect_spring(
         trading_range: Active trading range with Creek level (trading_range.creek must not be None)
         bars: OHLCV bars (minimum 20 bars for volume ratio calculation)
         phase: Current Wyckoff phase (must be Phase C per FR15)
+        symbol: Trading symbol (used for asset class detection and scorer selection)
         start_index: Index to start scanning from (default: 20 for volume calculation)
         skip_indices: Set of bar indices to skip (already detected springs)
         volume_cache: Optional VolumeCache for O(1) volume ratio lookups (Task 2A performance optimization)
@@ -180,6 +186,30 @@ def detect_spring(
             message="Spring only valid in Phase C (FR15)",
         )
         return None
+
+    # ============================================================
+    # ASSET CLASS DETECTION AND SCORER SELECTION (Story 0.5 AC 1-3)
+    # ============================================================
+
+    asset_class = detect_asset_class(symbol)
+    scorer = get_scorer(asset_class)
+
+    logger.debug(
+        "spring_detector_asset_class",
+        symbol=symbol,
+        asset_class=asset_class,
+        volume_reliability=scorer.volume_reliability,
+        max_confidence=scorer.max_confidence,
+    )
+
+    # Volume interpretation logging (Story 0.5 AC 13-14)
+    # Volume Reliability Meanings:
+    # - "HIGH": Real institutional volume (stocks, futures) - measures shares/contracts traded
+    # - "LOW": Tick volume only (forex, CFDs) - measures price changes, NOT institutional participation
+    #
+    # Volume Interpretation Differences:
+    # - Stock 2.0x volume: Institutional participation CONFIRMED (2x shares traded)
+    # - Forex 2.0x tick volume: Increased activity (could be news/retail/institutional - CANNOT confirm)
 
     # ============================================================
     # EXTRACT CREEK LEVEL
@@ -319,7 +349,7 @@ def detect_spring(
             continue  # Try next penetration candidate
 
         # ============================================================
-        # CREATE SPRING INSTANCE (AC 7)
+        # CREATE SPRING INSTANCE (AC 7, Story 0.5 AC 4)
         # ============================================================
 
         spring = Spring(
@@ -333,7 +363,27 @@ def detect_spring(
             recovery_price=recovery_price,
             detection_timestamp=datetime.now(UTC),
             trading_range_id=trading_range.id,
+            asset_class=scorer.asset_class,  # Story 0.5 AC 4
+            volume_reliability=scorer.volume_reliability,  # Story 0.5 AC 4
         )
+
+        # Volume interpretation logging based on asset class (Story 0.5 AC 13-14)
+        if scorer.volume_reliability == "HIGH":
+            logger.debug(
+                "volume_interpretation",
+                symbol=symbol,
+                volume_ratio=float(volume_ratio),
+                interpretation="Institutional volume - confirms accumulation/distribution",
+                volume_type="Real shares/contracts traded",
+            )
+        else:
+            logger.debug(
+                "volume_interpretation",
+                symbol=symbol,
+                tick_volume_ratio=float(volume_ratio),
+                interpretation="Tick volume - shows activity only, NOT institutional confirmation",
+                volume_type="Price changes per period",
+            )
 
         logger.info(
             "spring_detected",
@@ -781,27 +831,25 @@ def calculate_spring_confidence(
     """
     Calculate confidence score for Spring pattern quality (FR4 requirement).
 
+    DEPRECATION NOTE (Story 0.5):
+    -----------------------------
+    This function now delegates to asset-class-specific scorers via ScorerFactory.
+    The inline scoring logic has been refactored to:
+    - StockConfidenceScorer (Story 0.2) - for stocks (max confidence 100)
+    - ForexConfidenceScorer (Story 0.3) - for forex (max confidence 85)
+
     Purpose:
     --------
     Quantify spring quality using multi-dimensional scoring to ensure only
     high-probability setups (70%+ confidence) generate trading signals.
 
-    Scoring Formula (Team-Approved 2025-11-03):
-    --------------------------------------------
-    Base Components (100 points):
-    - Volume Quality: 40 points (most important - supply exhaustion)
-    - Penetration Depth: 35 points (optimal shakeout depth)
-    - Recovery Speed: 25 points (demand strength)
-    - Test Confirmation: 20 points (FR13 requirement)
-
-    Bonuses (+20 points max):
-    - Creek Strength Bonus: +10 points (strong support quality)
-    - Volume Trend Bonus: +10 points (declining volume pattern)
-
-    Total: 120 points possible, capped at 100 for final score
+    Asset-Class Aware Scoring:
+    --------------------------
+    - Stock: Uses real institutional volume (HIGH reliability) - max 100 confidence
+    - Forex: Uses tick volume only (LOW reliability) - max 85 confidence (humility tax)
 
     Args:
-        spring: Detected Spring pattern (from detect_spring)
+        spring: Detected Spring pattern (from detect_spring, includes asset_class)
         creek: Creek level providing support strength (from TradingRange.creek)
         previous_tests: Optional list of previous Test patterns for volume trend analysis
 
@@ -905,6 +953,13 @@ def calculate_spring_confidence(
     if previous_tests is None:
         previous_tests = []
 
+    # ============================================================
+    # DELEGATE TO ASSET-CLASS-SPECIFIC SCORER (Story 0.5 AC 3)
+    # ============================================================
+
+    # Get scorer based on spring's asset class
+    scorer = get_scorer(spring.asset_class)
+
     logger.debug(
         "spring_confidence_calculation_starting",
         spring_timestamp=spring.bar.timestamp.isoformat(),
@@ -913,289 +968,27 @@ def calculate_spring_confidence(
         spring_recovery_bars=spring.recovery_bars,
         creek_strength=creek.strength_score,
         previous_tests_count=len(previous_tests),
+        asset_class=spring.asset_class,
+        volume_reliability=spring.volume_reliability,
+        scorer_type=scorer.__class__.__name__,
     )
 
-    # Initialize component scores
-    component_scores = {
-        "volume_quality": 0,
-        "penetration_depth": 0,
-        "recovery_speed": 0,
-        "test_confirmation": 0,
-        "creek_strength_bonus": 0,
-        "volume_trend_bonus": 0,
-        "raw_total": 0,
-    }
+    # Delegate to scorer's calculate_spring_confidence method
+    spring_confidence = scorer.calculate_spring_confidence(spring, creek, previous_tests)
 
-    # ============================================================
-    # COMPONENT 1: VOLUME QUALITY SCORING (40 points max)
-    # ============================================================
-    # AC 2: Volume quality is MOST important indicator
-    # Low volume proves supply exhaustion
-
-    volume_ratio = spring.volume_ratio
-
-    if volume_ratio < Decimal("0.3"):
-        volume_points = 40
-        volume_quality = "EXCEPTIONAL"
-        logger.info(
-            "exceptional_volume_spring",
-            volume_ratio=float(volume_ratio),
-            message=f"Exceptionally rare ultra-low volume spring (<0.3x): {volume_points} points",
-        )
-    elif volume_ratio < Decimal("0.4"):
-        volume_points = 30
-        volume_quality = "EXCELLENT"
-    elif volume_ratio < Decimal("0.5"):
-        volume_points = 20
-        volume_quality = "IDEAL"
-    elif volume_ratio < Decimal("0.6"):
-        volume_points = 10
-        volume_quality = "ACCEPTABLE"
-    else:  # 0.6 <= volume_ratio < 0.7
-        volume_points = 5
-        volume_quality = "MARGINAL"
-
-    component_scores["volume_quality"] = volume_points
-
-    logger.debug(
-        "volume_quality_scored",
-        volume_ratio=float(volume_ratio),
-        volume_points=volume_points,
-        volume_quality=volume_quality,
-        message=f"Volume {volume_ratio:.2f}x scored {volume_points} points",
-    )
-
-    # ============================================================
-    # COMPONENT 2: PENETRATION DEPTH SCORING (35 points max)
-    # ============================================================
-    # AC 7: Penetration depth indicates shakeout quality
-    # 1-2% ideal, 4-5% maximum allowed
-
-    penetration_pct = spring.penetration_pct
-
-    if Decimal("0.01") <= penetration_pct < Decimal("0.02"):
-        penetration_points = 35
-        penetration_quality = "IDEAL"
-    elif Decimal("0.02") <= penetration_pct < Decimal("0.03"):
-        penetration_points = 25
-        penetration_quality = "GOOD"
-    elif Decimal("0.03") <= penetration_pct < Decimal("0.04"):
-        penetration_points = 15
-        penetration_quality = "ACCEPTABLE"
-    else:  # 0.04 <= penetration_pct <= 0.05
-        penetration_points = 5
-        penetration_quality = "DEEP"
-
-    component_scores["penetration_depth"] = penetration_points
-
-    logger.debug(
-        "penetration_depth_scored",
-        penetration_pct=float(penetration_pct),
-        penetration_points=penetration_points,
-        penetration_quality=penetration_quality,
-        message=f"Penetration {penetration_pct:.1%} scored {penetration_points} points",
-    )
-
-    # ============================================================
-    # COMPONENT 3: RECOVERY SPEED SCORING (25 points max)
-    # ============================================================
-    # AC 4: Recovery speed indicates demand strength
-    # Faster recovery = stronger demand absorption
-
-    recovery_bars = spring.recovery_bars
-
-    if recovery_bars == 1:
-        recovery_points = 25
-        recovery_quality = "IMMEDIATE"
-    elif recovery_bars == 2:
-        recovery_points = 20
-        recovery_quality = "STRONG"
-    elif recovery_bars == 3:
-        recovery_points = 15
-        recovery_quality = "GOOD"
-    else:  # 4-5 bars
-        recovery_points = 10
-        recovery_quality = "SLOW"
-
-    component_scores["recovery_speed"] = recovery_points
-
-    logger.debug(
-        "recovery_speed_scored",
-        recovery_bars=recovery_bars,
-        recovery_points=recovery_points,
-        recovery_quality=recovery_quality,
-        message=f"Recovery in {recovery_bars} bars scored {recovery_points} points",
-    )
-
-    # ============================================================
-    # COMPONENT 4: TEST CONFIRMATION SCORING (20 points)
-    # ============================================================
-    # AC 5: Test confirmation is FR13 requirement
-    # Note: This function doesn't receive the Test object directly
-    # For now, we assume if previous_tests has 1+ test, the spring has confirmation
-    # This should be refactored when integrating with Story 5.5
-
-    # TEMPORARY: Check if previous_tests list has any tests
-    # Story 5.5 will pass the actual Test object for this spring
-    has_test = len(previous_tests) > 0
-
-    if has_test:
-        test_points = 20
-        test_quality = "PRESENT"
-        logger.debug(
-            "test_confirmation_scored",
-            test_present=True,
-            test_points=test_points,
-            test_quality=test_quality,
-        )
-    else:
-        test_points = 0
-        test_quality = "NONE"
+    # Apply minimum confidence threshold (Story 0.5 AC 15)
+    if spring_confidence.total_score < MINIMUM_CONFIDENCE_THRESHOLD:
         logger.warning(
-            "no_test_confirmation",
-            message="No test confirmation - spring will not generate signal (FR13)",
+            "spring_rejected_low_confidence",
+            spring_timestamp=spring.bar.timestamp.isoformat(),
+            confidence=spring_confidence.total_score,
+            minimum=MINIMUM_CONFIDENCE_THRESHOLD,
+            asset_class=spring.asset_class,
+            volume_reliability=spring.volume_reliability,
+            message=f"Spring confidence {spring_confidence.total_score}% below minimum threshold",
         )
 
-    component_scores["test_confirmation"] = test_points
-
-    # ============================================================
-    # BONUS 1: CREEK STRENGTH BONUS (10 points max)
-    # ============================================================
-    # AC 8: Creek strength indicates support quality
-    # Strong support = more reliable spring
-
-    creek_strength = creek.strength_score
-
-    if creek_strength >= 80:
-        creek_bonus = 10
-        creek_quality = "EXCELLENT"
-    elif creek_strength >= 70:
-        creek_bonus = 7
-        creek_quality = "STRONG"
-    elif creek_strength >= 60:
-        creek_bonus = 5
-        creek_quality = "MODERATE"
-    else:
-        creek_bonus = 0
-        creek_quality = "WEAK"
-
-    component_scores["creek_strength_bonus"] = creek_bonus
-
-    logger.debug(
-        "creek_strength_bonus",
-        creek_strength=creek_strength,
-        creek_bonus=creek_bonus,
-        creek_quality=creek_quality,
-        message=f"Creek strength {creek_strength} earned {creek_bonus} bonus points",
-    )
-
-    # ============================================================
-    # BONUS 2: VOLUME TREND BONUS (10 points max)
-    # ============================================================
-    # AC 9: Volume trend from previous tests indicates accumulation pattern
-    # Declining volume = bullish accumulation
-
-    if len(previous_tests) >= 2:
-        # Calculate average volume of previous 2 tests
-        prev_volumes = [test.volume_ratio for test in previous_tests[-2:]]
-        avg_prev_volume = sum(prev_volumes, Decimal("0")) / len(prev_volumes)
-
-        # Compare spring volume to average previous test volume
-        volume_change_pct = (avg_prev_volume - spring.volume_ratio) / avg_prev_volume
-
-        if volume_change_pct >= Decimal("0.2"):  # 20%+ decrease
-            volume_trend_bonus = 10
-            logger.info(
-                "volume_trend_bonus_awarded",
-                avg_prev_volume=float(avg_prev_volume),
-                spring_volume=float(spring.volume_ratio),
-                volume_decrease=float(volume_change_pct),
-                message=f"Declining volume trend earned {volume_trend_bonus} bonus points",
-            )
-        elif volume_change_pct >= Decimal("-0.2"):  # Stable ±20%
-            volume_trend_bonus = 5
-        else:  # Rising volume (warning)
-            volume_trend_bonus = 0
-            logger.warning(
-                "rising_volume_trend",
-                avg_prev_volume=float(avg_prev_volume),
-                spring_volume=float(spring.volume_ratio),
-                message="Rising volume trend - potential warning signal",
-            )
-    else:
-        # Not enough previous tests to calculate trend
-        volume_trend_bonus = 0
-        logger.debug(
-            "volume_trend_insufficient_data",
-            previous_tests_count=len(previous_tests),
-            message="Need 2+ previous tests for volume trend bonus",
-        )
-
-    component_scores["volume_trend_bonus"] = volume_trend_bonus
-
-    # ============================================================
-    # FINAL CONFIDENCE CALCULATION
-    # ============================================================
-    # AC 10: Total possible 120 points, capped at 100
-
-    raw_total = (
-        volume_points
-        + penetration_points
-        + recovery_points
-        + test_points
-        + creek_bonus
-        + volume_trend_bonus
-    )
-
-    component_scores["raw_total"] = raw_total
-
-    # Cap at 100 for final score
-    final_confidence = min(raw_total, 100)
-
-    # Determine quality tier
-    if final_confidence >= 90:
-        quality_tier = "EXCELLENT"
-    elif final_confidence >= 80:
-        quality_tier = "GOOD"
-    elif final_confidence >= 70:
-        quality_tier = "ACCEPTABLE"
-    else:
-        quality_tier = "REJECTED"
-
-    logger.info(
-        "spring_confidence_calculated",
-        spring_timestamp=spring.bar.timestamp.isoformat(),
-        total_confidence=final_confidence,
-        raw_total=raw_total,
-        quality_tier=quality_tier,
-        volume_points=volume_points,
-        penetration_points=penetration_points,
-        recovery_points=recovery_points,
-        test_points=test_points,
-        creek_bonus=creek_bonus,
-        volume_trend_bonus=volume_trend_bonus,
-        meets_threshold=final_confidence >= 70,
-    )
-
-    # Validate FR4 minimum threshold (70%)
-    if final_confidence < 70:
-        logger.warning(
-            "spring_low_confidence",
-            final_confidence=final_confidence,
-            threshold=70,
-            message=(
-                f"Spring confidence {final_confidence}% below FR4 minimum "
-                "(70%) - will not generate signal"
-            ),
-        )
-
-    # ============================================================
-    # CREATE AND RETURN SPRINGCONFIDENCE DATACLASS
-    # ============================================================
-
-    return SpringConfidence(
-        total_score=final_confidence, component_scores=component_scores, quality_tier=quality_tier
-    )
+    return spring_confidence
 
 
 # ============================================================

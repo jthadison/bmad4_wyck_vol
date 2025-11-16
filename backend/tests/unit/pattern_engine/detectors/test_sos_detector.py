@@ -312,7 +312,7 @@ def test_detect_sos_breakout_valid():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is not None, "SOS should be detected"
@@ -365,7 +365,7 @@ def test_detect_sos_low_volume_rejected():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is None, "Low-volume breakout should be REJECTED (FR12)"
@@ -394,7 +394,9 @@ def test_volume_boundary_149_rejects_150_passes():
     }
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
-    sos_reject = detect_sos_breakout(trading_range, bars_reject, volume_analysis_reject, phase)
+    sos_reject = detect_sos_breakout(
+        trading_range, bars_reject, volume_analysis_reject, phase, symbol="AAPL"
+    )
     assert sos_reject is None, "1.49x volume should reject (< 1.5x threshold)"
 
     # Test 1.50x - should PASS
@@ -410,7 +412,9 @@ def test_volume_boundary_149_rejects_150_passes():
         }
     }
 
-    sos_pass = detect_sos_breakout(trading_range, bars_pass, volume_analysis_pass, phase)
+    sos_pass = detect_sos_breakout(
+        trading_range, bars_pass, volume_analysis_pass, phase, symbol="AAPL"
+    )
     assert sos_pass is not None, "1.50x volume should pass (>= 1.5x threshold, FR12)"
     assert sos_pass.volume_ratio == Decimal("1.50")
 
@@ -452,7 +456,7 @@ def test_breakout_1_percent_accepted():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is not None, "1% breakout should be accepted (AC 3 minimum)"
@@ -491,7 +495,7 @@ def test_breakout_below_1_percent_rejected():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is None, "< 1% breakout should be rejected (AC 3)"
@@ -534,7 +538,7 @@ def test_sos_in_phase_d_accepted():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is not None, "SOS valid in Phase D (FR15)"
@@ -582,7 +586,7 @@ def test_sos_wrong_phase_rejected(phase_value):
     phase = create_phase_classification(phase=phase_value, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert (
@@ -625,7 +629,7 @@ def test_insufficient_bars_rejected():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is None, "Insufficient bars should return None"
@@ -648,7 +652,7 @@ def test_missing_trading_range_raises_error():
 
     # Act & Assert
     with pytest.raises(ValueError, match="Trading range required"):
-        detect_sos_breakout(None, bars, volume_analysis, phase)
+        detect_sos_breakout(None, bars, volume_analysis, phase, symbol="AAPL")
 
 
 def test_invalid_ice_level_raises_error():
@@ -671,7 +675,7 @@ def test_invalid_ice_level_raises_error():
 
     # Act & Assert
     with pytest.raises(ValueError, match="Valid Ice level required"):
-        detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+        detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
 
 def test_missing_volume_analysis_skips_candidate():
@@ -698,7 +702,7 @@ def test_missing_volume_analysis_skips_candidate():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is None, "Missing volume analysis should skip candidate"
@@ -821,7 +825,7 @@ def test_spread_expansion_minimum_accepted():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is not None, "1.2x spread should be accepted (AC 1)"
@@ -854,7 +858,7 @@ def test_narrow_spread_rejected():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is None, "Narrow spread (<1.2x) should be rejected"
@@ -886,7 +890,9 @@ def test_spread_boundary():
         volume=Decimal("2.0"),
         spread=Decimal("1.19"),
     )
-    sos_reject = detect_sos_breakout(trading_range, bars_reject, volume_analysis_reject, phase)
+    sos_reject = detect_sos_breakout(
+        trading_range, bars_reject, volume_analysis_reject, phase, symbol="AAPL"
+    )
     assert sos_reject is None, "1.19x spread should reject"
 
     # 1.20x should pass
@@ -900,7 +906,9 @@ def test_spread_boundary():
         volume=Decimal("2.0"),
         spread=Decimal("1.20"),
     )
-    sos_pass = detect_sos_breakout(trading_range, bars_pass, volume_analysis_pass, phase)
+    sos_pass = detect_sos_breakout(
+        trading_range, bars_pass, volume_analysis_pass, phase, symbol="AAPL"
+    )
     assert sos_pass is not None, "1.20x spread should pass"
     assert sos_pass.spread_ratio == Decimal("1.20")
 
@@ -934,7 +942,7 @@ def test_close_position_pass_tier():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is not None, "Close position 0.7 should pass (PASS tier)"
@@ -966,7 +974,7 @@ def test_close_position_marginal_tier():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is not None, "Close position 0.6 should pass (MARGINAL tier)"
@@ -996,7 +1004,7 @@ def test_close_position_reject_tier():
     phase = create_phase_classification(phase=WyckoffPhase.D, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase, symbol="AAPL")
 
     # Assert
     assert sos is None, "Close position < 0.5 should be rejected"
@@ -1024,7 +1032,9 @@ def test_close_position_boundaries():
     volume_analysis_049 = create_volume_analysis_with_quality(
         bars_049, Decimal("2.0"), Decimal("1.2")
     )
-    sos_049 = detect_sos_breakout(trading_range, bars_049, volume_analysis_049, phase)
+    sos_049 = detect_sos_breakout(
+        trading_range, bars_049, volume_analysis_049, phase, symbol="AAPL"
+    )
     assert sos_049 is None, "0.49 close position should reject"
 
     # 0.50 should pass (MARGINAL)
@@ -1032,7 +1042,9 @@ def test_close_position_boundaries():
     volume_analysis_050 = create_volume_analysis_with_quality(
         bars_050, Decimal("2.0"), Decimal("1.2")
     )
-    sos_050 = detect_sos_breakout(trading_range, bars_050, volume_analysis_050, phase)
+    sos_050 = detect_sos_breakout(
+        trading_range, bars_050, volume_analysis_050, phase, symbol="AAPL"
+    )
     assert sos_050 is not None, "0.50 close position should pass (MARGINAL)"
     assert sos_050.close_position_tier == "MARGINAL"
 
@@ -1041,7 +1053,9 @@ def test_close_position_boundaries():
     volume_analysis_069 = create_volume_analysis_with_quality(
         bars_069, Decimal("2.0"), Decimal("1.2")
     )
-    sos_069 = detect_sos_breakout(trading_range, bars_069, volume_analysis_069, phase)
+    sos_069 = detect_sos_breakout(
+        trading_range, bars_069, volume_analysis_069, phase, symbol="AAPL"
+    )
     assert sos_069 is not None, "0.69 close position should pass (MARGINAL)"
     assert sos_069.close_position < Decimal("0.7")
     assert sos_069.close_position_tier == "MARGINAL"
@@ -1051,7 +1065,9 @@ def test_close_position_boundaries():
     volume_analysis_070 = create_volume_analysis_with_quality(
         bars_070, Decimal("2.0"), Decimal("1.2")
     )
-    sos_070 = detect_sos_breakout(trading_range, bars_070, volume_analysis_070, phase)
+    sos_070 = detect_sos_breakout(
+        trading_range, bars_070, volume_analysis_070, phase, symbol="AAPL"
+    )
     assert sos_070 is not None, "0.70 close position should pass (PASS)"
     assert sos_070.close_position >= Decimal("0.7")
     assert sos_070.close_position_tier == "PASS"
@@ -1088,7 +1104,7 @@ def test_late_phase_c_85_confidence_accepted():
     phase_c_85 = create_phase_classification(phase=WyckoffPhase.C, confidence=85)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_85)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_85, symbol="AAPL")
 
     # Assert
     assert sos is not None, "Phase C with 85 confidence should be accepted"
@@ -1120,7 +1136,7 @@ def test_phase_c_below_85_confidence_rejected():
     phase_c_84 = create_phase_classification(phase=WyckoffPhase.C, confidence=84)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_84)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_84, symbol="AAPL")
 
     # Assert
     assert sos is None, "Phase C with 84 confidence should be rejected"
@@ -1152,12 +1168,14 @@ def test_phase_c_confidence_boundary():
 
     # 84 confidence should reject
     phase_c_84 = create_phase_classification(phase=WyckoffPhase.C, confidence=84)
-    sos_reject = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_84)
+    sos_reject = detect_sos_breakout(
+        trading_range, bars, volume_analysis, phase_c_84, symbol="AAPL"
+    )
     assert sos_reject is None, "Phase C with 84 confidence should reject"
 
     # 85 confidence should pass
     phase_c_85 = create_phase_classification(phase=WyckoffPhase.C, confidence=85)
-    sos_pass = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_85)
+    sos_pass = detect_sos_breakout(trading_range, bars, volume_analysis, phase_c_85, symbol="AAPL")
     assert sos_pass is not None, "Phase C with 85 confidence should pass"
 
 
@@ -1187,7 +1205,7 @@ def test_phase_d_still_accepted():
     phase_d = create_phase_classification(phase=WyckoffPhase.D, confidence=80)
 
     # Act
-    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_d)
+    sos = detect_sos_breakout(trading_range, bars, volume_analysis, phase_d, symbol="AAPL")
 
     # Assert
     assert sos is not None, "Phase D should still be accepted (baseline from 6.1A)"

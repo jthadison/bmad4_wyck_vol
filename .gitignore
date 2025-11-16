@@ -183,6 +183,8 @@ coverage/
 
 # Misc
 nul
+test_results.txt
+**/test_results.txt
 
 #BMAD
 .bmad-core/

@@ -50,6 +50,8 @@ class Spring(BaseModel):
         recovery_price: Closing price that recovered above Creek
         detection_timestamp: When spring was detected (UTC)
         trading_range_id: Associated trading range UUID
+        asset_class: Asset class identifier (stock/forex) - determines volume interpretation
+        volume_reliability: Volume data quality (HIGH=real volume, LOW=tick volume only)
 
     Example:
         >>> spring = Spring(
@@ -104,6 +106,14 @@ class Spring(BaseModel):
     )
     detection_timestamp: datetime = Field(..., description="When spring was detected (UTC)")
     trading_range_id: UUID = Field(..., description="Associated trading range")
+    asset_class: str = Field(
+        default="stock",
+        description="Asset class ('stock', 'forex', etc.) - determines volume interpretation",
+    )
+    volume_reliability: str = Field(
+        default="HIGH",
+        description="Volume reliability ('HIGH'=real volume, 'LOW'=tick volume only)",
+    )
 
     @field_validator("detection_timestamp", mode="before")
     @classmethod

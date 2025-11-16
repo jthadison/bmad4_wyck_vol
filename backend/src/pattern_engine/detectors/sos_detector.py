@@ -73,8 +73,12 @@ from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import PhaseClassification, WyckoffPhase
 from src.models.sos_breakout import SOSBreakout
 from src.models.trading_range import TradingRange
+from src.pattern_engine.scoring.scorer_factory import detect_asset_class, get_scorer
 
 logger = structlog.get_logger(__name__)
+
+# Minimum confidence threshold for pattern validation (Story 0.5 AC 15)
+MINIMUM_CONFIDENCE_THRESHOLD = 70
 
 
 def detect_sos_breakout(
@@ -82,6 +86,7 @@ def detect_sos_breakout(
     bars: list[OHLCVBar],
     volume_analysis: dict,
     phase: PhaseClassification,
+    symbol: str,
 ) -> Optional[SOSBreakout]:
     """
     Detect SOS (Sign of Strength) breakout patterns.
@@ -96,6 +101,7 @@ def detect_sos_breakout(
         volume_analysis: Pre-calculated volume ratios from VolumeAnalyzer (Story 2.5)
             Format: {bar.timestamp: {"volume_ratio": Decimal("2.0")}}
         phase: Current Wyckoff phase classification (must be Phase D per FR15)
+        symbol: Trading symbol (used for asset class detection and scorer selection)
 
     Returns:
         Optional[SOSBreakout]: SOS if detected, None if not found or rejected
@@ -182,6 +188,30 @@ def detect_sos_breakout(
             message=f"SOS rejected: Phase {current_phase.value} (requires Phase D or Phase C with 85+ confidence)",
         )
         return None
+
+    # ============================================================
+    # ASSET CLASS DETECTION AND SCORER SELECTION (Story 0.5 AC 6-7)
+    # ============================================================
+
+    asset_class = detect_asset_class(symbol)
+    scorer = get_scorer(asset_class)
+
+    logger.debug(
+        "sos_detector_asset_class",
+        symbol=symbol,
+        asset_class=asset_class,
+        volume_reliability=scorer.volume_reliability,
+        max_confidence=scorer.max_confidence,
+    )
+
+    # Volume interpretation logging (Story 0.5 AC 13-14)
+    # Volume Reliability Meanings:
+    # - "HIGH": Real institutional volume (stocks, futures) - measures shares/contracts traded
+    # - "LOW": Tick volume only (forex, CFDs) - measures price changes, NOT institutional participation
+    #
+    # Volume Interpretation Differences:
+    # - Stock 2.0x volume: Institutional participation CONFIRMED (2x shares traded)
+    # - Forex 2.0x tick volume: Increased activity (could be news/retail/institutional - CANNOT confirm)
 
     # ============================================================
     # ICE LEVEL EXTRACTION - Task 4
@@ -358,7 +388,7 @@ def detect_sos_breakout(
         )
 
         # ============================================================
-        # CREATE SOS BREAKOUT INSTANCE - Task 6
+        # CREATE SOS BREAKOUT INSTANCE - Task 6, Story 0.5 AC 9
         # ============================================================
 
         sos_breakout = SOSBreakout(
@@ -373,7 +403,28 @@ def detect_sos_breakout(
             spread_ratio=spread_ratio,
             close_position=close_position,
             spread=spread,
+            # Asset class fields (Story 0.5 AC 9)
+            asset_class=scorer.asset_class,
+            volume_reliability=scorer.volume_reliability,
         )
+
+        # Volume interpretation logging based on asset class (Story 0.5 AC 13-14)
+        if scorer.volume_reliability == "HIGH":
+            logger.debug(
+                "volume_interpretation",
+                symbol=symbol,
+                volume_ratio=float(volume_ratio),
+                interpretation="Institutional volume - confirms breakout strength",
+                volume_type="Real shares/contracts traded",
+            )
+        else:
+            logger.debug(
+                "volume_interpretation",
+                symbol=symbol,
+                tick_volume_ratio=float(volume_ratio),
+                interpretation="Tick volume - shows activity only, NOT institutional confirmation",
+                volume_type="Price changes per period",
+            )
 
         logger.info(
             "sos_breakout_detected",

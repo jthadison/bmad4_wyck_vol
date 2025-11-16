@@ -50,6 +50,8 @@ class SOSBreakout(BaseModel):
         spread_ratio: Bar spread expansion relative to average (>=1.2x - Story 6.1B)
         close_position: Close position within bar range 0.0-1.0 (>=0.5 - Story 6.1B)
         spread: Bar spread (high - low) for quality assessment (Story 6.1B)
+        asset_class: Asset class identifier (stock/forex) - determines volume interpretation
+        volume_reliability: Volume data quality (HIGH=real volume, LOW=tick volume only)
 
     Example:
         >>> sos = SOSBreakout(
@@ -119,6 +121,14 @@ class SOSBreakout(BaseModel):
         decimal_places=8,
         max_digits=18,
         description="Bar spread (high - low) for quality assessment (Story 6.1B)",
+    )
+    asset_class: str = Field(
+        default="stock",
+        description="Asset class ('stock', 'forex', etc.) - determines volume interpretation",
+    )
+    volume_reliability: str = Field(
+        default="HIGH",
+        description="Volume reliability ('HIGH'=real volume, 'LOW'=tick volume only)",
     )
 
     @field_validator("detection_timestamp", mode="before")
