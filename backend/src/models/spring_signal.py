@@ -71,10 +71,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
+
+if TYPE_CHECKING:
+    from backend.src.risk_management.forex_position_sizer import ForexPositionSize
 
 
 class SpringSignal(BaseModel):
@@ -158,6 +161,11 @@ class SpringSignal(BaseModel):
     )
     portfolio_heat: Optional[Decimal] = Field(
         default=None, description="Calculated by Epic 7 (portfolio aggregation)"
+    )
+
+    # Forex-specific position sizing (Story 7.2-FX, AC 9)
+    forex_position_size: Optional[ForexPositionSize] = Field(
+        default=None, description="Forex position size (lot-based, for forex signals only)"
     )
 
     @field_validator(
