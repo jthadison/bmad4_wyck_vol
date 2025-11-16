@@ -319,7 +319,7 @@ class TestDetectSpringValidCases:
         phase = WyckoffPhase.C
 
         # Act
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         # Assert
         assert spring is not None, "Spring should be detected"
@@ -348,7 +348,7 @@ class TestDetectSpringValidCases:
         )
         phase = WyckoffPhase.C
 
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         assert spring is not None
         assert spring.penetration_pct == Decimal("0.01"), "1% penetration"
@@ -374,7 +374,7 @@ class TestDetectSpringValidCases:
         )
         phase = WyckoffPhase.C
 
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         assert spring is not None, "5% penetration should be accepted (AC 4)"
         assert spring.penetration_pct == Decimal("0.05"), "5% penetration"
@@ -398,7 +398,7 @@ class TestDetectSpringValidCases:
         )
         phase = WyckoffPhase.C
 
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         assert spring is not None, "Recovery in 5 bars should be accepted"
         assert spring.recovery_bars == 5, "Should track 5-bar recovery"
@@ -429,7 +429,7 @@ class TestDetectSpringRejectionCases:
         )
         phase = WyckoffPhase.C
 
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         assert spring is None, "High-volume (0.8x) penetration should be REJECTED (FR12)"
 
@@ -451,7 +451,7 @@ class TestDetectSpringRejectionCases:
             base_volume=base_volume,
         )
 
-        spring_pass = detect_spring(range_obj, bars_pass, WyckoffPhase.C)
+        spring_pass = detect_spring(range_obj, bars_pass, WyckoffPhase.C, symbol="AAPL")
         assert spring_pass is not None, "0.69x volume should pass"
 
         # Test 0.70x volume (should REJECT)
@@ -464,7 +464,7 @@ class TestDetectSpringRejectionCases:
             base_volume=base_volume,
         )
 
-        spring_reject = detect_spring(range_obj, bars_reject, WyckoffPhase.C)
+        spring_reject = detect_spring(range_obj, bars_reject, WyckoffPhase.C, symbol="AAPL")
         assert spring_reject is None, "0.70x volume should reject (FR12)"
 
     def test_penetration_over_5pct_rejected(self):
@@ -485,7 +485,7 @@ class TestDetectSpringRejectionCases:
         )
         phase = WyckoffPhase.C
 
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         assert spring is None, "6% penetration indicates breakdown, not spring (AC 4)"
 
@@ -541,7 +541,7 @@ class TestDetectSpringRejectionCases:
             )
 
         phase = WyckoffPhase.C
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         assert spring is None, "No recovery within 5 bars - not a spring (AC 6)"
 
@@ -566,7 +566,7 @@ class TestDetectSpringPhaseValidation:
             base_volume=base_volume,
         )
 
-        spring = detect_spring(range_obj, bars, WyckoffPhase.C)
+        spring = detect_spring(range_obj, bars, WyckoffPhase.C, symbol="AAPL")
 
         assert spring is not None, "Spring valid in Phase C (FR15)"
 
@@ -596,7 +596,7 @@ class TestDetectSpringPhaseValidation:
             base_volume=base_volume,
         )
 
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         assert spring is None, f"Spring should be rejected in Phase {phase.value} (FR15)"
 
@@ -618,7 +618,7 @@ class TestDetectSpringEdgeCases:
         )
 
         with pytest.raises(ValueError, match="Valid Creek level required"):
-            detect_spring(range_obj, bars, WyckoffPhase.C)
+            detect_spring(range_obj, bars, WyckoffPhase.C, symbol="AAPL")
 
     def test_invalid_creek_price_raises_valueerror(self):
         """AC 11: Test invalid Creek price (<= 0) raises ValueError."""
@@ -633,7 +633,7 @@ class TestDetectSpringEdgeCases:
         )
 
         with pytest.raises(ValueError, match="Valid Creek level required"):
-            detect_spring(range_obj, bars, WyckoffPhase.C)
+            detect_spring(range_obj, bars, WyckoffPhase.C, symbol="AAPL")
 
     def test_insufficient_bars_returns_none(self):
         """Test insufficient bars (<20) returns None."""
@@ -655,7 +655,7 @@ class TestDetectSpringEdgeCases:
                 )
             )
 
-        spring = detect_spring(range_obj, bars, WyckoffPhase.C)
+        spring = detect_spring(range_obj, bars, WyckoffPhase.C, symbol="AAPL")
 
         assert spring is None, "Insufficient bars should return None"
 
@@ -679,7 +679,7 @@ class TestDetectSpringEdgeCases:
                 )
             )
 
-        spring = detect_spring(range_obj, bars, WyckoffPhase.C)
+        spring = detect_spring(range_obj, bars, WyckoffPhase.C, symbol="AAPL")
 
         assert spring is None, "No penetration should return None"
 
@@ -766,7 +766,7 @@ class TestSpringInvalidation:
             )
 
         phase = WyckoffPhase.C
-        spring = detect_spring(range_obj, bars, phase)
+        spring = detect_spring(range_obj, bars, phase, symbol="AAPL")
 
         # Spring should be invalidated (returns None)
         assert spring is None, "Spring should be invalidated by breakdown"
