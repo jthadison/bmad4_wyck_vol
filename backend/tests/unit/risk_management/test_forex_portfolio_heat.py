@@ -15,13 +15,12 @@ Coverage Target: 95%+
 Test Count Target: 59+ tests
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-import pytz
 
-from backend.src.risk_management.forex_portfolio_heat import (
+from src.risk_management.forex_portfolio_heat import (
     PAIR_VOLATILITY_WEEKEND_MULTIPLIERS,
     PATTERN_WEEKEND_BUFFERS,
     PHASE_WEEKEND_MULTIPLIERS,
@@ -47,7 +46,6 @@ from backend.src.risk_management.forex_portfolio_heat import (
     should_auto_close_position,
     validate_heat_limit,
 )
-
 
 # =============================================================================
 # Test Fixtures
@@ -108,49 +106,49 @@ def sample_lps_position() -> ForexPosition:
 @pytest.fixture
 def monday_time() -> datetime:
     """Monday 10am ET (15:00 UTC)."""
-    return datetime(2025, 11, 10, 15, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 11, 10, 15, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
 def thursday_time() -> datetime:
     """Thursday 3pm ET (20:00 UTC)."""
-    return datetime(2025, 11, 13, 20, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 11, 13, 20, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
 def friday_1pm_time() -> datetime:
     """Friday 1pm ET (18:00 UTC)."""
-    return datetime(2025, 11, 14, 18, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 11, 14, 18, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
 def friday_4pm_time() -> datetime:
     """Friday 4pm ET (21:00 UTC)."""
-    return datetime(2025, 11, 14, 21, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 11, 14, 21, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
 def friday_430pm_time() -> datetime:
     """Friday 4:30pm ET (21:30 UTC)."""
-    return datetime(2025, 11, 14, 21, 30, 0, tzinfo=timezone.utc)
+    return datetime(2025, 11, 14, 21, 30, 0, tzinfo=UTC)
 
 
 @pytest.fixture
 def saturday_time() -> datetime:
     """Saturday 10am ET (15:00 UTC)."""
-    return datetime(2025, 11, 15, 15, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 11, 15, 15, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
 def sunday_4pm_time() -> datetime:
     """Sunday 4pm ET (21:00 UTC)."""
-    return datetime(2025, 11, 16, 21, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 11, 16, 21, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
 def sunday_6pm_time() -> datetime:
     """Sunday 6pm ET (23:00 UTC) - market open."""
-    return datetime(2025, 11, 16, 23, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 11, 16, 23, 0, 0, tzinfo=UTC)
 
 
 # =============================================================================
@@ -211,13 +209,13 @@ def test_is_friday_close_approaching_thursday(thursday_time: datetime) -> None:
 
 def test_is_friday_close_approaching_friday_morning() -> None:
     """Test Friday close detection - Friday 10am ET (before threshold)."""
-    friday_10am = datetime(2025, 11, 14, 15, 0, 0, tzinfo=timezone.utc)
+    friday_10am = datetime(2025, 11, 14, 15, 0, 0, tzinfo=UTC)
     assert is_friday_close_approaching(friday_10am) is False
 
 
 def test_is_friday_close_approaching_friday_noon() -> None:
     """Test Friday close detection - Friday 12pm ET (threshold)."""
-    friday_noon = datetime(2025, 11, 14, 17, 0, 0, tzinfo=timezone.utc)
+    friday_noon = datetime(2025, 11, 14, 17, 0, 0, tzinfo=UTC)
     assert is_friday_close_approaching(friday_noon) is True
 
 
@@ -443,9 +441,7 @@ def test_validate_heat_limit_pass_thursday(thursday_time: datetime) -> None:
 
 def test_generate_weekend_warning_friday_high_heat(friday_4pm_time: datetime) -> None:
     """Test weekend warning - Friday 4pm with high heat."""
-    warning = generate_weekend_warning(
-        Decimal("4.5"), Decimal("6.0"), 3, friday_4pm_time
-    )
+    warning = generate_weekend_warning(Decimal("4.5"), Decimal("6.0"), 3, friday_4pm_time)
     assert warning is not None
     assert "WARNING" in warning
     assert "3 positions" in warning
@@ -453,18 +449,14 @@ def test_generate_weekend_warning_friday_high_heat(friday_4pm_time: datetime) ->
 
 def test_generate_weekend_warning_friday_low_heat(friday_4pm_time: datetime) -> None:
     """Test weekend warning - Friday 4pm with low heat."""
-    warning = generate_weekend_warning(
-        Decimal("3.0"), Decimal("4.5"), 2, friday_4pm_time
-    )
+    warning = generate_weekend_warning(Decimal("3.0"), Decimal("4.5"), 2, friday_4pm_time)
     # No warning if base heat <= 4%
     assert warning is None
 
 
 def test_generate_weekend_warning_friday_exceeded_limit(friday_4pm_time: datetime) -> None:
     """Test weekend warning - Friday with heat exceeding limit."""
-    warning = generate_weekend_warning(
-        Decimal("5.0"), Decimal("6.5"), 3, friday_4pm_time
-    )
+    warning = generate_weekend_warning(Decimal("5.0"), Decimal("6.5"), 3, friday_4pm_time)
     assert warning is not None
     assert "BLOCKED" in warning
     assert "exceeds Friday limit" in warning
@@ -472,18 +464,14 @@ def test_generate_weekend_warning_friday_exceeded_limit(friday_4pm_time: datetim
 
 def test_generate_weekend_warning_monday(monday_time: datetime) -> None:
     """Test weekend warning - Monday (no warning)."""
-    warning = generate_weekend_warning(
-        Decimal("5.0"), Decimal("6.5"), 3, monday_time
-    )
+    warning = generate_weekend_warning(Decimal("5.0"), Decimal("6.5"), 3, monday_time)
     # No warning on non-Friday
     assert warning is None
 
 
 def test_generate_weekend_warning_friday_early(friday_1pm_time: datetime) -> None:
     """Test weekend warning - Friday 1pm (before 3pm threshold)."""
-    warning = generate_weekend_warning(
-        Decimal("4.5"), Decimal("6.0"), 3, friday_1pm_time
-    )
+    warning = generate_weekend_warning(Decimal("4.5"), Decimal("6.0"), 3, friday_1pm_time)
     # No warning before 3pm
     assert warning is None
 
@@ -813,9 +801,7 @@ def test_can_open_new_position_weekday_pass(
     sample_position: ForexPosition, monday_time: datetime
 ) -> None:
     """Test can_open_new_position - Weekday (pass)."""
-    can_open, msg = can_open_new_position(
-        [sample_position], Decimal("2.0"), None, monday_time
-    )
+    can_open, msg = can_open_new_position([sample_position], Decimal("2.0"), None, monday_time)
     assert can_open is True
     assert msg is None
 
@@ -885,7 +871,7 @@ def test_weekend_gap_event_creation() -> None:
         sunday_open=Decimal("1.3500"),
         gap_pips=Decimal("-1400"),
         gap_pct=Decimal("-9.40"),
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
     assert event.symbol == "GBP/USD"
     assert event.gap_pct == Decimal("-9.40")

@@ -92,7 +92,7 @@ Author: Story 7.3-FX
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -255,7 +255,7 @@ def is_friday_close_approaching(current_time: Optional[datetime] = None) -> bool
         False
     """
     if current_time is None:
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
 
     # Convert to ET
     et = pytz.timezone("America/New_York")
@@ -290,7 +290,7 @@ def is_weekend(current_time: Optional[datetime] = None) -> bool:
         False
     """
     if current_time is None:
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
 
     et = pytz.timezone("America/New_York")
     et_time = current_time.astimezone(et)
@@ -394,7 +394,9 @@ def calculate_weekend_adjustment_volatility_aware(
         pattern_breakdown[pattern_key] = position_adjustment
 
         phase_key = f"{position.wyckoff_phase}"
-        phase_breakdown[phase_key] = phase_breakdown.get(phase_key, Decimal("0")) + position_adjustment
+        phase_breakdown[phase_key] = (
+            phase_breakdown.get(phase_key, Decimal("0")) + position_adjustment
+        )
 
         vol_key = position.symbol
         volatility_breakdown[vol_key] = position_adjustment
@@ -496,7 +498,7 @@ def generate_weekend_warning(
         return None
 
     et = pytz.timezone("America/New_York")
-    et_time = current_time.astimezone(et) if current_time else datetime.now(timezone.utc).astimezone(et)
+    et_time = current_time.astimezone(et) if current_time else datetime.now(UTC).astimezone(et)
 
     # Warning after 3pm if heat >4%
     if et_time.hour >= 15 and base_heat > Decimal("4.0"):
@@ -614,7 +616,7 @@ def should_auto_close_position(
         return False, ""
 
     if current_time is None:
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
 
     et = pytz.timezone("America/New_York")
     et_time = current_time.astimezone(et)
@@ -729,7 +731,7 @@ def log_weekend_gap(
         sunday_open=sunday_open,
         gap_pips=gap_pips,
         gap_pct=gap_pct,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
     # Log to system
@@ -788,7 +790,7 @@ class ForexPortfolioHeat:
     def __post_init__(self) -> None:
         """Initialize computed fields."""
         if self.created_at is None:
-            self.created_at = datetime.now(timezone.utc)
+            self.created_at = datetime.now(UTC)
 
     @property
     def heat_utilization_pct(self) -> Decimal:

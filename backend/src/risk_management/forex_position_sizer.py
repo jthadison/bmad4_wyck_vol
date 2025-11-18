@@ -409,16 +409,12 @@ def validate_margin(
 
     # AC 10: Reject if margin > 50% of account (over-leveraged)
     if required_margin > (available_margin * Decimal("0.5")):
-        margin_pct = (required_margin / available_margin * Decimal("100")).quantize(
-            Decimal("0.1")
-        )
+        margin_pct = (required_margin / available_margin * Decimal("100")).quantize(Decimal("0.1"))
         return False, f"Over-leveraged: using {margin_pct}% of margin (max 50%)"
 
     # Warning if > 20%
     if required_margin > (available_margin * Decimal("0.2")):
-        margin_pct = (required_margin / available_margin * Decimal("100")).quantize(
-            Decimal("0.1")
-        )
+        margin_pct = (required_margin / available_margin * Decimal("100")).quantize(Decimal("0.1"))
         return True, f"WARNING: Using {margin_pct}% of available margin"
 
     return True, None
@@ -504,7 +500,9 @@ def convert_to_account_currency(
     # Try inverse rate
     inverse_pair = f"{to_currency}/{from_currency}"
     if inverse_pair in exchange_rates:
-        return (amount / exchange_rates[inverse_pair]).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        return (amount / exchange_rates[inverse_pair]).quantize(
+            Decimal("0.01"), rounding=ROUND_DOWN
+        )
 
     # Fallback: convert through USD
     if from_currency != "USD" and to_currency != "USD":
@@ -823,9 +821,7 @@ def calculate_forex_lot_size_with_wyckoff_adjustments(
 
     # Calculate volume ratio for logging
     volume_ratio_str = (
-        str(
-            (Decimal(str(tick_volume)) / Decimal(str(avg_tick_volume))).quantize(Decimal("0.01"))
-        )
+        str((Decimal(str(tick_volume)) / Decimal(str(avg_tick_volume))).quantize(Decimal("0.01")))
         if avg_tick_volume > 0
         else "N/A"
     )
@@ -1044,7 +1040,9 @@ class ForexPositionSize:
             "volume_ratio": str(self.volume_ratio) if self.volume_ratio else None,
             "volume_multiplier": str(self.volume_multiplier) if self.volume_multiplier else None,
             # Session Analysis
-            "signal_timestamp": self.signal_timestamp.isoformat() if self.signal_timestamp else None,
+            "signal_timestamp": self.signal_timestamp.isoformat()
+            if self.signal_timestamp
+            else None,
             "trading_session": self.trading_session,
             "session_multiplier": str(self.session_multiplier) if self.session_multiplier else None,
             # Effective Risk

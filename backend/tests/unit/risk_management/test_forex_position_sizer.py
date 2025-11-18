@@ -21,12 +21,9 @@ Author: Story 7.2-FX
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import pytest
-
-from backend.src.risk_management.forex_position_sizer import (
+from src.risk_management.forex_position_sizer import (
     WYCKOFF_PIP_STOP_RANGES,
     ForexPositionSize,
-    adjust_stop_for_spread,
     calculate_forex_lot_size_with_wyckoff_adjustments,
     calculate_lot_size,
     calculate_pip_value,
@@ -41,7 +38,6 @@ from backend.src.risk_management.forex_position_sizer import (
     validate_margin,
     validate_wyckoff_stop_pips,
 )
-
 
 # =============================================================================
 # Task 2: Pip Calculation with Spread Adjustment Tests (4 tests)
@@ -205,9 +201,7 @@ def test_optimize_lot_type_mini_to_micro() -> None:
 def test_currency_conversion_eur_to_usd() -> None:
     """Test currency conversion EUR to USD."""
     exchange_rates = {"EUR/USD": Decimal("1.0850")}
-    converted = convert_to_account_currency(
-        Decimal("100.00"), "EUR", "USD", exchange_rates
-    )
+    converted = convert_to_account_currency(Decimal("100.00"), "EUR", "USD", exchange_rates)
     assert converted == Decimal("108.50")
 
 
@@ -589,9 +583,7 @@ def test_margin_validation_warning_threshold() -> None:
 
 def test_currency_conversion_same_currency() -> None:
     """Test currency conversion with same source and target currency."""
-    converted = convert_to_account_currency(
-        Decimal("100.00"), "USD", "USD", {}
-    )
+    converted = convert_to_account_currency(Decimal("100.00"), "USD", "USD", {})
     assert converted == Decimal("100.00")
 
 

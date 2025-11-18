@@ -10,7 +10,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from backend.src.risk_management.forex_campaign_tracker import (
+
+from src.risk_management.forex_campaign_tracker import (
     ADDON_MIN_VOLUME,
     CONFIRM_MIN_VOLUME,
     FIRST_ENTRY_MAX_VOLUME,
