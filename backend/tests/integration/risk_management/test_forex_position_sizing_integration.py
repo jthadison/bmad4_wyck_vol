@@ -15,11 +15,7 @@ Author: Story 7.2-FX
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import pytest
-
-from backend.src.risk_management.forex_position_sizer import (
-    ForexPositionSize,
-    adjust_stop_for_spread,
+from src.risk_management.forex_position_sizer import (
     calculate_forex_lot_size_with_wyckoff_adjustments,
     calculate_pip_value,
     calculate_required_margin,
@@ -65,9 +61,7 @@ class TestEURUSDSpringIntegration:
         leverage = Decimal("50")
 
         # Calculate spread-adjusted stop
-        stop_pips = calculate_stop_pips_with_spread(
-            entry, structural_stop, symbol, "long"
-        )
+        stop_pips = calculate_stop_pips_with_spread(entry, structural_stop, symbol, "long")
         assert stop_pips >= Decimal("30.0")
         assert stop_pips <= Decimal("31.0")
 
@@ -162,9 +156,7 @@ class TestUSDJPYSOSIntegration:
         leverage = Decimal("50")
 
         # Calculate spread-adjusted stop
-        stop_pips = calculate_stop_pips_with_spread(
-            entry, structural_stop, symbol, "long"
-        )
+        stop_pips = calculate_stop_pips_with_spread(entry, structural_stop, symbol, "long")
         assert stop_pips >= Decimal("150.0")
         assert stop_pips <= Decimal("151.0")
 
@@ -241,9 +233,7 @@ class TestGBPUSDLPSIntegration:
         leverage = Decimal("50")
 
         # Calculate spread-adjusted stop
-        stop_pips = calculate_stop_pips_with_spread(
-            entry, structural_stop, symbol, "long"
-        )
+        stop_pips = calculate_stop_pips_with_spread(entry, structural_stop, symbol, "long")
         assert stop_pips == Decimal("51.0")  # 50 + 1.0 spread adjustment
 
         # Calculate pip value

@@ -11,21 +11,17 @@ Tests end-to-end scenarios:
 Coverage: Real-world trading scenarios with Wyckoff methodology integration.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
-import pytest
-
-from backend.src.risk_management.forex_portfolio_heat import (
+from src.risk_management.forex_portfolio_heat import (
     ForexPosition,
     SelectiveAutoCloseConfig,
     calculate_portfolio_heat,
-    calculate_portfolio_heat_after_new_position,
     can_open_new_position,
     log_weekend_gap,
     should_auto_close_position,
 )
-
 
 # =============================================================================
 # Real-World Scenario Tests
@@ -48,9 +44,7 @@ def test_swiss_snb_unpegging_gap_scenario() -> None:
     assert event.sunday_open == Decimal("0.8500")
 
     # Calculate expected gap %: (0.8500 - 1.2000) / 1.2000 * 100 = -29.17%
-    expected_gap_pct = (
-        (Decimal("0.8500") - Decimal("1.2000")) / Decimal("1.2000") * Decimal("100")
-    )
+    expected_gap_pct = (Decimal("0.8500") - Decimal("1.2000")) / Decimal("1.2000") * Decimal("100")
     assert abs(event.gap_pct - expected_gap_pct) < Decimal("0.1")
 
 
@@ -68,9 +62,7 @@ def test_brexit_referendum_gap_scenario() -> None:
     assert event.symbol == "GBP/USD"
 
     # Calculate expected gap %: (1.3500 - 1.4900) / 1.4900 * 100 = -9.40%
-    expected_gap_pct = (
-        (Decimal("1.3500") - Decimal("1.4900")) / Decimal("1.4900") * Decimal("100")
-    )
+    expected_gap_pct = (Decimal("1.3500") - Decimal("1.4900")) / Decimal("1.4900") * Decimal("100")
     assert abs(event.gap_pct - expected_gap_pct) < Decimal("0.1")
 
 
@@ -88,9 +80,7 @@ def test_trump_election_usd_mxn_gap_scenario() -> None:
     assert event.symbol == "USD/MXN"
 
     # Calculate expected gap %: (20.80 - 18.50) / 18.50 * 100 = +12.43%
-    expected_gap_pct = (
-        (Decimal("20.80") - Decimal("18.50")) / Decimal("18.50") * Decimal("100")
-    )
+    expected_gap_pct = (Decimal("20.80") - Decimal("18.50")) / Decimal("18.50") * Decimal("100")
     assert abs(event.gap_pct - expected_gap_pct) < Decimal("0.1")
 
 
@@ -108,7 +98,7 @@ def test_friday_close_scenario_conservative_portfolio() -> None:
     - Low base heat (3.0%)
     - Should pass Friday limit with low weekend adjustment
     """
-    friday_4pm = datetime(2025, 11, 14, 21, 0, 0, tzinfo=timezone.utc)
+    friday_4pm = datetime(2025, 11, 14, 21, 0, 0, tzinfo=UTC)
 
     positions = [
         ForexPosition(
@@ -153,7 +143,7 @@ def test_friday_close_scenario_aggressive_portfolio() -> None:
     - High base heat (5.0%)
     - Should trigger warning/block due to high weekend adjustment
     """
-    friday_4pm = datetime(2025, 11, 14, 21, 0, 0, tzinfo=timezone.utc)
+    friday_4pm = datetime(2025, 11, 14, 21, 0, 0, tzinfo=UTC)
 
     positions = [
         ForexPosition(
@@ -215,7 +205,7 @@ def test_friday_close_scenario_new_position_rejected() -> None:
     - Attempt to add 3rd position (2.0% risk)
     - Should be rejected due to exceeding Friday limit after weekend adjustment
     """
-    friday_4pm = datetime(2025, 11, 14, 21, 0, 0, tzinfo=timezone.utc)
+    friday_4pm = datetime(2025, 11, 14, 21, 0, 0, tzinfo=UTC)
 
     existing_positions = [
         ForexPosition(
@@ -282,7 +272,7 @@ def test_selective_auto_close_mixed_portfolio() -> None:
 
     Expected: Close 2 positions, keep 2 positions
     """
-    friday_430pm = datetime(2025, 11, 14, 21, 30, 0, tzinfo=timezone.utc)
+    friday_430pm = datetime(2025, 11, 14, 21, 30, 0, tzinfo=UTC)
     config = SelectiveAutoCloseConfig(enabled=True)
 
     positions = [
@@ -345,9 +335,7 @@ def test_selective_auto_close_mixed_portfolio() -> None:
         should_close, reason = should_auto_close_position(
             position, config, current_price, friday_430pm
         )
-        results.append(
-            {"symbol": position.symbol, "should_close": should_close, "reason": reason}
-        )
+        results.append({"symbol": position.symbol, "should_close": should_close, "reason": reason})
 
     # Verify decisions
     eur_usd_result = next(r for r in results if r["symbol"] == "EUR/USD")
@@ -377,7 +365,7 @@ def test_selective_auto_close_all_losers() -> None:
     Scenario: Friday 4:30pm, all 3 positions underwater.
     Expected: Close all positions (reduce weekend risk).
     """
-    friday_430pm = datetime(2025, 11, 14, 21, 30, 0, tzinfo=timezone.utc)
+    friday_430pm = datetime(2025, 11, 14, 21, 30, 0, tzinfo=UTC)
     config = SelectiveAutoCloseConfig(enabled=True)
 
     positions = [
@@ -430,7 +418,7 @@ def test_selective_auto_close_all_winners() -> None:
     Scenario: Friday 4:30pm, all Spring positions >2R.
     Expected: Keep all positions (let winners run).
     """
-    friday_430pm = datetime(2025, 11, 14, 21, 30, 0, tzinfo=timezone.utc)
+    friday_430pm = datetime(2025, 11, 14, 21, 30, 0, tzinfo=UTC)
     config = SelectiveAutoCloseConfig(enabled=True)
 
     positions = [
@@ -515,13 +503,13 @@ def test_portfolio_heat_progression_throughout_week() -> None:
     ]
 
     # Monday
-    monday = datetime(2025, 11, 10, 15, 0, 0, tzinfo=timezone.utc)
+    monday = datetime(2025, 11, 10, 15, 0, 0, tzinfo=UTC)
     monday_heat = calculate_portfolio_heat(positions, monday)
     assert monday_heat.weekend_adjustment_pct == Decimal("0")
     assert monday_heat.max_heat_limit_pct == Decimal("6.0")
 
     # Friday
-    friday = datetime(2025, 11, 14, 21, 0, 0, tzinfo=timezone.utc)
+    friday = datetime(2025, 11, 14, 21, 0, 0, tzinfo=UTC)
     friday_heat = calculate_portfolio_heat(positions, friday)
     assert friday_heat.weekend_adjustment_pct > Decimal("0")
     assert friday_heat.max_heat_limit_pct == Decimal("5.5")
@@ -551,17 +539,13 @@ def test_adding_positions_throughout_week() -> None:
     )
 
     # Monday: Can add position
-    monday = datetime(2025, 11, 10, 15, 0, 0, tzinfo=timezone.utc)
-    can_open_monday, msg_monday = can_open_new_position(
-        [position1], Decimal("2.5"), None, monday
-    )
+    monday = datetime(2025, 11, 10, 15, 0, 0, tzinfo=UTC)
+    can_open_monday, msg_monday = can_open_new_position([position1], Decimal("2.5"), None, monday)
     # Should pass on Monday (6% limit, no weekend adjustment)
 
     # Friday: May be rejected
-    friday = datetime(2025, 11, 14, 21, 0, 0, tzinfo=timezone.utc)
-    can_open_friday, msg_friday = can_open_new_position(
-        [position1], Decimal("2.5"), None, friday
-    )
+    friday = datetime(2025, 11, 14, 21, 0, 0, tzinfo=UTC)
+    can_open_friday, msg_friday = can_open_new_position([position1], Decimal("2.5"), None, friday)
     # Tighter on Friday due to 5.5% limit + weekend adjustment
 
     # Monday should be more permissive than Friday
