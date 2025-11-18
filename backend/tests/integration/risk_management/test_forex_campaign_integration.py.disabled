@@ -17,12 +17,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from src.risk_management.forex_campaign_tracker import (
+    ForexCurrencyCampaign,
     ForexPosition,
     add_position_to_campaign,
-    check_trend_completion,
-    create_campaign_from_position,
+    check_campaign_completion,
+    create_new_campaign,
     detect_trend_reversal,
-    identify_currency_trend,
 )
 
 # ============================================================================
