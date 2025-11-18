@@ -731,3 +731,54 @@ def create_new_campaign(
     )
 
     return campaign
+
+
+# =============================================================================
+# HELPER FUNCTIONS (FOR INTEGRATION TESTS)
+# =============================================================================
+
+
+def identify_currency_trend(
+    symbol: str, direction: Literal["long", "short"]
+) -> tuple[str, Literal["LONG", "SHORT"]]:
+    """
+    Identify which currency trend a position belongs to.
+
+    Args:
+        symbol: Forex pair symbol
+        direction: Position direction
+
+    Returns:
+        (currency, trend_direction)
+
+    Example:
+        >>> identify_currency_trend("EUR/USD", "long")
+        ("EUR", "LONG")  # Buying EUR = EUR long trend
+    """
+    bought_currency, _sold_currency = extract_currency_exposure(symbol, direction)
+    return bought_currency, "LONG" if direction == "long" else "SHORT"
+
+
+def create_campaign_from_position(first_position: ForexPosition) -> ForexCurrencyCampaign:
+    """
+    Create campaign from first position (convenience wrapper).
+
+    Args:
+        first_position: Initial position
+
+    Returns:
+        New campaign
+
+    Example:
+        >>> position = ForexPosition(symbol="EUR/USD", direction="long", ...)
+        >>> campaign = create_campaign_from_position(position)
+        >>> campaign.currency
+        "EUR"
+    """
+    currency, direction = identify_currency_trend(first_position.symbol, first_position.direction)
+    return create_new_campaign(currency, direction, first_position)
+
+
+def check_trend_completion(campaign: ForexCurrencyCampaign) -> tuple[bool, str]:
+    """Alias for check_campaign_completion (for backwards compatibility)."""
+    return check_campaign_completion(campaign)

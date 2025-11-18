@@ -16,7 +16,7 @@ Date: 2025-11-17
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from risk_management.forex_campaign_tracker import (
+from src.risk_management.forex_campaign_tracker import (
     ForexPosition,
     add_position_to_campaign,
     check_trend_completion,
