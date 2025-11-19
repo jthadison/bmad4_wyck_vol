@@ -1,0 +1,130 @@
+# Symbol Sector Classifications for Correlation Risk Tracking
+# Format: SYMBOL: {sector: "SectorName", asset_class: "stocks|futures|crypto", geography: "US|EU|ASIA|null"}
+#
+# This configuration file maps trading symbols to their sector, asset class, and geography
+# for campaign-level correlation risk tracking (Story 7.5).
+#
+# Tiered Correlation Limits (Wyckoff Review):
+# - Sector: 6.0% (strictest - sectors rotate together)
+# - Asset class: 15.0% (moderate - allows cross-sector diversification)
+# - Geography: 20.0% (loosest - optional macro risk control)
+#
+# Campaign Count Limits:
+# - Maximum 3 simultaneous campaigns per sector
+#
+# Maintenance:
+# - Add new symbols as needed
+# - Review sector classifications quarterly
+# - Update last_updated field when making changes
+
+version: 1
+last_updated: "2025-11-19"
+
+# Tiered correlation limits per Wyckoff Review (AC 1, 14)
+correlation_limits:
+  sector: 6.0              # Strictest - sectors rotate together
+  asset_class: 15.0        # Moderate - allows cross-sector diversification
+  geography: 20.0          # Loosest - optional macro risk control
+  max_campaigns_per_sector: 3  # Campaign count limit (AC 12)
+
+# Enforcement mode: strict (reject) or permissive (warn)
+enforcement_mode: strict
+
+# Symbol mappings
+mappings:
+  # Technology Sector
+  AAPL: {sector: "Technology", asset_class: "stock", geography: "US"}
+  MSFT: {sector: "Technology", asset_class: "stock", geography: "US"}
+  GOOGL: {sector: "Technology", asset_class: "stock", geography: "US"}
+  GOOG: {sector: "Technology", asset_class: "stock", geography: "US"}
+  NVDA: {sector: "Technology", asset_class: "stock", geography: "US"}
+  META: {sector: "Technology", asset_class: "stock", geography: "US"}
+  TSLA: {sector: "Technology", asset_class: "stock", geography: "US"}
+  AMD: {sector: "Technology", asset_class: "stock", geography: "US"}
+  INTC: {sector: "Technology", asset_class: "stock", geography: "US"}
+  ORCL: {sector: "Technology", asset_class: "stock", geography: "US"}
+  CSCO: {sector: "Technology", asset_class: "stock", geography: "US"}
+  ADBE: {sector: "Technology", asset_class: "stock", geography: "US"}
+  CRM: {sector: "Technology", asset_class: "stock", geography: "US"}
+  AVGO: {sector: "Technology", asset_class: "stock", geography: "US"}
+  QCOM: {sector: "Technology", asset_class: "stock", geography: "US"}
+
+  # Healthcare Sector
+  JNJ: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  UNH: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  PFE: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  ABBV: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  TMO: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  ABT: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  MRK: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  LLY: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  AMGN: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+  GILD: {sector: "Healthcare", asset_class: "stock", geography: "US"}
+
+  # Finance Sector
+  JPM: {sector: "Finance", asset_class: "stock", geography: "US"}
+  BAC: {sector: "Finance", asset_class: "stock", geography: "US"}
+  GS: {sector: "Finance", asset_class: "stock", geography: "US"}
+  MS: {sector: "Finance", asset_class: "stock", geography: "US"}
+  WFC: {sector: "Finance", asset_class: "stock", geography: "US"}
+  C: {sector: "Finance", asset_class: "stock", geography: "US"}
+  BLK: {sector: "Finance", asset_class: "stock", geography: "US"}
+  SCHW: {sector: "Finance", asset_class: "stock", geography: "US"}
+  AXP: {sector: "Finance", asset_class: "stock", geography: "US"}
+  USB: {sector: "Finance", asset_class: "stock", geography: "US"}
+
+  # Energy Sector
+  XOM: {sector: "Energy", asset_class: "stock", geography: "US"}
+  CVX: {sector: "Energy", asset_class: "stock", geography: "US"}
+  COP: {sector: "Energy", asset_class: "stock", geography: "US"}
+  SLB: {sector: "Energy", asset_class: "stock", geography: "US"}
+  EOG: {sector: "Energy", asset_class: "stock", geography: "US"}
+  MPC: {sector: "Energy", asset_class: "stock", geography: "US"}
+  PSX: {sector: "Energy", asset_class: "stock", geography: "US"}
+  VLO: {sector: "Energy", asset_class: "stock", geography: "US"}
+  OXY: {sector: "Energy", asset_class: "stock", geography: "US"}
+  HAL: {sector: "Energy", asset_class: "stock", geography: "US"}
+
+  # Consumer Sector
+  AMZN: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  WMT: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  HD: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  MCD: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  NKE: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  SBUX: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  TGT: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  LOW: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  COST: {sector: "Consumer", asset_class: "stock", geography: "US"}
+  PG: {sector: "Consumer", asset_class: "stock", geography: "US"}
+
+  # Industrial Sector
+  BA: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  CAT: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  GE: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  HON: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  UPS: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  LMT: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  RTX: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  MMM: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  DE: {sector: "Industrial", asset_class: "stock", geography: "US"}
+  UNP: {sector: "Industrial", asset_class: "stock", geography: "US"}
+
+  # Materials Sector
+  LIN: {sector: "Materials", asset_class: "stock", geography: "US"}
+  APD: {sector: "Materials", asset_class: "stock", geography: "US"}
+  ECL: {sector: "Materials", asset_class: "stock", geography: "US"}
+  SHW: {sector: "Materials", asset_class: "stock", geography: "US"}
+  FCX: {sector: "Materials", asset_class: "stock", geography: "US"}
+  NEM: {sector: "Materials", asset_class: "stock", geography: "US"}
+  DOW: {sector: "Materials", asset_class: "stock", geography: "US"}
+  DD: {sector: "Materials", asset_class: "stock", geography: "US"}
+
+  # Utilities Sector
+  NEE: {sector: "Utilities", asset_class: "stock", geography: "US"}
+  DUK: {sector: "Utilities", asset_class: "stock", geography: "US"}
+  SO: {sector: "Utilities", asset_class: "stock", geography: "US"}
+  D: {sector: "Utilities", asset_class: "stock", geography: "US"}
+  AEP: {sector: "Utilities", asset_class: "stock", geography: "US"}
+  EXC: {sector: "Utilities", asset_class: "stock", geography: "US"}
+  SRE: {sector: "Utilities", asset_class: "stock", geography: "US"}
+  XEL: {sector: "Utilities", asset_class: "stock", geography: "US"}

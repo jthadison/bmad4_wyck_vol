@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sector Mappings Schema",
+  "description": "JSON schema for validating sector_mappings.yaml configuration",
+  "type": "object",
+  "required": ["version", "mappings"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Configuration version number",
+      "minimum": 1
+    },
+    "last_updated": {
+      "type": "string",
+      "format": "date",
+      "description": "Last update date in YYYY-MM-DD format"
+    },
+    "correlation_limits": {
+      "type": "object",
+      "description": "Tiered correlation limits",
+      "properties": {
+        "sector": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Sector correlation limit percentage"
+        },
+        "asset_class": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Asset class correlation limit percentage"
+        },
+        "geography": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Geography correlation limit percentage (optional)"
+        },
+        "max_campaigns_per_sector": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum campaigns per sector"
+        }
+      }
+    },
+    "enforcement_mode": {
+      "type": "string",
+      "enum": ["strict", "permissive"],
+      "description": "Enforcement mode for correlation limits"
+    },
+    "mappings": {
+      "type": "object",
+      "description": "Symbol to sector/asset class mappings",
+      "patternProperties": {
+        "^[A-Z]{1,10}$": {
+          "type": "object",
+          "required": ["sector", "asset_class"],
+          "properties": {
+            "sector": {
+              "type": "string",
+              "description": "Sector classification"
+            },
+            "asset_class": {
+              "type": "string",
+              "enum": ["stock", "futures", "crypto", "forex"],
+              "description": "Asset class type"
+            },
+            "geography": {
+              "type": ["string", "null"],
+              "description": "Optional geography classification"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
