@@ -288,3 +288,152 @@ MAX_CAMPAIGNS_PER_SECTOR = 3
 SECTOR_PROXIMITY_WARNING_PCT = Decimal("4.8")  # 80% of 6.0%
 ASSET_CLASS_PROXIMITY_WARNING_PCT = Decimal("12.0")  # 80% of 15.0%
 GEOGRAPHY_PROXIMITY_WARNING_PCT = Decimal("16.0")  # 80% of 20.0%
+
+
+class RMultipleConfig(BaseModel):
+    """
+    Pattern-specific R-multiple (risk/reward) threshold configuration.
+
+    Implements Wyckoff-optimized R-multiple requirements per pattern type.
+    R-multiple = (Target - Entry) / (Entry - Stop)
+
+    Pattern-Specific Thresholds:
+    -----------------------------
+    - Spring: min 3.0R, ideal 4.0R, max 10.0R (Phase C test - tight stop, high probability)
+    - ST (Secondary Test): min 2.5R, ideal 3.5R, max 8.0R (validates Spring)
+    - SOS: min 2.5R, ideal 3.5R, max 8.0R (breakout volatility + "Jump the Creek" risk)
+    - LPS: min 2.5R, ideal 3.5R, max 8.0R (pullback confirmation)
+    - UTAD: min 3.5R, ideal 5.0R, max 12.0R (SHORT trade - higher R required)
+
+    Fields:
+    -------
+    - pattern_type: SPRING, ST, SOS, LPS, or UTAD
+    - minimum_r: Reject if R < minimum (hard stop)
+    - ideal_r: Warn if R < ideal (suboptimal but acceptable)
+    - maximum_r: Reject if R > maximum (unrealistic target/stop combo)
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> config = RMultipleConfig(
+    ...     pattern_type="SPRING",
+    ...     minimum_r=Decimal("3.0"),
+    ...     ideal_r=Decimal("4.0"),
+    ...     maximum_r=Decimal("10.0")
+    ... )
+
+    Author: Story 7.6
+    """
+
+    pattern_type: Literal["SPRING", "ST", "SOS", "LPS", "UTAD"] = Field(
+        ..., description="Pattern type"
+    )
+    minimum_r: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=6,
+        description="Minimum R-multiple threshold (reject below)",
+    )
+    ideal_r: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=6,
+        description="Ideal R-multiple threshold (warn below)",
+    )
+    maximum_r: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=6,
+        description="Maximum reasonable R-multiple (reject above)",
+    )
+
+    model_config = ConfigDict()
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "pattern_type": self.pattern_type,
+            "minimum_r": str(self.minimum_r),
+            "ideal_r": str(self.ideal_r),
+            "maximum_r": str(self.maximum_r),
+        }
+
+
+class RMultipleValidation(BaseModel):
+    """
+    R-multiple validation result.
+
+    Contains calculated R-multiple and validation status for a trade setup.
+
+    Fields:
+    -------
+    - is_valid: True if R-multiple meets minimum requirements
+    - r_multiple: Calculated R-multiple value
+    - rejection_reason: Reason for rejection if is_valid=False
+    - warning: Warning message if below ideal but acceptable
+    - status: REJECTED, ACCEPTABLE, or IDEAL
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> validation = RMultipleValidation(
+    ...     is_valid=True,
+    ...     r_multiple=Decimal("3.5"),
+    ...     rejection_reason=None,
+    ...     warning="R-multiple 3.5 below ideal 4.0 for SPRING",
+    ...     status="ACCEPTABLE"
+    ... )
+
+    Author: Story 7.6
+    """
+
+    is_valid: bool = Field(..., description="Whether R-multiple meets minimum requirements")
+    r_multiple: Decimal = Field(
+        ..., decimal_places=2, max_digits=6, description="Calculated R-multiple"
+    )
+    rejection_reason: str | None = Field(
+        default=None, description="Reason for rejection if is_valid=False"
+    )
+    warning: str | None = Field(
+        default=None, description="Warning message if below ideal but acceptable"
+    )
+    status: Literal["REJECTED", "ACCEPTABLE", "IDEAL"] = Field(
+        ..., description="R-multiple validation status"
+    )
+
+    model_config = ConfigDict()
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "is_valid": self.is_valid,
+            "r_multiple": str(self.r_multiple),
+            "rejection_reason": self.rejection_reason,
+            "warning": self.warning,
+            "status": self.status,
+        }
+
+
+# R-Multiple Threshold Constants (Story 7.6 - AC 2, 5)
+# Pattern-specific minimum R-multiples (rejection threshold)
+SPRING_MINIMUM_R = Decimal("3.0")  # Phase C test - tight stop, high probability
+ST_MINIMUM_R = Decimal("2.5")  # Secondary Test - validates Spring
+SOS_MINIMUM_R = Decimal("2.5")  # Breakout volatility + "Jump the Creek" risk
+LPS_MINIMUM_R = Decimal("2.5")  # Pullback confirmation
+UTAD_MINIMUM_R = Decimal("3.5")  # SHORT trade - higher R required
+
+# Pattern-specific ideal R-multiples (warning threshold)
+SPRING_IDEAL_R = Decimal("4.0")
+ST_IDEAL_R = Decimal("3.5")
+SOS_IDEAL_R = Decimal("3.5")
+LPS_IDEAL_R = Decimal("3.5")
+UTAD_IDEAL_R = Decimal("5.0")  # SHORT trade - better reward needed
+
+# Pattern-specific maximum R-multiples (unreasonable threshold)
+SPRING_MAXIMUM_R = Decimal("10.0")  # Tight stop, realistic target
+ST_MAXIMUM_R = Decimal("8.0")  # Medium stops, breakout/pullback dynamics
+SOS_MAXIMUM_R = Decimal("8.0")
+LPS_MAXIMUM_R = Decimal("8.0")
+UTAD_MAXIMUM_R = Decimal("12.0")  # SHORT - allow higher R due to markdown velocity

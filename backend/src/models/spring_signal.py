@@ -119,6 +119,12 @@ class SpringSignal(BaseModel):
     )
     confidence: int = Field(..., ge=0, le=100, description="Signal confidence (from Story 5.4)")
     r_multiple: Decimal = Field(..., ge=0, decimal_places=2, description="Risk-reward ratio (AC 6)")
+    r_multiple_status: Literal["REJECTED", "ACCEPTABLE", "IDEAL"] = Field(
+        ..., description="R-multiple validation status (Story 7.6)"
+    )
+    r_multiple_warning: Optional[str] = Field(
+        default=None, description="Warning if R-multiple below ideal (Story 7.6)"
+    )
     signal_type: str = Field(default="LONG_ENTRY", description="Always long for springs")
     pattern_type: str = Field(default="SPRING", description="Pattern identifier")
     signal_timestamp: datetime = Field(
