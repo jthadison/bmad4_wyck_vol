@@ -130,6 +130,12 @@ class SOSSignal(BaseModel):
     r_multiple: Decimal = Field(
         ..., decimal_places=4, max_digits=10, ge=Decimal("0"), description="Risk/reward ratio"
     )
+    r_multiple_status: Literal["REJECTED", "ACCEPTABLE", "IDEAL"] = Field(
+        ..., description="R-multiple validation status (Story 7.6)"
+    )
+    r_multiple_warning: Optional[str] = Field(
+        default=None, description="Warning if R-multiple below ideal (Story 7.6)"
+    )
     pattern_data: dict = Field(..., description="SOS and LPS pattern details")
     sos_bar_timestamp: datetime = Field(..., description="SOS breakout bar timestamp")
     lps_bar_timestamp: Optional[datetime] = Field(
