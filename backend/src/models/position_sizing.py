@@ -46,6 +46,9 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
+# Import validation models for Story 7.8 integration
+from src.models.validation import PhaseValidation, ValidationPipeline
+
 
 class PositionSizing(BaseModel):
     """
@@ -142,9 +145,46 @@ class PositionSizing(BaseModel):
         description="Pattern type (SPRING, ST, LPS, SOS, UTAD)",
     )
 
+    # Story 7.8: Enhanced validation metadata
+    r_multiple: Optional[Decimal] = Field(
+        None,
+        decimal_places=2,
+        max_digits=6,
+        description="Risk-reward ratio (Story 7.8 AC 3)",
+    )
+
+    validation_pipeline: Optional[ValidationPipeline] = Field(
+        None,
+        description="Full validation execution history (Story 7.8 AC 3)",
+    )
+
+    phase_validation: Optional[PhaseValidation] = Field(
+        None,
+        description="Wyckoff phase prerequisite validation result (Story 7.8 AC 3, Story 7.9)",
+    )
+
+    portfolio_heat_after: Optional[Decimal] = Field(
+        None,
+        decimal_places=4,
+        max_digits=6,
+        description="Projected portfolio heat after position (Story 7.8 AC 3)",
+    )
+
+    campaign_risk_after: Optional[Decimal] = Field(
+        None,
+        decimal_places=4,
+        max_digits=6,
+        description="Projected campaign risk after position (Story 7.8 AC 3)",
+    )
+
+    correlated_risks: dict[str, Decimal] = Field(
+        default_factory=dict,
+        description="Correlation risks by type (Story 7.8 AC 3)",
+    )
+
     @field_validator("actual_risk")
     @classmethod
-    def validate_actual_risk(cls, v: Decimal, info: Any) -> Decimal:  # type: ignore[no-untyped-def]
+    def validate_actual_risk(cls, v: Decimal, info: Any) -> Decimal:
         """
         Ensure actual risk never exceeds intended risk (AC 7).
 
@@ -166,7 +206,7 @@ class PositionSizing(BaseModel):
 
     @field_validator("position_value")
     @classmethod
-    def validate_position_value(cls, v: Decimal, info: Any) -> Decimal:  # type: ignore[no-untyped-def]
+    def validate_position_value(cls, v: Decimal, info: Any) -> Decimal:
         """
         Ensure position value ≤ 20% of account equity (AC 6, FR18).
 
@@ -204,4 +244,19 @@ class PositionSizing(BaseModel):
             "position_value": str(self.position_value),
             "actual_risk": str(self.actual_risk),
             "pattern_type": self.pattern_type,
+            # Story 7.8 enhanced fields
+            "r_multiple": str(self.r_multiple) if self.r_multiple else None,
+            "validation_pipeline": (
+                self.validation_pipeline.serialize_model() if self.validation_pipeline else None
+            ),
+            "phase_validation": (
+                self.phase_validation.serialize_model() if self.phase_validation else None
+            ),
+            "portfolio_heat_after": (
+                str(self.portfolio_heat_after) if self.portfolio_heat_after else None
+            ),
+            "campaign_risk_after": (
+                str(self.campaign_risk_after) if self.campaign_risk_after else None
+            ),
+            "correlated_risks": {k: str(v) for k, v in self.correlated_risks.items()},
         }

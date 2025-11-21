@@ -26,9 +26,16 @@ Author: Story 7.3
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+from src.models.risk import CorrelationConfig, SectorMapping
+
+# Import for type hints only to avoid circular import
+if TYPE_CHECKING:
+    from src.models.correlation_campaign import CampaignForCorrelation
 
 
 @dataclass
@@ -68,6 +75,9 @@ class Position:
     wyckoff_phase: str = "unknown"  # "A"|"B"|"C"|"D"|"E"|"unknown"
     volume_confirmation_score: Decimal = Decimal("15.0")  # 0-40 points, default weak
     sector: str = "unknown"  # Sector/industry classification
+
+    # Campaign tracking (Story 7.4)
+    campaign_id: UUID | None = None  # Campaign identifier for risk tracking
 
 
 @dataclass
@@ -262,3 +272,105 @@ class PortfolioHeat(BaseModel):
     def serialize_risk_breakdown(self, value: dict[str, Decimal]) -> dict[str, str]:
         """Serialize risk_breakdown Decimal values as strings."""
         return {k: str(v) for k, v in value.items()}
+
+
+class PortfolioContext(BaseModel):
+    """
+    Complete portfolio state for risk validation (Story 7.8).
+
+    Provides all context needed for RiskManager to validate a new signal
+    against portfolio-level, campaign-level, and correlation constraints.
+
+    This model aggregates data from multiple sources:
+    - Account equity (from account service)
+    - Open positions (from position service)
+    - Active campaigns (from campaign tracker)
+    - Sector mappings (from configuration)
+    - Correlation config (from risk configuration)
+    - R-multiple config (from risk configuration)
+
+    Fields:
+    -------
+    - account_equity: Current account equity (Decimal, 2 decimal places)
+    - open_positions: All currently open positions (list[Position])
+    - active_campaigns: All active campaigns (list[CampaignForCorrelation])
+    - sector_mappings: Symbol → sector mapping (dict[str, SectorMapping])
+    - correlation_config: Correlation risk configuration (CorrelationConfig)
+    - r_multiple_config: R-multiple thresholds by pattern (dict[str, RMultipleConfig])
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from src.models.risk import CorrelationConfig, SectorMapping, RMultipleConfig
+    >>> context = PortfolioContext(
+    ...     account_equity=Decimal("100000.00"),
+    ...     open_positions=[],
+    ...     active_campaigns=[],
+    ...     sector_mappings={
+    ...         "AAPL": SectorMapping(
+    ...             symbol="AAPL",
+    ...             sector="Technology",
+    ...             asset_class="stock",
+    ...             geography="US"
+    ...         )
+    ...     },
+    ...     correlation_config=CorrelationConfig(
+    ...         max_sector_correlation=Decimal("6.0"),
+    ...         max_asset_class_correlation=Decimal("15.0"),
+    ...         enforcement_mode="strict",
+    ...         sector_mappings={}
+    ...     ),
+    ...     r_multiple_config={}
+    ... )
+    """
+
+    account_equity: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=18,
+        description="Current account equity",
+    )
+
+    open_positions: list[Position] = Field(
+        default_factory=list,
+        description="All currently open positions",
+    )
+
+    active_campaigns: list["CampaignForCorrelation"] = Field(
+        default_factory=list,
+        description="All active campaigns",
+    )
+
+    sector_mappings: dict[str, SectorMapping] = Field(
+        default_factory=dict,
+        description="Symbol → sector mapping from config",
+    )
+
+    correlation_config: CorrelationConfig = Field(
+        ...,
+        description="Correlation risk configuration",
+    )
+
+    r_multiple_config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="R-multiple thresholds by pattern type",
+    )
+
+    model_config = ConfigDict()
+
+    @field_serializer("account_equity")
+    def serialize_account_equity(self, value: Decimal) -> str:
+        """Serialize account_equity as string."""
+        return str(value)
+
+
+# Rebuild model after CampaignForCorrelation is imported (fixes forward reference)
+# This is necessary because PortfolioContext uses CampaignForCorrelation in a type hint
+# but imports it conditionally with TYPE_CHECKING to avoid circular imports
+try:
+    from src.models.correlation_campaign import CampaignForCorrelation  # noqa: F401
+
+    PortfolioContext.model_rebuild()
+except ImportError:
+    # If correlation_campaign module not available yet, skip rebuild
+    pass
