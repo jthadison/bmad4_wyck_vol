@@ -174,6 +174,17 @@ class SpringSignal(BaseModel):
         default=None, description="Forex position size (lot-based, for forex signals only)"
     )
 
+    # Phase validation fields (Story 7.9, AC 9)
+    phase_validation_status: Literal["PASSED", "WARNING", "FAILED"] = Field(
+        default="PASSED", description="Phase prerequisite validation status"
+    )
+    phase_prerequisites_met: list[str] = Field(
+        default_factory=list, description="List of prerequisite events detected"
+    )
+    phase_prerequisites_missing: Optional[list[str]] = Field(
+        default=None, description="Missing prerequisites if validation failed/warned"
+    )
+
     @field_validator(
         "signal_timestamp", "spring_bar_timestamp", "test_bar_timestamp", "range_start_timestamp"
     )

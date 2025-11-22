@@ -4,13 +4,10 @@ Unit Tests for RiskManager Module (Story 7.8)
 Tests all 8 validation steps and end-to-end validate_and_size pipeline.
 """
 
-import asyncio
 from decimal import Decimal
-from uuid import uuid4
 
 import pytest
 
-from src.models.campaign import MAX_CAMPAIGN_RISK_PCT
 from src.models.portfolio import PortfolioContext, Position
 from src.models.position_sizing import PositionSizing
 from src.models.risk import CorrelationConfig, SectorMapping
@@ -82,18 +79,25 @@ def sos_signal():
 
 @pytest.fixture
 def trading_range():
-    """Trading range with event history."""
-    # Placeholder - Story 7.9 will provide full TradingRange with event_history
-    from datetime import UTC, datetime
+    """Trading range with event history for phase validation (Story 7.9)."""
+    from datetime import UTC, datetime, timedelta
 
     from src.models.ohlcv import OHLCVBar
-    from src.models.price_cluster import PriceCluster, Pivot, PivotType
+    from src.models.phase_validation import (
+        VolumeQuality,
+        WyckoffEvent,
+        WyckoffEventType,
+    )
+    from src.models.pivot import Pivot, PivotType
+    from src.models.price_cluster import PriceCluster
     from src.models.trading_range import RangeStatus
+
+    base_timestamp = datetime(2024, 1, 10, 14, 30, tzinfo=UTC)
 
     # Create OHLCV bars for pivots
     support_bar = OHLCVBar(
         symbol="AAPL",
-        timestamp=datetime(2024, 1, 10, 14, 30, tzinfo=UTC),
+        timestamp=base_timestamp,
         open=Decimal("91.00"),
         high=Decimal("92.00"),
         low=Decimal("90.00"),
@@ -105,7 +109,7 @@ def trading_range():
 
     resistance_bar = OHLCVBar(
         symbol="AAPL",
-        timestamp=datetime(2024, 1, 15, 14, 30, tzinfo=UTC),
+        timestamp=base_timestamp + timedelta(days=5),
         open=Decimal("109.00"),
         high=Decimal("110.00"),
         low=Decimal("108.50"),
@@ -175,6 +179,66 @@ def trading_range():
         timestamp_range=(resistance_bar.timestamp, resistance_bar.timestamp),
     )
 
+    # Story 7.9: Add complete Phase A-B events for Spring validation
+    event_history = [
+        WyckoffEvent(
+            event_type=WyckoffEventType.PS,
+            timestamp=base_timestamp,
+            price_level=Decimal("92.00"),
+            volume_ratio=Decimal("1.3"),
+            volume_quality=VolumeQuality.AVERAGE,
+            confidence=0.85,
+            meets_volume_threshold=True,
+        ),
+        WyckoffEvent(
+            event_type=WyckoffEventType.SC,
+            timestamp=base_timestamp + timedelta(days=2),
+            price_level=Decimal("90.00"),
+            volume_ratio=Decimal("2.5"),
+            volume_quality=VolumeQuality.CLIMACTIC,
+            confidence=0.90,
+            meets_volume_threshold=True,
+        ),
+        WyckoffEvent(
+            event_type=WyckoffEventType.AR,
+            timestamp=base_timestamp + timedelta(days=5),
+            price_level=Decimal("105.00"),
+            volume_ratio=Decimal("1.2"),
+            volume_quality=VolumeQuality.AVERAGE,
+            confidence=0.85,
+            meets_volume_threshold=True,
+        ),
+        # Add Spring events for SOS tests
+        WyckoffEvent(
+            event_type=WyckoffEventType.SPRING,
+            timestamp=base_timestamp + timedelta(days=15),
+            price_level=Decimal("89.50"),
+            volume_ratio=Decimal("0.6"),
+            volume_quality=VolumeQuality.LOW,
+            confidence=0.85,
+            meets_volume_threshold=True,
+        ),
+        WyckoffEvent(
+            event_type=WyckoffEventType.TEST_OF_SPRING,
+            timestamp=base_timestamp + timedelta(days=17),
+            price_level=Decimal("90.00"),
+            volume_ratio=Decimal("0.4"),
+            volume_quality=VolumeQuality.DRIED_UP,
+            confidence=0.85,
+            meets_volume_threshold=True,
+        ),
+        # Add SOS for LPS tests
+        WyckoffEvent(
+            event_type=WyckoffEventType.SOS,
+            timestamp=base_timestamp + timedelta(days=25),
+            price_level=Decimal("112.00"),
+            volume_ratio=Decimal("1.8"),
+            volume_quality=VolumeQuality.HIGH,
+            confidence=0.85,
+            meets_volume_threshold=True,
+        ),
+    ]
+
     return TradingRange(
         symbol="AAPL",
         timeframe="1d",
@@ -189,6 +253,7 @@ def trading_range():
         end_index=50,
         duration=41,  # >= 10 bars minimum
         status=RangeStatus.ACTIVE,
+        event_history=event_history,
     )
 
 
@@ -209,9 +274,7 @@ class TestPatternRiskValidation:
     async def test_pattern_risk_at_limit(self, risk_manager, spring_signal):
         """Test pattern risk validation passes at 2.0% limit."""
         # Set risk to maximum allowed (2.0%)
-        risk_manager.risk_allocator.set_pattern_risk_override(
-            PatternType.SPRING, Decimal("2.0")
-        )
+        risk_manager.risk_allocator.set_pattern_risk_override(PatternType.SPRING, Decimal("2.0"))
         result = await risk_manager._validate_pattern_risk(
             pattern_type=spring_signal.pattern_type, signal=spring_signal
         )
@@ -312,9 +375,7 @@ class TestPositionSizeCalculation:
     """Tests for Step 5: Position size calculation."""
 
     @pytest.mark.asyncio
-    async def test_valid_position_sizing(
-        self, risk_manager, portfolio_context, spring_signal
-    ):
+    async def test_valid_position_sizing(self, risk_manager, portfolio_context, spring_signal):
         """Test position sizing succeeds for valid signal."""
         result, position_sizing = await risk_manager._calculate_position_size(
             account_equity=portfolio_context.account_equity,

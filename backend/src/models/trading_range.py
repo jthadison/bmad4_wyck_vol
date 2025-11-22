@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
@@ -22,6 +22,7 @@ from src.models.jump_level import JumpLevel
 from src.models.price_cluster import PriceCluster
 
 if TYPE_CHECKING:
+    from src.models.phase_validation import WyckoffEvent
     from src.models.zone import Zone
 
 
@@ -119,6 +120,12 @@ class TradingRange(BaseModel):
     status: RangeStatus = Field(default=RangeStatus.FORMING, description="Range lifecycle status")
     start_timestamp: datetime | None = Field(None, description="First bar timestamp")
     end_timestamp: datetime | None = Field(None, description="Last bar timestamp")
+
+    # Story 7.9: Phase completion validation - Wyckoff event history
+    event_history: list[Any] = Field(
+        default_factory=list,
+        description="Chronological list of WyckoffEvent objects for phase validation (Story 7.9)",
+    )
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -288,6 +295,64 @@ class TradingRange(BaseModel):
             ...     print("Range can be used for pattern detection")
         """
         return self.status == RangeStatus.ACTIVE
+
+    def add_wyckoff_event(self, event: WyckoffEvent) -> None:
+        """
+        Add a Wyckoff event to the event history (Story 7.9).
+
+        Events are maintained in chronological order by timestamp.
+        Used by pattern detectors to record PS, SC, AR, Spring, etc.
+
+        Args:
+            event: WyckoffEvent to add to history
+
+        Example:
+            >>> from src.models.phase_validation import WyckoffEvent, WyckoffEventType
+            >>> trading_range.add_wyckoff_event(WyckoffEvent(
+            ...     event_type=WyckoffEventType.SC,
+            ...     timestamp=datetime.now(UTC),
+            ...     price_level=Decimal("95.00"),
+            ...     volume_ratio=Decimal("2.5"),
+            ...     volume_quality=VolumeQuality.CLIMACTIC,
+            ...     confidence=0.85,
+            ...     meets_volume_threshold=True
+            ... ))
+        """
+        self.event_history.append(event)
+        # Sort by timestamp to maintain chronological order
+        self.event_history.sort(key=lambda e: e.timestamp)
+
+    def get_events_by_type(self, event_type: str) -> list[Any]:
+        """
+        Get all events of a specific type from history.
+
+        Args:
+            event_type: Event type string (PS, SC, AR, SPRING, etc.)
+
+        Returns:
+            List of matching WyckoffEvent objects
+        """
+        return [
+            e
+            for e in self.event_history
+            if (
+                hasattr(e, "event_type")
+                and (e.event_type.value if hasattr(e.event_type, "value") else e.event_type)
+                == event_type
+            )
+        ]
+
+    def has_event(self, event_type: str) -> bool:
+        """
+        Check if an event type exists in history.
+
+        Args:
+            event_type: Event type string (PS, SC, AR, SPRING, etc.)
+
+        Returns:
+            True if event type exists, False otherwise
+        """
+        return len(self.get_events_by_type(event_type)) > 0
 
 
 # Rebuild model after Zone is imported to resolve forward references

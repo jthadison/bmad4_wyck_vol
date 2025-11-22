@@ -57,6 +57,7 @@ from uuid import UUID
 
 import structlog
 
+from src.models.phase_validation import PhaseValidation
 from src.models.portfolio import PortfolioContext, Position
 from src.models.position_sizing import PositionSizing
 from src.models.risk import (
@@ -67,12 +68,12 @@ from src.models.risk import (
 from src.models.risk_allocation import PatternType
 from src.models.trading_range import TradingRange
 from src.models.validation import (
-    PhaseValidation,
     ValidationPipeline,
     ValidationResult,
 )
 from src.risk_management.campaign_tracker import calculate_campaign_risk
 from src.risk_management.correlation import validate_correlated_risk
+from src.risk_management.phase_validator import validate_phase_prerequisites
 from src.risk_management.portfolio import calculate_portfolio_heat
 from src.risk_management.position_calculator import calculate_position_size
 from src.risk_management.r_multiple import validate_r_multiple
@@ -83,45 +84,6 @@ if TYPE_CHECKING:
     from src.models.correlation_campaign import CampaignForCorrelation
 
 logger = structlog.get_logger(__name__)
-
-
-# Placeholder for Story 7.9 phase validation function
-# Story 7.9 is currently in Draft status
-def validate_phase_prerequisites(
-    pattern_type: PatternType,
-    trading_range: TradingRange,
-    mode: str = "STRICT",
-) -> PhaseValidation:
-    """
-    Placeholder for Wyckoff phase prerequisite validation (Story 7.9).
-
-    This function will be fully implemented in Story 7.9. For now, this
-    placeholder returns a passing validation to allow RiskManager integration
-    to compile and test.
-
-    Parameters:
-    -----------
-    pattern_type : PatternType
-        Pattern type (SPRING, SOS, LPS, UTAD)
-    trading_range : TradingRange
-        Trading range with event_history
-    mode : str
-        Validation mode (STRICT or PERMISSIVE)
-
-    Returns:
-    --------
-    PhaseValidation
-        Placeholder validation result (always passes for now)
-    """
-    return PhaseValidation(
-        is_valid=True,
-        pattern_type=pattern_type.value,
-        phase_complete=True,
-        missing_prerequisites=[],
-        prerequisite_events={},
-        validation_mode=mode,
-        rejection_reason=None,
-    )
 
 
 class Signal:
