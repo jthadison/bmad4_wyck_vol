@@ -54,12 +54,8 @@ class ValidationResult(BaseModel):
 
     is_valid: bool = Field(..., description="Whether validation passed")
     validation_step: str = Field(..., description="Name of validation step")
-    rejection_reason: str | None = Field(
-        default=None, description="Reason for rejection if failed"
-    )
-    warnings: list[str] = Field(
-        default_factory=list, description="Warning messages (non-blocking)"
-    )
+    rejection_reason: str | None = Field(default=None, description="Reason for rejection if failed")
+    warnings: list[str] = Field(default_factory=list, description="Warning messages (non-blocking)")
     execution_time_ms: float | None = Field(
         default=None, description="Step execution time in milliseconds"
     )
@@ -146,9 +142,7 @@ class ValidationPipeline(BaseModel):
         if not result.is_valid:
             self.is_valid = False
             if self.rejection_reason is None:
-                self.rejection_reason = (
-                    f"{result.validation_step}: {result.rejection_reason}"
-                )
+                self.rejection_reason = f"{result.validation_step}: {result.rejection_reason}"
 
     def get_first_failure(self) -> ValidationResult | None:
         """
@@ -192,52 +186,6 @@ class ValidationPipeline(BaseModel):
         }
 
 
-# Placeholder for Story 7.9 PhaseValidation model
-# Story 7.9 is currently in Draft status
-class PhaseValidation(BaseModel):
-    """
-    Placeholder for Wyckoff phase prerequisite validation result (Story 7.9).
-
-    This model will be fully implemented in Story 7.9. For now, this
-    placeholder allows RiskManager integration to compile.
-
-    Expected fields (from Story 7.9 spec):
-    - is_valid: bool - whether phase prerequisites are met
-    - pattern_type: str - SPRING, SOS, LPS, UTAD
-    - phase_complete: bool - whether phase is complete
-    - missing_prerequisites: list[str] - missing prerequisite events
-    - prerequisite_events: dict - detected events with timestamps
-    - validation_mode: str - STRICT or PERMISSIVE
-    - rejection_reason: str | None - detailed explanation if rejected
-    """
-
-    is_valid: bool = Field(..., description="Whether phase prerequisites are met")
-    pattern_type: str = Field(..., description="SPRING, SOS, LPS, UTAD")
-    phase_complete: bool = Field(
-        default=True, description="Whether phase is complete"
-    )
-    missing_prerequisites: list[str] = Field(
-        default_factory=list, description="Missing prerequisite events"
-    )
-    prerequisite_events: dict[str, Any] = Field(
-        default_factory=dict, description="Detected events with timestamps"
-    )
-    validation_mode: str = Field(default="STRICT", description="STRICT or PERMISSIVE")
-    rejection_reason: str | None = Field(
-        default=None, description="Detailed explanation if rejected"
-    )
-
-    model_config = ConfigDict()
-
-    @model_serializer
-    def serialize_model(self) -> dict[str, Any]:
-        """Serialize model."""
-        return {
-            "is_valid": self.is_valid,
-            "pattern_type": self.pattern_type,
-            "phase_complete": self.phase_complete,
-            "missing_prerequisites": self.missing_prerequisites,
-            "prerequisite_events": self.prerequisite_events,
-            "validation_mode": self.validation_mode,
-            "rejection_reason": self.rejection_reason,
-        }
+# PhaseValidation has been moved to src.models.phase_validation (Story 7.9)
+# Re-export for backward compatibility
+from src.models.phase_validation import PhaseValidation  # noqa: E402, F401
