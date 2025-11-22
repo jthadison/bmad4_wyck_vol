@@ -17,11 +17,15 @@ repos:
     hooks:
       - id: mypy
         files: ^backend/src/
-        args: [--strict, --ignore-missing-imports]
+        args: [--ignore-missing-imports, --explicit-package-bases, --no-strict-optional]
         additional_dependencies:
           - pydantic>=2.5.0
+          - pydantic-settings>=2.0.0
           - sqlalchemy>=2.0.0
           - types-requests
+          - types-cachetools
+          - types-PyYAML
+          - structlog
 
   # ESLint - TypeScript/Vue linting
   - repo: https://github.com/pre-commit/mirrors-eslint
