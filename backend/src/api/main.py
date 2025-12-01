@@ -4,10 +4,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import portfolio
+from src.api.routes import orchestrator, portfolio
 from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
+from src.orchestrator.service import get_orchestrator
 
 app = FastAPI(
     title="BMAD Wyckoff Volume Pattern Detection API",
@@ -17,6 +18,7 @@ app = FastAPI(
 
 # Include routers
 app.include_router(portfolio.router)
+app.include_router(orchestrator.router)
 
 # Configure CORS
 app.add_middleware(
@@ -32,7 +34,7 @@ _coordinator: MarketDataCoordinator | None = None
 
 
 @app.on_event("startup")
-async def startup_event():
+async def startup_event() -> None:
     """
     FastAPI startup event handler.
 
@@ -58,7 +60,7 @@ async def startup_event():
 
 
 @app.on_event("shutdown")
-async def shutdown_event():
+async def shutdown_event() -> None:
     """
     FastAPI shutdown event handler.
 
@@ -83,7 +85,7 @@ async def health_check() -> dict[str, str]:
 
 
 @app.get("/api/v1/health")
-async def detailed_health_check() -> dict:
+async def detailed_health_check() -> dict[str, object]:
     """
     Detailed health check endpoint.
 
@@ -94,11 +96,13 @@ async def detailed_health_check() -> dict:
         - status: "healthy" or "degraded"
         - database: database connection status
         - realtime_feed: real-time data feed status (if enabled)
+        - orchestrator: orchestrator status
     """
-    health_status = {
+    health_status: dict[str, object] = {
         "status": "healthy",
         "database": "unknown",
         "realtime_feed": None,
+        "orchestrator": None,
     }
 
     # Check database connection
@@ -125,5 +129,17 @@ async def detailed_health_check() -> dict:
             health_status["status"] = "degraded"
     else:
         health_status["realtime_feed"] = {"status": "not_configured"}
+
+    # Check orchestrator status
+    try:
+        orch = get_orchestrator()
+        orchestrator_health = orch.get_health()
+        health_status["orchestrator"] = orchestrator_health
+
+        if orchestrator_health.get("status") != "healthy":
+            health_status["status"] = "degraded"
+    except Exception as e:
+        health_status["orchestrator"] = {"error": str(e)}
+        health_status["status"] = "degraded"
 
     return health_status
