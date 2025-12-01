@@ -33,6 +33,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
+from src.models.validation import ValidationChain
+
 if TYPE_CHECKING:
     from backend.src.risk_management.forex_position_sizer import ForexPositionSize
 
@@ -176,6 +178,12 @@ class SOSSignal(BaseModel):
     )
     phase_prerequisites_missing: Optional[list[str]] = Field(
         default=None, description="Missing prerequisites if validation failed/warned"
+    )
+
+    # Multi-stage validation chain (Story 8.2, AC 7)
+    validation_chain: Optional[ValidationChain] = Field(
+        default=None,
+        description="Complete audit trail of validation stages (Volume → Phase → Levels → Risk → Strategy)",
     )
 
     @field_validator("r_multiple")
