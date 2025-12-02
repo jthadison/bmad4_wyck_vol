@@ -165,7 +165,7 @@ async def test_spring_at_threshold_fails(volume_validator: VolumeValidator) -> N
     result = await volume_validator.validate(context)
 
     assert result.status == ValidationStatus.FAIL
-    assert "Spring volume too high" in result.reason
+    assert "Spring" in result.reason and "volume too high" in result.reason
     assert "0.7" in result.reason
     assert result.metadata is not None
     assert result.metadata["actual_volume_ratio"] == 0.7
@@ -180,7 +180,7 @@ async def test_spring_high_volume_fails_ac7(volume_validator: VolumeValidator) -
     result = await volume_validator.validate(context)
 
     assert result.status == ValidationStatus.FAIL
-    assert "Spring volume too high" in result.reason
+    assert "Spring" in result.reason and "volume too high" in result.reason
     assert "0.8" in result.reason
     assert result.metadata["actual_volume_ratio"] == 0.8
     assert result.metadata["threshold"] == 0.7
@@ -194,7 +194,7 @@ async def test_spring_very_high_volume_fails(volume_validator: VolumeValidator) 
     result = await volume_validator.validate(context)
 
     assert result.status == ValidationStatus.FAIL
-    assert "Spring volume too high" in result.reason
+    assert "Spring" in result.reason and "volume too high" in result.reason
     assert result.metadata["actual_volume_ratio"] == 1.2
 
 
@@ -229,7 +229,7 @@ async def test_sos_just_under_threshold_fails(volume_validator: VolumeValidator)
     result = await volume_validator.validate(context)
 
     assert result.status == ValidationStatus.FAIL
-    assert "SOS volume too low" in result.reason
+    assert "SOS" in result.reason and "volume too low" in result.reason
     assert "1.49" in result.reason
     assert result.metadata["actual_volume_ratio"] == 1.49
     assert result.metadata["threshold"] == 1.5
@@ -242,7 +242,7 @@ async def test_sos_low_volume_fails_ac8(volume_validator: VolumeValidator) -> No
     result = await volume_validator.validate(context)
 
     assert result.status == ValidationStatus.FAIL
-    assert "SOS volume too low" in result.reason
+    assert "SOS" in result.reason and "volume too low" in result.reason
     assert "1.2" in result.reason
     assert result.metadata["actual_volume_ratio"] == 1.2
     assert result.metadata["pattern_type"] == "SOS"
@@ -255,7 +255,7 @@ async def test_sos_very_low_volume_fails(volume_validator: VolumeValidator) -> N
     result = await volume_validator.validate(context)
 
     assert result.status == ValidationStatus.FAIL
-    assert "SOS volume too low" in result.reason
+    assert "SOS" in result.reason and "volume too low" in result.reason
 
 
 # ============================================================================

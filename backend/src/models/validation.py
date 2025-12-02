@@ -401,13 +401,14 @@ class ValidationChain(BaseModel):
 
 class VolumeValidationConfig(BaseModel):
     """
-    Configuration for volume validation thresholds (NFR15) - WYCKOFF ENHANCED.
+    Configuration for volume validation thresholds (NFR15) - WYCKOFF ENHANCED + FOREX SUPPORT.
 
     Provides configurable thresholds for pattern-specific volume validation
-    with defaults aligned to Wyckoff principles.
+    with defaults aligned to Wyckoff principles. Includes forex-specific
+    thresholds for tick volume validation (Story 8.3.1).
 
-    Fields:
-    -------
+    Fields (Stock - Actual Volume):
+    -------------------------------
     - spring_max_volume: Maximum volume ratio for Spring (FR4, FR12)
     - sos_min_volume: Minimum volume ratio for SOS (FR6, FR12)
     - utad_min_volume: Minimum volume ratio for UTAD initial bar (FR5, WYCKOFF ENHANCEMENT)
@@ -417,15 +418,26 @@ class VolumeValidationConfig(BaseModel):
     - lps_absorption_min_close_position: Minimum close position for LPS absorption (WYCKOFF ENHANCEMENT)
     - test_volume_decrease_required: Require test volume < pattern volume (FR13)
 
+    Fields (Forex - Tick Volume):
+    -----------------------------
+    - forex_spring_max_volume: Maximum tick volume ratio for Forex Spring (Story 8.3.1)
+    - forex_test_max_volume: Maximum tick volume ratio for Forex Test
+    - forex_sos_min_volume: Minimum tick volume ratio for Forex SOS
+    - forex_utad_min_volume: Minimum tick volume ratio for Forex UTAD
+    - forex_asian_spring_max_volume: Stricter threshold for Asian session springs
+    - forex_asian_sos_min_volume: Higher threshold for Asian session SOS
+
     Example:
     --------
     >>> config = VolumeValidationConfig(
     ...     spring_max_volume=Decimal("0.6"),  # Stricter than default 0.7
     ...     sos_min_volume=Decimal("2.0"),     # Higher than default 1.5
-    ...     lps_allow_absorption=True          # Enable advanced feature
+    ...     lps_allow_absorption=True,         # Enable advanced feature
+    ...     forex_spring_max_volume=Decimal("0.85")  # Forex tick volume threshold
     ... )
     """
 
+    # Stock (Actual Volume) thresholds
     spring_max_volume: Decimal = Field(
         default=Decimal("0.7"),
         description="Maximum volume ratio for Spring (FR4, FR12)",
@@ -464,6 +476,41 @@ class VolumeValidationConfig(BaseModel):
     )
     test_volume_decrease_required: bool = Field(
         default=True, description="Require test volume < pattern volume (FR13)"
+    )
+
+    # Forex (Tick Volume) thresholds (Story 8.3.1)
+    forex_spring_max_volume: Decimal = Field(
+        default=Decimal("0.85"),
+        description="Maximum tick volume ratio for Forex Spring (wider tolerance)",
+        gt=Decimal("0.0"),
+        le=Decimal("1.0"),
+    )
+    forex_test_max_volume: Decimal = Field(
+        default=Decimal("0.60"),
+        description="Maximum tick volume ratio for Forex Test",
+        gt=Decimal("0.0"),
+        le=Decimal("1.0"),
+    )
+    forex_sos_min_volume: Decimal = Field(
+        default=Decimal("1.80"),
+        description="Minimum tick volume ratio for Forex SOS (higher than stocks)",
+        ge=Decimal("1.0"),
+    )
+    forex_utad_min_volume: Decimal = Field(
+        default=Decimal("2.50"),
+        description="Minimum tick volume ratio for Forex UTAD",
+        ge=Decimal("1.0"),
+    )
+    forex_asian_spring_max_volume: Decimal = Field(
+        default=Decimal("0.60"),
+        description="Stricter threshold for Asian session springs (low liquidity)",
+        gt=Decimal("0.0"),
+        le=Decimal("1.0"),
+    )
+    forex_asian_sos_min_volume: Decimal = Field(
+        default=Decimal("2.00"),
+        description="Higher threshold for Asian session SOS",
+        ge=Decimal("1.0"),
     )
 
     model_config = ConfigDict(json_encoders={Decimal: str})
@@ -521,6 +568,17 @@ class ValidationContext(BaseModel):
     test_volume_ratio: Decimal | None = Field(
         default=None,
         description="Volume ratio of test bar (required if pattern.test_confirmed=True)",
+    )
+
+    # Forex-specific fields (Story 8.3.1)
+    asset_class: str = Field(
+        default="STOCK", description="Asset class (STOCK, FOREX, CRYPTO) for volume validation"
+    )
+    forex_session: Any | None = Field(
+        default=None, description="Forex trading session (ASIAN/LONDON/NY/OVERLAP)"
+    )
+    historical_volumes: list[Decimal] | None = Field(
+        default=None, description="Historical volume data for percentile calculations"
     )
 
     # Optional fields - validators check for presence before using
