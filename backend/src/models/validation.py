@@ -598,4 +598,5 @@ class ValidationContext(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,  # Allow complex types like Pattern, VolumeAnalysis, etc.
+        extra="allow",  # Allow dynamic fields added by validators (e.g., entry_price, stop_loss)
     )
