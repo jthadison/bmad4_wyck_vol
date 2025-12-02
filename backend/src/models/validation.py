@@ -399,6 +399,76 @@ class ValidationChain(BaseModel):
     )
 
 
+class VolumeValidationConfig(BaseModel):
+    """
+    Configuration for volume validation thresholds (NFR15) - WYCKOFF ENHANCED.
+
+    Provides configurable thresholds for pattern-specific volume validation
+    with defaults aligned to Wyckoff principles.
+
+    Fields:
+    -------
+    - spring_max_volume: Maximum volume ratio for Spring (FR4, FR12)
+    - sos_min_volume: Minimum volume ratio for SOS (FR6, FR12)
+    - utad_min_volume: Minimum volume ratio for UTAD initial bar (FR5, WYCKOFF ENHANCEMENT)
+    - lps_max_volume: Maximum volume ratio for standard LPS (FR7)
+    - lps_allow_absorption: Allow LPS with higher volume if absorption pattern detected (WYCKOFF ENHANCEMENT)
+    - lps_absorption_max_volume: Maximum volume for LPS absorption pattern (WYCKOFF ENHANCEMENT)
+    - lps_absorption_min_close_position: Minimum close position for LPS absorption (WYCKOFF ENHANCEMENT)
+    - test_volume_decrease_required: Require test volume < pattern volume (FR13)
+
+    Example:
+    --------
+    >>> config = VolumeValidationConfig(
+    ...     spring_max_volume=Decimal("0.6"),  # Stricter than default 0.7
+    ...     sos_min_volume=Decimal("2.0"),     # Higher than default 1.5
+    ...     lps_allow_absorption=True          # Enable advanced feature
+    ... )
+    """
+
+    spring_max_volume: Decimal = Field(
+        default=Decimal("0.7"),
+        description="Maximum volume ratio for Spring (FR4, FR12)",
+        gt=Decimal("0.0"),
+        le=Decimal("1.0"),
+    )
+    sos_min_volume: Decimal = Field(
+        default=Decimal("1.5"),
+        description="Minimum volume ratio for SOS (FR6, FR12)",
+        ge=Decimal("1.0"),
+    )
+    utad_min_volume: Decimal = Field(
+        default=Decimal("1.2"),
+        description="Minimum volume ratio for UTAD initial bar (FR5, WYCKOFF ENHANCEMENT)",
+        ge=Decimal("1.0"),
+    )
+    lps_max_volume: Decimal = Field(
+        default=Decimal("1.0"),
+        description="Maximum volume ratio for standard LPS (FR7)",
+        gt=Decimal("0.0"),
+    )
+    lps_allow_absorption: bool = Field(
+        default=False,
+        description="Allow LPS with higher volume if absorption pattern detected (WYCKOFF ENHANCEMENT)",
+    )
+    lps_absorption_max_volume: Decimal = Field(
+        default=Decimal("1.5"),
+        description="Maximum volume for LPS absorption pattern (WYCKOFF ENHANCEMENT)",
+        gt=Decimal("1.0"),
+    )
+    lps_absorption_min_close_position: Decimal = Field(
+        default=Decimal("0.7"),
+        description="Minimum close position for LPS absorption (WYCKOFF ENHANCEMENT)",
+        ge=Decimal("0.0"),
+        le=Decimal("1.0"),
+    )
+    test_volume_decrease_required: bool = Field(
+        default=True, description="Require test volume < pattern volume (FR13)"
+    )
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+
 class ValidationContext(BaseModel):
     """
     Context object passed to all validators containing shared data.
@@ -413,6 +483,7 @@ class ValidationContext(BaseModel):
     - symbol: Trading symbol (REQUIRED)
     - timeframe: Timeframe of pattern (REQUIRED)
     - volume_analysis: Volume data for volume validation (REQUIRED)
+    - test_volume_ratio: Volume ratio of test bar (required if pattern.test_confirmed=True)
     - phase_info: Phase detection data (optional - checked by PhaseValidator)
     - trading_range: Range levels for level validation (optional - checked by LevelValidator)
     - portfolio_context: Portfolio state for risk validation (optional - checked by RiskValidator)
@@ -432,6 +503,7 @@ class ValidationContext(BaseModel):
     ...     symbol="AAPL",
     ...     timeframe="1d",
     ...     volume_analysis=VolumeAnalysis(...),
+    ...     test_volume_ratio=Decimal("0.4"),  # If test confirmed
     ...     phase_info=phase_info,
     ...     trading_range=trading_range
     ... )
@@ -443,6 +515,12 @@ class ValidationContext(BaseModel):
     timeframe: str = Field(..., description="Timeframe of pattern")
     volume_analysis: Any = Field(
         ..., description="Volume data (REQUIRED - Wyckoff Team Recommendation)"
+    )
+
+    # Test confirmation field (Story 8.3)
+    test_volume_ratio: Decimal | None = Field(
+        default=None,
+        description="Volume ratio of test bar (required if pattern.test_confirmed=True)",
     )
 
     # Optional fields - validators check for presence before using
