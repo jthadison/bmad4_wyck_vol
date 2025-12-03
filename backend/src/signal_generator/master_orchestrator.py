@@ -205,6 +205,9 @@ class MasterOrchestrator:
         self,
         market_data_service: Any = None,  # Stub for now
         trading_range_service: Any = None,  # Stub for now
+        volume_service: Any = None,  # NEW: Story 8.10.1 - Volume analysis service
+        portfolio_service: Any = None,  # NEW: Story 8.10.1 - Portfolio context service
+        market_context_builder: Any = None,  # NEW: Story 8.10.1 - Market context builder
         pattern_detectors: list[Any] | None = None,  # Stub for now
         volume_validator: VolumeValidator | None = None,
         phase_validator: PhaseValidator | None = None,
@@ -225,6 +228,9 @@ class MasterOrchestrator:
         Args:
             market_data_service: Fetch OHLCV bars
             trading_range_service: Get ranges and levels
+            volume_service: Volume analysis service (Story 8.10.1)
+            portfolio_service: Portfolio context service (Story 8.10.1)
+            market_context_builder: Asset-class-aware market context builder (Story 8.10.1)
             pattern_detectors: List of all 13 pattern detectors
             volume_validator: Story 8.3
             phase_validator: Story 8.4
@@ -241,6 +247,9 @@ class MasterOrchestrator:
         """
         self.market_data_service = market_data_service
         self.trading_range_service = trading_range_service
+        self.volume_service = volume_service  # NEW: Story 8.10.1
+        self.portfolio_service = portfolio_service  # NEW: Story 8.10.1
+        self.market_context_builder = market_context_builder  # NEW: Story 8.10.1
         self.pattern_detectors = pattern_detectors or []
 
         # Initialize validators (create default instances if not provided)
@@ -507,8 +516,15 @@ class MasterOrchestrator:
             # Detect asset class
             asset_class = self._detect_asset_class(symbol)
 
+            # Detect forex session if applicable (MUST be done before _fetch_volume_analysis)
+            # Story 8.3.1: Volume analysis requires forex_session for session-aware baselines
+            forex_session = None
+            if asset_class == "FOREX":
+                forex_session = self._get_forex_session()
+
             # Fetch volume analysis (REQUIRED)
-            volume_analysis = await self._fetch_volume_analysis(symbol, pattern)
+            # CRITICAL: Pass forex_session for session-aware volume baselines (Victoria requirement)
+            volume_analysis = await self._fetch_volume_analysis(symbol, pattern, forex_session)
             if not volume_analysis:
                 self.logger.error(
                     "volume_analysis_missing", symbol=symbol, pattern_id=str(pattern.get("id"))
@@ -525,12 +541,7 @@ class MasterOrchestrator:
             portfolio_context = await self._fetch_portfolio_context()
 
             # Build market context (asset-class-aware)
-            market_context = await self._build_market_context(symbol, asset_class)
-
-            # Detect forex session if applicable
-            forex_session = None
-            if asset_class == "FOREX":
-                forex_session = self._get_forex_session()
+            market_context = await self._build_market_context(symbol, asset_class, forex_session)
 
             # Build context
             context = ValidationContext(
@@ -944,9 +955,37 @@ class MasterOrchestrator:
     # ========================================================================
 
     async def _fetch_bars(self, symbol: str, timeframe: str, limit: int = 100) -> list[Any]:
-        """Fetch bars from market data service."""
-        # Stub - return empty list for now
-        return []
+        """
+        Fetch OHLCV bars from MarketDataService.
+
+        Args:
+            symbol: Trading symbol
+            timeframe: Bar interval (1m, 5m, 15m, 1h, 1d)
+            limit: Number of recent bars to fetch (default: 100)
+
+        Returns:
+            List of OHLCVBar objects, or empty list on error
+        """
+        try:
+            if not self.market_data_service:
+                self.logger.warning("market_data_service_not_configured", symbol=symbol)
+                return []
+
+            # Call market data service to fetch bars
+            bars = await self.market_data_service.fetch_bars(
+                symbol=symbol, timeframe=timeframe, limit=limit
+            )
+            return bars
+        except Exception as e:
+            self.logger.error(
+                "fetch_bars_failed",
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit,
+                error=str(e),
+                exc_info=True,
+            )
+            return []
 
     async def _get_trading_ranges(self, symbol: str) -> list[Any]:
         """Get trading ranges for symbol."""
@@ -967,37 +1006,224 @@ class MasterOrchestrator:
         # Stub implementation
         return None
 
-    async def _fetch_volume_analysis(self, symbol: str, pattern: Any) -> Any:
-        """Fetch volume analysis for pattern."""
-        # Stub
-        return None
+    async def _fetch_volume_analysis(
+        self, symbol: str, pattern: Any, forex_session: str | None = None
+    ) -> Any:
+        """
+        Fetch volume analysis for pattern bar.
+
+        IMPORTANT: forex_session parameter is REQUIRED for forex symbols
+        to use session-aware volume baselines (Story 8.3.1).
+
+        Args:
+            symbol: Ticker symbol
+            pattern: Pattern dict with bar_timestamp
+            forex_session: ASIAN/LONDON/NY/OVERLAP (forex only)
+
+        Returns:
+            VolumeAnalysis object or None if not found
+        """
+        try:
+            if not hasattr(self, "volume_service") or not self.volume_service:
+                self.logger.warning("volume_service_not_configured", symbol=symbol)
+                return None
+
+            # Get bar timestamp from pattern
+            bar_timestamp = pattern.get("bar_timestamp")
+            if not bar_timestamp:
+                self.logger.error(
+                    "pattern_missing_timestamp", symbol=symbol, pattern_id=str(pattern.get("id"))
+                )
+                return None
+
+            # Call volume service with forex_session for session-aware baselines
+            volume_analysis = await self.volume_service.get_analysis(
+                symbol=symbol,
+                timestamp=bar_timestamp,
+                forex_session=forex_session,  # Pass session for Story 8.3.1
+            )
+            return volume_analysis
+        except Exception as e:
+            self.logger.error(
+                "fetch_volume_analysis_failed",
+                symbol=symbol,
+                forex_session=forex_session,
+                error=str(e),
+                exc_info=True,
+            )
+            return None
 
     async def _fetch_phase_info(self, symbol: str, timeframe: str) -> Any:
         """Fetch phase classification."""
         # Stub
         return None
 
-    async def _fetch_trading_range(self, trading_range_id: Any) -> Any:
-        """Fetch trading range by ID."""
-        # Stub
-        return None
+    async def _fetch_trading_range(self, trading_range_id: UUID | None) -> Any:
+        """
+        Fetch TradingRange by UUID.
+
+        Args:
+            trading_range_id: UUID of trading range
+
+        Returns:
+            TradingRange object or None if not found
+        """
+        try:
+            if not trading_range_id:
+                return None
+
+            if not self.trading_range_service:
+                self.logger.warning("trading_range_service_not_configured")
+                return None
+
+            trading_range = await self.trading_range_service.get_by_id(trading_range_id)
+            return trading_range
+        except Exception as e:
+            self.logger.error(
+                "fetch_trading_range_failed",
+                trading_range_id=str(trading_range_id) if trading_range_id else None,
+                error=str(e),
+                exc_info=True,
+            )
+            return None
 
     async def _fetch_portfolio_context(self) -> Any:
-        """Fetch current portfolio state."""
-        # Stub
-        return None
+        """
+        Fetch current portfolio state.
 
-    async def _build_market_context(self, symbol: str, asset_class: str) -> Any:
-        """Build market context (asset-class-aware)."""
-        # Stub
-        return None
+        Returns PortfolioContext with:
+        - total_equity
+        - available_equity
+        - total_heat (current risk exposure)
+        - active_positions
+        - active_campaigns
+        - total_forex_notional (NEW: Story 8.6.1 - Rachel requirement)
+        - max_forex_notional (3x equity limit)
+
+        Returns:
+            PortfolioContext or None on error
+        """
+        try:
+            if not hasattr(self, "portfolio_service") or not self.portfolio_service:
+                self.logger.warning("portfolio_service_not_configured")
+                # Return safe defaults (no positions, no heat)
+                return {
+                    "total_equity": Decimal("0"),
+                    "available_equity": Decimal("0"),
+                    "total_heat": Decimal("0"),
+                    "active_positions": [],
+                    "active_campaigns": [],
+                    "total_forex_notional": Decimal("0"),
+                    "max_forex_notional": Decimal("0"),
+                }
+
+            portfolio = await self.portfolio_service.get_current_context()
+            return portfolio
+        except Exception as e:
+            self.logger.error("fetch_portfolio_context_failed", error=str(e), exc_info=True)
+            # Return safe defaults (no positions, no heat)
+            return {
+                "total_equity": Decimal("0"),
+                "available_equity": Decimal("0"),
+                "total_heat": Decimal("0"),
+                "active_positions": [],
+                "active_campaigns": [],
+                "total_forex_notional": Decimal("0"),
+                "max_forex_notional": Decimal("0"),
+            }
+
+    async def _build_market_context(
+        self,
+        symbol: str,
+        asset_class: Literal["STOCK", "FOREX", "CRYPTO"],
+        forex_session: str | None = None,
+    ) -> Any:
+        """
+        Build asset-class-aware market context.
+
+        For STOCK: Fetch earnings calendar, market regime
+        For FOREX: Fetch forex news calendar, current session liquidity
+
+        Args:
+            symbol: Ticker symbol
+            asset_class: STOCK/FOREX/CRYPTO
+            forex_session: ASIAN/LONDON/NY/OVERLAP (forex only)
+
+        Returns:
+            MarketContext with asset-class-specific data
+        """
+        try:
+            if not hasattr(self, "market_context_builder") or not self.market_context_builder:
+                self.logger.warning("market_context_builder_not_configured", symbol=symbol)
+                # Return safe defaults (no news, no events)
+                return {
+                    "symbol": symbol,
+                    "asset_class": asset_class,
+                    "upcoming_events": [],
+                    "market_regime": "UNKNOWN",
+                }
+
+            context = await self.market_context_builder.build(
+                symbol=symbol, asset_class=asset_class, forex_session=forex_session
+            )
+            return context
+        except Exception as e:
+            self.logger.error(
+                "build_market_context_failed",
+                symbol=symbol,
+                asset_class=asset_class,
+                forex_session=forex_session,
+                error=str(e),
+                exc_info=True,
+            )
+            # Return safe defaults (no news, no events)
+            return {
+                "symbol": symbol,
+                "asset_class": asset_class,
+                "upcoming_events": [],
+                "market_regime": "UNKNOWN",
+            }
 
     async def _fetch_historical_bars(
         self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime
     ) -> list[Any]:
-        """Fetch historical bars for backtesting."""
-        # Stub
-        return []
+        """
+        Fetch historical bars for backtesting.
+
+        Returns bars in chronological order (oldest first).
+
+        Args:
+            symbol: Trading symbol
+            timeframe: Bar interval
+            start_date: Start date (inclusive)
+            end_date: End date (inclusive)
+
+        Returns:
+            List of OHLCVBar objects sorted by timestamp, or empty list on error
+        """
+        try:
+            if not self.market_data_service:
+                self.logger.warning("market_data_service_not_configured", symbol=symbol)
+                return []
+
+            bars = await self.market_data_service.fetch_historical(
+                symbol=symbol, timeframe=timeframe, start_date=start_date, end_date=end_date
+            )
+
+            # Ensure chronological order (oldest first for backtesting)
+            bars.sort(key=lambda b: b.timestamp)
+            return bars
+        except Exception as e:
+            self.logger.error(
+                "fetch_historical_bars_failed",
+                symbol=symbol,
+                timeframe=timeframe,
+                start_date=start_date.isoformat() if start_date else None,
+                end_date=end_date.isoformat() if end_date else None,
+                error=str(e),
+                exc_info=True,
+            )
+            return []
 
     def _invalidate_cache(self, symbol: str) -> None:
         """Invalidate cached data for symbol."""
