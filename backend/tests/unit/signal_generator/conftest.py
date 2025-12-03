@@ -1,10 +1,13 @@
 """
 Shared test fixtures for SOS/LPS signal generator tests.
+
+Story 8.10.2: Added fixtures for risk metadata integration testing.
 """
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import Mock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -12,9 +15,12 @@ import pytest
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
 from src.models.pivot import Pivot, PivotType
+from src.models.portfolio import PortfolioContext
 from src.models.price_cluster import PriceCluster
+from src.models.risk import CorrelationConfig
 from src.models.sos_breakout import SOSBreakout
 from src.models.trading_range import RangeStatus, TradingRange
+from src.models.validation import ValidationContext
 
 
 @pytest.fixture
@@ -220,3 +226,135 @@ def lps_pattern(sos_breakout):
         volume_trend_quality="EXCELLENT",
         volume_trend_bonus=5,
     )
+
+
+# Story 8.10.2: Risk Metadata Integration Fixtures
+
+
+@pytest.fixture
+def stock_validation_context() -> ValidationContext:
+    """Create ValidationContext for stock (AAPL) with portfolio context."""
+
+    # Mock pattern object
+    class MockPattern:
+        id = uuid4()
+        pattern_type = "SPRING"
+
+    pattern = MockPattern()
+
+    # Portfolio context
+    portfolio_context = PortfolioContext(
+        account_equity=Decimal("100000.00"),
+        cash_available=Decimal("50000.00"),
+        open_positions=[],
+        sector_mappings={},
+        correlation_config=CorrelationConfig(
+            max_sector_correlation=Decimal("6.0"),
+            max_asset_class_correlation=Decimal("15.0"),
+            enforcement_mode="strict",
+            sector_mappings={},
+        ),
+        r_multiple_config={},
+    )
+
+    # Create context
+    context = ValidationContext(
+        pattern=pattern,
+        symbol="AAPL",
+        timeframe="1d",
+        volume_analysis={"volume_ratio": Decimal("0.5")},  # Minimal mock
+        asset_class="STOCK",
+        portfolio_context=portfolio_context,
+    )
+
+    # Add entry/stop/target (set by LevelValidator)
+    context.entry_price = Decimal("150.00")
+    context.stop_loss = Decimal("145.00")
+    context.target_price = Decimal("165.00")
+
+    return context
+
+
+@pytest.fixture
+def forex_validation_context() -> ValidationContext:
+    """Create ValidationContext for forex (EUR/USD) with portfolio context."""
+
+    # Mock pattern object
+    class MockPattern:
+        id = uuid4()
+        pattern_type = "SPRING"
+
+    pattern = MockPattern()
+
+    # Portfolio context (larger equity for forex to handle lot sizing)
+    portfolio_context = PortfolioContext(
+        account_equity=Decimal("100000.00"),  # Increased to $100k to handle forex lot sizing
+        cash_available=Decimal("50000.00"),
+        open_positions=[],
+        sector_mappings={},
+        correlation_config=CorrelationConfig(
+            max_sector_correlation=Decimal("6.0"),
+            max_asset_class_correlation=Decimal("15.0"),
+            enforcement_mode="strict",
+            sector_mappings={},
+        ),
+        r_multiple_config={},
+    )
+
+    # Create context
+    context = ValidationContext(
+        pattern=pattern,
+        symbol="EUR/USD",
+        timeframe="1H",
+        volume_analysis={"volume_ratio": Decimal("0.5")},  # Minimal mock
+        asset_class="FOREX",
+        portfolio_context=portfolio_context,
+    )
+
+    # Add entry/stop/target (set by LevelValidator)
+    context.entry_price = Decimal("1.0825")
+    context.stop_loss = Decimal("1.0795")  # 30 pips
+    context.target_price = Decimal("1.0945")  # 120 pips (4R)
+
+    return context
+
+
+@pytest.fixture
+def stock_pattern() -> dict:
+    """Create mock stock pattern dict."""
+    return {
+        "id": uuid4(),
+        "pattern_type": "SPRING",
+        "phase": "C",
+        "confidence_score": 85,
+        "entry_price": Decimal("150.00"),
+        "stop_loss": Decimal("145.00"),
+        "target_price": Decimal("165.00"),
+    }
+
+
+@pytest.fixture
+def stock_context(stock_validation_context: ValidationContext) -> ValidationContext:
+    """Alias for stock_validation_context."""
+    return stock_validation_context
+
+
+@pytest.fixture
+def master_orchestrator_with_mocks() -> Any:
+    """Create MasterOrchestrator with mocked dependencies."""
+    from src.signal_generator.master_orchestrator import MasterOrchestrator
+
+    # Create orchestrator with mocked repository
+    orchestrator = MasterOrchestrator(
+        market_data_service=MagicMock(),
+        trading_range_service=MagicMock(),
+        pattern_detectors=[MagicMock()],  # List of pattern detectors
+        volume_validator=MagicMock(),
+        phase_validator=MagicMock(),
+        level_validator=MagicMock(),
+        risk_validator=MagicMock(),
+        strategy_validator=MagicMock(),
+        signal_repository=AsyncMock(),  # Mock repository to avoid DB calls
+    )
+
+    return orchestrator
