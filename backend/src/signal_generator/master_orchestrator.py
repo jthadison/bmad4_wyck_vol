@@ -618,6 +618,36 @@ class MasterOrchestrator:
             secondary_targets=[],
         )
 
+        # Story 8.10.2: Extract risk metadata from RiskValidator
+        risk_metadata = validation_chain.get_metadata_for_stage("Risk")
+
+        # Story 8.10.2 AC 7: Error handling for missing metadata
+        if not risk_metadata:
+            self.logger.critical(
+                "risk_metadata_missing",
+                pattern_id=pattern.get("id"),
+                symbol=context.symbol,
+                pattern_type=pattern.get("pattern_type"),
+                validation_chain_status=validation_chain.overall_status,
+            )
+            return RejectedSignal(
+                pattern_id=pattern.get("id", UUID(int=0)),
+                symbol=context.symbol,
+                pattern_type=pattern.get("pattern_type", "UNKNOWN"),
+                rejection_stage="SYSTEM",
+                rejection_reason="Risk validator did not provide position sizing metadata",
+                validation_chain=validation_chain,
+            )
+
+        # Story 8.10.2 AC 3: Extract calculated values from metadata
+        position_size = risk_metadata.get("position_size", Decimal("0"))
+        position_size_unit = risk_metadata.get("position_size_unit", "SHARES")
+        leverage = risk_metadata.get("leverage")
+        margin_requirement = risk_metadata.get("margin_requirement")
+        notional_value = risk_metadata.get("notional_value", Decimal("0"))
+        risk_amount = risk_metadata.get("risk_amount", Decimal("0"))
+        r_multiple = risk_metadata.get("r_multiple", Decimal("0"))
+
         # Create TradeSignal
         signal = TradeSignal(
             asset_class=context.asset_class,
@@ -628,13 +658,13 @@ class MasterOrchestrator:
             entry_price=entry_price,
             stop_loss=stop_loss,
             target_levels=target_levels,
-            position_size=Decimal("100"),  # Default
-            position_size_unit="SHARES" if context.asset_class == "STOCK" else "LOTS",
-            leverage=Decimal("50.0") if context.asset_class == "FOREX" else None,
-            margin_requirement=Decimal("100.0") if context.asset_class == "FOREX" else None,
-            notional_value=Decimal("15000.0"),  # Default
-            risk_amount=Decimal("200.0"),  # Default
-            r_multiple=Decimal("3.0"),  # Default
+            position_size=position_size,
+            position_size_unit=position_size_unit,
+            leverage=leverage,
+            margin_requirement=margin_requirement,
+            notional_value=notional_value,
+            risk_amount=risk_amount,
+            r_multiple=r_multiple,
             confidence_score=confidence_components.overall_confidence,
             confidence_components=confidence_components,
             validation_chain=validation_chain,

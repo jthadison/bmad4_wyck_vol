@@ -691,29 +691,59 @@ class RiskValidator(BaseValidator):
             )
 
         # All validations passed - construct metadata
+        # Story 8.10.2: Populate 7 required fields for TradeSignal generation
+        # Fields: position_size, position_size_unit, leverage, margin_requirement,
+        #         notional_value, risk_amount, r_multiple
+
+        # Determine position size unit based on asset class
+        asset_class = getattr(context, "asset_class", "STOCK")
+        position_size_unit = "LOTS" if asset_class == "FOREX" else "SHARES"
+
+        # Calculate notional value (total exposure)
+        if asset_class == "FOREX":
+            # Forex: notional = lots × contract_size × entry_price
+            # Standard lot = 100,000 units
+            contract_size = Decimal("100000")
+            notional_value = Decimal(str(position_sizing.shares)) * contract_size * entry_price
+
+            # Forex leverage (50:1 standard)
+            leverage = Decimal("50.0")
+
+            # Margin requirement = notional_value / leverage
+            margin_requirement = notional_value / leverage
+        else:
+            # Stocks: notional = shares × entry_price
+            notional_value = position_value
+            leverage = None
+            margin_requirement = None
+
         metadata: dict[str, Any] = {
-            "position_size": position_sizing.shares,
-            "risk_amount": float(position_sizing.risk_amount),
-            "risk_pct": float(risk_pct),
-            "r_multiple": float(r_multiple),
-            "portfolio_heat_before": float(current_heat),
-            "portfolio_heat_after": float(total_heat),
-            "portfolio_heat_limit": float(MAX_PORTFOLIO_HEAT),
-            "campaign_risk_before": float(current_campaign_risk),
-            "campaign_risk_after": float(total_campaign_risk),
-            "campaign_risk_limit": float(MAX_CAMPAIGN_RISK),
-            "correlated_risk_before": float(current_correlated_risk) if sector_mapping else 0.0,
-            "correlated_risk_after": float(total_correlated_risk) if sector_mapping else 0.0,
-            "correlated_risk_limit": float(MAX_CORRELATED_RISK),
-            "per_trade_risk_limit": float(MAX_PER_TRADE_RISK),
-            "r_multiple_minimum": float(
-                R_MULTIPLE_MINIMUMS.get(pattern_type_str.upper(), Decimal("2.0"))
-            ),
-            "account_equity": float(portfolio_context.account_equity),
-            "position_value": float(position_value),
-            "entry_price": float(entry_price),
-            "stop_loss": float(stop_loss),
-            "target_price": float(target_price),
+            # Story 8.10.2: Required fields for signal generation
+            "position_size": Decimal(str(position_sizing.shares)),
+            "position_size_unit": position_size_unit,
+            "leverage": leverage,
+            "margin_requirement": margin_requirement,
+            "notional_value": notional_value,
+            "risk_amount": position_sizing.risk_amount,
+            "r_multiple": r_multiple,
+            # Additional risk validation metadata (for debugging/analysis)
+            "risk_pct": risk_pct,
+            "portfolio_heat_before": current_heat,
+            "portfolio_heat_after": total_heat,
+            "portfolio_heat_limit": MAX_PORTFOLIO_HEAT,
+            "campaign_risk_before": current_campaign_risk,
+            "campaign_risk_after": total_campaign_risk,
+            "campaign_risk_limit": MAX_CAMPAIGN_RISK,
+            "correlated_risk_before": current_correlated_risk if sector_mapping else Decimal("0.0"),
+            "correlated_risk_after": total_correlated_risk if sector_mapping else Decimal("0.0"),
+            "correlated_risk_limit": MAX_CORRELATED_RISK,
+            "per_trade_risk_limit": MAX_PER_TRADE_RISK,
+            "r_multiple_minimum": R_MULTIPLE_MINIMUMS.get(pattern_type_str.upper(), Decimal("2.0")),
+            "account_equity": portfolio_context.account_equity,
+            "position_value": position_value,
+            "entry_price": entry_price,
+            "stop_loss": stop_loss,
+            "target_price": target_price,
         }
 
         logger.info(

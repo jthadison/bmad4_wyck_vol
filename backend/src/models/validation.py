@@ -393,6 +393,34 @@ class ValidationChain(BaseModel):
             if result.reason:
                 self.warnings.append(f"{result.stage}: {result.reason}")
 
+    def get_metadata_for_stage(self, stage: str) -> dict[str, Any]:
+        """
+        Retrieve metadata from a specific validation stage.
+
+        Story 8.10.2: Used to extract risk calculations from RiskValidator
+        for TradeSignal generation in MasterOrchestrator.
+
+        Parameters:
+        -----------
+        stage : str
+            Stage name to retrieve metadata from (e.g., "Risk", "Volume", "Phase")
+
+        Returns:
+        --------
+        dict[str, Any]
+            Metadata dict from specified stage, or empty dict if not found
+
+        Example:
+        --------
+        >>> chain = ValidationChain(pattern_id=UUID("..."))
+        >>> risk_metadata = chain.get_metadata_for_stage("Risk")
+        >>> position_size = risk_metadata.get("position_size", Decimal("0"))
+        """
+        for result in self.validation_results:
+            if result.stage == stage:
+                return result.metadata if result.metadata else {}
+        return {}
+
     model_config = ConfigDict(
         json_encoders={datetime: lambda v: v.isoformat(), Decimal: str, UUID: str},
         use_enum_values=True,
