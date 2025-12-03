@@ -7,7 +7,7 @@ including database connection settings, API keys, and environment-specific value
 
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     )
 
     # Database Configuration
-    database_url: PostgresDsn = Field(
+    database_url: str = Field(
         default="postgresql+psycopg://wyckoff_user:changeme@localhost:5432/wyckoff_db",
         description="PostgreSQL connection string with async driver",
     )
@@ -161,6 +161,44 @@ class Settings(BaseSettings):
     risk_allocation_config_path: str = Field(
         default="config/risk_allocation.yaml",
         description="Path to risk allocation configuration file (relative to backend/)",
+    )
+
+    # MasterOrchestrator Configuration (Story 8.10)
+    max_concurrent_symbols: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Parallel symbol processing limit (orchestrator)",
+    )
+    cache_ttl_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=3600,
+        description="Cache expiration time for ranges/phases (5 min default)",
+    )
+    performance_alert_threshold_ms: int = Field(
+        default=1000,
+        ge=100,
+        le=10000,
+        description="Latency alert threshold in milliseconds (NFR1: <1s)",
+    )
+    backpressure_queue_size: int = Field(
+        default=10,
+        ge=5,
+        le=100,
+        description="Max queued bars for real-time processing",
+    )
+    enable_real_time_mode: bool = Field(
+        default=True,
+        description="Enable WebSocket bar processing",
+    )
+    enable_performance_tracking: bool = Field(
+        default=True,
+        description="Enable pipeline latency tracking",
+    )
+    forex_volume_source: Literal["TICK", "ACTUAL", "ESTIMATED"] = Field(
+        default="TICK",
+        description="Default volume source for forex (TICK for most brokers)",
     )
 
     @field_validator("database_url", mode="before")
