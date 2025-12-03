@@ -118,6 +118,30 @@ class EmergencyExit(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class PortfolioState(BaseModel):
+    """
+    Portfolio state for emergency exit checking (Story 8.10.3).
+
+    Provides all fields needed for asset-class-aware emergency exits:
+    - Daily P&L tracking (daily_pnl, daily_pnl_pct)
+    - Max drawdown tracking (max_drawdown_pct)
+    - Forex notional exposure (total_forex_notional, max_forex_notional)
+    """
+
+    total_equity: Decimal = Field(..., description="Current account equity")
+    available_equity: Decimal = Field(..., description="Available equity for new trades")
+    daily_pnl: Decimal = Field(..., description="Dollar P&L for current day")
+    daily_pnl_pct: Decimal = Field(..., description="Percentage P&L (daily_pnl / total_equity)")
+    max_drawdown_pct: Decimal = Field(..., description="Maximum drawdown since inception")
+    total_heat: Decimal = Field(..., description="Current risk exposure (%)")
+    total_forex_notional: Decimal = Field(
+        default=Decimal("0"), description="Total forex notional exposure (Story 8.6.1)"
+    )
+    max_forex_notional: Decimal = Field(
+        default=Decimal("0"), description="Max forex notional (3x equity)"
+    )
+
+
 # ============================================================================
 # Performance Tracker (Stub Implementation)
 # ============================================================================
@@ -859,28 +883,112 @@ class MasterOrchestrator:
     # Emergency Exit Integration
     # ========================================================================
 
-    async def check_emergency_exits(self, bar: Any) -> list[EmergencyExit]:
+    async def check_emergency_exits(
+        self,
+        bar: Any,
+        portfolio: PortfolioState,
+        asset_class: Literal["STOCK", "FOREX", "CRYPTO"],
+    ) -> list[EmergencyExit]:
         """
-        Check for emergency exit conditions (Story 8.9).
+        Check emergency exit conditions (asset-class-aware).
+
+        Thresholds by asset class:
+        - Forex: 2% daily loss (faster with leverage)
+        - Stock: 3% daily loss
+        - Both: 15% max drawdown (universal)
+        - Forex: 3x notional exposure limit
 
         Emergency conditions (FR21):
-        - Spring low break: bar.low < campaign.spring_low
-        - Ice break after SOS: bar.low < campaign.ice_level
-        - UTAD high exceeded: bar.high > campaign.utad_high
-        - Daily loss ≥3%: portfolio.daily_pnl_pct <= -3.0
-        - Max drawdown ≥15%: portfolio.max_drawdown_pct >= 15.0
+        - Daily loss ≥ threshold (2% forex, 3% stocks)
+        - Max drawdown ≥15%
+        - Forex notional > 3x equity (FOREX only)
 
         Args:
             bar: Current OHLCV bar
+            portfolio: Portfolio state with P&L and risk metrics
+            asset_class: STOCK/FOREX/CRYPTO
 
         Returns:
             List of EmergencyExit events triggered
         """
         exits: list[EmergencyExit] = []
 
-        # Stub implementation - would check actual campaign data
-        # For now, just log and return empty list
-        self.logger.debug("check_emergency_exits", bar=bar)
+        # Determine asset-class-specific thresholds
+        if asset_class == "FOREX":
+            daily_loss_threshold = Decimal("-0.02")  # 2% for forex
+        elif asset_class == "STOCK":
+            daily_loss_threshold = Decimal("-0.03")  # 3% for stocks
+        else:  # CRYPTO
+            daily_loss_threshold = Decimal("-0.03")  # 3% for crypto (future)
+
+        # Check daily loss limit (asset-class-aware)
+        if portfolio.daily_pnl_pct <= daily_loss_threshold:
+            reason = (
+                f"Daily loss {portfolio.daily_pnl_pct:.2%} exceeds "
+                f"{abs(daily_loss_threshold):.0%} limit for {asset_class}"
+            )
+            exits.append(
+                EmergencyExit(
+                    campaign_id="SYSTEM",  # System-wide halt
+                    reason=reason,
+                    exit_price=bar.close if hasattr(bar, "close") else Decimal("0"),
+                    timestamp=datetime.now(UTC),
+                )
+            )
+            self.logger.critical(
+                "emergency_exit_daily_loss",
+                reason=reason,
+                asset_class=asset_class,
+                daily_pnl_pct=float(portfolio.daily_pnl_pct),
+                threshold=float(daily_loss_threshold),
+                portfolio_equity=float(portfolio.total_equity),
+            )
+
+        # Check max drawdown (universal - applies to all asset classes)
+        if portfolio.max_drawdown_pct >= Decimal("0.15"):
+            reason = (
+                f"Max drawdown {portfolio.max_drawdown_pct:.2%} exceeds 15% limit for {asset_class}"
+            )
+            exits.append(
+                EmergencyExit(
+                    campaign_id="SYSTEM",
+                    reason=reason,
+                    exit_price=bar.close if hasattr(bar, "close") else Decimal("0"),
+                    timestamp=datetime.now(UTC),
+                )
+            )
+            # System halt required for max drawdown
+            self._system_halted = True
+            self.logger.critical(
+                "system_halted_max_drawdown",
+                reason=reason,
+                asset_class=asset_class,
+                max_drawdown_pct=float(portfolio.max_drawdown_pct),
+                portfolio_equity=float(portfolio.total_equity),
+            )
+
+        # Check forex notional exposure limit (FOREX only)
+        if asset_class == "FOREX":
+            if portfolio.total_forex_notional > portfolio.max_forex_notional:
+                reason = (
+                    f"Forex notional ${portfolio.total_forex_notional:,.0f} exceeds "
+                    f"3x equity limit ${portfolio.max_forex_notional:,.0f}"
+                )
+                exits.append(
+                    EmergencyExit(
+                        campaign_id="SYSTEM",
+                        reason=reason,
+                        exit_price=bar.close if hasattr(bar, "close") else Decimal("0"),
+                        timestamp=datetime.now(UTC),
+                    )
+                )
+                self.logger.critical(
+                    "emergency_exit_forex_notional",
+                    reason=reason,
+                    total_notional=float(portfolio.total_forex_notional),
+                    max_notional=float(portfolio.max_forex_notional),
+                    equity=float(portfolio.total_equity),
+                )
 
         return exits
 
