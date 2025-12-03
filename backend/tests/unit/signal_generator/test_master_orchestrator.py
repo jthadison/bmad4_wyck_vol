@@ -629,3 +629,301 @@ async def test_check_emergency_exits(orchestrator):
     # Stub implementation returns empty list
     assert isinstance(exits, list)
     assert len(exits) == 0
+
+
+# ============================================================================
+# Test: Service Integration Helper Methods (Story 8.10.1)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_fetch_bars_returns_bars_for_valid_symbol():
+    """Test _fetch_bars() returns bars when market_data_service succeeds."""
+    # Arrange
+    mock_market_data_service = Mock()
+    mock_bars = [Mock(), Mock(), Mock()]
+    mock_market_data_service.fetch_bars = AsyncMock(return_value=mock_bars)
+
+    orchestrator = MasterOrchestrator(market_data_service=mock_market_data_service)
+
+    # Act
+    result = await orchestrator._fetch_bars("AAPL", "1h", limit=100)
+
+    # Assert
+    assert result == mock_bars
+    mock_market_data_service.fetch_bars.assert_called_once_with(
+        symbol="AAPL", timeframe="1h", limit=100
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_bars_handles_service_error():
+    """Test _fetch_bars() returns [] when market_data_service raises exception."""
+    # Arrange
+    mock_market_data_service = Mock()
+    mock_market_data_service.fetch_bars = AsyncMock(side_effect=Exception("Service error"))
+
+    orchestrator = MasterOrchestrator(market_data_service=mock_market_data_service)
+
+    # Act
+    result = await orchestrator._fetch_bars("AAPL", "1h")
+
+    # Assert
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_bars_returns_empty_when_service_not_configured():
+    """Test _fetch_bars() returns [] when market_data_service is None."""
+    # Arrange
+    orchestrator = MasterOrchestrator(market_data_service=None)
+
+    # Act
+    result = await orchestrator._fetch_bars("AAPL", "1h")
+
+    # Assert
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_volume_analysis_passes_forex_session():
+    """Test _fetch_volume_analysis() passes forex_session parameter (Victoria requirement)."""
+    # Arrange
+    mock_volume_service = Mock()
+    mock_analysis = Mock()
+    mock_volume_service.get_analysis = AsyncMock(return_value=mock_analysis)
+
+    orchestrator = MasterOrchestrator()
+    orchestrator.volume_service = mock_volume_service
+
+    pattern = {"id": uuid4(), "bar_timestamp": datetime(2024, 1, 1, 9, 0, tzinfo=UTC)}
+
+    # Act
+    result = await orchestrator._fetch_volume_analysis("EUR/USD", pattern, "LONDON")
+
+    # Assert
+    assert result == mock_analysis
+    mock_volume_service.get_analysis.assert_called_once_with(
+        symbol="EUR/USD",
+        timestamp=pattern["bar_timestamp"],
+        forex_session="LONDON",  # CRITICAL: Session must be passed
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_volume_analysis_returns_none_on_error():
+    """Test _fetch_volume_analysis() returns None when service raises exception."""
+    # Arrange
+    mock_volume_service = Mock()
+    mock_volume_service.get_analysis = AsyncMock(side_effect=Exception("Service error"))
+
+    orchestrator = MasterOrchestrator()
+    orchestrator.volume_service = mock_volume_service
+
+    pattern = {"id": uuid4(), "bar_timestamp": datetime(2024, 1, 1, 9, 0, tzinfo=UTC)}
+
+    # Act
+    result = await orchestrator._fetch_volume_analysis("EUR/USD", pattern, "LONDON")
+
+    # Assert
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_trading_range_returns_range_for_valid_id():
+    """Test _fetch_trading_range() returns TradingRange for valid UUID."""
+    # Arrange
+    mock_trading_range_service = Mock()
+    mock_range = Mock()
+    mock_trading_range_service.get_by_id = AsyncMock(return_value=mock_range)
+
+    orchestrator = MasterOrchestrator(trading_range_service=mock_trading_range_service)
+
+    range_id = uuid4()
+
+    # Act
+    result = await orchestrator._fetch_trading_range(range_id)
+
+    # Assert
+    assert result == mock_range
+    mock_trading_range_service.get_by_id.assert_called_once_with(range_id)
+
+
+@pytest.mark.asyncio
+async def test_fetch_trading_range_returns_none_for_invalid_id():
+    """Test _fetch_trading_range() returns None when service raises exception."""
+    # Arrange
+    mock_trading_range_service = Mock()
+    mock_trading_range_service.get_by_id = AsyncMock(side_effect=Exception("Not found"))
+
+    orchestrator = MasterOrchestrator(trading_range_service=mock_trading_range_service)
+
+    # Act
+    result = await orchestrator._fetch_trading_range(uuid4())
+
+    # Assert
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_portfolio_context_returns_current_state():
+    """Test _fetch_portfolio_context() returns PortfolioContext with total_forex_notional."""
+    # Arrange
+    mock_portfolio_service = Mock()
+    mock_context = {
+        "total_equity": Decimal("10000"),
+        "available_equity": Decimal("8000"),
+        "total_heat": Decimal("5.5"),
+        "active_positions": [],
+        "active_campaigns": [],
+        "total_forex_notional": Decimal("15000"),  # Rachel requirement
+        "max_forex_notional": Decimal("30000"),
+    }
+    mock_portfolio_service.get_current_context = AsyncMock(return_value=mock_context)
+
+    orchestrator = MasterOrchestrator()
+    orchestrator.portfolio_service = mock_portfolio_service
+
+    # Act
+    result = await orchestrator._fetch_portfolio_context()
+
+    # Assert
+    assert result == mock_context
+    assert result["total_forex_notional"] == Decimal("15000")  # Verify Rachel requirement
+    mock_portfolio_service.get_current_context.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_fetch_portfolio_context_returns_safe_defaults_on_error():
+    """Test _fetch_portfolio_context() returns safe defaults when service fails."""
+    # Arrange
+    mock_portfolio_service = Mock()
+    mock_portfolio_service.get_current_context = AsyncMock(side_effect=Exception("Service error"))
+
+    orchestrator = MasterOrchestrator()
+    orchestrator.portfolio_service = mock_portfolio_service
+
+    # Act
+    result = await orchestrator._fetch_portfolio_context()
+
+    # Assert
+    assert result["total_equity"] == Decimal("0")
+    assert result["total_forex_notional"] == Decimal("0")
+    assert result["active_positions"] == []
+
+
+@pytest.mark.asyncio
+async def test_build_market_context_for_stock_includes_asset_class():
+    """Test _build_market_context() passes asset_class parameter."""
+    # Arrange
+    mock_builder = Mock()
+    mock_context = {
+        "symbol": "AAPL",
+        "asset_class": "STOCK",
+        "upcoming_events": [],
+        "market_regime": "TRENDING",
+    }
+    mock_builder.build = AsyncMock(return_value=mock_context)
+
+    orchestrator = MasterOrchestrator()
+    orchestrator.market_context_builder = mock_builder
+
+    # Act
+    result = await orchestrator._build_market_context("AAPL", "STOCK", forex_session=None)
+
+    # Assert
+    assert result == mock_context
+    mock_builder.build.assert_called_once_with(
+        symbol="AAPL", asset_class="STOCK", forex_session=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_market_context_for_forex_passes_session():
+    """Test _build_market_context() passes forex_session for FOREX symbols."""
+    # Arrange
+    mock_builder = Mock()
+    mock_context = {
+        "symbol": "EUR/USD",
+        "asset_class": "FOREX",
+        "upcoming_events": [],
+        "market_regime": "RANGING",
+        "forex_session": "LONDON",
+    }
+    mock_builder.build = AsyncMock(return_value=mock_context)
+
+    orchestrator = MasterOrchestrator()
+    orchestrator.market_context_builder = mock_builder
+
+    # Act
+    result = await orchestrator._build_market_context("EUR/USD", "FOREX", forex_session="LONDON")
+
+    # Assert
+    assert result == mock_context
+    mock_builder.build.assert_called_once_with(
+        symbol="EUR/USD", asset_class="FOREX", forex_session="LONDON"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_historical_bars_returns_chronological_order():
+    """Test _fetch_historical_bars() returns bars sorted by timestamp."""
+    # Arrange
+    mock_market_data_service = Mock()
+
+    # Create unsorted bars
+    bar1 = Mock(timestamp=datetime(2024, 1, 3, tzinfo=UTC))
+    bar2 = Mock(timestamp=datetime(2024, 1, 1, tzinfo=UTC))
+    bar3 = Mock(timestamp=datetime(2024, 1, 2, tzinfo=UTC))
+
+    mock_market_data_service.fetch_historical = AsyncMock(return_value=[bar1, bar2, bar3])
+
+    orchestrator = MasterOrchestrator(market_data_service=mock_market_data_service)
+
+    # Act
+    result = await orchestrator._fetch_historical_bars(
+        "AAPL", "1d", datetime(2024, 1, 1, tzinfo=UTC), datetime(2024, 1, 31, tzinfo=UTC)
+    )
+
+    # Assert
+    assert len(result) == 3
+    # Verify chronological order (oldest first)
+    assert result[0].timestamp == datetime(2024, 1, 1, tzinfo=UTC)
+    assert result[1].timestamp == datetime(2024, 1, 2, tzinfo=UTC)
+    assert result[2].timestamp == datetime(2024, 1, 3, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_fetch_historical_bars_handles_service_error():
+    """Test _fetch_historical_bars() returns [] when service fails."""
+    # Arrange
+    mock_market_data_service = Mock()
+    mock_market_data_service.fetch_historical = AsyncMock(side_effect=Exception("Service error"))
+
+    orchestrator = MasterOrchestrator(market_data_service=mock_market_data_service)
+
+    # Act
+    result = await orchestrator._fetch_historical_bars(
+        "AAPL", "1d", datetime(2024, 1, 1, tzinfo=UTC), datetime(2024, 1, 31, tzinfo=UTC)
+    )
+
+    # Assert
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_service_failure_does_not_crash_pipeline():
+    """Test that service failures log errors but don't crash the pipeline."""
+    # Arrange
+    mock_market_data_service = Mock()
+    mock_market_data_service.fetch_bars = AsyncMock(
+        side_effect=Exception("Database connection lost")
+    )
+
+    orchestrator = MasterOrchestrator(market_data_service=mock_market_data_service)
+
+    # Act - Should not raise exception
+    result = await orchestrator._fetch_bars("AAPL", "1h")
+
+    # Assert
+    assert result == []  # Graceful degradation
