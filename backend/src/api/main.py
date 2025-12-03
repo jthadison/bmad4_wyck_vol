@@ -4,7 +4,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import orchestrator, portfolio
+from src.api.routes import orchestrator, portfolio, signals
 from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
@@ -19,6 +19,7 @@ app = FastAPI(
 # Include routers
 app.include_router(portfolio.router)
 app.include_router(orchestrator.router)
+app.include_router(signals.router)
 
 # Configure CORS
 app.add_middleware(

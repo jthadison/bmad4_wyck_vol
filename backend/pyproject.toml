@@ -24,6 +24,7 @@ yfinance = "^0.2.0"
 structlog = "^24.1.0"
 redis = {extras = ["hiredis"], version = "^5.0.0"}
 cachetools = "^6.2.2"
+msgpack = "^1.1.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
@@ -55,6 +56,7 @@ ignore = [
     "E402",  # Module level import not at top (intentional in some scripts)
     "E712",  # Comparison to True/False (test code style preference)
     "B007",  # Loop variable not used (intentional in test iterations)
+    "B008",  # Function call in argument defaults (FastAPI Query/Path/Body pattern)
     "F841",  # Local variable assigned but never used (test fixtures, future use)
     "B017",  # pytest.raises(Exception) too broad (test code pattern)
     "F821",  # Undefined name (legacy code, needs refactoring in separate PR)
