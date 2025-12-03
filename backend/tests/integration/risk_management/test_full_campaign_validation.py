@@ -276,7 +276,9 @@ class TestFullCampaignSequence:
         assert result.risk_pct <= Decimal("1.0")  # Within ST max allocation
 
         # Campaign risk: 0.5% (Spring) + 0.4% (ST) ≈ 0.9%
-        assert result.campaign_risk_after is None or result.campaign_risk_after < MAX_CAMPAIGN_RISK_PCT
+        assert (
+            result.campaign_risk_after is None or result.campaign_risk_after < MAX_CAMPAIGN_RISK_PCT
+        )
 
     @pytest.mark.asyncio
     async def test_sos_entry_validation(
