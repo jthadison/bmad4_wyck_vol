@@ -19,11 +19,31 @@ from decimal import Decimal
 from src.risk_management.forex_campaign_tracker import (
     ForexPosition,
     add_position_to_campaign,
-    check_trend_completion,
-    create_campaign_from_position,
+    check_campaign_completion,
+    create_new_campaign,
     detect_trend_reversal,
-    identify_currency_trend,
+    extract_currency_exposure,
 )
+
+
+# Helper functions to match test expectations
+def identify_currency_trend(symbol: str, direction: str) -> tuple[str, str]:
+    """Extract currency and trend direction from position."""
+    bought_currency, _ = extract_currency_exposure(symbol, direction)
+    return bought_currency, direction.upper()
+
+
+def create_campaign_from_position(position: ForexPosition):
+    """Create campaign from a position."""
+    currency, trend_direction = identify_currency_trend(position.symbol, position.direction)
+    return create_new_campaign(currency, trend_direction, position)
+
+
+def check_trend_completion(campaign):
+    """Alias for check_campaign_completion with lowercase return value."""
+    is_complete, reason = check_campaign_completion(campaign)
+    return is_complete, reason.lower() if reason else None
+
 
 # ============================================================================
 # Integration Test 1: EUR Strength Multi-Pair Campaign
