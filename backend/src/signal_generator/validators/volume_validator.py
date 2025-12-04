@@ -25,9 +25,11 @@ Author: Story 8.3, Story 8.3.1
 """
 
 from decimal import Decimal
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
 import structlog
+import yaml
 
 from src.models.effort_result import EffortResult
 from src.models.forex import ForexSession, NewsEvent
@@ -78,6 +80,68 @@ class VolumeValidator(BaseValidator):
     def stage_name(self) -> str:
         """Human-readable stage name."""
         return "Volume"
+
+    # Class-level cache for volume threshold config (Story 9.1)
+    _threshold_config_cache: Optional[dict[str, Any]] = None
+
+    @classmethod
+    def _load_volume_thresholds_from_config(cls) -> dict[str, Any]:
+        """
+        Load volume thresholds from YAML configuration file (Story 9.1).
+
+        This method loads session-specific UTAD thresholds optimized through
+        backtesting. The config is cached at class level to avoid repeated
+        file I/O.
+
+        Returns:
+            Dict with threshold configuration including forex_session_overrides
+
+        Example:
+            >>> config = VolumeValidator._load_volume_thresholds_from_config()
+            >>> print(config["forex"]["utad_min_volume"])  # 2.5 (baseline)
+            >>> print(config["forex_session_overrides"]["OVERLAP"]["utad_min_volume"])  # 2.2
+        """
+        # Return cached config if available
+        if cls._threshold_config_cache is not None:
+            return cls._threshold_config_cache
+
+        # Locate config file
+        config_path = (
+            Path(__file__).parent.parent.parent.parent / "config" / "volume_thresholds.yaml"
+        )
+
+        if not config_path.exists():
+            logger.warning(
+                "volume_thresholds_config_not_found",
+                config_path=str(config_path),
+                note="Using VolumeValidationConfig defaults",
+            )
+            cls._threshold_config_cache = {}
+            return cls._threshold_config_cache
+
+        # Load YAML
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+
+            logger.info(
+                "volume_thresholds_config_loaded",
+                config_path=str(config_path),
+                has_session_overrides="forex_session_overrides" in config,
+            )
+
+            # Cache the config
+            cls._threshold_config_cache = config
+            return config
+
+        except Exception as e:
+            logger.error(
+                "volume_thresholds_config_load_error",
+                config_path=str(config_path),
+                error=str(e),
+            )
+            cls._threshold_config_cache = {}
+            return cls._threshold_config_cache
 
     def _load_config(self, context: ValidationContext) -> VolumeValidationConfig:
         """
@@ -329,13 +393,14 @@ class VolumeValidator(BaseValidator):
         context: ValidationContext,
     ) -> Decimal:
         """
-        Get forex-specific threshold with session adjustments (Story 8.3.1, AC 2, 6).
+        Get forex-specific threshold with session adjustments (Story 8.3.1 + Story 9.1).
 
-        Applies session-based adjustments for Asian session (stricter thresholds
-        due to low liquidity).
+        Applies session-based adjustments:
+        - Asian session: Stricter thresholds (low liquidity)
+        - UTAD: Session-specific optimized thresholds from YAML config (Story 9.1)
 
         Args:
-            pattern_type: Pattern type (SPRING, SOS, etc.)
+            pattern_type: Pattern type (SPRING, SOS, UTAD, etc.)
             threshold_type: "max" or "min"
             config: VolumeValidationConfig with forex thresholds
             context: ValidationContext with forex_session
@@ -344,17 +409,42 @@ class VolumeValidator(BaseValidator):
             Decimal: Session-adjusted threshold
 
         Example:
-            >>> # Spring during London session
-            >>> threshold = self._get_forex_threshold("SPRING", "max", config, context)
-            >>> print(threshold)  # Decimal("0.85")
+            >>> # UTAD during OVERLAP session (Story 9.1 optimization)
+            >>> threshold = self._get_forex_threshold("UTAD", "min", config, context)
+            >>> print(threshold)  # Decimal("2.20") - optimized from 2.50!
             >>>
-            >>> # Spring during Asian session
-            >>> threshold = self._get_forex_threshold("SPRING", "max", config, context)
-            >>> print(threshold)  # Decimal("0.60") - stricter!
+            >>> # UTAD during ASIAN session
+            >>> threshold = self._get_forex_threshold("UTAD", "min", config, context)
+            >>> print(threshold)  # Decimal("2.80") - stricter for low liquidity!
         """
         forex_session = context.forex_session
 
-        # Asian session uses stricter thresholds (low liquidity)
+        # Story 9.1: Check for session-specific UTAD threshold overrides
+        if pattern_type == "UTAD" and threshold_type == "min":
+            yaml_config = self._load_volume_thresholds_from_config()
+            overrides = yaml_config.get("forex_session_overrides", {})
+
+            if overrides and forex_session is not None:
+                session_name = forex_session.value
+                session_override = overrides.get(session_name, {})
+
+                if "utad_min_volume" in session_override:
+                    override_threshold = Decimal(str(session_override["utad_min_volume"]))
+
+                    logger.debug(
+                        "forex_utad_session_override_applied",
+                        session=session_name,
+                        baseline_threshold=float(config.forex_utad_min_volume),
+                        override_threshold=float(override_threshold),
+                        story="9.1",
+                    )
+
+                    return override_threshold
+
+            # Fall through to baseline if no override found
+            return config.forex_utad_min_volume
+
+        # Asian session uses stricter thresholds (low liquidity) - Story 8.3.1
         if forex_session == ForexSession.ASIAN:
             if pattern_type == "SPRING" and threshold_type == "max":
                 return config.forex_asian_spring_max_volume
