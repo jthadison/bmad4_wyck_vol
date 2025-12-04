@@ -8,23 +8,30 @@ Provides REST API endpoints for campaign risk tracking and BMAD allocation monit
 Endpoints:
 ----------
 GET /api/v1/campaigns/{campaign_id}/risk - Returns campaign risk report with BMAD breakdown
+GET /api/v1/campaigns/{campaign_id}/allocations - Returns allocation audit trail (Story 9.2)
 
-BMAD Allocation:
-----------------
+BMAD Allocation (Story 9.2, FR23):
+-----------------------------------
 - Spring: 40% of 5% campaign budget (2.00% max) - HIGHEST allocation
-- SOS: 35% of 5% campaign budget (1.75% max) - Primary confirmation entry
-- LPS: 25% of 5% campaign budget (1.25% max) - Secondary entry
+- SOS: 30% of 5% campaign budget (1.50% max) - Primary confirmation entry
+- LPS: 30% of 5% campaign budget (1.50% max) - Secondary entry
+- Rebalancing: Adjusts percentages when earlier entries skipped
+- 75% Confidence: Required for 100% LPS sole entry allocation
 
-Author: Story 7.4 (AC 1, 4)
+Author: Story 7.4 (AC 1, 4), Story 9.2 (Allocation Audit Trail)
 """
 
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.database import get_db_session
+from src.models.allocation import AllocationPlan
 from src.models.campaign import CampaignRisk
 from src.models.portfolio import Position
+from src.repositories.allocation_repository import AllocationRepository
 from src.risk_management.campaign_tracker import build_campaign_risk_report
 
 logger = structlog.get_logger()
@@ -164,6 +171,137 @@ async def get_campaign_risk(campaign_id: UUID) -> CampaignRisk:
         # Database or other system error
         logger.error(
             "campaign_risk_system_error",
+            campaign_id=str(campaign_id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporarily unavailable. Please try again later.",
+        ) from e
+
+
+@router.get("/{campaign_id}/allocations", response_model=list[AllocationPlan])
+async def get_campaign_allocations(
+    campaign_id: UUID, db_session: AsyncSession = Depends(get_db_session)
+) -> list[AllocationPlan]:
+    """
+    Get allocation audit trail for campaign (Story 9.2, AC: 8).
+
+    Returns chronological list of all allocation decisions for a campaign,
+    including approved and rejected allocations with BMAD percentages,
+    rebalancing reasons, and confidence thresholds.
+
+    Use Cases:
+    ----------
+    - Audit trail: Review all allocation decisions for compliance
+    - Debugging: Understand why allocations were approved/rejected
+    - Analytics: Track rebalancing patterns and confidence scores
+    - Risk review: Verify 5% campaign budget enforcement
+
+    Parameters:
+    -----------
+    campaign_id : UUID
+        Campaign identifier
+    db_session : AsyncSession
+        Database session (injected)
+
+    Returns:
+    --------
+    list[AllocationPlan]
+        Chronological list of allocation plans (oldest first):
+        - id: Allocation plan UUID
+        - campaign_id: Campaign UUID
+        - signal_id: Signal UUID
+        - pattern_type: SPRING | SOS | LPS
+        - bmad_allocation_pct: 0.40 (40%), 0.30 (30%), or rebalanced value
+        - target_risk_pct: Target risk percentage
+        - actual_risk_pct: Actual risk percentage
+        - position_size_shares: Position size in shares
+        - allocation_used: Cumulative allocation used (≤ 5.0%)
+        - remaining_budget: Remaining budget after this allocation
+        - is_rebalanced: True if rebalancing applied
+        - rebalance_reason: Explanation if rebalanced
+        - approved: True if approved, False if rejected
+        - rejection_reason: Explanation if rejected
+        - timestamp: When allocation was created
+
+    Raises:
+    -------
+    HTTPException
+        404 Not Found if campaign doesn't exist
+        503 Service Unavailable if database error
+
+    Example Response:
+    -----------------
+    ```json
+    [
+      {
+        "id": "a1b2c3d4...",
+        "campaign_id": "550e8400...",
+        "signal_id": "abc123...",
+        "pattern_type": "SPRING",
+        "bmad_allocation_pct": "0.4000",
+        "target_risk_pct": "2.00",
+        "actual_risk_pct": "0.50",
+        "position_size_shares": "166",
+        "allocation_used": "0.50",
+        "remaining_budget": "4.50",
+        "is_rebalanced": false,
+        "rebalance_reason": null,
+        "approved": true,
+        "rejection_reason": null,
+        "timestamp": "2024-10-15T10:30:00Z"
+      },
+      {
+        "id": "e5f6g7h8...",
+        "campaign_id": "550e8400...",
+        "signal_id": "def456...",
+        "pattern_type": "SOS",
+        "bmad_allocation_pct": "0.3000",
+        "target_risk_pct": "1.50",
+        "actual_risk_pct": "1.00",
+        "position_size_shares": "333",
+        "allocation_used": "1.50",
+        "remaining_budget": "3.50",
+        "is_rebalanced": false,
+        "rebalance_reason": null,
+        "approved": true,
+        "rejection_reason": null,
+        "timestamp": "2024-10-15T11:00:00Z"
+      }
+    ]
+    ```
+    """
+    try:
+        # Create repository with db session
+        allocation_repository = AllocationRepository(db_session)
+
+        # Fetch all allocation plans for campaign
+        allocations = await allocation_repository.get_allocation_plans_by_campaign(campaign_id)
+
+        if not allocations:
+            # Return empty list if no allocations found (campaign might not have any yet)
+            logger.info(
+                "no_allocations_found",
+                campaign_id=str(campaign_id),
+            )
+            return []
+
+        logger.info(
+            "campaign_allocations_retrieved",
+            campaign_id=str(campaign_id),
+            allocation_count=len(allocations),
+            approved_count=sum(1 for a in allocations if a.approved),
+            rejected_count=sum(1 for a in allocations if not a.approved),
+        )
+
+        return allocations
+
+    except Exception as e:
+        # Database or other system error
+        logger.error(
+            "campaign_allocations_error",
             campaign_id=str(campaign_id),
             error=str(e),
             error_type=type(e).__name__,

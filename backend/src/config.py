@@ -5,6 +5,7 @@ This module provides centralized configuration management for the BMAD Wyckoff s
 including database connection settings, API keys, and environment-specific values.
 """
 
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -231,3 +232,31 @@ def get_settings() -> Settings:
         Application settings object
     """
     return settings
+
+
+# ============================================================================
+# BMAD Position Allocation Constants (Story 9.2, FR23)
+# ============================================================================
+# BMAD Methodology: Spring (40%) gets largest allocation as it has tightest
+# stop and highest R-multiple potential. SOS (30%) and LPS (30%) share
+# remaining 60% as they have wider stops but lower R-multiple.
+# Total campaign budget: 5% maximum (FR18) = 40% + 30% + 30%
+
+# Campaign Risk Limits (FR18)
+CAMPAIGN_MAX_RISK_PCT: Decimal = Decimal("5.0")  # 5% maximum per campaign
+
+# BMAD Allocation Percentages (FR23)
+BMAD_SPRING_ALLOCATION: Decimal = Decimal("0.40")  # 40% of campaign budget
+BMAD_SOS_ALLOCATION: Decimal = Decimal("0.30")  # 30% of campaign budget
+BMAD_LPS_ALLOCATION: Decimal = Decimal("0.30")  # 30% of campaign budget
+
+# Pattern-Specific Risk Percentages (FR16)
+# These determine actual position size based on pattern type
+PATTERN_RISK_SPRING: Decimal = Decimal("0.005")  # 0.5% of portfolio
+PATTERN_RISK_SOS: Decimal = Decimal("0.010")  # 1.0% of portfolio
+PATTERN_RISK_LPS: Decimal = Decimal("0.006")  # 0.6% of portfolio
+PATTERN_RISK_UTAD: Decimal = Decimal("0.005")  # 0.5% of portfolio
+
+# Special Confidence Threshold (AC: 11)
+# When LPS is sole entry (100% allocation), require elevated confidence
+LPS_SOLE_ENTRY_MIN_CONFIDENCE: Decimal = Decimal("75.0")  # 75% vs normal 70%
