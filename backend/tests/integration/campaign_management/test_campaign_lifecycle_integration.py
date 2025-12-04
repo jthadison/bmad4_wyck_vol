@@ -56,11 +56,10 @@ def mock_repository():
     async def mock_get_campaign_by_trading_range(trading_range_id):
         # Find active campaign for this range
         for campaign in repo._campaigns.values():
-            if (
-                campaign.trading_range_id == trading_range_id
-                and campaign.status
-                in [CampaignStatus.ACTIVE, CampaignStatus.MARKUP]
-            ):
+            if campaign.trading_range_id == trading_range_id and campaign.status in [
+                CampaignStatus.ACTIVE,
+                CampaignStatus.MARKUP,
+            ]:
                 return campaign
         return None
 
@@ -335,12 +334,12 @@ class TestFullCampaignLifecycle:
         assert campaign.positions[1].pattern_type == "SOS"
         assert campaign.positions[2].pattern_type == "LPS"
 
-        print(f"✓ Campaign lifecycle completed successfully")
+        print("✓ Campaign lifecycle completed successfully")
         print(f"  Campaign ID: {campaign.campaign_id}")
         print(f"  Status: {campaign.status.value}")
         print(f"  Total Allocation: {campaign.total_allocation}%")
         print(f"  Total Shares: {campaign.total_shares}")
-        print(f"  Position Sequence: Spring → SOS → LPS")
+        print("  Position Sequence: Spring → SOS → LPS")
 
     async def test_campaign_invalidation_workflow(
         self,

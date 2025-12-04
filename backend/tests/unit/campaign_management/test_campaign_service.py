@@ -17,14 +17,13 @@ Author: Story 9.1
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
 from src.campaign_management.service import (
     CampaignAllocationExceededError,
-    CampaignNotFoundError,
     CampaignNotReadyForCompletionError,
     CampaignService,
     InvalidStatusTransitionError,
@@ -180,9 +179,7 @@ class TestGetOrCreateCampaign:
         )
 
         # Verify checked for existing campaign
-        mock_repository.get_campaign_by_trading_range.assert_called_once_with(
-            mock_trading_range.id
-        )
+        mock_repository.get_campaign_by_trading_range.assert_called_once_with(mock_trading_range.id)
 
         # Verify created new campaign
         assert mock_repository.create_campaign.called
@@ -325,9 +322,7 @@ class TestCampaignStatusTransitions:
     """Tests for status transition methods (AC: 4)."""
 
     @pytest.mark.asyncio
-    async def test_update_campaign_status_valid_transition(
-        self, campaign_service, mock_repository
-    ):
+    async def test_update_campaign_status_valid_transition(self, campaign_service, mock_repository):
         """Test valid status transition updates campaign."""
         campaign = Campaign(
             id=uuid4(),
@@ -350,9 +345,7 @@ class TestCampaignStatusTransitions:
         updated_campaign.status = CampaignStatus.MARKUP
         mock_repository.update_campaign.return_value = updated_campaign
 
-        result = await campaign_service.update_campaign_status(
-            campaign.id, CampaignStatus.MARKUP
-        )
+        result = await campaign_service.update_campaign_status(campaign.id, CampaignStatus.MARKUP)
 
         assert mock_repository.update_campaign.called
         assert result.status == CampaignStatus.MARKUP

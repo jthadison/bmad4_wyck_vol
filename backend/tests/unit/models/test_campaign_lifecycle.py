@@ -23,13 +23,11 @@ from uuid import uuid4
 import pytest
 
 from src.models.campaign_lifecycle import (
+    VALID_CAMPAIGN_TRANSITIONS,
     Campaign,
     CampaignPosition,
     CampaignStatus,
-    MAX_CAMPAIGN_RISK_PCT,
-    VALID_CAMPAIGN_TRANSITIONS,
 )
-from src.models.trading_range import TradingRange
 
 
 class TestCampaignPosition:

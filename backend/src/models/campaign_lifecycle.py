@@ -36,7 +36,7 @@ Author: Story 9.1
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -121,16 +121,12 @@ class CampaignPosition(BaseModel):
     current_price: Decimal = Field(
         ..., decimal_places=8, max_digits=18, description="Last market price (real-time)"
     )
-    current_pnl: Decimal = Field(
-        ..., decimal_places=2, max_digits=12, description="Unrealized P&L"
-    )
+    current_pnl: Decimal = Field(..., decimal_places=2, max_digits=12, description="Unrealized P&L")
     status: Literal["OPEN", "CLOSED", "PARTIAL"] = Field(..., description="Position status")
     allocation_percent: Decimal = Field(
         ..., decimal_places=2, max_digits=5, description="% of campaign budget"
     )
-    risk_amount: Decimal = Field(
-        ..., decimal_places=2, max_digits=12, description="Dollar risk"
-    )
+    risk_amount: Decimal = Field(..., decimal_places=2, max_digits=12, description="Dollar risk")
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), description="Creation timestamp"
     )
@@ -304,9 +300,7 @@ class Campaign(BaseModel):
         """Validate completed_at is set for terminal states."""
         if self.status in [CampaignStatus.COMPLETED, CampaignStatus.INVALIDATED]:
             if self.completed_at is None:
-                raise ValueError(
-                    f"completed_at must be set for terminal state {self.status.value}"
-                )
+                raise ValueError(f"completed_at must be set for terminal state {self.status.value}")
         if self.status == CampaignStatus.INVALIDATED:
             if self.invalidation_reason is None:
                 raise ValueError("invalidation_reason must be set when status is INVALIDATED")
@@ -361,9 +355,7 @@ class Campaign(BaseModel):
         """
         return (self.total_allocation + new_allocation) <= Decimal("5.0")
 
-    model_config = {
-        "json_encoders": {Decimal: str, datetime: lambda v: v.isoformat(), UUID: str}
-    }
+    model_config = {"json_encoders": {Decimal: str, datetime: lambda v: v.isoformat(), UUID: str}}
 
 
 # Maximum campaign risk (FR18)

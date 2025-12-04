@@ -51,14 +51,11 @@ Integration:
 Author: Story 9.1
 """
 
-from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.models.campaign_lifecycle import Campaign, CampaignPosition, CampaignStatus
 
@@ -191,14 +188,10 @@ class CampaignLifecycleRepository:
             return None
 
         except Exception as e:
-            logger.error(
-                "get_campaign_by_id_failed", campaign_id=str(campaign_id), error=str(e)
-            )
+            logger.error("get_campaign_by_id_failed", campaign_id=str(campaign_id), error=str(e))
             raise CampaignRepositoryError(f"Failed to fetch campaign: {e}") from e
 
-    async def get_campaign_by_trading_range(
-        self, trading_range_id: UUID
-    ) -> Campaign | None:
+    async def get_campaign_by_trading_range(self, trading_range_id: UUID) -> Campaign | None:
         """
         Check if active campaign exists for trading range (AC: 6).
 
@@ -250,9 +243,7 @@ class CampaignLifecycleRepository:
                 trading_range_id=str(trading_range_id),
                 error=str(e),
             )
-            raise CampaignRepositoryError(
-                f"Failed to fetch campaign by trading range: {e}"
-            ) from e
+            raise CampaignRepositoryError(f"Failed to fetch campaign by trading range: {e}") from e
 
     async def get_campaigns_by_symbol(
         self, symbol: str, status: Optional[CampaignStatus] = None, limit: int = 50, offset: int = 0
@@ -296,9 +287,7 @@ class CampaignLifecycleRepository:
             return []
 
         except Exception as e:
-            logger.error(
-                "get_campaigns_by_symbol_failed", symbol=symbol, error=str(e)
-            )
+            logger.error("get_campaigns_by_symbol_failed", symbol=symbol, error=str(e))
             raise CampaignRepositoryError(f"Failed to list campaigns: {e}") from e
 
     async def update_campaign(self, campaign: Campaign) -> Campaign:
@@ -436,6 +425,4 @@ class CampaignLifecycleRepository:
                 campaign_id=str(campaign_id),
                 error=str(e),
             )
-            raise CampaignRepositoryError(
-                f"Failed to add position to campaign: {e}"
-            ) from e
+            raise CampaignRepositoryError(f"Failed to add position to campaign: {e}") from e

@@ -43,17 +43,16 @@ from uuid import UUID
 import structlog
 
 from src.models.campaign_lifecycle import (
+    VALID_CAMPAIGN_TRANSITIONS,
     Campaign,
     CampaignPosition,
     CampaignStatus,
-    VALID_CAMPAIGN_TRANSITIONS,
 )
 from src.models.signal import TradeSignal
 from src.models.trading_range import TradingRange
 from src.repositories.campaign_lifecycle_repository import (
     CampaignLifecycleRepository,
     CampaignNotFoundError,
-    OptimisticLockError,
 )
 
 logger = structlog.get_logger(__name__)
@@ -106,9 +105,7 @@ class CampaignService:
         self.campaign_repository = campaign_repository
         self.logger = logger.bind(service="campaign_service")
 
-    async def create_campaign(
-        self, signal: TradeSignal, trading_range: TradingRange
-    ) -> Campaign:
+    async def create_campaign(self, signal: TradeSignal, trading_range: TradingRange) -> Campaign:
         """
         Create new campaign from first signal (AC: 5).
 
@@ -264,9 +261,7 @@ class CampaignService:
             )
             raise
 
-    async def add_signal_to_campaign(
-        self, campaign: Campaign, signal: TradeSignal
-    ) -> Campaign:
+    async def add_signal_to_campaign(self, campaign: Campaign, signal: TradeSignal) -> Campaign:
         """
         Add new signal to existing campaign (AC: 6).
 
