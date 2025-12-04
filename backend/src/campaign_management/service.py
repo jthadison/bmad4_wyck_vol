@@ -42,6 +42,8 @@ from uuid import UUID
 
 import structlog
 
+from src.campaign_management.allocator import CampaignAllocator
+from src.models.allocation import AllocationPlan
 from src.models.campaign_lifecycle import (
     VALID_CAMPAIGN_TRANSITIONS,
     Campaign,
@@ -50,6 +52,7 @@ from src.models.campaign_lifecycle import (
 )
 from src.models.signal import TradeSignal
 from src.models.trading_range import TradingRange
+from src.repositories.allocation_repository import AllocationRepository
 from src.repositories.campaign_lifecycle_repository import (
     CampaignLifecycleRepository,
     CampaignNotFoundError,
@@ -93,6 +96,8 @@ class CampaignService:
     def __init__(
         self,
         campaign_repository: CampaignLifecycleRepository,
+        allocation_repository: AllocationRepository,
+        allocator: CampaignAllocator,
     ):
         """
         Initialize service with dependencies.
@@ -101,16 +106,24 @@ class CampaignService:
         -----------
         campaign_repository : CampaignLifecycleRepository
             Database access for campaigns
+        allocation_repository : AllocationRepository
+            Database access for allocation plans (Story 9.2)
+        allocator : CampaignAllocator
+            BMAD allocation logic (Story 9.2)
         """
         self.campaign_repository = campaign_repository
+        self.allocation_repository = allocation_repository
+        self.allocator = allocator
         self.logger = logger.bind(service="campaign_service")
 
-    async def create_campaign(self, signal: TradeSignal, trading_range: TradingRange) -> Campaign:
+    async def create_campaign(
+        self, signal: TradeSignal, trading_range: TradingRange
+    ) -> tuple[Campaign, AllocationPlan]:
         """
-        Create new campaign from first signal (AC: 5).
+        Create new campaign from first signal with BMAD allocation (AC: 5, Story 9.2).
 
         Generates campaign_id from symbol + trading_range start date.
-        Creates first CampaignPosition from signal.
+        Creates AllocationPlan using CampaignAllocator for first position.
         Initializes campaign with ACTIVE status.
 
         Campaign ID Format (AC: 3):
@@ -127,22 +140,47 @@ class CampaignService:
 
         Returns:
         --------
-        Campaign
-            Created campaign with first position
+        tuple[Campaign, AllocationPlan]
+            Created campaign with first position and allocation plan
 
         Example:
         --------
         >>> signal = TradeSignal(pattern_type="SPRING", ...)
-        >>> campaign = await service.create_campaign(signal, trading_range)
+        >>> campaign, plan = await service.create_campaign(signal, trading_range)
         >>> assert campaign.status == CampaignStatus.ACTIVE
         >>> assert len(campaign.positions) == 1
+        >>> assert plan.approved is True
         """
         try:
             # Generate campaign_id: {symbol}-{range_start_date} (AC: 3)
             campaign_id = self._generate_campaign_id(signal.symbol, trading_range)
 
-            # Create first position from signal
-            first_position = self._create_position_from_signal(signal)
+            # Create empty campaign for allocation calculation
+            empty_campaign = Campaign(
+                campaign_id=campaign_id,
+                symbol=signal.symbol,
+                timeframe=signal.timeframe,
+                trading_range_id=trading_range.id,
+                status=CampaignStatus.ACTIVE,
+                phase=signal.phase,
+                positions=[],
+                total_risk=Decimal("0.00"),
+                total_allocation=Decimal("0.00"),
+                current_risk=Decimal("0.00"),
+                weighted_avg_entry=None,
+                total_shares=Decimal("0.00"),
+                total_pnl=Decimal("0.00"),
+                start_date=datetime.now(UTC),
+            )
+
+            # Generate allocation plan using BMAD allocator (Story 9.2)
+            allocation_plan = self.allocator.allocate_campaign_risk(empty_campaign, signal)
+
+            # Persist allocation plan for audit trail
+            await self.allocation_repository.save_allocation_plan(allocation_plan)
+
+            # Create first position from signal with allocation
+            first_position = self._create_position_from_signal(signal, allocation_plan)
 
             # Calculate initial campaign metrics
             total_risk = first_position.risk_amount
@@ -151,26 +189,17 @@ class CampaignService:
             total_shares = first_position.shares
             total_pnl = Decimal("0.00")  # Not yet filled
 
-            # Create Campaign object
-            campaign = Campaign(
-                campaign_id=campaign_id,
-                symbol=signal.symbol,
-                timeframe=signal.timeframe,
-                trading_range_id=trading_range.id,
-                status=CampaignStatus.ACTIVE,  # Initial state (AC: 4)
-                phase=signal.phase,
-                positions=[first_position],
-                total_risk=total_risk,
-                total_allocation=total_allocation,
-                current_risk=total_risk,
-                weighted_avg_entry=weighted_avg_entry,
-                total_shares=total_shares,
-                total_pnl=total_pnl,
-                start_date=datetime.now(UTC),
-            )
+            # Update campaign with first position
+            empty_campaign.positions = [first_position]
+            empty_campaign.total_risk = total_risk
+            empty_campaign.total_allocation = total_allocation
+            empty_campaign.current_risk = total_risk
+            empty_campaign.weighted_avg_entry = weighted_avg_entry
+            empty_campaign.total_shares = total_shares
+            empty_campaign.total_pnl = total_pnl
 
             # Persist to database
-            created_campaign = await self.campaign_repository.create_campaign(campaign)
+            created_campaign = await self.campaign_repository.create_campaign(empty_campaign)
 
             self.logger.info(
                 "campaign_created",
@@ -179,9 +208,10 @@ class CampaignService:
                 pattern_type=signal.pattern_type,
                 status=CampaignStatus.ACTIVE.value,
                 total_allocation=str(total_allocation),
+                bmad_allocation_pct=str(allocation_plan.bmad_allocation_pct),
             )
 
-            return created_campaign
+            return created_campaign, allocation_plan
 
         except Exception as e:
             self.logger.error(
@@ -195,13 +225,13 @@ class CampaignService:
 
     async def get_or_create_campaign(
         self, signal: TradeSignal, trading_range: TradingRange
-    ) -> Campaign:
+    ) -> tuple[Campaign, AllocationPlan | None]:
         """
-        Get existing campaign or create new one (AC: 6).
+        Get existing campaign or create new one (AC: 6, Story 9.2).
 
         Checks if active campaign exists for trading_range_id.
-        If exists: returns existing campaign (for signal linkage).
-        If not exists: creates new campaign from signal.
+        If exists: returns existing campaign (for signal linkage), allocation_plan is None.
+        If not exists: creates new campaign from signal with AllocationPlan.
 
         This is the primary entry point for signal-to-campaign linking.
 
@@ -214,16 +244,18 @@ class CampaignService:
 
         Returns:
         --------
-        Campaign
-            Existing or newly created campaign
+        tuple[Campaign, AllocationPlan | None]
+            Existing campaign (plan=None) or newly created campaign with allocation plan
 
         Example:
         --------
         >>> # First signal creates campaign
-        >>> campaign1 = await service.get_or_create_campaign(spring_signal, range)
+        >>> campaign1, plan1 = await service.get_or_create_campaign(spring_signal, range)
+        >>> assert plan1 is not None  # New campaign has allocation plan
         >>> # Second signal links to existing campaign
-        >>> campaign2 = await service.get_or_create_campaign(sos_signal, range)
+        >>> campaign2, plan2 = await service.get_or_create_campaign(sos_signal, range)
         >>> assert campaign1.id == campaign2.id  # Same campaign
+        >>> assert plan2 is None  # Existing campaign, no new allocation plan
         """
         try:
             # Check for existing active campaign for this trading range (AC: 6)
@@ -238,10 +270,10 @@ class CampaignService:
                     signal_id=str(signal.id),
                     pattern_type=signal.pattern_type,
                 )
-                return existing_campaign
+                return existing_campaign, None
 
             # No existing campaign - create new one (AC: 1, 5)
-            new_campaign = await self.create_campaign(signal, trading_range)
+            new_campaign, allocation_plan = await self.create_campaign(signal, trading_range)
 
             self.logger.info(
                 "campaign_created_new",
@@ -250,7 +282,7 @@ class CampaignService:
                 trading_range_id=str(trading_range.id),
             )
 
-            return new_campaign
+            return new_campaign, allocation_plan
 
         except Exception as e:
             self.logger.error(
@@ -261,13 +293,16 @@ class CampaignService:
             )
             raise
 
-    async def add_signal_to_campaign(self, campaign: Campaign, signal: TradeSignal) -> Campaign:
+    async def add_signal_to_campaign(
+        self, campaign: Campaign, signal: TradeSignal
+    ) -> tuple[Campaign, AllocationPlan]:
         """
-        Add new signal to existing campaign (AC: 6).
+        Add new signal to existing campaign with BMAD allocation (AC: 6, Story 9.2).
 
-        Creates new CampaignPosition from signal and adds to campaign.
+        Creates AllocationPlan using CampaignAllocator (40/30/30 + rebalancing).
+        If approved: creates CampaignPosition and adds to campaign.
+        If rejected: returns campaign unchanged with rejection reason in AllocationPlan.
         Updates campaign status if needed (ACTIVE → MARKUP after SOS).
-        Enforces 5% allocation limit (FR18).
 
         Parameters:
         -----------
@@ -278,8 +313,8 @@ class CampaignService:
 
         Returns:
         --------
-        Campaign
-            Updated campaign with new position
+        tuple[Campaign, AllocationPlan]
+            Updated campaign (or unchanged if rejected) and allocation plan with approval status
 
         Raises:
         -------
@@ -289,20 +324,31 @@ class CampaignService:
         Example:
         --------
         >>> # Campaign has Spring (2% allocation)
-        >>> campaign = await service.add_signal_to_campaign(campaign, sos_signal)
-        >>> assert campaign.status == CampaignStatus.MARKUP  # Transitioned
-        >>> assert len(campaign.positions) == 2  # Spring + SOS
+        >>> campaign, plan = await service.add_signal_to_campaign(campaign, sos_signal)
+        >>> if plan.approved:
+        ...     assert campaign.status == CampaignStatus.MARKUP  # Transitioned
+        ...     assert len(campaign.positions) == 2  # Spring + SOS
         """
         try:
-            # Create position from signal
-            new_position = self._create_position_from_signal(signal)
+            # Generate allocation plan using BMAD allocator (Story 9.2)
+            allocation_plan = self.allocator.allocate_campaign_risk(campaign, signal)
 
-            # Check allocation limit (FR18)
-            if not campaign.can_add_position(new_position.allocation_percent):
-                raise CampaignAllocationExceededError(
-                    f"Adding position ({new_position.allocation_percent}%) would exceed "
-                    f"5% campaign limit (current: {campaign.total_allocation}%)"
+            # Persist allocation plan for audit trail (AC: 8)
+            await self.allocation_repository.save_allocation_plan(allocation_plan)
+
+            # If rejected, return unchanged campaign with rejection reason
+            if not allocation_plan.approved:
+                self.logger.warning(
+                    "allocation_rejected",
+                    campaign_id=campaign.campaign_id,
+                    signal_id=str(signal.id),
+                    pattern_type=signal.pattern_type,
+                    rejection_reason=allocation_plan.rejection_reason,
                 )
+                return campaign, allocation_plan
+
+            # Create position from signal with approved allocation
+            new_position = self._create_position_from_signal(signal, allocation_plan)
 
             # Add position to campaign via repository
             updated_campaign = await self.campaign_repository.add_position_to_campaign(
@@ -328,16 +374,17 @@ class CampaignService:
                 signal_id=str(signal.id),
                 pattern_type=signal.pattern_type,
                 new_allocation=str(updated_campaign.total_allocation),
+                bmad_allocation_pct=str(allocation_plan.bmad_allocation_pct),
+                is_rebalanced=allocation_plan.is_rebalanced,
             )
 
-            return updated_campaign
+            return updated_campaign, allocation_plan
 
         except CampaignAllocationExceededError:
             self.logger.warning(
                 "campaign_allocation_exceeded",
                 campaign_id=campaign.campaign_id,
                 current_allocation=str(campaign.total_allocation),
-                attempted_addition=str(new_position.allocation_percent),
             )
             raise
         except Exception as e:
@@ -575,32 +622,29 @@ class CampaignService:
         start_date = trading_range.created_at.strftime("%Y-%m-%d")
         return f"{symbol}-{start_date}"
 
-    def _create_position_from_signal(self, signal: TradeSignal) -> CampaignPosition:
+    def _create_position_from_signal(
+        self, signal: TradeSignal, allocation_plan: AllocationPlan
+    ) -> CampaignPosition:
         """
-        Create CampaignPosition from TradeSignal.
+        Create CampaignPosition from TradeSignal with AllocationPlan (Story 9.2).
 
-        Maps signal fields to position fields.
-        Calculates initial current_pnl (0 before fill).
+        Maps signal fields to position fields using BMAD allocation from AllocationPlan.
+        Uses actual_risk_pct from allocation plan for precise allocation tracking.
 
         Parameters:
         -----------
         signal : TradeSignal
             Signal to convert to position
+        allocation_plan : AllocationPlan
+            Approved allocation plan with BMAD percentages
 
         Returns:
         --------
         CampaignPosition
-            Position ready to add to campaign
+            Position ready to add to campaign with correct allocation
         """
-        # Calculate allocation percentage from risk_amount
-        # This is simplified - real calculation would use portfolio value
-        # For now, use fixed allocations from FR23 BMAD rules
-        allocation_map = {
-            "SPRING": Decimal("2.0"),  # 40% of 5% = 2%
-            "SOS": Decimal("1.5"),  # 30% of 5% = 1.5%
-            "LPS": Decimal("1.5"),  # 30% of 5% = 1.5%
-        }
-        allocation_percent = allocation_map.get(signal.pattern_type, Decimal("1.0"))
+        # Use actual_risk_pct from allocation plan (Story 9.2)
+        allocation_percent = allocation_plan.actual_risk_pct
 
         return CampaignPosition(
             signal_id=signal.id,
