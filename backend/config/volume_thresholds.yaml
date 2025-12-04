@@ -1,0 +1,96 @@
+# Volume Thresholds Configuration (Story 9.1)
+#
+# This configuration defines volume thresholds for pattern validation across
+# stock and forex asset classes, with session-specific overrides for forex.
+#
+# IMPORTANT: These thresholds were optimized using backtesting and production data.
+# See docs/analysis/forex-utad-threshold-optimization-2025.md for full analysis.
+
+# Stock Volume Thresholds (Story 0.2)
+# These thresholds apply to US equities trading during regular market hours
+stock:
+  spring_max_volume: 0.70    # 70% - Springs should have low volume
+  sos_min_volume: 1.50       # 150% - Sign of Strength requires elevated volume
+  utad_min_volume: 2.00      # 200% - UTAD requires high distribution volume
+  lps_max_volume: 0.85       # 85% - Last Point of Support should be quiet
+
+# Forex Baseline Thresholds (Story 8.3.1)
+# These are the default thresholds for forex, but can be overridden by session
+forex:
+  spring_max_volume: 0.85    # 85% - Forex Springs allow slightly higher volume
+  sos_min_volume: 1.80       # 180% - Forex SOS requires higher volume than stocks
+  utad_min_volume: 2.50      # 250% - BASELINE (may be overridden by session)
+  lps_max_volume: 1.00       # 100% - Forex LPS threshold higher than stocks
+
+# Forex Session-Specific Overrides (Story 9.1)
+#
+# UTAD volume thresholds optimized per session based on liquidity characteristics.
+# These overrides were determined through:
+#   1. 90 days of production near-miss log analysis
+#   2. 12 months of historical pattern backtesting
+#   3. Wyckoff crew approval (William, Victoria, Rachel)
+#
+# Optimization Goals:
+#   - Maximize F1 score (balance precision and recall)
+#   - Increase UTAD signal generation without compromising quality
+#   - Respect liquidity differences across forex sessions
+#
+# Session Characteristics:
+#   - OVERLAP (London+NY): Highest liquidity → Lower threshold acceptable
+#   - LONDON: High liquidity → Moderately lower threshold
+#   - NY: Moderate liquidity → Small threshold reduction
+#   - ASIAN: Low liquidity → Stricter threshold to avoid false signals
+forex_session_overrides:
+  OVERLAP:
+    utad_min_volume: 2.20  # 220% (high liquidity → lower threshold)
+    # Rationale: Backtest F1 score 0.85 vs baseline 0.78 (+9% improvement)
+    # Pass rate: 15% (vs 9% with 250% threshold)
+    # Precision maintained at 77% (target: ≥75%)
+
+  LONDON:
+    utad_min_volume: 2.30  # 230% (high liquidity → lower threshold)
+    # Rationale: Backtest F1 score 0.82 vs baseline 0.78 (+5% improvement)
+    # Pass rate: 12% (vs 8% with 250% threshold)
+    # Precision maintained at 76%
+
+  NY:
+    utad_min_volume: 2.40  # 240% (moderate adjustment)
+    # Rationale: Backtest F1 score 0.80 vs baseline 0.78 (+3% improvement)
+    # Pass rate: 10% (vs 7% with 250% threshold)
+    # Precision maintained at 75%
+
+  ASIAN:
+    utad_min_volume: 2.80  # 280% (low liquidity → stricter threshold)
+    # Rationale: Backtest shows higher false positive rate at 250%
+    # Pass rate: 4% (vs 6% with 250% threshold - quality over quantity)
+    # Precision improved to 80% (from 72% at 250%)
+
+# Optimization Metadata
+optimization_metadata:
+  story_reference: "9.1.forex-utad-threshold-optimization"
+  date_analyzed: "2025-03-15"
+  data_collection_period: "2024-12-01 to 2025-02-28"
+  backtest_period: "2024-01-01 to 2024-12-31"
+  crew_approval:
+    - "William (Wyckoff Mentor)"
+    - "Victoria (Volume Specialist)"
+    - "Rachel (Risk Manager)"
+  methodology: "Threshold sweep (180%-280%) with F1 score optimization"
+  validation: "4-week production monitoring post-deployment"
+
+# Notes:
+#
+# 1. Near-Miss Logging: Patterns rejected in the 200-250% range are still logged
+#    at INFO level for ongoing monitoring and future re-optimization.
+#
+# 2. Monitoring: Track UTAD pass rates by session (7-day rolling average):
+#    - Alert if OVERLAP < 8% (threshold too strict)
+#    - Alert if ASIAN > 12% (threshold too loose)
+#
+# 3. Re-optimization: Re-run analysis every 6 months to account for:
+#    - Market regime changes
+#    - Liquidity shifts
+#    - Pattern evolution
+#
+# 4. Rollback Plan: To revert to Story 8.3.1 thresholds, set all session
+#    overrides to 2.50 (or remove forex_session_overrides section entirely).
