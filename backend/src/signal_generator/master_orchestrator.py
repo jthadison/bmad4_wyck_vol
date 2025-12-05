@@ -60,6 +60,7 @@ from src.signal_generator.validators.strategy_validator import StrategyValidator
 # from backend.src.pattern_engine.trading_range_service import TradingRangeService
 # from backend.src.pattern_engine.detectors.base_detector import BasePatternDetector
 from src.signal_generator.validators.volume_validator import VolumeValidator
+from src.signal_prioritization.priority_queue import SignalPriorityQueue
 
 # ============================================================================
 # Forex Session Detection
@@ -241,6 +242,7 @@ class MasterOrchestrator:
         signal_generator: Any = None,  # Stub for now
         signal_repository: Any = None,  # Stub for now
         rejection_repository: Any = None,  # Stub for now
+        signal_priority_queue: SignalPriorityQueue | None = None,  # NEW: Story 9.3
         performance_tracker: PerformanceTracker | None = None,
         max_concurrent_symbols: int = 10,
         cache_ttl_seconds: int = 300,
@@ -264,6 +266,7 @@ class MasterOrchestrator:
             signal_generator: Create TradeSignal from validation results
             signal_repository: Persist signals
             rejection_repository: Log rejections
+            signal_priority_queue: Priority queue for signal ranking (Story 9.3)
             performance_tracker: Track latency
             max_concurrent_symbols: Parallel processing limit
             cache_ttl_seconds: Cache expiration time
@@ -287,6 +290,7 @@ class MasterOrchestrator:
         self.signal_generator = signal_generator
         self.signal_repository = signal_repository
         self.rejection_repository = rejection_repository
+        self.signal_priority_queue = signal_priority_queue  # NEW: Story 9.3
         self.performance_tracker = performance_tracker or PerformanceTracker()
         self.max_concurrent_symbols = max_concurrent_symbols
         self.cache_ttl_seconds = cache_ttl_seconds
@@ -295,10 +299,6 @@ class MasterOrchestrator:
         # Caching
         self._range_cache: dict[str, tuple[Any, float]] = {}  # {symbol: (range, timestamp)}
         self._phase_cache: dict[str, tuple[Any, float]] = {}  # {symbol: (phase, timestamp)}
-
-        # Real-time processing
-        self._bar_queue: asyncio.Queue = asyncio.Queue(maxsize=10)
-        self._signal_queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
 
         # System state
         self._system_halted: bool = False
@@ -711,7 +711,68 @@ class MasterOrchestrator:
         if self.signal_repository:
             await self.signal_repository.save_signal(signal)
 
+        # Add signal to priority queue (Story 9.3)
+        if self.signal_priority_queue:
+            self.signal_priority_queue.push(signal)
+            self.logger.info(
+                "signal_added_to_priority_queue",
+                signal_id=str(signal.id),
+                pattern_type=signal.pattern_type,
+                confidence_score=signal.confidence_score,
+                r_multiple=str(signal.r_multiple),
+            )
+
         return signal
+
+    # ========================================================================
+    # Priority Queue Methods (Story 9.3)
+    # ========================================================================
+
+    def get_next_signal(self) -> TradeSignal | None:
+        """
+        Get highest priority signal from queue (Story 9.3).
+
+        Pops and returns the signal with the highest priority score.
+        Used by trading system to execute signals in priority order.
+
+        Returns:
+            TradeSignal | None: Highest priority signal, or None if queue empty
+        """
+        if not self.signal_priority_queue:
+            self.logger.warning("signal_priority_queue_not_configured")
+            return None
+
+        signal = self.signal_priority_queue.pop()
+
+        if signal:
+            self.logger.info(
+                "next_signal_retrieved",
+                signal_id=str(signal.id),
+                pattern_type=signal.pattern_type,
+                symbol=signal.symbol,
+            )
+
+        return signal
+
+    def get_pending_signals(self, limit: int = 50) -> list[TradeSignal]:
+        """
+        Get all pending signals in priority order (Story 9.3).
+
+        Returns copy of signals without modifying queue.
+        Used by API endpoint GET /signals?sorted=true.
+
+        Args:
+            limit: Maximum number of signals to return (default: 50)
+
+        Returns:
+            list[TradeSignal]: Signals sorted by priority (highest first)
+        """
+        if not self.signal_priority_queue:
+            self.logger.warning("signal_priority_queue_not_configured")
+            return []
+
+        all_signals = self.signal_priority_queue.get_all_sorted()
+        return all_signals[:limit]
 
     # ========================================================================
     # Multi-Symbol Watchlist Processing

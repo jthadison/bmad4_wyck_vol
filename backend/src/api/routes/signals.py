@@ -232,11 +232,17 @@ async def list_signals(
         None, ge=Decimal("0.0"), description="Minimum R-multiple"
     ),
     since: datetime | None = Query(None, description="Only signals created after this timestamp"),
+    sorted: bool = Query(
+        False,
+        description="Return signals in priority order (Story 9.3). "
+        "When True, signals ordered by FR28 priority score (highest first). "
+        "When False, signals ordered by timestamp (newest first).",
+    ),
     limit: int = Query(50, ge=1, le=200, description="Maximum results per page"),
     offset: int = Query(0, ge=0, description="Offset from start of results"),
 ) -> SignalListResponse:
     """
-    List trade signals with pagination and filters.
+    List trade signals with pagination and filters (AC: 10).
 
     Query Parameters:
     -----------------
@@ -245,8 +251,16 @@ async def list_signals(
     - min_confidence: Minimum confidence score (70-95)
     - min_r_multiple: Minimum risk/reward ratio
     - since: Only signals created after this timestamp
+    - sorted: Return signals in FR28 priority order (Story 9.3)
     - limit: Maximum results per page (1-200, default 50)
     - offset: Offset from start of results (for pagination)
+
+    Sorting Behavior (Story 9.3):
+    ------------------------------
+    - sorted=False (default): Signals ordered by timestamp DESC (newest first)
+    - sorted=True: Signals ordered by FR28 priority score DESC (highest priority first)
+      * Priority calculated from: confidence (40%), R-multiple (30%), pattern (30%)
+      * Requires MasterOrchestrator with SignalPriorityQueue configured
 
     Returns:
     --------
@@ -256,17 +270,79 @@ async def list_signals(
     Example:
     --------
     GET /api/v1/signals?status=APPROVED&symbol=AAPL&min_confidence=80&limit=20
+    GET /api/v1/signals?sorted=true&limit=50  # Priority-ordered signals
     """
     try:
-        signals, total_count = await get_signals_with_filters(
-            status=status,
-            symbol=symbol,
-            min_confidence=min_confidence,
-            min_r_multiple=min_r_multiple,
-            since=since,
-            limit=limit,
-            offset=offset,
-        )
+        # Story 9.3 AC 10: Handle sorted parameter
+        if sorted:
+            # TODO: Wire up MasterOrchestrator via dependency injection
+            # When orchestrator available:
+            #   from backend.src.api.dependencies import get_orchestrator
+            #   orchestrator = await get_orchestrator()
+            #   if orchestrator.signal_priority_queue:
+            #       signals = orchestrator.get_pending_signals(limit=limit)
+            #       # Apply filters to sorted signals
+            #       if status:
+            #           signals = [s for s in signals if s.status == status]
+            #       ...
+            #
+            # For now, use fallback sorting via calculate_adhoc_priority_score
+
+            signals, total_count = await get_signals_with_filters(
+                status=status,
+                symbol=symbol,
+                min_confidence=min_confidence,
+                min_r_multiple=min_r_multiple,
+                since=since,
+                limit=999,  # Get all for sorting
+                offset=0,
+            )
+
+            # Sort by ad-hoc priority score (FR28 weights)
+            signals_with_scores = [
+                (signal, calculate_adhoc_priority_score(signal)) for signal in signals
+            ]
+            signals_with_scores.sort(key=lambda x: x[1], reverse=True)  # Highest first
+            signals = [s[0] for s in signals_with_scores]
+
+            # Apply pagination after sorting
+            total_count = len(signals)
+            signals = signals[offset : offset + limit]
+
+            logger.info(
+                "signals_listed",
+                returned_count=len(signals),
+                total_count=total_count,
+                sorted=True,
+                filters={
+                    "status": status,
+                    "symbol": symbol,
+                    "min_confidence": min_confidence,
+                },
+            )
+        else:
+            # Default: timestamp order (newest first)
+            signals, total_count = await get_signals_with_filters(
+                status=status,
+                symbol=symbol,
+                min_confidence=min_confidence,
+                min_r_multiple=min_r_multiple,
+                since=since,
+                limit=limit,
+                offset=offset,
+            )
+
+            logger.info(
+                "signals_listed",
+                returned_count=len(signals),
+                total_count=total_count,
+                sorted=False,
+                filters={
+                    "status": status,
+                    "symbol": symbol,
+                    "min_confidence": min_confidence,
+                },
+            )
 
         pagination = PaginationInfo(
             returned_count=len(signals),
@@ -274,17 +350,6 @@ async def list_signals(
             limit=limit,
             offset=offset,
             has_more=(offset + limit) < total_count,
-        )
-
-        logger.info(
-            "signals_listed",
-            returned_count=len(signals),
-            total_count=total_count,
-            filters={
-                "status": status,
-                "symbol": symbol,
-                "min_confidence": min_confidence,
-            },
         )
 
         return SignalListResponse(data=signals, pagination=pagination)
@@ -388,6 +453,62 @@ async def update_signal(signal_id: UUID, status_update: SignalStatusUpdate) -> T
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating signal: {str(e)}",
         ) from e
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def calculate_adhoc_priority_score(signal: TradeSignal) -> float:
+    """
+    Calculate ad-hoc FR28 priority score for sorting (Story 9.3 AC 10).
+
+    This is a fallback implementation for when MasterOrchestrator
+    priority queue is not available. Uses same FR28 algorithm:
+    - Confidence: 40% weight
+    - R-multiple: 30% weight
+    - Pattern priority: 30% weight
+
+    Pattern priority order (lower = higher priority):
+    - SPRING: 1 (highest)
+    - LPS: 2
+    - SOS: 3
+    - UTAD: 4 (lowest)
+
+    Parameters:
+    -----------
+    signal : TradeSignal
+        Signal to score
+
+    Returns:
+    --------
+    float
+        Priority score 0.0-100.0 (higher = higher priority)
+    """
+    # Normalize confidence (70-95) to [0.0, 1.0]
+    confidence_normalized = (signal.confidence_score - 70) / (95 - 70)
+    confidence_normalized = max(0.0, min(1.0, confidence_normalized))
+
+    # Normalize R-multiple (2.0-5.0) to [0.0, 1.0]
+    r_multiple_float = float(signal.r_multiple)
+    r_normalized = (r_multiple_float - 2.0) / (5.0 - 2.0)
+    r_normalized = max(0.0, min(1.0, r_normalized))
+
+    # Pattern priority: SPRING=1, LPS=2, SOS=3, UTAD=4
+    pattern_priorities = {"SPRING": 1, "LPS": 2, "SOS": 3, "UTAD": 4}
+    pattern_priority = pattern_priorities.get(signal.pattern_type, 4)
+
+    # Normalize pattern priority (inverted: lower = higher score)
+    pattern_normalized = (4 - pattern_priority) / (4 - 1)  # (max - p) / (max - min)
+
+    # Apply FR28 weights
+    weighted_score = (
+        (confidence_normalized * 0.40) + (r_normalized * 0.30) + (pattern_normalized * 0.30)
+    )
+
+    # Scale to 0-100
+    return weighted_score * 100.0
 
 
 # ============================================================================
