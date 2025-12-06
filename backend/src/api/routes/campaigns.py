@@ -9,6 +9,7 @@ Endpoints:
 ----------
 GET /api/v1/campaigns/{campaign_id}/risk - Returns campaign risk report with BMAD breakdown
 GET /api/v1/campaigns/{campaign_id}/allocations - Returns allocation audit trail (Story 9.2)
+GET /api/v1/campaigns/{campaign_id}/positions - Returns all positions with aggregated totals (Story 9.4)
 
 BMAD Allocation (Story 9.2, FR23):
 -----------------------------------
@@ -18,20 +19,21 @@ BMAD Allocation (Story 9.2, FR23):
 - Rebalancing: Adjusts percentages when earlier entries skipped
 - 75% Confidence: Required for 100% LPS sole entry allocation
 
-Author: Story 7.4 (AC 1, 4), Story 9.2 (Allocation Audit Trail)
+Author: Story 7.4 (AC 1, 4), Story 9.2 (Allocation Audit Trail), Story 9.4 (Position Tracking)
 """
 
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database import get_db_session
+from src.database import get_db
 from src.models.allocation import AllocationPlan
-from src.models.campaign import CampaignRisk
+from src.models.campaign import CampaignPositions, CampaignRisk
 from src.models.portfolio import Position
 from src.repositories.allocation_repository import AllocationRepository
+from src.repositories.campaign_repository import CampaignNotFoundError, CampaignRepository
 from src.risk_management.campaign_tracker import build_campaign_risk_report
 
 logger = structlog.get_logger()
@@ -183,7 +185,7 @@ async def get_campaign_risk(campaign_id: UUID) -> CampaignRisk:
 
 @router.get("/{campaign_id}/allocations", response_model=list[AllocationPlan])
 async def get_campaign_allocations(
-    campaign_id: UUID, db_session: AsyncSession = Depends(get_db_session)
+    campaign_id: UUID, db_session: AsyncSession = Depends(get_db)
 ) -> list[AllocationPlan]:
     """
     Get allocation audit trail for campaign (Story 9.2, AC: 8).
@@ -302,6 +304,171 @@ async def get_campaign_allocations(
         # Database or other system error
         logger.error(
             "campaign_allocations_error",
+            campaign_id=str(campaign_id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporarily unavailable. Please try again later.",
+        ) from e
+
+
+@router.get("/{campaign_id}/positions", response_model=CampaignPositions)
+async def get_campaign_positions(
+    campaign_id: UUID,
+    include_closed: bool = Query(default=True, description="Include closed positions in results"),
+    db_session: AsyncSession = Depends(get_db),
+) -> CampaignPositions:
+    """
+    Get all positions for campaign with aggregated totals (Story 9.4, AC 10).
+
+    Returns comprehensive position list with campaign-level aggregations:
+    - Total shares across all open positions
+    - Weighted average entry price (open positions only)
+    - Total risk exposure (open positions only)
+    - Total P&L (unrealized + realized)
+
+    Query Performance:
+    ------------------
+    - Uses indexes on campaign_id and status for efficient retrieval
+    - Target: < 100ms for 100+ positions (AC 9)
+
+    Parameters:
+    -----------
+    campaign_id : UUID
+        Campaign identifier
+    include_closed : bool, default=True
+        Whether to include closed positions in results (AC 6)
+    db_session : AsyncSession
+        Database session (injected)
+
+    Returns:
+    --------
+    CampaignPositions
+        Complete position list with aggregated metrics:
+        - campaign_id: Campaign UUID
+        - positions: List of all positions (OPEN and/or CLOSED)
+        - total_shares: Sum of shares across open positions
+        - weighted_avg_entry: (sum(entry_price × shares) / sum(shares)) for open positions
+        - total_risk: sum((entry_price - stop_loss) × shares) for open positions
+        - total_pnl: sum(current_pnl) for open + sum(realized_pnl) for closed
+        - open_positions_count: Number of currently open positions
+        - closed_positions_count: Number of closed positions
+
+    Raises:
+    -------
+    HTTPException
+        404 Not Found if campaign doesn't exist
+        503 Service Unavailable if database error
+
+    Example Response:
+    -----------------
+    ```json
+    {
+      "campaign_id": "550e8400-e29b-41d4-a716-446655440000",
+      "positions": [
+        {
+          "id": "a1b2c3d4...",
+          "campaign_id": "550e8400...",
+          "signal_id": "abc123...",
+          "symbol": "AAPL",
+          "timeframe": "1h",
+          "pattern_type": "SPRING",
+          "entry_date": "2024-10-15T10:30:00Z",
+          "entry_price": "150.00",
+          "shares": "100",
+          "stop_loss": "148.00",
+          "current_price": "152.00",
+          "current_pnl": "200.00",
+          "status": "OPEN",
+          "closed_date": null,
+          "exit_price": null,
+          "realized_pnl": null
+        },
+        {
+          "id": "e5f6g7h8...",
+          "campaign_id": "550e8400...",
+          "signal_id": "def456...",
+          "symbol": "AAPL",
+          "timeframe": "1h",
+          "pattern_type": "SOS",
+          "entry_date": "2024-10-15T11:00:00Z",
+          "entry_price": "152.00",
+          "shares": "75",
+          "stop_loss": "148.00",
+          "current_price": "155.00",
+          "current_pnl": "225.00",
+          "status": "OPEN",
+          "closed_date": null,
+          "exit_price": null,
+          "realized_pnl": null
+        },
+        {
+          "id": "i9j0k1l2...",
+          "campaign_id": "550e8400...",
+          "signal_id": "ghi789...",
+          "symbol": "AAPL",
+          "timeframe": "1h",
+          "pattern_type": "SPRING",
+          "entry_date": "2024-10-14T10:00:00Z",
+          "entry_price": "145.00",
+          "shares": "100",
+          "stop_loss": "143.00",
+          "current_price": null,
+          "current_pnl": null,
+          "status": "CLOSED",
+          "closed_date": "2024-10-15T09:00:00Z",
+          "exit_price": "158.00",
+          "realized_pnl": "1300.00"
+        }
+      ],
+      "total_shares": "175",
+      "weighted_avg_entry": "150.857142857143",
+      "total_risk": "350.00",
+      "total_pnl": "1725.00",
+      "open_positions_count": 2,
+      "closed_positions_count": 1
+    }
+    ```
+    """
+    try:
+        # Create repository with db session
+        campaign_repository = CampaignRepository(db_session)
+
+        # Fetch all positions for campaign with aggregations
+        campaign_positions = await campaign_repository.get_campaign_positions(
+            campaign_id=campaign_id, include_closed=include_closed
+        )
+
+        logger.info(
+            "campaign_positions_retrieved",
+            campaign_id=str(campaign_id),
+            total_positions=len(campaign_positions.positions),
+            open_count=campaign_positions.open_positions_count,
+            closed_count=campaign_positions.closed_positions_count,
+            total_pnl=str(campaign_positions.total_pnl),
+            include_closed=include_closed,
+        )
+
+        return campaign_positions
+
+    except CampaignNotFoundError as e:
+        # Campaign not found
+        logger.error(
+            "campaign_not_found",
+            campaign_id=str(campaign_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Campaign not found: {campaign_id}",
+        ) from e
+
+    except Exception as e:
+        # Database or other system error
+        logger.error(
+            "campaign_positions_error",
             campaign_id=str(campaign_id),
             error=str(e),
             error_type=type(e).__name__,
