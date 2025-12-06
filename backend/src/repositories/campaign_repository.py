@@ -567,3 +567,299 @@ class CampaignRepository:
         )
 
         return updated_positions
+
+    # ==================================================================================
+    # Campaign Performance Metrics Methods (Story 9.6)
+    # ==================================================================================
+
+    async def save_campaign_metrics(
+        self,
+        metrics: "CampaignMetrics",  # type: ignore
+    ) -> None:
+        """
+        Persist campaign performance metrics to database (Story 9.6 - Task 3).
+
+        Uses upsert pattern: update if exists, insert otherwise.
+
+        Parameters:
+        -----------
+        metrics : CampaignMetrics
+            Campaign performance metrics to persist
+
+        Raises:
+        -------
+        SQLAlchemyError
+            If database operation fails
+
+        Example:
+        --------
+        >>> await repo.save_campaign_metrics(campaign_metrics)
+        """
+        from src.repositories.models import CampaignMetricsModel
+
+        try:
+            # Check if metrics already exist for this campaign
+            stmt = select(CampaignMetricsModel).where(
+                CampaignMetricsModel.campaign_id == metrics.campaign_id
+            )
+            result = await self.session.execute(stmt)
+            existing_metrics = result.scalar_one_or_none()
+
+            if existing_metrics:
+                # Update existing metrics
+                existing_metrics.symbol = metrics.symbol
+                existing_metrics.total_return_pct = metrics.total_return_pct
+                existing_metrics.total_r_achieved = metrics.total_r_achieved
+                existing_metrics.duration_days = metrics.duration_days
+                existing_metrics.max_drawdown = metrics.max_drawdown
+                existing_metrics.total_positions = metrics.total_positions
+                existing_metrics.winning_positions = metrics.winning_positions
+                existing_metrics.losing_positions = metrics.losing_positions
+                existing_metrics.win_rate = metrics.win_rate
+                existing_metrics.average_entry_price = metrics.average_entry_price
+                existing_metrics.average_exit_price = metrics.average_exit_price
+                existing_metrics.expected_jump_target = metrics.expected_jump_target
+                existing_metrics.actual_high_reached = metrics.actual_high_reached
+                existing_metrics.target_achievement_pct = metrics.target_achievement_pct
+                existing_metrics.expected_r = metrics.expected_r
+                existing_metrics.actual_r_achieved = metrics.actual_r_achieved
+                existing_metrics.phase_c_avg_r = metrics.phase_c_avg_r
+                existing_metrics.phase_d_avg_r = metrics.phase_d_avg_r
+                existing_metrics.phase_c_positions = metrics.phase_c_positions
+                existing_metrics.phase_d_positions = metrics.phase_d_positions
+                existing_metrics.phase_c_win_rate = metrics.phase_c_win_rate
+                existing_metrics.phase_d_win_rate = metrics.phase_d_win_rate
+                existing_metrics.calculation_timestamp = metrics.calculation_timestamp
+                existing_metrics.completed_at = metrics.completed_at
+                existing_metrics.updated_at = datetime.now(UTC)
+
+                logger.info(
+                    "campaign_metrics_updated",
+                    campaign_id=str(metrics.campaign_id),
+                    total_r=str(metrics.total_r_achieved),
+                )
+            else:
+                # Insert new metrics
+                metrics_model = CampaignMetricsModel(
+                    campaign_id=metrics.campaign_id,
+                    symbol=metrics.symbol,
+                    total_return_pct=metrics.total_return_pct,
+                    total_r_achieved=metrics.total_r_achieved,
+                    duration_days=metrics.duration_days,
+                    max_drawdown=metrics.max_drawdown,
+                    total_positions=metrics.total_positions,
+                    winning_positions=metrics.winning_positions,
+                    losing_positions=metrics.losing_positions,
+                    win_rate=metrics.win_rate,
+                    average_entry_price=metrics.average_entry_price,
+                    average_exit_price=metrics.average_exit_price,
+                    expected_jump_target=metrics.expected_jump_target,
+                    actual_high_reached=metrics.actual_high_reached,
+                    target_achievement_pct=metrics.target_achievement_pct,
+                    expected_r=metrics.expected_r,
+                    actual_r_achieved=metrics.actual_r_achieved,
+                    phase_c_avg_r=metrics.phase_c_avg_r,
+                    phase_d_avg_r=metrics.phase_d_avg_r,
+                    phase_c_positions=metrics.phase_c_positions,
+                    phase_d_positions=metrics.phase_d_positions,
+                    phase_c_win_rate=metrics.phase_c_win_rate,
+                    phase_d_win_rate=metrics.phase_d_win_rate,
+                    calculation_timestamp=metrics.calculation_timestamp,
+                    completed_at=metrics.completed_at,
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+                self.session.add(metrics_model)
+
+                logger.info(
+                    "campaign_metrics_created",
+                    campaign_id=str(metrics.campaign_id),
+                    total_r=str(metrics.total_r_achieved),
+                )
+
+            await self.session.commit()
+
+        except SQLAlchemyError as e:
+            await self.session.rollback()
+            logger.error(
+                "failed_to_save_campaign_metrics",
+                campaign_id=str(metrics.campaign_id),
+                error=str(e),
+            )
+            raise
+
+    async def get_campaign_metrics(self, campaign_id: UUID) -> Optional["CampaignMetrics"]:  # type: ignore
+        """
+        Retrieve campaign performance metrics by campaign ID (Story 9.6 - Task 3).
+
+        Parameters:
+        -----------
+        campaign_id : UUID
+            Campaign identifier
+
+        Returns:
+        --------
+        CampaignMetrics | None
+            Campaign performance metrics or None if not found
+
+        Example:
+        --------
+        >>> metrics = await repo.get_campaign_metrics(campaign_id)
+        """
+        from src.models.campaign import CampaignMetrics
+        from src.repositories.models import CampaignMetricsModel
+
+        try:
+            stmt = select(CampaignMetricsModel).where(
+                CampaignMetricsModel.campaign_id == campaign_id
+            )
+            result = await self.session.execute(stmt)
+            metrics_model = result.scalar_one_or_none()
+
+            if not metrics_model:
+                logger.debug(
+                    "campaign_metrics_not_found",
+                    campaign_id=str(campaign_id),
+                )
+                return None
+
+            # Convert model to Pydantic
+            return CampaignMetrics(
+                campaign_id=metrics_model.campaign_id,
+                symbol=metrics_model.symbol,
+                total_return_pct=metrics_model.total_return_pct,
+                total_r_achieved=metrics_model.total_r_achieved,
+                duration_days=metrics_model.duration_days,
+                max_drawdown=metrics_model.max_drawdown,
+                total_positions=metrics_model.total_positions,
+                winning_positions=metrics_model.winning_positions,
+                losing_positions=metrics_model.losing_positions,
+                win_rate=metrics_model.win_rate,
+                average_entry_price=metrics_model.average_entry_price,
+                average_exit_price=metrics_model.average_exit_price,
+                expected_jump_target=metrics_model.expected_jump_target,
+                actual_high_reached=metrics_model.actual_high_reached,
+                target_achievement_pct=metrics_model.target_achievement_pct,
+                expected_r=metrics_model.expected_r,
+                actual_r_achieved=metrics_model.actual_r_achieved,
+                phase_c_avg_r=metrics_model.phase_c_avg_r,
+                phase_d_avg_r=metrics_model.phase_d_avg_r,
+                phase_c_positions=metrics_model.phase_c_positions,
+                phase_d_positions=metrics_model.phase_d_positions,
+                phase_c_win_rate=metrics_model.phase_c_win_rate,
+                phase_d_win_rate=metrics_model.phase_d_win_rate,
+                position_details=[],  # Not stored in DB, calculated on-demand
+                calculation_timestamp=metrics_model.calculation_timestamp,
+                completed_at=metrics_model.completed_at,
+            )
+
+        except SQLAlchemyError as e:
+            logger.error(
+                "failed_to_get_campaign_metrics",
+                campaign_id=str(campaign_id),
+                error=str(e),
+            )
+            raise
+
+    async def get_historical_metrics(
+        self,
+        filters: "MetricsFilter",  # type: ignore
+    ) -> list["CampaignMetrics"]:  # type: ignore
+        """
+        Retrieve historical campaign metrics with filtering (Story 9.6 - Task 3).
+
+        Parameters:
+        -----------
+        filters : MetricsFilter
+            Filter criteria (symbol, date_range, min_return, min_r_achieved, limit, offset)
+
+        Returns:
+        --------
+        list[CampaignMetrics]
+            List of campaign metrics matching filters, ordered by completed_at DESC
+
+        Example:
+        --------
+        >>> filters = MetricsFilter(symbol="AAPL", limit=10)
+        >>> metrics_list = await repo.get_historical_metrics(filters)
+        """
+        from src.models.campaign import CampaignMetrics
+        from src.repositories.models import CampaignMetricsModel
+
+        try:
+            # Build query with filters
+            stmt = select(CampaignMetricsModel)
+
+            # Apply filters
+            if filters.symbol:
+                stmt = stmt.where(CampaignMetricsModel.symbol == filters.symbol)
+
+            if filters.start_date:
+                stmt = stmt.where(CampaignMetricsModel.completed_at >= filters.start_date)
+
+            if filters.end_date:
+                stmt = stmt.where(CampaignMetricsModel.completed_at <= filters.end_date)
+
+            if filters.min_return is not None:
+                stmt = stmt.where(CampaignMetricsModel.total_return_pct >= filters.min_return)
+
+            if filters.min_r_achieved is not None:
+                stmt = stmt.where(CampaignMetricsModel.total_r_achieved >= filters.min_r_achieved)
+
+            # Order by completed_at DESC (most recent first)
+            stmt = stmt.order_by(CampaignMetricsModel.completed_at.desc())
+
+            # Apply pagination
+            stmt = stmt.limit(filters.limit).offset(filters.offset)
+
+            result = await self.session.execute(stmt)
+            metrics_models = result.scalars().all()
+
+            # Convert models to Pydantic
+            metrics_list = []
+            for metrics_model in metrics_models:
+                metrics = CampaignMetrics(
+                    campaign_id=metrics_model.campaign_id,
+                    symbol=metrics_model.symbol,
+                    total_return_pct=metrics_model.total_return_pct,
+                    total_r_achieved=metrics_model.total_r_achieved,
+                    duration_days=metrics_model.duration_days,
+                    max_drawdown=metrics_model.max_drawdown,
+                    total_positions=metrics_model.total_positions,
+                    winning_positions=metrics_model.winning_positions,
+                    losing_positions=metrics_model.losing_positions,
+                    win_rate=metrics_model.win_rate,
+                    average_entry_price=metrics_model.average_entry_price,
+                    average_exit_price=metrics_model.average_exit_price,
+                    expected_jump_target=metrics_model.expected_jump_target,
+                    actual_high_reached=metrics_model.actual_high_reached,
+                    target_achievement_pct=metrics_model.target_achievement_pct,
+                    expected_r=metrics_model.expected_r,
+                    actual_r_achieved=metrics_model.actual_r_achieved,
+                    phase_c_avg_r=metrics_model.phase_c_avg_r,
+                    phase_d_avg_r=metrics_model.phase_d_avg_r,
+                    phase_c_positions=metrics_model.phase_c_positions,
+                    phase_d_positions=metrics_model.phase_d_positions,
+                    phase_c_win_rate=metrics_model.phase_c_win_rate,
+                    phase_d_win_rate=metrics_model.phase_d_win_rate,
+                    position_details=[],  # Not stored in DB
+                    calculation_timestamp=metrics_model.calculation_timestamp,
+                    completed_at=metrics_model.completed_at,
+                )
+                metrics_list.append(metrics)
+
+            logger.info(
+                "historical_metrics_retrieved",
+                count=len(metrics_list),
+                filters=filters.model_dump(),
+            )
+
+            return metrics_list
+
+        except SQLAlchemyError as e:
+            logger.error(
+                "failed_to_get_historical_metrics",
+                filters=filters.model_dump(),
+                error=str(e),
+            )
+            raise

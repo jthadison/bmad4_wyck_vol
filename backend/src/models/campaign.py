@@ -58,6 +58,7 @@ Author: Story 7.4, Story 9.4
 """
 
 from decimal import Decimal
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -704,3 +705,676 @@ class ExitRule(BaseModel):
 from src.models.position import Position  # noqa: E402, F401
 
 CampaignPositions.model_rebuild()
+
+
+# ==================================================================================
+# Campaign Performance Tracking Models (Story 9.6)
+# ==================================================================================
+
+
+class WinLossStatus(str, Enum):
+    """
+    Position win/loss status for performance tracking.
+
+    Values:
+    -------
+    - WIN: Position realized P&L > 0
+    - LOSS: Position realized P&L < 0
+    - BREAKEVEN: Position realized P&L == 0
+    """
+
+    WIN = "WIN"
+    LOSS = "LOSS"
+    BREAKEVEN = "BREAKEVEN"
+
+
+class PositionMetrics(BaseModel):
+    """
+    Position-level performance metrics for individual campaign entries.
+
+    Provides detailed performance analytics for a single position within
+    a campaign, including R-multiple achieved, win/loss status, and
+    duration metrics.
+
+    Fields:
+    -------
+    - position_id: Position identifier (FK to positions.id)
+    - pattern_type: SPRING | SOS | LPS
+    - individual_r: R-multiple achieved = (exit_price - entry_price) / (entry_price - stop_loss)
+    - entry_price: Actual entry fill price
+    - exit_price: Actual exit fill price
+    - shares: Position size
+    - realized_pnl: Final P&L = (exit_price - entry_price) × shares
+    - win_loss_status: WIN | LOSS | BREAKEVEN
+    - duration_bars: Number of bars position was held
+    - entry_date: Position entry timestamp (UTC)
+    - exit_date: Position exit timestamp (UTC)
+    - entry_phase: Phase C (SPRING/LPS) or Phase D (SOS)
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from datetime import datetime, UTC
+    >>> from uuid import uuid4
+    >>> position_metrics = PositionMetrics(
+    ...     position_id=uuid4(),
+    ...     pattern_type="SPRING",
+    ...     individual_r=Decimal("2.5"),
+    ...     entry_price=Decimal("100.00"),
+    ...     exit_price=Decimal("105.00"),
+    ...     shares=Decimal("50"),
+    ...     realized_pnl=Decimal("250.00"),
+    ...     win_loss_status=WinLossStatus.WIN,
+    ...     duration_bars=120,
+    ...     entry_date=datetime.now(UTC),
+    ...     exit_date=datetime.now(UTC),
+    ...     entry_phase="Phase C"
+    ... )
+    """
+
+    position_id: UUID = Field(..., description="Position identifier (FK to positions.id)")
+
+    pattern_type: str = Field(..., max_length=10, description="SPRING | SOS | LPS")
+
+    individual_r: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=8,
+        description="R-multiple achieved",
+    )
+
+    entry_price: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Actual entry fill price",
+    )
+
+    exit_price: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Actual exit fill price",
+    )
+
+    shares: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Position size (shares/lots)",
+    )
+
+    realized_pnl: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Final P&L",
+    )
+
+    win_loss_status: WinLossStatus = Field(..., description="WIN | LOSS | BREAKEVEN")
+
+    duration_bars: int = Field(..., ge=0, description="Number of bars position was held")
+
+    entry_date: Any = Field(..., description="Position entry timestamp (UTC)")
+
+    exit_date: Any = Field(..., description="Position exit timestamp (UTC)")
+
+    entry_phase: str = Field(
+        ..., max_length=20, description="Phase C (SPRING/LPS) or Phase D (SOS)"
+    )
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal and UUID as strings."""
+        return {
+            "position_id": str(self.position_id),
+            "pattern_type": self.pattern_type,
+            "individual_r": str(self.individual_r),
+            "entry_price": str(self.entry_price),
+            "exit_price": str(self.exit_price),
+            "shares": str(self.shares),
+            "realized_pnl": str(self.realized_pnl),
+            "win_loss_status": self.win_loss_status.value,
+            "duration_bars": self.duration_bars,
+            "entry_date": self.entry_date.isoformat()
+            if hasattr(self.entry_date, "isoformat")
+            else str(self.entry_date),
+            "exit_date": self.exit_date.isoformat()
+            if hasattr(self.exit_date, "isoformat")
+            else str(self.exit_date),
+            "entry_phase": self.entry_phase,
+        }
+
+
+class CampaignMetrics(BaseModel):
+    """
+    Campaign-level performance metrics calculated from completed campaigns.
+
+    Provides comprehensive performance analytics including campaign-level
+    aggregates (total return %, total R achieved, win rate, max drawdown),
+    position-level details, phase-specific metrics, and comparison between
+    expected vs actual performance.
+
+    Fields:
+    -------
+    Campaign-level metrics:
+    - campaign_id: Campaign identifier (FK to campaigns.id)
+    - symbol: Trading symbol
+    - total_return_pct: Total campaign return percentage
+    - total_r_achieved: Sum of R-multiples across all positions
+    - duration_days: Campaign duration in days
+    - max_drawdown: Maximum drawdown percentage
+    - total_positions: Total number of positions (open + closed)
+    - winning_positions: Number of winning positions
+    - losing_positions: Number of losing positions
+    - win_rate: Percentage of winning positions
+    - average_entry_price: Weighted average entry price
+    - average_exit_price: Weighted average exit price
+
+    Comparison metrics:
+    - expected_jump_target: Projected Jump target from trading range
+    - actual_high_reached: Highest price reached during campaign
+    - target_achievement_pct: % of Jump target achieved
+    - expected_r: Expected R-multiple based on Jump target
+    - actual_r_achieved: Actual R-multiple achieved
+
+    Phase-specific metrics (AC #11):
+    - phase_c_avg_r: Average R-multiple for Phase C entries (SPRING + LPS)
+    - phase_d_avg_r: Average R-multiple for Phase D entries (SOS)
+    - phase_c_positions: Count of Phase C entries
+    - phase_d_positions: Count of Phase D entries
+    - phase_c_win_rate: Win rate for Phase C entries
+    - phase_d_win_rate: Win rate for Phase D entries
+
+    Position details:
+    - position_details: List of PositionMetrics for all positions
+
+    Metadata:
+    - calculation_timestamp: When metrics were calculated
+    - completed_at: When campaign was completed
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from datetime import datetime, UTC
+    >>> from uuid import uuid4
+    >>> campaign_metrics = CampaignMetrics(
+    ...     campaign_id=uuid4(),
+    ...     symbol="AAPL",
+    ...     total_return_pct=Decimal("15.50"),
+    ...     total_r_achieved=Decimal("8.2"),
+    ...     duration_days=45,
+    ...     max_drawdown=Decimal("5.25"),
+    ...     total_positions=3,
+    ...     winning_positions=2,
+    ...     losing_positions=1,
+    ...     win_rate=Decimal("66.67"),
+    ...     average_entry_price=Decimal("150.00"),
+    ...     average_exit_price=Decimal("173.25"),
+    ...     expected_jump_target=Decimal("175.00"),
+    ...     actual_high_reached=Decimal("178.50"),
+    ...     target_achievement_pct=Decimal("114.00"),
+    ...     expected_r=Decimal("10.0"),
+    ...     actual_r_achieved=Decimal("8.2"),
+    ...     phase_c_avg_r=Decimal("3.5"),
+    ...     phase_d_avg_r=Decimal("2.1"),
+    ...     phase_c_positions=2,
+    ...     phase_d_positions=1,
+    ...     phase_c_win_rate=Decimal("100.00"),
+    ...     phase_d_win_rate=Decimal("100.00"),
+    ...     position_details=[],
+    ...     calculation_timestamp=datetime.now(UTC),
+    ...     completed_at=datetime.now(UTC)
+    ... )
+    """
+
+    # Campaign identification
+    campaign_id: UUID = Field(..., description="Campaign identifier (FK to campaigns.id)")
+    symbol: str = Field(..., max_length=20, description="Trading symbol")
+
+    # Campaign-level metrics
+    total_return_pct: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Total campaign return percentage",
+    )
+
+    total_r_achieved: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=8,
+        description="Sum of R-multiples across all positions",
+    )
+
+    duration_days: int = Field(..., ge=0, description="Campaign duration in days")
+
+    max_drawdown: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Maximum drawdown percentage",
+    )
+
+    total_positions: int = Field(..., ge=0, description="Total number of positions")
+
+    winning_positions: int = Field(..., ge=0, description="Number of winning positions")
+
+    losing_positions: int = Field(..., ge=0, description="Number of losing positions")
+
+    win_rate: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=5,
+        ge=Decimal("0"),
+        le=Decimal("100.00"),
+        description="Percentage of winning positions",
+    )
+
+    average_entry_price: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Weighted average entry price",
+    )
+
+    average_exit_price: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Weighted average exit price",
+    )
+
+    # Comparison metrics
+    expected_jump_target: Decimal | None = Field(
+        None,
+        decimal_places=8,
+        max_digits=18,
+        description="Projected Jump target from trading range",
+    )
+
+    actual_high_reached: Decimal | None = Field(
+        None,
+        decimal_places=8,
+        max_digits=18,
+        description="Highest price reached during campaign",
+    )
+
+    target_achievement_pct: Decimal | None = Field(
+        None,
+        decimal_places=2,
+        max_digits=7,
+        description="Percentage of Jump target achieved",
+    )
+
+    expected_r: Decimal | None = Field(
+        None,
+        decimal_places=4,
+        max_digits=8,
+        description="Expected R-multiple based on Jump target",
+    )
+
+    actual_r_achieved: Decimal | None = Field(
+        None,
+        decimal_places=4,
+        max_digits=8,
+        description="Actual R-multiple achieved (same as total_r_achieved)",
+    )
+
+    # Phase-specific metrics (AC #11)
+    phase_c_avg_r: Decimal | None = Field(
+        None,
+        decimal_places=4,
+        max_digits=8,
+        description="Average R-multiple for Phase C entries (SPRING + LPS)",
+    )
+
+    phase_d_avg_r: Decimal | None = Field(
+        None,
+        decimal_places=4,
+        max_digits=8,
+        description="Average R-multiple for Phase D entries (SOS)",
+    )
+
+    phase_c_positions: int = Field(
+        default=0, ge=0, description="Count of Phase C entries (SPRING + LPS)"
+    )
+
+    phase_d_positions: int = Field(default=0, ge=0, description="Count of Phase D entries (SOS)")
+
+    phase_c_win_rate: Decimal | None = Field(
+        None,
+        decimal_places=2,
+        max_digits=5,
+        description="Win rate for Phase C entries",
+    )
+
+    phase_d_win_rate: Decimal | None = Field(
+        None,
+        decimal_places=2,
+        max_digits=5,
+        description="Win rate for Phase D entries",
+    )
+
+    # Position details
+    position_details: list[PositionMetrics] = Field(
+        default_factory=list, description="List of PositionMetrics for all positions"
+    )
+
+    # Metadata
+    calculation_timestamp: Any = Field(
+        default_factory=lambda: __import__("datetime").datetime.now(__import__("datetime").UTC),
+        description="When metrics were calculated",
+    )
+
+    completed_at: Any = Field(..., description="When campaign was completed")
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal and UUID as strings."""
+        return {
+            "campaign_id": str(self.campaign_id),
+            "symbol": self.symbol,
+            "total_return_pct": str(self.total_return_pct),
+            "total_r_achieved": str(self.total_r_achieved),
+            "duration_days": self.duration_days,
+            "max_drawdown": str(self.max_drawdown),
+            "total_positions": self.total_positions,
+            "winning_positions": self.winning_positions,
+            "losing_positions": self.losing_positions,
+            "win_rate": str(self.win_rate),
+            "average_entry_price": str(self.average_entry_price),
+            "average_exit_price": str(self.average_exit_price),
+            "expected_jump_target": str(self.expected_jump_target)
+            if self.expected_jump_target
+            else None,
+            "actual_high_reached": str(self.actual_high_reached)
+            if self.actual_high_reached
+            else None,
+            "target_achievement_pct": str(self.target_achievement_pct)
+            if self.target_achievement_pct
+            else None,
+            "expected_r": str(self.expected_r) if self.expected_r else None,
+            "actual_r_achieved": str(self.actual_r_achieved) if self.actual_r_achieved else None,
+            "phase_c_avg_r": str(self.phase_c_avg_r) if self.phase_c_avg_r else None,
+            "phase_d_avg_r": str(self.phase_d_avg_r) if self.phase_d_avg_r else None,
+            "phase_c_positions": self.phase_c_positions,
+            "phase_d_positions": self.phase_d_positions,
+            "phase_c_win_rate": str(self.phase_c_win_rate) if self.phase_c_win_rate else None,
+            "phase_d_win_rate": str(self.phase_d_win_rate) if self.phase_d_win_rate else None,
+            "position_details": [p.serialize_model() for p in self.position_details],
+            "calculation_timestamp": self.calculation_timestamp.isoformat()
+            if hasattr(self.calculation_timestamp, "isoformat")
+            else str(self.calculation_timestamp),
+            "completed_at": self.completed_at.isoformat()
+            if hasattr(self.completed_at, "isoformat")
+            else str(self.completed_at),
+        }
+
+
+class PnLPoint(BaseModel):
+    """
+    Single point in campaign P&L curve time-series.
+
+    Fields:
+    -------
+    - timestamp: Point in time (UTC)
+    - cumulative_pnl: Cumulative P&L at this point
+    - cumulative_return_pct: Cumulative return percentage
+    - drawdown_pct: Drawdown percentage at this point
+    """
+
+    timestamp: Any = Field(..., description="Point in time (UTC)")
+
+    cumulative_pnl: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Cumulative P&L at this point",
+    )
+
+    cumulative_return_pct: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Cumulative return percentage",
+    )
+
+    drawdown_pct: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Drawdown percentage at this point",
+    )
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "timestamp": self.timestamp.isoformat()
+            if hasattr(self.timestamp, "isoformat")
+            else str(self.timestamp),
+            "cumulative_pnl": str(self.cumulative_pnl),
+            "cumulative_return_pct": str(self.cumulative_return_pct),
+            "drawdown_pct": str(self.drawdown_pct),
+        }
+
+
+class PnLCurve(BaseModel):
+    """
+    Campaign P&L curve data for visualization.
+
+    Provides time-series data of campaign cumulative P&L and drawdown
+    for rendering equity curves and performance charts.
+
+    Fields:
+    -------
+    - campaign_id: Campaign identifier
+    - data_points: List of PnLPoint time-series data
+    - max_drawdown_point: PnLPoint where maximum drawdown occurred
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from datetime import datetime, UTC
+    >>> from uuid import uuid4
+    >>> pnl_curve = PnLCurve(
+    ...     campaign_id=uuid4(),
+    ...     data_points=[
+    ...         PnLPoint(
+    ...             timestamp=datetime.now(UTC),
+    ...             cumulative_pnl=Decimal("500.00"),
+    ...             cumulative_return_pct=Decimal("5.00"),
+    ...             drawdown_pct=Decimal("0.00")
+    ...         )
+    ...     ],
+    ...     max_drawdown_point=PnLPoint(...)
+    ... )
+    """
+
+    campaign_id: UUID = Field(..., description="Campaign identifier")
+
+    data_points: list[PnLPoint] = Field(
+        default_factory=list, description="List of PnLPoint time-series data"
+    )
+
+    max_drawdown_point: PnLPoint | None = Field(
+        None, description="PnLPoint where maximum drawdown occurred"
+    )
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal and UUID as strings."""
+        return {
+            "campaign_id": str(self.campaign_id),
+            "data_points": [p.serialize_model() for p in self.data_points],
+            "max_drawdown_point": self.max_drawdown_point.serialize_model()
+            if self.max_drawdown_point
+            else None,
+        }
+
+
+class AggregatedMetrics(BaseModel):
+    """
+    Aggregated performance statistics across all completed campaigns.
+
+    Provides system-wide performance analytics aggregated from all
+    completed campaigns, with optional filtering by symbol, timeframe,
+    and date range.
+
+    Fields:
+    -------
+    - total_campaigns_completed: Total number of completed campaigns
+    - overall_win_rate: Percentage of winning campaigns
+    - average_campaign_return_pct: Average return across all campaigns
+    - average_r_achieved_per_campaign: Average R-multiple per campaign
+    - best_campaign: Campaign with highest return (campaign_id, return_pct)
+    - worst_campaign: Campaign with lowest return (campaign_id, return_pct)
+    - median_duration_days: Median campaign duration
+    - average_max_drawdown: Average maximum drawdown across campaigns
+    - calculation_timestamp: When aggregation was calculated
+    - filter_criteria: Filters applied (symbol, timeframe, date_range)
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from datetime import datetime, UTC
+    >>> aggregated = AggregatedMetrics(
+    ...     total_campaigns_completed=25,
+    ...     overall_win_rate=Decimal("72.00"),
+    ...     average_campaign_return_pct=Decimal("12.50"),
+    ...     average_r_achieved_per_campaign=Decimal("6.8"),
+    ...     best_campaign={"campaign_id": "uuid", "return_pct": "35.50"},
+    ...     worst_campaign={"campaign_id": "uuid", "return_pct": "-5.25"},
+    ...     median_duration_days=38,
+    ...     average_max_drawdown=Decimal("6.75"),
+    ...     calculation_timestamp=datetime.now(UTC),
+    ...     filter_criteria={}
+    ... )
+    """
+
+    total_campaigns_completed: int = Field(
+        ..., ge=0, description="Total number of completed campaigns"
+    )
+
+    overall_win_rate: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=5,
+        ge=Decimal("0"),
+        le=Decimal("100.00"),
+        description="Percentage of winning campaigns",
+    )
+
+    average_campaign_return_pct: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Average return across all campaigns",
+    )
+
+    average_r_achieved_per_campaign: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=8,
+        description="Average R-multiple per campaign",
+    )
+
+    best_campaign: dict[str, str] | None = Field(
+        None, description="Campaign with highest return (campaign_id, return_pct)"
+    )
+
+    worst_campaign: dict[str, str] | None = Field(
+        None, description="Campaign with lowest return (campaign_id, return_pct)"
+    )
+
+    median_duration_days: int | None = Field(None, ge=0, description="Median campaign duration")
+
+    average_max_drawdown: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        description="Average maximum drawdown across campaigns",
+    )
+
+    calculation_timestamp: Any = Field(
+        default_factory=lambda: __import__("datetime").datetime.now(__import__("datetime").UTC),
+        description="When aggregation was calculated",
+    )
+
+    filter_criteria: dict[str, Any] = Field(
+        default_factory=dict, description="Filters applied (symbol, timeframe, date_range)"
+    )
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "total_campaigns_completed": self.total_campaigns_completed,
+            "overall_win_rate": str(self.overall_win_rate),
+            "average_campaign_return_pct": str(self.average_campaign_return_pct),
+            "average_r_achieved_per_campaign": str(self.average_r_achieved_per_campaign),
+            "best_campaign": self.best_campaign,
+            "worst_campaign": self.worst_campaign,
+            "median_duration_days": self.median_duration_days,
+            "average_max_drawdown": str(self.average_max_drawdown),
+            "calculation_timestamp": self.calculation_timestamp.isoformat()
+            if hasattr(self.calculation_timestamp, "isoformat")
+            else str(self.calculation_timestamp),
+            "filter_criteria": self.filter_criteria,
+        }
+
+
+class MetricsFilter(BaseModel):
+    """
+    Filter criteria for historical campaign metrics queries.
+
+    Fields:
+    -------
+    - symbol: Filter by trading symbol
+    - timeframe: Filter by timeframe
+    - start_date: Filter campaigns completed after this date
+    - end_date: Filter campaigns completed before this date
+    - min_return: Filter campaigns with return >= min_return
+    - min_r_achieved: Filter campaigns with total R >= min_r_achieved
+    - limit: Maximum number of results (pagination)
+    - offset: Skip first N results (pagination)
+    """
+
+    symbol: str | None = Field(None, max_length=20, description="Filter by trading symbol")
+
+    timeframe: str | None = Field(None, max_length=10, description="Filter by timeframe")
+
+    start_date: Any = Field(None, description="Filter campaigns completed after this date")
+
+    end_date: Any = Field(None, description="Filter campaigns completed before this date")
+
+    min_return: Decimal | None = Field(
+        None,
+        decimal_places=8,
+        max_digits=18,
+        description="Filter campaigns with return >= min_return",
+    )
+
+    min_r_achieved: Decimal | None = Field(
+        None,
+        decimal_places=4,
+        max_digits=8,
+        description="Filter campaigns with total R >= min_r_achieved",
+    )
+
+    limit: int = Field(default=100, ge=1, le=1000, description="Maximum number of results")
+
+    offset: int = Field(default=0, ge=0, description="Skip first N results")
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
