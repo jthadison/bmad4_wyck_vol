@@ -282,6 +282,44 @@ class Position(BaseModel):
             )
         return v
 
+    @__import__("pydantic").model_validator(mode="after")
+    def validate_closed_position_fields(self) -> "Position":
+        """
+        Validate that CLOSED positions have required exit fields.
+
+        CLOSED positions must have:
+        - exit_price (cannot be None)
+        - closed_date (cannot be None)
+        - realized_pnl (cannot be None)
+
+        Returns:
+        --------
+        Position
+            Validated position
+
+        Raises:
+        -------
+        ValueError
+            If CLOSED position missing required exit fields
+        """
+        if self.status == PositionStatus.CLOSED:
+            if self.exit_price is None:
+                raise ValueError(
+                    "CLOSED position must have exit_price. "
+                    f"Position {self.id} (status=CLOSED) has exit_price=None"
+                )
+            if self.closed_date is None:
+                raise ValueError(
+                    "CLOSED position must have closed_date. "
+                    f"Position {self.id} (status=CLOSED) has closed_date=None"
+                )
+            if self.realized_pnl is None:
+                raise ValueError(
+                    "CLOSED position must have realized_pnl. "
+                    f"Position {self.id} (status=CLOSED) has realized_pnl=None"
+                )
+        return self
+
     @model_serializer
     def serialize_model(self) -> dict[str, Any]:
         """

@@ -572,3 +572,164 @@ class ExitOrderModel(Base):
             f"<ExitOrder(id={self.id}, campaign_id={self.campaign_id}, "
             f"order_type={self.order_type}, shares={self.shares})>"
         )
+
+
+class CampaignMetricsModel(Base):
+    """
+    Campaign performance metrics database model (Story 9.6).
+
+    Stores calculated performance analytics for completed campaigns including
+    campaign-level metrics (total return %, total R, win rate, max drawdown),
+    comparison metrics (expected vs actual), and phase-specific metrics
+    (Phase C vs Phase D performance).
+    """
+
+    __tablename__ = "campaign_metrics"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Campaign identification
+    campaign_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    # Campaign-level metrics
+    total_return_pct: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+    )
+    total_r_achieved: Mapped[Decimal] = mapped_column(
+        DECIMAL(8, 4),
+        nullable=False,
+    )
+    duration_days: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+    max_drawdown: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+    )
+    total_positions: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+    winning_positions: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+    losing_positions: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+    win_rate: Mapped[Decimal] = mapped_column(
+        DECIMAL(5, 2),
+        nullable=False,
+    )
+    average_entry_price: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+    )
+    average_exit_price: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+    )
+
+    # Comparison metrics (expected vs actual)
+    expected_jump_target: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=True,
+    )
+    actual_high_reached: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=True,
+    )
+    target_achievement_pct: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(7, 2),
+        nullable=True,
+    )
+    expected_r: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(8, 4),
+        nullable=True,
+    )
+    actual_r_achieved: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(8, 4),
+        nullable=True,
+    )
+
+    # Phase-specific metrics (AC #11) - Wyckoff methodology validation
+    phase_c_avg_r: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(8, 4),
+        nullable=True,
+    )
+    phase_d_avg_r: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(8, 4),
+        nullable=True,
+    )
+    phase_c_positions: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0,
+    )
+    phase_d_positions: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0,
+    )
+    phase_c_win_rate: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(5, 2),
+        nullable=True,
+    )
+    phase_d_win_rate: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(5, 2),
+        nullable=True,
+    )
+
+    # Metadata
+    calculation_timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    # Constraints and indexes
+    __table_args__ = (
+        # Unique index on campaign_id (one metrics record per campaign)
+        Index("ix_campaign_metrics_campaign_id", "campaign_id", unique=True),
+        # Index on completed_at for historical queries
+        Index("ix_campaign_metrics_completed_at", "completed_at"),
+        # Index on symbol for filtering
+        Index("ix_campaign_metrics_symbol", "symbol"),
+        # Composite index for filtered historical queries
+        Index("ix_campaign_metrics_symbol_completed_at", "symbol", "completed_at"),
+        # Unique constraint on (campaign_id, calculation_timestamp)
+        UniqueConstraint(
+            "campaign_id", "calculation_timestamp", name="uq_campaign_metrics_campaign_calculation"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"<CampaignMetrics(id={self.id}, campaign_id={self.campaign_id}, "
+            f"symbol={self.symbol}, total_r={self.total_r_achieved})>"
+        )

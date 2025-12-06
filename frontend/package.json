@@ -12,6 +12,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "big.js": "^7.0.1",
     "lightweight-charts": "^4.1.0",
     "pinia": "^2.1.0",
     "primeicons": "^7.0.0",
@@ -19,6 +20,7 @@
     "vue": "^3.4.0"
   },
   "devDependencies": {
+    "@types/big.js": "^6.2.2",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "@vitejs/plugin-vue": "^5.0.0",
