@@ -480,6 +480,226 @@ class CampaignPositions(BaseModel):
         }
 
 
+class ExitRule(BaseModel):
+    """
+    Campaign exit strategy configuration with target levels and partial exit percentages.
+
+    Defines the complete exit strategy for a campaign, including three target price
+    levels (T1, T2, T3), partial exit percentages at each target, trailing stop
+    configuration, and invalidation levels for emergency exits.
+
+    Target Levels (AC #1):
+    -----------------------
+    - T1: Ice level (for pre-breakout entries) or Jump (for post-breakout entries)
+    - T2: Jump target (calculated from trading range using cause factor)
+    - T3: Jump × 1.5 (extended target for momentum continuation)
+
+    Partial Exit Percentages (AC #2):
+    ----------------------------------
+    - Default: 50% at T1, 30% at T2, 20% at T3 (configurable)
+    - Validator ensures percentages sum to 100%
+
+    Trailing Stop Configuration (AC #3):
+    -------------------------------------
+    - trail_to_breakeven_on_t1: Move stop to entry_price when T1 hit
+    - trail_to_t1_on_t2: Move stop to T1 level when T2 hit
+
+    Invalidation Levels (AC #4):
+    -----------------------------
+    - spring_low: Exit if price < spring_low (Spring low break)
+    - ice_level: Exit if price < ice_level after SOS (Ice break post-breakout)
+    - creek_level: Exit if price < creek_level after Jump achieved (Creek break post-Jump)
+    - utad_high: Exit if price > utad_high (UTAD high exceeded for shorts)
+
+    Fields:
+    -------
+    - id: Exit rule identifier (UUID)
+    - campaign_id: Parent campaign (FK to campaigns.id)
+    - target_1_level, target_2_level, target_3_level: Target prices (NUMERIC(18,8))
+    - t1_exit_pct, t2_exit_pct, t3_exit_pct: Partial exit percentages (default 50/30/20)
+    - trail_to_breakeven_on_t1, trail_to_t1_on_t2: Trailing stop config (bool)
+    - spring_low, ice_level, creek_level, utad_high: Invalidation price levels
+    - jump_target: Jump price for tracking jump achievement (Creek break detection)
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from uuid import uuid4
+    >>> exit_rule = ExitRule(
+    ...     campaign_id=uuid4(),
+    ...     target_1_level=Decimal("160.00"),
+    ...     target_2_level=Decimal("175.00"),
+    ...     target_3_level=Decimal("187.50"),
+    ...     t1_exit_pct=Decimal("50.00"),
+    ...     t2_exit_pct=Decimal("30.00"),
+    ...     t3_exit_pct=Decimal("20.00"),
+    ...     trail_to_breakeven_on_t1=True,
+    ...     trail_to_t1_on_t2=True,
+    ...     spring_low=Decimal("145.00"),
+    ...     ice_level=Decimal("160.00"),
+    ...     creek_level=Decimal("145.00"),
+    ...     jump_target=Decimal("175.00")
+    ... )
+    """
+
+    id: UUID = Field(
+        default_factory=lambda: __import__("uuid").uuid4(), description="Exit rule identifier"
+    )
+    campaign_id: UUID = Field(..., description="Parent campaign (FK to campaigns.id)")
+
+    # Target levels (NUMERIC(18,8) precision)
+    target_1_level: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        gt=Decimal("0"),
+        description="T1 target price (Ice for pre-breakout, Jump for post-breakout)",
+    )
+    target_2_level: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        gt=Decimal("0"),
+        description="T2 target price (Jump)",
+    )
+    target_3_level: Decimal = Field(
+        ...,
+        decimal_places=8,
+        max_digits=18,
+        gt=Decimal("0"),
+        description="T3 target price (Jump × 1.5 extended target)",
+    )
+
+    # Partial exit percentages (NUMERIC(5,2) precision)
+    t1_exit_pct: Decimal = Field(
+        default=Decimal("50.00"),
+        decimal_places=2,
+        max_digits=5,
+        ge=Decimal("0"),
+        le=Decimal("100.00"),
+        description="Percentage to exit at T1 (default 50%)",
+    )
+    t2_exit_pct: Decimal = Field(
+        default=Decimal("30.00"),
+        decimal_places=2,
+        max_digits=5,
+        ge=Decimal("0"),
+        le=Decimal("100.00"),
+        description="Percentage to exit at T2 (default 30%)",
+    )
+    t3_exit_pct: Decimal = Field(
+        default=Decimal("20.00"),
+        decimal_places=2,
+        max_digits=5,
+        ge=Decimal("0"),
+        le=Decimal("100.00"),
+        description="Percentage to exit at T3 (default 20%)",
+    )
+
+    # Trailing stop configuration
+    trail_to_breakeven_on_t1: bool = Field(
+        default=True, description="Move stop to entry_price when T1 hit"
+    )
+    trail_to_t1_on_t2: bool = Field(default=True, description="Move stop to T1 level when T2 hit")
+
+    # Invalidation levels (NUMERIC(18,8) precision)
+    spring_low: Decimal | None = Field(
+        None,
+        decimal_places=8,
+        max_digits=18,
+        description="Spring low invalidation level",
+    )
+    ice_level: Decimal | None = Field(
+        None,
+        decimal_places=8,
+        max_digits=18,
+        description="Ice level for post-SOS invalidation",
+    )
+    creek_level: Decimal | None = Field(
+        None,
+        decimal_places=8,
+        max_digits=18,
+        description="Creek level for post-Jump invalidation",
+    )
+    utad_high: Decimal | None = Field(
+        None,
+        decimal_places=8,
+        max_digits=18,
+        description="UTAD high invalidation level (for shorts)",
+    )
+    jump_target: Decimal | None = Field(
+        None,
+        decimal_places=8,
+        max_digits=18,
+        description="Jump target price for tracking jump achievement",
+    )
+
+    # Timestamps
+    created_at: Any = Field(
+        default_factory=lambda: __import__("datetime").datetime.now(__import__("datetime").UTC),
+        description="Record creation timestamp",
+    )
+    updated_at: Any = Field(
+        default_factory=lambda: __import__("datetime").datetime.now(__import__("datetime").UTC),
+        description="Record last update timestamp",
+    )
+
+    @__import__("pydantic").model_validator(mode="after")
+    def validate_exit_percentages_sum(self) -> "ExitRule":
+        """
+        Validate that exit percentages sum to 100%.
+
+        This validator runs after all fields are set and ensures
+        the total equals 100% to guarantee the entire position is eventually closed.
+
+        Returns:
+        --------
+        ExitRule
+            Validated exit rule
+
+        Raises:
+        -------
+        ValueError
+            If sum of percentages != 100%
+        """
+        total = self.t1_exit_pct + self.t2_exit_pct + self.t3_exit_pct
+        if total != Decimal("100.00"):
+            raise ValueError(
+                f"Exit percentages must sum to 100%. Current sum: {total}% "
+                f"(T1: {self.t1_exit_pct}%, T2: {self.t2_exit_pct}%, T3: {self.t3_exit_pct}%)"
+            )
+        return self
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal and UUID as strings."""
+        return {
+            "id": str(self.id),
+            "campaign_id": str(self.campaign_id),
+            "target_1_level": str(self.target_1_level),
+            "target_2_level": str(self.target_2_level),
+            "target_3_level": str(self.target_3_level),
+            "t1_exit_pct": str(self.t1_exit_pct),
+            "t2_exit_pct": str(self.t2_exit_pct),
+            "t3_exit_pct": str(self.t3_exit_pct),
+            "trail_to_breakeven_on_t1": self.trail_to_breakeven_on_t1,
+            "trail_to_t1_on_t2": self.trail_to_t1_on_t2,
+            "spring_low": str(self.spring_low) if self.spring_low else None,
+            "ice_level": str(self.ice_level) if self.ice_level else None,
+            "creek_level": str(self.creek_level) if self.creek_level else None,
+            "utad_high": str(self.utad_high) if self.utad_high else None,
+            "jump_target": str(self.jump_target) if self.jump_target else None,
+            "created_at": self.created_at.isoformat()
+            if hasattr(self.created_at, "isoformat")
+            else str(self.created_at),
+            "updated_at": self.updated_at.isoformat()
+            if hasattr(self.updated_at, "isoformat")
+            else str(self.updated_at),
+        }
+
+
 # Rebuild CampaignPositions to resolve forward reference to Position
 from src.models.position import Position  # noqa: E402, F401
 

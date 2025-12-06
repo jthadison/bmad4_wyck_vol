@@ -357,3 +357,218 @@ class PositionModel(Base):
             f"<Position(id={self.id}, symbol={self.symbol}, "
             f"pattern_type={self.pattern_type}, status={self.status})>"
         )
+
+
+class ExitRuleModel(Base):
+    """
+    Exit Rule database model (Story 9.5).
+
+    Represents exit strategy configuration for a campaign with target
+    levels, partial exit percentages, and invalidation conditions.
+    """
+
+    __tablename__ = "exit_rules"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Foreign key to campaign (UNIQUE - one exit rule per campaign)
+    campaign_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+    # Target levels (NUMERIC(18,8) precision)
+    target_1_level: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+    )
+    target_2_level: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+    )
+    target_3_level: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+    )
+
+    # Partial exit percentages (NUMERIC(5,2) precision)
+    t1_exit_pct: Mapped[Decimal] = mapped_column(
+        DECIMAL(5, 2),
+        nullable=False,
+        default=Decimal("50.00"),
+    )
+    t2_exit_pct: Mapped[Decimal] = mapped_column(
+        DECIMAL(5, 2),
+        nullable=False,
+        default=Decimal("30.00"),
+    )
+    t3_exit_pct: Mapped[Decimal] = mapped_column(
+        DECIMAL(5, 2),
+        nullable=False,
+        default=Decimal("20.00"),
+    )
+
+    # Trailing stop configuration
+    trail_to_breakeven_on_t1: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=True,
+    )
+    trail_to_t1_on_t2: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=True,
+    )
+
+    # Invalidation levels (NUMERIC(18,8) precision)
+    spring_low: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=True,
+    )
+    ice_level: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=True,
+    )
+    creek_level: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=True,
+    )
+    utad_high: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=True,
+    )
+    jump_target: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=True,
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint(
+            "t1_exit_pct >= 0 AND t1_exit_pct <= 100",
+            name="ck_exit_rules_t1_pct_range",
+        ),
+        CheckConstraint(
+            "t2_exit_pct >= 0 AND t2_exit_pct <= 100",
+            name="ck_exit_rules_t2_pct_range",
+        ),
+        CheckConstraint(
+            "t3_exit_pct >= 0 AND t3_exit_pct <= 100",
+            name="ck_exit_rules_t3_pct_range",
+        ),
+        CheckConstraint(
+            "target_1_level > 0 AND target_2_level > 0 AND target_3_level > 0",
+            name="ck_exit_rules_positive_targets",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"<ExitRule(id={self.id}, campaign_id={self.campaign_id}, "
+            f"T1={self.target_1_level}, T2={self.target_2_level}, T3={self.target_3_level})>"
+        )
+
+
+class ExitOrderModel(Base):
+    """
+    Exit Order database model (Story 9.5).
+
+    Represents a triggered exit order (partial exit, stop loss, or
+    emergency invalidation exit).
+    """
+
+    __tablename__ = "exit_orders"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Foreign keys
+    campaign_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("campaigns.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    position_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("positions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    # Exit details
+    order_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    exit_level: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+    )
+    shares: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+    reason: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+
+    # Timestamps
+    triggered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    # Execution tracking
+    executed: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+    )
+
+    # Record timestamp
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+    # Constraints
+    __table_args__ = (
+        # Composite index for campaign+triggered_at queries
+        Index("ix_exit_orders_campaign_triggered", "campaign_id", "triggered_at"),
+        # Check constraints
+        CheckConstraint(
+            "order_type IN ('PARTIAL_EXIT', 'STOP_LOSS', 'INVALIDATION')",
+            name="ck_exit_orders_order_type",
+        ),
+        CheckConstraint("exit_level > 0", name="ck_exit_orders_positive_exit_level"),
+        CheckConstraint("shares > 0", name="ck_exit_orders_positive_shares"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"<ExitOrder(id={self.id}, campaign_id={self.campaign_id}, "
+            f"order_type={self.order_type}, shares={self.shares})>"
+        )
