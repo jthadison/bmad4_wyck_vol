@@ -11,6 +11,7 @@ Data Models:
 ------------
 1. CampaignEntry: Individual position entry within a campaign
 2. CampaignRisk: Campaign risk tracking with BMAD allocation breakdown
+3. CampaignPositions: Campaign-level position aggregation with totals (Story 9.4)
 
 Wyckoff BMAD Allocation (AC 4):
 --------------------------------
@@ -51,15 +52,19 @@ Integration:
 - Story 7.2: Uses position_risk_pct from PositionSizing
 - Story 7.3: Campaign risk is subset of portfolio heat
 - Story 7.4: Core data models for campaign tracking
+- Story 9.4: Campaign position tracking with real-time updates
 
-Author: Story 7.4
+Author: Story 7.4, Story 9.4
 """
 
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
+
+if TYPE_CHECKING:
+    from src.models.position import Position
 
 
 class CampaignEntry(BaseModel):
@@ -293,3 +298,189 @@ MAX_SPRING_RISK = Decimal("2.00")  # 40% of 5% = 2.00% (HIGHEST - best risk/rewa
 MAX_SOS_RISK = Decimal("1.75")  # 35% of 5% = 1.75%
 MAX_LPS_RISK = Decimal("1.25")  # 25% of 5% = 1.25%
 # Note: Secondary Test (ST) is a confirmation event, not an entry pattern
+
+
+class CampaignPositions(BaseModel):
+    """
+    Campaign-level position aggregation with calculated totals (Story 9.4).
+
+    Provides a complete view of all positions within a campaign with aggregated
+    metrics for portfolio monitoring, risk management, and performance analysis.
+
+    Aggregation Calculations:
+    -------------------------
+    - total_shares: Sum of shares across all OPEN positions
+    - weighted_avg_entry: (sum(entry_price × shares) / sum(shares)) for OPEN positions only
+    - total_risk: sum((entry_price - stop_loss) × shares) for OPEN positions only
+    - total_pnl: sum(current_pnl) for OPEN + sum(realized_pnl) for CLOSED positions
+
+    Fields:
+    -------
+    - campaign_id: Campaign identifier (UUID)
+    - positions: List of all positions (OPEN and CLOSED)
+    - total_shares: Total shares across all open positions
+    - weighted_avg_entry: Weighted average entry price (open positions)
+    - total_risk: Total risk exposure (open positions)
+    - total_pnl: Combined unrealized + realized P&L
+    - open_positions_count: Number of currently open positions
+    - closed_positions_count: Number of closed positions
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from uuid import uuid4
+    >>> campaign_positions = CampaignPositions(
+    ...     campaign_id=uuid4(),
+    ...     positions=[position1, position2, position3],
+    ...     total_shares=Decimal("175"),
+    ...     weighted_avg_entry=Decimal("150.86"),
+    ...     total_risk=Decimal("350.00"),
+    ...     total_pnl=Decimal("1300.00"),
+    ...     open_positions_count=2,
+    ...     closed_positions_count=1
+    ... )
+    """
+
+    campaign_id: UUID = Field(..., description="Campaign identifier")
+
+    positions: list["Position"] = Field(
+        default_factory=list, description="List of all positions (OPEN and CLOSED)"
+    )
+
+    total_shares: Decimal = Field(
+        default=Decimal("0"),
+        decimal_places=8,
+        max_digits=18,
+        description="Total shares across all open positions",
+    )
+
+    weighted_avg_entry: Decimal = Field(
+        default=Decimal("0"),
+        decimal_places=8,
+        max_digits=18,
+        description="Weighted average entry price (open positions only)",
+    )
+
+    total_risk: Decimal = Field(
+        default=Decimal("0"),
+        decimal_places=8,
+        max_digits=18,
+        description="Total risk exposure (open positions only)",
+    )
+
+    total_pnl: Decimal = Field(
+        default=Decimal("0"),
+        decimal_places=8,
+        max_digits=18,
+        description="Combined unrealized + realized P&L",
+    )
+
+    open_positions_count: int = Field(
+        default=0, ge=0, description="Number of currently open positions"
+    )
+
+    closed_positions_count: int = Field(default=0, ge=0, description="Number of closed positions")
+
+    model_config = ConfigDict(
+        json_encoders={Decimal: str},
+        arbitrary_types_allowed=True,  # Allow Position type
+    )
+
+    @classmethod
+    def from_positions(cls, campaign_id: UUID, positions: list["Position"]) -> "CampaignPositions":
+        """
+        Create CampaignPositions from a list of Position objects.
+
+        Automatically calculates all aggregated metrics from the position list.
+
+        Parameters:
+        -----------
+        campaign_id : UUID
+            Campaign identifier
+        positions : list[Position]
+            List of all positions (OPEN and CLOSED)
+
+        Returns:
+        --------
+        CampaignPositions
+            Campaign positions with calculated aggregations
+
+        Example:
+        --------
+        >>> campaign_positions = CampaignPositions.from_positions(
+        ...     campaign_id=uuid4(),
+        ...     positions=[position1, position2, position3]
+        ... )
+        """
+        from src.models.position import PositionStatus
+
+        # Separate open and closed positions
+        open_positions = [p for p in positions if p.status == PositionStatus.OPEN]
+        closed_positions = [p for p in positions if p.status == PositionStatus.CLOSED]
+
+        # Calculate total_shares (open positions only)
+        total_shares = sum((p.shares for p in open_positions), Decimal("0"))
+
+        # Calculate weighted_avg_entry (open positions only)
+        # Round to 8 decimal places to fit DECIMAL(18,8) constraint
+        if total_shares > Decimal("0"):
+            weighted_avg_entry = (
+                sum((p.entry_price * p.shares for p in open_positions), Decimal("0")) / total_shares
+            ).quantize(Decimal("0.00000001"))
+        else:
+            weighted_avg_entry = Decimal("0")
+
+        # Calculate total_risk (open positions only)
+        total_risk = sum(
+            ((p.entry_price - p.stop_loss) * p.shares for p in open_positions),
+            Decimal("0"),
+        )
+
+        # Calculate total_pnl (unrealized from open + realized from closed)
+        unrealized_pnl = sum(
+            (p.current_pnl for p in open_positions if p.current_pnl is not None),
+            Decimal("0"),
+        )
+        realized_pnl = sum(
+            (p.realized_pnl for p in closed_positions if p.realized_pnl is not None),
+            Decimal("0"),
+        )
+        total_pnl = unrealized_pnl + realized_pnl
+
+        return cls(
+            campaign_id=campaign_id,
+            positions=positions,
+            total_shares=total_shares,
+            weighted_avg_entry=weighted_avg_entry,
+            total_risk=total_risk,
+            total_pnl=total_pnl,
+            open_positions_count=len(open_positions),
+            closed_positions_count=len(closed_positions),
+        )
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """
+        Serialize model with Decimal as strings and UUID as strings.
+
+        Returns:
+        --------
+        dict[str, Any]
+            Serialized model data
+        """
+        return {
+            "campaign_id": str(self.campaign_id),
+            "positions": [p.serialize_model() for p in self.positions],
+            "total_shares": str(self.total_shares),
+            "weighted_avg_entry": str(self.weighted_avg_entry),
+            "total_risk": str(self.total_risk),
+            "total_pnl": str(self.total_pnl),
+            "open_positions_count": self.open_positions_count,
+            "closed_positions_count": self.closed_positions_count,
+        }
+
+
+# Rebuild CampaignPositions to resolve forward reference to Position
+from src.models.position import Position  # noqa: E402, F401
+
+CampaignPositions.model_rebuild()
