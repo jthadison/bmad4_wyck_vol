@@ -6,6 +6,7 @@
  * and caching performance analytics.
  *
  * Story 9.6 - Campaign Performance Tracking (Frontend)
+ * Story 9.7 - Campaign Manager Integration (Frontend)
  */
 
 import { defineStore } from "pinia";
@@ -15,6 +16,10 @@ import type {
   AggregatedMetrics,
   MetricsFilter,
 } from "@/types/campaign-performance";
+import type {
+  Campaign,
+  CampaignStatusResponse,
+} from "@/types/campaign-manager";
 import {
   formatPercent,
   formatR,
@@ -27,22 +32,30 @@ import {
  * Campaign store state interface
  */
 interface CampaignState {
-  // Campaign-level metrics
+  // Campaign-level metrics (Story 9.6)
   campaignMetrics: Record<string, CampaignMetrics>;
   pnlCurves: Record<string, PnLCurve>;
 
-  // Aggregated metrics
+  // Aggregated metrics (Story 9.6)
   aggregatedMetrics: AggregatedMetrics | null;
+
+  // Campaign lifecycle (Story 9.7)
+  activeCampaigns: Campaign[];
+  campaignStatusMap: Record<string, CampaignStatusResponse>;
 
   // Loading states
   loadingCampaignMetrics: Record<string, boolean>;
   loadingPnLCurve: Record<string, boolean>;
   loadingAggregated: boolean;
+  loadingActiveCampaigns: boolean; // Story 9.7
+  loadingInvalidate: Record<string, boolean>; // Story 9.7
 
   // Error states
   campaignMetricsErrors: Record<string, string | null>;
   pnlCurveErrors: Record<string, string | null>;
   aggregatedError: string | null;
+  activeCampaignsError: string | null; // Story 9.7
+  invalidateErrors: Record<string, string | null>; // Story 9.7
 }
 
 /**
@@ -50,22 +63,30 @@ interface CampaignState {
  */
 export const useCampaignStore = defineStore("campaign", {
   state: (): CampaignState => ({
-    // Campaign-level data
+    // Campaign-level data (Story 9.6)
     campaignMetrics: {},
     pnlCurves: {},
 
-    // Aggregated data
+    // Aggregated data (Story 9.6)
     aggregatedMetrics: null,
+
+    // Campaign lifecycle (Story 9.7)
+    activeCampaigns: [],
+    campaignStatusMap: {},
 
     // Loading states
     loadingCampaignMetrics: {},
     loadingPnLCurve: {},
     loadingAggregated: false,
+    loadingActiveCampaigns: false, // Story 9.7
+    loadingInvalidate: {}, // Story 9.7
 
     // Error states
     campaignMetricsErrors: {},
     pnlCurveErrors: {},
     aggregatedError: null,
+    activeCampaignsError: null, // Story 9.7
+    invalidateErrors: {}, // Story 9.7
   }),
 
   getters: {
@@ -399,12 +420,121 @@ export const useCampaignStore = defineStore("campaign", {
       this.aggregatedError = null;
     },
 
+    // =========================================================================
+    // Story 9.7: Campaign Manager Actions
+    // =========================================================================
+
     /**
-     * Clear all data (campaigns + aggregated)
+     * Fetch all active campaigns (Story 9.7 AC #4).
+     *
+     * GET /api/v1/campaigns/active
+     */
+    async fetchActiveCampaigns(): Promise<void> {
+      this.loadingActiveCampaigns = true;
+      this.activeCampaignsError = null;
+
+      try {
+        const response = await fetch("/api/v1/campaigns/active");
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP error ${response.status}: ${response.statusText}`,
+          );
+        }
+
+        const campaigns: Campaign[] = await response.json();
+        this.activeCampaigns = campaigns;
+
+        // Update status map
+        campaigns.forEach((campaign) => {
+          this.campaignStatusMap[campaign.id] = {
+            campaign_id: campaign.campaign_id,
+            status: campaign.status,
+            phase: campaign.phase,
+            total_allocation: campaign.total_allocation,
+            entries: campaign.entries,
+          };
+        });
+      } catch (error) {
+        this.activeCampaignsError =
+          error instanceof Error ? error.message : "Unknown error";
+        throw error;
+      } finally {
+        this.loadingActiveCampaigns = false;
+      }
+    },
+
+    /**
+     * Invalidate a campaign (Story 9.7 AC #5).
+     *
+     * POST /api/v1/campaigns/{campaign_id}/invalidate
+     *
+     * @param campaignId - Campaign UUID
+     * @param reason - Invalidation reason
+     */
+    async invalidateCampaign(
+      campaignId: string,
+      reason: string,
+    ): Promise<void> {
+      this.loadingInvalidate[campaignId] = true;
+      this.invalidateErrors[campaignId] = null;
+
+      try {
+        const response = await fetch(
+          `/api/v1/campaigns/${campaignId}/invalidate`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ reason }),
+          },
+        );
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error("Campaign not found");
+          } else if (response.status === 422) {
+            throw new Error("Campaign already invalidated or completed");
+          } else {
+            throw new Error(
+              `HTTP error ${response.status}: ${response.statusText}`,
+            );
+          }
+        }
+
+        // Remove from active campaigns list
+        this.activeCampaigns = this.activeCampaigns.filter(
+          (c) => c.id !== campaignId,
+        );
+
+        // Update status in status map
+        if (this.campaignStatusMap[campaignId]) {
+          this.campaignStatusMap[campaignId].status = "INVALIDATED";
+        }
+      } catch (error) {
+        this.invalidateErrors[campaignId] =
+          error instanceof Error ? error.message : "Unknown error";
+        throw error;
+      } finally {
+        this.loadingInvalidate[campaignId] = false;
+      }
+    },
+
+    /**
+     * Clear all data (campaigns + aggregated + lifecycle)
      */
     clearAll(): void {
       this.clearAllCampaigns();
       this.clearAggregatedMetrics();
+
+      // Clear Story 9.7 data
+      this.activeCampaigns = [];
+      this.campaignStatusMap = {};
+      this.loadingActiveCampaigns = false;
+      this.loadingInvalidate = {};
+      this.activeCampaignsError = null;
+      this.invalidateErrors = {};
     },
   },
 });
