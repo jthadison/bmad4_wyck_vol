@@ -1,5 +1,8 @@
 <template>
   <div id="app" class="min-h-screen bg-gray-900 text-gray-100">
+    <!-- System Status Widget (Persistent) -->
+    <SystemStatusWidget />
+
     <!-- Navigation -->
     <nav class="bg-gray-800 border-b border-gray-700">
       <div class="container mx-auto px-4">
@@ -42,5 +45,5 @@
 </template>
 
 <script setup lang="ts">
-// App component - main layout with navigation and router view
+import SystemStatusWidget from '@/components/SystemStatusWidget.vue'
 </script>
