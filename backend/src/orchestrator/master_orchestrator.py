@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 
 import structlog
 
+from src.campaign_management.campaign_manager import CampaignManager
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import PhaseClassification
 from src.models.trading_range import TradingRange
@@ -201,6 +202,7 @@ class MasterOrchestrator:
         container: OrchestratorContainer | None = None,
         event_bus: EventBus | None = None,
         cache: OrchestratorCache | None = None,
+        campaign_manager: CampaignManager | None = None,
     ) -> None:
         """
         Initialize MasterOrchestrator with dependencies.
@@ -210,11 +212,13 @@ class MasterOrchestrator:
             container: Optional DI container (uses singleton if not provided)
             event_bus: Optional event bus (uses singleton if not provided)
             cache: Optional cache (uses singleton if not provided)
+            campaign_manager: Optional campaign manager (Story 9.7)
         """
         self._config = config or OrchestratorConfig()
         self._container = container or get_orchestrator_container(self._config)
         self._event_bus = event_bus or get_event_bus()
         self._cache = cache or get_orchestrator_cache(self._config)
+        self._campaign_manager = campaign_manager  # Story 9.7: Will be set via setter
 
         # Circuit breaker for detector failures
         self._circuit_breaker = CircuitBreaker(
@@ -240,6 +244,19 @@ class MasterOrchestrator:
                 "parallel_enabled": self._config.enable_parallel_processing,
             },
         )
+
+    def set_campaign_manager(self, campaign_manager: CampaignManager) -> None:
+        """
+        Set CampaignManager instance (Story 9.7 AC #3).
+
+        This is called during application startup after CampaignRepository
+        is initialized with a database session.
+
+        Args:
+            campaign_manager: Initialized CampaignManager instance
+        """
+        self._campaign_manager = campaign_manager
+        logger.info("campaign_manager_set", has_manager=campaign_manager is not None)
 
     # Stage 1: Data Ingestion
 
@@ -954,6 +971,119 @@ class MasterOrchestrator:
                 stage_name="risk_validation",
             )
 
+    # Campaign Management (Story 9.7)
+
+    async def _handle_campaign_for_signal(
+        self,
+        pattern: Pattern,
+        trading_range: TradingRange | None,
+        correlation_id: UUID,
+    ) -> UUID | None:
+        """
+        Handle campaign creation/linking for a signal (Story 9.7 AC #3).
+
+        Creates new campaign if first signal in trading range, otherwise
+        links signal to existing campaign.
+
+        Args:
+            pattern: Detected pattern
+            trading_range: Trading range containing pattern
+            correlation_id: Request correlation ID
+
+        Returns:
+            Campaign ID (UUID) if campaign exists/created, None otherwise
+        """
+        if not self._campaign_manager:
+            logger.debug(
+                "campaign_manager_not_set",
+                pattern_type=pattern.pattern_type,
+                correlation_id=str(correlation_id),
+            )
+            return None
+
+        if not trading_range:
+            logger.debug(
+                "no_trading_range_for_campaign",
+                pattern_type=pattern.pattern_type,
+                correlation_id=str(correlation_id),
+            )
+            return None
+
+        try:
+            # Check if campaign already exists for this trading range
+            existing_campaign = await self._campaign_manager.get_campaign_for_range(
+                trading_range.id
+            )
+
+            if existing_campaign:
+                # Campaign exists - return campaign_id for linking
+                logger.debug(
+                    "campaign_already_exists",
+                    campaign_id=str(existing_campaign.id),
+                    trading_range_id=str(trading_range.id),
+                    pattern_type=pattern.pattern_type,
+                    correlation_id=str(correlation_id),
+                )
+                return existing_campaign.id
+
+            # No campaign exists - create new one (first signal in range)
+            # Convert pattern to TradeSignal for campaign creation
+            from src.models.signal import TradeSignal as SignalModel
+
+            signal = SignalModel(
+                id=uuid4(),
+                symbol=pattern.symbol,
+                timeframe=pattern.timeframe,
+                pattern_type=pattern.pattern_type,
+                phase=pattern.phase,
+                entry_price=pattern.entry_price,
+                stop_loss=pattern.stop_price,
+                target_levels={"T1": pattern.target_price},
+                position_size=Decimal("0"),  # Will be calculated by position sizing
+                notional_value=Decimal("0"),
+                risk_amount=Decimal("0"),
+                confidence_score=pattern.confidence_score,
+                r_multiple=Decimal("0"),  # Will be calculated
+                confidence=Decimal(pattern.confidence_score),
+                created_at=None,  # Will be set by repository
+            )
+
+            # Extract range_start_date from trading_range
+            range_start_date = (
+                trading_range.start_timestamp.strftime("%Y-%m-%d")
+                if trading_range.start_timestamp
+                else "unknown"
+            )
+
+            # Create campaign
+            campaign = await self._campaign_manager.create_campaign(
+                signal=signal,
+                trading_range_id=trading_range.id,
+                range_start_date=range_start_date,
+            )
+
+            logger.info(
+                "campaign_created_for_signal",
+                campaign_id=str(campaign.id),
+                campaign_id_str=campaign.campaign_id,
+                trading_range_id=str(trading_range.id),
+                pattern_type=pattern.pattern_type,
+                initial_phase=campaign.phase,
+                correlation_id=str(correlation_id),
+            )
+
+            return campaign.id
+
+        except Exception as e:
+            logger.error(
+                "campaign_handling_error",
+                pattern_type=pattern.pattern_type,
+                trading_range_id=str(trading_range.id) if trading_range else None,
+                error=str(e),
+                correlation_id=str(correlation_id),
+            )
+            return None
+
     # Stage 7: Signal Generation
 
     async def _generate_signals(
@@ -984,6 +1114,13 @@ class MasterOrchestrator:
             signals: list[TradeSignal] = []
 
             for pattern, position_sizing in validated_patterns:
+                # Story 9.7 AC #3: Handle campaign creation/linking
+                campaign_id = await self._handle_campaign_for_signal(
+                    pattern=pattern,
+                    trading_range=pattern.trading_range,
+                    correlation_id=correlation_id,
+                )
+
                 signal = TradeSignal(
                     signal_id=uuid4(),
                     symbol=symbol,
@@ -1008,6 +1145,7 @@ class MasterOrchestrator:
                         "campaign_risk",
                         "correlated_risk",
                     ],
+                    campaign_id=campaign_id,  # Story 9.7: Link signal to campaign
                 )
                 signals.append(signal)
 
