@@ -123,6 +123,293 @@ class CampaignRepository:
         )
         return result.scalar_one_or_none()
 
+    # ==================================================================================
+    # CampaignManager Methods (Story 9.7)
+    # ==================================================================================
+
+    async def create_campaign(self, campaign: "Campaign") -> "Campaign":  # type: ignore
+        """
+        Create new campaign record (Story 9.7 AC #1).
+
+        Parameters:
+        -----------
+        campaign : Campaign
+            Campaign Pydantic model to persist
+
+        Returns:
+        --------
+        Campaign
+            Persisted campaign with database-generated fields
+
+        Raises:
+        -------
+        SQLAlchemyError
+            If database operation fails
+
+        Example:
+        --------
+        >>> campaign = Campaign(
+        ...     campaign_id="AAPL-2024-10-15",
+        ...     symbol="AAPL",
+        ...     status=CampaignStatus.ACTIVE,
+        ...     ...
+        ... )
+        >>> persisted = await repo.create_campaign(campaign)
+        """
+        from src.models.campaign_lifecycle import Campaign
+
+        campaign_model = CampaignModel(
+            id=campaign.id,
+            campaign_id=campaign.campaign_id,
+            symbol=campaign.symbol,
+            timeframe=campaign.timeframe,
+            trading_range_id=campaign.trading_range_id,
+            status=campaign.status.value,
+            phase=campaign.phase,
+            total_risk=campaign.total_risk,
+            total_allocation=campaign.total_allocation,
+            current_risk=campaign.current_risk,
+            weighted_avg_entry=campaign.weighted_avg_entry,
+            total_shares=campaign.total_shares,
+            total_pnl=campaign.total_pnl,
+            start_date=campaign.start_date,
+            completed_at=campaign.completed_at,
+            invalidation_reason=campaign.invalidation_reason,
+            entries={},  # Will be populated as positions are added
+            version=campaign.version,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+
+        try:
+            self.session.add(campaign_model)
+            await self.session.commit()
+            await self.session.refresh(campaign_model)
+
+            logger.info(
+                "campaign_created",
+                campaign_id=campaign.campaign_id,
+                symbol=campaign.symbol,
+                status=campaign.status.value,
+            )
+
+            # Convert back to Pydantic
+            return Campaign(
+                id=campaign_model.id,
+                campaign_id=campaign_model.campaign_id,
+                symbol=campaign_model.symbol,
+                timeframe=campaign_model.timeframe,
+                trading_range_id=campaign_model.trading_range_id,
+                status=campaign_model.status,
+                phase=campaign_model.phase,
+                positions=[],
+                entries=campaign_model.entries or {},
+                total_risk=campaign_model.total_risk,
+                total_allocation=campaign_model.total_allocation,
+                current_risk=campaign_model.current_risk,
+                weighted_avg_entry=campaign_model.weighted_avg_entry,
+                total_shares=campaign_model.total_shares,
+                total_pnl=campaign_model.total_pnl,
+                start_date=campaign_model.start_date,
+                completed_at=campaign_model.completed_at,
+                invalidation_reason=campaign_model.invalidation_reason,
+                version=campaign_model.version,
+            )
+
+        except SQLAlchemyError as e:
+            await self.session.rollback()
+            logger.error(
+                "failed_to_create_campaign",
+                campaign_id=campaign.campaign_id,
+                error=str(e),
+            )
+            raise
+
+    async def get_campaign_by_range(self, trading_range_id: UUID) -> Optional["Campaign"]:  # type: ignore
+        """
+        Get campaign by trading_range_id (Story 9.7 AC #2).
+
+        Used by CampaignManager to check if campaign already exists for a range
+        and to link subsequent signals (SOS, LPS) to existing campaign.
+
+        Parameters:
+        -----------
+        trading_range_id : UUID
+            Trading range identifier
+
+        Returns:
+        --------
+        Campaign | None
+            Campaign if exists, None otherwise
+
+        Example:
+        --------
+        >>> campaign = await repo.get_campaign_by_range(trading_range_id)
+        >>> if campaign:
+        ...     # Link new signal to existing campaign
+        """
+        from src.models.campaign_lifecycle import Campaign
+
+        result = await self.session.execute(
+            select(CampaignModel).where(CampaignModel.trading_range_id == trading_range_id)
+        )
+        campaign_model = result.scalar_one_or_none()
+
+        if not campaign_model:
+            return None
+
+        # Convert to Pydantic
+        return Campaign(
+            id=campaign_model.id,
+            campaign_id=campaign_model.campaign_id,
+            symbol=campaign_model.symbol,
+            timeframe=campaign_model.timeframe,
+            trading_range_id=campaign_model.trading_range_id,
+            status=campaign_model.status,
+            phase=campaign_model.phase,
+            positions=[],  # Positions loaded separately if needed
+            entries=campaign_model.entries or {},
+            total_risk=campaign_model.total_risk,
+            total_allocation=campaign_model.total_allocation,
+            current_risk=campaign_model.current_risk,
+            weighted_avg_entry=campaign_model.weighted_avg_entry,
+            total_shares=campaign_model.total_shares,
+            total_pnl=campaign_model.total_pnl,
+            start_date=campaign_model.start_date,
+            completed_at=campaign_model.completed_at,
+            invalidation_reason=campaign_model.invalidation_reason,
+            version=campaign_model.version,
+        )
+
+    async def get_active_campaigns(self, limit: int = 100) -> list["Campaign"]:  # type: ignore
+        """
+        Get all active campaigns (Story 9.7 AC #1).
+
+        Returns campaigns with status ACTIVE or MARKUP, ordered by start_date DESC.
+
+        Parameters:
+        -----------
+        limit : int, default=100
+            Maximum number of campaigns to return
+
+        Returns:
+        --------
+        list[Campaign]
+            List of active campaigns
+
+        Example:
+        --------
+        >>> active_campaigns = await repo.get_active_campaigns()
+        """
+        from src.models.campaign_lifecycle import Campaign, CampaignStatus
+
+        result = await self.session.execute(
+            select(CampaignModel)
+            .where(
+                CampaignModel.status.in_([CampaignStatus.ACTIVE.value, CampaignStatus.MARKUP.value])
+            )
+            .order_by(CampaignModel.start_date.desc())
+            .limit(limit)
+        )
+        campaign_models = result.scalars().all()
+
+        campaigns = []
+        for campaign_model in campaign_models:
+            campaign = Campaign(
+                id=campaign_model.id,
+                campaign_id=campaign_model.campaign_id,
+                symbol=campaign_model.symbol,
+                timeframe=campaign_model.timeframe,
+                trading_range_id=campaign_model.trading_range_id,
+                status=campaign_model.status,
+                phase=campaign_model.phase,
+                positions=[],
+                entries=campaign_model.entries or {},
+                total_risk=campaign_model.total_risk,
+                total_allocation=campaign_model.total_allocation,
+                current_risk=campaign_model.current_risk,
+                weighted_avg_entry=campaign_model.weighted_avg_entry,
+                total_shares=campaign_model.total_shares,
+                total_pnl=campaign_model.total_pnl,
+                start_date=campaign_model.start_date,
+                completed_at=campaign_model.completed_at,
+                invalidation_reason=campaign_model.invalidation_reason,
+                version=campaign_model.version,
+            )
+            campaigns.append(campaign)
+
+        logger.info("active_campaigns_retrieved", count=len(campaigns))
+        return campaigns
+
+    async def get_campaigns_by_symbol(
+        self, symbol: str, status: Optional[str] = None, limit: int = 100
+    ) -> list["Campaign"]:  # type: ignore
+        """
+        Get campaigns for specific symbol with optional status filter (Story 9.7 AC #1).
+
+        Parameters:
+        -----------
+        symbol : str
+            Ticker symbol (e.g., "AAPL")
+        status : str | None
+            Optional status filter (ACTIVE, MARKUP, COMPLETED, INVALIDATED)
+        limit : int, default=100
+            Maximum number of campaigns to return
+
+        Returns:
+        --------
+        list[Campaign]
+            List of campaigns for symbol, ordered by start_date DESC
+
+        Example:
+        --------
+        >>> aapl_active = await repo.get_campaigns_by_symbol("AAPL", status="ACTIVE")
+        """
+        from src.models.campaign_lifecycle import Campaign
+
+        stmt = select(CampaignModel).where(CampaignModel.symbol == symbol)
+
+        if status:
+            stmt = stmt.where(CampaignModel.status == status)
+
+        stmt = stmt.order_by(CampaignModel.start_date.desc()).limit(limit)
+
+        result = await self.session.execute(stmt)
+        campaign_models = result.scalars().all()
+
+        campaigns = []
+        for campaign_model in campaign_models:
+            campaign = Campaign(
+                id=campaign_model.id,
+                campaign_id=campaign_model.campaign_id,
+                symbol=campaign_model.symbol,
+                timeframe=campaign_model.timeframe,
+                trading_range_id=campaign_model.trading_range_id,
+                status=campaign_model.status,
+                phase=campaign_model.phase,
+                positions=[],
+                entries=campaign_model.entries or {},
+                total_risk=campaign_model.total_risk,
+                total_allocation=campaign_model.total_allocation,
+                current_risk=campaign_model.current_risk,
+                weighted_avg_entry=campaign_model.weighted_avg_entry,
+                total_shares=campaign_model.total_shares,
+                total_pnl=campaign_model.total_pnl,
+                start_date=campaign_model.start_date,
+                completed_at=campaign_model.completed_at,
+                invalidation_reason=campaign_model.invalidation_reason,
+                version=campaign_model.version,
+            )
+            campaigns.append(campaign)
+
+        logger.info(
+            "campaigns_by_symbol_retrieved",
+            symbol=symbol,
+            status=status,
+            count=len(campaigns),
+        )
+        return campaigns
+
     async def get_campaign_positions(
         self, campaign_id: UUID, include_closed: bool = True
     ) -> CampaignPositions:

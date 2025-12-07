@@ -15,10 +15,12 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
+    Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -136,10 +138,15 @@ class OHLCVBarModel(Base):
 
 class CampaignModel(Base):
     """
-    Campaign database model (Story 9.4).
+    Campaign database model (Story 9.1, 9.4, 9.7).
 
     Represents a trading campaign (Spring → SOS → LPS entry sequence)
     within a single trading range with BMAD allocation and 5% risk limit.
+
+    Updated in Story 9.7:
+    - Added entries JSONB field for EntryDetails tracking
+    - Added campaign_id, phase, timeframe fields (from migration 009)
+    - Added lifecycle tracking fields
     """
 
     __tablename__ = "campaigns"
@@ -152,41 +159,113 @@ class CampaignModel(Base):
     )
 
     # Identification
+    campaign_id: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Human-readable ID: {symbol}-{range_start_date}",
+    )
     symbol: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         index=True,
     )
+    timeframe: Mapped[str] = mapped_column(
+        String(5),
+        nullable=False,
+        comment="Bar interval (e.g., 1h, 1d)",
+    )
     trading_range_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,  # Optional link to trading range
+        index=True,
     )
 
-    # Risk tracking
-    current_risk: Mapped[Decimal] = mapped_column(
-        DECIMAL(6, 4),  # Max 5.0000%
-        nullable=False,
-        default=Decimal("0.0"),
-    )
-    total_allocation: Mapped[Decimal] = mapped_column(
-        DECIMAL(6, 4),
-        nullable=False,
-        default=Decimal("0.0"),
-    )
-
-    # Status
+    # Lifecycle management
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="ACTIVE",
         index=True,
     )
+    phase: Mapped[str] = mapped_column(
+        String(1),
+        nullable=False,
+        comment="Wyckoff phase: C, D, E",
+    )
+
+    # Entry details tracking (Story 9.7)
+    entries: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="'{}'::jsonb",
+        comment="Entry details by pattern type (SPRING/SOS/LPS mapping)",
+    )
+
+    # Risk tracking
+    total_risk: Mapped[Decimal] = mapped_column(
+        DECIMAL(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        comment="Total dollar risk across all positions",
+    )
+    total_allocation: Mapped[Decimal] = mapped_column(
+        DECIMAL(5, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        comment="Total % of portfolio allocated (max 5%)",
+    )
+    current_risk: Mapped[Decimal] = mapped_column(
+        DECIMAL(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        comment="Current open risk (updated as positions close)",
+    )
+
+    # Position aggregations
+    weighted_avg_entry: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=True,
+        comment="Weighted average entry price",
+    )
+    total_shares: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 8),
+        nullable=False,
+        default=Decimal("0.00"),
+        comment="Sum of all position shares",
+    )
+    total_pnl: Mapped[Decimal] = mapped_column(
+        DECIMAL(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        comment="Current unrealized P&L",
+    )
+
+    # Lifecycle timestamps
+    start_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        comment="Campaign start date (UTC)",
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Campaign completion date (UTC)",
+    )
+    invalidation_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Reason for invalidation if status=INVALIDATED",
+    )
 
     # Optimistic locking
     version: Mapped[int] = mapped_column(
-        BigInteger,
+        Integer,
         nullable=False,
         default=1,
+        comment="Optimistic locking version (increment on update)",
     )
 
     # Timestamps
@@ -211,15 +290,15 @@ class CampaignModel(Base):
 
     # Constraints
     __table_args__ = (
-        # Check constraint for risk limit
-        CheckConstraint("current_risk <= 5.0", name="ck_campaign_risk_limit"),
+        # Check constraint for risk limit (5% max)
+        CheckConstraint("total_allocation <= 5.0", name="ck_campaign_allocation_limit"),
     )
 
     def __repr__(self) -> str:
         """String representation."""
         return (
-            f"<Campaign(id={self.id}, symbol={self.symbol}, "
-            f"current_risk={self.current_risk}, status={self.status})>"
+            f"<Campaign(id={self.id}, campaign_id={self.campaign_id}, "
+            f"symbol={self.symbol}, status={self.status}, phase={self.phase})>"
         )
 
 

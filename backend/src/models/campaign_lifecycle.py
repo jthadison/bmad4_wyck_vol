@@ -42,6 +42,47 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class EntryDetails(BaseModel):
+    """
+    Individual pattern entry details within a campaign (Story 9.7).
+
+    Tracks metadata for each entry point (Spring/SOS/LPS) in the campaign's
+    multi-phase position building sequence.
+
+    Fields:
+    -------
+    - pattern_type: SPRING | SOS | LPS
+    - entry_price: Actual fill price
+    - shares: Position size
+    - risk_allocated: Percentage of portfolio allocated
+    - position_id: UUID linking to Position record
+
+    Example:
+    --------
+    >>> entry = EntryDetails(
+    ...     pattern_type="SPRING",
+    ...     entry_price=Decimal("150.00"),
+    ...     shares=Decimal("100"),
+    ...     risk_allocated=Decimal("2.0"),
+    ...     position_id=UUID("...")
+    ... )
+    """
+
+    pattern_type: Literal["SPRING", "SOS", "LPS"] = Field(..., description="Entry pattern type")
+    entry_price: Decimal = Field(
+        ..., decimal_places=8, max_digits=18, description="Actual fill price"
+    )
+    shares: Decimal = Field(
+        ..., ge=Decimal("0.01"), decimal_places=8, max_digits=18, description="Position size"
+    )
+    risk_allocated: Decimal = Field(
+        ..., decimal_places=2, max_digits=5, description="% of portfolio allocated"
+    )
+    position_id: UUID = Field(..., description="UUID linking to Position record")
+
+    model_config = {"json_encoders": {Decimal: str, UUID: str}}
+
+
 class CampaignStatus(str, Enum):
     """
     Campaign lifecycle states (AC: 4).
@@ -240,6 +281,10 @@ class Campaign(BaseModel):
     # Positions and risk tracking
     positions: list[CampaignPosition] = Field(
         default_factory=list, description="All campaign positions"
+    )
+    entries: dict[str, EntryDetails] = Field(
+        default_factory=dict,
+        description="Entry details by pattern type (SPRING/SOS/LPS mapping)",
     )
     total_risk: Decimal = Field(
         ..., decimal_places=2, max_digits=12, description="Total dollar risk"
