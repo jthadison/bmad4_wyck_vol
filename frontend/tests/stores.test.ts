@@ -19,9 +19,19 @@ describe('Pinia Stores', () => {
       expect(store.error).toBe(null)
     })
 
-    it('has activeSignals getter', () => {
+    it('has pendingSignals getter', () => {
       const store = useSignalStore()
-      expect(store.activeSignals).toBeDefined()
+      expect(store.pendingSignals).toBeDefined()
+    })
+
+    it('has executedSignals getter', () => {
+      const store = useSignalStore()
+      expect(store.executedSignals).toBeDefined()
+    })
+
+    it('has rejectedSignals getter', () => {
+      const store = useSignalStore()
+      expect(store.rejectedSignals).toBeDefined()
     })
 
     it('has fetchSignals action', () => {

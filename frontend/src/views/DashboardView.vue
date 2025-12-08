@@ -1,16 +1,20 @@
-<template>
-  <div class="dashboard-view">
-    <!-- Daily Summary Card (Story 10.3) -->
-    <DailySummaryCard />
+<script setup lang="ts">
+import DailySummaryCard from '@/components/DailySummaryCard.vue'
+import LiveSignalsDashboard from '@/components/signals/LiveSignalsDashboard.vue'
+</script>
 
-    <!-- Dashboard Header -->
-    <h1 class="text-3xl font-bold mb-6">Live Signals Dashboard</h1>
-    <p class="text-gray-400">
-      This is the main dashboard where live trading signals will be displayed.
-    </p>
+<template>
+  <div class="dashboard-view p-6">
+    <!-- Daily Summary Card (Story 10.3) -->
+    <DailySummaryCard class="mb-6" />
+
+    <!-- Live Signals Dashboard (Story 10.4) -->
+    <LiveSignalsDashboard />
   </div>
 </template>
 
-<script setup lang="ts">
-import DailySummaryCard from '@/components/DailySummaryCard.vue'
-</script>
+<style scoped>
+.dashboard-view {
+  @apply min-h-screen bg-gray-950;
+}
+</style>

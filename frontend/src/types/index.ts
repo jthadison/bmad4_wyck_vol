@@ -60,18 +60,42 @@ export {
 export interface Signal {
   id: string
   symbol: string
-  pattern_type: string
-  pattern_id: string
-  entry_price: Big
-  stop_loss: Big
-  profit_target_1: Big
-  profit_target_2: Big | null
-  risk_percent: Big
-  position_size: Big
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'FILLED' | 'CLOSED'
+  pattern_type: 'SPRING' | 'SOS' | 'LPS' | 'UTAD'
+  phase: string
+  entry_price: string
+  stop_loss: string
+  target_levels: {
+    primary_target: string
+    secondary_targets: string[]
+    trailing_stop_activation?: string | null
+    trailing_stop_offset?: string | null
+  }
+  position_size: number
+  risk_amount: string
+  r_multiple: string
   confidence_score: number
-  created_at: string
-  updated_at: string
+  confidence_components: {
+    pattern_confidence: number
+    phase_confidence: number
+    volume_confidence: number
+    overall_confidence: number
+  }
+  campaign_id: string | null
+  status:
+    | 'PENDING'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'FILLED'
+    | 'STOPPED'
+    | 'TARGET_HIT'
+    | 'EXPIRED'
+  timestamp: string
+  timeframe: string
+  rejection_reasons?: string[]
+  pattern_data?: Record<string, unknown>
+  volume_analysis?: Record<string, unknown>
+  created_at?: string
+  schema_version?: number
 }
 
 export interface Pattern {
@@ -93,4 +117,59 @@ export interface OHLCVBar {
   low: Big
   close: Big
   volume: number
+}
+
+// Signal API types
+export interface SignalQueryParams {
+  status?: Signal['status']
+  symbol?: string
+  min_confidence?: number
+  min_r_multiple?: number
+  pattern_type?: Signal['pattern_type']
+  since?: string
+  limit?: number
+  offset?: number
+}
+
+export interface SignalListResponse {
+  data: Signal[]
+  pagination: {
+    returned_count: number
+    total_count: number
+    limit: number
+    offset: number
+    has_more: boolean
+    next_offset: number
+  }
+}
+
+// WebSocket event types
+export interface SignalNewEvent {
+  type: 'signal:new'
+  sequence_number: number
+  data: Signal
+  timestamp: string
+}
+
+export interface SignalExecutedEvent {
+  type: 'signal:executed'
+  sequence_number: number
+  data: {
+    id: string
+    status: 'FILLED' | 'STOPPED' | 'TARGET_HIT'
+    filled_price?: string
+    filled_timestamp: string
+  }
+  timestamp: string
+}
+
+export interface SignalRejectedEvent {
+  type: 'signal:rejected'
+  sequence_number: number
+  data: {
+    id: string
+    status: 'REJECTED'
+    rejection_reasons: string[]
+  }
+  timestamp: string
 }
