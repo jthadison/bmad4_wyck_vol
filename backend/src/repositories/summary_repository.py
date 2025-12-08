@@ -20,13 +20,16 @@ Repository Methods:
 Author: Story 10.3
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import structlog
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.summary import DailySummary
+from src.orm.models import OHLCVBar, Pattern, Signal
 
 logger = structlog.get_logger()
 
@@ -83,15 +86,21 @@ class SummaryRepository:
                 cutoff=twenty_four_hours_ago.isoformat(),
             )
 
-            # NOTE: For MVP, return mock data since database tables aren't fully implemented yet
-            # TODO: Replace with actual database queries once Signal, Pattern, and Portfolio tables exist
+            # Execute all queries in parallel for optimal performance (Story 10.3.1, AC: 6)
+            (
+                symbols_scanned,
+                patterns_detected,
+                signals_executed,
+                signals_rejected,
+                portfolio_heat_change,
+            ) = await asyncio.gather(
+                self._get_symbols_scanned(twenty_four_hours_ago, now),
+                self._get_patterns_detected(twenty_four_hours_ago, now),
+                self._get_signals_executed(twenty_four_hours_ago, now),
+                self._get_signals_rejected(twenty_four_hours_ago, now),
+                self._get_portfolio_heat_change(),
+            )
 
-            # Mock aggregation data
-            symbols_scanned = await self._get_symbols_scanned_mock(twenty_four_hours_ago, now)
-            patterns_detected = await self._get_patterns_detected_mock(twenty_four_hours_ago, now)
-            signals_executed = await self._get_signals_executed_mock(twenty_four_hours_ago, now)
-            signals_rejected = await self._get_signals_rejected_mock(twenty_four_hours_ago, now)
-            portfolio_heat_change = await self._get_portfolio_heat_change_mock()
             suggested_actions = self._generate_suggested_actions(
                 symbols_scanned,
                 patterns_detected,
@@ -131,109 +140,224 @@ class SummaryRepository:
             raise
 
     # ==================================================================================
-    # Mock Methods (MVP Implementation)
-    # TODO: Replace with actual database queries once tables are implemented
+    # Database Query Methods (Story 10.3.1)
     # ==================================================================================
 
-    async def _get_symbols_scanned_mock(self, start_time: datetime, end_time: datetime) -> int:
+    async def _get_symbols_scanned(self, start_time: datetime, end_time: datetime) -> int:
         """
-        Mock: Count unique symbols analyzed in last 24 hours.
+        Count unique symbols analyzed in last 24 hours (Story 10.3.1, AC: 1, 6, 7, 8).
 
-        TODO: Replace with actual query:
-        ```python
-        from src.repositories.models import OHLCVBar
-        result = await self.db_session.execute(
-            select(func.count(func.distinct(OHLCVBar.symbol)))
-            .where(OHLCVBar.timestamp >= start_time)
-            .where(OHLCVBar.timestamp <= end_time)
-        )
-        return result.scalar() or 0
-        ```
+        Queries ohlcv_bars table for distinct symbols within time range.
+        Uses TimescaleDB hypertable indexes for optimal performance.
+
+        Parameters:
+        -----------
+        start_time : datetime
+            Start of time window (UTC timezone-aware)
+        end_time : datetime
+            End of time window (UTC timezone-aware)
+
+        Returns:
+        --------
+        int
+            Count of unique symbols (0 if no data)
         """
-        return 15  # Mock data
+        try:
+            query_start = datetime.now(UTC)
 
-    async def _get_patterns_detected_mock(self, start_time: datetime, end_time: datetime) -> int:
+            result = await self.db_session.execute(
+                select(func.count(func.distinct(OHLCVBar.symbol))).where(
+                    OHLCVBar.timestamp >= start_time, OHLCVBar.timestamp <= end_time
+                )
+            )
+            count = result.scalar() or 0
+
+            query_duration = (datetime.now(UTC) - query_start).total_seconds() * 1000
+            logger.debug(
+                "symbols_scanned_query",
+                count=count,
+                duration_ms=query_duration,
+            )
+
+            return count
+        except Exception as e:
+            logger.error(
+                "symbols_scanned_query_error",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return 0
+
+    async def _get_patterns_detected(self, start_time: datetime, end_time: datetime) -> int:
         """
-        Mock: Count patterns detected in last 24 hours.
+        Count patterns detected in last 24 hours (Story 10.3.1, AC: 2, 6, 7, 8).
 
-        TODO: Replace with actual query when Pattern table exists:
-        ```python
-        from src.repositories.models import Pattern
-        result = await self.db_session.execute(
-            select(func.count(Pattern.id))
-            .where(Pattern.detected_at >= start_time)
-            .where(Pattern.detected_at <= end_time)
-        )
-        return result.scalar() or 0
-        ```
+        Queries patterns table for patterns detected within time range.
+
+        Parameters:
+        -----------
+        start_time : datetime
+            Start of time window (UTC timezone-aware)
+        end_time : datetime
+            End of time window (UTC timezone-aware)
+
+        Returns:
+        --------
+        int
+            Count of patterns detected (0 if no data)
         """
-        return 23  # Mock data
+        try:
+            query_start = datetime.now(UTC)
 
-    async def _get_signals_executed_mock(self, start_time: datetime, end_time: datetime) -> int:
+            result = await self.db_session.execute(
+                select(func.count(Pattern.id)).where(
+                    Pattern.detection_time >= start_time, Pattern.detection_time <= end_time
+                )
+            )
+            count = result.scalar() or 0
+
+            query_duration = (datetime.now(UTC) - query_start).total_seconds() * 1000
+            logger.debug(
+                "patterns_detected_query",
+                count=count,
+                duration_ms=query_duration,
+            )
+
+            return count
+        except Exception as e:
+            logger.error(
+                "patterns_detected_query_error",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return 0
+
+    async def _get_signals_executed(self, start_time: datetime, end_time: datetime) -> int:
         """
-        Mock: Count signals with status EXECUTED in last 24 hours.
+        Count signals with status EXECUTED in last 24 hours (Story 10.3.1, AC: 3, 6, 7, 8).
 
-        TODO: Replace with actual query when Signal table exists:
-        ```python
-        from src.repositories.models import Signal
-        result = await self.db_session.execute(
-            select(func.count(Signal.id))
-            .where(Signal.timestamp >= start_time)
-            .where(Signal.timestamp <= end_time)
-            .where(Signal.status == "EXECUTED")
-        )
-        return result.scalar() or 0
-        ```
+        Queries signals table for executed signals within time range.
+
+        Parameters:
+        -----------
+        start_time : datetime
+            Start of time window (UTC timezone-aware)
+        end_time : datetime
+            End of time window (UTC timezone-aware)
+
+        Returns:
+        --------
+        int
+            Count of executed signals (0 if no data)
         """
-        return 4  # Mock data
+        try:
+            query_start = datetime.now(UTC)
 
-    async def _get_signals_rejected_mock(self, start_time: datetime, end_time: datetime) -> int:
+            result = await self.db_session.execute(
+                select(func.count(Signal.id)).where(
+                    Signal.generated_at >= start_time,
+                    Signal.generated_at <= end_time,
+                    Signal.status == "EXECUTED",
+                )
+            )
+            count = result.scalar() or 0
+
+            query_duration = (datetime.now(UTC) - query_start).total_seconds() * 1000
+            logger.debug(
+                "signals_executed_query",
+                count=count,
+                duration_ms=query_duration,
+            )
+
+            return count
+        except Exception as e:
+            logger.error(
+                "signals_executed_query_error",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return 0
+
+    async def _get_signals_rejected(self, start_time: datetime, end_time: datetime) -> int:
         """
-        Mock: Count signals with rejection_reason not null in last 24 hours.
+        Count signals with rejection_reason not null in last 24 hours (Story 10.3.1, AC: 4, 6, 7, 8).
 
-        TODO: Replace with actual query when Signal table exists:
-        ```python
-        from src.repositories.models import Signal
-        result = await self.db_session.execute(
-            select(func.count(Signal.id))
-            .where(Signal.timestamp >= start_time)
-            .where(Signal.timestamp <= end_time)
-            .where(Signal.rejection_reason.isnot(None))
-        )
-        return result.scalar() or 0
-        ```
+        Queries signals table for rejected signals (those with rejection_reason set)
+        within time range.
+
+        Parameters:
+        -----------
+        start_time : datetime
+            Start of time window (UTC timezone-aware)
+        end_time : datetime
+            End of time window (UTC timezone-aware)
+
+        Returns:
+        --------
+        int
+            Count of rejected signals (0 if no data)
         """
-        return 8  # Mock data
+        try:
+            query_start = datetime.now(UTC)
 
-    async def _get_portfolio_heat_change_mock(self) -> Decimal:
+            result = await self.db_session.execute(
+                select(func.count(Signal.id)).where(
+                    Signal.generated_at >= start_time,
+                    Signal.generated_at <= end_time,
+                    Signal.rejection_reason.isnot(None),
+                )
+            )
+            count = result.scalar() or 0
+
+            query_duration = (datetime.now(UTC) - query_start).total_seconds() * 1000
+            logger.debug(
+                "signals_rejected_query",
+                count=count,
+                duration_ms=query_duration,
+            )
+
+            return count
+        except Exception as e:
+            logger.error(
+                "signals_rejected_query_error",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return 0
+
+    async def _get_portfolio_heat_change(self) -> Decimal:
         """
-        Mock: Calculate portfolio heat change (current - 24h ago).
+        Calculate portfolio heat change (current - 24h ago) (Story 10.3.1, AC: 5, 6, 7, 8).
 
-        TODO: Replace with actual query when Portfolio table exists:
-        ```python
-        from src.repositories.models import Portfolio
-        # Get current heat
-        current_result = await self.db_session.execute(
-            select(Portfolio.current_heat_pct)
-            .order_by(Portfolio.updated_at.desc())
-            .limit(1)
-        )
-        current_heat = current_result.scalar() or Decimal("0.0")
+        NOTE: Portfolio heat snapshot table not yet implemented.
+        Returns 0.0 until portfolio heat tracking is available.
 
-        # Get heat from 24 hours ago
-        twenty_four_hours_ago = datetime.now(UTC) - timedelta(hours=24)
-        past_result = await self.db_session.execute(
-            select(Portfolio.current_heat_pct)
-            .where(Portfolio.updated_at <= twenty_four_hours_ago)
-            .order_by(Portfolio.updated_at.desc())
-            .limit(1)
-        )
-        past_heat = past_result.scalar() or Decimal("0.0")
+        TODO (Story 10.3.3 or similar):
+        Implement portfolio heat snapshot queries when table exists:
+        - Query current portfolio heat from most recent snapshot
+        - Query portfolio heat from 24 hours ago
+        - Calculate delta
 
-        return current_heat - past_heat
-        ```
+        Returns:
+        --------
+        Decimal
+            Portfolio heat change % (0.0 if no data available)
         """
-        return Decimal("1.2")  # Mock data: +1.2% heat increase
+        try:
+            # Portfolio heat snapshots not yet implemented
+            # Return 0.0 until table exists (Story 10.3.1, AC: 8 - graceful defaults)
+            logger.debug(
+                "portfolio_heat_change_placeholder",
+                message="Portfolio heat snapshot table not yet implemented, returning 0.0",
+            )
+            return Decimal("0.0")
+        except Exception as e:
+            logger.error(
+                "portfolio_heat_change_error",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return Decimal("0.0")
 
     # ==================================================================================
     # Business Logic - Suggested Actions Generation
