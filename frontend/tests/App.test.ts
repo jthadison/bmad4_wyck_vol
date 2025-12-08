@@ -1,7 +1,30 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createRouter, createWebHistory } from 'vue-router'
+import { createPinia } from 'pinia'
 import App from '../src/App.vue'
+
+// Mock useWebSocket to prevent actual WebSocket connections in tests
+vi.mock('@/composables/useWebSocket', () => ({
+  useWebSocket: () => ({
+    isConnected: { value: false },
+    connectionStatus: { value: 'disconnected' },
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+  }),
+}))
+
+// Mock API client
+vi.mock('@/services/api', () => ({
+  apiClient: {
+    get: vi.fn().mockResolvedValue({
+      status: 'operational',
+      bars_analyzed: 0,
+      patterns_detected: 0,
+      signals_executed: 0,
+    }),
+  },
+}))
 
 describe('App.vue', () => {
   it('renders successfully', () => {
@@ -10,9 +33,11 @@ describe('App.vue', () => {
       routes: [{ path: '/', component: { template: '<div>Home</div>' } }],
     })
 
+    const pinia = createPinia()
+
     const wrapper = mount(App, {
       global: {
-        plugins: [router],
+        plugins: [router, pinia],
       },
     })
 
@@ -29,9 +54,11 @@ describe('App.vue', () => {
       ],
     })
 
+    const pinia = createPinia()
+
     const wrapper = mount(App, {
       global: {
-        plugins: [router],
+        plugins: [router, pinia],
       },
     })
 
@@ -46,9 +73,11 @@ describe('App.vue', () => {
       routes: [{ path: '/', component: { template: '<div>Home</div>' } }],
     })
 
+    const pinia = createPinia()
+
     const wrapper = mount(App, {
       global: {
-        plugins: [router],
+        plugins: [router, pinia],
       },
     })
 
