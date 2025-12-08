@@ -45,7 +45,7 @@ axiosInstance.interceptors.response.use(
 )
 
 // Recursively convert Decimal string fields to Big.js objects
-function convertDecimalsToBig(obj: any): any {
+function convertDecimalsToBig(obj: unknown): unknown {
   if (obj === null || obj === undefined) {
     return obj
   }
@@ -55,19 +55,22 @@ function convertDecimalsToBig(obj: any): any {
   }
 
   if (typeof obj === 'object') {
-    const converted: any = {}
-    for (const key in obj) {
-      const value = obj[key]
+    const converted: Record<string, unknown> = {}
+    const record = obj as Record<string, unknown>
+    for (const key in record) {
+      const value = record[key]
       // Convert strings that look like decimal numbers (prices, percentages)
       // Only convert if field name suggests it's a financial value
       if (
         typeof value === 'string' &&
-        /^-?\d+\.\d+$/.test(value) &&
+        /^-?\d+\.?\d*$/.test(value) &&
         (key.includes('price') ||
           key.includes('risk') ||
           key.includes('percent') ||
           key.includes('ratio') ||
-          key.includes('size'))
+          key.includes('size') ||
+          key.includes('change') ||
+          key.includes('heat'))
       ) {
         converted[key] = new Big(value)
       } else {
@@ -82,19 +85,22 @@ function convertDecimalsToBig(obj: any): any {
 
 // Typed API client methods
 export const apiClient = {
-  get: <T = any>(url: string, params?: any): Promise<T> => {
+  get: <T = unknown>(
+    url: string,
+    params?: Record<string, unknown>
+  ): Promise<T> => {
     return axiosInstance.get<T>(url, { params }).then((res) => res.data)
   },
 
-  post: <T = any>(url: string, data?: any): Promise<T> => {
+  post: <T = unknown>(url: string, data?: unknown): Promise<T> => {
     return axiosInstance.post<T>(url, data).then((res) => res.data)
   },
 
-  patch: <T = any>(url: string, data?: any): Promise<T> => {
+  patch: <T = unknown>(url: string, data?: unknown): Promise<T> => {
     return axiosInstance.patch<T>(url, data).then((res) => res.data)
   },
 
-  delete: <T = any>(url: string): Promise<T> => {
+  delete: <T = unknown>(url: string): Promise<T> => {
     return axiosInstance.delete<T>(url).then((res) => res.data)
   },
 }
