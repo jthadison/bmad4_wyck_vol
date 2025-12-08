@@ -20,8 +20,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 from src.database import Base
 
@@ -197,7 +198,7 @@ class CampaignModel(Base):
 
     # Entry details tracking (Story 9.7)
     entries: Mapped[dict] = mapped_column(
-        JSONB,
+        JSON,
         nullable=False,
         default=dict,
         server_default="'{}'::jsonb",
