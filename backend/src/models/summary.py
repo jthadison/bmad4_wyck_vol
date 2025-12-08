@@ -15,15 +15,16 @@ Features:
 ---------
 - Fixed-point arithmetic: Decimal type for portfolio_heat_change
 - UTC timestamps: Enforced on all datetime fields
-- Serialization: JSON with Decimal preservation
+- Serialization: Custom @field_serializer for Decimal → str, datetime → ISO format (Pydantic V2)
 
 Author: Story 10.3
 """
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 class DailySummary(BaseModel):
@@ -102,8 +103,17 @@ class DailySummary(BaseModel):
             return v.replace(tzinfo=UTC)
         return v.astimezone(UTC)
 
+    @field_serializer("portfolio_heat_change", when_used="json")
+    def serialize_decimal(self, value: Decimal, _info: Any) -> str:
+        """Serialize Decimal to string for JSON compatibility (Pydantic V2)."""
+        return str(value)
+
+    @field_serializer("timestamp", when_used="json")
+    def serialize_timestamp(self, value: datetime, _info: Any) -> str:
+        """Serialize datetime to ISO format string (Pydantic V2)."""
+        return value.isoformat()
+
     model_config = {
-        "json_encoders": {Decimal: str, datetime: lambda v: v.isoformat()},
         "json_schema_extra": {
             "examples": [
                 {
