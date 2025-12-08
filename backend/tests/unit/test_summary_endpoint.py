@@ -313,3 +313,42 @@ class TestDailySummaryModel:
                 portfolio_heat_change=Decimal("1.2"),
                 timestamp=datetime.now(UTC),
             )
+
+    def test_no_pydantic_deprecation_warnings(self):
+        """
+        Test that DailySummary produces no Pydantic deprecation warnings.
+
+        AC: Story 10.3.2, AC-1 - Zero deprecation warnings from DailySummary model
+        """
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            # Create instance
+            summary = DailySummary(
+                symbols_scanned=15,
+                patterns_detected=23,
+                signals_executed=4,
+                signals_rejected=8,
+                portfolio_heat_change=Decimal("1.2"),
+                suggested_actions=["Action 1"],
+                timestamp=datetime.now(UTC),
+            )
+
+            # Serialize to JSON (triggers json_encoders if present)
+            summary.model_dump_json()
+
+            # Filter for Pydantic deprecation warnings
+            pydantic_warnings = [
+                warn
+                for warn in w
+                if "pydantic" in str(warn.message).lower()
+                and "deprecated" in str(warn.message).lower()
+            ]
+
+            # Verify zero warnings from DailySummary model
+            assert len(pydantic_warnings) == 0, (
+                f"Found {len(pydantic_warnings)} Pydantic deprecation warnings: "
+                f"{[str(warn.message) for warn in pydantic_warnings]}"
+            )
