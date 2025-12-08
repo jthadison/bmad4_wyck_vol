@@ -48,24 +48,30 @@ class TestSummaryRepositoryIntegration:
         Test symbols scanned aggregation with real database (Story 10.3.1, AC: 1).
 
         Seeds 20 symbols: 10 within last 24h, 10 older.
-        Verifies query returns exactly 10 recent symbols.
+        Verifies query returns at least 10 recent symbols.
         """
-        # Arrange: Create 20 symbols, 10 recent, 10 old
-        symbols = [f"SYMBOL{i:02d}" for i in range(20)]
+        # Arrange: Create 20 unique symbols, 10 recent, 10 old
+        import time
+
+        unique_id = int(time.time() * 1000) % 100000
+        symbols = [f"SYM{unique_id}_{i:02d}" for i in range(20)]
         bars = create_ohlcv_bars_fixture(symbols=symbols, recent_count=10)
+
+        # Store count before adding test data
+        now = datetime.now(UTC)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+        count_before = await repository._get_symbols_scanned(twenty_four_hours_ago, now)
 
         # Add bars to database
         for bar in bars:
             repository.db_session.add(bar)
         await repository.db_session.commit()
 
-        # Act: Query symbols scanned
-        now = datetime.now(UTC)
-        twenty_four_hours_ago = now - timedelta(hours=24)
+        # Act: Query symbols scanned after adding test data
         symbols_scanned = await repository._get_symbols_scanned(twenty_four_hours_ago, now)
 
-        # Assert: Exactly 10 recent symbols
-        assert symbols_scanned == 10
+        # Assert: Increased by exactly 10 new symbols
+        assert symbols_scanned == count_before + 10
 
     @pytest.mark.asyncio
     async def test_patterns_detected_aggregation_real_db(self, repository):
@@ -73,8 +79,13 @@ class TestSummaryRepositoryIntegration:
         Test patterns detected aggregation with real database (Story 10.3.1, AC: 2).
 
         Seeds 15 patterns within last 24h.
-        Verifies query returns exactly 15.
+        Verifies query returns increased count by 15.
         """
+        # Store count before adding test data
+        now = datetime.now(UTC)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+        count_before = await repository._get_patterns_detected(twenty_four_hours_ago, now)
+
         # Arrange: Create 15 recent patterns
         patterns = create_patterns_fixture(count=15)
 
@@ -83,13 +94,11 @@ class TestSummaryRepositoryIntegration:
             repository.db_session.add(pattern)
         await repository.db_session.commit()
 
-        # Act: Query patterns detected
-        now = datetime.now(UTC)
-        twenty_four_hours_ago = now - timedelta(hours=24)
+        # Act: Query patterns detected after adding test data
         patterns_detected = await repository._get_patterns_detected(twenty_four_hours_ago, now)
 
-        # Assert: Exactly 15 patterns
-        assert patterns_detected == 15
+        # Assert: Increased by exactly 15 patterns
+        assert patterns_detected == count_before + 15
 
     @pytest.mark.asyncio
     async def test_signals_executed_vs_rejected_aggregation(self, repository):
@@ -97,8 +106,14 @@ class TestSummaryRepositoryIntegration:
         Test signals executed vs rejected aggregation (Story 10.3.1, AC: 3, 4).
 
         Seeds 5 executed, 3 rejected, 2 pending signals.
-        Verifies query returns executed=5, rejected=3 (pending excluded).
+        Verifies query returns increased counts (pending excluded).
         """
+        # Store counts before adding test data
+        now = datetime.now(UTC)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+        executed_before = await repository._get_signals_executed(twenty_four_hours_ago, now)
+        rejected_before = await repository._get_signals_rejected(twenty_four_hours_ago, now)
+
         # Arrange: Create signals with different statuses
         signals = create_signals_fixture(
             executed_count=5,
@@ -111,15 +126,13 @@ class TestSummaryRepositoryIntegration:
             repository.db_session.add(signal)
         await repository.db_session.commit()
 
-        # Act: Query signals
-        now = datetime.now(UTC)
-        twenty_four_hours_ago = now - timedelta(hours=24)
+        # Act: Query signals after adding test data
         signals_executed = await repository._get_signals_executed(twenty_four_hours_ago, now)
         signals_rejected = await repository._get_signals_rejected(twenty_four_hours_ago, now)
 
-        # Assert: Correct counts
-        assert signals_executed == 5
-        assert signals_rejected == 3
+        # Assert: Increased by correct counts
+        assert signals_executed == executed_before + 5
+        assert signals_rejected == rejected_before + 3
 
     @pytest.mark.asyncio
     async def test_portfolio_heat_change_calculation(self, repository):
@@ -148,46 +161,52 @@ class TestSummaryRepositoryIntegration:
 
         Verifies only data within exact 24h window is counted.
         """
-        # Arrange: Create bars at specific timestamps
+        # Arrange: Create bars at specific timestamps with unique symbols
+        import time
+
+        unique_id = int(time.time() * 1000) % 100000
         now = datetime.now(UTC)
         exactly_24h_ago = now - timedelta(hours=24)
+
+        # Store count before adding test data
+        count_before = await repository._get_symbols_scanned(exactly_24h_ago, now)
 
         bars = []
 
         # Bar outside window (24h 1s ago) - should be excluded
-        bars.append(
-            create_ohlcv_bars_fixture(
-                symbols=["OUT_SYMBOL"],
-                recent_count=0,
-            )[0]._replace(timestamp=exactly_24h_ago - timedelta(seconds=1))
-        )
+        bar_out = create_ohlcv_bars_fixture(
+            symbols=[f"OUT_{unique_id}"],
+            recent_count=0,
+        )[0]
+        bar_out.timestamp = exactly_24h_ago - timedelta(seconds=1)
+        bars.append(bar_out)
 
         # Bar inside window (23h 59m 59s ago) - should be included
-        bars.append(
-            create_ohlcv_bars_fixture(
-                symbols=["IN_SYMBOL1"],
-                recent_count=0,
-            )[0]._replace(timestamp=exactly_24h_ago + timedelta(seconds=1))
-        )
+        bar_in1 = create_ohlcv_bars_fixture(
+            symbols=[f"IN1_{unique_id}"],
+            recent_count=0,
+        )[0]
+        bar_in1.timestamp = exactly_24h_ago + timedelta(seconds=1)
+        bars.append(bar_in1)
 
         # Bar inside window (12h ago) - should be included
-        bars.append(
-            create_ohlcv_bars_fixture(
-                symbols=["IN_SYMBOL2"],
-                recent_count=0,
-            )[0]._replace(timestamp=now - timedelta(hours=12))
-        )
+        bar_in2 = create_ohlcv_bars_fixture(
+            symbols=[f"IN2_{unique_id}"],
+            recent_count=0,
+        )[0]
+        bar_in2.timestamp = now - timedelta(hours=12)
+        bars.append(bar_in2)
 
         # Add bars to database
         for bar in bars:
             repository.db_session.add(bar)
         await repository.db_session.commit()
 
-        # Act: Query symbols scanned
+        # Act: Query symbols scanned after adding test data
         symbols_scanned = await repository._get_symbols_scanned(exactly_24h_ago, now)
 
-        # Assert: Only 2 symbols included (OUT_SYMBOL excluded)
-        assert symbols_scanned == 2
+        # Assert: Only 2 new symbols included (OUT_SYMBOL excluded)
+        assert symbols_scanned == count_before + 2
 
     @pytest.mark.asyncio
     async def test_empty_database_graceful_handling(self, repository):

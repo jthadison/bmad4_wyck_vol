@@ -1,71 +1,28 @@
 """
-SQLAlchemy ORM Models for BMAD Wyckoff System.
+SQLAlchemy ORM Models for BMAD Wyckoff System (Story 10.3.1).
 
-These models map to the database tables defined in migration 001_initial_schema_with_timescaledb.py.
-They enable type-safe querying through SQLAlchemy ORM.
+These models map to database tables for pattern and signal data.
+They enable type-safe querying through SQLAlchemy ORM for daily summary queries.
+
+Note: OHLCVBar model exists in src/repositories/models.py (created in earlier stories).
+This file contains only the models needed for Story 10.3.1 pattern/signal queries.
 
 Models:
 -------
-- OHLCVBar: OHLCV price bars (TimescaleDB hypertable)
 - Pattern: Detected Wyckoff patterns
 - Signal: Generated trade signals
-- Campaign: Position sizing campaigns
-- TradingRange: Wyckoff trading ranges
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, Integer, String, Text
+from sqlalchemy import JSON, Boolean, CheckConstraint, Integer, String, Text
 from sqlalchemy.dialects.postgresql import NUMERIC, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
-
-
-class OHLCVBar(Base):
-    """
-    OHLCV price bar data (TimescaleDB hypertable).
-
-    Table: ohlcv_bars
-    Primary Key: (symbol, timeframe, timestamp) - composite key for TimescaleDB
-    Partitioning: Automatic daily chunks via TimescaleDB hypertable
-    """
-
-    __tablename__ = "ohlcv_bars"
-
-    # Composite primary key (required for TimescaleDB partitioning)
-    symbol: Mapped[str] = mapped_column(String(20), primary_key=True, nullable=False)
-    timeframe: Mapped[str] = mapped_column(String(5), primary_key=True, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), primary_key=True, nullable=False
-    )
-
-    # UUID for lookups (indexed separately)
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), server_default="gen_random_uuid()", nullable=False
-    )
-
-    # OHLCV data
-    open: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    high: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    low: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    close: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
-
-    # Calculated metrics
-    spread: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    spread_ratio: Mapped[Decimal] = mapped_column(NUMERIC(10, 4), nullable=False)
-    volume_ratio: Mapped[Decimal] = mapped_column(NUMERIC(10, 4), nullable=False)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default="NOW()", nullable=False
-    )
-
-    __table_args__ = (CheckConstraint("volume >= 0", name="chk_volume_positive"),)
 
 
 class Pattern(Base):
@@ -83,7 +40,7 @@ class Pattern(Base):
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
-        server_default="gen_random_uuid()",
+        default=uuid4,
     )
 
     # Pattern identification
@@ -129,7 +86,7 @@ class Pattern(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default="NOW()", nullable=False
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
 
     __table_args__ = (
@@ -153,7 +110,7 @@ class Signal(Base):
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
-        server_default="gen_random_uuid()",
+        default=uuid4,
     )
 
     # Signal identification
@@ -189,18 +146,15 @@ class Signal(Base):
     # Notification
     notification_sent: Mapped[bool] = mapped_column(Boolean, server_default="false")
 
-    # Rejection reason (nullable)
-    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-
     # Approval chain
     approval_chain: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default="NOW()", nullable=False
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default="NOW()", nullable=False
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
 
     __table_args__ = (CheckConstraint("r_multiple >= 2.0", name="chk_r_multiple"),)

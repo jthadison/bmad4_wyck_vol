@@ -20,7 +20,6 @@ Repository Methods:
 Author: Story 10.3
 """
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -29,7 +28,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.summary import DailySummary
-from src.orm.models import OHLCVBar, Pattern, Signal
+from src.orm.models import Pattern, Signal
+from src.repositories.models import OHLCVBarModel
 
 logger = structlog.get_logger()
 
@@ -86,20 +86,12 @@ class SummaryRepository:
                 cutoff=twenty_four_hours_ago.isoformat(),
             )
 
-            # Execute all queries in parallel for optimal performance (Story 10.3.1, AC: 6)
-            (
-                symbols_scanned,
-                patterns_detected,
-                signals_executed,
-                signals_rejected,
-                portfolio_heat_change,
-            ) = await asyncio.gather(
-                self._get_symbols_scanned(twenty_four_hours_ago, now),
-                self._get_patterns_detected(twenty_four_hours_ago, now),
-                self._get_signals_executed(twenty_four_hours_ago, now),
-                self._get_signals_rejected(twenty_four_hours_ago, now),
-                self._get_portfolio_heat_change(),
-            )
+            # Execute all queries sequentially (shared session doesn't support concurrent queries)
+            symbols_scanned = await self._get_symbols_scanned(twenty_four_hours_ago, now)
+            patterns_detected = await self._get_patterns_detected(twenty_four_hours_ago, now)
+            signals_executed = await self._get_signals_executed(twenty_four_hours_ago, now)
+            signals_rejected = await self._get_signals_rejected(twenty_four_hours_ago, now)
+            portfolio_heat_change = await self._get_portfolio_heat_change()
 
             suggested_actions = self._generate_suggested_actions(
                 symbols_scanned,
@@ -166,8 +158,8 @@ class SummaryRepository:
             query_start = datetime.now(UTC)
 
             result = await self.db_session.execute(
-                select(func.count(func.distinct(OHLCVBar.symbol))).where(
-                    OHLCVBar.timestamp >= start_time, OHLCVBar.timestamp <= end_time
+                select(func.count(func.distinct(OHLCVBarModel.symbol))).where(
+                    OHLCVBarModel.timestamp >= start_time, OHLCVBarModel.timestamp <= end_time
                 )
             )
             count = result.scalar() or 0
@@ -280,9 +272,9 @@ class SummaryRepository:
 
     async def _get_signals_rejected(self, start_time: datetime, end_time: datetime) -> int:
         """
-        Count signals with rejection_reason not null in last 24 hours (Story 10.3.1, AC: 4, 6, 7, 8).
+        Count signals with status REJECTED in last 24 hours (Story 10.3.1, AC: 4, 6, 7, 8).
 
-        Queries signals table for rejected signals (those with rejection_reason set)
+        Queries signals table for rejected signals (those with status REJECTED)
         within time range.
 
         Parameters:
@@ -304,7 +296,7 @@ class SummaryRepository:
                 select(func.count(Signal.id)).where(
                     Signal.generated_at >= start_time,
                     Signal.generated_at <= end_time,
-                    Signal.rejection_reason.isnot(None),
+                    Signal.status == "REJECTED",
                 )
             )
             count = result.scalar() or 0

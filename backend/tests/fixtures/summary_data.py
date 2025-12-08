@@ -17,7 +17,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from src.orm.models import OHLCVBar, Pattern, Signal
+from src.orm.models import Pattern, Signal
+from src.repositories.models import OHLCVBarModel
 
 
 def create_ohlcv_bars_fixture(
@@ -25,7 +26,7 @@ def create_ohlcv_bars_fixture(
     timeframe: str = "1h",
     hours_back: int = 48,
     recent_count: int = 10,
-) -> list[OHLCVBar]:
+) -> list[OHLCVBarModel]:
     """
     Create OHLCV bar fixtures for testing.
 
@@ -42,7 +43,7 @@ def create_ohlcv_bars_fixture(
 
     Returns:
     --------
-    list[OHLCVBar]
+    list[OHLCVBarModel]
         List of OHLCV bar fixtures
     """
     bars = []
@@ -52,7 +53,7 @@ def create_ohlcv_bars_fixture(
     for i, symbol in enumerate(symbols[:recent_count]):
         timestamp = now - timedelta(hours=i)  # Stagger timestamps
         bars.append(
-            OHLCVBar(
+            OHLCVBarModel(
                 symbol=symbol,
                 timeframe=timeframe,
                 timestamp=timestamp,
@@ -71,7 +72,7 @@ def create_ohlcv_bars_fixture(
     for i, symbol in enumerate(symbols[recent_count:]):
         timestamp = now - timedelta(hours=hours_back + i)
         bars.append(
-            OHLCVBar(
+            OHLCVBarModel(
                 symbol=symbol,
                 timeframe=timeframe,
                 timestamp=timestamp,
@@ -93,7 +94,7 @@ def create_patterns_fixture(
     count: int = 15,
     symbol: str = "EURUSD",
     timeframe: str = "1h",
-    hours_back_recent: int = 12,
+    hours_back_start: int = 23,
 ) -> list[Pattern]:
     """
     Create pattern fixtures for testing.
@@ -106,8 +107,8 @@ def create_patterns_fixture(
         Symbol for patterns
     timeframe : str
         Pattern timeframe
-    hours_back_recent : int
-        Hours back for recent patterns
+    hours_back_start : int
+        Hours back to start creating patterns (default: 23 hours ago)
 
     Returns:
     --------
@@ -118,7 +119,9 @@ def create_patterns_fixture(
     now = datetime.now(UTC)
 
     for i in range(count):
-        timestamp = now - timedelta(hours=hours_back_recent - i)
+        # Create patterns from 23 hours ago to recent, spaced evenly
+        hours_ago = hours_back_start - (i * (hours_back_start / count))
+        timestamp = now - timedelta(hours=hours_ago)
         patterns.append(
             Pattern(
                 id=uuid4(),
@@ -173,9 +176,11 @@ def create_signals_fixture(
     signals = []
     now = datetime.now(UTC)
 
-    # Create executed signals
+    # Create executed signals - space evenly from 22 hours ago to recent
+    total_signals = executed_count + rejected_count + pending_count
     for i in range(executed_count):
-        timestamp = now - timedelta(hours=i)
+        hours_ago = 22 - (i * (22 / total_signals if total_signals > 0 else 1))
+        timestamp = now - timedelta(hours=hours_ago)
         signals.append(
             Signal(
                 id=uuid4(),
@@ -198,7 +203,8 @@ def create_signals_fixture(
 
     # Create rejected signals
     for i in range(rejected_count):
-        timestamp = now - timedelta(hours=i + 1)
+        hours_ago = 22 - ((executed_count + i) * (22 / total_signals if total_signals > 0 else 1))
+        timestamp = now - timedelta(hours=hours_ago)
         signals.append(
             Signal(
                 id=uuid4(),
@@ -215,14 +221,16 @@ def create_signals_fixture(
                 r_multiple=Decimal("2.0"),
                 confidence_score=70,
                 status="REJECTED",
-                rejection_reason="Insufficient confidence score",
                 approval_chain={},
             )
         )
 
     # Create pending signals
     for i in range(pending_count):
-        timestamp = now - timedelta(hours=i + 2)
+        hours_ago = 22 - (
+            (executed_count + rejected_count + i) * (22 / total_signals if total_signals > 0 else 1)
+        )
+        timestamp = now - timedelta(hours=hours_ago)
         signals.append(
             Signal(
                 id=uuid4(),
