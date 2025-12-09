@@ -1,7 +1,7 @@
 """FastAPI application entry point for BMAD Wyckoff system."""
 
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import (
@@ -14,6 +14,7 @@ from src.api.routes import (
     risk,
     signals,
 )
+from src.api.websocket import websocket_endpoint
 from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
@@ -34,6 +35,14 @@ app.include_router(risk.router)
 app.include_router(feedback.router)
 app.include_router(patterns.router)
 app.include_router(audit.router)
+
+
+# WebSocket endpoint for real-time updates
+@app.websocket("/ws")
+async def websocket_route(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time event streaming."""
+    await websocket_endpoint(websocket)
+
 
 # Configure CORS
 app.add_middleware(
