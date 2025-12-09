@@ -22,6 +22,7 @@ const emit = defineEmits<{
   viewChart: []
   viewAudit: []
   viewStats: []
+  viewRejection: []
 }>()
 
 // Local expanded state
@@ -222,6 +223,11 @@ const handleViewStats = (event: Event) => {
   event.stopPropagation()
   emit('viewStats')
 }
+
+const handleViewRejection = (event: Event) => {
+  event.stopPropagation()
+  emit('viewRejection')
+}
 </script>
 
 <template>
@@ -380,6 +386,7 @@ const handleViewStats = (event: Event) => {
       <!-- Quick Action Buttons (AC: 4) -->
       <div class="flex gap-2 mb-3">
         <Button
+          v-if="signal.status !== 'REJECTED'"
           label="View Chart"
           icon="pi pi-chart-line"
           size="small"
@@ -389,6 +396,7 @@ const handleViewStats = (event: Event) => {
           @click="handleViewChart"
         />
         <Button
+          v-if="signal.status !== 'REJECTED'"
           label="Audit Trail"
           icon="pi pi-list"
           size="small"
@@ -398,6 +406,7 @@ const handleViewStats = (event: Event) => {
           @click="handleViewAudit"
         />
         <Button
+          v-if="signal.status !== 'REJECTED'"
           label="Stats"
           icon="pi pi-chart-bar"
           size="small"
@@ -405,6 +414,16 @@ const handleViewStats = (event: Event) => {
           class="flex-1"
           aria-label="View pattern statistics"
           @click="handleViewStats"
+        />
+        <Button
+          v-if="signal.status === 'REJECTED'"
+          label="Why Rejected?"
+          icon="pi pi-info-circle"
+          size="small"
+          severity="danger"
+          class="flex-1"
+          aria-label="View rejection details and learn why this pattern was rejected"
+          @click="handleViewRejection"
         />
       </div>
 

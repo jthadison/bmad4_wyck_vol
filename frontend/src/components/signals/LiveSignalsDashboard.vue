@@ -11,6 +11,8 @@ import Calendar from 'primevue/calendar'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
 import SignalCard from './SignalCard.vue'
+import RejectionDetailDialog from './RejectionDetailDialog.vue'
+import type { Signal } from '@/types'
 
 const signalStore = useSignalStore()
 
@@ -39,6 +41,10 @@ const dateRange = ref<Date[] | null>(null)
 
 // Infinite scroll state
 const isLoadingMore = ref(false)
+
+// Rejection dialog state
+const rejectionDialogVisible = ref(false)
+const selectedRejectedSignal = ref<Signal | null>(null)
 
 // Tab data
 const executedSignals = computed(() => signalStore.executedSignals)
@@ -177,6 +183,24 @@ function handleCardKeyDown(event: KeyboardEvent) {
     event.preventDefault()
     // Future: Expand signal details (Story 10.5)
   }
+}
+
+// Handle view rejection dialog
+function handleViewRejection(signal: Signal) {
+  selectedRejectedSignal.value = signal
+  rejectionDialogVisible.value = true
+}
+
+// Handle chart view from rejection dialog
+function handleViewChartFromDialog(signalId: string) {
+  // Future: Navigate to chart view with pattern overlay
+  console.log('View chart for signal:', signalId)
+  rejectionDialogVisible.value = false
+}
+
+// Handle feedback submitted from rejection dialog
+function handleFeedbackSubmitted(feedbackType: string) {
+  console.log('Feedback submitted:', feedbackType)
 }
 
 // Initialize
@@ -324,6 +348,7 @@ defineExpose({
               :key="signal.id"
               v-memo="[signal.id, signal.status, signal.timestamp]"
               :signal="signal"
+              @view-rejection="handleViewRejection(signal)"
               @keydown="handleCardKeyDown"
             />
 
@@ -404,6 +429,7 @@ defineExpose({
               :key="signal.id"
               v-memo="[signal.id, signal.status, signal.timestamp]"
               :signal="signal"
+              @view-rejection="handleViewRejection(signal)"
               @keydown="handleCardKeyDown"
             />
 
@@ -484,6 +510,7 @@ defineExpose({
               :key="signal.id"
               v-memo="[signal.id, signal.status, signal.timestamp]"
               :signal="signal"
+              @view-rejection="handleViewRejection(signal)"
               @keydown="handleCardKeyDown"
             />
 
@@ -564,6 +591,7 @@ defineExpose({
               :key="signal.id"
               v-memo="[signal.id, signal.status, signal.timestamp]"
               :signal="signal"
+              @view-rejection="handleViewRejection(signal)"
               @keydown="handleCardKeyDown"
             />
 
@@ -591,6 +619,16 @@ defineExpose({
         </div>
       </TabPanel>
     </TabView>
+
+    <!-- Rejection Detail Dialog (Story 10.7) -->
+    <RejectionDetailDialog
+      v-if="selectedRejectedSignal"
+      :signal="selectedRejectedSignal"
+      :visible="rejectionDialogVisible"
+      @update:visible="rejectionDialogVisible = $event"
+      @view-chart="handleViewChartFromDialog"
+      @feedback-submitted="handleFeedbackSubmitted"
+    />
   </div>
 </template>
 

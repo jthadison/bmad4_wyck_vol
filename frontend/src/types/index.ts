@@ -61,6 +61,12 @@ export type {
   RiskDashboardUpdatedEvent,
 } from './risk-dashboard'
 
+// Export all feedback types (Story 10.7)
+export type { FeedbackSubmission, FeedbackResponse, Feedback } from './feedback'
+
+// Export all pattern statistics types (Story 10.7)
+export type { PatternStatistics } from './pattern-statistics'
+
 // ============================================================================
 // Placeholder Types (Story 10.1)
 // NOTE: These will be replaced by auto-generated types from Pydantic in Story 10.10
@@ -69,7 +75,7 @@ export type {
 export interface Signal {
   id: string
   symbol: string
-  pattern_type: 'SPRING' | 'SOS' | 'LPS' | 'UTAD'
+  pattern_type: 'SPRING' | 'SOS' | 'LPS' | 'UTAD' | 'SC' | 'AR' | 'ST'
   phase: string
   entry_price: string
   stop_loss: string
@@ -101,8 +107,11 @@ export interface Signal {
   timestamp: string
   timeframe: string
   rejection_reasons?: string[]
+  rejection_reason?: string // Combined rejection reason string (Story 10.7)
   pattern_data?: Record<string, unknown>
   volume_analysis?: Record<string, unknown>
+  volume_ratio?: number // Volume ratio for rejection visualization (Story 10.7)
+  spread_ratio?: number
   created_at?: string
   schema_version?: number
 }
