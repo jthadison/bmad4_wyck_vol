@@ -105,4 +105,95 @@ export const apiClient = {
   },
 }
 
+// ============================================================================
+// Audit Log Types (Story 10.8)
+// ============================================================================
+
+export interface ValidationChainStep {
+  step_name: string
+  passed: boolean
+  reason: string
+  timestamp: string
+  wyckoff_rule_reference: string
+}
+
+export interface AuditLogEntry {
+  id: string
+  timestamp: string
+  symbol: string
+  pattern_type: 'SPRING' | 'UTAD' | 'SOS' | 'LPS' | 'SC' | 'AR' | 'ST'
+  phase: 'A' | 'B' | 'C' | 'D' | 'E'
+  confidence_score: number
+  status:
+    | 'PENDING'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'FILLED'
+    | 'STOPPED'
+    | 'TARGET_HIT'
+    | 'EXPIRED'
+  rejection_reason: string | null
+  signal_id: string | null
+  pattern_id: string
+  validation_chain: ValidationChainStep[]
+  entry_price: string | null
+  target_price: string | null
+  stop_loss: string | null
+  r_multiple: string | null
+  volume_ratio: string
+  spread_ratio: string
+}
+
+export interface AuditLogQueryParams {
+  start_date?: string
+  end_date?: string
+  symbols?: string[]
+  pattern_types?: string[]
+  statuses?: string[]
+  min_confidence?: number
+  max_confidence?: number
+  search_text?: string
+  order_by?: 'timestamp' | 'symbol' | 'pattern_type' | 'confidence' | 'status'
+  order_direction?: 'asc' | 'desc'
+  limit?: number
+  offset?: number
+}
+
+export interface AuditLogResponse {
+  data: AuditLogEntry[]
+  total_count: number
+  limit: number
+  offset: number
+}
+
+// ============================================================================
+// API Methods
+// ============================================================================
+
+/**
+ * Get audit log with filtering, sorting, and pagination (Story 10.8)
+ *
+ * @param params - Query parameters for filtering/sorting/pagination
+ * @returns Promise resolving to paginated audit log response
+ *
+ * @example
+ * ```ts
+ * const response = await getAuditLog({
+ *   symbols: ['AAPL', 'TSLA'],
+ *   pattern_types: ['SPRING'],
+ *   statuses: ['FILLED'],
+ *   limit: 50,
+ *   offset: 0
+ * })
+ * ```
+ */
+export async function getAuditLog(
+  params?: AuditLogQueryParams
+): Promise<AuditLogResponse> {
+  return apiClient.get<AuditLogResponse>(
+    '/audit-log',
+    params as Record<string, unknown>
+  )
+}
+
 export default apiClient
