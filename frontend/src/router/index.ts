@@ -3,6 +3,7 @@ import DashboardView from '@/views/DashboardView.vue'
 import BacktestView from '@/views/BacktestView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
+import TradeAuditLog from '@/components/audit/TradeAuditLog.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -19,6 +20,11 @@ const routes: RouteRecordRaw[] = [
     path: '/settings',
     name: 'settings',
     component: SettingsView,
+  },
+  {
+    path: '/audit-log',
+    name: 'audit-log',
+    component: TradeAuditLog,
   },
   {
     path: '/:pathMatch(.*)*',
