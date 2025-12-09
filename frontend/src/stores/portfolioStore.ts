@@ -23,8 +23,8 @@ import type {
   CampaignRiskSummary,
   CorrelatedRiskSummary,
   HeatHistoryPoint,
-  RiskDashboardUpdatedEvent,
 } from '@/types'
+import type { WebSocketMessage } from '@/types/websocket'
 
 export const usePortfolioStore = defineStore('portfolio', () => {
   // ============================================================================
@@ -224,14 +224,56 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   }
 
   // ============================================================================
-  // WebSocket Integration - Real-time Updates
+  // WebSocket Integration - Real-time Updates (Story 10.9)
   // ============================================================================
 
   const ws = useWebSocket()
 
-  // Subscribe to risk dashboard updates
-  ws.subscribe('risk:dashboard:updated', (event: RiskDashboardUpdatedEvent) => {
-    updateFromWebSocket(event.data)
+  // Subscribe to portfolio updates (Story 10.9 spec)
+  ws.subscribe('portfolio:updated', (message: WebSocketMessage) => {
+    if ('data' in message && message.data) {
+      const data = message.data as {
+        total_heat?: string
+        available_capacity?: string
+        timestamp?: string
+      }
+      // Update portfolio heat from WebSocket message
+      if (data.total_heat) totalHeat.value = data.total_heat as never
+      if (data.available_capacity)
+        availableCapacity.value = data.available_capacity as never
+      if (data.timestamp) lastUpdated.value = data.timestamp
+    }
+  })
+
+  // Subscribe to campaign updates (Story 10.9 spec)
+  ws.subscribe('campaign:updated', (message: WebSocketMessage) => {
+    if ('data' in message && message.data) {
+      const data = message.data as {
+        campaign_id?: string
+        risk_allocated?: string
+        positions_count?: number
+      }
+      if (data.campaign_id) {
+        // Update specific campaign in campaignRisks array
+        const index = campaignRisks.value.findIndex(
+          (c) => c.campaign_id === data.campaign_id
+        )
+        if (index !== -1) {
+          campaignRisks.value[index] = {
+            ...campaignRisks.value[index],
+            risk_allocated: data.risk_allocated as never,
+            positions_count: data.positions_count || 0,
+          }
+        }
+      }
+    }
+  })
+
+  // Legacy: Subscribe to risk dashboard updates (backward compatibility)
+  ws.subscribe('risk:dashboard:updated', (event: WebSocketMessage) => {
+    if ('data' in event && event.data) {
+      updateFromWebSocket(event.data as unknown as RiskDashboardData)
+    }
   })
 
   // ============================================================================

@@ -243,6 +243,7 @@ class MasterOrchestrator:
         signal_repository: Any = None,  # Stub for now
         rejection_repository: Any = None,  # Stub for now
         signal_priority_queue: SignalPriorityQueue | None = None,  # NEW: Story 9.3
+        websocket_manager: Any = None,  # NEW: Story 10.9 - WebSocket event emissions
         performance_tracker: PerformanceTracker | None = None,
         max_concurrent_symbols: int = 10,
         cache_ttl_seconds: int = 300,
@@ -291,6 +292,7 @@ class MasterOrchestrator:
         self.signal_repository = signal_repository
         self.rejection_repository = rejection_repository
         self.signal_priority_queue = signal_priority_queue  # NEW: Story 9.3
+        self.websocket_manager = websocket_manager  # NEW: Story 10.9
         self.performance_tracker = performance_tracker or PerformanceTracker()
         self.max_concurrent_symbols = max_concurrent_symbols
         self.cache_ttl_seconds = cache_ttl_seconds
@@ -302,7 +304,7 @@ class MasterOrchestrator:
 
         # System state
         self._system_halted: bool = False
-        self._event_emitter: Any = None  # WebSocket event emitter
+        self._event_emitter: Any = None  # Deprecated: use websocket_manager instead
 
         self.logger = structlog.get_logger(__name__)
 
@@ -629,6 +631,26 @@ class MasterOrchestrator:
             if self.rejection_repository:
                 await self.rejection_repository.log_rejection(rejected)
 
+            # Story 10.9: Emit signal:rejected event via WebSocket
+            if self.websocket_manager:
+                try:
+                    await self.websocket_manager.emit_signal_rejected(
+                        {
+                            "id": str(rejected.pattern_id),
+                            "symbol": rejected.symbol,
+                            "pattern_type": rejected.pattern_type,
+                            "rejection_stage": rejected.rejection_stage,
+                            "rejection_reason": rejected.rejection_reason,
+                            "timestamp": rejected.timestamp.isoformat(),
+                        }
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        "websocket_emit_failed",
+                        event="signal:rejected",
+                        error=str(e),
+                    )
+
             return rejected
 
         # Validation passed, create TradeSignal
@@ -721,6 +743,33 @@ class MasterOrchestrator:
                 confidence_score=signal.confidence_score,
                 r_multiple=str(signal.r_multiple),
             )
+
+        # Story 10.9: Emit signal:new event via WebSocket
+        if self.websocket_manager:
+            try:
+                await self.websocket_manager.emit_signal_generated(
+                    {
+                        "id": str(signal.id),
+                        "symbol": signal.symbol,
+                        "pattern_type": signal.pattern_type,
+                        "phase": signal.phase,
+                        "entry_price": str(signal.entry_price),
+                        "stop_loss": str(signal.stop_loss),
+                        "target_price": str(signal.target_levels.primary_target),
+                        "position_size": str(signal.position_size),
+                        "position_size_unit": signal.position_size_unit,
+                        "confidence_score": signal.confidence_score,
+                        "r_multiple": str(signal.r_multiple),
+                        "status": signal.status,
+                        "timestamp": signal.timestamp.isoformat(),
+                    }
+                )
+            except Exception as e:
+                self.logger.warning(
+                    "websocket_emit_failed",
+                    event="signal:new",
+                    error=str(e),
+                )
 
         return signal
 

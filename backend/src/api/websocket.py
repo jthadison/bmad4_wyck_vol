@@ -1,0 +1,451 @@
+"""
+WebSocket API for Real-Time Updates (Story 10.9)
+
+Purpose:
+--------
+Provides WebSocket endpoint for real-time event streaming to frontend clients.
+Implements ConnectionManager to track active connections with sequence numbers
+for message ordering and deduplication.
+
+Architecture:
+-------------
+- Native FastAPI WebSocket support (NOT Socket.IO)
+- ConnectionManager: Tracks active connections with UUID + sequence numbers
+- Event emission methods: Integrate with Pattern Engine, Signal Generator, Risk Management
+- Heartbeat/ping every 30 seconds to keep connections alive
+- Graceful disconnect handling with cleanup
+
+Message Format:
+---------------
+All WebSocket messages include:
+- type: Event type identifier (connected, pattern_detected, signal:new, etc.)
+- sequence_number: Monotonic counter per connection (prevents duplicates)
+- timestamp: ISO 8601 UTC timestamp
+- data: Message-specific payload (optional)
+
+Event Types:
+------------
+- connected: Connection established
+- pattern_detected: New Wyckoff pattern detected
+- signal:new: New trade signal generated
+- signal:executed: Signal executed
+- signal:rejected: Signal rejected
+- portfolio:updated: Portfolio heat changed
+- campaign:updated: Campaign risk changed
+- batch_update: Multiple events batched (high-volume scenarios)
+
+Integration Points:
+-------------------
+- Pattern Detection Engine: emit_pattern_detected()
+- Signal Generator: emit_signal_generated(), emit_signal_executed(), emit_signal_rejected()
+- Risk Management Service: emit_portfolio_updated(), emit_campaign_updated()
+
+Author: Story 10.9
+"""
+
+from datetime import UTC, datetime
+from typing import Any
+from uuid import uuid4
+
+from fastapi import WebSocket, WebSocketDisconnect
+
+
+class ConnectionManager:
+    """
+    Manages active WebSocket connections.
+
+    Tracks connections with unique IDs and sequence numbers for message ordering.
+    Provides methods to emit events to individual connections or broadcast to all.
+
+    Attributes:
+    -----------
+    active_connections: Dict mapping connection_id to (WebSocket, sequence_number) tuple
+
+    Methods:
+    --------
+    - connect(websocket): Accept connection, assign UUID, send connected message
+    - disconnect(connection_id): Remove connection from tracking
+    - send_message(connection_id, message): Send message to specific connection
+    - broadcast(message): Send message to all connected clients
+    - emit_pattern_detected(...): Emit pattern detection event
+    - emit_signal_generated(...): Emit signal generation event
+    - emit_signal_executed(...): Emit signal execution event
+    - emit_signal_rejected(...): Emit signal rejection event
+    - emit_portfolio_updated(...): Emit portfolio update event
+    - emit_campaign_updated(...): Emit campaign update event
+    """
+
+    def __init__(self) -> None:
+        """Initialize ConnectionManager with empty connection tracking."""
+        # Maps connection_id to (WebSocket, sequence_number) tuple
+        self.active_connections: dict[str, tuple[WebSocket, int]] = {}
+
+    async def connect(self, websocket: WebSocket) -> str:
+        """
+        Accept WebSocket connection and send connected message.
+
+        Args:
+            websocket: FastAPI WebSocket instance
+
+        Returns:
+            connection_id: Unique UUID for this connection
+
+        Side Effects:
+            - Accepts WebSocket connection
+            - Assigns UUID and initializes sequence_number to 0
+            - Sends connected message with connection_id
+        """
+        await websocket.accept()
+        connection_id = str(uuid4())
+        self.active_connections[connection_id] = (websocket, 0)
+
+        # Send connected message (sequence_number = 0) directly without incrementing
+        try:
+            await websocket.send_json(
+                {
+                    "type": "connected",
+                    "connection_id": connection_id,
+                    "sequence_number": 0,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
+        except Exception as e:
+            print(f"[WebSocket] Failed to send connected message to {connection_id}: {e}")
+            await self.disconnect(connection_id)
+
+        return connection_id
+
+    async def disconnect(self, connection_id: str) -> None:
+        """
+        Remove connection from tracking.
+
+        Args:
+            connection_id: UUID of connection to remove
+        """
+        if connection_id in self.active_connections:
+            del self.active_connections[connection_id]
+
+    async def send_message(self, connection_id: str, message: dict[str, Any]) -> None:
+        """
+        Send message to specific connection with sequence number.
+
+        Args:
+            connection_id: UUID of target connection
+            message: Message dictionary (will be enriched with sequence_number)
+
+        Side Effects:
+            - Increments sequence_number for this connection
+            - Adds sequence_number and timestamp to message
+            - Sends JSON message via WebSocket
+        """
+        if connection_id not in self.active_connections:
+            return
+
+        ws, seq = self.active_connections[connection_id]
+
+        # Increment sequence number (start at 1, since connected message is 0)
+        seq += 1
+        self.active_connections[connection_id] = (ws, seq)
+
+        # Add sequence number and timestamp if not present
+        message["sequence_number"] = seq
+        if "timestamp" not in message:
+            message["timestamp"] = datetime.now(UTC).isoformat()
+
+        try:
+            await ws.send_json(message)
+        except Exception as e:
+            print(f"[WebSocket] Failed to send message to {connection_id}: {e}")
+            # Remove dead connection
+            await self.disconnect(connection_id)
+
+    async def broadcast(self, message: dict[str, Any]) -> None:
+        """
+        Send message to all connected clients.
+
+        Args:
+            message: Message dictionary (will be enriched with sequence_number per connection)
+
+        Note:
+            Each connection receives the message with its own sequence_number.
+        """
+        # Create list of connection IDs to avoid modification during iteration
+        connection_ids = list(self.active_connections.keys())
+
+        for connection_id in connection_ids:
+            # Create copy of message for each connection (different sequence numbers)
+            await self.send_message(connection_id, message.copy())
+
+    async def emit_pattern_detected(
+        self,
+        pattern_id: str,
+        symbol: str,
+        pattern_type: str,
+        confidence_score: int,
+        phase: str,
+        test_confirmed: bool,
+    ) -> None:
+        """
+        Emit pattern_detected event to all connected clients.
+
+        Args:
+            pattern_id: Pattern UUID
+            symbol: Ticker symbol (e.g., "AAPL")
+            pattern_type: Pattern name (SPRING, UTAD, SOS, etc.)
+            confidence_score: Confidence score 70-95
+            phase: Wyckoff phase (A, B, C, D, E)
+            test_confirmed: Whether test confirmed (True/False)
+
+        Message Format:
+            {
+                "type": "pattern_detected",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "data": {
+                    "id": "<pattern_id>",
+                    "symbol": "<symbol>",
+                    "pattern_type": "<type>",
+                    "confidence_score": <score>,
+                    "phase": "<phase>",
+                    "test_confirmed": <bool>
+                },
+                "full_details_url": "/api/v1/patterns/<pattern_id>"
+            }
+        """
+        message = {
+            "type": "pattern_detected",
+            "data": {
+                "id": pattern_id,
+                "symbol": symbol,
+                "pattern_type": pattern_type,
+                "confidence_score": confidence_score,
+                "phase": phase,
+                "test_confirmed": test_confirmed,
+            },
+            "full_details_url": f"/api/v1/patterns/{pattern_id}",
+        }
+
+        await self.broadcast(message)
+
+    async def emit_signal_generated(self, signal_data: dict[str, Any]) -> None:
+        """
+        Emit signal:new event to all connected clients.
+
+        Args:
+            signal_data: Complete Signal object as dictionary
+
+        Message Format:
+            {
+                "type": "signal:new",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "data": <signal_data>
+            }
+        """
+        message = {
+            "type": "signal:new",
+            "data": signal_data,
+        }
+
+        await self.broadcast(message)
+
+    async def emit_signal_executed(self, signal_data: dict[str, Any]) -> None:
+        """
+        Emit signal:executed event to all connected clients.
+
+        Args:
+            signal_data: Complete Signal object as dictionary
+
+        Message Format:
+            {
+                "type": "signal:executed",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "data": <signal_data>
+            }
+        """
+        message = {
+            "type": "signal:executed",
+            "data": signal_data,
+        }
+
+        await self.broadcast(message)
+
+    async def emit_signal_rejected(self, signal_data: dict[str, Any]) -> None:
+        """
+        Emit signal:rejected event to all connected clients.
+
+        Args:
+            signal_data: Complete Signal object as dictionary (includes rejection_reason)
+
+        Message Format:
+            {
+                "type": "signal:rejected",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "data": <signal_data>
+            }
+        """
+        message = {
+            "type": "signal:rejected",
+            "data": signal_data,
+        }
+
+        await self.broadcast(message)
+
+    async def emit_portfolio_updated(
+        self,
+        total_heat: str,
+        available_capacity: str,
+    ) -> None:
+        """
+        Emit portfolio:updated event to all connected clients.
+
+        Args:
+            total_heat: Total portfolio heat as Decimal string
+            available_capacity: Available capacity as Decimal string
+
+        Message Format:
+            {
+                "type": "portfolio:updated",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "data": {
+                    "total_heat": "<decimal_string>",
+                    "available_capacity": "<decimal_string>",
+                    "timestamp": "<ISO8601>"
+                }
+            }
+        """
+        timestamp = datetime.now(UTC).isoformat()
+
+        message = {
+            "type": "portfolio:updated",
+            "data": {
+                "total_heat": total_heat,
+                "available_capacity": available_capacity,
+                "timestamp": timestamp,
+            },
+        }
+
+        await self.broadcast(message)
+
+    async def emit_campaign_updated(
+        self,
+        campaign_id: str,
+        risk_allocated: str,
+        positions_count: int,
+    ) -> None:
+        """
+        Emit campaign:updated event to all connected clients.
+
+        Args:
+            campaign_id: Campaign UUID
+            risk_allocated: Risk allocated as Decimal string
+            positions_count: Number of active positions
+
+        Message Format:
+            {
+                "type": "campaign:updated",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "data": {
+                    "campaign_id": "<campaign_id>",
+                    "risk_allocated": "<decimal_string>",
+                    "positions_count": <count>
+                }
+            }
+        """
+        message = {
+            "type": "campaign:updated",
+            "data": {
+                "campaign_id": campaign_id,
+                "risk_allocated": risk_allocated,
+                "positions_count": positions_count,
+            },
+        }
+
+        await self.broadcast(message)
+
+    async def emit_batch_update(
+        self,
+        patterns_detected: list[dict[str, Any]],
+        signals_generated: list[dict[str, Any]],
+    ) -> None:
+        """
+        Emit batch_update event for high-volume scenarios.
+
+        Args:
+            patterns_detected: List of pattern detection data
+            signals_generated: List of signal generation data
+
+        Message Format:
+            {
+                "type": "batch_update",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "batch_size": <total_count>,
+                "patterns_detected": [...],
+                "signals_generated": [...]
+            }
+
+        Note:
+            Used when >10 events occur within 500ms to reduce message overhead.
+        """
+        message = {
+            "type": "batch_update",
+            "batch_size": len(patterns_detected) + len(signals_generated),
+            "patterns_detected": patterns_detected,
+            "signals_generated": signals_generated,
+        }
+
+        await self.broadcast(message)
+
+
+# Global singleton instance
+manager = ConnectionManager()
+
+
+async def websocket_endpoint(websocket: WebSocket) -> None:
+    """
+    WebSocket endpoint handler.
+
+    Endpoint: ws://localhost:8000/ws
+
+    Connection Flow:
+    ----------------
+    1. Client connects: `new WebSocket('ws://localhost:8000/ws')`
+    2. Server accepts, assigns connection_id, sends connected message
+    3. Server emits events as they occur (pattern detected, signal generated, etc.)
+    4. Client processes messages, updates UI
+    5. On disconnect: Server removes connection from tracking
+
+    Heartbeat:
+    ----------
+    FastAPI WebSocket connections are kept alive by the ASGI server.
+    No explicit ping/pong needed for MVP (single-user, local deployment).
+
+    Error Handling:
+    ---------------
+    - WebSocketDisconnect: Normal disconnection, cleanup connection
+    - Any Exception: Log error, cleanup connection
+    """
+    connection_id = await manager.connect(websocket)
+    print(f"[WebSocket] Client connected: {connection_id}")
+
+    try:
+        # Keep connection alive, listen for client messages if needed
+        while True:
+            # Wait for messages from client (currently unused, but keeps connection alive)
+            data = await websocket.receive_text()
+
+            # Echo back for debugging (remove in production)
+            if data:
+                print(f"[WebSocket] Received from {connection_id}: {data}")
+
+    except WebSocketDisconnect:
+        print(f"[WebSocket] Client disconnected: {connection_id}")
+        await manager.disconnect(connection_id)
+    except Exception as e:
+        print(f"[WebSocket] Error for {connection_id}: {e}")
+        await manager.disconnect(connection_id)

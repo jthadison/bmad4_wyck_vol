@@ -2,14 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { apiClient } from '@/services/api'
 import { useWebSocket } from '@/composables/useWebSocket'
-import type {
-  Signal,
-  SignalQueryParams,
-  SignalListResponse,
-  SignalNewEvent,
-  SignalExecutedEvent,
-  SignalRejectedEvent,
-} from '@/types'
+import type { Signal, SignalQueryParams, SignalListResponse } from '@/types'
+import type { WebSocketMessage } from '@/types/websocket'
 
 export const useSignalStore = defineStore('signal', () => {
   // State
@@ -131,19 +125,31 @@ export const useSignalStore = defineStore('signal', () => {
   // WebSocket integration
   const ws = useWebSocket()
 
-  ws.subscribe('signal:new', (event: SignalNewEvent) => {
-    addSignal(event.data)
+  ws.subscribe('signal:new', (message: WebSocketMessage) => {
+    // Full Signal object in message.data
+    if ('data' in message && message.data) {
+      addSignal(message.data as Signal)
+    }
   })
 
-  ws.subscribe('signal:executed', (event: SignalExecutedEvent) => {
-    updateSignal(event.data.id, { status: event.data.status })
+  ws.subscribe('signal:executed', (message: WebSocketMessage) => {
+    // Full Signal object in message.data
+    if ('data' in message && message.data) {
+      const signal = message.data as Signal
+      if (signal.id) {
+        updateSignal(signal.id, signal)
+      }
+    }
   })
 
-  ws.subscribe('signal:rejected', (event: SignalRejectedEvent) => {
-    updateSignal(event.data.id, {
-      status: event.data.status,
-      rejection_reasons: event.data.rejection_reasons,
-    })
+  ws.subscribe('signal:rejected', (message: WebSocketMessage) => {
+    // Full Signal object in message.data
+    if ('data' in message && message.data) {
+      const signal = message.data as Signal
+      if (signal.id) {
+        updateSignal(signal.id, signal)
+      }
+    }
   })
 
   return {

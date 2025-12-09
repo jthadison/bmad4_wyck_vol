@@ -1,98 +1,116 @@
-import { ref, onMounted, onUnmounted, readonly } from 'vue'
-import { WebSocketClient, type WebSocketMessage } from '@/services/websocket'
+/**
+ * Vue Composable for WebSocket Connection (Story 10.9)
+ *
+ * Purpose:
+ * --------
+ * Provides reactive access to WebSocket service in Vue components.
+ * Wraps websocketService singleton with Vue's reactivity system.
+ *
+ * Usage:
+ * ------
+ * ```vue
+ * <script setup lang="ts">
+ * import { useWebSocket } from '@/composables/useWebSocket'
+ *
+ * const ws = useWebSocket()
+ *
+ * // Subscribe to events
+ * ws.subscribe('signal:new', (message) => {
+ *   console.log('New signal:', message)
+ * })
+ *
+ * // Access reactive state
+ * const isConnected = ws.isConnected
+ * const connectionStatus = ws.connectionStatus
+ * </script>
+ * ```
+ *
+ * Features:
+ * ---------
+ * - Reactive connection status
+ * - Reactive last message time
+ * - Event subscription methods
+ * - Connection control methods (connect, disconnect, reconnectNow)
+ *
+ * Integration:
+ * ------------
+ * - WebSocketService: Singleton service for WebSocket management
+ * - Pinia stores: Subscribe to WebSocket events to update store state
+ *
+ * Author: Story 10.9
+ */
 
-// Get WebSocket URL from environment variables
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
-
-// Singleton WebSocket client instance
-let wsClient: WebSocketClient | null = null
+import { readonly, computed } from 'vue'
+import { websocketService } from '@/services/websocketService'
+import type { EventHandler } from '@/types/websocket'
 
 /**
- * Vue composable for WebSocket connection
- * Provides reactive connection state and subscription methods
+ * Vue composable for WebSocket connection.
+ * Provides reactive access to WebSocket service.
  */
 export function useWebSocket() {
-  const isConnected = ref(false)
-  const connectionStatus = ref<'connecting' | 'connected' | 'disconnected'>(
-    'disconnected'
-  )
-  const lastMessageTime = ref<Date | null>(null)
+  // Reactive state from WebSocketService
+  const connectionStatus = websocketService.connectionStatus
+  const lastMessageTime = websocketService.lastMessageTime
+  const reconnectAttemptsCount = websocketService.reconnectAttemptsCount
 
-  // Initialize WebSocket client if not already created
-  if (!wsClient) {
-    wsClient = new WebSocketClient(WS_URL)
-  }
-
-  // Update connection state
-  const updateConnectionState = () => {
-    if (wsClient) {
-      isConnected.value = wsClient.isConnected()
-      connectionStatus.value = isConnected.value ? 'connected' : 'disconnected'
-    }
-  }
-
-  // Handle generic message event to update last message time
-  const handleMessage = (_message: WebSocketMessage) => {
-    lastMessageTime.value = new Date()
-  }
-
-  // Auto-connect on mount
-  onMounted(() => {
-    if (wsClient) {
-      wsClient.on('connected', updateConnectionState)
-      wsClient.on('message', handleMessage)
-      wsClient.on('reconnected', updateConnectionState)
-
-      connectionStatus.value = 'connecting'
-      wsClient.connect()
-
-      // Update state periodically
-      const interval = setInterval(updateConnectionState, 1000)
-      onUnmounted(() => clearInterval(interval))
-    }
-  })
-
-  // Cleanup on unmount
-  onUnmounted(() => {
-    if (wsClient) {
-      wsClient.off('connected', updateConnectionState)
-      wsClient.off('message', handleMessage)
-      wsClient.off('reconnected', updateConnectionState)
-    }
-  })
+  // Computed properties
+  const isConnected = computed(() => websocketService.isConnected())
 
   /**
-   * Subscribe to specific event type
+   * Subscribe to specific event type.
+   *
+   * @param eventType - Event type to subscribe to (e.g., 'signal:new')
+   * @param handler - Callback function to handle event
    */
-  const subscribe = (eventType: string, handler: (message: any) => void) => {
-    if (wsClient) {
-      wsClient.on(eventType, handler)
-    }
+  function subscribe(eventType: string, handler: EventHandler): void {
+    websocketService.subscribe(eventType, handler)
   }
 
   /**
-   * Unsubscribe from event type
+   * Unsubscribe from event type.
+   *
+   * @param eventType - Event type to unsubscribe from
+   * @param handler - Callback function to remove
    */
-  const unsubscribe = (eventType: string, handler: (message: any) => void) => {
-    if (wsClient) {
-      wsClient.off(eventType, handler)
-    }
+  function unsubscribe(eventType: string, handler: EventHandler): void {
+    websocketService.unsubscribe(eventType, handler)
   }
 
   /**
-   * Send message to server
+   * Get last sequence number.
    */
-  const send = (message: any) => {
-    if (wsClient) {
-      wsClient.send(message)
-    }
+  function getLastSequenceNumber(): number {
+    return websocketService.getLastSequenceNumber()
   }
 
   /**
-   * Get last sequence number
+   * Get connection ID.
    */
-  const getLastSequenceNumber = (): number => {
-    return wsClient?.getLastSequenceNumber() || 0
+  function getConnectionId(): string | null {
+    return websocketService.getConnectionId()
+  }
+
+  /**
+   * Connect to WebSocket server.
+   */
+  function connect(): void {
+    websocketService.connect()
+  }
+
+  /**
+   * Disconnect from WebSocket server.
+   */
+  function disconnect(): void {
+    websocketService.disconnect()
+  }
+
+  /**
+   * Manually reconnect (skips backoff timer).
+   * Used by "Reconnect Now" button.
+   */
+  function reconnectNow(): void {
+    websocketService.reconnectNow()
   }
 
   return {
@@ -100,11 +118,17 @@ export function useWebSocket() {
     isConnected: readonly(isConnected),
     connectionStatus: readonly(connectionStatus),
     lastMessageTime: readonly(lastMessageTime),
+    reconnectAttemptsCount: readonly(reconnectAttemptsCount),
 
     // Methods
     subscribe,
     unsubscribe,
-    send,
     getLastSequenceNumber,
+    getConnectionId,
+    connect,
+    disconnect,
+    reconnectNow,
   }
 }
+
+export default useWebSocket
