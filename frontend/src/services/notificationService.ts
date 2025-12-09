@@ -105,12 +105,14 @@ class NotificationService {
   showNewSignal(patternType: string, symbol: string, signalId: string): void {
     if (!this.canShowToast() || !this.toast) return
 
+    // Note: signalId available for future navigation implementation
+    console.log(`[NotificationService] New signal: ${signalId}`)
+
     this.toast.add({
       severity: 'info',
       summary: 'New Signal',
       detail: `${patternType} on ${symbol}`,
       life: this.toastLifeMs,
-      data: { signalId, action: 'viewSignal' },
     })
   }
 
@@ -123,12 +125,14 @@ class NotificationService {
   showSignalExecuted(symbol: string, signalId: string): void {
     if (!this.canShowToast() || !this.toast) return
 
+    // Note: signalId available for future navigation implementation
+    console.log(`[NotificationService] Signal executed: ${signalId}`)
+
     this.toast.add({
       severity: 'success',
       summary: 'Signal Executed',
       detail: `Signal executed: ${symbol}`,
       life: this.toastLifeMs,
-      data: { signalId, action: 'viewSignal' },
     })
   }
 
@@ -142,12 +146,14 @@ class NotificationService {
   showSignalRejected(symbol: string, reason: string, signalId: string): void {
     if (!this.canShowToast() || !this.toast) return
 
+    // Note: signalId available for future navigation implementation
+    console.log(`[NotificationService] Signal rejected: ${signalId}`)
+
     this.toast.add({
       severity: 'error',
       summary: 'Signal Rejected',
       detail: `${symbol}: ${reason}`,
       life: this.toastLifeMs,
-      data: { signalId, action: 'viewSignal' },
     })
   }
 
@@ -167,7 +173,6 @@ class NotificationService {
       summary: 'Portfolio Heat Warning',
       detail: `Portfolio heat at ${heatPercentage.toFixed(1)}%`,
       life: this.toastLifeMs,
-      data: { action: 'viewRiskDashboard' },
     })
   }
 
@@ -183,6 +188,9 @@ class NotificationService {
     // Only show if campaign risk > 80%
     if (riskPercentage <= 80) return
 
+    // Note: campaignId available for future navigation implementation
+    console.log(`[NotificationService] Campaign risk warning: ${campaignId}`)
+
     this.toast.add({
       severity: 'warn',
       summary: 'Campaign Risk Warning',
@@ -190,7 +198,6 @@ class NotificationService {
         1
       )}%`,
       life: this.toastLifeMs,
-      data: { campaignId, action: 'viewCampaign' },
     })
   }
 
@@ -208,12 +215,14 @@ class NotificationService {
   ): void {
     if (!this.canShowToast() || !this.toast) return
 
+    // Note: patternId available for future navigation implementation
+    console.log(`[NotificationService] Pattern detected: ${patternId}`)
+
     this.toast.add({
       severity: 'info',
       summary: 'Pattern Detected',
       detail: `${patternType} detected on ${symbol}`,
       life: this.toastLifeMs,
-      data: { patternId, action: 'viewPattern' },
     })
   }
 

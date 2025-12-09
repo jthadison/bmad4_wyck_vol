@@ -72,7 +72,7 @@ export const usePatternStore = defineStore('pattern', () => {
       const pattern: Pattern = {
         id: data.id,
         symbol: data.symbol,
-        pattern_type: data.pattern_type,
+        pattern_type: data.pattern_type as Pattern['pattern_type'],
         detected_at: message.timestamp,
         confidence: data.confidence_score,
         phase: data.phase,

@@ -130,9 +130,9 @@ class WebSocketService {
           this.isReconnecting = false
         }
 
-        // Emit reconnected event if this is a reconnection
+        // Log reconnection (internal event, not emitted to subscribers)
         if (this.connectionId !== null) {
-          this.emit('reconnected', {})
+          console.log('[WebSocket] Reconnected successfully')
         }
       }
 

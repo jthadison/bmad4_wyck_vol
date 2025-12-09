@@ -272,7 +272,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   // Legacy: Subscribe to risk dashboard updates (backward compatibility)
   ws.subscribe('risk:dashboard:updated', (event: WebSocketMessage) => {
     if ('data' in event && event.data) {
-      updateFromWebSocket(event.data as RiskDashboardData)
+      updateFromWebSocket(event.data as unknown as RiskDashboardData)
     }
   })
 
