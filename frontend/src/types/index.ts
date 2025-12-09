@@ -52,6 +52,15 @@ export {
   maxDecimal,
 } from './decimal-utils'
 
+// Export all risk dashboard types (Story 10.6)
+export type {
+  HeatHistoryPoint,
+  CampaignRiskSummary,
+  CorrelatedRiskSummary,
+  RiskDashboardData,
+  RiskDashboardUpdatedEvent,
+} from './risk-dashboard'
+
 // ============================================================================
 // Placeholder Types (Story 10.1)
 // NOTE: These will be replaced by auto-generated types from Pydantic in Story 10.10
