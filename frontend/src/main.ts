@@ -11,6 +11,35 @@ import 'primeicons/primeicons.css'
 // Import Tailwind CSS
 import './style.css'
 
+// Validate required environment variables
+const requiredEnvVars = [
+  'VITE_API_BASE_URL',
+  'VITE_WS_BASE_URL',
+  'VITE_APP_VERSION',
+]
+const missingVars = requiredEnvVars.filter(
+  (varName) => !import.meta.env[varName]
+)
+
+if (missingVars.length > 0) {
+  console.error(
+    `Missing required environment variables: ${missingVars.join(', ')}`
+  )
+  console.error(
+    'Please configure .env.production file with all required variables'
+  )
+}
+
+// Log app configuration in development
+if (import.meta.env.DEV) {
+  console.log('App Configuration:', {
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
+    wsBaseUrl: import.meta.env.VITE_WS_BASE_URL,
+    version: import.meta.env.VITE_APP_VERSION,
+    mode: import.meta.env.MODE,
+  })
+}
+
 const app = createApp(App)
 const pinia = createPinia()
 

@@ -5,12 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vite build",
+    "build:check": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
+    "test:smoke": "playwright test",
+    "test:smoke:headed": "playwright test --headed",
+    "test:smoke:report": "playwright show-report",
     "coverage": "vitest run --coverage",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "format": "prettier --write src/"
@@ -29,6 +33,7 @@
   },
   "devDependencies": {
     "@pinia/testing": "^0.1.7",
+    "@playwright/test": "^1.57.0",
     "@types/big.js": "^6.2.2",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
@@ -43,6 +48,7 @@
     "happy-dom": "^20.0.11",
     "postcss": "^8.4.0",
     "prettier": "^3.2.0",
+    "rollup-plugin-visualizer": "^6.0.5",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.9.3",
     "vite": "^5.0.0",

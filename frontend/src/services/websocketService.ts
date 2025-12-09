@@ -88,8 +88,8 @@ class WebSocketService {
    */
   private getDefaultWebSocketUrl(): string {
     // Use environment variable if available
-    if (import.meta.env.VITE_WS_URL) {
-      return import.meta.env.VITE_WS_URL
+    if (import.meta.env.VITE_WS_BASE_URL) {
+      return import.meta.env.VITE_WS_BASE_URL
     }
 
     // Default to localhost:8000 for MVP
