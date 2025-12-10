@@ -196,4 +196,172 @@ export async function getAuditLog(
   )
 }
 
+// ============================================================================
+// Configuration API (Story 11.1)
+// ============================================================================
+
+export interface SystemConfiguration {
+  id: string
+  version: number
+  volume_thresholds: VolumeThresholds
+  risk_limits: RiskLimits
+  cause_factors: CauseFactors
+  pattern_confidence: PatternConfidence
+  applied_at: string
+  applied_by: string | null
+}
+
+export interface VolumeThresholds {
+  spring_volume_min: string
+  spring_volume_max: string
+  sos_volume_min: string
+  lps_volume_min: string
+  utad_volume_max: string
+}
+
+export interface RiskLimits {
+  max_risk_per_trade: string
+  max_campaign_risk: string
+  max_portfolio_heat: string
+}
+
+export interface CauseFactors {
+  min_cause_factor: string
+  max_cause_factor: string
+}
+
+export interface PatternConfidence {
+  min_spring_confidence: number
+  min_sos_confidence: number
+  min_lps_confidence: number
+  min_utad_confidence: number
+}
+
+export interface ImpactAnalysisResult {
+  signal_count_delta: number
+  current_signal_count: number
+  proposed_signal_count: number
+  current_win_rate: string | null
+  proposed_win_rate: string | null
+  win_rate_delta: string | null
+  confidence_range: {
+    min: string
+    max: string
+  }
+  recommendations: Recommendation[]
+  risk_impact: string | null
+}
+
+export interface Recommendation {
+  severity: 'INFO' | 'WARNING' | 'CAUTION'
+  message: string
+  category: string | null
+}
+
+export interface ConfigurationResponse {
+  data: SystemConfiguration
+  metadata: {
+    last_modified_at: string
+    version: number
+    modified_by: string
+  }
+}
+
+export interface ImpactAnalysisResponse {
+  data: ImpactAnalysisResult
+  metadata: {
+    analysis_period_days: number
+    patterns_evaluated: number
+    calculated_at: string
+  }
+}
+
+/**
+ * Get current system configuration (Story 11.1)
+ *
+ * @returns Promise resolving to current configuration with metadata
+ *
+ * @example
+ * ```ts
+ * const response = await getConfiguration()
+ * console.log(`Version: ${response.metadata.version}`)
+ * ```
+ */
+export async function getConfiguration(): Promise<ConfigurationResponse> {
+  return apiClient.get<ConfigurationResponse>('/config')
+}
+
+/**
+ * Update system configuration with optimistic locking (Story 11.1)
+ *
+ * @param configuration - New configuration to apply
+ * @param currentVersion - Expected current version for optimistic locking
+ * @returns Promise resolving to updated configuration
+ * @throws 409 Conflict if version mismatch (concurrent update)
+ * @throws 422 Unprocessable Entity if validation fails
+ *
+ * @example
+ * ```ts
+ * try {
+ *   const response = await updateConfiguration(newConfig, 5)
+ *   console.log(`Updated to version ${response.data.version}`)
+ * } catch (error) {
+ *   if (error.response?.status === 409) {
+ *     // Handle version conflict - refetch and retry
+ *   }
+ * }
+ * ```
+ */
+export async function updateConfiguration(
+  configuration: SystemConfiguration,
+  currentVersion: number
+): Promise<ConfigurationResponse> {
+  const payload = {
+    configuration,
+    current_version: currentVersion,
+  }
+  return apiClient.put<ConfigurationResponse>('/config', payload)
+}
+
+/**
+ * Analyze impact of proposed configuration changes (Story 11.1)
+ *
+ * @param proposedConfig - Proposed configuration to analyze
+ * @returns Promise resolving to impact analysis with recommendations
+ *
+ * @example
+ * ```ts
+ * const impact = await analyzeConfigImpact(proposedConfig)
+ * console.log(`Signal delta: ${impact.data.signal_count_delta}`)
+ * console.log(`Recommendations: ${impact.data.recommendations.length}`)
+ * ```
+ */
+export async function analyzeConfigImpact(
+  proposedConfig: SystemConfiguration
+): Promise<ImpactAnalysisResponse> {
+  return apiClient.post<ImpactAnalysisResponse>(
+    '/config/analyze-impact',
+    proposedConfig
+  )
+}
+
+/**
+ * Get configuration change history (Story 11.1)
+ *
+ * @param limit - Maximum number of historical configurations to return
+ * @returns Promise resolving to list of historical configurations
+ *
+ * @example
+ * ```ts
+ * const response = await getConfigurationHistory(10)
+ * console.log(`History count: ${response.data.length}`)
+ * ```
+ */
+export async function getConfigurationHistory(limit: number = 10): Promise<{
+  data: SystemConfiguration[]
+  metadata: { count: number; limit: number }
+}> {
+  return apiClient.get(`/config/history?limit=${limit}`)
+}
+
 export default apiClient

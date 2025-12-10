@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import (
     audit,
     campaigns,
+    config,
     feedback,
     orchestrator,
     patterns,
@@ -27,14 +28,15 @@ app = FastAPI(
 )
 
 # Include routers
-app.include_router(campaigns.router)
-app.include_router(portfolio.router)
-app.include_router(orchestrator.router)
-app.include_router(signals.router)
-app.include_router(risk.router)
-app.include_router(feedback.router)
-app.include_router(patterns.router)
-app.include_router(audit.router)
+app.include_router(campaigns.router, prefix="/api/v1")
+app.include_router(portfolio.router, prefix="/api/v1")
+app.include_router(orchestrator.router, prefix="/api/v1")
+app.include_router(signals.router, prefix="/api/v1")
+app.include_router(risk.router, prefix="/api/v1")
+app.include_router(feedback.router, prefix="/api/v1")
+app.include_router(patterns.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
+app.include_router(config.router, prefix="/api/v1")
 
 
 # WebSocket endpoint for real-time updates
