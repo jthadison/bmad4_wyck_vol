@@ -4,6 +4,7 @@ Configuration API routes.
 Provides endpoints for retrieving and updating system configuration.
 """
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -226,7 +227,7 @@ async def analyze_configuration_impact(
             "analysis_period_days": 90,
             "patterns_evaluated": impact_result.current_signal_count
             + impact_result.proposed_signal_count,
-            "calculated_at": "2025-12-09T13:10:00Z",  # TODO: Use actual timestamp
+            "calculated_at": datetime.utcnow().isoformat() + "Z",
         },
     )
 

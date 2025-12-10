@@ -96,6 +96,10 @@ export const apiClient = {
     return axiosInstance.post<T>(url, data).then((res) => res.data)
   },
 
+  put: <T = unknown>(url: string, data?: unknown): Promise<T> => {
+    return axiosInstance.put<T>(url, data).then((res) => res.data)
+  },
+
   patch: <T = unknown>(url: string, data?: unknown): Promise<T> => {
     return axiosInstance.patch<T>(url, data).then((res) => res.data)
   },
