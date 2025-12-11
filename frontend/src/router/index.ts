@@ -4,6 +4,7 @@ import BacktestView from '@/views/BacktestView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
 import TradeAuditLog from '@/components/audit/TradeAuditLog.vue'
+import ConfigurationWizard from '@/components/configuration/ConfigurationWizard.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -20,6 +21,18 @@ const routes: RouteRecordRaw[] = [
     path: '/settings',
     name: 'settings',
     component: SettingsView,
+  },
+  {
+    path: '/settings/configuration',
+    name: 'configuration',
+    component: ConfigurationWizard,
+    meta: {
+      title: 'System Configuration',
+      breadcrumb: [
+        { label: 'Settings', to: '/settings' },
+        { label: 'Configuration' },
+      ],
+    },
   },
   {
     path: '/audit-log',

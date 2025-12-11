@@ -8,6 +8,7 @@ from src.api.routes import (
     audit,
     auth,
     campaigns,
+    config,
     feedback,
     orchestrator,
     patterns,
@@ -39,6 +40,7 @@ app.include_router(risk.router)
 app.include_router(feedback.router)
 app.include_router(patterns.router)
 app.include_router(audit.router)
+app.include_router(config.router)  # Configuration routes (Story 11.1)
 
 
 # WebSocket endpoint for real-time updates
