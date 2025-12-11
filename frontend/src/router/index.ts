@@ -5,6 +5,7 @@ import SettingsView from '@/views/SettingsView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
 import TradeAuditLog from '@/components/audit/TradeAuditLog.vue'
 import ConfigurationWizard from '@/components/configuration/ConfigurationWizard.vue'
+import CampaignTracker from '@/components/campaigns/CampaignTracker.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -38,6 +39,16 @@ const routes: RouteRecordRaw[] = [
     path: '/audit-log',
     name: 'audit-log',
     component: TradeAuditLog,
+  },
+  {
+    path: '/campaigns',
+    name: 'campaigns',
+    component: CampaignTracker,
+    meta: {
+      title: 'Campaign Tracker',
+      description:
+        'Monitor active trading campaigns with progression and health status',
+    },
   },
   {
     path: '/:pathMatch(.*)*',
