@@ -367,6 +367,41 @@ class ConnectionManager:
 
         await self.broadcast(message)
 
+    async def emit_campaign_tracker_update(
+        self,
+        campaign_updated_message: dict[str, Any],
+    ) -> None:
+        """
+        Emit campaign_updated message for campaign tracker UI (Story 11.4 Task 4).
+
+        Sends complete CampaignUpdatedMessage with full campaign data including
+        progression, health status, entries, P&L, and exit plan.
+
+        Args:
+            campaign_updated_message: Serialized CampaignUpdatedMessage dict
+
+        Message Format:
+            {
+                "type": "campaign_updated",
+                "sequence_number": <seq>,
+                "campaign_id": "<uuid>",
+                "updated_fields": ["pnl", "progression", ...],
+                "campaign": {<CampaignResponse>},
+                "timestamp": "<ISO8601>"
+            }
+
+        Rate Limiting:
+            Max 1 update per campaign per 5 seconds (enforced by caller)
+
+        Integration:
+            - Called when signal status changes (PENDING → FILLED, etc.)
+            - Called when P&L changes > 1% of campaign allocation
+            - Called when campaign health status changes
+        """
+        # Message already includes sequence_number from caller
+        # Just broadcast as-is
+        await self.broadcast(campaign_updated_message)
+
     async def emit_batch_update(
         self,
         patterns_detected: list[dict[str, Any]],

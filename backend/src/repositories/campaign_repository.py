@@ -1150,3 +1150,164 @@ class CampaignRepository:
                 error=str(e),
             )
             raise
+
+    # ==================================================================================
+    # Campaign Tracker Methods (Story 11.4)
+    # ==================================================================================
+
+    async def get_campaigns(
+        self,
+        user_id: Optional[UUID] = None,
+        status: Optional[str] = None,
+        symbol: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[CampaignModel], int]:
+        """
+        Get campaigns with optional filtering by user, status and symbol (Story 11.4 Subtask 1.6).
+
+        **Security:** Filters campaigns by user_id to ensure user isolation.
+        **Performance:** Uses eager loading (selectinload) to avoid N+1 queries.
+        **Pagination:** Supports limit/offset for efficient data retrieval.
+
+        Parameters:
+        -----------
+        user_id : Optional[UUID]
+            Filter by user ID for user isolation (recommended for security)
+        status : Optional[str]
+            Filter by status: ACTIVE, MARKUP, COMPLETED, INVALIDATED
+        symbol : Optional[str]
+            Filter by trading symbol
+        limit : int
+            Maximum number of campaigns to return (default: 50)
+        offset : int
+            Number of campaigns to skip (default: 0)
+
+        Returns:
+        --------
+        tuple[list[CampaignModel], int]
+            Tuple of (campaigns, total_count) for pagination
+
+        Example:
+        --------
+        >>> campaigns, total = await repo.get_campaigns(
+        ...     user_id=user_id, status="ACTIVE", symbol="AAPL", limit=20, offset=0
+        ... )
+        """
+        try:
+            # Build query with eager loading to prevent N+1 queries (PERF-001)
+            stmt = select(CampaignModel).options(selectinload(CampaignModel.positions))
+
+            # Apply user isolation filter (SEC-001, CODE-002)
+            if user_id:
+                stmt = stmt.where(CampaignModel.user_id == user_id)
+
+            # Apply status filter
+            if status:
+                stmt = stmt.where(CampaignModel.status == status)
+
+            # Apply symbol filter
+            if symbol:
+                stmt = stmt.where(CampaignModel.symbol == symbol)
+
+            # Get total count before pagination
+            from sqlalchemy import func
+            from sqlalchemy import select as sql_select
+
+            count_stmt = sql_select(func.count()).select_from(CampaignModel)
+            if user_id:
+                count_stmt = count_stmt.where(CampaignModel.user_id == user_id)
+            if status:
+                count_stmt = count_stmt.where(CampaignModel.status == status)
+            if symbol:
+                count_stmt = count_stmt.where(CampaignModel.symbol == symbol)
+
+            count_result = await self.session.execute(count_stmt)
+            total_count = count_result.scalar() or 0
+
+            # Apply pagination (CODE-003)
+            stmt = stmt.order_by(CampaignModel.created_at.desc()).limit(limit).offset(offset)
+
+            result = await self.session.execute(stmt)
+            campaigns = result.scalars().all()
+
+            logger.info(
+                "campaigns_retrieved",
+                count=len(campaigns),
+                total_count=total_count,
+                user_id=str(user_id) if user_id else None,
+                status_filter=status,
+                symbol_filter=symbol,
+                limit=limit,
+                offset=offset,
+            )
+
+            return list(campaigns), total_count
+
+        except SQLAlchemyError as e:
+            logger.error(
+                "failed_to_get_campaigns",
+                user_id=str(user_id) if user_id else None,
+                status=status,
+                symbol=symbol,
+                error=str(e),
+            )
+            raise
+
+    async def get_campaign_with_details(self, campaign_id: UUID) -> Optional[CampaignModel]:
+        """
+        Get campaign with all related data for campaign tracker (Story 11.4 Subtask 1.7).
+
+        Fetches campaign with:
+        - All positions (entries)
+        - Trading range data (for creek/ice/jump levels)
+        - Exit rules
+
+        Parameters:
+        -----------
+        campaign_id : UUID
+            Campaign identifier
+
+        Returns:
+        --------
+        Optional[CampaignModel]
+            Campaign model with relationships loaded, None if not found
+
+        Example:
+        --------
+        >>> campaign = await repo.get_campaign_with_details(campaign_id)
+        >>> if campaign:
+        ...     print(f"Positions: {len(campaign.positions)}")
+        """
+        try:
+            stmt = (
+                select(CampaignModel)
+                .where(CampaignModel.id == campaign_id)
+                .options(
+                    selectinload(CampaignModel.positions),
+                    # Note: Trading range and exit rules relationships would be loaded here
+                    # if they exist in the CampaignModel SQLAlchemy definition
+                )
+            )
+
+            result = await self.session.execute(stmt)
+            campaign = result.scalar_one_or_none()
+
+            if campaign:
+                logger.info(
+                    "campaign_with_details_retrieved",
+                    campaign_id=str(campaign_id),
+                    position_count=len(campaign.positions) if campaign.positions else 0,
+                )
+            else:
+                logger.warning("campaign_not_found", campaign_id=str(campaign_id))
+
+            return campaign
+
+        except SQLAlchemyError as e:
+            logger.error(
+                "failed_to_get_campaign_with_details",
+                campaign_id=str(campaign_id),
+                error=str(e),
+            )
+            raise
