@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import (
     audit,
+    auth,
     campaigns,
     feedback,
     orchestrator,
@@ -13,6 +14,7 @@ from src.api.routes import (
     portfolio,
     risk,
     signals,
+    user,
 )
 from src.api.websocket import websocket_endpoint
 from src.config import settings
@@ -27,6 +29,8 @@ app = FastAPI(
 )
 
 # Include routers
+app.include_router(auth.router)  # Authentication routes (Story 11.7)
+app.include_router(user.router)  # User settings routes (Story 11.7)
 app.include_router(campaigns.router)
 app.include_router(portfolio.router)
 app.include_router(orchestrator.router)
