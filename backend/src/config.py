@@ -202,6 +202,28 @@ class Settings(BaseSettings):
         description="Default volume source for forex (TICK for most brokers)",
     )
 
+    # JWT Authentication Configuration (Story 11.7)
+    jwt_secret_key: str = Field(
+        default="dev-secret-key-change-in-production-use-64-char-random-string",
+        description="Secret key for JWT token signing (MUST be changed in production)",
+    )
+    jwt_algorithm: str = Field(
+        default="HS256",
+        description="JWT signing algorithm",
+    )
+    jwt_access_token_expire_minutes: int = Field(
+        default=30,
+        ge=5,
+        le=1440,
+        description="Access token expiration time in minutes (default: 30 min)",
+    )
+    jwt_refresh_token_expire_days: int = Field(
+        default=7,
+        ge=1,
+        le=30,
+        description="Refresh token expiration time in days (default: 7 days)",
+    )
+
     @field_validator("database_url", mode="before")
     @classmethod
     def validate_database_url(cls, v: str) -> str:

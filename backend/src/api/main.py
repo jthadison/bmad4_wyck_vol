@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import (
     audit,
+    auth,
     campaigns,
     config,
     feedback,
@@ -14,6 +15,7 @@ from src.api.routes import (
     portfolio,
     risk,
     signals,
+    user,
 )
 from src.api.websocket import websocket_endpoint
 from src.config import settings
@@ -28,15 +30,17 @@ app = FastAPI(
 )
 
 # Include routers
-app.include_router(campaigns.router, prefix="/api/v1")
-app.include_router(portfolio.router, prefix="/api/v1")
-app.include_router(orchestrator.router, prefix="/api/v1")
-app.include_router(signals.router, prefix="/api/v1")
-app.include_router(risk.router, prefix="/api/v1")
-app.include_router(feedback.router, prefix="/api/v1")
-app.include_router(patterns.router, prefix="/api/v1")
-app.include_router(audit.router, prefix="/api/v1")
-app.include_router(config.router, prefix="/api/v1")
+app.include_router(auth.router)  # Authentication routes (Story 11.7)
+app.include_router(user.router)  # User settings routes (Story 11.7)
+app.include_router(campaigns.router)
+app.include_router(portfolio.router)
+app.include_router(orchestrator.router)
+app.include_router(signals.router)
+app.include_router(risk.router)
+app.include_router(feedback.router)
+app.include_router(patterns.router)
+app.include_router(audit.router)
+app.include_router(config.router)  # Configuration routes (Story 11.1)
 
 
 # WebSocket endpoint for real-time updates
