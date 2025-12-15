@@ -1,7 +1,7 @@
 """FastAPI application entry point for BMAD Wyckoff system."""
 
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import (
@@ -11,6 +11,7 @@ from src.api.routes import (
     campaigns,
     config,
     feedback,
+    notifications,
     orchestrator,
     patterns,
     portfolio,
@@ -18,7 +19,6 @@ from src.api.routes import (
     signals,
     user,
 )
-from src.api.websocket import websocket_endpoint
 from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
@@ -43,16 +43,7 @@ app.include_router(patterns.router)
 app.include_router(audit.router)
 app.include_router(config.router)  # Configuration routes (Story 11.1)
 app.include_router(backtest.router)  # Backtest preview routes (Story 11.2)
-
-
-# WebSocket endpoint for real-time updates
-@app.websocket("/ws")
-async def websocket_route(websocket: WebSocket) -> None:
-    """WebSocket endpoint for real-time event streaming."""
-    await websocket_endpoint(websocket)
-
-
-# Configure CORS
+app.include_router(notifications.router)  # Notification routes (Story 11.6)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000"],
