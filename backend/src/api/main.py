@@ -10,6 +10,7 @@ from src.api.routes import (
     campaigns,
     config,
     feedback,
+    notifications,
     orchestrator,
     patterns,
     portfolio,
@@ -41,6 +42,7 @@ app.include_router(feedback.router)
 app.include_router(patterns.router)
 app.include_router(audit.router)
 app.include_router(config.router)  # Configuration routes (Story 11.1)
+app.include_router(notifications.router)  # Notification routes (Story 11.6)
 
 
 # WebSocket endpoint for real-time updates
