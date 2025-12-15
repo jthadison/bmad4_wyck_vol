@@ -68,7 +68,7 @@ class NotificationRepository:
             priority=priority,
             title=title,
             message=message,
-            metadata=metadata,
+            notification_metadata=metadata,
             user_id=user_id,
             read=False,
         )
@@ -112,10 +112,15 @@ class NotificationRepository:
         if notification_type:
             query = query.where(NotificationORM.notification_type == notification_type.value)
 
-        # Get total count
-        count_result = await self.session.execute(
-            select(NotificationORM.id).where(NotificationORM.user_id == user_id)
-        )
+        # Get total count with same filters
+        count_query = select(NotificationORM.id).where(NotificationORM.user_id == user_id)
+        if unread_only:
+            count_query = count_query.where(NotificationORM.read == False)  # noqa: E712
+        if notification_type:
+            count_query = count_query.where(
+                NotificationORM.notification_type == notification_type.value
+            )
+        count_result = await self.session.execute(count_query)
         total_count = len(count_result.all())
 
         # Get paginated results ordered by most recent first
@@ -205,7 +210,7 @@ class NotificationRepository:
         return NotificationPreferences(**prefs_dict)
 
     async def update_preferences(
-        self, user_id: UUID, preferences: NotificationPreferences
+        self, preferences: NotificationPreferences
     ) -> NotificationPreferences:
         """
         Update or create notification preferences for a user.
@@ -225,7 +230,7 @@ class NotificationRepository:
 
         # Upsert preferences
         stmt = insert(NotificationPreferencesORM).values(
-            user_id=user_id,
+            user_id=preferences.user_id,
             preferences=prefs_dict,
             updated_at=datetime.utcnow(),
         )
@@ -242,7 +247,7 @@ class NotificationRepository:
         await self.session.commit()
 
         # Return updated preferences
-        return await self.get_preferences(user_id)  # type: ignore
+        return await self.get_preferences(preferences.user_id)  # type: ignore
 
     # =============================
     # Push Subscription Operations
@@ -351,7 +356,7 @@ class NotificationRepository:
             priority=orm.priority,
             title=orm.title,
             message=orm.message,
-            metadata=orm.metadata,
+            metadata=orm.notification_metadata,
             user_id=orm.user_id,
             read=orm.read,
             created_at=orm.created_at,

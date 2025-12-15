@@ -72,11 +72,15 @@ async def get_notification_service(
         test_mode=getattr(settings, "NOTIFICATION_TEST_MODE", True),
     )
 
+    # Get WebSocket manager for toast notifications
+    from src.api.websocket import manager as websocket_manager
+
     return NotificationService(
         repository=repository,
         twilio_client=twilio_client,
         email_client=email_client,
         push_client=push_client,
+        websocket_manager=websocket_manager,
     )
 
 
@@ -195,7 +199,7 @@ async def update_notification_preferences(
             detail="Cannot update preferences for another user",
         )
 
-    updated_prefs = await repository.update_preferences(user_id, preferences)
+    updated_prefs = await repository.update_preferences(preferences)
 
     return {
         "success": True,

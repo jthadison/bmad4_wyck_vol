@@ -273,10 +273,8 @@ class NotificationService:
             logger.warning("WebSocket manager not configured, skipping toast")
             return
 
-        # WebSocket manager will handle broadcasting to user's connections
-        # Implementation depends on existing WebSocket infrastructure
-        # Placeholder for now - will be implemented in Task 8
-        pass
+        # Emit notification_toast to all connected WebSocket clients
+        await self.websocket_manager.emit_notification_toast(notification)
 
     async def _send_email(self, notification: Notification, email_address: str) -> None:
         """

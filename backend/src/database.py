@@ -70,15 +70,26 @@ def create_engine() -> AsyncEngine:
 
 
 # Global engine instance
-engine: AsyncEngine = create_engine()
+# Defer creation in test environments where database URL may not be configured
+try:
+    engine: AsyncEngine = create_engine()
+except Exception as e:
+    # In test environments, the engine will be created by test fixtures
+    logger.warning(f"Failed to create database engine at module load time: {e}")
+    engine = None  # type: ignore
 
 # Async session factory (AC: 9 - connection pooling)
-async_session_maker = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,  # Prevent lazy-loading issues after commit
-    autocommit=False,
-    autoflush=False,
+# In test environments, this will be None and tests will create their own session makers
+async_session_maker = (
+    async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,  # Prevent lazy-loading issues after commit
+        autocommit=False,
+        autoflush=False,
+    )
+    if engine
+    else None
 )
 
 

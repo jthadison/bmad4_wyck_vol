@@ -402,6 +402,61 @@ class ConnectionManager:
         # Just broadcast as-is
         await self.broadcast(campaign_updated_message)
 
+    async def emit_notification_toast(
+        self,
+        notification: "Notification",
+    ) -> None:
+        """
+        Emit notification_toast event to all connected clients (Story 11.6).
+
+        Sends real-time toast notification for display in frontend UI.
+        Integrates with NotificationService for multi-channel notifications.
+
+        Args:
+            notification: Notification object to send as toast
+
+        Message Format:
+            {
+                "type": "notification_toast",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "notification": {
+                    "id": "<uuid>",
+                    "notification_type": "<type>",
+                    "priority": "<priority>",
+                    "title": "<title>",
+                    "message": "<message>",
+                    "metadata": {...},
+                    "user_id": "<uuid>",
+                    "read": false,
+                    "created_at": "<ISO8601>"
+                }
+            }
+
+        Note:
+            Toast notifications are sent to all connected clients.
+            Frontend should filter by user_id if needed.
+        """
+        # Serialize Notification to dict for JSON transmission
+        notification_dict = {
+            "id": str(notification.id),
+            "notification_type": notification.notification_type.value,
+            "priority": notification.priority.value,
+            "title": notification.title,
+            "message": notification.message,
+            "metadata": notification.metadata,
+            "user_id": str(notification.user_id),
+            "read": notification.read,
+            "created_at": notification.created_at.isoformat(),
+        }
+
+        message = {
+            "type": "notification_toast",
+            "notification": notification_dict,
+        }
+
+        await self.broadcast(message)
+
     async def emit_batch_update(
         self,
         patterns_detected: list[dict[str, Any]],

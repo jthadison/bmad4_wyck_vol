@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Integer, String, Text
+from sqlalchemy import JSON, Boolean, CheckConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import NUMERIC, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -189,7 +189,9 @@ class NotificationORM(Base):
     # Content
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     message: Mapped[str] = mapped_column(String(1000), nullable=False)
-    metadata: Mapped[dict] = mapped_column(JSON, nullable=False, server_default="{}")
+    notification_metadata: Mapped[dict] = mapped_column(
+        "metadata", JSON, nullable=False, server_default="{}"
+    )
 
     # User relationship
     user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -271,3 +273,5 @@ class PushSubscriptionORM(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
+
+    __table_args__ = (UniqueConstraint("user_id", "endpoint", name="uq_user_endpoint"),)

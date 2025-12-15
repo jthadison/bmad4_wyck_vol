@@ -69,8 +69,8 @@ class QuietHours(BaseModel):
     """
 
     enabled: bool = False
-    start_time: time  # HH:MM format, e.g., "22:00"
-    end_time: time  # HH:MM format, e.g., "08:00"
+    start_time: time = time(22, 0)  # Default: 10:00 PM
+    end_time: time = time(8, 0)  # Default: 8:00 AM
     timezone: str = "America/New_York"  # User's timezone
 
     @field_validator("timezone")
