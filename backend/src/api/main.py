@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import (
     audit,
     auth,
+    backtest,
     campaigns,
     config,
     feedback,
@@ -41,6 +42,7 @@ app.include_router(feedback.router)
 app.include_router(patterns.router)
 app.include_router(audit.router)
 app.include_router(config.router)  # Configuration routes (Story 11.1)
+app.include_router(backtest.router)  # Backtest preview routes (Story 11.2)
 
 
 # WebSocket endpoint for real-time updates
