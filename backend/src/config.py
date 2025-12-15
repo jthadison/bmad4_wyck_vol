@@ -101,6 +101,10 @@ class Settings(BaseSettings):
         le=65535,
         description="Redis server port",
     )
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection URL for analytics caching (Task 4)",
+    )
 
     # External API Configuration
     polygon_api_key: str = Field(
