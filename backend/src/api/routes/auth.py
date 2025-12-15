@@ -6,10 +6,14 @@ Endpoints for login, token refresh, and user registration.
 
 from uuid import uuid4
 
-from backend.src.api.dependencies import get_db_session, token_service
-from backend.src.auth.password_service import PasswordService
-from backend.src.config import settings
-from backend.src.models.auth import (
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.dependencies import get_db_session, token_service
+from src.auth.password_service import PasswordService
+from src.config import settings
+from src.models.auth import (
     LoginRequest,
     LoginResponse,
     RefreshTokenRequest,
@@ -17,9 +21,6 @@ from backend.src.models.auth import (
     RegisterRequest,
     RegisterResponse,
 )
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 
@@ -41,7 +42,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db_session
     Returns:
         LoginResponse with access_token, refresh_token, and expiration
     """
-    from backend.src.db.models import User
+    from src.db.models import User
 
     # Find user by username
     stmt = select(User).where(User.username == request.username)
@@ -145,7 +146,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db_s
     """
     from datetime import datetime
 
-    from backend.src.db.models import User
+    from src.db.models import User
 
     # Check if username already exists
     stmt = select(User).where(User.username == request.username)

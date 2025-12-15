@@ -6,10 +6,13 @@ Endpoints for user settings management, password changes, and API key management
 
 from uuid import UUID
 
-from backend.src.api.dependencies import get_current_user_id, get_db_session
-from backend.src.auth.api_key_service import APIKeyService
-from backend.src.auth.password_service import PasswordService
-from backend.src.models.user_settings import (
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.dependencies import get_current_user_id, get_db_session
+from src.auth.api_key_service import APIKeyService
+from src.auth.password_service import PasswordService
+from src.models.user_settings import (
     APIKey,
     ChangePasswordRequest,
     CreateAPIKeyRequest,
@@ -17,10 +20,8 @@ from backend.src.models.user_settings import (
     UserSettings,
     UserSettingsExport,
 )
-from backend.src.repositories.user_repository import UserRepository
-from backend.src.settings.service import SettingsService
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from src.repositories.user_repository import UserRepository
+from src.settings.service import SettingsService
 
 router = APIRouter(prefix="/api/v1/user", tags=["user"])
 

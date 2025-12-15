@@ -147,6 +147,44 @@ onMounted(() => {
     }
   )
 
+  // Subscribe to notification_toast messages (Story 11.6)
+  websocketService.subscribe(
+    'notification_toast',
+    (message: WebSocketMessage) => {
+      if ('notification' in message && message.notification) {
+        const notification = message.notification as {
+          id: string
+          notification_type: string
+          priority: string
+          title: string
+          message: string
+          user_id: string
+        }
+
+        // Show toast notification
+        notificationService.showNotificationToast(notification)
+
+        // Add to notification store for notification center
+        import('@/stores/notificationStore').then(
+          ({ useNotificationStore }) => {
+            const notificationStore = useNotificationStore()
+            notificationStore.handleToastNotification({
+              id: notification.id,
+              notification_type: notification.notification_type as any,
+              priority: notification.priority as any,
+              title: notification.title,
+              message: notification.message,
+              metadata: {},
+              user_id: notification.user_id,
+              read: false,
+              created_at: new Date().toISOString(),
+            })
+          }
+        )
+      }
+    }
+  )
+
   console.log('[App] WebSocket initialized and subscriptions configured')
 })
 

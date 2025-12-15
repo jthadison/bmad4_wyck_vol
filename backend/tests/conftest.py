@@ -11,12 +11,13 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
-from backend.src.api.main import app
-from backend.src.auth.token_service import TokenService
-from backend.src.config import settings
-from backend.src.database import Base, get_db
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from src.api.main import app
+from src.auth.token_service import TokenService
+from src.config import settings
+from src.database import Base, get_db
 
 # =============================
 # Database Fixtures
