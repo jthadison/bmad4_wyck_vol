@@ -27,8 +27,8 @@ Algorithm:
 
 Usage:
 ------
->>> from backend.src.pattern_engine.volume_cache import VolumeCache
->>> from backend.src.models.ohlcv import OHLCVBar
+>>> from src.pattern_engine.volume_cache import VolumeCache
+>>> from src.models.ohlcv import OHLCVBar
 >>> from datetime import datetime, timezone
 >>> from decimal import Decimal
 >>>

@@ -181,7 +181,7 @@ async def get_current_user(
     Raises:
         HTTPException: 404 if user not found
     """
-    from backend.src.repositories.user_repository import UserRepository
+    from src.repositories.user_repository import UserRepository
 
     repo = UserRepository(db)
     user = await repo.get_user(user_id)

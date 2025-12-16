@@ -54,7 +54,7 @@ Support Quality Levels:
 
 Usage:
 ------
->>> from backend.src.pattern_engine.detectors.lps_detector import detect_lps
+>>> from src.pattern_engine.detectors.lps_detector import detect_lps
 >>>
 >>> # After SOS detected
 >>> lps = detect_lps(

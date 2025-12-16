@@ -26,9 +26,9 @@ Quality Hierarchy (for best spring selection):
 
 Example:
 --------
->>> from backend.src.models.spring_history import SpringHistory
->>> from backend.src.models.spring import Spring
->>> from backend.src.models.spring_signal import SpringSignal
+>>> from src.models.spring_history import SpringHistory
+>>> from src.models.spring import Spring
+>>> from src.models.spring_signal import SpringSignal
 >>> from datetime import datetime, timezone
 >>> from uuid import uuid4
 >>>

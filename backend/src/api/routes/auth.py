@@ -42,7 +42,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db_session
     Returns:
         LoginResponse with access_token, refresh_token, and expiration
     """
-    from src.db.models import User
+    from src.orm.models import User
 
     # Find user by username
     stmt = select(User).where(User.username == request.username)
@@ -146,7 +146,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db_s
     """
     from datetime import datetime
 
-    from src.db.models import User
+    from src.orm.models import User
 
     # Check if username already exists
     stmt = select(User).where(User.username == request.username)

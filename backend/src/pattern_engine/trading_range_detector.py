@@ -19,9 +19,9 @@ Performance Target:
     1000 bars in <200ms (AC 10)
 
 Example:
-    >>> from backend.src.pattern_engine.trading_range_detector import TradingRangeDetector
-    >>> from backend.src.pattern_engine.volume_analyzer import VolumeAnalyzer
-    >>> from backend.src.repositories.ohlcv_repository import OHLCVRepository
+    >>> from src.pattern_engine.trading_range_detector import TradingRangeDetector
+    >>> from src.pattern_engine.volume_analyzer import VolumeAnalyzer
+    >>> from src.repositories.ohlcv_repository import OHLCVRepository
     >>>
     >>> # Load data
     >>> repo = OHLCVRepository()

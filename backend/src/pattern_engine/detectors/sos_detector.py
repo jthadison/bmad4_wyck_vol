@@ -34,8 +34,8 @@ Ideal Volume Ranges:
 
 Usage:
 ------
->>> from backend.src.pattern_engine.detectors.sos_detector import detect_sos_breakout
->>> from backend.src.models.phase_classification import WyckoffPhase, PhaseClassification
+>>> from src.pattern_engine.detectors.sos_detector import detect_sos_breakout
+>>> from src.models.phase_classification import WyckoffPhase, PhaseClassification
 >>>
 >>> phase_classification = PhaseClassification(phase=WyckoffPhase.D, confidence=85)
 >>> volume_analysis = {bar.timestamp: {"volume_ratio": Decimal("2.0")}}

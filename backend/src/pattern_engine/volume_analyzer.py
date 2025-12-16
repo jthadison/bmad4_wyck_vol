@@ -711,8 +711,8 @@ class VolumeAnalyzer:
     analysis for bar sequences, then filter for specific patterns (springs, UTADs, etc).
 
     Example:
-        >>> from backend.src.pattern_engine.volume_analyzer import VolumeAnalyzer
-        >>> from backend.src.repositories.ohlcv_repository import OHLCVRepository
+        >>> from src.pattern_engine.volume_analyzer import VolumeAnalyzer
+        >>> from src.repositories.ohlcv_repository import OHLCVRepository
         >>>
         >>> # Load bars
         >>> repo = OHLCVRepository()
@@ -723,7 +723,7 @@ class VolumeAnalyzer:
         >>> analysis_results = analyzer.analyze(bars)
         >>>
         >>> # Filter for patterns
-        >>> from backend.src.models.effort_result import EffortResult
+        >>> from src.models.effort_result import EffortResult
         >>> absorption_bars = [a for a in analysis_results
         ...                    if a.effort_result == EffortResult.ABSORPTION]
         >>> climactic_bars = [a for a in analysis_results

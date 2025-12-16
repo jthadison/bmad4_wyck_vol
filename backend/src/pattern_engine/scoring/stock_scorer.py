@@ -77,7 +77,7 @@ Formula (100+ points with bonuses):
 
 Example (AAPL Spring):
 ----------------------
-    >>> from backend.src.pattern_engine.scoring.stock_scorer import StockConfidenceScorer
+    >>> from src.pattern_engine.scoring.stock_scorer import StockConfidenceScorer
     >>> scorer = StockConfidenceScorer()
     >>> confidence = scorer.calculate_spring_confidence(
     ...     spring=spring,  # Volume: 4M shares (0.22x avg 18M)
@@ -314,7 +314,7 @@ class StockConfidenceScorer(ConfidenceScorer):
         - <70%: REJECTED - Below threshold, no signal
 
         Example:
-            >>> from backend.src.pattern_engine.scoring.stock_scorer import StockConfidenceScorer
+            >>> from src.pattern_engine.scoring.stock_scorer import StockConfidenceScorer
             >>>
             >>> scorer = StockConfidenceScorer()
             >>> # After detecting spring and test

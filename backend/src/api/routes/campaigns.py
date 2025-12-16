@@ -83,7 +83,7 @@ async def get_open_positions() -> list[Position]:
     """
     # PLACEHOLDER: Return empty list for now
     # In production, replace with:
-    # from backend.src.repositories.position_repository import PositionRepository
+    # from src.repositories.position_repository import PositionRepository
     # repo = PositionRepository()
     # return await repo.get_open_positions()
 

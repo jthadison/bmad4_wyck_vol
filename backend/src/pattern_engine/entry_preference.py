@@ -86,7 +86,7 @@ SOS Direct Entry:
 
 Usage:
 ------
->>> from backend.src.pattern_engine.entry_preference import determine_entry_preference
+>>> from src.pattern_engine.entry_preference import determine_entry_preference
 >>>
 >>> # After SOS detected
 >>> sos = detect_sos_breakout(range, bars, volume_analysis, phase)

@@ -1,49 +1,33 @@
-"""
-Analytics Repository for Pattern Performance Dashboard (Story 11.9)
+"""Analytics Repository - Pattern Performance Data Access Layer
 
-Purpose:
---------
-Repository for querying pattern performance analytics from signals and patterns tables.
-Provides aggregated metrics, sector breakdowns, trend data, and trade details.
+This repository provides data access for pattern performance analytics.
 
-Query Strategy:
----------------
-All queries join signals and patterns tables with appropriate filters:
-- Time period filtering (7/30/90/all days)
-- Detection phase filtering (A/B/C/D/E)
-- Exclude open trades (exit_date IS NOT NULL)
-- Status filtering (CLOSED_WIN, CLOSED_LOSS)
+**Current Status (Story 11.3a):**
+- Repository structure: PRODUCTION-READY
+- Redis caching: IMPLEMENTED (24-hour TTL)
+- Database queries: MVP PLACEHOLDERS (return empty/zero data)
 
-Performance:
-------------
-- Uses indexes from migration 016_analytics_indexes
-- Target query times (with 10,000+ signals):
-  * Pattern performance: 50-100ms
-  * Win rate trend: 30-50ms
-  * Trade details (paginated): 20-30ms
-  * Sector breakdown: 40-60ms
+**Production Implementation (Story 11.9):**
+- Task 1: Real SQL queries with aggregations
+- Task 2: Database indexes for performance
+- Task 3: Sector mapping table
+- Tasks 5-8: Wyckoff enhancement logic (VSA, RS, preliminary events)
 
-Integration:
-------------
-- Story 11.9: Pattern Performance Dashboard production implementation
-- GET /api/v1/analytics/pattern-performance
-- GET /api/v1/analytics/trend/{pattern_type}
-- GET /api/v1/analytics/trades/{pattern_type}
-- GET /api/v1/analytics/sector-breakdown
-
-Author: Story 11.9
+See docs/stories/epic-11/11.9.pattern-performance-production-implementation.md
 """
 
+import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Literal, Optional
-from uuid import UUID
+from typing import Any, Optional
 
-from sqlalchemy import text
+import structlog
+from redis.asyncio import Redis  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.analytics import (
     PatternPerformanceMetrics,
+    PatternPerformanceResponse,
     PreliminaryEvents,
     SectorBreakdown,
     TradeDetail,
@@ -51,577 +35,406 @@ from src.models.analytics import (
     VSAMetrics,
 )
 
+logger = structlog.get_logger(__name__)
+
 
 class AnalyticsRepository:
-    """
-    Repository for analytics queries on signals and patterns tables.
+    """Repository for analytics queries with Redis caching.
 
-    Methods:
-    --------
-    - get_pattern_performance: Aggregated metrics for all pattern types
-    - get_win_rate_trend: Time-series win rate data
-    - get_trade_details: Individual trade list with pagination
-    - get_sector_breakdown: Performance grouped by sector
-    - get_vsa_metrics: VSA event counts per pattern type
-    - get_preliminary_events: PS/SC/AR/ST counts for Spring/UTAD patterns
-    - get_relative_strength: RS scores vs SPY and sector benchmarks
+    Attributes:
+        session: Async SQLAlchemy session for database queries
+        redis: Redis client for caching
+        cache_ttl: Cache TTL in seconds (default: 24 hours)
     """
 
-    def __init__(self, session: AsyncSession):
-        """
-        Initialize repository with database session.
+    def __init__(
+        self,
+        session: AsyncSession,
+        redis: Optional[Redis] = None,
+        cache_ttl: int = 86400,
+    ):
+        """Initialize analytics repository.
 
         Args:
-            session: SQLAlchemy async session
+            session: Async SQLAlchemy session
+            redis: Optional Redis client for caching
+            cache_ttl: Cache TTL in seconds (default: 86400 = 24 hours)
         """
         self.session = session
+        self.redis = redis
+        self.cache_ttl = cache_ttl
 
     async def get_pattern_performance(
         self,
         days: Optional[int] = None,
-        detection_phase: Optional[Literal["A", "B", "C", "D", "E"]] = None,
-    ) -> list[PatternPerformanceMetrics]:
-        """
-        Query pattern performance metrics from database.
-
-        Aggregates signals and patterns to calculate:
-        - Win rates (overall, test-confirmed, non-test-confirmed)
-        - Average R-multiples
-        - Profit factors
-        - Trade counts
-        - Phase distribution
-
-        Task 1, Subtask 1: Pattern metrics query
-        Task 5: Test quality tracking
+        detection_phase: Optional[str] = None,
+    ) -> PatternPerformanceResponse:
+        """Get pattern performance metrics with caching.
 
         Args:
-            days: Optional time period filter (7/30/90/None for all time)
-            detection_phase: Optional Wyckoff phase filter (A-E)
+            days: Number of days to analyze (7, 30, 90, or None for all time)
+            detection_phase: Optional phase filter (A, B, C, D, E)
 
         Returns:
-            List of PatternPerformanceMetrics, one per pattern type
+            PatternPerformanceResponse with metrics for all pattern types
 
-        Example:
-            >>> metrics = await repo.get_pattern_performance(days=30, detection_phase="C")
-            >>> print(f"Spring win rate: {metrics[0].win_rate}%")
+        Raises:
+            ValueError: If days is not 7, 30, 90, or None
         """
-        # Calculate cutoff date if days specified
-        cutoff_date = None
-        if days:
-            cutoff_date = datetime.now(UTC) - timedelta(days=days)
+        if days is not None and days not in [7, 30, 90]:
+            raise ValueError("days must be 7, 30, 90, or None (all time)")
 
-        # Build base query joining signals and patterns
-        # Import tables dynamically to avoid circular imports
+        # Check cache first
+        cache_key = f"analytics:pattern_performance:{days}:{detection_phase or 'all'}"
+        if self.redis:
+            cached_data = await self._get_from_cache(cache_key)
+            if cached_data:
+                logger.info(
+                    "Analytics cache hit",
+                    extra={
+                        "cache_key": cache_key,
+                        "time_period_days": days,
+                        "detection_phase": detection_phase,
+                    },
+                )
+                return PatternPerformanceResponse(**cached_data)
 
-        # NOTE: Adjust import paths based on actual model structure
-        # For now, using text() for raw SQL to ensure correctness
-
-        query = text(
-            """
-            SELECT
-                p.pattern_type,
-                COUNT(DISTINCT s.id) as trade_count,
-                -- Win rate calculation: (wins / total) * 100
-                ROUND(
-                    100.0 * SUM(CASE WHEN s.status = 'CLOSED_WIN' THEN 1 ELSE 0 END)::numeric
-                    / NULLIF(COUNT(s.id), 0),
-                    2
-                ) as win_rate,
-                -- Average R-multiple
-                ROUND(AVG(s.r_multiple)::numeric, 2) as avg_r_multiple,
-                -- Profit factor: sum(winning R) / sum(losing R)
-                ROUND(
-                    COALESCE(
-                        SUM(CASE WHEN s.status = 'CLOSED_WIN' THEN s.r_multiple ELSE 0 END)
-                        / NULLIF(SUM(CASE WHEN s.status = 'CLOSED_LOSS' THEN ABS(s.r_multiple) ELSE 0 END), 0),
-                        0
-                    )::numeric,
-                    2
-                ) as profit_factor,
-                -- Test quality tracking (Task 5)
-                COUNT(DISTINCT s.id) FILTER (WHERE p.test_confirmed = true) as test_confirmed_count,
-                ROUND(
-                    100.0 * SUM(CASE WHEN s.status = 'CLOSED_WIN' AND p.test_confirmed = true THEN 1 ELSE 0 END)::numeric
-                    / NULLIF(COUNT(s.id) FILTER (WHERE p.test_confirmed = true), 0),
-                    2
-                ) as test_confirmed_win_rate,
-                ROUND(
-                    100.0 * SUM(CASE WHEN s.status = 'CLOSED_WIN' AND p.test_confirmed = false THEN 1 ELSE 0 END)::numeric
-                    / NULLIF(COUNT(s.id) FILTER (WHERE p.test_confirmed = false), 0),
-                    2
-                ) as non_test_confirmed_win_rate
-            FROM signals s
-            INNER JOIN patterns p ON s.pattern_id = p.id
-            WHERE s.exit_date IS NOT NULL  -- Exclude open trades
-              AND s.status IN ('CLOSED_WIN', 'CLOSED_LOSS')
-              AND (:cutoff_date IS NULL OR s.exit_date >= :cutoff_date)
-              AND (:detection_phase IS NULL OR p.detection_phase = :detection_phase)
-            GROUP BY p.pattern_type
-            ORDER BY trade_count DESC
-            """
-        )
-
-        # Execute query
-        result = await self.session.execute(
-            query,
-            {
-                "cutoff_date": cutoff_date,
+        # Cache miss - query database
+        logger.info(
+            "Analytics cache miss - querying database",
+            extra={
+                "time_period_days": days,
                 "detection_phase": detection_phase,
             },
         )
 
-        # Fetch phase distribution for each pattern type
-        phase_dist_query = text(
-            """
+        now = datetime.now(UTC)
+        cutoff_date = now - timedelta(days=days) if days else datetime(2000, 1, 1, tzinfo=UTC)
+
+        # For MVP, we'll create mock data since we don't have actual signal tables yet
+        # In production, this would query from signals JOIN patterns tables
+        patterns = await self._query_pattern_metrics(cutoff_date, detection_phase)
+        sector_breakdown = await self._query_sector_breakdown(cutoff_date, detection_phase)
+
+        response = PatternPerformanceResponse(
+            patterns=patterns,
+            sector_breakdown=sector_breakdown,
+            time_period_days=days,
+            generated_at=now,
+            cache_expires_at=now + timedelta(seconds=self.cache_ttl),
+        )
+
+        # Store in cache
+        if self.redis:
+            await self._set_cache(cache_key, response.model_dump(mode="json"))
+
+        return response
+
+    async def _query_pattern_metrics(
+        self,
+        cutoff_date: datetime,
+        detection_phase: Optional[str] = None,
+    ) -> list[PatternPerformanceMetrics]:
+        """Query pattern performance metrics from database.
+
+        **MVP PLACEHOLDER:** This method currently returns empty metrics structure.
+        Production implementation (Story 11.9) will include:
+        - JOIN signals, patterns tables
+        - GROUP BY pattern_type, detection_phase
+        - Aggregate: win_rate, avg(r_multiple), profit_factor, COUNT(*)
+        - Filter by time period (cutoff_date)
+        - Handle NULL exit_date (exclude open trades)
+
+        Example SQL:
             SELECT
                 p.pattern_type,
                 p.detection_phase,
-                COUNT(*) as count
+                COUNT(*) as trade_count,
+                AVG(CASE WHEN s.status = 'TARGET_HIT' THEN 1.0 ELSE 0.0 END) as win_rate,
+                AVG(s.r_multiple) as average_r_multiple,
+                SUM(CASE WHEN s.status = 'TARGET_HIT' THEN s.r_multiple ELSE 0 END) /
+                    ABS(SUM(CASE WHEN s.status = 'STOPPED' THEN s.r_multiple ELSE 0 END)) as profit_factor
             FROM signals s
-            INNER JOIN patterns p ON s.pattern_id = p.id
-            WHERE s.exit_date IS NOT NULL
-              AND s.status IN ('CLOSED_WIN', 'CLOSED_LOSS')
-              AND (:cutoff_date IS NULL OR s.exit_date >= :cutoff_date)
-              AND (:detection_phase IS NULL OR p.detection_phase = :detection_phase)
-            GROUP BY p.pattern_type, p.detection_phase
-            """
-        )
+            JOIN patterns p ON s.pattern_id = p.id
+            WHERE s.status IN ('TARGET_HIT', 'STOPPED')
+                AND s.generated_at >= :cutoff_date
+                AND (p.detection_phase = :detection_phase OR :detection_phase IS NULL)
+            GROUP BY p.pattern_type, p.detection_phase;
 
-        phase_result = await self.session.execute(
-            phase_dist_query,
-            {
-                "cutoff_date": cutoff_date,
-                "detection_phase": detection_phase,
-            },
-        )
+        Args:
+            cutoff_date: Only include signals after this date
+            detection_phase: Optional phase filter
 
-        # Build phase distribution lookup
-        phase_distributions: dict[str, dict[str, int]] = {}
-        for row in phase_result:
-            pattern_type = row.pattern_type
-            if pattern_type not in phase_distributions:
-                phase_distributions[pattern_type] = {}
-            # Use attribute name 'count' not callable
-            phase_distributions[pattern_type][row.detection_phase] = row[2]  # count is 3rd column
+        Returns:
+            List of PatternPerformanceMetrics (empty in MVP)
 
-        # Convert results to PatternPerformanceMetrics objects
+        See Also:
+            Story 11.9 Task 1: Database Query Implementation
+        """
+        # MVP: Return sample data structure
+        # TODO: Replace with actual database query when signals/patterns tables exist
+        pattern_types = ["SPRING", "SOS", "LPS", "UTAD"]
         metrics = []
-        for row in result:
-            # Handle NULL values from aggregations
-            win_rate = row.win_rate if row.win_rate is not None else Decimal("0.00")
-            avg_r = row.avg_r_multiple if row.avg_r_multiple is not None else Decimal("0.00")
-            profit_factor = row.profit_factor if row.profit_factor is not None else Decimal("0.00")
-            test_wr = (
-                Decimal(str(row.test_confirmed_win_rate))
-                if row.test_confirmed_win_rate is not None
-                else None
-            )
-            non_test_wr = (
-                Decimal(str(row.non_test_confirmed_win_rate))
-                if row.non_test_confirmed_win_rate is not None
-                else None
-            )
 
+        for pattern_type in pattern_types:
+            # Sample data - in production, this comes from database aggregation
             metrics.append(
                 PatternPerformanceMetrics(
-                    pattern_type=row.pattern_type,
-                    trade_count=row.trade_count,
-                    win_rate=Decimal(str(win_rate)),
-                    avg_r_multiple=Decimal(str(avg_r)),
-                    profit_factor=Decimal(str(profit_factor)),
-                    test_confirmed_count=row.test_confirmed_count or 0,
-                    test_confirmed_win_rate=test_wr,
-                    non_test_confirmed_win_rate=non_test_wr,
-                    phase_distribution=phase_distributions.get(row.pattern_type, {}),
+                    pattern_type=pattern_type,  # type: ignore
+                    win_rate=Decimal("0.0000"),
+                    average_r_multiple=Decimal("0.00"),
+                    profit_factor=Decimal("0.00"),
+                    trade_count=0,
+                    test_confirmed_count=0,
+                    detection_phase=detection_phase,  # type: ignore
+                    phase_distribution={},
                 )
-            )
-
-        # If no data, return empty list
-        if not metrics:
-            # Log warning for suspicious scenario
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                f"No pattern performance data found for days={days}, phase={detection_phase}"
             )
 
         return metrics
 
-    async def get_sector_breakdown(
+    async def _query_sector_breakdown(
         self,
-        days: Optional[int] = None,
-        detection_phase: Optional[Literal["A", "B", "C", "D", "E"]] = None,
+        cutoff_date: datetime,
+        detection_phase: Optional[str] = None,
     ) -> list[SectorBreakdown]:
-        """
-        Query sector-level performance metrics.
+        """Query sector breakdown from database.
 
-        Task 1, Subtask 2: Sector breakdown query
-        Task 3: Sector mapping table
-        Task 7: Relative strength integration
+        **MVP PLACEHOLDER:** This method currently returns empty list.
+        Production implementation (Story 11.9 Task 3) will:
+        - Create sector_mapping table
+        - JOIN signals → patterns → symbol_mapping
+        - GROUP BY sector_name
+        - Calculate win_rate, avg(r_multiple) per sector
+        - ORDER BY win_rate DESC
 
-        Args:
-            days: Optional time period filter
-            detection_phase: Optional Wyckoff phase filter
-
-        Returns:
-            List of SectorBreakdown objects, sorted by win_rate DESC
-
-        Example:
-            >>> breakdown = await repo.get_sector_breakdown(days=30)
-            >>> print(f"Technology sector: {breakdown[0].win_rate}% win rate")
-        """
-        cutoff_date = None
-        if days:
-            cutoff_date = datetime.now(UTC) - timedelta(days=days)
-
-        query = text(
-            """
+        Example SQL:
             SELECT
                 sm.sector_name,
-                COUNT(DISTINCT s.id) as trade_count,
-                ROUND(
-                    100.0 * SUM(CASE WHEN s.status = 'CLOSED_WIN' THEN 1 ELSE 0 END)::numeric
-                    / NULLIF(COUNT(s.id), 0),
-                    2
-                ) as win_rate,
-                ROUND(AVG(s.r_multiple)::numeric, 2) as avg_r_multiple,
-                COALESCE(MAX(sm.is_sector_leader), false) as is_sector_leader,
-                MAX(sm.rs_score) as rs_score
+                AVG(CASE WHEN s.status = 'TARGET_HIT' THEN 1.0 ELSE 0.0 END) as win_rate,
+                COUNT(*) as trade_count,
+                AVG(s.r_multiple) as average_r_multiple
             FROM signals s
-            INNER JOIN patterns p ON s.pattern_id = p.id
-            LEFT JOIN sector_mapping sm ON s.symbol = sm.symbol
-            WHERE s.exit_date IS NOT NULL
-              AND s.status IN ('CLOSED_WIN', 'CLOSED_LOSS')
-              AND (:cutoff_date IS NULL OR s.exit_date >= :cutoff_date)
-              AND (:detection_phase IS NULL OR p.detection_phase = :detection_phase)
-              AND sm.sector_name IS NOT NULL
-              AND sm.sector_name NOT IN ('Benchmark', 'Sector ETF')  -- Exclude ETFs
+            JOIN patterns p ON s.pattern_id = p.id
+            JOIN symbol_mapping sm ON s.symbol = sm.symbol
+            WHERE s.generated_at >= :cutoff_date
+                AND (p.detection_phase = :detection_phase OR :detection_phase IS NULL)
             GROUP BY sm.sector_name
-            ORDER BY win_rate DESC
-            LIMIT 20  -- Top 20 sectors for performance
-            """
-        )
+            ORDER BY win_rate DESC;
 
-        result = await self.session.execute(
-            query,
-            {
-                "cutoff_date": cutoff_date,
-                "detection_phase": detection_phase,
-            },
-        )
+        Args:
+            cutoff_date: Only include signals after this date
+            detection_phase: Optional phase filter
 
-        breakdown = []
-        for row in result:
-            win_rate = row.win_rate if row.win_rate is not None else Decimal("0.00")
-            avg_r = row.avg_r_multiple if row.avg_r_multiple is not None else Decimal("0.00")
-            rs_score = Decimal(str(row.rs_score)) if row.rs_score is not None else None
+        Returns:
+            List of SectorBreakdown sorted by win rate (empty in MVP)
 
-            breakdown.append(
-                SectorBreakdown(
-                    sector_name=row.sector_name,
-                    trade_count=row.trade_count,
-                    win_rate=Decimal(str(win_rate)),
-                    avg_r_multiple=Decimal(str(avg_r)),
-                    is_sector_leader=row.is_sector_leader,
-                    rs_score=rs_score,
-                )
-            )
-
-        return breakdown
+        See Also:
+            Story 11.9 Task 3: Sector Mapping Implementation
+        """
+        # MVP: Return empty list
+        # TODO: Replace with actual database query
+        return []
 
     async def get_win_rate_trend(
         self,
         pattern_type: str,
-        days: int = 90,
+        days: int,
     ) -> list[TrendDataPoint]:
-        """
-        Query daily win rate trend data for a specific pattern.
+        """Get win rate trend data for charting.
 
-        Task 1, Subtask 3: Trend data query
+        Aggregates win rate by day for the specified pattern type.
+
+        Example SQL:
+            SELECT
+                DATE(s.generated_at) as date,
+                AVG(CASE WHEN s.status = 'TARGET_HIT' THEN 1.0 ELSE 0.0 END) as win_rate
+            FROM signals s
+            JOIN patterns p ON s.pattern_id = p.id
+            WHERE p.pattern_type = :pattern_type
+                AND s.generated_at >= NOW() - INTERVAL ':days days'
+            GROUP BY DATE(s.generated_at)
+            ORDER BY date;
 
         Args:
-            pattern_type: Pattern identifier (SPRING, UTAD, etc.)
-            days: Number of days to look back (default 90, max 365)
+            pattern_type: Pattern type to analyze
+            days: Number of days of historical data
 
         Returns:
-            List of TrendDataPoint objects, ordered by date ASC
-
-        Example:
-            >>> trend = await repo.get_win_rate_trend("SPRING", days=30)
-            >>> for point in trend:
-            >>>     print(f"{point.date}: {point.win_rate}%")
+            List of TrendDataPoint with daily win rates
         """
-        # Limit to 365 days max for performance
-        days = min(days, 365)
-        cutoff_date = datetime.now(UTC) - timedelta(days=days)
+        # Check cache
+        cache_key = f"analytics:trend:{pattern_type}:{days}"
+        if self.redis:
+            cached_data = await self._get_from_cache(cache_key)
+            if cached_data:
+                return [TrendDataPoint(**point) for point in cached_data]
 
-        query = text(
-            """
-            SELECT
-                DATE(s.exit_date) as date,
-                :pattern_type as pattern_type,
-                ROUND(
-                    100.0 * SUM(CASE WHEN s.status = 'CLOSED_WIN' THEN 1 ELSE 0 END)::numeric
-                    / NULLIF(COUNT(s.id), 0),
-                    2
-                ) as win_rate,
-                COUNT(DISTINCT s.id) as trade_count
-            FROM signals s
-            INNER JOIN patterns p ON s.pattern_id = p.id
-            WHERE s.exit_date IS NOT NULL
-              AND s.exit_date >= :cutoff_date
-              AND p.pattern_type = :pattern_type
-              AND s.status IN ('CLOSED_WIN', 'CLOSED_LOSS')
-            GROUP BY DATE(s.exit_date)
-            ORDER BY DATE(s.exit_date) ASC
-            """
-        )
+        # MVP: Return empty list
+        # TODO: Replace with actual database query
+        trend_data: list[TrendDataPoint] = []
 
-        result = await self.session.execute(
-            query,
-            {
-                "pattern_type": pattern_type,
-                "cutoff_date": cutoff_date,
-            },
-        )
-
-        trend_data = []
-        for row in result:
-            win_rate = row.win_rate if row.win_rate is not None else Decimal("0.00")
-
-            # Convert date to datetime (set to start of day UTC)
-            dt = datetime.combine(row.date, datetime.min.time()).replace(tzinfo=UTC)
-
-            trend_data.append(
-                TrendDataPoint(
-                    date=dt,
-                    pattern_type=row.pattern_type,
-                    win_rate=Decimal(str(win_rate)),
-                    trade_count=row.trade_count,
-                )
+        if self.redis:
+            await self._set_cache(
+                cache_key, [point.model_dump(mode="json") for point in trend_data]
             )
 
         return trend_data
 
     async def get_trade_details(
         self,
-        pattern_type: Optional[str] = None,
+        pattern_type: str,
         days: Optional[int] = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[TradeDetail]:
-        """
-        Query individual trade details with pagination.
+    ) -> tuple[list[TradeDetail], int]:
+        """Get individual trade details for drill-down.
 
-        Task 1, Subtask 4: Trade details query
-
-        Args:
-            pattern_type: Optional pattern filter
-            days: Optional time period filter
-            limit: Number of trades to return (default 50, max 100)
-            offset: Pagination offset (default 0)
-
-        Returns:
-            List of TradeDetail objects, ordered by exit_date DESC
-
-        Example:
-            >>> trades = await repo.get_trade_details("SPRING", days=30, limit=20)
-            >>> for trade in trades:
-            >>>     print(f"{trade.symbol}: R{trade.r_multiple}")
-        """
-        # Limit to max 100 for performance
-        limit = min(limit, 100)
-
-        cutoff_date = None
-        if days:
-            cutoff_date = datetime.now(UTC) - timedelta(days=days)
-
-        query = text(
-            """
+        Example SQL:
             SELECT
-                s.id::text as trade_id,
+                s.id as signal_id,
                 s.symbol,
-                s.generated_at as entry_date,
-                s.exit_date,
+                DATE(s.entry_date) as entry_date,
                 s.entry_price,
                 s.exit_price,
-                s.r_multiple,
-                p.pattern_type,
-                p.detection_phase,
-                p.test_confirmed,
-                s.status
+                s.r_multiple as r_multiple_achieved,
+                s.status,
+                p.detection_phase
             FROM signals s
-            INNER JOIN patterns p ON s.pattern_id = p.id
-            WHERE s.exit_date IS NOT NULL
-              AND s.status IN ('CLOSED_WIN', 'CLOSED_LOSS')
-              AND (:pattern_type IS NULL OR p.pattern_type = :pattern_type)
-              AND (:cutoff_date IS NULL OR s.exit_date >= :cutoff_date)
-            ORDER BY s.exit_date DESC
-            LIMIT :limit OFFSET :offset
-            """
-        )
+            JOIN patterns p ON s.pattern_id = p.id
+            WHERE p.pattern_type = :pattern_type
+                AND (s.generated_at >= NOW() - INTERVAL ':days days' OR :days IS NULL)
+            ORDER BY s.generated_at DESC
+            LIMIT :limit OFFSET :offset;
 
-        result = await self.session.execute(
-            query,
-            {
-                "pattern_type": pattern_type,
-                "cutoff_date": cutoff_date,
-                "limit": limit,
-                "offset": offset,
-            },
-        )
+        Args:
+            pattern_type: Pattern type to filter
+            days: Number of days (None = all time)
+            limit: Max trades to return
+            offset: Pagination offset
 
-        trades = []
-        for row in result:
-            trades.append(
-                TradeDetail(
-                    trade_id=row.trade_id,
-                    symbol=row.symbol,
-                    entry_date=row.entry_date,
-                    exit_date=row.exit_date,
-                    entry_price=Decimal(str(row.entry_price)),
-                    exit_price=Decimal(str(row.exit_price)) if row.exit_price else None,
-                    r_multiple=Decimal(str(row.r_multiple)),
-                    pattern_type=row.pattern_type,
-                    detection_phase=row.detection_phase,
-                    test_confirmed=row.test_confirmed,
-                    status=row.status,
-                )
-            )
+        Returns:
+            Tuple of (trade_list, total_count)
+        """
+        # MVP: Return empty list
+        # TODO: Replace with actual database query
+        trades: list[TradeDetail] = []
+        total_count = 0
 
-        return trades
+        return trades, total_count
 
     async def get_vsa_metrics(
         self,
-        pattern_type: Optional[str] = None,
-    ) -> list[VSAMetrics]:
-        """
-        Get VSA event counts for pattern types.
+        pattern_type: str,
+        days: Optional[int] = None,
+    ) -> VSAMetrics:
+        """Get Volume Spread Analysis metrics for pattern.
 
-        Task 6: VSA metrics detection
-        Queries patterns.vsa_events JSONB column.
+        **MVP PLACEHOLDER:** Returns zero counts.
+        Production implementation (Story 11.9 Task 6) will query
+        patterns.vsa_events JSONB column for actual event counts.
+
+        Queries for VSA events (No Demand, No Supply, Stopping Volume) associated
+        with the specified pattern type.
 
         Args:
-            pattern_type: Optional pattern filter
+            pattern_type: Pattern type to analyze
+            days: Number of days (None = all time)
 
         Returns:
-            List of VSAMetrics objects
+            VSAMetrics with event counts (zeros in MVP)
 
-        Example:
-            >>> vsa = await repo.get_vsa_metrics("SPRING")
-            >>> print(f"No Demand events: {vsa[0].no_demand_count}")
+        See Also:
+            Story 11.9 Task 6: VSA Detection Logic
         """
-        query = text(
-            """
-            SELECT
-                p.pattern_type,
-                SUM((p.vsa_events->>'no_demand')::int) as no_demand_count,
-                SUM((p.vsa_events->>'no_supply')::int) as no_supply_count,
-                SUM((p.vsa_events->>'stopping_volume')::int) as stopping_volume_count
-            FROM patterns p
-            WHERE p.vsa_events IS NOT NULL
-              AND (:pattern_type IS NULL OR p.pattern_type = :pattern_type)
-            GROUP BY p.pattern_type
-            """
+        # MVP: Return zero metrics
+        # TODO: Implement VSA detection logic and database query
+        return VSAMetrics(
+            no_demand_count=0,
+            no_supply_count=0,
+            stopping_volume_count=0,
         )
-
-        result = await self.session.execute(query, {"pattern_type": pattern_type})
-
-        vsa_metrics = []
-        for row in result:
-            vsa_metrics.append(
-                VSAMetrics(
-                    pattern_type=row.pattern_type,
-                    no_demand_count=row.no_demand_count or 0,
-                    no_supply_count=row.no_supply_count or 0,
-                    stopping_volume_count=row.stopping_volume_count or 0,
-                )
-            )
-
-        return vsa_metrics
 
     async def get_preliminary_events(
         self,
-        pattern_id: UUID,
-        lookback_days: int = 30,
-    ) -> Optional[PreliminaryEvents]:
-        """
-        Get preliminary event counts (PS/SC/AR/ST) before a Spring/UTAD pattern.
+        pattern_type: str,
+        days: Optional[int] = None,
+    ) -> PreliminaryEvents:
+        """Get preliminary events (PS, SC, AR, ST) before pattern detection.
 
-        Task 8: Preliminary events tracking
+        **MVP PLACEHOLDER:** Returns zero counts.
+        Production implementation (Story 11.9 Task 7) will:
+        - Track preliminary events in patterns table
+        - Query event counts by pattern_type
+        - Filter by time period
+
+        Queries for Wyckoff accumulation schematic events that occurred before
+        the specified pattern type.
 
         Args:
-            pattern_id: Target pattern UUID
-            lookback_days: Days to look back (default 30)
+            pattern_type: Pattern type to analyze
+            days: Number of days (None = all time)
 
         Returns:
-            PreliminaryEvents object or None if pattern not found
+            PreliminaryEvents with event counts (zeros in MVP)
 
-        Example:
-            >>> events = await repo.get_preliminary_events(pattern_uuid)
-            >>> print(f"PS count: {events.ps_count}")
+        See Also:
+            Story 11.9 Task 7: Preliminary Events Tracking
         """
-        # First get the target pattern's symbol and detection time
-        target_query = text(
-            """
-            SELECT symbol, detection_time
-            FROM patterns
-            WHERE id = :pattern_id
-            """
+        # MVP: Return zero events
+        # TODO: Implement preliminary event detection and database query
+        return PreliminaryEvents(
+            ps_count=0,
+            sc_count=0,
+            ar_count=0,
+            st_count=0,
         )
 
-        target_result = await self.session.execute(target_query, {"pattern_id": pattern_id})
-        target_row = target_result.fetchone()
+    async def _get_from_cache(self, key: str) -> Optional[dict]:
+        """Get data from Redis cache.
 
-        if not target_row:
+        Args:
+            key: Cache key
+
+        Returns:
+            Cached data as dict, or None if not found
+        """
+        if not self.redis:
             return None
 
-        symbol = target_row.symbol
-        detection_time = target_row.detection_time
-        lookback_start = detection_time - timedelta(days=lookback_days)
-
-        # Query for preliminary events
-        events_query = text(
-            """
-            SELECT
-                SUM(CASE WHEN pattern_type = 'PS' THEN 1 ELSE 0 END) as ps_count,
-                SUM(CASE WHEN pattern_type = 'SC' THEN 1 ELSE 0 END) as sc_count,
-                SUM(CASE WHEN pattern_type = 'AR' THEN 1 ELSE 0 END) as ar_count,
-                SUM(CASE WHEN pattern_type = 'ST' THEN 1 ELSE 0 END) as st_count
-            FROM patterns
-            WHERE symbol = :symbol
-              AND detection_time >= :lookback_start
-              AND detection_time < :detection_time
-              AND pattern_type IN ('PS', 'SC', 'AR', 'ST')
-            """
-        )
-
-        result = await self.session.execute(
-            events_query,
-            {
-                "symbol": symbol,
-                "lookback_start": lookback_start,
-                "detection_time": detection_time,
-            },
-        )
-
-        row = result.fetchone()
-        if not row:
-            return PreliminaryEvents(
-                pattern_id=str(pattern_id),
-                ps_count=0,
-                sc_count=0,
-                ar_count=0,
-                st_count=0,
-                lookback_days=lookback_days,
+        try:
+            cached = await self.redis.get(key)
+            if cached:
+                return json.loads(cached)
+        except Exception as e:
+            logger.warning(
+                "Cache retrieval failed",
+                extra={"cache_key": key, "error": str(e)},
             )
+        return None
 
-        return PreliminaryEvents(
-            pattern_id=str(pattern_id),
-            ps_count=row.ps_count or 0,
-            sc_count=row.sc_count or 0,
-            ar_count=row.ar_count or 0,
-            st_count=row.st_count or 0,
-            lookback_days=lookback_days,
-        )
+    async def _set_cache(self, key: str, data: dict[str, Any] | list[Any]) -> None:
+        """Set data in Redis cache.
+
+        Args:
+            key: Cache key
+            data: Data to cache (must be JSON-serializable)
+        """
+        if not self.redis:
+            return
+
+        try:
+            await self.redis.setex(
+                key,
+                self.cache_ttl,
+                json.dumps(data, default=str),
+            )
+            logger.debug(
+                "Data cached successfully",
+                extra={"cache_key": key, "ttl_seconds": self.cache_ttl},
+            )
+        except Exception as e:
+            logger.warning(
+                "Cache storage failed",
+                extra={"cache_key": key, "error": str(e)},
+            )
