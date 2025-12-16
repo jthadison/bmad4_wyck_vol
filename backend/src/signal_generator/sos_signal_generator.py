@@ -58,7 +58,7 @@ If Spring signal exists for same trading range, link SOS signal to same campaign
 
 Usage:
 ------
->>> from backend.src.signal_generator.sos_signal_generator import (
+>>> from src.signal_generator.sos_signal_generator import (
 >>>     generate_lps_signal,
 >>>     generate_sos_direct_signal
 >>> )

@@ -61,7 +61,7 @@ async def get_open_positions() -> list[Position]:
     """
     # PLACEHOLDER: Return mock data
     # In production, replace with:
-    # from backend.src.repositories.position_repository import PositionRepository
+    # from src.repositories.position_repository import PositionRepository
     # repo = PositionRepository()
     # return await repo.get_open_positions()
 
@@ -123,7 +123,7 @@ async def get_heat_history_7d() -> list[HeatHistoryPoint]:
     """
     # PLACEHOLDER: Generate mock 7-day history
     # In production, replace with:
-    # from backend.src.repositories.heat_history_repository import HeatHistoryRepository
+    # from src.repositories.heat_history_repository import HeatHistoryRepository
     # repo = HeatHistoryRepository()
     # return await repo.get_last_n_days(7)
 
@@ -170,7 +170,7 @@ def get_campaign_id_label(campaign_id: UUID) -> str:
     """
     # PLACEHOLDER: Generate simple label from UUID
     # In production, replace with:
-    # from backend.src.repositories.campaign_repository import CampaignRepository
+    # from src.repositories.campaign_repository import CampaignRepository
     # repo = CampaignRepository()
     # campaign = await repo.get_by_id(campaign_id)
     # return campaign.display_name

@@ -12,8 +12,8 @@ The parameter N is called the "lookback" and determines pivot sensitivity:
 - Larger lookback (e.g., 10) = less sensitive, finds fewer, stronger pivots
 
 Example:
-    >>> from backend.src.pattern_engine.pivot_detector import detect_pivots
-    >>> from backend.src.repositories.ohlcv_repository import OHLCVRepository
+    >>> from src.pattern_engine.pivot_detector import detect_pivots
+    >>> from src.repositories.ohlcv_repository import OHLCVRepository
     >>>
     >>> repo = OHLCVRepository()
     >>> bars = repo.get_bars("AAPL", "1d", limit=252)

@@ -25,6 +25,105 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.database import Base
 
 
+class User(Base):
+    """
+    User account model.
+
+    Table: users
+    Primary Key: id (UUID)
+    """
+
+    __tablename__ = "users"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # User credentials
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class UserSettingsDB(Base):
+    """
+    User settings model.
+
+    Table: user_settings
+    Primary Key: user_id (UUID, FK to users.id)
+    """
+
+    __tablename__ = "user_settings"
+
+    # Primary key and foreign key
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+    )
+
+    # Settings JSON
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # Timestamps
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
+class APIKeyDB(Base):
+    """
+    API Key model for user authentication.
+
+    Table: api_keys
+    Primary Key: id (UUID)
+    Foreign Keys: user_id -> users.id
+    """
+
+    __tablename__ = "api_keys"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Foreign key
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+
+    # API key details
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    scopes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+
 class Pattern(Base):
     """
     Detected Wyckoff patterns.

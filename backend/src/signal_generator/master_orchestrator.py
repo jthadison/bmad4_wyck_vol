@@ -56,9 +56,9 @@ from src.signal_generator.validators.risk_validator import RiskValidator
 from src.signal_generator.validators.strategy_validator import StrategyValidator
 
 # Note: These imports will be mocked/stubbed for now since not all are implemented
-# from backend.src.market_data.service import MarketDataService
-# from backend.src.pattern_engine.trading_range_service import TradingRangeService
-# from backend.src.pattern_engine.detectors.base_detector import BasePatternDetector
+# from src.market_data.service import MarketDataService
+# from src.pattern_engine.trading_range_service import TradingRangeService
+# from src.pattern_engine.detectors.base_detector import BasePatternDetector
 from src.signal_generator.validators.volume_validator import VolumeValidator
 from src.signal_prioritization.priority_queue import SignalPriorityQueue
 

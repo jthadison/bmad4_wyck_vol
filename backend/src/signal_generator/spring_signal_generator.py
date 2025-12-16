@@ -34,7 +34,7 @@ Signal Components:
 
 Usage:
 ------
->>> from backend.src.signal_generator.spring_signal_generator import generate_spring_signal
+>>> from src.signal_generator.spring_signal_generator import generate_spring_signal
 >>>
 >>> # After detecting spring (5.1), test (5.3), confidence (5.4)
 >>> signal = generate_spring_signal(

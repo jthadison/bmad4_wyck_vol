@@ -32,7 +32,7 @@ Signal Components:
 
 Usage:
 ------
->>> from backend.src.models.spring_signal import SpringSignal
+>>> from src.models.spring_signal import SpringSignal
 >>> from decimal import Decimal
 >>> from datetime import datetime, timezone
 >>>
@@ -79,7 +79,7 @@ from pydantic import BaseModel, Field, field_validator
 from src.models.validation import ValidationChain
 
 if TYPE_CHECKING:
-    from backend.src.risk_management.forex_position_sizer import ForexPositionSize
+    from src.risk_management.forex_position_sizer import ForexPositionSize
 
 
 class SpringSignal(BaseModel):

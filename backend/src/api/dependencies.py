@@ -8,12 +8,13 @@ from collections.abc import AsyncGenerator
 from typing import Optional
 from uuid import UUID
 
-from backend.src.auth.token_service import TokenService
-from backend.src.config import settings
-from backend.src.database import async_session_maker
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.auth.token_service import TokenService
+from src.config import settings
+from src.database import async_session_maker
 
 # Security scheme for Bearer token authentication
 security = HTTPBearer()
@@ -180,7 +181,7 @@ async def get_current_user(
     Raises:
         HTTPException: 404 if user not found
     """
-    from backend.src.repositories.user_repository import UserRepository
+    from src.repositories.user_repository import UserRepository
 
     repo = UserRepository(db)
     user = await repo.get_user(user_id)

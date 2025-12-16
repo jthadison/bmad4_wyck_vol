@@ -27,10 +27,10 @@ reflecting 86.7% better trade expectancy from tighter stops and dual confirmatio
 
 Example:
     >>> from decimal import Decimal
-    >>> from backend.src.models.sos_breakout import SOSBreakout
-    >>> from backend.src.models.lps import LPS
-    >>> from backend.src.models.trading_range import TradingRange
-    >>> from backend.src.models.phase_classification import PhaseClassification, WyckoffPhase
+    >>> from src.models.sos_breakout import SOSBreakout
+    >>> from src.models.lps import LPS
+    >>> from src.models.trading_range import TradingRange
+    >>> from src.models.phase_classification import PhaseClassification, WyckoffPhase
     >>>
     >>> # Ideal SOS with LPS entry
     >>> confidence = calculate_sos_confidence(sos, lps, trading_range, phase)

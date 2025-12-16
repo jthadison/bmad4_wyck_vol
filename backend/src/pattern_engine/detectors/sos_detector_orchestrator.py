@@ -66,8 +66,8 @@ Integration:
 
 Usage:
 ------
->>> from backend.src.pattern_engine.detectors.sos_detector_orchestrator import SOSDetector
->>> from backend.src.pattern_engine.detectors.lps_detector_orchestrator import LPSDetector
+>>> from src.pattern_engine.detectors.sos_detector_orchestrator import SOSDetector
+>>> from src.pattern_engine.detectors.lps_detector_orchestrator import LPSDetector
 >>>
 >>> sos_detector = SOSDetector()
 >>> lps_detector = LPSDetector()

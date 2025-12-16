@@ -572,7 +572,7 @@ class ValidationContext(BaseModel):
 
     Example:
     --------
-    >>> from backend.src.models.volume_analysis import VolumeAnalysis
+    >>> from src.models.volume_analysis import VolumeAnalysis
     >>> context = ValidationContext(
     ...     pattern=spring_pattern,
     ...     symbol="AAPL",

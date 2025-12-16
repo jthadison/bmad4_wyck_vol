@@ -16,8 +16,8 @@ Quality Threshold:
     - Score < 70: Low-quality range (skip, insufficient quality for patterns)
 
 Example:
-    >>> from backend.src.pattern_engine.range_quality import calculate_range_quality
-    >>> from backend.src.pattern_engine.volume_analyzer import VolumeAnalyzer
+    >>> from src.pattern_engine.range_quality import calculate_range_quality
+    >>> from src.pattern_engine.volume_analyzer import VolumeAnalyzer
     >>>
     >>> # Analyze volume
     >>> volume_analyzer = VolumeAnalyzer()

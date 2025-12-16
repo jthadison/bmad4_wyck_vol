@@ -49,8 +49,8 @@ Schema validation via Pydantic models
 
 Usage:
 ------
->>> from backend.src.risk_management.risk_allocator import RiskAllocator
->>> from backend.src.models.risk_allocation import PatternType
+>>> from src.risk_management.risk_allocator import RiskAllocator
+>>> from src.models.risk_allocation import PatternType
 >>> from decimal import Decimal
 >>>
 >>> allocator = RiskAllocator()

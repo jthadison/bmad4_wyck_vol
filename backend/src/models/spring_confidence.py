@@ -31,7 +31,7 @@ Springs scoring <70% are rejected.
 
 Usage:
 ------
->>> from backend.src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
+>>> from src.pattern_engine.detectors.spring_detector import calculate_spring_confidence
 >>>
 >>> confidence = calculate_spring_confidence(
 >>>     spring=spring,

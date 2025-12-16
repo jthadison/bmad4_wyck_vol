@@ -35,8 +35,8 @@ Ideal Volume Ranges:
 
 Usage:
 ------
->>> from backend.src.pattern_engine.detectors.spring_detector import detect_spring
->>> from backend.src.models.phase_classification import WyckoffPhase
+>>> from src.pattern_engine.detectors.spring_detector import detect_spring
+>>> from src.models.phase_classification import WyckoffPhase
 >>>
 >>> spring = detect_spring(
 >>>     range=trading_range,      # From Epic 3 (has Creek level: range.creek)
@@ -500,7 +500,7 @@ def detect_test_confirmation(
     - Story 5.5: Test presence enables signal generation (FR13)
 
     Example:
-        >>> from backend.src.pattern_engine.detectors.spring_detector import (
+        >>> from src.pattern_engine.detectors.spring_detector import (
         ...     detect_spring, detect_test_confirmation
         ... )
         >>>
@@ -916,7 +916,7 @@ def calculate_spring_confidence(
     - <70%: REJECTED - Below threshold, no signal
 
     Example:
-        >>> from backend.src.pattern_engine.detectors.spring_detector import (
+        >>> from src.pattern_engine.detectors.spring_detector import (
         ...     calculate_spring_confidence
         ... )
         >>>
@@ -1558,8 +1558,8 @@ class SpringDetector:
     Usage:
     ------
     **Single Spring Detection:**
-    >>> from backend.src.pattern_engine.detectors.spring_detector import SpringDetector
-    >>> from backend.src.models.phase_classification import WyckoffPhase
+    >>> from src.pattern_engine.detectors.spring_detector import SpringDetector
+    >>> from src.models.phase_classification import WyckoffPhase
     >>>
     >>> detector = SpringDetector()
     >>>

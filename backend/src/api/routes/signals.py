@@ -90,7 +90,7 @@ async def get_signal_by_id(signal_id: UUID) -> TradeSignal | None:
     """
     # PLACEHOLDER: Return from mock store
     # In production, replace with:
-    # from backend.src.repositories.signal_repository import SignalRepository
+    # from src.repositories.signal_repository import SignalRepository
     # repo = SignalRepository()
     # return await repo.get_by_id(signal_id)
 
@@ -277,7 +277,7 @@ async def list_signals(
         if sorted:
             # TODO: Wire up MasterOrchestrator via dependency injection
             # When orchestrator available:
-            #   from backend.src.api.dependencies import get_orchestrator
+            #   from src.api.dependencies import get_orchestrator
             #   orchestrator = await get_orchestrator()
             #   if orchestrator.signal_priority_queue:
             #       signals = orchestrator.get_pending_signals(limit=limit)

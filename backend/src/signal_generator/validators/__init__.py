@@ -16,7 +16,7 @@ Validators:
 
 Usage:
 ------
->>> from backend.src.signal_generator.validators import VolumeValidator, PhaseValidator
+>>> from src.signal_generator.validators import VolumeValidator, PhaseValidator
 >>> volume_validator = VolumeValidator()
 >>> phase_validator = PhaseValidator()
 """
