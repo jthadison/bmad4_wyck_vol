@@ -57,7 +57,7 @@ FR12 Compliance:
 
 Usage:
 ------
->>> from backend.src.pattern_engine.validators.sos_validator import SOSValidator
+>>> from src.pattern_engine.validators.sos_validator import SOSValidator
 >>>
 >>> validator = SOSValidator()
 >>>

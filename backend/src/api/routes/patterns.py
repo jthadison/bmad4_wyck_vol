@@ -128,7 +128,7 @@ async def get_pattern_statistics(
     """
     # PLACEHOLDER: Return from mock data
     # In production, replace with:
-    # from backend.src.repositories.pattern_repository import PatternRepository
+    # from src.repositories.pattern_repository import PatternRepository
     # repo = PatternRepository()
     # return await repo.get_statistics(pattern_type, rejection_category)
 

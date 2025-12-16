@@ -69,7 +69,7 @@ async def get_campaign_service() -> CampaignService:
     """
     # Placeholder implementation
     # In production:
-    # from backend.src.database import get_async_session
+    # from src.database import get_async_session
     # session = await get_async_session()
     # repository = CampaignLifecycleRepository(session)
     # return CampaignService(repository)

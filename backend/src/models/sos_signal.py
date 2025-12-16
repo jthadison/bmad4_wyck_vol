@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field, field_serializer, field_validator, model_
 from src.models.validation import ValidationChain
 
 if TYPE_CHECKING:
-    from backend.src.risk_management.forex_position_sizer import ForexPositionSize
+    from src.risk_management.forex_position_sizer import ForexPositionSize
 
 
 class SOSSignal(BaseModel):

@@ -1306,12 +1306,12 @@ def calculate_phase_confidence(
         <60: Weak phase (rejected, low confidence)
 
     Example:
-        >>> from backend.src.pattern_engine.phase_detector import (
+        >>> from src.pattern_engine.phase_detector import (
         ...     calculate_phase_confidence,
         ...     should_reject_phase
         ... )
-        >>> from backend.src.models.phase_events import PhaseEvents
-        >>> from backend.src.models.wyckoff_phase import WyckoffPhase
+        >>> from src.models.phase_events import PhaseEvents
+        >>> from src.models.wyckoff_phase import WyckoffPhase
         >>>
         >>> # Detected events
         >>> events = PhaseEvents(

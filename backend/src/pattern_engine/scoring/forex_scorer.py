@@ -88,7 +88,7 @@ Formula (190 points total, capped at 85):
 
 Example (EUR/USD Spring):
 --------------------------
-    >>> from backend.src.pattern_engine.scoring.forex_scorer import ForexConfidenceScorer
+    >>> from src.pattern_engine.scoring.forex_scorer import ForexConfidenceScorer
     >>> scorer = ForexConfidenceScorer()
     >>> confidence = scorer.calculate_spring_confidence(
     ...     spring=spring,  # Tick Volume: 220 ticks (0.22x avg 1000)
@@ -339,7 +339,7 @@ class ForexConfidenceScorer(ConfidenceScorer):
         - <70%: REJECTED - Below threshold, no signal
 
         Example (EUR/USD):
-            >>> from backend.src.pattern_engine.scoring.forex_scorer import ForexConfidenceScorer
+            >>> from src.pattern_engine.scoring.forex_scorer import ForexConfidenceScorer
             >>>
             >>> scorer = ForexConfidenceScorer()
             >>> # After detecting spring and test

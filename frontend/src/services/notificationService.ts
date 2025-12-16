@@ -283,6 +283,60 @@ class NotificationService {
   }
 
   /**
+   * Show toast for notification_toast WebSocket message (Story 11.6).
+   *
+   * Displays notification from backend notification system with priority-based styling.
+   *
+   * @param notification - Notification object from WebSocket
+   */
+  showNotificationToast(notification: {
+    notification_type: string
+    priority: string
+    title: string
+    message: string
+    id: string
+  }): void {
+    if (!this.toast) return
+
+    // Map priority to severity and life duration
+    let severity: 'info' | 'success' | 'warn' | 'error' = 'info'
+    let life = 5000 // Default 5 seconds
+
+    switch (notification.priority) {
+      case 'info':
+        severity = 'info'
+        life = 5000
+        break
+      case 'warning':
+        severity = 'warn'
+        life = 10000 // 10 seconds for warnings
+        break
+      case 'critical':
+        severity = 'error'
+        life = 0 // Sticky for critical
+        break
+    }
+
+    // Check if enabled and throttle
+    // For CRITICAL priority, bypass throttling
+    if (notification.priority !== 'critical' && !this.canShowToast()) {
+      return
+    }
+
+    this.toast.add({
+      severity,
+      summary: notification.title,
+      detail: notification.message,
+      life,
+      closable: true,
+    })
+
+    console.log(
+      `[NotificationService] Notification toast: ${notification.notification_type} - ${notification.title}`
+    )
+  }
+
+  /**
    * Clear all toasts.
    */
   clearAll(): void {

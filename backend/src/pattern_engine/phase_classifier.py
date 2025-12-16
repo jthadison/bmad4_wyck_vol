@@ -19,8 +19,8 @@ FR14 Trading Restrictions:
     - Phase C/D/E: ALLOWED
 
 Example:
-    >>> from backend.src.pattern_engine.phase_classifier import classify_phase
-    >>> from backend.src.models.phase_classification import PhaseEvents
+    >>> from src.pattern_engine.phase_classifier import classify_phase
+    >>> from src.models.phase_classification import PhaseEvents
     >>>
     >>> events = PhaseEvents(
     ...     selling_climax=sc_dict,

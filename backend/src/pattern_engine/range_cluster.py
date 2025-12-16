@@ -9,8 +9,8 @@ to form PriceCluster objects, which are then combined into TradingRange objects
 representing accumulation or distribution zones.
 
 Example:
-    >>> from backend.src.pattern_engine.pivot_detector import detect_pivots
-    >>> from backend.src.pattern_engine.range_cluster import find_potential_ranges
+    >>> from src.pattern_engine.pivot_detector import detect_pivots
+    >>> from src.pattern_engine.range_cluster import find_potential_ranges
     >>>
     >>> # Detect pivots from OHLCV bars
     >>> pivots = detect_pivots(bars, lookback=5)

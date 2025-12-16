@@ -4,27 +4,23 @@ Story 11.5: Advanced Charting Integration
 Tests chart data endpoint with database integration and performance validation.
 """
 
-import pytest
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.src.orm.models import OHLCVBar, Pattern, TradingRange
-from backend.src.models.chart import ChartDataResponse
+from src.orm.models import OHLCVBar, Pattern, TradingRange
 
 
 @pytest.mark.asyncio
 class TestChartDataEndpoint:
     """Test /api/v1/charts/data endpoint."""
 
-    async def test_get_chart_data_success(
-        self,
-        client: AsyncClient,
-        db_session: AsyncSession
-    ):
+    async def test_get_chart_data_success(self, client: AsyncClient, db_session: AsyncSession):
         """Test successful chart data retrieval."""
         # Setup: Create OHLCV bars
         symbol = "AAPL"
@@ -33,7 +29,7 @@ class TestChartDataEndpoint:
 
         bars = []
         for i in range(10):
-            timestamp = now - timedelta(days=10-i)
+            timestamp = now - timedelta(days=10 - i)
             bar = OHLCVBar(
                 id=uuid4(),
                 symbol=symbol,
@@ -47,7 +43,7 @@ class TestChartDataEndpoint:
                 spread=Decimal("3.00"),
                 spread_ratio=Decimal("1.0"),
                 volume_ratio=Decimal("1.0"),
-                created_at=now
+                created_at=now,
             )
             bars.append(bar)
             db_session.add(bar)
@@ -56,12 +52,7 @@ class TestChartDataEndpoint:
 
         # Execute: Call API endpoint
         response = await client.get(
-            "/api/v1/charts/data",
-            params={
-                "symbol": symbol,
-                "timeframe": "1D",
-                "limit": 500
-            }
+            "/api/v1/charts/data", params={"symbol": symbol, "timeframe": "1D", "limit": 500}
         )
 
         # Verify: Response
@@ -83,9 +74,7 @@ class TestChartDataEndpoint:
         assert "volume" in first_bar
 
     async def test_get_chart_data_with_patterns(
-        self,
-        client: AsyncClient,
-        db_session: AsyncSession
+        self, client: AsyncClient, db_session: AsyncSession
     ):
         """Test chart data with pattern markers."""
         # Setup: Create OHLCV bars and patterns
@@ -108,7 +97,7 @@ class TestChartDataEndpoint:
             spread=Decimal("3.00"),
             spread_ratio=Decimal("1.0"),
             volume_ratio=Decimal("1.0"),
-            created_at=now
+            created_at=now,
         )
         db_session.add(bar)
 
@@ -131,7 +120,7 @@ class TestChartDataEndpoint:
             touch_count_ice=2,
             version=1,
             created_at=now,
-            updated_at=now
+            updated_at=now,
         )
         db_session.add(trading_range)
         await db_session.flush()
@@ -157,18 +146,14 @@ class TestChartDataEndpoint:
             rejection_reason=None,
             pattern_metadata={},
             metadata_version=1,
-            created_at=now
+            created_at=now,
         )
         db_session.add(pattern)
         await db_session.commit()
 
         # Execute: Call API endpoint
         response = await client.get(
-            "/api/v1/charts/data",
-            params={
-                "symbol": symbol,
-                "timeframe": "1D"
-            }
+            "/api/v1/charts/data", params={"symbol": symbol, "timeframe": "1D"}
         )
 
         # Verify: Response includes patterns
@@ -184,9 +169,7 @@ class TestChartDataEndpoint:
         assert pattern_marker["color"] == "#16A34A"
 
     async def test_get_chart_data_with_trading_ranges(
-        self,
-        client: AsyncClient,
-        db_session: AsyncSession
+        self, client: AsyncClient, db_session: AsyncSession
     ):
         """Test chart data with trading range level lines."""
         # Setup: Create trading range
@@ -212,18 +195,14 @@ class TestChartDataEndpoint:
             touch_count_ice=3,
             version=1,
             created_at=now,
-            updated_at=now
+            updated_at=now,
         )
         db_session.add(trading_range)
         await db_session.commit()
 
         # Execute: Call API endpoint
         response = await client.get(
-            "/api/v1/charts/data",
-            params={
-                "symbol": symbol,
-                "timeframe": "1D"
-            }
+            "/api/v1/charts/data", params={"symbol": symbol, "timeframe": "1D"}
         )
 
         # Verify: Response includes level lines
@@ -243,43 +222,25 @@ class TestChartDataEndpoint:
         assert "ICE" in level_types
         assert "JUMP" in level_types
 
-    async def test_get_chart_data_not_found(
-        self,
-        client: AsyncClient
-    ):
+    async def test_get_chart_data_not_found(self, client: AsyncClient):
         """Test chart data request for non-existent symbol."""
         response = await client.get(
-            "/api/v1/charts/data",
-            params={
-                "symbol": "NONEXISTENT",
-                "timeframe": "1D"
-            }
+            "/api/v1/charts/data", params={"symbol": "NONEXISTENT", "timeframe": "1D"}
         )
 
         assert response.status_code == 404
         assert "No data found" in response.json()["detail"]
 
-    async def test_get_chart_data_invalid_timeframe(
-        self,
-        client: AsyncClient
-    ):
+    async def test_get_chart_data_invalid_timeframe(self, client: AsyncClient):
         """Test chart data request with invalid timeframe."""
         response = await client.get(
-            "/api/v1/charts/data",
-            params={
-                "symbol": "AAPL",
-                "timeframe": "INVALID"
-            }
+            "/api/v1/charts/data", params={"symbol": "AAPL", "timeframe": "INVALID"}
         )
 
         # Pydantic validation should reject invalid timeframe
         assert response.status_code == 422
 
-    async def test_get_chart_data_custom_limit(
-        self,
-        client: AsyncClient,
-        db_session: AsyncSession
-    ):
+    async def test_get_chart_data_custom_limit(self, client: AsyncClient, db_session: AsyncSession):
         """Test chart data with custom limit parameter."""
         # Setup: Create 100 OHLCV bars
         symbol = "TSLA"
@@ -287,7 +248,7 @@ class TestChartDataEndpoint:
         now = datetime.utcnow()
 
         for i in range(100):
-            timestamp = now - timedelta(days=100-i)
+            timestamp = now - timedelta(days=100 - i)
             bar = OHLCVBar(
                 id=uuid4(),
                 symbol=symbol,
@@ -301,7 +262,7 @@ class TestChartDataEndpoint:
                 spread=Decimal("7.00"),
                 spread_ratio=Decimal("1.0"),
                 volume_ratio=Decimal("1.0"),
-                created_at=now
+                created_at=now,
             )
             db_session.add(bar)
 
@@ -309,12 +270,7 @@ class TestChartDataEndpoint:
 
         # Execute: Request with limit=50
         response = await client.get(
-            "/api/v1/charts/data",
-            params={
-                "symbol": symbol,
-                "timeframe": "1D",
-                "limit": 50
-            }
+            "/api/v1/charts/data", params={"symbol": symbol, "timeframe": "1D", "limit": 50}
         )
 
         # Verify: Returns only 50 bars
@@ -324,9 +280,7 @@ class TestChartDataEndpoint:
         assert data["bar_count"] == 50
 
     async def test_get_chart_data_date_range_filter(
-        self,
-        client: AsyncClient,
-        db_session: AsyncSession
+        self, client: AsyncClient, db_session: AsyncSession
     ):
         """Test chart data with date range filtering."""
         # Setup: Create bars across 30 days
@@ -335,7 +289,7 @@ class TestChartDataEndpoint:
         now = datetime.utcnow()
 
         for i in range(30):
-            timestamp = now - timedelta(days=30-i)
+            timestamp = now - timedelta(days=30 - i)
             bar = OHLCVBar(
                 id=uuid4(),
                 symbol=symbol,
@@ -349,7 +303,7 @@ class TestChartDataEndpoint:
                 spread=Decimal("15.00"),
                 spread_ratio=Decimal("1.0"),
                 volume_ratio=Decimal("1.0"),
-                created_at=now
+                created_at=now,
             )
             db_session.add(bar)
 
@@ -365,8 +319,8 @@ class TestChartDataEndpoint:
                 "symbol": symbol,
                 "timeframe": "1D",
                 "start_date": start_date,
-                "end_date": end_date
-            }
+                "end_date": end_date,
+            },
         )
 
         # Verify: Returns bars within date range
@@ -375,11 +329,7 @@ class TestChartDataEndpoint:
         assert len(data["bars"]) <= 10
 
     @pytest.mark.performance
-    async def test_chart_data_performance(
-        self,
-        client: AsyncClient,
-        db_session: AsyncSession
-    ):
+    async def test_chart_data_performance(self, client: AsyncClient, db_session: AsyncSession):
         """Test chart data endpoint performance < 100ms for 500 bars.
 
         Story 11.5 AC: Response time < 100ms (p95)
@@ -391,7 +341,7 @@ class TestChartDataEndpoint:
 
         bars = []
         for i in range(500):
-            timestamp = now - timedelta(days=500-i)
+            timestamp = now - timedelta(days=500 - i)
             bar = OHLCVBar(
                 id=uuid4(),
                 symbol=symbol,
@@ -405,7 +355,7 @@ class TestChartDataEndpoint:
                 spread=Decimal("3.00"),
                 spread_ratio=Decimal("1.0"),
                 volume_ratio=Decimal("1.0"),
-                created_at=now
+                created_at=now,
             )
             bars.append(bar)
 
@@ -415,12 +365,7 @@ class TestChartDataEndpoint:
         # Execute: Measure response time
         start_time = time.time()
         response = await client.get(
-            "/api/v1/charts/data",
-            params={
-                "symbol": symbol,
-                "timeframe": "1D",
-                "limit": 500
-            }
+            "/api/v1/charts/data", params={"symbol": symbol, "timeframe": "1D", "limit": 500}
         )
         elapsed_ms = (time.time() - start_time) * 1000
 
@@ -436,9 +381,7 @@ class TestChartDataEndpoint:
         assert elapsed_ms < 200, f"Chart data API too slow: {elapsed_ms:.2f}ms"
 
     async def test_get_chart_data_phase_annotations(
-        self,
-        client: AsyncClient,
-        db_session: AsyncSession
+        self, client: AsyncClient, db_session: AsyncSession
     ):
         """Test chart data includes phase annotations."""
         # Setup: Create patterns in different phases
@@ -460,7 +403,7 @@ class TestChartDataEndpoint:
             spread=Decimal("3.00"),
             spread_ratio=Decimal("1.0"),
             volume_ratio=Decimal("1.0"),
-            created_at=now
+            created_at=now,
         )
         db_session.add(bar)
 
@@ -485,18 +428,14 @@ class TestChartDataEndpoint:
             rejection_reason=None,
             pattern_metadata={},
             metadata_version=1,
-            created_at=now
+            created_at=now,
         )
         db_session.add(pattern)
         await db_session.commit()
 
         # Execute: Call API endpoint
         response = await client.get(
-            "/api/v1/charts/data",
-            params={
-                "symbol": symbol,
-                "timeframe": "1D"
-            }
+            "/api/v1/charts/data", params={"symbol": symbol, "timeframe": "1D"}
         )
 
         # Verify: Response includes phase annotations

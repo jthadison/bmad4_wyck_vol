@@ -55,7 +55,7 @@ async def get_signal_by_id(signal_id: UUID) -> bool:
     """
     # PLACEHOLDER: Check mock store
     # In production, replace with:
-    # from backend.src.repositories.signal_repository import SignalRepository
+    # from src.repositories.signal_repository import SignalRepository
     # repo = SignalRepository()
     # signal = await repo.get_by_id(signal_id)
     # return signal is not None
@@ -82,7 +82,7 @@ async def save_feedback(feedback: Feedback) -> Feedback:
     """
     # PLACEHOLDER: Save to mock store
     # In production, replace with:
-    # from backend.src.repositories.feedback_repository import FeedbackRepository
+    # from src.repositories.feedback_repository import FeedbackRepository
     # repo = FeedbackRepository()
     # return await repo.create(feedback)
 

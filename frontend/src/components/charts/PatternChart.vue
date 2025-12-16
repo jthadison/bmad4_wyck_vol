@@ -61,11 +61,30 @@
         <span class="info-value">{{ chartStore.levelLines.length }}</span>
       </div>
     </div>
+
+    <!-- Wyckoff Enhancements Panel (Story 11.5.1) -->
+    <div
+      v-if="chartStore.chartData && !chartStore.isLoading"
+      class="wyckoff-panel"
+    >
+      <!-- Schematic Badge -->
+      <SchematicBadge
+        v-if="chartStore.schematicMatch"
+        :schematic="chartStore.schematicMatch"
+      />
+
+      <!-- Cause Building Panel -->
+      <CauseBuildingPanel
+        v-if="chartStore.causeBuildingData"
+        :cause-building-data="chartStore.causeBuildingData"
+        class="cause-building-container"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import {
   createChart,
   type IChartApi,
@@ -74,6 +93,12 @@ import {
 } from 'lightweight-charts'
 import { useChartStore } from '@/stores/chartStore'
 import ChartToolbar from './ChartToolbar.vue'
+import SchematicBadge from './SchematicBadge.vue'
+import CauseBuildingPanel from './CauseBuildingPanel.vue'
+import {
+  renderSchematicOverlay,
+  removeSchematicOverlay,
+} from '@/utils/schematicOverlay'
 import { format } from 'date-fns'
 import Skeleton from 'primevue/skeleton'
 import Message from 'primevue/message'
@@ -100,6 +125,7 @@ const chartContainer = ref<HTMLElement | null>(null)
 const chart = ref<IChartApi | null>(null)
 const candlestickSeries = ref<ISeriesApi<'Candlestick'> | null>(null)
 const volumeSeries = ref<ISeriesApi<'Histogram'> | null>(null)
+const templateSeries = ref<ISeriesApi<'Line'> | null>(null)
 
 const chartStore = useChartStore()
 const currentSymbol = ref(props.symbol)
@@ -204,7 +230,7 @@ function updateChartData() {
     candlestickSeries.value.setData(bars)
 
     // Set volume data (with colors based on price direction)
-    const volumeData = bars.map((bar, index) => ({
+    const volumeData = bars.map((bar) => ({
       time: bar.time,
       value: bar.volume,
       color: bar.close >= bar.open ? '#26a69a80' : '#ef535080', // Semi-transparent
@@ -217,6 +243,12 @@ function updateChartData() {
 
   // Add level lines
   updateLevelLines()
+
+  // Add projected jump line (Story 11.5.1)
+  updateProjectedJumpLine()
+
+  // Add schematic template overlay (Story 11.5.1)
+  updateSchematicOverlay()
 
   // Add preliminary events
   updatePreliminaryEvents()
@@ -257,6 +289,70 @@ function updateLevelLines() {
 }
 
 /**
+ * Update projected jump line (Story 11.5.1 Task 7)
+ * Displays projected jump target when cause building progress > 50%
+ */
+function updateProjectedJumpLine() {
+  if (!candlestickSeries.value) return
+
+  const causeBuildingData = chartStore.causeBuildingData
+
+  // Only show projected jump line when progress > 50%
+  if (!causeBuildingData || causeBuildingData.progress_percentage <= 50) {
+    return
+  }
+
+  // Create dashed green price line for projected jump target
+  candlestickSeries.value.createPriceLine({
+    price: causeBuildingData.projected_jump,
+    color: '#16A34A', // Green
+    lineWidth: 2,
+    lineStyle: 1, // Dashed
+    axisLabelVisible: true,
+    title: `Projected Jump: $${causeBuildingData.projected_jump.toFixed(2)}`,
+  })
+}
+
+/**
+ * Update schematic template overlay (Story 11.5.1 Task 5)
+ * Renders ideal Wyckoff schematic pattern as dashed line overlay
+ */
+function updateSchematicOverlay() {
+  if (!chart.value) return
+
+  // Remove existing template overlay
+  if (templateSeries.value) {
+    removeSchematicOverlay(chart.value, templateSeries.value)
+    templateSeries.value = null
+  }
+
+  // Check if schematic overlay is enabled and data exists
+  const schematicMatch = chartStore.schematicMatch
+  if (!schematicMatch || !chartStore.visibility.schematicOverlay) {
+    return
+  }
+
+  // Get trading range levels for scaling
+  const tradingRanges = chartStore.tradingRanges
+  if (tradingRanges.length === 0) {
+    return
+  }
+
+  const activeRange = tradingRanges[0]
+  const creekLevel = activeRange.creek_level
+  const iceLevel = activeRange.ice_level
+
+  // Render schematic overlay
+  templateSeries.value = renderSchematicOverlay(
+    chart.value,
+    schematicMatch,
+    chartStore.bars,
+    creekLevel,
+    iceLevel
+  )
+}
+
+/**
  * Update preliminary events on chart
  */
 function updatePreliminaryEvents() {
@@ -282,7 +378,7 @@ function updatePreliminaryEvents() {
     })),
   ]
 
-  candlestickSeries.value.setMarkers(allMarkers as any)
+  candlestickSeries.value.setMarkers(allMarkers as never[])
 }
 
 /**
@@ -493,5 +589,15 @@ watch(currentTimeframe, async (newTimeframe) => {
 .info-value {
   color: #111827;
   font-size: 0.875rem;
+}
+
+.wyckoff-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cause-building-container {
+  max-width: 500px;
 }
 </style>

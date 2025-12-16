@@ -29,7 +29,7 @@ class UserRepository:
         Returns:
             User dict or None if not found
         """
-        from backend.src.db.models import User
+        from src.orm.models import User
 
         stmt = select(User).where(User.id == user_id)
         result = await self.session.execute(stmt)
@@ -56,7 +56,7 @@ class UserRepository:
         Returns:
             Settings dict or None if not found
         """
-        from backend.src.db.models import UserSettingsDB
+        from src.orm.models import UserSettingsDB
 
         stmt = select(UserSettingsDB).where(UserSettingsDB.user_id == user_id)
         result = await self.session.execute(stmt)
@@ -83,7 +83,7 @@ class UserRepository:
         Returns:
             Updated settings dict
         """
-        from backend.src.db.models import UserSettingsDB
+        from src.orm.models import UserSettingsDB
 
         now = datetime.utcnow()
 
@@ -112,7 +112,7 @@ class UserRepository:
         Returns:
             List of API key dicts
         """
-        from backend.src.db.models import APIKeyDB
+        from src.orm.models import APIKeyDB
 
         stmt = (
             select(APIKeyDB).where(APIKeyDB.user_id == user_id).order_by(APIKeyDB.created_at.desc())
@@ -159,7 +159,7 @@ class UserRepository:
         Returns:
             Created API key dict
         """
-        from backend.src.db.models import APIKeyDB
+        from src.orm.models import APIKeyDB
 
         now = datetime.utcnow()
 
@@ -199,7 +199,7 @@ class UserRepository:
         Returns:
             True if revoked, False if not found
         """
-        from backend.src.db.models import APIKeyDB
+        from src.orm.models import APIKeyDB
 
         now = datetime.utcnow()
 
@@ -220,7 +220,7 @@ class UserRepository:
         Returns:
             API key dict or None if not found
         """
-        from backend.src.db.models import APIKeyDB
+        from src.orm.models import APIKeyDB
 
         stmt = select(APIKeyDB).where(APIKeyDB.key_hash == key_hash)
         result = await self.session.execute(stmt)
@@ -247,7 +247,7 @@ class UserRepository:
         Args:
             key_id: API key UUID
         """
-        from backend.src.db.models import APIKeyDB
+        from src.orm.models import APIKeyDB
 
         now = datetime.utcnow()
 
@@ -267,7 +267,7 @@ class UserRepository:
         Returns:
             True if updated, False if user not found
         """
-        from backend.src.db.models import User
+        from src.orm.models import User
 
         now = datetime.utcnow()
 

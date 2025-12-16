@@ -1,28 +1,199 @@
 """
-SQLAlchemy ORM Models for BMAD Wyckoff System (Story 10.3.1).
+SQLAlchemy ORM Models for BMAD Wyckoff System.
 
-These models map to database tables for pattern and signal data.
-They enable type-safe querying through SQLAlchemy ORM for daily summary queries.
+These models map to database tables for the Wyckoff trading system.
+They enable type-safe querying through SQLAlchemy ORM.
 
-Note: OHLCVBar model exists in src/repositories/models.py (created in earlier stories).
-This file contains only the models needed for Story 10.3.1 pattern/signal queries.
+Note: OHLCVBar (OHLCVBarModel) exists in src/repositories/models.py.
 
 Models:
 -------
+- TradingRange: Wyckoff trading ranges (accumulation/distribution)
+- User: User accounts
+- UserSettingsDB: User settings
+- APIKeyDB: API keys for authentication
 - Pattern: Detected Wyckoff patterns
 - Signal: Generated trade signals
+- NotificationORM: User notifications
+- NotificationPreferencesORM: User notification preferences
+- PushSubscriptionORM: Browser push subscriptions
 """
 
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Integer, String, Text
+from sqlalchemy import JSON, Boolean, CheckConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import NUMERIC, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
+
+
+class TradingRange(Base):
+    """
+    Trading range model for Wyckoff accumulation/distribution ranges.
+
+    Table: trading_ranges
+    Primary Key: id (UUID)
+    """
+
+    __tablename__ = "trading_ranges"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Symbol and timeframe
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(5), nullable=False)
+
+    # Time range
+    start_time: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    end_time: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    duration_bars: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Price levels
+    creek_level: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
+    ice_level: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
+    jump_target: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
+
+    # Range metrics
+    cause_factor: Mapped[Decimal] = mapped_column(NUMERIC(4, 2), nullable=False)
+    range_width: Mapped[Decimal] = mapped_column(NUMERIC(10, 4), nullable=False)
+    phase: Mapped[str] = mapped_column(String(1), nullable=False)
+    strength_score: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Touch counts
+    touch_count_creek: Mapped[int] = mapped_column(Integer, server_default="0")
+    touch_count_ice: Mapped[int] = mapped_column(Integer, server_default="0")
+
+    # Soft delete
+    deleted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    # Optimistic locking
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint("duration_bars BETWEEN 15 AND 100", name="chk_duration_bars"),
+        CheckConstraint("cause_factor BETWEEN 2.0 AND 3.0", name="chk_cause_factor"),
+        CheckConstraint("phase IN ('A','B','C','D','E')", name="chk_phase"),
+        CheckConstraint("strength_score BETWEEN 60 AND 100", name="chk_strength_score"),
+    )
+
+
+class User(Base):
+    """
+    User account model.
+
+    Table: users
+    Primary Key: id (UUID)
+    """
+
+    __tablename__ = "users"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # User credentials
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class UserSettingsDB(Base):
+    """
+    User settings model.
+
+    Table: user_settings
+    Primary Key: user_id (UUID, FK to users.id)
+    """
+
+    __tablename__ = "user_settings"
+
+    # Primary key and foreign key
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+    )
+
+    # Settings JSON
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # Timestamps
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
+class APIKeyDB(Base):
+    """
+    API Key model for user authentication.
+
+    Table: api_keys
+    Primary Key: id (UUID)
+    Foreign Keys: user_id -> users.id
+    """
+
+    __tablename__ = "api_keys"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Foreign key
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+
+    # API key details
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    scopes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
 
 class Pattern(Base):
@@ -160,15 +331,17 @@ class Signal(Base):
     __table_args__ = (CheckConstraint("r_multiple >= 2.0", name="chk_r_multiple"),)
 
 
-class TradingRange(Base):
+class NotificationORM(Base):
     """
-    Trading range metadata for Wyckoff analysis.
+    User notifications across all channels.
 
-    Table: trading_ranges
+    Table: notifications
     Primary Key: id (UUID)
+    Foreign Keys: user_id -> users.id
+    Indexes: idx_notifications_user_read, idx_notifications_type
     """
 
-    __tablename__ = "trading_ranges"
+    __tablename__ = "notifications"
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -177,81 +350,96 @@ class TradingRange(Base):
         default=uuid4,
     )
 
-    # Trading range identification
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    timeframe: Mapped[str] = mapped_column(String(5), nullable=False)
+    # Notification classification
+    notification_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    priority: Mapped[str] = mapped_column(String(10), nullable=False)
 
-    # Time range
-    start_time: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    end_time: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    duration_bars: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Content
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str] = mapped_column(String(1000), nullable=False)
+    notification_metadata: Mapped[dict] = mapped_column(
+        "metadata", JSON, nullable=False, server_default="{}"
+    )
 
-    # Price levels (Wyckoff terminology)
-    creek_level: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)  # Support
-    ice_level: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)  # Resistance
-    jump_target: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)  # Target
+    # User relationship
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
-    # Wyckoff analysis
-    cause_factor: Mapped[Decimal] = mapped_column(NUMERIC(4, 2), nullable=False)
-    range_width: Mapped[Decimal] = mapped_column(NUMERIC(10, 4), nullable=False)
-    phase: Mapped[str] = mapped_column(String(1), nullable=False)
-    strength_score: Mapped[int] = mapped_column(Integer, nullable=False)
-
-    # Touch counts
-    touch_count_creek: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    touch_count_ice: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-
-    # Soft delete
-    deleted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-
-    # Optimistic locking
-    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    # Status
+    read: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
 
     __table_args__ = (
-        CheckConstraint("duration_bars BETWEEN 15 AND 100", name="chk_duration_bars"),
-        CheckConstraint("cause_factor BETWEEN 2.0 AND 3.0", name="chk_cause_factor"),
-        CheckConstraint("strength_score BETWEEN 60 AND 100", name="chk_strength_score"),
-        CheckConstraint("phase IN ('A', 'B', 'C', 'D', 'E')", name="chk_phase"),
+        CheckConstraint(
+            "notification_type IN ('signal_generated', 'risk_warning', 'emergency_exit', 'system_error')",
+            name="chk_notification_type",
+        ),
+        CheckConstraint(
+            "priority IN ('info', 'warning', 'critical')",
+            name="chk_notification_priority",
+        ),
     )
 
 
-class OHLCVBar(Base):
+class NotificationPreferencesORM(Base):
     """
-    OHLCV bar data (TimescaleDB hypertable).
+    User notification preferences and configuration.
 
-    Table: ohlcv_bars
-    Primary Key: (symbol, timeframe, timestamp) - Composite for TimescaleDB
+    Table: notification_preferences
+    Primary Key: user_id (UUID) - One preference record per user
     """
 
-    __tablename__ = "ohlcv_bars"
+    __tablename__ = "notification_preferences"
 
-    # Columns
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), default=uuid4, nullable=False)
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    timeframe: Mapped[str] = mapped_column(String(5), nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)  # Partitioning column
+    # Primary key (also foreign key to users)
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+    )
 
-    # OHLCV data
-    open: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    high: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    low: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    close: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    volume: Mapped[int] = mapped_column(sa.BigInteger, nullable=False)
+    # Preferences stored as JSONB for flexibility
+    # Contains: email_enabled, sms_enabled, push_enabled, channels, quiet_hours, etc.
+    preferences: Mapped[dict] = mapped_column(JSON, nullable=False)
 
-    # VSA analysis fields
-    spread: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
-    spread_ratio: Mapped[Decimal] = mapped_column(NUMERIC(10, 4), server_default="1.0", nullable=False)
-    volume_ratio: Mapped[Decimal] = mapped_column(NUMERIC(10, 4), server_default="1.0", nullable=False)
+    # Timestamps
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class PushSubscriptionORM(Base):
+    """
+    Browser push notification subscriptions.
+
+    Table: push_subscriptions
+    Primary Key: id (UUID)
+    Foreign Keys: user_id -> users.id
+    Unique: (user_id, endpoint) - One subscription per browser/device
+    """
+
+    __tablename__ = "push_subscriptions"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # User relationship
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+
+    # Web Push subscription data
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh_key: Mapped[str] = mapped_column(Text, nullable=False)
+    auth_key: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
+
+    __table_args__ = (UniqueConstraint("user_id", "endpoint", name="uq_user_endpoint"),)
