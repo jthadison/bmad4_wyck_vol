@@ -8,12 +8,13 @@ from collections.abc import AsyncGenerator
 from typing import Optional
 from uuid import UUID
 
-from backend.src.auth.token_service import TokenService
-from backend.src.config import settings
-from backend.src.database import async_session_maker
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.auth.token_service import TokenService
+from src.config import settings
+from src.database import async_session_maker
 
 # Security scheme for Bearer token authentication
 security = HTTPBearer()
