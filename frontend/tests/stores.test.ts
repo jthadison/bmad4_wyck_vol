@@ -44,8 +44,8 @@ describe('Pinia Stores', () => {
     it('initializes with default values', () => {
       const store = usePortfolioStore()
 
-      expect(store.totalHeat).toBe(0)
-      expect(store.availableCapacity).toBe(100)
+      expect(store.totalHeat).toBeNull()
+      expect(store.availableCapacity).toBeNull()
       expect(store.activeCampaigns).toBe(0)
     })
 
