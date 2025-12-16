@@ -56,7 +56,7 @@
 
 import { test, expect, Page } from '@playwright/test'
 
-const DEPLOYMENT_URL = process.env.DEPLOYMENT_URL || 'http://localhost'
+const DEPLOYMENT_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 const TIMEOUT = 30000 // 30 seconds
 
 /**
@@ -87,7 +87,9 @@ async function navigateToChartWithWyckoff(page: Page): Promise<void> {
     .catch(() => false)
 
   if (!hasWyckoffData) {
-    console.warn('No Wyckoff data found on current chart - some tests may be skipped')
+    console.warn(
+      'No Wyckoff data found on current chart - some tests may be skipped'
+    )
   }
 }
 
@@ -118,7 +120,8 @@ test.describe('Wyckoff Charting Enhancements (Story 11.5.1)', () => {
 
       // Should contain schematic type (Accumulation or Distribution)
       const hasSchematicType =
-        badgeText!.includes('Accumulation') || badgeText!.includes('Distribution')
+        badgeText!.includes('Accumulation') ||
+        badgeText!.includes('Distribution')
       expect(hasSchematicType).toBe(true)
     })
 
@@ -342,7 +345,9 @@ test.describe('Wyckoff Charting Enhancements (Story 11.5.1)', () => {
 
       // Look for overlay toggle control (may be in settings/controls panel)
       // This depends on the UI implementation - adjust selector as needed
-      const controls = page.locator('[class*="control"], [class*="settings"], [class*="toggle"]')
+      const controls = page.locator(
+        '[class*="control"], [class*="settings"], [class*="toggle"]'
+      )
       const hasControls = await controls.count()
 
       // Should have at least some control elements
@@ -417,9 +422,12 @@ test.describe('Wyckoff Charting Enhancements (Story 11.5.1)', () => {
     test('API returns schematic data', async ({ request }) => {
       // Test that the API endpoint returns Wyckoff data
       // This will depend on your actual API structure
-      const response = await request.get(`${DEPLOYMENT_URL}/api/v1/charts/data`, {
-        timeout: TIMEOUT,
-      })
+      const response = await request.get(
+        `${DEPLOYMENT_URL}/api/v1/charts/data`,
+        {
+          timeout: TIMEOUT,
+        }
+      )
 
       if (response.status() === 200) {
         const data = await response.json()
@@ -427,7 +435,8 @@ test.describe('Wyckoff Charting Enhancements (Story 11.5.1)', () => {
         // Check if response has schematic_match or cause_building data
         // The exact structure depends on your API response format
         const hasWyckoffData =
-          data.schematic_match !== undefined || data.cause_building !== undefined
+          data.schematic_match !== undefined ||
+          data.cause_building !== undefined
 
         if (hasWyckoffData) {
           expect(data).toBeTruthy()
@@ -472,7 +481,9 @@ test.describe('Wyckoff Charting Enhancements (Story 11.5.1)', () => {
         // Verify initial value is stable
         await page.waitForTimeout(1000)
 
-        const currentProgress = await panel.locator('.progress-percentage').textContent()
+        const currentProgress = await panel
+          .locator('.progress-percentage')
+          .textContent()
 
         // Progress should be the same (data is not changing during test)
         expect(currentProgress).toBe(initialProgress)

@@ -118,7 +118,7 @@ describe('EquityCurveChart', () => {
     expect(proposedLegend.classes()).toContain('neutral')
   })
 
-  it('initializes chart on mount', () => {
+  it('initializes chart on mount', async () => {
     const { createChart } = await import('lightweight-charts')
 
     mount(EquityCurveChart, {
