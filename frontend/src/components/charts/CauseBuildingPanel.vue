@@ -74,6 +74,21 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * @fileoverview CauseBuildingPanel Component - Story 11.5.1 AC 5
+ *
+ * Displays Point & Figure cause-building progress tracking panel.
+ * Shows column count, target columns, progress percentage, projected jump target,
+ * and expandable methodology explanation.
+ *
+ * @component
+ * @example
+ * <CauseBuildingPanel
+ *   :cause-building-data="chartStore.causeBuildingData"
+ *   :show-mini-chart="true"
+ * />
+ */
+
 import { computed, ref } from 'vue'
 import type { CauseBuildingData } from '@/types/chart'
 import ProgressBar from 'primevue/progressbar'
@@ -82,6 +97,10 @@ import Button from 'primevue/button'
 
 /**
  * Component props
+ *
+ * @interface Props
+ * @property {CauseBuildingData | null} causeBuildingData - P&F cause-building data from backend
+ * @property {boolean} [showMiniChart=true] - Whether to show mini histogram chart
  */
 interface Props {
   causeBuildingData: CauseBuildingData | null
@@ -93,19 +112,27 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 /**
- * Component state
+ * Component state - Controls methodology explanation expansion
+ *
+ * @type {Ref<boolean>}
  */
 const methodologyExpanded = ref(false)
 
 /**
- * Toggle methodology explanation
+ * Toggle methodology explanation visibility
+ *
+ * @function toggleMethodology
+ * @returns {void}
  */
 function toggleMethodology() {
   methodologyExpanded.value = !methodologyExpanded.value
 }
 
 /**
- * Status badge text
+ * Status badge text based on progress percentage
+ *
+ * @computed
+ * @returns {string} Badge text - 'Complete' (100%+), 'Advanced' (75-99%), 'Building' (50-74%), 'Early' (25-49%), 'Initial' (<25%)
  */
 const statusBadge = computed(() => {
   if (!props.causeBuildingData) return ''
@@ -119,7 +146,10 @@ const statusBadge = computed(() => {
 })
 
 /**
- * Status severity for badge color
+ * PrimeVue Badge severity for color coding
+ *
+ * @computed
+ * @returns {string} Severity - 'success' (green, 75%+), 'warning' (yellow, 50-74%), 'info' (blue, <50%)
  */
 const statusSeverity = computed(() => {
   if (!props.causeBuildingData) return 'info'
@@ -132,7 +162,10 @@ const statusSeverity = computed(() => {
 })
 
 /**
- * Progress bar CSS class based on completion
+ * CSS class for progress bar color customization
+ *
+ * @computed
+ * @returns {string} CSS class - 'progress-complete' (green, 100%+), 'progress-advanced' (light green, 75-99%), 'progress-building' (yellow, 50-74%), 'progress-early' (blue, <50%)
  */
 const progressBarClass = computed(() => {
   if (!props.causeBuildingData) return ''

@@ -74,6 +74,17 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * @fileoverview SchematicBadge Component - Story 11.5.1 AC 2
+ *
+ * Displays a clickable badge showing Wyckoff schematic match information.
+ * When clicked, opens a detail modal with pattern sequence and interpretation guide.
+ *
+ * @component
+ * @example
+ * <SchematicBadge :schematic="chartStore.schematicMatch" />
+ */
+
 import { computed, ref } from 'vue'
 import type { WyckoffSchematic } from '@/types/chart'
 import Dialog from 'primevue/dialog'
@@ -82,6 +93,9 @@ import Tag from 'primevue/tag'
 
 /**
  * Component props
+ *
+ * @interface Props
+ * @property {WyckoffSchematic | null} schematic - Wyckoff schematic match data from backend
  */
 interface Props {
   schematic: WyckoffSchematic | null
@@ -90,12 +104,17 @@ interface Props {
 const props = defineProps<Props>()
 
 /**
- * Component state
+ * Component state - Controls detail modal visibility
+ *
+ * @type {Ref<boolean>}
  */
 const detailsVisible = ref(false)
 
 /**
- * Show details modal
+ * Show details modal when badge is clicked
+ *
+ * @function showDetails
+ * @returns {void}
  */
 function showDetails() {
   if (props.schematic) {
@@ -104,7 +123,13 @@ function showDetails() {
 }
 
 /**
- * Schematic label text
+ * Human-readable label for the schematic type
+ *
+ * @computed
+ * @returns {string} Formatted schematic label (e.g., "Accumulation #1 (Spring)")
+ * @example
+ * // For ACCUMULATION_1 type
+ * schematicLabel.value // => "Accumulation #1 (Spring)"
  */
 const schematicLabel = computed(() => {
   if (!props.schematic) return ''
@@ -122,7 +147,10 @@ const schematicLabel = computed(() => {
 })
 
 /**
- * Schematic icon class
+ * PrimeIcons class for the schematic type icon
+ *
+ * @computed
+ * @returns {string} Icon class - 'pi pi-arrow-up' for accumulation, 'pi pi-arrow-down' for distribution
  */
 const schematicIcon = computed(() => {
   if (!props.schematic) return ''
@@ -133,7 +161,10 @@ const schematicIcon = computed(() => {
 })
 
 /**
- * Confidence color class
+ * CSS class for confidence score color coding
+ *
+ * @computed
+ * @returns {string} CSS class - 'confidence-high' (≥80%), 'confidence-medium' (70-79%), or 'confidence-low' (<70%)
  */
 const confidenceClass = computed(() => {
   if (!props.schematic) return ''
@@ -145,14 +176,20 @@ const confidenceClass = computed(() => {
 })
 
 /**
- * Modal title
+ * Modal dialog title text
+ *
+ * @computed
+ * @returns {string} Modal title including schematic type
  */
 const modalTitle = computed(() => {
   return `Wyckoff Schematic Match: ${schematicLabel.value}`
 })
 
 /**
- * Schematic description
+ * Detailed description of the schematic pattern
+ *
+ * @computed
+ * @returns {string} Human-readable description explaining the schematic characteristics
  */
 const schematicDescription = computed(() => {
   if (!props.schematic) return ''
@@ -168,7 +205,13 @@ const schematicDescription = computed(() => {
 })
 
 /**
- * Expected pattern sequence for this schematic
+ * Expected Wyckoff pattern sequence for this schematic type
+ *
+ * @computed
+ * @returns {string[]} Array of pattern codes in expected order
+ * @example
+ * // For ACCUMULATION_1
+ * expectedSequence.value // => ['PS', 'SC', 'AR', 'ST', 'SPRING', 'SOS']
  */
 const expectedSequence = computed(() => {
   if (!props.schematic) return []
@@ -184,7 +227,10 @@ const expectedSequence = computed(() => {
 })
 
 /**
- * Interpretation guide text
+ * Trading interpretation guide for the schematic pattern
+ *
+ * @computed
+ * @returns {string} Detailed explanation of what the pattern indicates and what to look for
  */
 const interpretationGuide = computed(() => {
   if (!props.schematic) return ''
