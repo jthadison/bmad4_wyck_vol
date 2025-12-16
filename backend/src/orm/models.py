@@ -1,14 +1,17 @@
 """
-SQLAlchemy ORM Models for BMAD Wyckoff System (Story 10.3.1).
+SQLAlchemy ORM Models for BMAD Wyckoff System.
 
-These models map to database tables for pattern and signal data.
-They enable type-safe querying through SQLAlchemy ORM for daily summary queries.
+These models map to database tables for the Wyckoff trading system.
+They enable type-safe querying through SQLAlchemy ORM.
 
-Note: OHLCVBar model exists in src/repositories/models.py (created in earlier stories).
-This file contains only the models needed for Story 10.3.1 pattern/signal queries.
+Note: OHLCVBar (OHLCVBarModel) exists in src/repositories/models.py.
 
 Models:
 -------
+- TradingRange: Wyckoff trading ranges (accumulation/distribution)
+- User: User accounts
+- UserSettingsDB: User settings
+- APIKeyDB: API keys for authentication
 - Pattern: Detected Wyckoff patterns
 - Signal: Generated trade signals
 - NotificationORM: User notifications
@@ -26,6 +29,72 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
+
+
+class TradingRange(Base):
+    """
+    Trading range model for Wyckoff accumulation/distribution ranges.
+
+    Table: trading_ranges
+    Primary Key: id (UUID)
+    """
+
+    __tablename__ = "trading_ranges"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Symbol and timeframe
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(5), nullable=False)
+
+    # Time range
+    start_time: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    end_time: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    duration_bars: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Price levels
+    creek_level: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
+    ice_level: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
+    jump_target: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
+
+    # Range metrics
+    cause_factor: Mapped[Decimal] = mapped_column(NUMERIC(4, 2), nullable=False)
+    range_width: Mapped[Decimal] = mapped_column(NUMERIC(10, 4), nullable=False)
+    phase: Mapped[str] = mapped_column(String(1), nullable=False)
+    strength_score: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Touch counts
+    touch_count_creek: Mapped[int] = mapped_column(Integer, server_default="0")
+    touch_count_ice: Mapped[int] = mapped_column(Integer, server_default="0")
+
+    # Soft delete
+    deleted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    # Optimistic locking
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint("duration_bars BETWEEN 15 AND 100", name="chk_duration_bars"),
+        CheckConstraint("cause_factor BETWEEN 2.0 AND 3.0", name="chk_cause_factor"),
+        CheckConstraint("phase IN ('A','B','C','D','E')", name="chk_phase"),
+        CheckConstraint("strength_score BETWEEN 60 AND 100", name="chk_strength_score"),
+    )
 
 
 class User(Base):

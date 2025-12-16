@@ -14,10 +14,11 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from backend.src.models.campaign import Campaign as CampaignModel
-from backend.src.models.position import Position as PositionModel
-from backend.src.models.trading_range import TradingRange
 from httpx import AsyncClient
+
+from src.models.campaign import Campaign as CampaignModel
+from src.models.position import Position as PositionModel
+from src.models.trading_range import TradingRange
 
 # Note: Authentication fixtures (test_user_id, test_user_id_2, auth_token, auth_headers)
 # are provided by conftest.py

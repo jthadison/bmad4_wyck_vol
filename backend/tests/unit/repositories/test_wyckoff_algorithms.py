@@ -9,8 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from backend.src.models.chart import TradingRangeLevels
-from backend.src.repositories.wyckoff_algorithms import (
+
+from src.models.chart import TradingRangeLevels
+from src.repositories.wyckoff_algorithms import (
     _calculate_atr,
     _calculate_schematic_confidence,
     calculate_cause_building,
