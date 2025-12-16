@@ -11,13 +11,16 @@ Models:
 -------
 - Pattern: Detected Wyckoff patterns
 - Signal: Generated trade signals
+- NotificationORM: User notifications
+- NotificationPreferencesORM: User notification preferences
+- PushSubscriptionORM: Browser push subscriptions
 """
 
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Integer, String, Text
+from sqlalchemy import JSON, Boolean, CheckConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import NUMERIC, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -257,3 +260,117 @@ class Signal(Base):
     )
 
     __table_args__ = (CheckConstraint("r_multiple >= 2.0", name="chk_r_multiple"),)
+
+
+class NotificationORM(Base):
+    """
+    User notifications across all channels.
+
+    Table: notifications
+    Primary Key: id (UUID)
+    Foreign Keys: user_id -> users.id
+    Indexes: idx_notifications_user_read, idx_notifications_type
+    """
+
+    __tablename__ = "notifications"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Notification classification
+    notification_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    priority: Mapped[str] = mapped_column(String(10), nullable=False)
+
+    # Content
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str] = mapped_column(String(1000), nullable=False)
+    notification_metadata: Mapped[dict] = mapped_column(
+        "metadata", JSON, nullable=False, server_default="{}"
+    )
+
+    # User relationship
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+
+    # Status
+    read: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "notification_type IN ('signal_generated', 'risk_warning', 'emergency_exit', 'system_error')",
+            name="chk_notification_type",
+        ),
+        CheckConstraint(
+            "priority IN ('info', 'warning', 'critical')",
+            name="chk_notification_priority",
+        ),
+    )
+
+
+class NotificationPreferencesORM(Base):
+    """
+    User notification preferences and configuration.
+
+    Table: notification_preferences
+    Primary Key: user_id (UUID) - One preference record per user
+    """
+
+    __tablename__ = "notification_preferences"
+
+    # Primary key (also foreign key to users)
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+    )
+
+    # Preferences stored as JSONB for flexibility
+    # Contains: email_enabled, sms_enabled, push_enabled, channels, quiet_hours, etc.
+    preferences: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    # Timestamps
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class PushSubscriptionORM(Base):
+    """
+    Browser push notification subscriptions.
+
+    Table: push_subscriptions
+    Primary Key: id (UUID)
+    Foreign Keys: user_id -> users.id
+    Unique: (user_id, endpoint) - One subscription per browser/device
+    """
+
+    __tablename__ = "push_subscriptions"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # User relationship
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+
+    # Web Push subscription data
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh_key: Mapped[str] = mapped_column(Text, nullable=False)
+    auth_key: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("user_id", "endpoint", name="uq_user_endpoint"),)

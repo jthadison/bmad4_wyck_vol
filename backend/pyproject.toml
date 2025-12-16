@@ -3,6 +3,7 @@ name = "bmad-wyckoff-backend"
 version = "0.1.0"
 description = "BMAD Wyckoff Volume Pattern Detection System - Backend"
 authors = ["BMAD Team"]
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -25,6 +26,15 @@ structlog = "^24.1.0"
 redis = {extras = ["hiredis"], version = "^5.0.0"}
 cachetools = "^6.2.2"
 msgpack = "^1.1.2"
+twilio = "^9.0.0"
+aiosmtplib = "^3.0.0"
+pywebpush = "^2.0.0"
+py-vapid = "^1.9.0"
+pytz = "^2024.1"
+python-jose = {extras = ["cryptography"], version = "^3.5.0"}
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+email-validator = "^2.3.0"
+jinja2 = "^3.1.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
