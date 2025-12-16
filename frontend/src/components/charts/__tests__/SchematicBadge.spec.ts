@@ -12,7 +12,7 @@
  * - Edge cases and data validation
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import SchematicBadge from '@/components/charts/SchematicBadge.vue'
 import type { WyckoffSchematic } from '@/types/chart'
@@ -106,7 +106,9 @@ describe('SchematicBadge.vue', () => {
       wrapper = mountComponent({ schematic })
 
       const badge = wrapper.find('.schematic-badge')
-      expect(badge.attributes('style')).toContain('cursor')
+      expect(badge.exists()).toBe(true)
+      expect(badge.attributes('role')).toBe('button')
+      expect(badge.attributes('tabindex')).toBe('0')
     })
   })
 
@@ -188,7 +190,7 @@ describe('SchematicBadge.vue', () => {
 
     it('should fallback to raw schematic_type for unknown types', () => {
       const schematic = createMockSchematic({
-        schematic_type: 'UNKNOWN_TYPE' as any,
+        schematic_type: 'UNKNOWN_TYPE' as WyckoffSchematic['schematic_type'],
       })
       wrapper = mountComponent({ schematic })
 
@@ -625,8 +627,9 @@ describe('SchematicBadge.vue', () => {
       wrapper = mountComponent({ schematic })
 
       const badge = wrapper.find('.schematic-badge')
-      const style = badge.attributes('style')
-      expect(style).toBeTruthy()
+      expect(badge.exists()).toBe(true)
+      expect(badge.attributes('role')).toBe('button')
+      expect(badge.attributes('tabindex')).toBe('0')
     })
 
     it('should have badge-content container', () => {

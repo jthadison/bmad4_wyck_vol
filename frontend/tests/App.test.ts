@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createRouter, createWebHistory } from 'vue-router'
 import { createPinia } from 'pinia'
+import PrimeVue from 'primevue/config'
+import ToastService from 'primevue/toastservice'
 import App from '../src/App.vue'
 
 // Mock useWebSocket to prevent actual WebSocket connections in tests
@@ -37,7 +39,7 @@ describe('App.vue', () => {
 
     const wrapper = mount(App, {
       global: {
-        plugins: [router, pinia],
+        plugins: [router, pinia, PrimeVue, ToastService],
       },
     })
 
@@ -58,7 +60,7 @@ describe('App.vue', () => {
 
     const wrapper = mount(App, {
       global: {
-        plugins: [router, pinia],
+        plugins: [router, pinia, PrimeVue, ToastService],
       },
     })
 
@@ -77,7 +79,7 @@ describe('App.vue', () => {
 
     const wrapper = mount(App, {
       global: {
-        plugins: [router, pinia],
+        plugins: [router, pinia, PrimeVue, ToastService],
       },
     })
 

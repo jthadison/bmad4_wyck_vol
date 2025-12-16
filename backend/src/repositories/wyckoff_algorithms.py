@@ -7,23 +7,18 @@ from datetime import datetime
 from typing import Optional
 
 import structlog
-from backend.src.models.chart import (
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.models.chart import (
     SCHEMATIC_TEMPLATES,
     CauseBuildingData,
     TradingRangeLevels,
     WyckoffSchematic,
 )
-from backend.src.orm.models import (
-    OHLCVBar as OHLCVBarORM,
-)
-from backend.src.orm.models import (
-    Pattern as PatternORM,
-)
-from backend.src.orm.models import (
-    TradingRange as TradingRangeORM,
-)
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from src.orm.models import Pattern as PatternORM
+from src.orm.models import TradingRange as TradingRangeORM
+from src.repositories.models import OHLCVBarModel as OHLCVBarORM
 
 logger = structlog.get_logger(__name__)
 
@@ -73,7 +68,7 @@ async def match_wyckoff_schematic(
     )
 
     result = await session.execute(query)
-    patterns = result.scalars().all()
+    patterns = list(result.scalars().all())
 
     if not patterns:
         logger.debug("No patterns found for schematic matching", symbol=symbol)
@@ -90,7 +85,7 @@ async def match_wyckoff_schematic(
 
     # Match to schematic templates
     best_match = None
-    best_confidence = 0
+    best_confidence = 0.0
 
     for schematic_type, template in SCHEMATIC_TEMPLATES.items():
         confidence = _calculate_schematic_confidence(
@@ -218,7 +213,7 @@ async def calculate_cause_building(
     )
 
     result = await session.execute(query)
-    bars = result.scalars().all()
+    bars = list(result.scalars().all())
 
     if not bars:
         return None

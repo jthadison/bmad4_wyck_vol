@@ -4,23 +4,23 @@ Story 11.5: Advanced Charting Integration
 Tests Pydantic model validation and transformation logic.
 """
 
-import pytest
 from datetime import datetime
 from uuid import uuid4
-from backend.src.models.chart import (
+
+import pytest
+
+from src.models.chart import (
+    LEVEL_LINE_CONFIG,
+    PATTERN_MARKER_CONFIG,
+    PHASE_COLOR_CONFIG,
     ChartBar,
-    PatternMarker,
-    LevelLine,
-    PhaseAnnotation,
-    TradingRangeLevels,
-    PreliminaryEvent,
-    WyckoffSchematic,
-    CauseBuildingData,
     ChartDataRequest,
     ChartDataResponse,
-    PATTERN_MARKER_CONFIG,
-    LEVEL_LINE_CONFIG,
-    PHASE_COLOR_CONFIG,
+    LevelLine,
+    PatternMarker,
+    PhaseAnnotation,
+    PreliminaryEvent,
+    TradingRangeLevels,
 )
 
 
@@ -35,7 +35,7 @@ class TestChartBar:
             high=152.50,
             low=149.75,
             close=151.00,
-            volume=1000000
+            volume=1000000,
         )
 
         assert bar.time == 1710345600
@@ -48,12 +48,7 @@ class TestChartBar:
     def test_chart_bar_json_serialization(self):
         """Test ChartBar serializes to JSON correctly."""
         bar = ChartBar(
-            time=1710345600,
-            open=150.00,
-            high=152.50,
-            low=149.75,
-            close=151.00,
-            volume=1000000
+            time=1710345600, open=150.00, high=152.50, low=149.75, close=151.00, volume=1000000
         )
 
         json_data = bar.model_dump()
@@ -80,7 +75,7 @@ class TestPatternMarker:
             shape="arrowUp",
             entry_price=150.00,
             stop_loss=148.00,
-            phase="C"
+            phase="C",
         )
 
         assert marker.pattern_type == "SPRING"
@@ -105,7 +100,7 @@ class TestPatternMarker:
             shape="arrowDown",
             entry_price=160.00,
             stop_loss=162.00,
-            phase="D"
+            phase="D",
         )
 
         assert marker.pattern_type == "UTAD"
@@ -136,7 +131,7 @@ class TestLevelLine:
             label="Creek: $150.00",
             color="#DC2626",
             line_style="SOLID",
-            line_width=2
+            line_width=2,
         )
 
         assert level.level_type == "CREEK"
@@ -152,7 +147,7 @@ class TestLevelLine:
             label="Ice: $160.00",
             color="#2563EB",
             line_style="SOLID",
-            line_width=2
+            line_width=2,
         )
 
         assert level.level_type == "ICE"
@@ -166,7 +161,7 @@ class TestLevelLine:
             label="Jump: $168.50",
             color="#16A34A",
             line_style="DASHED",
-            line_width=2
+            line_width=2,
         )
 
         assert level.level_type == "JUMP"
@@ -194,7 +189,7 @@ class TestPhaseAnnotation:
             start_time=1710000000,
             end_time=1710345600,
             background_color="#FCD34D20",
-            label="Phase C"
+            label="Phase C",
         )
 
         assert annotation.phase == "C"
@@ -223,7 +218,7 @@ class TestTradingRangeLevels:
             creek_level=150.00,
             ice_level=160.00,
             jump_target=168.50,
-            range_status="ACTIVE"
+            range_status="ACTIVE",
         )
 
         assert tr.symbol == "AAPL"
@@ -240,7 +235,7 @@ class TestTradingRangeLevels:
             creek_level=150.00,
             ice_level=160.00,
             jump_target=168.50,
-            range_status="COMPLETED"
+            range_status="COMPLETED",
         )
 
         assert tr.range_status == "COMPLETED"
@@ -258,7 +253,7 @@ class TestPreliminaryEvent:
             label="Selling Climax",
             description="Panic selling exhaustion",
             color="#DC2626",
-            shape="triangle"
+            shape="triangle",
         )
 
         assert event.event_type == "SC"
@@ -271,9 +266,7 @@ class TestChartDataRequest:
 
     def test_valid_request_with_defaults(self):
         """Test request with default values."""
-        request = ChartDataRequest(
-            symbol="AAPL"
-        )
+        request = ChartDataRequest(symbol="AAPL")
 
         assert request.symbol == "AAPL"
         assert request.timeframe == "1D"
@@ -287,11 +280,7 @@ class TestChartDataRequest:
         end = datetime(2024, 3, 13)
 
         request = ChartDataRequest(
-            symbol="MSFT",
-            timeframe="1W",
-            start_date=start,
-            end_date=end,
-            limit=1000
+            symbol="MSFT", timeframe="1W", start_date=start, end_date=end, limit=1000
         )
 
         assert request.symbol == "MSFT"
@@ -324,12 +313,7 @@ class TestChartDataResponse:
         """Test creating a complete chart data response."""
         bars = [
             ChartBar(
-                time=1710345600,
-                open=150.00,
-                high=152.00,
-                low=149.00,
-                close=151.00,
-                volume=1000000
+                time=1710345600, open=150.00, high=152.00, low=149.00, close=151.00, volume=1000000
             )
         ]
 
@@ -347,7 +331,7 @@ class TestChartDataResponse:
                 shape="arrowUp",
                 entry_price=149.00,
                 stop_loss=147.00,
-                phase="C"
+                phase="C",
             )
         ]
 
@@ -358,7 +342,7 @@ class TestChartDataResponse:
                 label="Creek: $148.00",
                 color="#DC2626",
                 line_style="SOLID",
-                line_width=2
+                line_width=2,
             )
         ]
 
@@ -374,7 +358,7 @@ class TestChartDataResponse:
             schematic_match=None,
             cause_building=None,
             bar_count=1,
-            date_range={"start": "2024-01-01", "end": "2024-03-13"}
+            date_range={"start": "2024-01-01", "end": "2024-03-13"},
         )
 
         assert response.symbol == "AAPL"
@@ -398,7 +382,7 @@ class TestChartDataResponse:
             schematic_match=None,
             cause_building=None,
             bar_count=0,
-            date_range={"start": "2024-01-01", "end": "2024-03-13"}
+            date_range={"start": "2024-01-01", "end": "2024-03-13"},
         )
 
         json_data = response.model_dump()

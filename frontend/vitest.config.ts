@@ -13,6 +13,11 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: ['./tests/setup.ts'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/tests/smoke/**', // Exclude Playwright smoke tests
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
