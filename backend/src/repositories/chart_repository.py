@@ -5,34 +5,39 @@ Handles database queries for OHLCV bars, patterns, trading ranges, and Wyckoff d
 """
 
 from datetime import datetime, timedelta
-from typing import List, Optional, Tuple, Dict, Any
-from decimal import Decimal
-from uuid import UUID
-import structlog
-from sqlalchemy import select, and_, or_, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from typing import Optional
 
+import structlog
 from backend.src.models.chart import (
-    ChartBar,
-    PatternMarker,
-    LevelLine,
-    PhaseAnnotation,
-    TradingRangeLevels,
-    PreliminaryEvent,
-    WyckoffSchematic,
-    CauseBuildingData,
-    ChartDataResponse,
-    PATTERN_MARKER_CONFIG,
     LEVEL_LINE_CONFIG,
+    PATTERN_MARKER_CONFIG,
     PHASE_COLOR_CONFIG,
     PRELIMINARY_EVENT_CONFIG,
+    CauseBuildingData,
+    ChartBar,
+    ChartDataResponse,
+    LevelLine,
+    PatternMarker,
+    PhaseAnnotation,
+    PreliminaryEvent,
+    TradingRangeLevels,
+    WyckoffSchematic,
 )
 from backend.src.orm.models import (
     OHLCVBar as OHLCVBarORM,
+)
+from backend.src.orm.models import (
     Pattern as PatternORM,
+)
+from backend.src.orm.models import (
     TradingRange as TradingRangeORM,
 )
+from backend.src.repositories.wyckoff_algorithms import (
+    calculate_cause_building,
+    match_wyckoff_schematic,
+)
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -54,7 +59,7 @@ class ChartRepository:
         timeframe: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        limit: int = 500
+        limit: int = 500,
     ) -> ChartDataResponse:
         """Fetch complete chart data for symbol and timeframe.
 
@@ -77,7 +82,7 @@ class ChartRepository:
             timeframe=timeframe,
             start_date=start_date,
             end_date=end_date,
-            limit=limit
+            limit=limit,
         )
 
         # Default date range: last 90 days
@@ -87,9 +92,7 @@ class ChartRepository:
             start_date = end_date - timedelta(days=90)
 
         # Fetch OHLCV bars
-        bars = await self._get_ohlcv_bars(
-            symbol, timeframe, start_date, end_date, limit
-        )
+        bars = await self._get_ohlcv_bars(symbol, timeframe, start_date, end_date, limit)
 
         if not bars:
             raise ValueError(f"No OHLCV data found for {symbol} {timeframe}")
@@ -121,21 +124,23 @@ class ChartRepository:
         )
 
         # Get schematic matching (if available)
+        # Extract creek/ice levels from trading ranges for normalization
+        creek_level = trading_ranges[0].creek_level if trading_ranges else None
+        ice_level = trading_ranges[0].ice_level if trading_ranges else None
+
         schematic_match = await self._get_schematic_match(
-            symbol, timeframe, actual_start_dt, actual_end_dt
+            symbol, timeframe, actual_start_dt, actual_end_dt, creek_level, ice_level
         )
 
         # Get cause-building data (if available)
-        cause_building = await self._get_cause_building_data(
-            symbol, timeframe, trading_ranges
-        )
+        cause_building = await self._get_cause_building_data(symbol, timeframe, trading_ranges)
 
         logger.info(
             "Chart data fetched successfully",
             symbol=symbol,
             bar_count=len(bars),
             pattern_count=len(patterns),
-            level_line_count=len(level_lines)
+            level_line_count=len(level_lines),
         )
 
         return ChartDataResponse(
@@ -150,20 +155,12 @@ class ChartRepository:
             schematic_match=schematic_match,
             cause_building=cause_building,
             bar_count=len(bars),
-            date_range={
-                "start": actual_start_dt.isoformat(),
-                "end": actual_end_dt.isoformat()
-            }
+            date_range={"start": actual_start_dt.isoformat(), "end": actual_end_dt.isoformat()},
         )
 
     async def _get_ohlcv_bars(
-        self,
-        symbol: str,
-        timeframe: str,
-        start_date: datetime,
-        end_date: datetime,
-        limit: int
-    ) -> List[ChartBar]:
+        self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime, limit: int
+    ) -> list[ChartBar]:
         """Fetch OHLCV bars from database.
 
         Converts to Lightweight Charts format:
@@ -191,7 +188,7 @@ class ChartRepository:
                     OHLCVBarORM.symbol == symbol,
                     OHLCVBarORM.timeframe == db_timeframe,
                     OHLCVBarORM.timestamp >= start_date,
-                    OHLCVBarORM.timestamp <= end_date
+                    OHLCVBarORM.timestamp <= end_date,
                 )
             )
             .order_by(OHLCVBarORM.timestamp.desc())
@@ -211,19 +208,15 @@ class ChartRepository:
                     high=float(bar.high),
                     low=float(bar.low),
                     close=float(bar.close),
-                    volume=int(bar.volume)
+                    volume=int(bar.volume),
                 )
             )
 
         return chart_bars
 
     async def _get_pattern_markers(
-        self,
-        symbol: str,
-        timeframe: str,
-        start_date: datetime,
-        end_date: datetime
-    ) -> List[PatternMarker]:
+        self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime
+    ) -> list[PatternMarker]:
         """Fetch pattern markers for chart overlay.
 
         Only returns test-confirmed patterns with confidence >= 70.
@@ -250,7 +243,7 @@ class ChartRepository:
                     PatternORM.pattern_bar_timestamp >= start_date,
                     PatternORM.pattern_bar_timestamp <= end_date,
                     PatternORM.test_confirmed == True,  # noqa: E712
-                    PatternORM.confidence_score >= 70
+                    PatternORM.confidence_score >= 70,
                 )
             )
             .order_by(PatternORM.pattern_bar_timestamp.asc())
@@ -264,10 +257,7 @@ class ChartRepository:
         for pattern in patterns:
             config = PATTERN_MARKER_CONFIG.get(pattern.pattern_type, {})
             if not config:
-                logger.warning(
-                    "Unknown pattern type",
-                    pattern_type=pattern.pattern_type
-                )
+                logger.warning("Unknown pattern type", pattern_type=pattern.pattern_type)
                 continue
 
             markers.append(
@@ -284,19 +274,15 @@ class ChartRepository:
                     shape=config["shape"],
                     entry_price=float(pattern.entry_price),
                     stop_loss=float(pattern.stop_loss),
-                    phase=pattern.phase or "C"
+                    phase=pattern.phase or "C",
                 )
             )
 
         return markers
 
     async def _get_trading_range_levels(
-        self,
-        symbol: str,
-        timeframe: str,
-        start_date: datetime,
-        end_date: datetime
-    ) -> Tuple[List[LevelLine], List[TradingRangeLevels]]:
+        self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime
+    ) -> tuple[list[LevelLine], list[TradingRangeLevels]]:
         """Fetch trading range level lines (Creek, Ice, Jump).
 
         Args:
@@ -321,10 +307,10 @@ class ChartRepository:
                     or_(
                         and_(
                             TradingRangeORM.start_time <= end_date,
-                            TradingRangeORM.end_time >= start_date
+                            TradingRangeORM.end_time >= start_date,
                         ),
-                        TradingRangeORM.deleted_at.is_(None)
-                    )
+                        TradingRangeORM.deleted_at.is_(None),
+                    ),
                 )
             )
             .order_by(TradingRangeORM.start_time.desc())
@@ -350,7 +336,7 @@ class ChartRepository:
                     label=f"{creek_config['label_prefix']}: ${float(tr.creek_level):.2f}",
                     color=creek_config["color"],
                     line_style=line_style,
-                    line_width=2
+                    line_width=2,
                 )
             )
 
@@ -363,7 +349,7 @@ class ChartRepository:
                     label=f"{ice_config['label_prefix']}: ${float(tr.ice_level):.2f}",
                     color=ice_config["color"],
                     line_style=line_style,
-                    line_width=2
+                    line_width=2,
                 )
             )
 
@@ -376,7 +362,7 @@ class ChartRepository:
                     label=f"{jump_config['label_prefix']}: ${float(tr.jump_target):.2f}",
                     color=jump_config["color"],
                     line_style=line_style,
-                    line_width=2
+                    line_width=2,
                 )
             )
 
@@ -388,19 +374,15 @@ class ChartRepository:
                     creek_level=float(tr.creek_level),
                     ice_level=float(tr.ice_level),
                     jump_target=float(tr.jump_target),
-                    range_status=range_status
+                    range_status=range_status,
                 )
             )
 
         return level_lines, trading_ranges
 
     async def _get_phase_annotations(
-        self,
-        symbol: str,
-        timeframe: str,
-        start_date: datetime,
-        end_date: datetime
-    ) -> List[PhaseAnnotation]:
+        self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime
+    ) -> list[PhaseAnnotation]:
         """Fetch phase annotations for background shading.
 
         Groups patterns by phase and calculates duration.
@@ -423,7 +405,7 @@ class ChartRepository:
             select(
                 PatternORM.phase,
                 func.min(PatternORM.pattern_bar_timestamp).label("start_time"),
-                func.max(PatternORM.pattern_bar_timestamp).label("end_time")
+                func.max(PatternORM.pattern_bar_timestamp).label("end_time"),
             )
             .where(
                 and_(
@@ -431,7 +413,7 @@ class ChartRepository:
                     PatternORM.timeframe == db_timeframe,
                     PatternORM.pattern_bar_timestamp >= start_date,
                     PatternORM.pattern_bar_timestamp <= end_date,
-                    PatternORM.phase.isnot(None)
+                    PatternORM.phase.isnot(None),
                 )
             )
             .group_by(PatternORM.phase)
@@ -449,19 +431,15 @@ class ChartRepository:
                         start_time=int(start_time.timestamp()),
                         end_time=int(end_time.timestamp()),
                         background_color=PHASE_COLOR_CONFIG[phase],
-                        label=f"Phase {phase}"
+                        label=f"Phase {phase}",
                     )
                 )
 
         return annotations
 
     async def _get_preliminary_events(
-        self,
-        symbol: str,
-        timeframe: str,
-        start_date: datetime,
-        end_date: datetime
-    ) -> List[PreliminaryEvent]:
+        self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime
+    ) -> list[PreliminaryEvent]:
         """Fetch preliminary Wyckoff events (PS, SC, AR, ST).
 
         Story 11.5 AC 13: Mark early events before Spring patterns.
@@ -489,7 +467,7 @@ class ChartRepository:
                     PatternORM.timeframe == db_timeframe,
                     PatternORM.pattern_bar_timestamp >= start_date,
                     PatternORM.pattern_bar_timestamp <= end_date,
-                    PatternORM.pattern_type.in_(["PS", "SC", "AR", "ST"])
+                    PatternORM.pattern_type.in_(["PS", "SC", "AR", "ST"]),
                 )
             )
             .order_by(PatternORM.pattern_bar_timestamp.asc())
@@ -513,7 +491,7 @@ class ChartRepository:
                     label=config["label"],
                     description=config["description"],
                     color=config["color"],
-                    shape=config["shape"]
+                    shape=config["shape"],
                 )
             )
 
@@ -524,40 +502,41 @@ class ChartRepository:
         symbol: str,
         timeframe: str,
         start_date: datetime,
-        end_date: datetime
+        end_date: datetime,
+        creek_level: Optional[float] = None,
+        ice_level: Optional[float] = None,
     ) -> Optional[WyckoffSchematic]:
         """Get Wyckoff schematic matching data.
 
-        Story 11.5 AC 11, 14: Display which schematic the pattern matches.
-
-        This is a placeholder implementation. Full schematic matching
-        algorithm would analyze pattern sequence and compare to ideal templates.
+        Story 11.5.1 AC 1, 7: Schematic matching algorithm.
 
         Args:
             symbol: Ticker symbol
             timeframe: Bar interval
             start_date: Start date
             end_date: End date
+            creek_level: Support level for normalization
+            ice_level: Resistance level for normalization
 
         Returns:
-            WyckoffSchematic if match found, else None
+            WyckoffSchematic if match found (confidence >= 60%), else None
         """
-        # TODO: Implement full schematic matching algorithm
-        # For now, return None (will be implemented in Task 16)
-        return None
+        return await match_wyckoff_schematic(
+            self.session,
+            symbol,
+            timeframe,
+            start_date,
+            end_date,
+            creek_level,
+            ice_level,
+        )
 
     async def _get_cause_building_data(
-        self,
-        symbol: str,
-        timeframe: str,
-        trading_ranges: List[TradingRangeLevels]
+        self, symbol: str, timeframe: str, trading_ranges: list[TradingRangeLevels]
     ) -> Optional[CauseBuildingData]:
         """Get Point & Figure cause-building data.
 
-        Story 11.5 AC 12: Calculate P&F count and projected Jump target.
-
-        This is a placeholder implementation. Full P&F counting
-        algorithm would analyze bar structure within trading range.
+        Story 11.5.1 AC 4: P&F counting algorithm.
 
         Args:
             symbol: Ticker symbol
@@ -567,6 +546,9 @@ class ChartRepository:
         Returns:
             CauseBuildingData if active range found, else None
         """
-        # TODO: Implement full P&F counting algorithm
-        # For now, return None (will be implemented in Task 17)
-        return None
+        return await calculate_cause_building(
+            self.session,
+            symbol,
+            timeframe,
+            trading_ranges,
+        )
