@@ -1,19 +1,28 @@
 <template>
-  <div v-if="causeBuildingData" class="cause-building-panel">
+  <div
+    v-if="causeBuildingData"
+    class="cause-building-panel"
+    role="region"
+    aria-labelledby="cause-building-title"
+  >
     <!-- Panel Header -->
     <div class="panel-header">
-      <h3 class="panel-title">
-        <i class="pi pi-chart-bar" />
+      <h3 class="panel-title" id="cause-building-title">
+        <i class="pi pi-chart-bar" aria-hidden="true" />
         Point & Figure Count
       </h3>
-      <Badge :value="statusBadge" :severity="statusSeverity" />
+      <Badge
+        :value="statusBadge"
+        :severity="statusSeverity"
+        :aria-label="`Cause building status: ${statusBadge}`"
+      />
     </div>
 
     <!-- Progress Display -->
-    <div class="progress-section">
+    <div class="progress-section" role="group" aria-labelledby="progress-label">
       <div class="progress-label">
-        <span>Cause Building Progress</span>
-        <span class="progress-numbers">
+        <span id="progress-label">Cause Building Progress</span>
+        <span class="progress-numbers" aria-label="Column count">
           {{ causeBuildingData.column_count }} /
           {{ causeBuildingData.target_column_count }} columns
         </span>
@@ -22,22 +31,42 @@
         :value="causeBuildingData.progress_percentage"
         :showValue="false"
         :class="progressBarClass"
+        role="progressbar"
+        :aria-valuenow="Math.round(causeBuildingData.progress_percentage)"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-label="`Cause building progress: ${Math.round(
+          causeBuildingData.progress_percentage
+        )} percent complete. ${causeBuildingData.column_count} of ${
+          causeBuildingData.target_column_count
+        } columns accumulated.`"
       />
-      <div class="progress-percentage">
+      <div class="progress-percentage" aria-live="polite">
         {{ Math.round(causeBuildingData.progress_percentage) }}% complete
       </div>
     </div>
 
     <!-- Projected Jump Display -->
-    <div class="jump-section">
+    <div
+      class="jump-section"
+      role="region"
+      aria-labelledby="jump-target-label"
+      aria-live="polite"
+    >
       <div class="jump-row">
-        <span class="jump-label">Projected Jump Target:</span>
-        <span class="jump-value"
+        <span class="jump-label" id="jump-target-label"
+          >Projected Jump Target:</span
+        >
+        <span
+          class="jump-value"
+          :aria-label="`Projected price target: ${causeBuildingData.projected_jump.toFixed(
+            2
+          )} dollars`"
           >${{ causeBuildingData.projected_jump.toFixed(2) }}</span
         >
       </div>
       <div class="jump-info">
-        <i class="pi pi-info-circle" />
+        <i class="pi pi-info-circle" aria-hidden="true" />
         <span>Target price when cause building completes</span>
       </div>
     </div>
@@ -49,9 +78,20 @@
         :icon="methodologyExpanded ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
         text
         size="small"
+        :aria-expanded="methodologyExpanded"
+        aria-controls="methodology-content"
+        :aria-label="`${
+          methodologyExpanded ? 'Hide' : 'Show'
+        } Point & Figure counting methodology`"
         @click="toggleMethodology"
       />
-      <div v-if="methodologyExpanded" class="methodology-content">
+      <div
+        v-if="methodologyExpanded"
+        class="methodology-content"
+        id="methodology-content"
+        role="region"
+        aria-label="Point & Figure counting methodology explanation"
+      >
         <p class="methodology-text">
           {{ causeBuildingData.count_methodology }}
         </p>
@@ -59,14 +99,25 @@
     </div>
 
     <!-- Column Count Chart (Mini Histogram) -->
-    <div v-if="showMiniChart" class="mini-chart">
-      <div class="chart-header">Column Accumulation</div>
-      <div class="chart-bars">
+    <div
+      v-if="showMiniChart"
+      class="mini-chart"
+      role="img"
+      :aria-label="`Column accumulation chart: ${causeBuildingData.column_count} filled columns out of ${causeBuildingData.target_column_count} target columns`"
+    >
+      <div class="chart-header" aria-hidden="true">Column Accumulation</div>
+      <div class="chart-bars" role="presentation">
         <div
           v-for="i in causeBuildingData.target_column_count"
           :key="i"
           class="chart-bar"
           :class="{ filled: i <= causeBuildingData.column_count }"
+          :aria-label="
+            i <= causeBuildingData.column_count
+              ? `Column ${i}: Filled`
+              : `Column ${i}: Empty`
+          "
+          role="presentation"
         />
       </div>
     </div>

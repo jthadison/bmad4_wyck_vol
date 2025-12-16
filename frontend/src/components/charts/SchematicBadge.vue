@@ -1,8 +1,17 @@
 <template>
-  <div v-if="schematic" class="schematic-badge" @click="showDetails">
+  <div
+    v-if="schematic"
+    class="schematic-badge"
+    role="button"
+    tabindex="0"
+    :aria-label="`${schematicLabel} schematic with ${schematic.confidence_score}% confidence. Click to view details.`"
+    @click="showDetails"
+    @keypress.enter="showDetails"
+    @keypress.space.prevent="showDetails"
+  >
     <!-- Badge Content -->
     <div class="badge-content">
-      <div class="badge-icon">
+      <div class="badge-icon" aria-hidden="true">
         <i :class="schematicIcon" />
       </div>
       <div class="badge-info">
@@ -21,16 +30,30 @@
       :closable="true"
       :draggable="false"
       :style="{ width: '500px' }"
+      role="dialog"
+      :aria-labelledby="`schematic-modal-title-${schematic.schematic_type}`"
+      aria-describedby="schematic-modal-description"
     >
       <div class="schematic-details">
         <!-- Confidence Display -->
         <div class="detail-row">
-          <span class="detail-label">Confidence Score:</span>
-          <div class="confidence-meter">
+          <span class="detail-label" id="confidence-label"
+            >Confidence Score:</span
+          >
+          <div
+            class="confidence-meter"
+            role="group"
+            aria-labelledby="confidence-label"
+          >
             <ProgressBar
               :value="schematic.confidence_score"
               :showValue="true"
               :style="{ height: '20px' }"
+              role="progressbar"
+              :aria-valuenow="schematic.confidence_score"
+              aria-valuemin="60"
+              aria-valuemax="95"
+              :aria-label="`Schematic confidence: ${schematic.confidence_score} percent`"
             />
           </div>
         </div>
@@ -50,22 +73,37 @@
         </div>
 
         <!-- Expected Pattern Sequence -->
-        <div class="detail-section">
-          <h4>Expected Pattern Sequence:</h4>
-          <div class="pattern-sequence">
+        <div
+          class="detail-section"
+          role="region"
+          aria-labelledby="pattern-sequence-heading"
+        >
+          <h4 id="pattern-sequence-heading">Expected Pattern Sequence:</h4>
+          <div
+            class="pattern-sequence"
+            role="list"
+            aria-label="Expected Wyckoff pattern sequence"
+          >
             <Tag
               v-for="(pattern, idx) in expectedSequence"
               :key="idx"
               :value="pattern"
               severity="info"
               class="pattern-tag"
+              role="listitem"
+              :aria-label="`Pattern ${idx + 1}: ${pattern}`"
             />
           </div>
         </div>
 
         <!-- Interpretation Guide -->
-        <div class="detail-section">
-          <h4>Interpretation:</h4>
+        <div
+          class="detail-section"
+          role="region"
+          aria-labelledby="interpretation-heading"
+          id="schematic-modal-description"
+        >
+          <h4 id="interpretation-heading">Interpretation:</h4>
           <p class="interpretation-text">{{ interpretationGuide }}</p>
         </div>
       </div>
