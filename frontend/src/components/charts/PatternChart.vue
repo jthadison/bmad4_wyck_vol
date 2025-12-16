@@ -84,7 +84,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import {
   createChart,
   type IChartApi,
@@ -230,7 +230,7 @@ function updateChartData() {
     candlestickSeries.value.setData(bars)
 
     // Set volume data (with colors based on price direction)
-    const volumeData = bars.map((bar, index) => ({
+    const volumeData = bars.map((bar) => ({
       time: bar.time,
       value: bar.volume,
       color: bar.close >= bar.open ? '#26a69a80' : '#ef535080', // Semi-transparent
@@ -378,7 +378,7 @@ function updatePreliminaryEvents() {
     })),
   ]
 
-  candlestickSeries.value.setMarkers(allMarkers as any)
+  candlestickSeries.value.setMarkers(allMarkers as never[])
 }
 
 /**
