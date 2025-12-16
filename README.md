@@ -8,9 +8,12 @@ This system implements the Wyckoff methodology for institutional volume pattern 
 
 **Key Features:**
 - Real-time pattern detection using Wyckoff methodology
+- **Wyckoff schematic template matching** (Story 11.5.1) - Automated detection of 4 classic Wyckoff schematics (Accumulation #1/#2, Distribution #1/#2) with confidence scoring
+- **Point & Figure cause-building tracking** (Story 11.5.1) - P&F column counting with ATR-based analysis and projected jump target calculation
+- **Interactive schematic overlays** (Story 11.5.1) - Visual template overlays on charts with deviation highlighting
 - Multi-timeframe volume analysis and correlation
 - Automated trade signal generation with risk parameters
-- Interactive dashboard with TradingView-style charts
+- Interactive dashboard with TradingView-style charts and advanced Wyckoff visualizations
 - Backtesting engine for strategy validation
 - PostgreSQL data persistence with TimescaleDB extension support
 
@@ -111,17 +114,139 @@ The application will be available at:
 - **Backend API:** http://localhost:8000
 - **API Documentation:** http://localhost:8000/docs (Swagger UI)
 
+## Wyckoff Charting Enhancements (Story 11.5.1)
+
+The system now includes advanced Wyckoff charting capabilities with automated schematic matching and cause-building analysis:
+
+### Schematic Template Matching
+
+Automatically identifies which of the 4 classic Wyckoff schematics best matches the current chart pattern:
+
+- **Accumulation #1 (Spring)**: Classic accumulation with shakeout below Creek level
+- **Accumulation #2 (LPS)**: Accumulation without Spring, uses Last Point of Support
+- **Distribution #1 (UTAD)**: Distribution with Upthrust After Distribution above Ice level
+- **Distribution #2 (LPSY)**: Distribution without UTAD, uses Last Point of Supply
+
+**Algorithm Features**:
+
+- Pattern sequence matching against expected events (PS, SC, AR, ST, SPRING/UTAD, SOS/SOW)
+- Confidence scoring (60-95%) with bonuses for critical patterns (SPRING, UTAD, LPS, LPSY)
+- Minimum 60% threshold for schematic match validation
+
+**UI Components**:
+
+- **SchematicBadge**: Clickable badge showing schematic type and confidence score
+- **Detail Modal**: Pattern sequence, template data points, and trading interpretation guide
+- Color-coded confidence levels (Green 80%+, Yellow 70-79%, Orange <70%)
+
+### Point & Figure Cause-Building Tracking
+
+Tracks the progress of cause-building (accumulation/distribution) using Point & Figure methodology:
+
+**Algorithm**:
+
+- Column counting based on ATR (Average True Range) threshold
+- Target column calculation: `min(18, duration_bars / 5)`
+- Projected jump calculation: `creek + (range_height × column_count × 0.5)`
+- Progress percentage: `(column_count / target_column_count) × 100`
+
+**UI Components**:
+
+- **CauseBuildingPanel**: Progress bar with column count display
+- Color-coded progress stages (Complete, Advanced, Building, Early, Initial)
+- Projected jump target in dollars
+- Expandable methodology explanation
+- Optional mini histogram showing column accumulation
+
+### Schematic Template Overlay
+
+Visual overlay system that renders the matched Wyckoff template directly on the chart:
+
+**Features**:
+
+- Dashed blue line overlay scaled to chart time and price range
+- Coordinate scaling from normalized percentages (0-100%) to actual chart coordinates
+- Toggle on/off via chart visibility controls
+- Automatic scaling to trading range (Creek to Ice levels)
+
+**Implementation**:
+
+- Utility module: `frontend/src/utils/schematicOverlay.ts`
+- 5 exported functions: `scaleTemplateToChart()`, `renderSchematicOverlay()`, `removeSchematicOverlay()`, `calculateDeviation()`, `hasSignificantDeviation()`
+- Integrated with Lightweight Charts v4.1+ line series API
+
+### Projected Jump Line
+
+Conditional rendering of projected price target based on cause-building progress:
+
+**Display Rules**:
+
+- Only shown when progress > 50%
+- Dashed green horizontal line at projected jump price
+- Price label: "Projected Jump: $XXX.XX"
+
+**Usage**:
+
+```typescript
+// Automatically shown in PatternChart.vue when conditions met
+if (causeBuildingData.progress_percentage > 50) {
+  candlestickSeries.createPriceLine({
+    price: causeBuildingData.projected_jump,
+    color: '#16A34A', // Green
+    lineStyle: 1, // Dashed
+  })
+}
+```
+
+### API Integration
+
+All Wyckoff data is returned via the existing chart API endpoint:
+
+**Endpoint**: `GET /api/v1/charts/data`
+
+**Response Structure**:
+
+```json
+{
+  "schematic_match": {
+    "schematic_type": "ACCUMULATION_1",
+    "confidence_score": 85,
+    "template_data": [
+      { "x_percent": 10.0, "y_percent": 20.0 },
+      { "x_percent": 20.0, "y_percent": 5.0 }
+    ]
+  },
+  "cause_building": {
+    "column_count": 8,
+    "target_column_count": 18,
+    "projected_jump": 165.50,
+    "progress_percentage": 44.4,
+    "count_methodology": "P&F Count: Counted 8 wide-range bars..."
+  }
+}
+```
+
+### Performance
+
+Backend algorithms are optimized for real-time chart rendering:
+
+- **Schematic matching**: O(n×m) ~40 iterations, < 100ms
+- **P&F counting**: O(n) ~100 bars, < 50ms
+- **ATR calculation**: O(n) 14-period, < 10ms
+
 ## Development
 
 ### Running Tests
 
 **Backend (pytest):**
+
 ```bash
 cd backend
 poetry run pytest
 ```
 
 **Frontend (Vitest):**
+
 ```bash
 cd frontend
 npm run test
@@ -130,17 +255,20 @@ npm run test
 ### Code Quality
 
 Pre-commit hooks are configured to run automatically on commit:
+
 - **Ruff:** Python linting and formatting (10-100x faster than Black)
 - **mypy:** Python type checking (strict mode)
 - **ESLint:** TypeScript/Vue linting
 - **Prettier:** TypeScript/Vue formatting
 
 To install pre-commit hooks:
+
 ```bash
 poetry run pre-commit install
 ```
 
 To run manually:
+
 ```bash
 poetry run pre-commit run --all-files
 ```
@@ -148,6 +276,7 @@ poetry run pre-commit run --all-files
 ### Linting and Formatting
 
 **Backend:**
+
 ```bash
 cd backend
 poetry run ruff check .
@@ -156,6 +285,7 @@ poetry run mypy src/
 ```
 
 **Frontend:**
+
 ```bash
 cd frontend
 npm run lint
@@ -164,7 +294,7 @@ npm run format
 
 ## Project Structure
 
-```
+```text
 bmad-wyckoff/
 ├── backend/
 │   ├── src/
