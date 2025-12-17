@@ -1,10 +1,10 @@
 """
-Help API Routes (Story 11.8a - Task 7)
+Help API Routes (Story 11.8a - Task 7, Story 11.8b - Task 5)
 
 Purpose:
 --------
 FastAPI routes for help system including articles, glossary, search,
-and user feedback endpoints.
+tutorials, and user feedback endpoints.
 
 Endpoints:
 ----------
@@ -12,19 +12,23 @@ Endpoints:
 - GET /api/v1/help/articles/{slug} - Get article by slug
 - GET /api/v1/help/search - Full-text search
 - GET /api/v1/help/glossary - List glossary terms
+- GET /api/v1/help/tutorials - List tutorials with difficulty filtering (Story 11.8b)
+- GET /api/v1/help/tutorials/{slug} - Get tutorial by slug (Story 11.8b)
+- POST /api/v1/help/tutorials/{slug}/complete - Mark tutorial as completed (Story 11.8b)
 - POST /api/v1/help/feedback - Submit article feedback
 
 Integration:
 ------------
 - Uses HelpRepository for database operations
 - Implements PostgreSQL full-text search
-- Automatically increments view counts
+- Automatically increments view counts and completion counts
 
-Author: Story 11.8a (Task 7)
+Author: Story 11.8a (Task 7), Story 11.8b (Task 5)
 """
 
+
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,11 +40,14 @@ from src.models.help import (
     HelpFeedbackResponse,
     HelpFeedbackSubmission,
     SearchResponse,
+    Tutorial,
+    TutorialListResponse,
 )
 from src.repositories.help_repository import (
     ArticleNotFoundError,
     HelpRepository,
     SearchQueryError,
+    TutorialNotFoundError,
 )
 
 logger = structlog.get_logger(__name__)
@@ -429,4 +436,232 @@ async def submit_feedback(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit feedback: {str(e)}",
+        ) from e
+
+
+# ============================================================================
+# Tutorial Endpoints (Story 11.8b - Task 5)
+# ============================================================================
+
+
+@router.get(
+    "/tutorials",
+    response_model=TutorialListResponse,
+    summary="Get tutorials",
+    description="Retrieve tutorials with optional difficulty filtering and pagination",
+)
+async def get_tutorials(
+    difficulty: str | None = Query(
+        None,
+        description="Filter by difficulty (BEGINNER, INTERMEDIATE, ADVANCED)",
+        regex="^(BEGINNER|INTERMEDIATE|ADVANCED)$",
+    ),
+    limit: int = Query(
+        50,
+        description="Maximum number of tutorials to return",
+        ge=1,
+        le=100,
+    ),
+    offset: int = Query(
+        0,
+        description="Number of tutorials to skip for pagination",
+        ge=0,
+    ),
+    session: AsyncSession = Depends(get_db),
+) -> TutorialListResponse:
+    """
+    Get tutorials with optional difficulty filtering.
+
+    Parameters:
+    -----------
+    difficulty : str | None
+        Filter by difficulty (BEGINNER, INTERMEDIATE, ADVANCED, None for all)
+    limit : int
+        Maximum number of tutorials to return (1-100)
+    offset : int
+        Pagination offset
+
+    Returns:
+    --------
+    TutorialListResponse
+        List of tutorials with total count
+
+    Example:
+    --------
+    GET /api/v1/help/tutorials?difficulty=BEGINNER&limit=10
+    """
+    try:
+        repo = HelpRepository(session)
+
+        tutorials, total_count = await repo.get_tutorials(
+            difficulty=difficulty,
+            limit=limit,
+            offset=offset,
+        )
+
+        logger.info(
+            "GET /api/v1/help/tutorials",
+            difficulty=difficulty,
+            count=len(tutorials),
+            total_count=total_count,
+            limit=limit,
+            offset=offset,
+        )
+
+        return TutorialListResponse(
+            tutorials=tutorials,
+            total_count=total_count,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to retrieve tutorials",
+            difficulty=difficulty,
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve tutorials: {str(e)}",
+        ) from e
+
+
+@router.get(
+    "/tutorials/{slug}",
+    response_model=Tutorial,
+    summary="Get tutorial by slug",
+    description="Retrieve a single tutorial with all steps by its slug",
+)
+async def get_tutorial_by_slug(
+    slug: str = Path(..., description="Tutorial slug (URL-friendly identifier)"),
+    session: AsyncSession = Depends(get_db),
+) -> Tutorial:
+    """
+    Get tutorial by slug.
+
+    Parameters:
+    -----------
+    slug : str
+        Tutorial slug (e.g., "identifying-springs")
+
+    Returns:
+    --------
+    Tutorial
+        Complete tutorial with all steps
+
+    Raises:
+    -------
+    404 NOT FOUND
+        If tutorial doesn't exist
+
+    Example:
+    --------
+    GET /api/v1/help/tutorials/identifying-springs
+    """
+    try:
+        repo = HelpRepository(session)
+
+        tutorial = await repo.get_tutorial_by_slug(slug)
+
+        logger.info(
+            "GET /api/v1/help/tutorials/{slug}",
+            slug=slug,
+            tutorial_id=str(tutorial.id),
+            title=tutorial.title,
+            steps_count=len(tutorial.steps),
+        )
+
+        return tutorial
+
+    except TutorialNotFoundError as e:
+        logger.warning("Tutorial not found", slug=slug)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tutorial not found: {slug}",
+        ) from e
+
+    except Exception as e:
+        logger.error(
+            "Failed to retrieve tutorial",
+            slug=slug,
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve tutorial: {str(e)}",
+        ) from e
+
+
+@router.post(
+    "/tutorials/{slug}/complete",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Mark tutorial as completed",
+    description="Increment tutorial completion count (no authentication required for MVP)",
+)
+async def complete_tutorial(
+    slug: str = Path(..., description="Tutorial slug (URL-friendly identifier)"),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Mark tutorial as completed.
+
+    This endpoint increments the tutorial's completion_count for analytics.
+    No authentication required for MVP (Story 11.8b).
+
+    Parameters:
+    -----------
+    slug : str
+        Tutorial slug (e.g., "identifying-springs")
+
+    Returns:
+    --------
+    204 NO CONTENT
+        Success (no response body)
+
+    Raises:
+    -------
+    404 NOT FOUND
+        If tutorial doesn't exist
+
+    Example:
+    --------
+    POST /api/v1/help/tutorials/identifying-springs/complete
+    """
+    try:
+        repo = HelpRepository(session)
+
+        # Get tutorial to verify it exists and get ID
+        tutorial = await repo.get_tutorial_by_slug(slug)
+
+        # Increment completion count
+        await repo.increment_completion_count(tutorial.id)
+
+        # Commit transaction
+        await session.commit()
+
+        logger.info(
+            "POST /api/v1/help/tutorials/{slug}/complete",
+            slug=slug,
+            tutorial_id=str(tutorial.id),
+            title=tutorial.title,
+        )
+
+    except TutorialNotFoundError as e:
+        logger.warning("Tutorial not found for completion", slug=slug)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tutorial not found: {slug}",
+        ) from e
+
+    except Exception as e:
+        logger.error(
+            "Failed to mark tutorial as completed",
+            slug=slug,
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to mark tutorial as completed: {str(e)}",
         ) from e

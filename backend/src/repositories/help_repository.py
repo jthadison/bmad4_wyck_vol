@@ -1,15 +1,16 @@
 """
-Help Repository (Story 11.8a - Task 6)
+Help Repository (Story 11.8a - Task 6, Story 11.8b - Task 4)
 
 Purpose:
 --------
 Database operations for help system including articles, glossary terms,
-and user feedback. Implements PostgreSQL full-text search.
+tutorials, and user feedback. Implements PostgreSQL full-text search.
 
 Classes:
 --------
 - HelpRepository: Async repository for help content
 - ArticleNotFoundError: Raised when article doesn't exist
+- TutorialNotFoundError: Raised when tutorial doesn't exist
 - SearchQueryError: Raised when search query is invalid
 
 Integration:
@@ -17,15 +18,16 @@ Integration:
 - Used by help API endpoints
 - Implements PostgreSQL full-text search with ts_vector
 - Handles feedback submission and view count tracking
+- Tutorial CRUD operations and completion tracking
 
-Author: Story 11.8a (Task 6)
+Author: Story 11.8a (Task 6), Story 11.8b (Task 4)
 """
 
 from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,14 +36,21 @@ from src.models.help import (
     HelpArticle,
     HelpFeedback,
     HelpSearchResult,
+    Tutorial,
 )
-from src.orm.models import GlossaryTermORM, HelpArticleORM
+from src.orm.models import GlossaryTermORM, HelpArticleORM, TutorialORM
 
 logger = structlog.get_logger(__name__)
 
 
 class ArticleNotFoundError(Exception):
     """Raised when help article doesn't exist."""
+
+    pass
+
+
+class TutorialNotFoundError(Exception):
+    """Raised when tutorial doesn't exist (Story 11.8b)."""
 
     pass
 
@@ -508,18 +517,23 @@ class HelpRepository:
         --------
         >>> await repo.update_feedback_counts(article_id, helpful=True)
         """
+        # Use explicit conditional instead of f-string interpolation
         if helpful:
-            column = "helpful_count"
+            query = text(
+                """
+                UPDATE help_articles
+                SET helpful_count = helpful_count + 1
+                WHERE id = :article_id
+                """
+            )
         else:
-            column = "not_helpful_count"
-
-        query = text(
-            f"""
-            UPDATE help_articles
-            SET {column} = {column} + 1
-            WHERE id = :article_id
-            """
-        )
+            query = text(
+                """
+                UPDATE help_articles
+                SET not_helpful_count = not_helpful_count + 1
+                WHERE id = :article_id
+                """
+            )
 
         await self.session.execute(query, {"article_id": article_id})
 
@@ -528,6 +542,240 @@ class HelpRepository:
             article_id=str(article_id),
             helpful=helpful,
         )
+
+    async def get_tutorials(
+        self,
+        difficulty: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Tutorial], int]:
+        """
+        Get tutorials with optional difficulty filtering (Story 11.8b - Task 4).
+
+        Parameters:
+        -----------
+        difficulty : str | None
+            Filter by difficulty (BEGINNER, INTERMEDIATE, ADVANCED, None for all)
+            Default: None (all difficulties)
+        limit : int
+            Maximum number of tutorials to return (default: 50, max: 100)
+        offset : int
+            Number of tutorials to skip for pagination (default: 0)
+
+        Returns:
+        --------
+        tuple[list[Tutorial], int]
+            Tuple of (tutorials list, total count)
+
+        Example:
+        --------
+        >>> tutorials, total = await repo.get_tutorials(difficulty="BEGINNER", limit=10)
+        """
+        # Build base query
+        query = select(TutorialORM)
+
+        # Apply difficulty filter if specified
+        if difficulty:
+            query = query.where(TutorialORM.difficulty == difficulty)
+
+        # Order by difficulty ASC, then estimated time ASC
+        query = query.order_by(
+            TutorialORM.difficulty.asc(), TutorialORM.estimated_time_minutes.asc()
+        )
+
+        # Get total count
+        count_query = select(func.count()).select_from(query.subquery())
+        count_result = await self.session.execute(count_query)
+        total_count = count_result.scalar() or 0
+
+        # Apply pagination
+        query = query.limit(min(limit, 100)).offset(offset)
+
+        # Execute query
+        result = await self.session.execute(query)
+        rows = result.scalars().all()
+
+        tutorials = [self._orm_to_tutorial(row) for row in rows]
+
+        logger.debug(
+            "Retrieved tutorials",
+            difficulty=difficulty,
+            count=len(tutorials),
+            total_count=total_count,
+            limit=limit,
+            offset=offset,
+        )
+
+        return tutorials, total_count
+
+    async def get_tutorial_by_slug(self, slug: str) -> Tutorial:
+        """
+        Get tutorial by slug (Story 11.8b - Task 4).
+
+        Parameters:
+        -----------
+        slug : str
+            Tutorial slug
+
+        Returns:
+        --------
+        Tutorial
+            Tutorial model
+
+        Raises:
+        -------
+        TutorialNotFoundError
+            If tutorial doesn't exist
+
+        Example:
+        --------
+        >>> tutorial = await repo.get_tutorial_by_slug("identifying-springs")
+        """
+        query = select(TutorialORM).where(TutorialORM.slug == slug)
+
+        result = await self.session.execute(query)
+        row = result.scalars().first()
+
+        if not row:
+            logger.warning("Tutorial not found", slug=slug)
+            raise TutorialNotFoundError(f"Tutorial not found: {slug}")
+
+        tutorial = self._orm_to_tutorial(row)
+
+        logger.debug("Retrieved tutorial by slug", slug=slug, title=tutorial.title)
+
+        return tutorial
+
+    async def increment_completion_count(self, tutorial_id: UUID) -> None:
+        """
+        Increment tutorial completion count (Story 11.8b - Task 4).
+
+        Parameters:
+        -----------
+        tutorial_id : UUID
+            Tutorial UUID
+
+        Example:
+        --------
+        >>> await repo.increment_completion_count(tutorial_id)
+        """
+        query = (
+            update(TutorialORM)
+            .where(TutorialORM.id == tutorial_id)
+            .values(completion_count=TutorialORM.completion_count + 1)
+        )
+
+        await self.session.execute(query)
+
+        logger.debug("Incremented tutorial completion count", tutorial_id=str(tutorial_id))
+
+    async def save_tutorial_progress(
+        self,
+        user_id: UUID,
+        tutorial_id: UUID,
+        current_step: int,
+        completed: bool,
+    ) -> None:
+        """
+        Save user tutorial progress (Story 11.8b - Task 4 - OPTIONAL).
+
+        Note: This method is implemented but not used in MVP (Story 11.8b uses localStorage).
+        It's available for future enhancement when user authentication is implemented.
+
+        Parameters:
+        -----------
+        user_id : UUID
+            User UUID
+        tutorial_id : UUID
+            Tutorial UUID
+        current_step : int
+            Current step number (1-indexed)
+        completed : bool
+            Whether tutorial is completed
+
+        Example:
+        --------
+        >>> await repo.save_tutorial_progress(user_id, tutorial_id, 5, False)
+        """
+        from datetime import UTC, datetime
+
+        # Upsert tutorial progress
+        query = text(
+            """
+            INSERT INTO tutorial_progress (user_id, tutorial_id, current_step, completed, last_accessed)
+            VALUES (:user_id, :tutorial_id, :current_step, :completed, :last_accessed)
+            ON CONFLICT (user_id, tutorial_id)
+            DO UPDATE SET
+                current_step = EXCLUDED.current_step,
+                completed = EXCLUDED.completed,
+                last_accessed = EXCLUDED.last_accessed
+            """
+        )
+
+        await self.session.execute(
+            query,
+            {
+                "user_id": user_id,
+                "tutorial_id": tutorial_id,
+                "current_step": current_step,
+                "completed": completed,
+                "last_accessed": datetime.now(UTC),
+            },
+        )
+
+        logger.debug(
+            "Saved tutorial progress",
+            user_id=str(user_id),
+            tutorial_id=str(tutorial_id),
+            current_step=current_step,
+            completed=completed,
+        )
+
+    async def get_tutorial_progress(
+        self, user_id: UUID, tutorial_id: UUID
+    ) -> dict[str, Any] | None:
+        """
+        Get user tutorial progress (Story 11.8b - Task 4 - OPTIONAL).
+
+        Note: This method is implemented but not used in MVP (Story 11.8b uses localStorage).
+        It's available for future enhancement when user authentication is implemented.
+
+        Parameters:
+        -----------
+        user_id : UUID
+            User UUID
+        tutorial_id : UUID
+            Tutorial UUID
+
+        Returns:
+        --------
+        dict | None
+            Progress data or None if not found
+
+        Example:
+        --------
+        >>> progress = await repo.get_tutorial_progress(user_id, tutorial_id)
+        >>> if progress:
+        ...     print(f"Current step: {progress['current_step']}")
+        """
+        from src.orm.models import TutorialProgressORM
+
+        query = select(TutorialProgressORM).where(
+            TutorialProgressORM.user_id == user_id,
+            TutorialProgressORM.tutorial_id == tutorial_id,
+        )
+
+        result = await self.session.execute(query)
+        row = result.scalars().first()
+
+        if not row:
+            return None
+
+        return {
+            "current_step": row.current_step,
+            "completed": row.completed,
+            "last_accessed": row.last_accessed,
+        }
 
     def _row_to_article(self, row: Any) -> HelpArticle:
         """Convert database row to HelpArticle model."""
@@ -568,3 +816,27 @@ class HelpRepository:
     def _orm_to_glossary_term(self, orm_obj: GlossaryTermORM) -> GlossaryTerm:
         """Convert ORM object to GlossaryTerm model (alias for _row_to_glossary_term)."""
         return self._row_to_glossary_term(orm_obj)
+
+    def _row_to_tutorial(self, row: Any) -> Tutorial:
+        """Convert database row to Tutorial model (Story 11.8b)."""
+        from src.models.help import TutorialStep
+
+        # Convert steps JSON to TutorialStep objects
+        steps = [TutorialStep(**step_data) for step_data in row.steps]
+
+        return Tutorial(
+            id=row.id,
+            slug=row.slug,
+            title=row.title,
+            description=row.description,
+            difficulty=row.difficulty,
+            estimated_time_minutes=row.estimated_time_minutes,
+            steps=steps,
+            tags=row.tags or [],
+            last_updated=row.last_updated,
+            completion_count=row.completion_count,
+        )
+
+    def _orm_to_tutorial(self, orm_obj: TutorialORM) -> Tutorial:
+        """Convert ORM object to Tutorial model (Story 11.8b)."""
+        return self._row_to_tutorial(orm_obj)

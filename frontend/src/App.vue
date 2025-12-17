@@ -28,6 +28,13 @@
                 Backtest
               </router-link>
               <router-link
+                to="/tutorials"
+                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
+                active-class="bg-gray-700 text-blue-400"
+              >
+                Tutorials
+              </router-link>
+              <router-link
                 to="/settings"
                 class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
                 active-class="bg-gray-700 text-blue-400"
@@ -170,8 +177,8 @@ onMounted(() => {
             const notificationStore = useNotificationStore()
             notificationStore.handleToastNotification({
               id: notification.id,
-              notification_type: notification.notification_type as any,
-              priority: notification.priority as any,
+              notification_type: notification.notification_type as string,
+              priority: notification.priority as string,
               title: notification.title,
               message: notification.message,
               metadata: {},

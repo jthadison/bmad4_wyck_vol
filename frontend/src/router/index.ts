@@ -89,6 +89,28 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
+  // Tutorial System Routes (Story 11.8b - Task 10)
+  {
+    path: '/tutorials',
+    name: 'tutorials',
+    component: () => import('@/components/help/TutorialView.vue'),
+    meta: {
+      title: 'Tutorials',
+      breadcrumb: [{ label: 'Tutorials' }],
+    },
+  },
+  {
+    path: '/tutorials/:slug',
+    name: 'tutorial-walkthrough',
+    component: () => import('@/components/help/TutorialWalkthrough.vue'),
+    meta: {
+      title: 'Tutorial',
+      breadcrumb: [
+        { label: 'Tutorials', to: '/tutorials' },
+        { label: 'Tutorial' },
+      ],
+    },
+  },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',

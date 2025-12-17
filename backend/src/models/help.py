@@ -1,26 +1,30 @@
 """
-Help System Models (Story 11.8a)
+Help System Models (Story 11.8a + 11.8b)
 
 Purpose:
 --------
 Pydantic models for the help documentation system, including articles,
-glossary terms, keyboard shortcuts, and user feedback.
+glossary terms, keyboard shortcuts, tutorials, and user feedback.
 
 Data Models:
 ------------
 - HelpArticle: Help article with Markdown content
 - GlossaryTerm: Wyckoff terminology with phase association
 - KeyboardShortcut: Application keyboard shortcuts
+- Tutorial: Interactive step-by-step tutorial (Story 11.8b)
+- TutorialStep: Individual tutorial step (Story 11.8b)
 - HelpFeedback: User feedback on help articles
-- Response models: HelpSearchResult, HelpArticleListResponse, etc.
+- Response models: HelpSearchResult, HelpArticleListResponse, TutorialListResponse, etc.
 
 Integration:
 ------------
 - Story 11.8a: Core Help Infrastructure
+- Story 11.8b: Tutorial System
 - GET /api/v1/help/articles, /help/search, /help/glossary endpoints
+- GET /api/v1/help/tutorials, /help/tutorials/{slug} endpoints
 - POST /api/v1/help/feedback endpoint
 
-Author: Story 11.8a (Task 1)
+Author: Story 11.8a (Task 1), Story 11.8b (Task 1)
 """
 
 from datetime import UTC, datetime
@@ -241,6 +245,141 @@ class KeyboardShortcut(BaseModel):
                 }
             ]
         }
+    }
+
+
+class TutorialStep(BaseModel):
+    """
+    Individual step within a tutorial (Story 11.8b).
+
+    Fields:
+    -------
+    - step_number: Step sequence number (1-indexed)
+    - title: Step title
+    - content_markdown: Original Markdown content for this step
+    - content_html: Rendered HTML content (sanitized)
+    - action_required: Optional action prompt for user (e.g., "Click Configuration button")
+    - ui_highlight: Optional CSS selector for UI highlighting (e.g., "#config-button")
+
+    Example:
+    --------
+    >>> step = TutorialStep(
+    ...     step_number=1,
+    ...     title="Navigate to Dashboard",
+    ...     content_markdown="Go to the main dashboard...",
+    ...     content_html="<p>Go to the main dashboard...</p>",
+    ...     action_required="Click the Dashboard link in the navigation",
+    ...     ui_highlight="#dashboard-link"
+    ... )
+    """
+
+    step_number: int = Field(..., ge=1, description="Step sequence number (1-indexed)")
+    title: str = Field(..., min_length=1, max_length=300, description="Step title")
+    content_markdown: str = Field(..., description="Original Markdown content")
+    content_html: str = Field(..., description="Rendered HTML content (sanitized)")
+    action_required: str | None = Field(
+        None, max_length=500, description="Optional action prompt for user"
+    )
+    ui_highlight: str | None = Field(
+        None, max_length=200, description="Optional CSS selector for UI highlighting"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "step_number": 1,
+                    "title": "Navigate to Dashboard",
+                    "content_markdown": "Go to the main dashboard...",
+                    "content_html": "<p>Go to the main dashboard...</p>",
+                    "action_required": "Click the Dashboard link",
+                    "ui_highlight": "#dashboard-link",
+                }
+            ]
+        }
+    }
+
+
+class Tutorial(BaseModel):
+    """
+    Interactive step-by-step tutorial (Story 11.8b).
+
+    Fields:
+    -------
+    - id: Unique tutorial identifier
+    - slug: URL-friendly identifier (unique)
+    - title: Tutorial title
+    - description: Tutorial description
+    - difficulty: Tutorial difficulty level (BEGINNER, INTERMEDIATE, ADVANCED)
+    - estimated_time_minutes: Estimated completion time in minutes
+    - steps: List of tutorial steps
+    - tags: Searchable tags
+    - last_updated: Last modification timestamp
+    - completion_count: Number of times tutorial completed (analytics)
+
+    Example:
+    --------
+    >>> tutorial = Tutorial(
+    ...     id=uuid4(),
+    ...     slug="identifying-springs",
+    ...     title="Identifying Springs",
+    ...     description="Learn to identify Spring patterns...",
+    ...     difficulty="INTERMEDIATE",
+    ...     estimated_time_minutes=15,
+    ...     steps=[...],
+    ...     tags=["pattern", "spring", "wyckoff"],
+    ...     last_updated=datetime.now(UTC),
+    ...     completion_count=42
+    ... )
+    """
+
+    id: UUID = Field(default_factory=uuid4, description="Unique tutorial identifier")
+    slug: str = Field(..., min_length=1, max_length=200, description="URL-friendly identifier")
+    title: str = Field(..., min_length=1, max_length=300, description="Tutorial title")
+    description: str = Field(..., min_length=1, max_length=1000, description="Tutorial description")
+    difficulty: Literal["BEGINNER", "INTERMEDIATE", "ADVANCED"] = Field(
+        ..., description="Tutorial difficulty level"
+    )
+    estimated_time_minutes: int = Field(
+        ..., ge=1, le=120, description="Estimated completion time in minutes"
+    )
+    steps: list[TutorialStep] = Field(..., min_length=1, description="List of tutorial steps")
+    tags: list[str] = Field(default_factory=list, description="Searchable tags")
+    last_updated: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Last modification timestamp"
+    )
+    completion_count: int = Field(default=0, ge=0, description="Number of completions")
+
+    @field_validator("last_updated", mode="before")
+    @classmethod
+    def ensure_utc(cls, v: datetime | str) -> datetime:
+        """Enforce UTC timezone on timestamps."""
+        if isinstance(v, str):
+            parsed = datetime.fromisoformat(v.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "id": "990e8400-e29b-41d4-a716-446655440099",
+                    "slug": "identifying-springs",
+                    "title": "Identifying Springs",
+                    "description": "Learn to identify Spring patterns with Creek penetration",
+                    "difficulty": "INTERMEDIATE",
+                    "estimated_time_minutes": 15,
+                    "steps": [],
+                    "tags": ["pattern", "spring", "wyckoff", "phase-c"],
+                    "last_updated": "2024-03-15T14:30:00Z",
+                    "completion_count": 42,
+                }
+            ]
+        },
+        "json_encoders": {datetime: lambda v: v.isoformat()},
     }
 
 
@@ -470,6 +609,31 @@ class HelpFeedbackResponse(BaseModel):
                 {
                     "feedback_id": "880e8400-e29b-41d4-a716-446655440003",
                     "message": "Thank you for your feedback!",
+                }
+            ]
+        }
+    }
+
+
+class TutorialListResponse(BaseModel):
+    """
+    Response for tutorial listing (Story 11.8b).
+
+    Fields:
+    -------
+    - tutorials: List of tutorials
+    - total_count: Total number of tutorials (before pagination)
+    """
+
+    tutorials: list[Tutorial] = Field(..., description="List of tutorials")
+    total_count: int = Field(..., ge=0, description="Total count")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "tutorials": [],
+                    "total_count": 10,
                 }
             ]
         }

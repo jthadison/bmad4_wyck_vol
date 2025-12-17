@@ -223,6 +223,11 @@ const menuItems = computed(() => [
     command: () => router.push('/help'),
   },
   {
+    label: 'Tutorials',
+    icon: 'pi pi-graduation-cap',
+    command: () => router.push('/tutorials'),
+  },
+  {
     label: 'Glossary',
     icon: 'pi pi-book',
     command: () => router.push('/help/glossary'),

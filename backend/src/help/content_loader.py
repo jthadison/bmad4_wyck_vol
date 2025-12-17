@@ -1,5 +1,5 @@
 """
-Help Content Loader (Story 11.8a - Task 4)
+Help Content Loader (Story 11.8a - Task 4, Story 11.8b - Task 2)
 
 Purpose:
 --------
@@ -16,10 +16,11 @@ Integration:
 - Monitors file modification times for cache invalidation
 - Supports glossary terms, FAQ, tutorials, and reference docs
 
-Author: Story 11.8a (Task 4)
+Author: Story 11.8a (Task 4), Story 11.8b (Task 2)
 """
 
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ from typing import Any
 import frontmatter
 import structlog
 
-from src.models.help import GlossaryTerm, HelpArticle
+from src.models.help import GlossaryTerm, HelpArticle, Tutorial, TutorialStep
 
 logger = structlog.get_logger(__name__)
 
@@ -292,6 +293,183 @@ class HelpContentLoader:
             keywords=parsed.get("keywords", ""),
             last_updated=datetime.now(UTC),
         )
+
+    def parse_tutorial(self, file_path: Path) -> Tutorial:
+        """
+        Parse a tutorial from Markdown file (Story 11.8b - Task 2).
+
+        Tutorial Format:
+        ----------------
+        Frontmatter:
+        - title, description, difficulty, estimated_time_minutes, tags
+
+        Content:
+        - Step boundaries marked by headings: ## Step N: Title
+        - Step content between headers
+        - Optional metadata in HTML comments:
+          <!-- action: Click Configuration button -->
+          <!-- highlight: #config-button -->
+
+        Parameters:
+        -----------
+        file_path : Path
+            Path to tutorial Markdown file
+
+        Returns:
+        --------
+        Tutorial
+            Parsed tutorial model with steps
+
+        Raises:
+        -------
+        ContentLoadError
+            If file doesn't exist or parsing fails
+        """
+        parsed = self._load_single_file(file_path)
+
+        if not parsed:
+            raise ContentLoadError(f"Failed to load tutorial: {file_path}")
+
+        if parsed["category"] != "TUTORIAL":
+            raise ContentLoadError(
+                f"File is not a tutorial (category={parsed['category']}): {file_path}"
+            )
+
+        # Load frontmatter again to get tutorial-specific fields
+        with open(file_path, encoding="utf-8") as f:
+            post = frontmatter.load(f)
+
+        metadata = post.metadata
+        content = post.content
+
+        # Validate required tutorial fields
+        if "difficulty" not in metadata:
+            raise ContentLoadError(f"Tutorial missing 'difficulty' field: {file_path}")
+
+        if "estimated_time_minutes" not in metadata:
+            raise ContentLoadError(f"Tutorial missing 'estimated_time_minutes' field: {file_path}")
+
+        difficulty = metadata["difficulty"]
+        if difficulty not in ["BEGINNER", "INTERMEDIATE", "ADVANCED"]:
+            raise ContentLoadError(
+                f"Invalid difficulty '{difficulty}' in tutorial: {file_path}. "
+                "Must be BEGINNER, INTERMEDIATE, or ADVANCED"
+            )
+
+        # Extract tutorial steps from content
+        steps = self._extract_tutorial_steps(content)
+
+        if not steps:
+            raise ContentLoadError(f"No tutorial steps found in: {file_path}")
+
+        # Build Tutorial model
+        # Note: HTML rendering for each step happens in MarkdownRenderer
+        return Tutorial(
+            slug=parsed["slug"],
+            title=parsed["title"],
+            description=metadata.get("description", ""),
+            difficulty=difficulty,
+            estimated_time_minutes=metadata["estimated_time_minutes"],
+            steps=steps,
+            tags=parsed.get("tags", []),
+            last_updated=datetime.now(UTC),
+            completion_count=0,
+        )
+
+    def _extract_tutorial_steps(self, content: str) -> list[TutorialStep]:
+        """
+        Extract tutorial steps from Markdown content.
+
+        Steps are identified by headings: ## Step N: Title
+
+        Parameters:
+        -----------
+        content : str
+            Markdown content
+
+        Returns:
+        --------
+        list[TutorialStep]
+            List of parsed tutorial steps (without HTML rendering)
+        """
+        # Regex to match step headers: ## Step N: Title
+        step_header_pattern = re.compile(r"^## Step (\d+):\s*(.+)$", re.MULTILINE)
+
+        # Find all step headers
+        step_matches = list(step_header_pattern.finditer(content))
+
+        if not step_matches:
+            return []
+
+        steps: list[TutorialStep] = []
+
+        for i, match in enumerate(step_matches):
+            step_number = int(match.group(1))
+            step_title = match.group(2).strip()
+
+            # Extract step content (from this header to next header or end)
+            start_pos = match.end()
+            if i + 1 < len(step_matches):
+                end_pos = step_matches[i + 1].start()
+            else:
+                end_pos = len(content)
+
+            step_content = content[start_pos:end_pos].strip()
+
+            # Extract metadata from HTML comments
+            action_required = self._extract_html_comment(step_content, "action")
+            ui_highlight = self._extract_html_comment(step_content, "highlight")
+
+            # Create TutorialStep
+            # Note: content_html will be set by MarkdownRenderer during seeding
+            step = TutorialStep(
+                step_number=step_number,
+                title=step_title,
+                content_markdown=step_content,
+                content_html="",  # Will be set by renderer
+                action_required=action_required,
+                ui_highlight=ui_highlight,
+            )
+
+            steps.append(step)
+
+        # Validate step numbering is sequential
+        for i, step in enumerate(steps, start=1):
+            if step.step_number != i:
+                logger.warning(
+                    "Step numbering not sequential",
+                    expected=i,
+                    actual=step.step_number,
+                    title=step.title,
+                )
+
+        return steps
+
+    def _extract_html_comment(self, content: str, comment_key: str) -> str | None:
+        """
+        Extract value from HTML comment metadata.
+
+        Looks for comments like: <!-- action: Click here -->
+
+        Parameters:
+        -----------
+        content : str
+            Markdown content
+        comment_key : str
+            Comment key to extract (e.g., "action", "highlight")
+
+        Returns:
+        --------
+        str | None
+            Comment value if found, None otherwise
+        """
+        pattern = re.compile(rf"<!--\s*{comment_key}:\s*(.+?)\s*-->", re.IGNORECASE)
+        match = pattern.search(content)
+
+        if match:
+            return match.group(1).strip()
+
+        return None
 
     def clear_cache(self) -> None:
         """Clear the content cache."""
