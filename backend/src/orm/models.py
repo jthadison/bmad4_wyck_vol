@@ -581,3 +581,102 @@ class HelpFeedbackORM(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
+
+
+class TutorialORM(Base):
+    """
+    Interactive step-by-step tutorial (Story 11.8b).
+
+    Table: tutorials
+    Primary Key: id (UUID)
+    Unique: slug
+    Indexes: idx_tutorials_slug, idx_tutorials_difficulty
+    """
+
+    __tablename__ = "tutorials"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Tutorial identification
+    slug: Mapped[str] = mapped_column(String(200), unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Tutorial metadata
+    difficulty: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    estimated_time_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Steps (stored as JSONB array of TutorialStep objects)
+    steps: Mapped[list] = mapped_column(JSON, nullable=False)
+
+    # Classification
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, server_default="[]")
+
+    # Timestamps
+    last_updated: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    # Analytics
+    completion_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    __table_args__ = (
+        CheckConstraint(
+            "difficulty IN ('BEGINNER', 'INTERMEDIATE', 'ADVANCED')",
+            name="chk_tutorial_difficulty",
+        ),
+        CheckConstraint(
+            "estimated_time_minutes > 0 AND estimated_time_minutes <= 120",
+            name="chk_estimated_time_range",
+        ),
+        CheckConstraint("completion_count >= 0", name="chk_completion_count"),
+    )
+
+
+class TutorialProgressORM(Base):
+    """
+    User progress tracking for tutorials (Story 11.8b - OPTIONAL).
+
+    Table: tutorial_progress
+    Primary Key: id (UUID)
+    Foreign Keys: tutorial_id -> tutorials.id
+    Unique: (user_id, tutorial_id)
+
+    Note: This table is created but not used in MVP (Story 11.8b uses localStorage).
+    It's available for future enhancement when user authentication is implemented.
+    """
+
+    __tablename__ = "tutorial_progress"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # User and tutorial relationship
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    tutorial_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+
+    # Progress tracking
+    current_step: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+
+    # Timestamp
+    last_accessed: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("current_step > 0", name="chk_current_step_positive"),
+        UniqueConstraint("user_id", "tutorial_id", name="uq_user_tutorial"),
+    )

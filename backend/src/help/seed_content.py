@@ -1,5 +1,5 @@
 """
-Help Content Seeding Script (Story 11.8a - Task 8)
+Help Content Seeding Script (Story 11.8a - Task 8, Story 11.8b - Task 6)
 
 Purpose:
 --------
@@ -18,11 +18,11 @@ Features:
 ---------
 - Loads Markdown files using HelpContentLoader
 - Renders HTML using MarkdownRenderer
-- Upserts into help_articles and glossary_terms tables
+- Upserts into help_articles, glossary_terms, and tutorials tables
 - Idempotent: safe to run multiple times
 - Logging for all operations
 
-Author: Story 11.8a (Task 8)
+Author: Story 11.8a (Task 8), Story 11.8b (Task 6)
 """
 
 import argparse
@@ -55,6 +55,8 @@ async def truncate_tables(session: AsyncSession) -> None:
     logger.warning("Truncating help system tables...")
 
     await session.execute(text("TRUNCATE TABLE help_feedback CASCADE"))
+    await session.execute(text("TRUNCATE TABLE tutorial_progress CASCADE"))
+    await session.execute(text("TRUNCATE TABLE tutorials CASCADE"))
     await session.execute(text("TRUNCATE TABLE glossary_terms CASCADE"))
     await session.execute(text("TRUNCATE TABLE help_articles CASCADE"))
     await session.commit()
@@ -204,6 +206,79 @@ async def upsert_glossary_term(
     )
 
 
+async def upsert_tutorial(
+    session: AsyncSession,
+    slug: str,
+    title: str,
+    description: str,
+    difficulty: str,
+    estimated_time_minutes: int,
+    steps: list[dict],
+    tags: list[str],
+) -> None:
+    """
+    Upsert tutorial (insert or update) - Story 11.8b - Task 6.
+
+    Uses PostgreSQL ON CONFLICT to implement upsert.
+
+    Parameters:
+    -----------
+    session : AsyncSession
+        Database session
+    slug : str
+        Tutorial slug (unique identifier)
+    title : str
+        Tutorial title
+    description : str
+        Tutorial description
+    difficulty : str
+        Tutorial difficulty (BEGINNER, INTERMEDIATE, ADVANCED)
+    estimated_time_minutes : int
+        Estimated completion time in minutes
+    steps : list[dict]
+        List of tutorial steps as dicts (will be stored as JSONB)
+    tags : list[str]
+        Tag list
+    """
+    import json
+
+    query = text(
+        """
+        INSERT INTO tutorials (
+            slug, title, description, difficulty, estimated_time_minutes,
+            steps, tags, last_updated
+        )
+        VALUES (
+            :slug, :title, :description, :difficulty, :estimated_time_minutes,
+            :steps, :tags, :last_updated
+        )
+        ON CONFLICT (slug)
+        DO UPDATE SET
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            difficulty = EXCLUDED.difficulty,
+            estimated_time_minutes = EXCLUDED.estimated_time_minutes,
+            steps = EXCLUDED.steps,
+            tags = EXCLUDED.tags,
+            last_updated = EXCLUDED.last_updated
+        """
+    )
+
+    await session.execute(
+        query,
+        {
+            "slug": slug,
+            "title": title,
+            "description": description,
+            "difficulty": difficulty,
+            "estimated_time_minutes": estimated_time_minutes,
+            "steps": json.dumps(steps),
+            "tags": tags,
+            "last_updated": datetime.now(UTC),
+        },
+    )
+
+
 async def seed_help_content(content_dir: Path | None = None, reset: bool = False) -> None:
     """
     Seed help content from Markdown files into database.
@@ -253,6 +328,7 @@ async def seed_help_content(content_dir: Path | None = None, reset: bool = False
             # Process each file
             articles_count = 0
             glossary_count = 0
+            tutorials_count = 0
 
             for parsed in loaded_files:
                 try:
@@ -263,10 +339,53 @@ async def seed_help_content(content_dir: Path | None = None, reset: bool = False
                     tags = parsed.get("tags", [])
                     keywords = parsed.get("keywords", "")
 
-                    # Render Markdown to HTML
-                    content_html = renderer.render(content_markdown)
+                    if category == "TUTORIAL":
+                        # Parse tutorial using HelpContentLoader
+                        # Note: We need to re-parse from file to get tutorial-specific data
+                        file_path = Path(parsed["file_path"])
+                        try:
+                            tutorial = loader.parse_tutorial(file_path)
 
-                    if category == "GLOSSARY":
+                            # Render HTML for each step
+                            steps_with_html = []
+                            for step in tutorial.steps:
+                                step_html = renderer.render(step.content_markdown)
+                                step_dict = step.model_dump()
+                                step_dict["content_html"] = step_html
+                                steps_with_html.append(step_dict)
+
+                            # Insert tutorial
+                            await upsert_tutorial(
+                                session,
+                                slug=tutorial.slug,
+                                title=tutorial.title,
+                                description=tutorial.description,
+                                difficulty=tutorial.difficulty,
+                                estimated_time_minutes=tutorial.estimated_time_minutes,
+                                steps=steps_with_html,
+                                tags=tutorial.tags,
+                            )
+                            tutorials_count += 1
+                            logger.debug(
+                                "Upserted tutorial",
+                                slug=slug,
+                                steps=len(steps_with_html),
+                                difficulty=tutorial.difficulty,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "Failed to parse tutorial",
+                                slug=slug,
+                                file_path=str(file_path),
+                                error=str(e),
+                                exc_info=True,
+                            )
+                            continue
+
+                    elif category == "GLOSSARY":
+                        # Render Markdown to HTML
+                        content_html = renderer.render(content_markdown)
+
                         # Insert as glossary term
                         await upsert_glossary_term(
                             session,
@@ -281,6 +400,9 @@ async def seed_help_content(content_dir: Path | None = None, reset: bool = False
                         glossary_count += 1
                         logger.debug("Upserted glossary term", slug=slug, term=title)
                     else:
+                        # Render Markdown to HTML
+                        content_html = renderer.render(content_markdown)
+
                         # Insert as help article
                         await upsert_article(
                             session,
@@ -311,7 +433,8 @@ async def seed_help_content(content_dir: Path | None = None, reset: bool = False
                 "Help content seeding complete",
                 articles=articles_count,
                 glossary_terms=glossary_count,
-                total=articles_count + glossary_count,
+                tutorials=tutorials_count,
+                total=articles_count + glossary_count + tutorials_count,
             )
 
 
