@@ -25,6 +25,7 @@ Author: Story 11.8a (Task 7)
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -381,13 +382,11 @@ async def submit_feedback(
         # Verify article exists
         try:
             await session.execute(
-                "SELECT id FROM help_articles WHERE id = :article_id",
+                text("SELECT id FROM help_articles WHERE id = :article_id"),
                 {"article_id": submission.article_id},
             )
         except Exception as e:
-            raise ArticleNotFoundError(
-                f"Article not found: {submission.article_id}"
-            ) from e
+            raise ArticleNotFoundError(f"Article not found: {submission.article_id}") from e
 
         # Create feedback record
         feedback = HelpFeedback(
