@@ -176,8 +176,8 @@ onMounted(() => {
             </p>
 
             <ParameterInput
-              label="Spring Volume Min"
               v-model="proposedConfig.volume_thresholds!.spring_volume_min"
+              label="Spring Volume Min"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.spring_volume_min)
               "
@@ -189,8 +189,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="Spring Volume Max"
               v-model="proposedConfig.volume_thresholds!.spring_volume_max"
+              label="Spring Volume Max"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.spring_volume_max)
               "
@@ -202,8 +202,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="SOS Volume Min"
               v-model="proposedConfig.volume_thresholds!.sos_volume_min"
+              label="SOS Volume Min"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.sos_volume_min)
               "
@@ -215,8 +215,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="LPS Volume Min"
               v-model="proposedConfig.volume_thresholds!.lps_volume_min"
+              label="LPS Volume Min"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.lps_volume_min)
               "
@@ -228,8 +228,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="UTAD Volume Max"
               v-model="proposedConfig.volume_thresholds!.utad_volume_max"
+              label="UTAD Volume Max"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.utad_volume_max)
               "
@@ -251,8 +251,8 @@ onMounted(() => {
             </p>
 
             <ParameterInput
-              label="Max Risk Per Trade"
               v-model="proposedConfig.risk_limits!.max_risk_per_trade"
+              label="Max Risk Per Trade"
               :current-value="
                 parseFloat(currentConfig.risk_limits.max_risk_per_trade)
               "
@@ -264,8 +264,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="Max Campaign Risk"
               v-model="proposedConfig.risk_limits!.max_campaign_risk"
+              label="Max Campaign Risk"
               :current-value="
                 parseFloat(currentConfig.risk_limits.max_campaign_risk)
               "
@@ -277,8 +277,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="Max Portfolio Heat"
               v-model="proposedConfig.risk_limits!.max_portfolio_heat"
+              label="Max Portfolio Heat"
               :current-value="
                 parseFloat(currentConfig.risk_limits.max_portfolio_heat)
               "
@@ -301,8 +301,8 @@ onMounted(() => {
             </p>
 
             <ParameterInput
-              label="Min Cause Factor"
               v-model="proposedConfig.cause_factors!.min_cause_factor"
+              label="Min Cause Factor"
               :current-value="
                 parseFloat(currentConfig.cause_factors.min_cause_factor)
               "
@@ -313,8 +313,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="Max Cause Factor"
               v-model="proposedConfig.cause_factors!.max_cause_factor"
+              label="Max Cause Factor"
               :current-value="
                 parseFloat(currentConfig.cause_factors.max_cause_factor)
               "
@@ -335,8 +335,8 @@ onMounted(() => {
             </p>
 
             <ParameterInput
-              label="Min Spring Confidence"
               v-model="proposedConfig.pattern_confidence!.min_spring_confidence"
+              label="Min Spring Confidence"
               :current-value="
                 currentConfig.pattern_confidence.min_spring_confidence
               "
@@ -348,8 +348,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="Min SOS Confidence"
               v-model="proposedConfig.pattern_confidence!.min_sos_confidence"
+              label="Min SOS Confidence"
               :current-value="
                 currentConfig.pattern_confidence.min_sos_confidence
               "
@@ -361,8 +361,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="Min LPS Confidence"
               v-model="proposedConfig.pattern_confidence!.min_lps_confidence"
+              label="Min LPS Confidence"
               :current-value="
                 currentConfig.pattern_confidence.min_lps_confidence
               "
@@ -374,8 +374,8 @@ onMounted(() => {
             />
 
             <ParameterInput
-              label="Min UTAD Confidence"
               v-model="proposedConfig.pattern_confidence!.min_utad_confidence"
+              label="Min UTAD Confidence"
               :current-value="
                 currentConfig.pattern_confidence.min_utad_confidence
               "
@@ -406,17 +406,17 @@ onMounted(() => {
           <Button
             label="Cancel"
             icon="pi pi-times"
-            @click="handleCancel"
             severity="secondary"
             outlined
             :disabled="!hasChanges"
+            @click="handleCancel"
           />
           <Button
             label="Apply Changes"
             icon="pi pi-check"
-            @click="handleSave"
             :disabled="!canSave"
             :loading="savingConfig"
+            @click="handleSave"
           />
         </div>
       </div>

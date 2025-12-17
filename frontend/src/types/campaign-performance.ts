@@ -12,9 +12,9 @@
  * Position win/loss status for performance tracking
  */
 export enum WinLossStatus {
-  WIN = "WIN",
-  LOSS = "LOSS",
-  BREAKEVEN = "BREAKEVEN",
+  WIN = 'WIN',
+  LOSS = 'LOSS',
+  BREAKEVEN = 'BREAKEVEN',
 }
 
 /**
@@ -26,40 +26,40 @@ export enum WinLossStatus {
  */
 export interface PositionMetrics {
   /** Position identifier (FK to positions.id) */
-  position_id: string;
+  position_id: string
 
   /** SPRING | SOS | LPS */
-  pattern_type: string;
+  pattern_type: string
 
   /** R-multiple achieved = (exit_price - entry_price) / (entry_price - stop_loss) */
-  individual_r: string;
+  individual_r: string
 
   /** Actual entry fill price (NUMERIC(18,8) as string) */
-  entry_price: string;
+  entry_price: string
 
   /** Actual exit fill price (NUMERIC(18,8) as string) */
-  exit_price: string;
+  exit_price: string
 
   /** Position size (shares/lots) (NUMERIC(18,8) as string) */
-  shares: string;
+  shares: string
 
   /** Final P&L = (exit_price - entry_price) × shares (NUMERIC(18,8) as string) */
-  realized_pnl: string;
+  realized_pnl: string
 
   /** WIN | LOSS | BREAKEVEN */
-  win_loss_status: WinLossStatus;
+  win_loss_status: WinLossStatus
 
   /** Number of bars position was held */
-  duration_bars: number;
+  duration_bars: number
 
   /** Position entry timestamp (UTC ISO 8601) */
-  entry_date: string;
+  entry_date: string
 
   /** Position exit timestamp (UTC ISO 8601) */
-  exit_date: string;
+  exit_date: string
 
   /** Phase C (SPRING/LPS) or Phase D (SOS) */
-  entry_phase: string;
+  entry_phase: string
 }
 
 /**
@@ -73,87 +73,87 @@ export interface PositionMetrics {
 export interface CampaignMetrics {
   // Campaign identification
   /** Campaign identifier (FK to campaigns.id) */
-  campaign_id: string;
+  campaign_id: string
 
   /** Trading symbol */
-  symbol: string;
+  symbol: string
 
   // Campaign-level metrics
   /** Total campaign return percentage (NUMERIC(18,8) as string) */
-  total_return_pct: string;
+  total_return_pct: string
 
   /** Sum of R-multiples across all positions (NUMERIC(8,4) as string) */
-  total_r_achieved: string;
+  total_r_achieved: string
 
   /** Campaign duration in days */
-  duration_days: number;
+  duration_days: number
 
   /** Maximum drawdown percentage (NUMERIC(18,8) as string) */
-  max_drawdown: string;
+  max_drawdown: string
 
   /** Total number of positions (open + closed) */
-  total_positions: number;
+  total_positions: number
 
   /** Number of winning positions */
-  winning_positions: number;
+  winning_positions: number
 
   /** Number of losing positions */
-  losing_positions: number;
+  losing_positions: number
 
   /** Percentage of winning positions (NUMERIC(5,2) as string) */
-  win_rate: string;
+  win_rate: string
 
   /** Weighted average entry price (NUMERIC(18,8) as string) */
-  average_entry_price: string;
+  average_entry_price: string
 
   /** Weighted average exit price (NUMERIC(18,8) as string) */
-  average_exit_price: string;
+  average_exit_price: string
 
   // Comparison metrics
   /** Projected Jump target from trading range (NUMERIC(18,8) as string) */
-  expected_jump_target: string | null;
+  expected_jump_target: string | null
 
   /** Highest price reached during campaign (NUMERIC(18,8) as string) */
-  actual_high_reached: string | null;
+  actual_high_reached: string | null
 
   /** Percentage of Jump target achieved (NUMERIC(7,2) as string) */
-  target_achievement_pct: string | null;
+  target_achievement_pct: string | null
 
   /** Expected R-multiple based on Jump target (NUMERIC(8,4) as string) */
-  expected_r: string | null;
+  expected_r: string | null
 
   /** Actual R-multiple achieved (NUMERIC(8,4) as string) */
-  actual_r_achieved: string | null;
+  actual_r_achieved: string | null
 
   // Phase-specific metrics
   /** Average R-multiple for Phase C entries (SPRING + LPS) (NUMERIC(8,4) as string) */
-  phase_c_avg_r: string | null;
+  phase_c_avg_r: string | null
 
   /** Average R-multiple for Phase D entries (SOS) (NUMERIC(8,4) as string) */
-  phase_d_avg_r: string | null;
+  phase_d_avg_r: string | null
 
   /** Count of Phase C entries (SPRING + LPS) */
-  phase_c_positions: number;
+  phase_c_positions: number
 
   /** Count of Phase D entries (SOS) */
-  phase_d_positions: number;
+  phase_d_positions: number
 
   /** Win rate for Phase C entries (NUMERIC(5,2) as string) */
-  phase_c_win_rate: string | null;
+  phase_c_win_rate: string | null
 
   /** Win rate for Phase D entries (NUMERIC(5,2) as string) */
-  phase_d_win_rate: string | null;
+  phase_d_win_rate: string | null
 
   // Position details
   /** List of PositionMetrics for all positions */
-  position_details: PositionMetrics[];
+  position_details: PositionMetrics[]
 
   // Metadata
   /** When metrics were calculated (UTC ISO 8601) */
-  calculation_timestamp: string;
+  calculation_timestamp: string
 
   /** When campaign was completed (UTC ISO 8601) */
-  completed_at: string;
+  completed_at: string
 }
 
 /**
@@ -161,16 +161,16 @@ export interface CampaignMetrics {
  */
 export interface PnLPoint {
   /** Point in time (UTC ISO 8601) */
-  timestamp: string;
+  timestamp: string
 
   /** Cumulative P&L at this point (NUMERIC(18,8) as string) */
-  cumulative_pnl: string;
+  cumulative_pnl: string
 
   /** Cumulative return percentage (NUMERIC(18,8) as string) */
-  cumulative_return_pct: string;
+  cumulative_return_pct: string
 
   /** Drawdown percentage at this point (NUMERIC(18,8) as string) */
-  drawdown_pct: string;
+  drawdown_pct: string
 }
 
 /**
@@ -181,13 +181,13 @@ export interface PnLPoint {
  */
 export interface PnLCurve {
   /** Campaign identifier */
-  campaign_id: string;
+  campaign_id: string
 
   /** List of PnLPoint time-series data */
-  data_points: PnLPoint[];
+  data_points: PnLPoint[]
 
   /** PnLPoint where maximum drawdown occurred */
-  max_drawdown_point: PnLPoint | null;
+  max_drawdown_point: PnLPoint | null
 }
 
 /**
@@ -199,40 +199,40 @@ export interface PnLCurve {
  */
 export interface AggregatedMetrics {
   /** Total number of completed campaigns */
-  total_campaigns_completed: number;
+  total_campaigns_completed: number
 
   /** Percentage of winning campaigns (NUMERIC(5,2) as string) */
-  overall_win_rate: string;
+  overall_win_rate: string
 
   /** Average return across all campaigns (NUMERIC(18,8) as string) */
-  average_campaign_return_pct: string;
+  average_campaign_return_pct: string
 
   /** Average R-multiple per campaign (NUMERIC(8,4) as string) */
-  average_r_achieved_per_campaign: string;
+  average_r_achieved_per_campaign: string
 
   /** Campaign with highest return (campaign_id, return_pct) */
   best_campaign: {
-    campaign_id: string;
-    return_pct: string;
-  } | null;
+    campaign_id: string
+    return_pct: string
+  } | null
 
   /** Campaign with lowest return (campaign_id, return_pct) */
   worst_campaign: {
-    campaign_id: string;
-    return_pct: string;
-  } | null;
+    campaign_id: string
+    return_pct: string
+  } | null
 
   /** Median campaign duration in days */
-  median_duration_days: number | null;
+  median_duration_days: number | null
 
   /** Average maximum drawdown across campaigns (NUMERIC(18,8) as string) */
-  average_max_drawdown: string;
+  average_max_drawdown: string
 
   /** When aggregation was calculated (UTC ISO 8601) */
-  calculation_timestamp: string;
+  calculation_timestamp: string
 
   /** Filters applied (symbol, timeframe, date_range) */
-  filter_criteria: Record<string, unknown>;
+  filter_criteria: Record<string, unknown>
 }
 
 /**
@@ -240,26 +240,26 @@ export interface AggregatedMetrics {
  */
 export interface MetricsFilter {
   /** Filter by trading symbol */
-  symbol?: string | null;
+  symbol?: string | null
 
   /** Filter by timeframe */
-  timeframe?: string | null;
+  timeframe?: string | null
 
   /** Filter campaigns completed after this date (UTC ISO 8601) */
-  start_date?: string | null;
+  start_date?: string | null
 
   /** Filter campaigns completed before this date (UTC ISO 8601) */
-  end_date?: string | null;
+  end_date?: string | null
 
   /** Filter campaigns with return >= min_return (NUMERIC(18,8) as string) */
-  min_return?: string | null;
+  min_return?: string | null
 
   /** Filter campaigns with total R >= min_r_achieved (NUMERIC(8,4) as string) */
-  min_r_achieved?: string | null;
+  min_r_achieved?: string | null
 
   /** Maximum number of results (pagination) */
-  limit?: number;
+  limit?: number
 
   /** Skip first N results (pagination) */
-  offset?: number;
+  offset?: number
 }

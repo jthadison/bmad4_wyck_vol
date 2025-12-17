@@ -7,7 +7,7 @@
   >
     <!-- Panel Header -->
     <div class="panel-header">
-      <h3 class="panel-title" id="cause-building-title">
+      <h3 id="cause-building-title" class="panel-title">
         <i class="pi pi-chart-bar" aria-hidden="true" />
         Point & Figure Count
       </h3>
@@ -29,7 +29,7 @@
       </div>
       <ProgressBar
         :value="causeBuildingData.progress_percentage"
-        :showValue="false"
+        :show-value="false"
         :class="progressBarClass"
         role="progressbar"
         :aria-valuenow="Math.round(causeBuildingData.progress_percentage)"
@@ -54,7 +54,7 @@
       aria-live="polite"
     >
       <div class="jump-row">
-        <span class="jump-label" id="jump-target-label"
+        <span id="jump-target-label" class="jump-label"
           >Projected Jump Target:</span
         >
         <span
@@ -87,8 +87,8 @@
       />
       <div
         v-if="methodologyExpanded"
-        class="methodology-content"
         id="methodology-content"
+        class="methodology-content"
         role="region"
         aria-label="Point & Figure counting methodology explanation"
       >

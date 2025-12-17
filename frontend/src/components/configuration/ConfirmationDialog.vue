@@ -135,15 +135,15 @@ const handleCancel = () => {
         <Button
           label="Cancel"
           icon="pi pi-times"
-          @click="handleCancel"
           severity="secondary"
           outlined
+          @click="handleCancel"
         />
         <Button
           label="Yes, Apply Changes"
           icon="pi pi-check"
-          @click="handleConfirm"
           :severity="hasWarnings ? 'warning' : 'primary'"
+          @click="handleConfirm"
         />
       </div>
     </template>

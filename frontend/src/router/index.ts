@@ -50,6 +50,45 @@ const routes: RouteRecordRaw[] = [
         'Monitor active trading campaigns with progression and health status',
     },
   },
+  // Help System Routes (Story 11.8a - Task 15)
+  {
+    path: '/help',
+    name: 'help',
+    component: () => import('@/components/help/HelpCenter.vue'),
+    meta: {
+      title: 'Help Center',
+      breadcrumb: [{ label: 'Help' }],
+    },
+    children: [
+      {
+        path: 'glossary',
+        name: 'help-glossary',
+        component: () => import('@/components/help/GlossaryView.vue'),
+        meta: {
+          title: 'Glossary',
+          breadcrumb: [{ label: 'Help', to: '/help' }, { label: 'Glossary' }],
+        },
+      },
+      {
+        path: 'article/:slug',
+        name: 'help-article',
+        component: () => import('@/components/help/ArticleView.vue'),
+        meta: {
+          title: 'Article',
+          breadcrumb: [{ label: 'Help', to: '/help' }, { label: 'Article' }],
+        },
+      },
+      {
+        path: 'search',
+        name: 'help-search',
+        component: () => import('@/components/help/SearchResults.vue'),
+        meta: {
+          title: 'Search Results',
+          breadcrumb: [{ label: 'Help', to: '/help' }, { label: 'Search' }],
+        },
+      },
+    ],
+  },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',

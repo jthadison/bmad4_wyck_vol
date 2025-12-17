@@ -89,7 +89,11 @@ export interface PreliminaryEvent {
  * Wyckoff schematic matching data
  */
 export interface WyckoffSchematic {
-  schematic_type: 'ACCUMULATION_1' | 'ACCUMULATION_2' | 'DISTRIBUTION_1' | 'DISTRIBUTION_2'
+  schematic_type:
+    | 'ACCUMULATION_1'
+    | 'ACCUMULATION_2'
+    | 'DISTRIBUTION_1'
+    | 'DISTRIBUTION_2'
   confidence_score: number
   template_data: Array<{ [key: string]: number }>
 }

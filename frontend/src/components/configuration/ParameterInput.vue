@@ -55,8 +55,8 @@ const updateValue = (value: number | null) => {
           :step="step"
           :min-fraction-digits="1"
           :max-fraction-digits="2"
-          @update:model-value="updateValue"
           class="value-input"
+          @update:model-value="updateValue"
         />
         <span v-if="unit" class="unit">{{ unit }}</span>
       </div>
@@ -67,8 +67,8 @@ const updateValue = (value: number | null) => {
       :min="min"
       :max="max"
       :step="step"
-      @update:model-value="updateValue"
       class="parameter-slider"
+      @update:model-value="updateValue"
     />
 
     <small v-if="helpText" class="help-text">{{ helpText }}</small>
