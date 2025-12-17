@@ -443,3 +443,141 @@ class PushSubscriptionORM(Base):
     )
 
     __table_args__ = (UniqueConstraint("user_id", "endpoint", name="uq_user_endpoint"),)
+
+
+class HelpArticleORM(Base):
+    """
+    Help article with searchable content (Story 11.8a).
+
+    Table: help_articles
+    Primary Key: id (UUID)
+    Unique: slug
+    Indexes: idx_help_articles_search (GIN full-text search)
+    """
+
+    __tablename__ = "help_articles"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Article identification
+    slug: Mapped[str] = mapped_column(String(200), unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+
+    # Content
+    content_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    content_html: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Classification
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, server_default="[]")
+    keywords: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+
+    # Engagement metrics
+    view_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    helpful_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    not_helpful_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    # Timestamps
+    last_updated: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('GLOSSARY', 'FAQ', 'TUTORIAL', 'REFERENCE')",
+            name="chk_help_article_category",
+        ),
+        CheckConstraint("view_count >= 0", name="chk_view_count"),
+        CheckConstraint("helpful_count >= 0", name="chk_helpful_count"),
+        CheckConstraint("not_helpful_count >= 0", name="chk_not_helpful_count"),
+    )
+
+
+class GlossaryTermORM(Base):
+    """
+    Wyckoff glossary term (Story 11.8a).
+
+    Table: glossary_terms
+    Primary Key: id (UUID)
+    Unique: slug
+    Indexes: idx_glossary_terms_slug, idx_glossary_terms_phase
+    """
+
+    __tablename__ = "glossary_terms"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Term identification
+    term: Mapped[str] = mapped_column(String(100), nullable=False)
+    slug: Mapped[str] = mapped_column(String(200), unique=True, nullable=False, index=True)
+
+    # Definitions
+    short_definition: Mapped[str] = mapped_column(String(500), nullable=False)
+    full_description: Mapped[str] = mapped_column(Text, nullable=False)
+    full_description_html: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Wyckoff association
+    wyckoff_phase: Mapped[str | None] = mapped_column(String(1), nullable=True, index=True)
+
+    # Related terms and tags
+    related_terms: Mapped[list] = mapped_column(JSON, nullable=False, server_default="[]")
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, server_default="[]")
+
+    # Timestamps
+    last_updated: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "wyckoff_phase IS NULL OR wyckoff_phase IN ('A', 'B', 'C', 'D', 'E')",
+            name="chk_glossary_wyckoff_phase",
+        ),
+    )
+
+
+class HelpFeedbackORM(Base):
+    """
+    User feedback on help articles (Story 11.8a).
+
+    Table: help_feedback
+    Primary Key: id (UUID)
+    Foreign Keys: article_id -> help_articles.id
+    """
+
+    __tablename__ = "help_feedback"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Article relationship
+    article_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+
+    # Feedback
+    helpful: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    user_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamp
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )

@@ -37,7 +37,7 @@
       <div class="schematic-details">
         <!-- Confidence Display -->
         <div class="detail-row">
-          <span class="detail-label" id="confidence-label"
+          <span id="confidence-label" class="detail-label"
             >Confidence Score:</span
           >
           <div
@@ -47,7 +47,7 @@
           >
             <ProgressBar
               :value="schematic.confidence_score"
-              :showValue="true"
+              :show-value="true"
               :style="{ height: '20px' }"
               role="progressbar"
               :aria-valuenow="schematic.confidence_score"
@@ -98,10 +98,10 @@
 
         <!-- Interpretation Guide -->
         <div
+          id="schematic-modal-description"
           class="detail-section"
           role="region"
           aria-labelledby="interpretation-heading"
-          id="schematic-modal-description"
         >
           <h4 id="interpretation-heading">Interpretation:</h4>
           <p class="interpretation-text">{{ interpretationGuide }}</p>

@@ -125,7 +125,7 @@
               <div class="metric-item">
                 <label>Actual High Reached</label>
                 <span class="metric-value">{{
-                  formatDecimal(metrics.actual_high_reached || "0", 4)
+                  formatDecimal(metrics.actual_high_reached || '0', 4)
                 }}</span>
               </div>
               <div class="metric-item">
@@ -136,7 +136,7 @@
                     getAchievementClass(metrics.target_achievement_pct || '0')
                   "
                 >
-                  {{ formatPercent(metrics.target_achievement_pct || "0") }}
+                  {{ formatPercent(metrics.target_achievement_pct || '0') }}
                 </span>
               </div>
             </div>
@@ -151,7 +151,7 @@
               <div class="metric-item">
                 <label>Phase C Avg R</label>
                 <span class="metric-value">{{
-                  formatR(metrics.phase_c_avg_r || "0")
+                  formatR(metrics.phase_c_avg_r || '0')
                 }}</span>
               </div>
               <div class="metric-item">
@@ -163,7 +163,7 @@
               <div class="metric-item">
                 <label>Phase C Win Rate</label>
                 <span class="metric-value">{{
-                  formatPercent(metrics.phase_c_win_rate || "0")
+                  formatPercent(metrics.phase_c_win_rate || '0')
                 }}</span>
               </div>
 
@@ -171,7 +171,7 @@
               <div class="metric-item">
                 <label>Phase D Avg R</label>
                 <span class="metric-value">{{
-                  formatR(metrics.phase_d_avg_r || "0")
+                  formatR(metrics.phase_d_avg_r || '0')
                 }}</span>
               </div>
               <div class="metric-item">
@@ -183,7 +183,7 @@
               <div class="metric-item">
                 <label>Phase D Win Rate</label>
                 <span class="metric-value">{{
-                  formatPercent(metrics.phase_d_win_rate || "0")
+                  formatPercent(metrics.phase_d_win_rate || '0')
                 }}</span>
               </div>
             </div>
@@ -326,9 +326,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from "vue";
-import { useCampaignStore } from "@/stores/campaignStore";
-import type { CampaignMetrics, PnLCurve } from "@/types/campaign-performance";
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { useCampaignStore } from '@/stores/campaignStore'
+import type { CampaignMetrics, PnLCurve } from '@/types/campaign-performance'
 import {
   formatDecimal,
   formatPercent,
@@ -337,49 +337,49 @@ import {
   isPositive,
   isNegative,
   toBig,
-} from "@/types/decimal-utils";
+} from '@/types/decimal-utils'
 
 // PrimeVue components
-import Card from "primevue/card";
-import DataTable from "primevue/datatable";
-import Column from "primevue/column";
-import Tag from "primevue/tag";
-import Message from "primevue/message";
-import ProgressSpinner from "primevue/progressspinner";
-import Divider from "primevue/divider";
+import Card from 'primevue/card'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
+import Tag from 'primevue/tag'
+import Message from 'primevue/message'
+import ProgressSpinner from 'primevue/progressspinner'
+import Divider from 'primevue/divider'
 
 // Lightweight Charts
-import { createChart, ColorType, LineStyle } from "lightweight-charts";
-import type { IChartApi, ISeriesApi } from "lightweight-charts";
+import { createChart, ColorType, LineStyle } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi } from 'lightweight-charts'
 
 /**
  * Component props
  */
 interface Props {
-  campaignId: string;
+  campaignId: string
 }
 
-const props = defineProps<Props>();
+const props = defineProps<Props>()
 
 /**
  * Store
  */
-const campaignStore = useCampaignStore();
+const campaignStore = useCampaignStore()
 
 /**
  * Component state
  */
-const metrics = ref<CampaignMetrics | null>(null);
-const isLoading = ref<boolean>(false);
-const error = ref<string | null>(null);
+const metrics = ref<CampaignMetrics | null>(null)
+const isLoading = ref<boolean>(false)
+const error = ref<string | null>(null)
 
-const pnlCurve = ref<PnLCurve | null>(null);
-const pnlLoading = ref<boolean>(false);
-const pnlError = ref<string | null>(null);
+const pnlCurve = ref<PnLCurve | null>(null)
+const pnlLoading = ref<boolean>(false)
+const pnlError = ref<string | null>(null)
 
-const chartContainer = ref<HTMLElement | null>(null);
-let chart: IChartApi | null = null;
-let areaSeries: ISeriesApi<"Area"> | null = null;
+const chartContainer = ref<HTMLElement | null>(null)
+let chart: IChartApi | null = null
+let areaSeries: ISeriesApi<'Area'> | null = null
 
 /**
  * Computed properties
@@ -388,23 +388,23 @@ const hasPhaseMetrics = computed(() => {
   return (
     metrics.value &&
     (metrics.value.phase_c_positions > 0 || metrics.value.phase_d_positions > 0)
-  );
-});
+  )
+})
 
 /**
  * Fetch campaign performance metrics
  */
 async function fetchPerformance() {
-  isLoading.value = true;
-  error.value = null;
+  isLoading.value = true
+  error.value = null
 
   try {
-    await campaignStore.fetchCampaignPerformance(props.campaignId);
-    metrics.value = campaignStore.getCampaignMetrics(props.campaignId);
+    await campaignStore.fetchCampaignPerformance(props.campaignId)
+    metrics.value = campaignStore.getCampaignMetrics(props.campaignId)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "Unknown error";
+    error.value = err instanceof Error ? err.message : 'Unknown error'
   } finally {
-    isLoading.value = false;
+    isLoading.value = false
   }
 }
 
@@ -412,20 +412,20 @@ async function fetchPerformance() {
  * Fetch P&L curve
  */
 async function fetchPnLCurve() {
-  pnlLoading.value = true;
-  pnlError.value = null;
+  pnlLoading.value = true
+  pnlError.value = null
 
   try {
-    await campaignStore.fetchPnLCurve(props.campaignId);
-    pnlCurve.value = campaignStore.getPnLCurve(props.campaignId);
+    await campaignStore.fetchPnLCurve(props.campaignId)
+    pnlCurve.value = campaignStore.getPnLCurve(props.campaignId)
 
     // Render chart after data is loaded
-    await nextTick();
-    renderChart();
+    await nextTick()
+    renderChart()
   } catch (err) {
-    pnlError.value = err instanceof Error ? err.message : "Unknown error";
+    pnlError.value = err instanceof Error ? err.message : 'Unknown error'
   } finally {
-    pnlLoading.value = false;
+    pnlLoading.value = false
   }
 }
 
@@ -433,13 +433,13 @@ async function fetchPnLCurve() {
  * Render P&L curve chart using Lightweight Charts
  */
 function renderChart() {
-  if (!chartContainer.value || !pnlCurve.value) return;
+  if (!chartContainer.value || !pnlCurve.value) return
 
   // Cleanup existing chart
   if (chart) {
-    chart.remove();
-    chart = null;
-    areaSeries = null;
+    chart.remove()
+    chart = null
+    areaSeries = null
   }
 
   // Create chart
@@ -447,159 +447,159 @@ function renderChart() {
     width: chartContainer.value.clientWidth,
     height: 400,
     layout: {
-      background: { type: ColorType.Solid, color: "#ffffff" },
-      textColor: "#333",
+      background: { type: ColorType.Solid, color: '#ffffff' },
+      textColor: '#333',
     },
     grid: {
-      vertLines: { color: "#e1e1e1" },
-      horzLines: { color: "#e1e1e1" },
+      vertLines: { color: '#e1e1e1' },
+      horzLines: { color: '#e1e1e1' },
     },
     rightPriceScale: {
-      borderColor: "#cccccc",
+      borderColor: '#cccccc',
     },
     timeScale: {
-      borderColor: "#cccccc",
+      borderColor: '#cccccc',
       timeVisible: true,
       secondsVisible: false,
     },
-  });
+  })
 
   // Create area series for cumulative P&L
   areaSeries = chart.addAreaSeries({
-    lineColor: "#2196F3",
-    topColor: "rgba(33, 150, 243, 0.4)",
-    bottomColor: "rgba(33, 150, 243, 0.0)",
+    lineColor: '#2196F3',
+    topColor: 'rgba(33, 150, 243, 0.4)',
+    bottomColor: 'rgba(33, 150, 243, 0.0)',
     lineWidth: 2,
     priceFormat: {
-      type: "price",
+      type: 'price',
       precision: 2,
       minMove: 0.01,
     },
-  });
+  })
 
   // Convert P&L curve data to chart format
   const chartData = pnlCurve.value.data_points.map((point) => ({
     time: new Date(point.timestamp).getTime() / 1000, // Unix timestamp in seconds
     value: parseFloat(point.cumulative_return_pct),
-  }));
+  }))
 
-  areaSeries.setData(chartData);
+  areaSeries.setData(chartData)
 
   // Add zero line
   const zeroLineSeries = chart.addLineSeries({
-    color: "#999999",
+    color: '#999999',
     lineWidth: 1,
     lineStyle: LineStyle.Dashed,
     priceLineVisible: false,
     lastValueVisible: false,
-  });
+  })
 
   if (chartData.length > 0) {
     zeroLineSeries.setData([
       { time: chartData[0].time, value: 0 },
       { time: chartData[chartData.length - 1].time, value: 0 },
-    ]);
+    ])
   }
 
   // Fit content
-  chart.timeScale().fitContent();
+  chart.timeScale().fitContent()
 
   // Handle window resize
   const resizeObserver = new ResizeObserver(() => {
     if (chart && chartContainer.value) {
-      chart.applyOptions({ width: chartContainer.value.clientWidth });
+      chart.applyOptions({ width: chartContainer.value.clientWidth })
     }
-  });
+  })
 
-  resizeObserver.observe(chartContainer.value);
+  resizeObserver.observe(chartContainer.value)
 }
 
 /**
  * Format date for display
  */
 function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  const date = new Date(dateString)
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 /**
  * Get severity class for return percentage tag
  */
-function getReturnSeverity(returnPct: string): "success" | "danger" | "info" {
-  if (isPositive(returnPct)) return "success";
-  if (isNegative(returnPct)) return "danger";
-  return "info";
+function getReturnSeverity(returnPct: string): 'success' | 'danger' | 'info' {
+  if (isPositive(returnPct)) return 'success'
+  if (isNegative(returnPct)) return 'danger'
+  return 'info'
 }
 
 /**
  * Get CSS class for return value
  */
 function getReturnClass(returnPct: string): string {
-  if (isPositive(returnPct)) return "positive";
-  if (isNegative(returnPct)) return "negative";
-  return "";
+  if (isPositive(returnPct)) return 'positive'
+  if (isNegative(returnPct)) return 'negative'
+  return ''
 }
 
 /**
  * Get CSS class for achievement percentage
  */
 function getAchievementClass(achievementPct: string): string {
-  const pct = toBig(achievementPct);
-  if (pct.gte(100)) return "positive"; // >= 100% is good
-  if (pct.gte(80)) return "warning"; // 80-99% is ok
-  return "negative"; // < 80% is poor
+  const pct = toBig(achievementPct)
+  if (pct.gte(100)) return 'positive' // >= 100% is good
+  if (pct.gte(80)) return 'warning' // 80-99% is ok
+  return 'negative' // < 80% is poor
 }
 
 /**
  * Get CSS class for P&L value
  */
 function getPnLClass(pnl: string): string {
-  if (isPositive(pnl)) return "positive";
-  if (isNegative(pnl)) return "negative";
-  return "";
+  if (isPositive(pnl)) return 'positive'
+  if (isNegative(pnl)) return 'negative'
+  return ''
 }
 
 /**
  * Get CSS class for R-multiple
  */
 function getRClass(r: string): string {
-  if (isPositive(r)) return "positive";
-  if (isNegative(r)) return "negative";
-  return "";
+  if (isPositive(r)) return 'positive'
+  if (isNegative(r)) return 'negative'
+  return ''
 }
 
 /**
  * Get severity for pattern type tag
  */
 function getPatternSeverity(
-  patternType: string,
-): "info" | "success" | "warning" {
-  if (patternType === "SPRING") return "info";
-  if (patternType === "SOS") return "success";
-  if (patternType === "LPS") return "warning";
-  return "info";
+  patternType: string
+): 'info' | 'success' | 'warning' {
+  if (patternType === 'SPRING') return 'info'
+  if (patternType === 'SOS') return 'success'
+  if (patternType === 'LPS') return 'warning'
+  return 'info'
 }
 
 /**
  * Get severity for win/loss status tag
  */
-function getWinLossSeverity(status: string): "success" | "danger" | "info" {
-  if (status === "WIN") return "success";
-  if (status === "LOSS") return "danger";
-  return "info";
+function getWinLossSeverity(status: string): 'success' | 'danger' | 'info' {
+  if (status === 'WIN') return 'success'
+  if (status === 'LOSS') return 'danger'
+  return 'info'
 }
 
 /**
  * Lifecycle hooks
  */
 onMounted(() => {
-  fetchPerformance();
-  fetchPnLCurve();
-});
+  fetchPerformance()
+  fetchPnLCurve()
+})
 
 /**
  * Watch for campaign ID changes
@@ -607,10 +607,10 @@ onMounted(() => {
 watch(
   () => props.campaignId,
   () => {
-    fetchPerformance();
-    fetchPnLCurve();
-  },
-);
+    fetchPerformance()
+    fetchPnLCurve()
+  }
+)
 </script>
 
 <style scoped>

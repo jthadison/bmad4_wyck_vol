@@ -12,6 +12,7 @@ from src.api.routes import (
     charts,
     config,
     feedback,
+    help,
     notifications,
     orchestrator,
     patterns,
@@ -49,6 +50,7 @@ app.include_router(charts.router)  # Chart data routes (Story 11.5)
 app.include_router(backtest.router)  # Backtest preview routes (Story 11.2)
 app.include_router(notifications.router)  # Notification routes (Story 11.6)
 app.include_router(summary.router)  # Summary routes (Story 10.3)
+app.include_router(help.router)  # Help system routes (Story 11.8a)
 
 
 # WebSocket endpoint for real-time updates

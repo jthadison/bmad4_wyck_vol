@@ -12,16 +12,16 @@
           <!-- Quality Badge (Story 11.4 Subtask 13.9) -->
           <Badge
             v-if="campaign.campaign_quality_score === 'COMPLETE'"
+            v-tooltip.bottom="qualityTooltip"
             value="High Quality Setup"
             severity="success"
-            v-tooltip.bottom="qualityTooltip"
             class="quality-badge"
           />
         </div>
         <!-- Health Status Badge (Story 11.4 Subtask 7.9) -->
         <div
-          :class="`health-indicator health-${campaign.health}`"
           v-tooltip.left="getHealthTooltip()"
+          :class="`health-indicator health-${campaign.health}`"
         >
           <i :class="`pi ${getHealthIcon()}`"></i>
         </div>
@@ -220,8 +220,8 @@
       <Button
         :label="expanded ? 'Collapse' : 'Expand'"
         :icon="`pi ${expanded ? 'pi-chevron-up' : 'pi-chevron-down'}`"
-        @click="toggleExpanded"
         class="p-button-text"
+        @click="toggleExpanded"
       />
     </template>
   </Card>

@@ -9,15 +9,15 @@
           icon="pi pi-chart-line"
           :loading="isRunning"
           :disabled="isRunning"
-          @click="handleBacktestClick"
           class="p-button-primary"
+          @click="handleBacktestClick"
         />
         <Button
           v-if="isRunning"
           label="Cancel"
           icon="pi pi-times"
-          @click="handleCancel"
           class="p-button-danger p-button-outlined"
+          @click="handleCancel"
         />
       </div>
     </div>

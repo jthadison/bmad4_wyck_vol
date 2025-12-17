@@ -389,46 +389,42 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import { useCampaignStore } from "@/stores/campaignStore";
-import type {
-  MetricsFilter,
-  AggregatedMetrics,
-  CampaignMetrics,
-} from "@/types";
+import { ref, computed, onMounted } from 'vue'
+import { useCampaignStore } from '@/stores/campaignStore'
+import type { MetricsFilter, AggregatedMetrics, CampaignMetrics } from '@/types'
 import {
   formatPercent,
   formatR,
   isPositive,
   isNegative,
-} from "@/types/decimal-utils";
-import { FilterMatchMode } from "primevue/api";
+} from '@/types/decimal-utils'
+import { FilterMatchMode } from 'primevue/api'
 
 // PrimeVue components
-import Card from "primevue/card";
-import DataTable from "primevue/datatable";
-import Column from "primevue/column";
-import Button from "primevue/button";
-import InputText from "primevue/inputtext";
-import InputNumber from "primevue/inputnumber";
-import Dropdown from "primevue/dropdown";
-import Calendar from "primevue/calendar";
-import Tag from "primevue/tag";
-import Message from "primevue/message";
-import ProgressSpinner from "primevue/progressspinner";
+import Card from 'primevue/card'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
+import InputNumber from 'primevue/inputnumber'
+import Dropdown from 'primevue/dropdown'
+import Calendar from 'primevue/calendar'
+import Tag from 'primevue/tag'
+import Message from 'primevue/message'
+import ProgressSpinner from 'primevue/progressspinner'
 
 /**
  * Store
  */
-const campaignStore = useCampaignStore();
+const campaignStore = useCampaignStore()
 
 /**
  * Component state
  */
-const aggregatedMetrics = ref<AggregatedMetrics | null>(null);
-const allCampaigns = ref<CampaignMetrics[]>([]);
-const isLoading = ref<boolean>(false);
-const error = ref<string | null>(null);
+const aggregatedMetrics = ref<AggregatedMetrics | null>(null)
+const allCampaigns = ref<CampaignMetrics[]>([])
+const isLoading = ref<boolean>(false)
+const error = ref<string | null>(null)
 
 /**
  * Filter state
@@ -442,55 +438,55 @@ const filters = ref<MetricsFilter>({
   min_r_achieved: null,
   limit: 100,
   offset: 0,
-});
+})
 
-const dateRange = ref<Date[] | null>(null);
-const minReturnNumber = ref<number | null>(null);
-const minRNumber = ref<number | null>(null);
+const dateRange = ref<Date[] | null>(null)
+const minReturnNumber = ref<number | null>(null)
+const minRNumber = ref<number | null>(null)
 
 /**
  * Table filters
  */
 const tableFilters = ref({
   symbol: { value: null, matchMode: FilterMatchMode.CONTAINS },
-});
+})
 
 /**
  * Timeframe options
  */
 const timeframeOptions = [
-  { label: "1 Hour", value: "1H" },
-  { label: "4 Hours", value: "4H" },
-  { label: "1 Day", value: "1D" },
-  { label: "1 Week", value: "1W" },
-];
+  { label: '1 Hour', value: '1H' },
+  { label: '4 Hours', value: '4H' },
+  { label: '1 Day', value: '1D' },
+  { label: '1 Week', value: '1W' },
+]
 
 /**
  * Computed: Best & Worst campaigns for table
  */
 const bestWorstCampaigns = computed(() => {
-  if (!aggregatedMetrics.value) return [];
+  if (!aggregatedMetrics.value) return []
 
-  const campaigns = [];
+  const campaigns = []
 
   if (aggregatedMetrics.value.best_campaign) {
     campaigns.push({
-      rank: "Best",
+      rank: 'Best',
       campaign_id: aggregatedMetrics.value.best_campaign.campaign_id,
       return_pct: aggregatedMetrics.value.best_campaign.return_pct,
-    });
+    })
   }
 
   if (aggregatedMetrics.value.worst_campaign) {
     campaigns.push({
-      rank: "Worst",
+      rank: 'Worst',
       campaign_id: aggregatedMetrics.value.worst_campaign.campaign_id,
       return_pct: aggregatedMetrics.value.worst_campaign.return_pct,
-    });
+    })
   }
 
-  return campaigns;
-});
+  return campaigns
+})
 
 /**
  * Apply filters and fetch aggregated metrics
@@ -506,21 +502,21 @@ async function applyFilters() {
     min_r_achieved: minRNumber.value?.toString() || null,
     limit: filters.value.limit,
     offset: filters.value.offset,
-  };
+  }
 
-  isLoading.value = true;
-  error.value = null;
+  isLoading.value = true
+  error.value = null
 
   try {
-    await campaignStore.fetchAggregatedPerformance(metricsFilter);
-    aggregatedMetrics.value = campaignStore.aggregatedMetrics;
+    await campaignStore.fetchAggregatedPerformance(metricsFilter)
+    aggregatedMetrics.value = campaignStore.aggregatedMetrics
 
     // Also fetch all campaigns matching filters for detailed table
-    allCampaigns.value = campaignStore.getCampaignsSortedByReturn();
+    allCampaigns.value = campaignStore.getCampaignsSortedByReturn()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "Unknown error";
+    error.value = err instanceof Error ? err.message : 'Unknown error'
   } finally {
-    isLoading.value = false;
+    isLoading.value = false
   }
 }
 
@@ -537,23 +533,23 @@ function clearFilters() {
     min_r_achieved: null,
     limit: 100,
     offset: 0,
-  };
+  }
 
-  dateRange.value = null;
-  minReturnNumber.value = null;
-  minRNumber.value = null;
+  dateRange.value = null
+  minReturnNumber.value = null
+  minRNumber.value = null
 
   // Reload data
-  applyFilters();
+  applyFilters()
 }
 
 /**
  * Get CSS class for return value
  */
 function getReturnClass(returnPct: string): string {
-  if (isPositive(returnPct)) return "success";
-  if (isNegative(returnPct)) return "danger";
-  return "";
+  if (isPositive(returnPct)) return 'success'
+  if (isNegative(returnPct)) return 'danger'
+  return ''
 }
 
 /**
@@ -561,7 +557,7 @@ function getReturnClass(returnPct: string): string {
  */
 function viewCampaignDetails(campaignId: string) {
   // TODO: Navigate to campaign details page or emit event
-  console.log("View campaign details:", campaignId);
+  console.log('View campaign details:', campaignId)
   // Example: router.push({ name: 'CampaignDetails', params: { id: campaignId } })
 }
 
@@ -570,28 +566,28 @@ function viewCampaignDetails(campaignId: string) {
  */
 function exportToCsv() {
   if (bestWorstCampaigns.value.length === 0) {
-    alert("No data to export");
-    return;
+    alert('No data to export')
+    return
   }
 
   const csvRows = [
-    ["Rank", "Campaign ID", "Return %"].join(","),
+    ['Rank', 'Campaign ID', 'Return %'].join(','),
     ...bestWorstCampaigns.value.map((row) =>
-      [row.rank, row.campaign_id, formatPercent(row.return_pct)].join(","),
+      [row.rank, row.campaign_id, formatPercent(row.return_pct)].join(',')
     ),
-  ];
+  ]
 
-  const csvContent = csvRows.join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const link = document.createElement("a");
-  const url = URL.createObjectURL(blob);
+  const csvContent = csvRows.join('\n')
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
 
-  link.setAttribute("href", url);
-  link.setAttribute("download", "best_worst_campaigns.csv");
-  link.style.visibility = "hidden";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  link.setAttribute('href', url)
+  link.setAttribute('download', 'best_worst_campaigns.csv')
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 /**
@@ -599,23 +595,23 @@ function exportToCsv() {
  */
 function exportAllToCsv() {
   if (allCampaigns.value.length === 0) {
-    alert("No data to export");
-    return;
+    alert('No data to export')
+    return
   }
 
   const csvRows = [
     [
-      "Symbol",
-      "Return %",
-      "Total R",
-      "Win Rate",
-      "Max Drawdown",
-      "Total Positions",
-      "Winners",
-      "Losers",
-      "Duration (days)",
-      "Campaign ID",
-    ].join(","),
+      'Symbol',
+      'Return %',
+      'Total R',
+      'Win Rate',
+      'Max Drawdown',
+      'Total Positions',
+      'Winners',
+      'Losers',
+      'Duration (days)',
+      'Campaign ID',
+    ].join(','),
     ...allCampaigns.value.map((campaign) =>
       [
         campaign.symbol,
@@ -628,21 +624,21 @@ function exportAllToCsv() {
         campaign.losing_positions,
         campaign.duration_days,
         campaign.campaign_id,
-      ].join(","),
+      ].join(',')
     ),
-  ];
+  ]
 
-  const csvContent = csvRows.join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const link = document.createElement("a");
-  const url = URL.createObjectURL(blob);
+  const csvContent = csvRows.join('\n')
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
 
-  link.setAttribute("href", url);
-  link.setAttribute("download", "all_campaigns_performance.csv");
-  link.style.visibility = "hidden";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  link.setAttribute('href', url)
+  link.setAttribute('download', 'all_campaigns_performance.csv')
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 /**
@@ -650,8 +646,8 @@ function exportAllToCsv() {
  */
 onMounted(() => {
   // Load initial aggregated metrics (no filters)
-  applyFilters();
-});
+  applyFilters()
+})
 </script>
 
 <style scoped>
@@ -794,7 +790,7 @@ onMounted(() => {
 }
 
 .campaign-id {
-  font-family: "Courier New", monospace;
+  font-family: 'Courier New', monospace;
   font-size: 0.9rem;
   color: #666;
 }

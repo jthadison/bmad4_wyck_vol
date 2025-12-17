@@ -13,8 +13,8 @@
             option-label="label"
             option-value="value"
             placeholder="All Statuses"
-            @change="onFilterChange"
             class="filter-dropdown"
+            @change="onFilterChange"
           />
         </div>
         <div class="filter-group">
@@ -23,8 +23,8 @@
             id="symbol-filter"
             v-model="localFilters.symbol"
             placeholder="Search symbol..."
-            @input="onSymbolSearch"
             class="filter-input"
+            @input="onSymbolSearch"
           />
         </div>
       </div>

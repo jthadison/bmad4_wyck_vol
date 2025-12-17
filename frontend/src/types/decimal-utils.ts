@@ -8,12 +8,12 @@
  * Story 9.6 - Campaign Performance Tracking
  */
 
-import Big from "big.js";
+import Big from 'big.js'
 
 // Configure Big.js defaults
 // Precision: 8 decimal places to match NUMERIC(18,8) backend precision
-Big.DP = 8; // Decimal places
-Big.RM = Big.roundHalfUp; // Rounding mode (banker's rounding)
+Big.DP = 8 // Decimal places
+Big.RM = Big.roundHalfUp // Rounding mode (banker's rounding)
 
 /**
  * Convert string decimal to Big.js instance for calculations
@@ -26,10 +26,10 @@ Big.RM = Big.roundHalfUp; // Rounding mode (banker's rounding)
  * const profit = price.minus("100.00000000")
  */
 export function toBig(value: string | null | undefined): Big {
-  if (value === null || value === undefined || value === "") {
-    return new Big(0);
+  if (value === null || value === undefined || value === '') {
+    return new Big(0)
   }
-  return new Big(value);
+  return new Big(value)
 }
 
 /**
@@ -43,7 +43,7 @@ export function toBig(value: string | null | undefined): Big {
  * const formatted = fromBig(result) // "160.75000000"
  */
 export function fromBig(value: Big): string {
-  return value.toFixed(8);
+  return value.toFixed(8)
 }
 
 /**
@@ -59,14 +59,14 @@ export function fromBig(value: Big): string {
  */
 export function formatDecimal(
   value: string | null | undefined,
-  maxDecimals = 2,
+  maxDecimals = 2
 ): string {
-  if (value === null || value === undefined || value === "") {
-    return "0.00";
+  if (value === null || value === undefined || value === '') {
+    return '0.00'
   }
 
-  const big = toBig(value);
-  return big.toFixed(maxDecimals);
+  const big = toBig(value)
+  return big.toFixed(maxDecimals)
 }
 
 /**
@@ -82,14 +82,14 @@ export function formatDecimal(
  */
 export function formatPercent(
   value: string | null | undefined,
-  decimals = 2,
+  decimals = 2
 ): string {
-  if (value === null || value === undefined || value === "") {
-    return "0.00%";
+  if (value === null || value === undefined || value === '') {
+    return '0.00%'
   }
 
-  const big = toBig(value);
-  return `${big.toFixed(decimals)}%`;
+  const big = toBig(value)
+  return `${big.toFixed(decimals)}%`
 }
 
 /**
@@ -105,14 +105,14 @@ export function formatPercent(
  */
 export function formatR(
   value: string | null | undefined,
-  decimals = 2,
+  decimals = 2
 ): string {
-  if (value === null || value === undefined || value === "") {
-    return "0.00R";
+  if (value === null || value === undefined || value === '') {
+    return '0.00R'
   }
 
-  const big = toBig(value);
-  return `${big.toFixed(decimals)}R`;
+  const big = toBig(value)
+  return `${big.toFixed(decimals)}R`
 }
 
 /**
@@ -129,21 +129,21 @@ export function formatR(
  */
 export function formatCurrency(
   value: string | null | undefined,
-  symbol = "$",
-  decimals = 2,
+  symbol = '$',
+  decimals = 2
 ): string {
-  if (value === null || value === undefined || value === "") {
-    return `${symbol}0.00`;
+  if (value === null || value === undefined || value === '') {
+    return `${symbol}0.00`
   }
 
-  const big = toBig(value);
-  const formatted = big.toFixed(decimals);
+  const big = toBig(value)
+  const formatted = big.toFixed(decimals)
 
   // Add thousands separators
-  const parts = formatted.split(".");
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const parts = formatted.split('.')
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
-  return `${symbol}${parts.join(".")}`;
+  return `${symbol}${parts.join('.')}`
 }
 
 /**
@@ -161,17 +161,17 @@ export function formatCurrency(
  */
 export function calculatePercentChange(
   oldValue: string | null | undefined,
-  newValue: string | null | undefined,
+  newValue: string | null | undefined
 ): string {
-  const old = toBig(oldValue);
-  const newVal = toBig(newValue);
+  const old = toBig(oldValue)
+  const newVal = toBig(newValue)
 
   if (old.eq(0)) {
-    return "0.00000000";
+    return '0.00000000'
   }
 
-  const change = newVal.minus(old).div(old).times(100);
-  return change.toFixed(8);
+  const change = newVal.minus(old).div(old).times(100)
+  return change.toFixed(8)
 }
 
 /**
@@ -191,22 +191,22 @@ export function calculatePercentChange(
 export function calculateR(
   entryPrice: string | null | undefined,
   exitPrice: string | null | undefined,
-  stopLoss: string | null | undefined,
+  stopLoss: string | null | undefined
 ): string {
-  const entry = toBig(entryPrice);
-  const exit = toBig(exitPrice);
-  const stop = toBig(stopLoss);
+  const entry = toBig(entryPrice)
+  const exit = toBig(exitPrice)
+  const stop = toBig(stopLoss)
 
-  const risk = entry.minus(stop);
+  const risk = entry.minus(stop)
 
   if (risk.lte(0)) {
-    throw new Error("Stop loss must be below entry price for long positions");
+    throw new Error('Stop loss must be below entry price for long positions')
   }
 
-  const profit = exit.minus(entry);
-  const rMultiple = profit.div(risk);
+  const profit = exit.minus(entry)
+  const rMultiple = profit.div(risk)
 
-  return rMultiple.toFixed(4); // R-multiple uses 4 decimal places
+  return rMultiple.toFixed(4) // R-multiple uses 4 decimal places
 }
 
 /**
@@ -219,15 +219,15 @@ export function calculateR(
  * sumDecimals(["10.50", "20.25", "5.00"]) // "35.75000000"
  */
 export function sumDecimals(values: (string | null | undefined)[]): string {
-  let sum = new Big(0);
+  let sum = new Big(0)
 
   for (const value of values) {
-    if (value !== null && value !== undefined && value !== "") {
-      sum = sum.plus(value);
+    if (value !== null && value !== undefined && value !== '') {
+      sum = sum.plus(value)
     }
   }
 
-  return sum.toFixed(8);
+  return sum.toFixed(8)
 }
 
 /**
@@ -241,17 +241,17 @@ export function sumDecimals(values: (string | null | undefined)[]): string {
  */
 export function averageDecimals(values: (string | null | undefined)[]): string {
   const filtered = values.filter(
-    (v) => v !== null && v !== undefined && v !== "",
-  );
+    (v) => v !== null && v !== undefined && v !== ''
+  )
 
   if (filtered.length === 0) {
-    return "0.00000000";
+    return '0.00000000'
   }
 
-  const sum = sumDecimals(filtered);
-  const avg = toBig(sum).div(filtered.length);
+  const sum = sumDecimals(filtered)
+  const avg = toBig(sum).div(filtered.length)
 
-  return avg.toFixed(8);
+  return avg.toFixed(8)
 }
 
 /**
@@ -268,14 +268,14 @@ export function averageDecimals(values: (string | null | undefined)[]): string {
  */
 export function compareDecimals(
   a: string | null | undefined,
-  b: string | null | undefined,
+  b: string | null | undefined
 ): -1 | 0 | 1 {
-  const bigA = toBig(a);
-  const bigB = toBig(b);
+  const bigA = toBig(a)
+  const bigB = toBig(b)
 
-  if (bigA.lt(bigB)) return -1;
-  if (bigA.gt(bigB)) return 1;
-  return 0;
+  if (bigA.lt(bigB)) return -1
+  if (bigA.gt(bigB)) return 1
+  return 0
 }
 
 /**
@@ -285,7 +285,7 @@ export function compareDecimals(
  * @returns True if value > 0
  */
 export function isPositive(value: string | null | undefined): boolean {
-  return toBig(value).gt(0);
+  return toBig(value).gt(0)
 }
 
 /**
@@ -295,7 +295,7 @@ export function isPositive(value: string | null | undefined): boolean {
  * @returns True if value < 0
  */
 export function isNegative(value: string | null | undefined): boolean {
-  return toBig(value).lt(0);
+  return toBig(value).lt(0)
 }
 
 /**
@@ -305,7 +305,7 @@ export function isNegative(value: string | null | undefined): boolean {
  * @returns True if value == 0
  */
 export function isZero(value: string | null | undefined): boolean {
-  return toBig(value).eq(0);
+  return toBig(value).eq(0)
 }
 
 /**
@@ -319,7 +319,7 @@ export function isZero(value: string | null | undefined): boolean {
  * abs("10.50")  // "10.50000000"
  */
 export function abs(value: string | null | undefined): string {
-  return toBig(value).abs().toFixed(8);
+  return toBig(value).abs().toFixed(8)
 }
 
 /**
@@ -333,23 +333,23 @@ export function abs(value: string | null | undefined): string {
  */
 export function minDecimal(values: (string | null | undefined)[]): string {
   const filtered = values.filter(
-    (v) => v !== null && v !== undefined && v !== "",
-  );
+    (v) => v !== null && v !== undefined && v !== ''
+  )
 
   if (filtered.length === 0) {
-    return "0.00000000";
+    return '0.00000000'
   }
 
-  let min = toBig(filtered[0]);
+  let min = toBig(filtered[0])
 
   for (let i = 1; i < filtered.length; i++) {
-    const current = toBig(filtered[i]);
+    const current = toBig(filtered[i])
     if (current.lt(min)) {
-      min = current;
+      min = current
     }
   }
 
-  return min.toFixed(8);
+  return min.toFixed(8)
 }
 
 /**
@@ -363,21 +363,21 @@ export function minDecimal(values: (string | null | undefined)[]): string {
  */
 export function maxDecimal(values: (string | null | undefined)[]): string {
   const filtered = values.filter(
-    (v) => v !== null && v !== undefined && v !== "",
-  );
+    (v) => v !== null && v !== undefined && v !== ''
+  )
 
   if (filtered.length === 0) {
-    return "0.00000000";
+    return '0.00000000'
   }
 
-  let max = toBig(filtered[0]);
+  let max = toBig(filtered[0])
 
   for (let i = 1; i < filtered.length; i++) {
-    const current = toBig(filtered[i]);
+    const current = toBig(filtered[i])
     if (current.gt(max)) {
-      max = current;
+      max = current
     }
   }
 
-  return max.toFixed(8);
+  return max.toFixed(8)
 }
