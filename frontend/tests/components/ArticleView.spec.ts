@@ -836,4 +836,47 @@ describe('ArticleView', () => {
 
     document.body.removeChild(articleBody)
   })
+
+  it('should sanitize malicious HTML in article content', async () => {
+    const helpStore = useHelpStore()
+
+    const maliciousArticle: HelpArticle = {
+      id: '999',
+      slug: 'xss-test-article',
+      title: 'XSS Test Article',
+      category: 'GUIDE',
+      content_html:
+        '<h1>Title</h1><script>fetch("/steal-data")</script><p>Content</p>',
+      content_markdown: '# Title\n\nContent',
+      tags: ['test'],
+      keywords: 'test',
+      last_updated: new Date().toISOString(),
+      view_count: 0,
+      helpful_count: 0,
+      not_helpful_count: 0,
+    }
+
+    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
+      helpStore.currentArticle = maliciousArticle
+      helpStore.isLoading = false
+    })
+
+    const wrapper = mount(ArticleView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: {
+          ArticleFeedback: true,
+        },
+      },
+    })
+
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const html = wrapper.html()
+    expect(html).not.toContain('<script>')
+    expect(html).not.toContain('fetch')
+    expect(html).toContain('Title')
+    expect(html).toContain('Content')
+  })
 })

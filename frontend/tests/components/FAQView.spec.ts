@@ -401,4 +401,42 @@ describe('FAQView', () => {
 
     expect(wrapper.text()).toContain('Failed to load FAQs')
   })
+
+  it('should sanitize malicious HTML in FAQ content', async () => {
+    const helpStore = useHelpStore()
+
+    const maliciousArticle: HelpArticle = {
+      id: '999',
+      slug: 'xss-test',
+      title: 'XSS Test',
+      category: 'FAQ',
+      content_html: '<p>Safe content</p><script>alert("XSS")</script>',
+      content_markdown: 'Safe content',
+      tags: [],
+      keywords: '',
+      last_updated: new Date().toISOString(),
+      view_count: 0,
+      helpful_count: 0,
+      not_helpful_count: 0,
+    }
+
+    vi.spyOn(helpStore, 'fetchArticles').mockImplementation(async () => {
+      helpStore.articles = [maliciousArticle]
+      helpStore.isLoading = false
+    })
+
+    const wrapper = mount(FAQView, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const html = wrapper.html()
+    expect(html).not.toContain('<script>')
+    expect(html).not.toContain('alert')
+    expect(html).toContain('Safe content')
+  })
 })

@@ -32,6 +32,7 @@ Author: Story 11.8c (Task 6)
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useHelpStore } from '@/stores/helpStore'
+import { sanitizeHtml } from '@/utils/sanitize'
 import { useToast } from 'primevue/usetoast'
 import Message from 'primevue/message'
 import Tag from 'primevue/tag'
@@ -58,6 +59,14 @@ const isMobile = ref(window.innerWidth < 1024)
 
 // Computed
 const article = computed(() => helpStore.currentArticle)
+
+const sanitizedArticleContent = computed(() => {
+  if (!article.value) return ''
+
+  // Apply client-side sanitization as defense-in-depth
+  // (Backend already sanitizes, but this adds extra protection)
+  return sanitizeHtml(article.value.content_html)
+})
 
 // Methods
 const formatDate = (dateString: string): string => {
@@ -227,7 +236,7 @@ onUnmounted(() => {
 
         <!-- Article Body -->
         <!-- eslint-disable-next-line vue/no-v-html -->
-        <div class="article-body" v-html="article.content_html"></div>
+        <div class="article-body" v-html="sanitizedArticleContent"></div>
 
         <!-- Tags -->
         <div v-if="article.tags.length > 0" class="article-tags">

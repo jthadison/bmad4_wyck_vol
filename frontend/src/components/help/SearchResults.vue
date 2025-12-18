@@ -31,6 +31,7 @@ Author: Story 11.8c (Task 5)
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useHelpStore } from '@/stores/helpStore'
+import { sanitizeHtml } from '@/utils/sanitize'
 import DataView from 'primevue/dataview'
 import Tag from 'primevue/tag'
 import Message from 'primevue/message'
@@ -136,6 +137,12 @@ const performSearch = async (query: string) => {
   if (query && query.trim().length > 0) {
     await helpStore.searchHelp(query.trim(), 50)
   }
+}
+
+const sanitizedSnippet = (snippet: string): string => {
+  // Apply client-side sanitization to search snippets
+  // (Backend provides snippets with <mark> highlighting, but we sanitize for defense-in-depth)
+  return sanitizeHtml(snippet)
 }
 
 // Lifecycle
@@ -256,8 +263,12 @@ onUnmounted(() => {
             </div>
 
             <!-- Snippet with highlighting -->
-            <!-- eslint-disable-next-line vue/no-v-html -->
-            <div class="result-snippet" v-html="result.snippet"></div>
+            <!-- eslint-disable vue/no-v-html -->
+            <div
+              class="result-snippet"
+              v-html="sanitizedSnippet(result.snippet)"
+            ></div>
+            <!-- eslint-enable vue/no-v-html -->
 
             <!-- Metadata -->
             <div class="result-metadata">
