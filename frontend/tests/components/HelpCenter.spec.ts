@@ -34,7 +34,14 @@ vi.mock('primevue/inputicon', () => ({
   default: { name: 'InputIcon', template: '<i></i>' },
 }))
 vi.mock('primevue/overlaypanel', () => ({
-  default: { name: 'OverlayPanel', template: '<div><slot /></div>' },
+  default: {
+    name: 'OverlayPanel',
+    template: '<div><slot /></div>',
+    methods: {
+      hide: vi.fn(),
+      show: vi.fn(),
+    },
+  },
 }))
 vi.mock('primevue/breadcrumb', () => ({
   default: { name: 'Breadcrumb', template: '<div></div>' },
@@ -134,6 +141,13 @@ describe('HelpCenter', () => {
   })
 
   it('should handle search input with debounce', async () => {
+    vi.useFakeTimers()
+
+    const helpStore = useHelpStore()
+    const searchSpy = vi
+      .spyOn(helpStore, 'searchHelp')
+      .mockResolvedValue(undefined)
+
     const wrapper = mount(HelpCenter, {
       global: {
         plugins: [router, pinia],
@@ -143,16 +157,17 @@ describe('HelpCenter', () => {
       },
     })
 
-    const helpStore = useHelpStore()
-    vi.spyOn(helpStore, 'searchHelp')
-
     const input = wrapper.find('input')
     await input.setValue('spring')
+    await input.trigger('input')
 
-    // Wait for debounce
-    await new Promise((resolve) => setTimeout(resolve, 350))
+    // Fast-forward time past the debounce delay (300ms) and run all pending timers
+    await vi.advanceTimersByTimeAsync(350)
+    await wrapper.vm.$nextTick()
 
-    expect(helpStore.searchHelp).toHaveBeenCalledWith('spring')
+    expect(searchSpy).toHaveBeenCalledWith('spring')
+
+    vi.useRealTimers()
   })
 
   it('should navigate to article when search result clicked', async () => {
@@ -181,6 +196,7 @@ describe('HelpCenter', () => {
 
     const vm = wrapper.vm as any
     await vm.navigateToArticle('spring-pattern')
+    await router.isReady()
 
     expect(router.currentRoute.value.path).toBe('/help/article/spring-pattern')
   })

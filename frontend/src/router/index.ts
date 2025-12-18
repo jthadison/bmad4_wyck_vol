@@ -50,7 +50,7 @@ const routes: RouteRecordRaw[] = [
         'Monitor active trading campaigns with progression and health status',
     },
   },
-  // Help System Routes (Story 11.8a - Task 15)
+  // Help System Routes (Story 11.8a - Task 15, Story 11.8c - Task 7)
   {
     path: '/help',
     name: 'help',
@@ -67,6 +67,15 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: 'Glossary',
           breadcrumb: [{ label: 'Help', to: '/help' }, { label: 'Glossary' }],
+        },
+      },
+      {
+        path: 'faq',
+        name: 'help-faq',
+        component: () => import('@/components/help/FAQView.vue'),
+        meta: {
+          title: 'FAQ',
+          breadcrumb: [{ label: 'Help', to: '/help' }, { label: 'FAQ' }],
         },
       },
       {
