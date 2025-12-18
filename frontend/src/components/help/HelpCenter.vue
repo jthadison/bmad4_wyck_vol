@@ -164,6 +164,28 @@
             </div>
           </div>
 
+          <!-- Frequently Asked Questions -->
+          <div class="faq-section">
+            <h3>Frequently Asked Questions</h3>
+            <div class="faq-list">
+              <div
+                v-for="faq in topFAQs"
+                :key="faq.slug"
+                class="faq-item"
+                @click="navigateToArticle(faq.slug)"
+              >
+                <i class="pi pi-question-circle faq-icon"></i>
+                <span class="faq-title">{{ faq.title }}</span>
+              </div>
+            </div>
+            <Button
+              label="View All FAQs"
+              icon="pi pi-arrow-right"
+              class="p-button-text view-all-btn"
+              @click="router.push('/help/faq')"
+            />
+          </div>
+
           <!-- Recent Articles -->
           <div v-if="recentArticles.length > 0" class="recent-articles">
             <h3>Recent Articles</h3>
@@ -182,6 +204,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Keyboard Shortcuts Overlay (Story 11.8c) -->
+    <KeyboardShortcutsOverlay v-model:visible="showShortcutsOverlay" />
   </div>
 </template>
 
@@ -189,6 +214,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useHelpStore } from '@/stores/helpStore'
+import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import Button from 'primevue/button'
 import Sidebar from 'primevue/sidebar'
 import Menu from 'primevue/menu'
@@ -199,11 +225,13 @@ import OverlayPanel from 'primevue/overlaypanel'
 import Breadcrumb from 'primevue/breadcrumb'
 import Card from 'primevue/card'
 import Tag from 'primevue/tag'
+import KeyboardShortcutsOverlay from './KeyboardShortcutsOverlay.vue'
 
 // Composables
 const router = useRouter()
 const route = useRoute()
 const helpStore = useHelpStore()
+const { showShortcutsOverlay } = useKeyboardShortcuts()
 
 // State
 const sidebarVisible = ref(false)
@@ -231,6 +259,11 @@ const menuItems = computed(() => [
     label: 'Glossary',
     icon: 'pi pi-book',
     command: () => router.push('/help/glossary'),
+  },
+  {
+    label: 'FAQ',
+    icon: 'pi pi-question-circle',
+    command: () => router.push('/help/faq'),
   },
   {
     label: 'Keyboard Shortcuts',
@@ -289,6 +322,18 @@ const recentArticles = computed(() => {
   return helpStore.articles.slice(0, 5)
 })
 
+// Top FAQs (hardcoded slugs for now, can be replaced with dynamic fetching)
+const topFAQs = [
+  { slug: 'what-is-wyckoff', title: 'What is the Wyckoff Method?' },
+  {
+    slug: 'how-are-signals-generated',
+    title: 'How are trading signals generated?',
+  },
+  { slug: 'how-is-risk-calculated', title: 'How is risk calculated?' },
+  { slug: 'what-is-a-spring', title: 'What is a Spring pattern?' },
+  { slug: 'what-is-portfolio-heat', title: 'What is Portfolio Heat?' },
+]
+
 // ============================================================================
 // Methods
 // ============================================================================
@@ -328,8 +373,8 @@ function navigateToArticle(slug: string) {
 }
 
 function showKeyboardShortcuts() {
-  // TODO: Implement keyboard shortcuts overlay (Story 11.8b)
-  console.log('Keyboard shortcuts not yet implemented')
+  // Implemented in Story 11.8c
+  showShortcutsOverlay.value = true
 }
 
 function handleResize() {
@@ -514,6 +559,52 @@ watch(
   font-size: 2.5rem;
   color: var(--primary-color);
   padding: 1rem;
+}
+
+.faq-section {
+  margin-top: 2rem;
+}
+
+.faq-section h3 {
+  margin-bottom: 1rem;
+}
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.faq-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background-color: var(--surface-ground);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.faq-item:hover {
+  background-color: var(--surface-hover);
+}
+
+.faq-icon {
+  font-size: 1.25rem;
+  color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.faq-title {
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.view-all-btn {
+  width: 100%;
+  justify-content: center;
 }
 
 .recent-articles {
