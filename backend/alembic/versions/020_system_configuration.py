@@ -1,7 +1,7 @@
 """Add system_configuration table
 
-Revision ID: 011_system_configuration
-Revises: 010_audit_trail_enhancements
+Revision ID: 020_system_configuration
+Revises: 018_add_tutorial_tables
 Create Date: 2025-12-09
 
 """
@@ -11,8 +11,8 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "011_system_configuration"
-down_revision = "010_audit_trail_enhancements"
+revision = "020_system_configuration"
+down_revision = "018_add_tutorial_tables"
 branch_labels = None
 depends_on = None
 

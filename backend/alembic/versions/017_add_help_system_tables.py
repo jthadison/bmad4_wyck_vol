@@ -32,7 +32,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "017_add_help_system_tables"
-down_revision = "016_analytics_indexes"
+down_revision = "016"
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """Add Analytics Fields for Pattern Performance Dashboard
 
 Revision ID: 014
-Revises: 012
+Revises: 013_notifications
 Create Date: 2025-12-12
 
 This migration adds fields required for the Pattern Performance Dashboard (Story 11.9):
@@ -33,7 +33,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "014"
-down_revision = "012"
+down_revision = "013_notifications"
 branch_labels = None
 depends_on = None
 
