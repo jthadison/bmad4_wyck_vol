@@ -28,6 +28,7 @@ Author: Story 11.8c (Task 1)
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useHelpStore } from '@/stores/helpStore'
+import { sanitizeHtml } from '@/utils/sanitize'
 import Accordion from 'primevue/accordion'
 import AccordionTab from 'primevue/accordiontab'
 import InputText from 'primevue/inputtext'
@@ -37,6 +38,7 @@ import Message from 'primevue/message'
 import ProgressSpinner from 'primevue/progressspinner'
 import Tag from 'primevue/tag'
 import ArticleFeedback from './ArticleFeedback.vue'
+import type { HelpArticle } from '@/stores/helpStore'
 
 const helpStore = useHelpStore()
 
@@ -71,7 +73,16 @@ const highlightSearchTerm = (text: string): string => {
   }
 
   const regex = new RegExp(`(${query})`, 'gi')
-  return text.replace(regex, '<mark>$1</mark>')
+  const highlighted = text.replace(regex, '<mark>$1</mark>')
+
+  // Sanitize the highlighted HTML to prevent XSS
+  return sanitizeHtml(highlighted)
+}
+
+const sanitizedContent = (article: HelpArticle): string => {
+  // Apply client-side sanitization as defense-in-depth
+  // (Backend already sanitizes, but this adds extra protection)
+  return sanitizeHtml(article.content_html)
 }
 
 // Lifecycle
@@ -179,7 +190,10 @@ onMounted(async () => {
           <div class="accordion-content">
             <!-- Article Content -->
             <!-- eslint-disable-next-line vue/no-v-html -->
-            <div class="article-content" v-html="article.content_html"></div>
+            <div
+              class="article-content"
+              v-html="sanitizedContent(article)"
+            ></div>
 
             <!-- Tags -->
             <div v-if="article.tags.length > 1" class="tags-section">

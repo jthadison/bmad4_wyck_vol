@@ -25,7 +25,11 @@ vi.mock('primevue/inputicon', () => ({
   default: { name: 'InputIcon', template: '<i></i>' },
 }))
 vi.mock('primevue/dataview', () => ({
-  default: { name: 'DataView', template: '<div><slot name="list" :items="value" /></div>', props: ['value'] },
+  default: {
+    name: 'DataView',
+    template: '<div><slot name="list" :items="value" /></div>',
+    props: ['value'],
+  },
 }))
 vi.mock('primevue/button', () => ({
   default: { name: 'Button', template: '<button><slot /></button>' },
@@ -137,7 +141,9 @@ describe('GlossaryView', () => {
 
     const vm = wrapper.vm as any
     expect(vm.filteredTerms).toHaveLength(2)
-    expect(vm.filteredTerms.every((t: GlossaryTerm) => t.wyckoff_phase === 'C')).toBe(true)
+    expect(
+      vm.filteredTerms.every((t: GlossaryTerm) => t.wyckoff_phase === 'C')
+    ).toBe(true)
   })
 
   it('should filter terms by search query', async () => {
@@ -150,7 +156,7 @@ describe('GlossaryView', () => {
       },
     })
 
-    await wrapper.vm.$data.searchFilter = 'spring'
+    wrapper.vm.$data.searchFilter = 'spring'
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as any

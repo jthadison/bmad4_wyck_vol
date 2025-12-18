@@ -59,6 +59,6 @@
     "vue-tsc": "^3.1.6"
   },
   "optionalDependencies": {
-    "@rollup/rollup-win32-x64-msvc": "https://registry.npmjs.org/@rollup/rollup-win32-x64-msvc/-/rollup-win32-x64-msvc-4.28.1.tgz"
+    "@rollup/rollup-win32-x64-msvc": "^4.53.5"
   }
 }

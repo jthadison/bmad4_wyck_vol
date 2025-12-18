@@ -1,0 +1,435 @@
+
+> bmad-wyckoff-frontend@0.1.0 test
+> vitest --run
+
+
+[7m[1m[36m RUN [39m[22m[27m [36mv1.6.1[39m [90mE:/projects/claude_code/bmad4_wyck_vol/frontend[39m
+
+ [32m✓[39m tests/stores/helpStore.spec.ts [2m ([22m[2m16 tests[22m[2m)[22m[90m 46[2mms[22m[39m
+ [32m✓[39m src/stores/tests/helpStore.spec.ts [2m ([22m[2m16 tests[22m[2m)[22m[90m 46[2mms[22m[39m
+ [32m✓[39m tests/stores/signalStore.test.ts [2m ([22m[2m18 tests[22m[2m)[22m[90m 64[2mms[22m[39m
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mConnection Lifecycle[2m > [22m[2mshould connect to WebSocket server[22m[39m
+[WebSocket] Connected
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mConnection Lifecycle[2m > [22m[2mshould disconnect gracefully[22m[39m
+[WebSocket] Connected
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mConnection Lifecycle[2m > [22m[2mshould handle connection errors[22m[39m
+[WebSocket] Connected
+[WebSocket] Disconnected
+
+ [32m✓[39m tests/integration/SystemStatusWidget.integration.spec.ts [2m ([22m[2m15 tests[22m[2m)[22m[33m 308[2mms[22m[39m
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mConnection Lifecycle[2m > [22m[2mshould store connection ID on connected message[22m[39m
+[WebSocket] Connected
+[WebSocket] Reconnected successfully
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mConnection Lifecycle[2m > [22m[2mshould store connection ID on connected message[22m[39m
+[WebSocket] Disconnected
+[WebSocket] Reconnecting in 1000ms (attempt 1/10)
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Connected
+[WebSocket] Connected
+[WebSocket] Disconnected
+[WebSocket] Reconnecting in 1000ms (attempt 1/10)
+[WebSocket] Connected
+[WebSocket] Handling reconnection, last sequence: 0
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Connected
+[WebSocket] Handling reconnection, last sequence: 0
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Disconnected
+[WebSocket] Reconnecting in 1000ms (attempt 1/10)
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Connected
+[WebSocket] Handling reconnection, last sequence: 0
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Connected
+[WebSocket] Handling reconnection, last sequence: 0
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Disconnected
+[WebSocket] Reconnecting in 1000ms (attempt 1/10)
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Connected
+[WebSocket] Handling reconnection, last sequence: 0
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Connected
+[WebSocket] Handling reconnection, last sequence: 0
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould use exponential backoff for reconnection attempts[22m[39m
+[WebSocket] Disconnected
+[WebSocket] Reconnecting in 1000ms (attempt 1/10)
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mExponential Backoff Reconnection[2m > [22m[2mshould stop reconnecting after maxReconnectAttempts[22m[39m
+[WebSocket] Connected
+[WebSocket] Disconnected
+
+ [32m✓[39m tests/components/SystemStatusWidget.spec.ts [2m ([22m[2m26 tests[22m[2m)[22m[33m 518[2mms[22m[39m
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mMessage Buffering[2m > [22m[2mshould replay buffered messages on reconnection[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mMessage Buffering[2m > [22m[2mshould replay buffered messages on reconnection[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mMessage Buffering[2m > [22m[2mshould clear buffer after successful replay[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mMessage Buffering[2m > [22m[2mshould clear buffer after successful replay[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mSequence Number Tracking[2m > [22m[2mshould track last sequence number[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mSequence Number Tracking[2m > [22m[2mshould track last sequence number[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mSequence Number Tracking[2m > [22m[2mshould track sequence numbers correctly[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mSequence Number Tracking[2m > [22m[2mshould track sequence numbers correctly[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mEvent Subscription[2m > [22m[2mshould call handler when matching event is emitted[22m[39m
+[WebSocket] Connected
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mEvent Subscription[2m > [22m[2mshould support multiple subscribers for same event[22m[39m
+[WebSocket] Connected
+[WebSocket] Disconnected
+
+ [33m❯[39m src/components/charts/__tests__/CauseBuildingPanel.spec.ts [2m ([22m[2m59 tests[22m [2m|[22m [31m8 failed[39m[2m)[22m[33m 687[2mms[22m[39m
+[31m   [33m❯[31m src/components/charts/__tests__/CauseBuildingPanel.spec.ts[2m > [22mCauseBuildingPanel.vue[2m > [22mComputed Property: progressBarClass[2m > [22mshould return "progress-complete" for progress >= 100%[39m
+[31m     → expected [ 'p-progressbar' ] to include 'progress-complete'[39m
+[31m   [33m❯[31m src/components/charts/__tests__/CauseBuildingPanel.spec.ts[2m > [22mCauseBuildingPanel.vue[2m > [22mComputed Property: progressBarClass[2m > [22mshould return "progress-advanced" for progress 75-99%[39m
+[31m     → expected [ 'p-progressbar' ] to include 'progress-advanced'[39m
+[31m   [33m❯[31m src/components/charts/__tests__/CauseBuildingPanel.spec.ts[2m > [22mCauseBuildingPanel.vue[2m > [22mComputed Property: progressBarClass[2m > [22mshould return "progress-building" for progress 50-74%[39m
+[31m     → expected [ 'p-progressbar' ] to include 'progress-building'[39m
+[31m   [33m❯[31m src/components/charts/__tests__/CauseBuildingPanel.spec.ts[2m > [22mCauseBuildingPanel.vue[2m > [22mComputed Property: progressBarClass[2m > [22mshould return "progress-early" for progress < 50%[39m
+[31m     → expected [ 'p-progressbar' ] to include 'progress-early'[39m
+[31m   [33m❯[31m src/components/charts/__tests__/CauseBuildingPanel.spec.ts[2m > [22mCauseBuildingPanel.vue[2m > [22mMethodology Section[2m > [22mshould expand methodology when button clicked[39m
+[31m     → expected 'Show Methodology' to contain 'Hide Methodology'[39m
+[31m   [33m❯[31m src/components/charts/__tests__/CauseBuildingPanel.spec.ts[2m > [22mCauseBuildingPanel.vue[2m > [22mMethodology Section[2m > [22mshould display methodology text when expanded[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m src/components/charts/__tests__/CauseBuildingPanel.spec.ts[2m > [22mCauseBuildingPanel.vue[2m > [22mMethodology Section[2m > [22mshould collapse methodology when button clicked again[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m src/components/charts/__tests__/CauseBuildingPanel.spec.ts[2m > [22mCauseBuildingPanel.vue[2m > [22mMethodology Section[2m > [22mshould toggle chevron icon direction[39m
+[31m     → expected '<button data-v-146da0f6="" class="p-b…' to contain 'pi-chevron-up'[39m
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2msignal:new → Signal Store[2m > [22m[2mshould add new signal to store when signal:new event is received[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mError Handling[2m > [22m[2mshould handle malformed JSON messages[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mError Handling[2m > [22m[2mshould handle malformed JSON messages[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2msignal:new → Signal Store[2m > [22m[2mshould add new signal to store when signal:new event is received[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mError Handling[2m > [22m[2mshould handle handler errors gracefully[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mError Handling[2m > [22m[2mshould handle handler errors gracefully[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2msignal:new → Signal Store[2m > [22m[2mshould add signal to top of list (most recent first)[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mError Handling[2m > [22m[2mshould update lastMessageTime on successful message[22m[39m
+[WebSocket] Connected
+
+ [32m✓[39m tests/services/websocketService.test.ts [2m ([22m[2m19 tests[22m[2m)[22m[33m 491[2mms[22m[39m
+[90mstdout[2m | tests/services/websocketService.test.ts[2m > [22m[2mWebSocketService[2m > [22m[2mError Handling[2m > [22m[2mshould update lastMessageTime on successful message[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2msignal:new → Signal Store[2m > [22m[2mshould add signal to top of list (most recent first)[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2msignal:executed → Signal Store[2m > [22m[2mshould update signal status when signal:executed event is received[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2msignal:executed → Signal Store[2m > [22m[2mshould update signal status when signal:executed event is received[22m[39m
+[WebSocket] Disconnected
+
+ [32m✓[39m tests/components/ArticleFeedback.spec.ts [2m ([22m[2m15 tests[22m[2m)[22m[33m 368[2mms[22m[39m
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2msignal:rejected → Signal Store[2m > [22m[2mshould update signal status when signal:rejected event is received[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2msignal:rejected → Signal Store[2m > [22m[2mshould update signal status when signal:rejected event is received[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2mMultiple Events[2m > [22m[2mshould handle multiple WebSocket events in sequence[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2mMultiple Events[2m > [22m[2mshould handle multiple WebSocket events in sequence[22m[39m
+[WebSocket] Disconnected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2mWebSocket Store[2m > [22m[2mshould update connection status in WebSocket store[22m[39m
+[WebSocket] Connected
+
+[90mstdout[2m | tests/integration/websocket-stores.integration.test.ts[2m > [22m[2mWebSocket → Pinia Store Integration[2m > [22m[2mWebSocket Store[2m > [22m[2mshould update connection status in WebSocket store[22m[39m
+[WebSocket] Disconnected
+
+ [32m✓[39m tests/integration/websocket-stores.integration.test.ts [2m ([22m[2m6 tests[22m[2m)[22m[90m 295[2mms[22m[39m
+ [32m✓[39m tests/components/SearchResults.spec.ts [2m ([22m[2m20 tests[22m[2m)[22m[33m 322[2mms[22m[39m
+ [32m✓[39m tests/components/DailySummaryCard.test.ts [2m ([22m[2m16 tests[22m[2m)[22m[33m 1401[2mms[22m[39m
+ [33m❯[39m tests/components/configuration/ConfigurationWizard.test.ts [2m ([22m[2m25 tests[22m [2m|[22m [31m6 failed[39m[2m)[22m[33m 2514[2mms[22m[39m
+[31m   [33m❯[31m tests/components/configuration/ConfigurationWizard.test.ts[2m > [22mConfigurationWizard[2m > [22mInitialization[2m > [22mdisplays loading state while loading configuration[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfigurationWizard.test.ts[2m > [22mConfigurationWizard[2m > [22mChange Detection[2m > [22mdisables cancel button when no changes[39m
+[31m     → expected undefined to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfigurationWizard.test.ts[2m > [22mConfigurationWizard[2m > [22mChange Detection[2m > [22mdisables apply button when no changes[39m
+[31m     → expected undefined to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfigurationWizard.test.ts[2m > [22mConfigurationWizard[2m > [22mSave Workflow[2m > [22mshows confirmation dialog when save button clicked[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfigurationWizard.test.ts[2m > [22mConfigurationWizard[2m > [22mCancel Action[2m > [22mreverts proposedConfig to currentConfig on cancel[39m
+[31m     → expected '2.50' to be '2.00' // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfigurationWizard.test.ts[2m > [22mConfigurationWizard[2m > [22mLoading States[2m > [22mdisables save button while saving[39m
+[31m     → expected undefined to be true // Object.is equality[39m
+ [33m❯[39m tests/integration/ConfigurationWorkflow.test.ts [2m ([22m[2m8 tests[22m [2m|[22m [31m2 failed[39m[2m)[22m[33m 1943[2mms[22m[39m
+[31m   [33m❯[31m tests/integration/ConfigurationWorkflow.test.ts[2m > [22mConfiguration Wizard E2E Workflow[2m > [22mcompletes full workflow: load → modify → analyze → confirm → save[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/integration/ConfigurationWorkflow.test.ts[2m > [22mConfiguration Wizard E2E Workflow[2m > [22mhandles cancel workflow: load → modify → cancel[39m
+[31m     → expected '2.50' to be '2.00' // Object.is equality[39m
+ [32m✓[39m src/components/charts/__tests__/SchematicBadge.spec.ts [2m ([22m[2m54 tests[22m[2m)[22m[33m 805[2mms[22m[39m
+ [33m❯[39m tests/components/configuration/ConfirmationDialog.test.ts [2m ([22m[2m30 tests[22m [2m|[22m [31m23 failed[39m[2m)[22m[33m 1542[2mms[22m[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mHeader and Icon[2m > [22mshows warning icon when warnings exist[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mHeader and Icon[2m > [22mshows info icon when no warnings[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mChange Description[2m > [22mdisplays default change description[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mChange Description[2m > [22mdisplays custom change description[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mImpact Summary[2m > [22mdisplays impact summary when impact exists[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mImpact Summary[2m > [22mdisplays signal count change correctly[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mImpact Summary[2m > [22mdisplays positive signal count with + sign[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mImpact Summary[2m > [22mdisplays negative signal count without + sign[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mImpact Summary[2m > [22mdisplays win rate as percentage[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mImpact Summary[2m > [22mdisplays win rate delta with up arrow[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mImpact Summary[2m > [22mdisplays win rate delta with down arrow for negative[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mImpact Summary[2m > [22mdoes not display win rate when proposed_win_rate is null[39m
+[31m     → expected +0 to be 1 // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mWarnings List[2m > [22mdisplays warnings when WARNING or CAUTION recommendations exist[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mWarnings List[2m > [22mrenders all warning messages[39m
+[31m     → expected +0 to be 2 // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mWarnings List[2m > [22mfilters out INFO recommendations from warnings[39m
+[31m     → expected +0 to be 1 // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mConfirmation Question[2m > [22mdisplays confirmation question[39m
+[31m     → Cannot call text on an empty DOMWrapper.[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mActions[2m > [22mdisplays cancel and confirm buttons[39m
+[31m     → expected +0 to be 2 // Object.is equality[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mActions[2m > [22memits confirm event when confirm button clicked[39m
+[31m     → Cannot read properties of undefined (reading 'vm')[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mActions[2m > [22memits cancel event when cancel button clicked[39m
+[31m     → Cannot read properties of undefined (reading 'vm')[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mActions[2m > [22memits update:visible false when confirm clicked[39m
+[31m     → Cannot read properties of undefined (reading 'vm')[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mActions[2m > [22memits update:visible false when cancel clicked[39m
+[31m     → Cannot read properties of undefined (reading 'vm')[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mActions[2m > [22mapplies warning severity to confirm button when warnings exist[39m
+[31m     → Cannot read properties of undefined (reading 'props')[39m
+[31m   [33m❯[31m tests/components/configuration/ConfirmationDialog.test.ts[2m > [22mConfirmationDialog[2m > [22mActions[2m > [22mapplies primary severity to confirm button when no warnings[39m
+[31m     → Cannot read properties of undefined (reading 'props')[39m
+ [33m❯[39m tests/components/TradeAuditLog.spec.ts [2m ([22m[2m17 tests[22m [2m|[22m [31m14 failed[39m[2m)[22m[33m 1600[2mms[22m[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mdisplays audit log entries[39m
+[31m     → expected '<div data-v-1706ad8b="" class="trade-…' to contain 'AAPL'[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mformats confidence scores with colors[39m
+[31m     → expected '<div data-v-1706ad8b="" class="trade-…' to contain 'text-green-500'[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mdisplays status badges with correct colors[39m
+[31m     → expected '<div data-v-1706ad8b="" class="trade-…' to contain 'FILLED'[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mexports to CSV when export button clicked[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mexports to JSON when export button clicked[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mhandles API errors gracefully[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mdebounces filter changes[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mformats timestamps as relative time[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mformats prices with 2 decimal places[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mhandles null prices correctly[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mreturns correct status colors[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mreturns correct confidence colors[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mtoggles row expansion correctly[39m
+[31m     → parent.insertBefore is not a function[39m
+[31m   [33m❯[31m tests/components/TradeAuditLog.spec.ts[2m > [22mTradeAuditLog[2m > [22mshows validation chain with Wyckoff rules[39m
+[31m     → parent.insertBefore is not a function[39m
+ [32m✓[39m tests/components/signals/SignalCard.spec.ts [2m ([22m[2m63 tests[22m[2m)[22m[33m 1233[2mms[22m[39m
+ [32m✓[39m tests/components/FAQView.spec.ts [2m ([22m[2m15 tests[22m[2m)[22m[33m 889[2mms[22m[39m
+ [32m✓[39m tests/components/CampaignRiskList.test.ts [2m ([22m[2m19 tests[22m[2m)[22m[33m 2582[2mms[22m[39m
+ [32m✓[39m tests/components/ArticleView.spec.ts [2m ([22m[2m25 tests[22m[2m)[22m[33m 946[2mms[22m[39m
+ [33m❯[39m tests/components/BacktestPreview.spec.ts [2m ([22m[2m0 test[22m[2m)[22m
+[90mstdout[2m | tests/composables/useKeyboardShortcuts.spec.ts[2m > [22m[2museKeyboardShortcuts[2m > [22m[2mshould handle Ctrl+K for command palette[22m[39m
+Command palette: Not yet implemented (Story 11.8c)
+
+[90mstdout[2m | tests/composables/useKeyboardShortcuts.spec.ts[2m > [22m[2museKeyboardShortcuts[2m > [22m[2mshould handle Cmd+K for command palette on Mac[22m[39m
+Command palette: Not yet implemented (Story 11.8c)
+
+ [32m✓[39m tests/composables/useKeyboardShortcuts.spec.ts [2m ([22m[2m16 tests[22m[2m)[22m[90m 96[2mms[22m[39m
+ [32m✓[39m tests/components/HeatGauge.test.ts [2m ([22m[2m19 tests[22m[2m)[22m[90m 247[2mms[22m[39m
+ [32m✓[39m tests/integration/DailySummaryCard.integration.test.ts [2m ([22m[2m14 tests[22m[2m)[22m[33m 1136[2mms[22m[39m
+ [32m✓[39m tests/components/RejectionDetailDialog.spec.ts [2m ([22m[2m24 tests[22m[2m)[22m[33m 1472[2mms[22m[39m
+ [33m❯[39m tests/components/KeyboardShortcutsOverlay.spec.ts [2m ([22m[2m17 tests[22m [2m|[22m [31m1 failed[39m[2m)[22m[33m 816[2mms[22m[39m
+[31m   [33m❯[31m tests/components/KeyboardShortcutsOverlay.spec.ts[2m > [22mKeyboardShortcutsOverlay[2m > [22mshould render when visible[39m
+[31m     → expected false to be true // Object.is equality[39m
+ [33m❯[39m tests/components/configuration/ImpactAnalysisPanel.test.ts [2m ([22m[2m26 tests[22m [2m|[22m [31m1 failed[39m[2m)[22m[33m 871[2mms[22m[39m
+[31m   [33m❯[31m tests/components/configuration/ImpactAnalysisPanel.test.ts[2m > [22mImpactAnalysisPanel[2m > [22mImpact Results Display[2m > [22mdisplays downward arrow for negative win rate delta[39m
+[31m     → expected 'Impact AnalysisSignal Count Change+5 …' to contain '↓ 2.0%'[39m
+ [33m❯[39m tests/components/RiskDashboard.test.ts [2m ([22m[2m16 tests[22m [2m|[22m [31m2 failed[39m[2m)[22m[33m 619[2mms[22m[39m
+[31m   [33m❯[31m tests/components/RiskDashboard.test.ts[2m > [22mRiskDashboard.vue[2m > [22mError State[2m > [22mshould show error message when fetch fails[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/RiskDashboard.test.ts[2m > [22mRiskDashboard.vue[2m > [22mError State[2m > [22mshould show retry button in error state[39m
+[31m     → expected '' to contain 'Try Again'[39m
+ [33m❯[39m tests/components/HelpIcon.spec.ts [2m ([22m[2m0 test[22m[2m)[22m
+ [32m✓[39m tests/utils/rejectionParser.test.ts [2m ([22m[2m28 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [33m❯[39m tests/components/EquityCurveChart.spec.ts [2m ([22m[2m0 test[22m[2m)[22m
+ [33m❯[39m tests/stores/chartStore.spec.ts [2m ([22m[2m13 tests[22m [2m|[22m [31m1 failed[39m[2m)[22m[90m 48[2mms[22m[39m
+[31m   [33m❯[31m tests/stores/chartStore.spec.ts[2m > [22museChartStore[2m > [22mactions[2m > [22mchangeSymbol[2m > [22mshould not fetch if symbol is the same[39m
+[31m     → expected "wrap" to not be called at all, but actually been called 1 times[90m
+
+Received:
+
+[1m  1st wrap call:
+
+[22m    Array [
+      "/api/v1/charts/data",
+      Object {
+        "params": Object {
+          "end_date": undefined,
+          "limit": 500,
+          "start_date": undefined,
+          "symbol": "AAPL",
+          "timeframe": "1D",
+        },
+      },
+    ]
+[31m[90m
+
+Number of calls: [1m1[22m
+[31m[39m
+ [32m✓[39m tests/api.test.ts [2m ([22m[2m1 test[22m[2m)[22m[90m 5[2mms[22m[39m
+[90mstdout[2m | tests/websocket.test.ts[2m > [22m[2mWebSocket Client[2m > [22m[2mhandles reconnection with exponential backoff[22m[39m
+[WebSocket] Disconnected
+[WebSocket] Reconnecting in 1000ms (attempt 1)
+
+[90mstdout[2m | tests/websocket.test.ts[2m > [22m[2mWebSocket Client[2m > [22m[2mbuffers messages during reconnection[22m[39m
+[WebSocket] Buffered message during reconnection (seq: 2)
+
+[90mstdout[2m | tests/websocket.test.ts[2m > [22m[2mWebSocket Client[2m > [22m[2mclears buffer on disconnect[22m[39m
+[WebSocket] Disconnected
+[WebSocket] Reconnecting in 1000ms (attempt 1)
+
+ [32m✓[39m tests/websocket.test.ts [2m ([22m[2m6 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/components/MarkdownRenderer.spec.ts [2m ([22m[2m16 tests[22m[2m)[22m[33m 317[2mms[22m[39m
+ [33m❯[39m tests/components/HelpCenter.spec.ts [2m ([22m[2m7 tests[22m [2m|[22m [31m1 failed[39m[2m)[22m[90m 296[2mms[22m[39m
+[31m   [33m❯[31m tests/components/HelpCenter.spec.ts[2m > [22mHelpCenter[2m > [22mshould handle search input with debounce[39m
+[31m     → expected "wrappedAction" to be called with arguments: [ 'spring' ][90m
+
+Received:
+
+[31m[90m
+
+Number of calls: [1m0[22m
+[31m[39m
+ [32m✓[39m tests/components/example.test.ts [2m ([22m[2m2 tests[22m[2m)[22m[90m 4[2mms[22m[39m
+ [32m✓[39m tests/components/configuration/ParameterInput.test.ts [2m ([22m[2m14 tests[22m[2m)[22m[90m 281[2mms[22m[39m
+ [33m❯[39m tests/components/GlossaryView.spec.ts [2m ([22m[2m0 test[22m[2m)[22m
+ [32m✓[39m tests/stores.test.ts [2m ([22m[2m15 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [33m❯[39m tests/App.test.ts [2m ([22m[2m3 tests[22m [2m|[22m [31m3 failed[39m[2m)[22m[90m 192[2mms[22m[39m
+[31m   [33m❯[31m tests/App.test.ts[2m > [22mApp.vue[2m > [22mrenders successfully[39m
+[31m     → ws.getConnectionId is not a function[39m
+[31m   [33m❯[31m tests/App.test.ts[2m > [22mApp.vue[2m > [22mhas navigation menu with router links[39m
+[31m     → ws.getConnectionId is not a function[39m
+[31m   [33m❯[31m tests/App.test.ts[2m > [22mApp.vue[2m > [22mhas router-view for route rendering[39m
+[31m     → ws.getConnectionId is not a function[39m
+[90mstdout[2m | tests/App.test.ts[2m > [22m[2mApp.vue[2m > [22m[2mrenders successfully[22m[39m
+[App] WebSocket initialized and subscriptions configured
+
+[90mstdout[2m | tests/App.test.ts[2m > [22m[2mApp.vue[2m > [22m[2mhas navigation menu with router links[22m[39m
+[App] WebSocket initialized and subscriptions configured
+
+[90mstdout[2m | tests/App.test.ts[2m > [22m[2mApp.vue[2m > [22m[2mhas router-view for route rendering[22m[39m
+[App] WebSocket initialized and subscriptions configured
+
+ [33m❯[39m tests/components/PatternChart.spec.ts [2m ([22m[2m12 tests[22m [2m|[22m [31m2 failed[39m[2m)[22m[90m 227[2mms[22m[39m
+[31m   [33m❯[31m tests/components/PatternChart.spec.ts[2m > [22mPatternChart.vue[2m > [22mLifecycle Management[2m > [22mshould add keyboard event listener on mount[39m
+[31m     → expected "bound bound addEventListener" to be called with arguments: [ 'keydown', Any<Function> ][90m
+
+Received:
+
+[31m[90m
+
+Number of calls: [1m0[22m
+[31m[39m
+[31m   [33m❯[31m tests/components/PatternChart.spec.ts[2m > [22mPatternChart.vue[2m > [22mChart Info Panel[2m > [22mshould display chart info when data is loaded[39m
+[31m     → expected false to be true // Object.is equality[39m
+ [33m❯[39m tests/components/signals/SignalCard.test.ts [2m ([22m[2m20 tests[22m [2m|[22m [31m6 failed[39m[2m)[22m[33m 357[2mms[22m[39m
+[31m   [33m❯[31m tests/components/signals/SignalCard.test.ts[2m > [22mSignalCard[2m > [22mapplies green border for STOPPED status[39m
+[31m     → expected [ 'p-card', 'p-component', …(10) ] to include 'border-green-500'[39m
+[31m   [33m❯[31m tests/components/signals/SignalCard.test.ts[2m > [22mSignalCard[2m > [22mdisplays rejection reasons for rejected signals[39m
+[31m     → expected 'AAPLSPRINGabout 1 year ago1h Entry  $…' to contain 'Rejection Reasons'[39m
+[31m   [33m❯[31m tests/components/signals/SignalCard.test.ts[2m > [22mSignalCard[2m > [22mdisplays phase[39m
+[31m     → expected 'AAPLSPRINGabout 1 year ago1h Entry  $…' to contain 'Phase'[39m
+[31m   [33m❯[31m tests/components/signals/SignalCard.test.ts[2m > [22mSignalCard[2m > [22mdisplays position size[39m
+[31m     → expected 'AAPLSPRINGabout 1 year ago1h Entry  $…' to contain 'Position Size'[39m
+[31m   [33m❯[31m tests/components/signals/SignalCard.test.ts[2m > [22mSignalCard[2m > [22mhas correct ARIA attributes[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/components/signals/SignalCard.test.ts[2m > [22mSignalCard[2m > [22mis keyboard focusable[39m
+[31m     → Cannot call attributes on an empty DOMWrapper.[39m
+ [32m✓[39m tests/router.test.ts [2m ([22m[2m6 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/components/signals/LiveSignalsDashboard.test.ts [2m ([22m[2m15 tests[22m[2m)[22m[33m 2095[2mms[22m[39m
+ [33m❯[39m tests/composables/useImpactAnalysis.test.ts [2m ([22m[2m9 tests[22m [2m|[22m [31m7 failed[39m[2m)[22m[33m 30102[2mms[22m[39m
+[31m   [33m❯[31m tests/composables/useImpactAnalysis.test.ts[2m > [22museImpactAnalysis[2m > [22msets loading state during analysis[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [33m❯[31m tests/composables/useImpactAnalysis.test.ts[2m > [22museImpactAnalysis[2m > [22mcalls API and sets impact result[39m
+[31m     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[31m   [33m❯[31m tests/composables/useImpactAnalysis.test.ts[2m > [22museImpactAnalysis[2m > [22msets error on API failure[39m
+[31m     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[31m   [33m❯[31m tests/composables/useImpactAnalysis.test.ts[2m > [22museImpactAnalysis[2m > [22mcaches identical configurations[39m
+[31m     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[31m   [33m❯[31m tests/composables/useImpactAnalysis.test.ts[2m > [22museImpactAnalysis[2m > [22mdoes not cache when disabled[39m
+[31m     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[31m   [33m❯[31m tests/composables/useImpactAnalysis.test.ts[2m > [22museImpactAnalysis[2m > [22mclears impact on clearImpact()[39m
+[31m     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[31m   [33m❯[31m tests/composables/useImpactAnalysis.test.ts[2m > [22museImpactAnalysis[2m > [22mclears cache on clearCache()[39m
+[31m     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Unhandled Errors [27m[22m⎯⎯⎯⎯⎯⎯[39m
+[31m[1m
+Vitest caught 2 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.[22m[39m
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+[2m Test Files [22m [1m[31m18 failed[39m[22m[2m | [22m[1m[32m28 passed[39m[22m[90m (46)[39m
+[2m      Tests [22m [1m[31m77 failed[39m[22m[2m | [22m[1m[32m704 passed[39m[22m[90m (781)[39m
+[2m     Errors [22m [1m[31m2 errors[39m[22m
+[2m   Start at [22m 11:50:22
+[2m   Duration [22m 41.72s[2m (transform 20.33s, setup 24.62s, collect 80.69s, tests 57.85s, environment 72.69s, prepare 18.36s)[22m

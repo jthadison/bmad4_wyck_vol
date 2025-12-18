@@ -17,7 +17,11 @@ vi.mock('primevue/button', () => ({
   default: { name: 'Button', template: '<button><slot /></button>' },
 }))
 vi.mock('primevue/dialog', () => ({
-  default: { name: 'Dialog', template: '<div v-if="visible"><slot /><slot name="footer" /></div>', props: ['visible'] },
+  default: {
+    name: 'Dialog',
+    template: '<div v-if="visible"><slot /><slot name="footer" /></div>',
+    props: ['visible'],
+  },
 }))
 vi.mock('primevue/message', () => ({
   default: { name: 'Message', template: '<div><slot /></div>' },
@@ -52,7 +56,10 @@ describe('HelpIcon', () => {
     router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/help/article/:slug', component: { template: '<div>Article</div>' } },
+        {
+          path: '/help/article/:slug',
+          component: { template: '<div>Article</div>' },
+        },
       ],
     })
 
@@ -124,7 +131,7 @@ describe('HelpIcon', () => {
       },
     })
 
-    await wrapper.vm.$data.dialogVisible = true
+    wrapper.vm.$data.dialogVisible = true
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.dialog-loading').exists()).toBe(true)
@@ -143,7 +150,7 @@ describe('HelpIcon', () => {
       },
     })
 
-    await wrapper.vm.$data.dialogVisible = true
+    wrapper.vm.$data.dialogVisible = true
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Failed to load article')
@@ -163,13 +170,17 @@ describe('HelpIcon', () => {
       },
     })
 
-    await wrapper.vm.$data.dialogVisible = true
+    wrapper.vm.$data.dialogVisible = true
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as any
     await vm.submitFeedback(true)
 
-    expect(helpStore.submitFeedback).toHaveBeenCalledWith('article-123', true, undefined)
+    expect(helpStore.submitFeedback).toHaveBeenCalledWith(
+      'article-123',
+      true,
+      undefined
+    )
   })
 
   it('should show comment input on negative feedback', async () => {
@@ -185,10 +196,10 @@ describe('HelpIcon', () => {
       },
     })
 
-    await wrapper.vm.$data.dialogVisible = true
+    wrapper.vm.$data.dialogVisible = true
     await wrapper.vm.$nextTick()
 
-    await wrapper.vm.$data.showCommentInput = true
+    wrapper.vm.$data.showCommentInput = true
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.comment-input').exists()).toBe(true)
@@ -208,8 +219,8 @@ describe('HelpIcon', () => {
       },
     })
 
-    await wrapper.vm.$data.dialogVisible = true
-    await wrapper.vm.$data.feedbackComment = 'Needs improvement'
+    wrapper.vm.$data.dialogVisible = true
+    wrapper.vm.$data.feedbackComment = 'Needs improvement'
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as any
@@ -236,7 +247,7 @@ describe('HelpIcon', () => {
       },
     })
 
-    await wrapper.vm.$data.dialogVisible = true
+    wrapper.vm.$data.dialogVisible = true
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as any
@@ -256,9 +267,9 @@ describe('HelpIcon', () => {
       },
     })
 
-    await wrapper.vm.$data.feedbackSubmitted = true
-    await wrapper.vm.$data.showCommentInput = true
-    await wrapper.vm.$data.feedbackComment = 'Test comment'
+    wrapper.vm.$data.feedbackSubmitted = true
+    wrapper.vm.$data.showCommentInput = true
+    wrapper.vm.$data.feedbackComment = 'Test comment'
 
     const vm = wrapper.vm as any
     vm.onDialogHide()
