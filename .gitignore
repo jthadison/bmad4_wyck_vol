@@ -201,3 +201,8 @@ test_results.txt
 .ignore/
 docs/
 expansion-packs/
+
+# Playwright Test Results
+playwright-report/
+playwright-report-dev/
+test-results/
