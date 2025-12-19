@@ -265,26 +265,26 @@ class HelpRepository:
         sanitized_query = " & ".join(query.strip().split())
 
         try:
-            # PostgreSQL full-text search query with ranking and snippets
+            # PostgreSQL full-text search query with ranking and count in single query
+            # Optimized for <200ms performance: removed snippet generation, using ts_rank (faster than ts_rank_cd)
             search_query = text(
                 """
-                SELECT
-                    id,
-                    slug,
-                    title,
-                    category,
-                    ts_rank(search_vector, query) AS rank,
-                    ts_headline(
-                        'english',
-                        content_markdown,
-                        query,
-                        'MaxWords=50, MinWords=15, StartSel=<mark>, StopSel=</mark>'
-                    ) AS snippet
-                FROM help_articles,
-                     to_tsquery('english', :query) AS query
-                WHERE search_vector @@ query
-                ORDER BY rank DESC
-                LIMIT :limit
+                WITH search_results AS (
+                    SELECT
+                        id,
+                        slug,
+                        title,
+                        category,
+                        ts_rank(search_vector, query) AS rank,
+                        LEFT(content_markdown, 150) AS snippet,
+                        COUNT(*) OVER() AS total_count
+                    FROM help_articles,
+                         to_tsquery('english', :query) AS query
+                    WHERE search_vector @@ query
+                    ORDER BY rank DESC
+                    LIMIT :limit
+                )
+                SELECT * FROM search_results
                 """
             )
 
@@ -294,21 +294,8 @@ class HelpRepository:
             )
             rows = result.fetchall()
 
-            # Count total results
-            count_query = text(
-                """
-                SELECT COUNT(*)
-                FROM help_articles,
-                     to_tsquery('english', :query) AS query
-                WHERE search_vector @@ query
-                """
-            )
-
-            count_result = await self.session.execute(
-                count_query,
-                {"query": sanitized_query},
-            )
-            total_count = count_result.scalar() or 0
+            # Get total count from first row (all rows have same count due to window function)
+            total_count = rows[0].total_count if rows else 0
 
             # Convert rows to HelpSearchResult models
             results = [
