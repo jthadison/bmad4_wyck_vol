@@ -86,8 +86,8 @@ test.describe('Tutorials Page (Story 11.8b)', () => {
     await page.waitForSelector('#app', { timeout: TIMEOUT })
     await page.waitForTimeout(2000)
 
-    // Should have page title
-    const pageTitle = page.locator('h1, .tutorials-title, .page-title')
+    // Should have page title (correct class is .tutorial-title)
+    const pageTitle = page.locator('.tutorial-title')
     const titleText = await pageTitle.textContent().catch(() => null)
 
     // Title should exist and contain "tutorial" (case insensitive)
