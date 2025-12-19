@@ -27,6 +27,7 @@ Author: Story 11.8a (Task 8), Story 11.8b (Task 6)
 
 import argparse
 import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -128,7 +129,7 @@ async def upsert_article(
             "content_markdown": content_markdown,
             "content_html": content_html,
             "category": category,
-            "tags": tags,
+            "tags": json.dumps(tags),
             "keywords": keywords,
             "last_updated": datetime.now(UTC),
         },
@@ -199,8 +200,8 @@ async def upsert_glossary_term(
             "short_definition": short_definition,
             "full_description_html": full_description_html,
             "wyckoff_phase": wyckoff_phase,
-            "related_terms": related_terms,
-            "tags": tags,
+            "related_terms": json.dumps(related_terms),
+            "tags": json.dumps(tags),
             "last_updated": datetime.now(UTC),
         },
     )
@@ -240,8 +241,6 @@ async def upsert_tutorial(
     tags : list[str]
         Tag list
     """
-    import json
-
     query = text(
         """
         INSERT INTO tutorials (
@@ -273,7 +272,7 @@ async def upsert_tutorial(
             "difficulty": difficulty,
             "estimated_time_minutes": estimated_time_minutes,
             "steps": json.dumps(steps),
-            "tags": tags,
+            "tags": json.dumps(tags),
             "last_updated": datetime.now(UTC),
         },
     )
@@ -473,6 +472,22 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    # Windows compatibility: Set UTF-8 encoding and event loop policy
+    import sys
+
+    if sys.platform == "win32":
+        # Fix Unicode encoding issues on Windows console
+        import os
+
+        os.environ["PYTHONIOENCODING"] = "utf-8"
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
+
+        # Use WindowsSelectorEventLoopPolicy for psycopg async
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     # Configure structlog for CLI
     structlog.configure(
         processors=[

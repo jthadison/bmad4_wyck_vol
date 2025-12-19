@@ -6,9 +6,12 @@ Create Date: 2025-12-09
 
 """
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 
 from alembic import op
+
+# Use TIMESTAMP WITH TIME ZONE for PostgreSQL
+TIMESTAMPTZ = TIMESTAMP(timezone=True)
 
 # revision identifiers, used by Alembic.
 revision = "020_system_configuration"

@@ -23,8 +23,8 @@
 
 import { test, expect } from '@playwright/test'
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8001'
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5175'
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000'
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4173'
 const TIMEOUT = 30000 // 30 seconds
 
 test.describe('Tutorials Page (Story 11.8b)', () => {

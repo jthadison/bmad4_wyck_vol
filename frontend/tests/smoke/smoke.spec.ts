@@ -27,7 +27,7 @@
 
 import { test, expect } from '@playwright/test'
 
-const DEPLOYMENT_URL = process.env.DEPLOYMENT_URL || 'http://localhost'
+const DEPLOYMENT_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 const TIMEOUT = 30000 // 30 seconds
 
 test.describe('Deployment Smoke Tests', () => {
