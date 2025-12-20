@@ -249,3 +249,88 @@ def get_pivot_prices(pivots: list[Pivot]) -> list[float]:
         >>> avg_price = sum(prices) / len(prices)
     """
     return [float(p.price) for p in pivots]
+
+
+class PivotDetector:
+    """
+    Class-based pivot detector for Story 11.9a implementation.
+
+    Provides an object-oriented interface for pivot detection with configurable
+    lookback parameters. This class wraps the functional detect_pivots() API
+    to match the Story 11.9 requirements while maintaining backward compatibility.
+
+    Attributes:
+        left_bars: Number of bars to check before pivot candidate (default: 5)
+        right_bars: Number of bars to check after pivot candidate (default: 5)
+
+    Note:
+        This implementation uses symmetric lookback (left_bars == right_bars)
+        to maintain consistency with the existing detect_pivots() function.
+        The lookback parameter is set to min(left_bars, right_bars).
+
+    Example:
+        >>> detector = PivotDetector(left_bars=5, right_bars=5)
+        >>> highs, lows = detector.detect_pivots(bars)
+        >>> print(f"Found {len(highs)} pivot highs, {len(lows)} pivot lows")
+    """
+
+    def __init__(self, left_bars: int = 5, right_bars: int = 5) -> None:
+        """
+        Initialize pivot detector with lookback windows.
+
+        Args:
+            left_bars: Number of bars to check before pivot (1-100)
+            right_bars: Number of bars to check after pivot (1-100)
+
+        Raises:
+            ValueError: If left_bars or right_bars are outside valid range
+        """
+        if not (1 <= left_bars <= 100):
+            raise ValueError(f"left_bars must be 1-100, got {left_bars}")
+        if not (1 <= right_bars <= 100):
+            raise ValueError(f"right_bars must be 1-100, got {right_bars}")
+
+        self.left_bars = left_bars
+        self.right_bars = right_bars
+        # Use symmetric lookback (minimum of left and right)
+        self._lookback = min(left_bars, right_bars)
+
+        logger.debug(
+            "pivot_detector_initialized",
+            left_bars=left_bars,
+            right_bars=right_bars,
+            lookback=self._lookback,
+        )
+
+    def detect_pivots(
+        self,
+        bars: list[OHLCVBar],
+    ) -> tuple[list[Pivot], list[Pivot]]:
+        """
+        Detect pivot highs and pivot lows in OHLCV bars.
+
+        This method uses the functional detect_pivots() API internally
+        and separates the results into highs and lows.
+
+        Args:
+            bars: List of OHLCV bars to scan for pivots
+
+        Returns:
+            Tuple of (pivot_highs, pivot_lows)
+            - pivot_highs: List of Pivot objects with type=HIGH
+            - pivot_lows: List of Pivot objects with type=LOW
+
+        Example:
+            >>> bars = get_ohlcv_bars("AAPL", "1d", count=100)
+            >>> highs, lows = detector.detect_pivots(bars)
+            >>> print(f"Resistance levels: {len(highs)}")
+            >>> print(f"Support levels: {len(lows)}")
+        """
+        # Use the functional API
+        all_pivots = detect_pivots(bars, lookback=self._lookback)
+
+        # Separate into highs and lows
+        pivot_highs = get_pivot_highs(all_pivots)
+        pivot_lows = get_pivot_lows(all_pivots)
+
+        return pivot_highs, pivot_lows

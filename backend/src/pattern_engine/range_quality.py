@@ -513,3 +513,133 @@ def get_quality_ranges(ranges: list[TradingRange]) -> list[TradingRange]:
     """
     quality = filter_quality_ranges(ranges, min_score=70)
     return sorted(quality, key=lambda r: r.quality_score or 0, reverse=True)
+
+
+# Story 11.9b: RangeQualityScore data model
+class RangeQualityScore:
+    """
+    Range quality score breakdown for Story 11.9b.
+
+    Provides detailed component scores and overall quality grade for a trading range.
+
+    Attributes:
+        total_score: Total quality score (0-100)
+        tightness_score: Cluster tightness component (0-20)
+        volume_score: Volume confirmation component (0-20)
+        duration_score: Range duration component (0-30)
+        touch_score: Touch count component (0-30)
+        quality_grade: Quality classification (EXCELLENT/GOOD/FAIR/POOR)
+    """
+
+    def __init__(
+        self,
+        total_score: int,
+        tightness_score: int,
+        volume_score: int,
+        duration_score: int,
+        touch_score: int,
+    ):
+        self.total_score = total_score
+        self.tightness_score = tightness_score
+        self.volume_score = volume_score
+        self.duration_score = duration_score
+        self.touch_score = touch_score
+        self.quality_grade = self._calculate_grade(total_score)
+
+    def _calculate_grade(self, total_score: int) -> str:
+        """Calculate quality grade from total score."""
+        if total_score >= 80:
+            return "EXCELLENT"
+        elif total_score >= 60:
+            return "GOOD"
+        elif total_score >= 40:
+            return "FAIR"
+        else:
+            return "POOR"
+
+
+# Story 11.9b: RangeQualityScorer class
+class RangeQualityScorer:
+    """
+    Class-based range quality scorer for Story 11.9b implementation.
+
+    Provides an object-oriented interface for scoring trading range quality with
+    configurable parameters. This class wraps the functional calculate_range_quality()
+    API to match Story 11.9 requirements while maintaining backward compatibility.
+
+    Attributes:
+        min_touches: Minimum touch count for range validity (default: 3)
+        min_bars: Minimum bar count for range validity (default: 10)
+
+    Example:
+        >>> scorer = RangeQualityScorer(min_touches=3, min_bars=10)
+        >>> score = scorer.score_range(trading_range, bars, volume_analysis)
+        >>> print(f"Quality: {score.quality_grade} ({score.total_score}/100)")
+        Quality: GOOD (72/100)
+    """
+
+    def __init__(self, min_touches: int = 3, min_bars: int = 10) -> None:
+        """
+        Initialize range quality scorer.
+
+        Args:
+            min_touches: Minimum touch count threshold (default: 3)
+            min_bars: Minimum duration threshold in bars (default: 10)
+
+        Note:
+            These parameters are for documentation purposes. The actual
+            scoring thresholds are hardcoded in the scoring functions
+            to maintain consistency with Epic 3 specifications.
+        """
+        self.min_touches = min_touches
+        self.min_bars = min_bars
+
+        logger.debug(
+            "range_quality_scorer_initialized",
+            min_touches=min_touches,
+            min_bars=min_bars,
+        )
+
+    def score_range(
+        self,
+        trading_range: TradingRange,
+        bars: list[OHLCVBar],
+        volume_analysis: list[VolumeAnalysis],
+    ) -> RangeQualityScore:
+        """
+        Score trading range quality with component breakdown.
+
+        Args:
+            trading_range: TradingRange to score
+            bars: OHLCV bars for the range period
+            volume_analysis: VolumeAnalysis results matching bars
+
+        Returns:
+            RangeQualityScore with total score and component breakdown
+
+        Example:
+            >>> score = scorer.score_range(trading_range, bars, volume_analysis)
+            >>> if score.quality_grade == "EXCELLENT":
+            ...     print(f"High-quality range: {score.total_score}/100")
+            >>> print(f"  Tightness: {score.tightness_score}/20")
+            >>> print(f"  Volume: {score.volume_score}/20")
+            >>> print(f"  Duration: {score.duration_score}/30")
+            >>> print(f"  Touches: {score.touch_score}/30")
+        """
+        # Calculate component scores using existing functions
+        duration_score = _score_duration(trading_range.duration)
+        touch_score = _score_touch_count(trading_range)
+        tightness_score = _score_price_tightness(trading_range)
+        volume_score = _score_volume_confirmation(trading_range, bars, volume_analysis)
+
+        # Calculate total score
+        total_score = min(duration_score + touch_score + tightness_score + volume_score, 100)
+
+        # Return structured score object
+        return RangeQualityScore(
+            total_score=total_score,
+            tightness_score=tightness_score,
+            volume_score=volume_score,
+            duration_score=duration_score,
+            touch_score=touch_score,
+        )
