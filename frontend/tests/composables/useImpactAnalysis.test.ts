@@ -65,16 +65,25 @@ describe('useImpactAnalysis', () => {
   })
 
   it('sets loading state during analysis', async () => {
-    vi.mocked(api.analyzeConfigImpact).mockResolvedValue({
-      data: mockImpact,
-    } as any)
+    let resolveApi: any
+    vi.mocked(api.analyzeConfigImpact).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApi = () => resolve({ data: mockImpact } as any)
+        })
+    )
     const { loading, analyze } = useImpactAnalysis({ debounceMs: 0 })
 
     const promise = analyze(mockConfig as any)
-    await nextTick()
+    await vi.runAllTimersAsync()
+
+    // Now loading should be true
     expect(loading.value).toBe(true)
 
+    // Resolve the API call
+    resolveApi()
     await promise
+
     expect(loading.value).toBe(false)
   })
 
@@ -84,7 +93,9 @@ describe('useImpactAnalysis', () => {
     } as any)
     const { impact, analyze } = useImpactAnalysis({ debounceMs: 0 })
 
-    await analyze(mockConfig as any)
+    const promise = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise
 
     expect(api.analyzeConfigImpact).toHaveBeenCalledWith(mockConfig)
     expect(impact.value).toEqual(mockImpact)
@@ -96,7 +107,9 @@ describe('useImpactAnalysis', () => {
     )
     const { error, impact, analyze } = useImpactAnalysis({ debounceMs: 0 })
 
-    await analyze(mockConfig as any)
+    const promise = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise
 
     expect(error.value).toBe('Network error')
     expect(impact.value).toBeNull()
@@ -126,8 +139,13 @@ describe('useImpactAnalysis', () => {
     } as any)
     const { analyze } = useImpactAnalysis({ debounceMs: 0, enableCache: true })
 
-    await analyze(mockConfig as any)
-    await analyze(mockConfig as any)
+    const promise1 = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise1
+
+    const promise2 = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise2
 
     expect(api.analyzeConfigImpact).toHaveBeenCalledTimes(1)
   })
@@ -138,8 +156,13 @@ describe('useImpactAnalysis', () => {
     } as any)
     const { analyze } = useImpactAnalysis({ debounceMs: 0, enableCache: false })
 
-    await analyze(mockConfig as any)
-    await analyze(mockConfig as any)
+    const promise1 = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise1
+
+    const promise2 = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise2
 
     expect(api.analyzeConfigImpact).toHaveBeenCalledTimes(2)
   })
@@ -152,7 +175,10 @@ describe('useImpactAnalysis', () => {
       debounceMs: 0,
     })
 
-    await analyze(mockConfig as any)
+    const promise = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise
+
     expect(impact.value).toEqual(mockImpact)
 
     clearImpact()
@@ -168,9 +194,15 @@ describe('useImpactAnalysis', () => {
       enableCache: true,
     })
 
-    await analyze(mockConfig as any)
+    const promise1 = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise1
+
     clearCache()
-    await analyze(mockConfig as any)
+
+    const promise2 = analyze(mockConfig as any)
+    await vi.runAllTimersAsync()
+    await promise2
 
     expect(api.analyzeConfigImpact).toHaveBeenCalledTimes(2)
   })

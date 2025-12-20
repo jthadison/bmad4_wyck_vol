@@ -13,6 +13,8 @@ vi.mock('@/composables/useWebSocket', () => ({
     connectionStatus: { value: 'disconnected' },
     subscribe: vi.fn(),
     unsubscribe: vi.fn(),
+    getConnectionId: vi.fn(() => null),
+    getLastSequenceNumber: vi.fn(() => 0),
   }),
 }))
 

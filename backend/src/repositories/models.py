@@ -813,3 +813,119 @@ class CampaignMetricsModel(Base):
             f"<CampaignMetrics(id={self.id}, campaign_id={self.campaign_id}, "
             f"symbol={self.symbol}, total_r={self.total_r_achieved})>"
         )
+
+
+class BacktestResultModel(Base):
+    """
+    Backtest Result database model (Story 12.1 Task 9).
+
+    Stores completed backtest runs with their configuration, trades,
+    equity curves, and performance metrics.
+    """
+
+    __tablename__ = "backtest_results"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Backtest run identification
+    backtest_run_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    # Trading symbol and timeframe
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    timeframe: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        default="1d",
+    )
+
+    # Date range
+    start_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    end_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    # Configuration (JSONB)
+    config: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
+    # Equity curve time series (JSONB)
+    equity_curve: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    # Trades (JSONB)
+    trades: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    # Performance metrics (JSONB)
+    metrics: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
+    # Look-ahead bias validation
+    look_ahead_bias_check: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+    )
+
+    # Execution metadata
+    execution_time_seconds: Mapped[Decimal] = mapped_column(
+        DECIMAL(10, 4),
+        nullable=False,
+        default=Decimal("0.0"),
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    # Indexes for query performance
+    __table_args__ = (
+        # Index on symbol for filtering
+        Index("ix_backtest_results_symbol", "symbol"),
+        # Index on created_at for sorting
+        Index("ix_backtest_results_created_at", "created_at"),
+        # Composite index for symbol + created_at queries
+        Index("ix_backtest_results_symbol_created_at", "symbol", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"<BacktestResult(id={self.id}, backtest_run_id={self.backtest_run_id}, "
+            f"symbol={self.symbol}, trades={len(self.trades)})>"
+        )
