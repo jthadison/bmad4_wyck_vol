@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from src.campaign_management.campaign_manager import CampaignManager
+from src.database import async_session_maker
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import PhaseClassification
 from src.models.trading_range import TradingRange
@@ -280,12 +281,13 @@ class MasterOrchestrator:
         try:
             from src.repositories.ohlcv_repository import OHLCVRepository
 
-            repo = OHLCVRepository()
-            bars = repo.get_bars(
-                symbol=symbol,
-                timeframe=timeframe,
-                limit=self._config.default_lookback_bars,
-            )
+            async with async_session_maker() as session:
+                repo = OHLCVRepository(session=session)
+                bars = await repo.get_latest_bars(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    count=self._config.default_lookback_bars,
+                )
 
             if not bars:
                 return StageResult(

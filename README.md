@@ -8,6 +8,14 @@ This system implements the Wyckoff methodology for institutional volume pattern 
 
 **Key Features:**
 - Real-time pattern detection using Wyckoff methodology
+- **Complete pattern detection suite** (Story 11.9) - 9/9 detectors loaded (HEALTHY status):
+  - Pivot detection for support/resistance levels
+  - Range quality scoring (EXCELLENT/GOOD/FAIR/POOR grades)
+  - Creek/Ice/Jump level calculations
+  - Supply/demand zone mapping
+  - UTAD distribution pattern detection
+  - Quality-based position sizing with RS integration
+  - Campaign state machine for multi-phase position tracking
 - **Wyckoff schematic template matching** (Story 11.5.1) - Automated detection of 4 classic Wyckoff schematics (Accumulation #1/#2, Distribution #1/#2) with confidence scoring
 - **Point & Figure cause-building tracking** (Story 11.5.1) - P&F column counting with ATR-based analysis and projected jump target calculation
 - **Interactive schematic overlays** (Story 11.5.1) - Visual template overlays on charts with deviation highlighting

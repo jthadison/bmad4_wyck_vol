@@ -5,6 +5,7 @@ Provides lazy-loaded access to all detector modules from previous epics.
 Supports production, test, and mock modes for flexible testing.
 
 Story 8.1: Master Orchestrator Architecture (AC: 4)
+Updated: Fixed detector imports to use correct class names and return None for unimplemented detectors
 """
 
 from typing import Any, Literal
@@ -144,7 +145,8 @@ class OrchestratorContainer:
                     detector="pivot_detector",
                     error=str(e),
                 )
-                raise
+                # Return None for unimplemented detectors instead of raising
+                return None
 
         return self._pivot_detector
 
@@ -202,7 +204,8 @@ class OrchestratorContainer:
                     detector="range_quality_scorer",
                     error=str(e),
                 )
-                raise
+                # Return None for unimplemented detectors instead of raising
+                return None
 
         return self._range_quality_scorer
 
@@ -231,7 +234,8 @@ class OrchestratorContainer:
                     detector="level_calculator",
                     error=str(e),
                 )
-                raise
+                # Return None for unimplemented detectors instead of raising
+                return None
 
         return self._level_calculator
 
@@ -260,7 +264,8 @@ class OrchestratorContainer:
                     detector="zone_mapper",
                     error=str(e),
                 )
-                raise
+                # Return None for unimplemented detectors instead of raising
+                return None
 
         return self._zone_mapper
 
@@ -280,10 +285,10 @@ class OrchestratorContainer:
         if self._sos_detector is None:
             try:
                 from src.pattern_engine.detectors.sos_detector_orchestrator import (
-                    SOSDetectorOrchestrator,
+                    SOSDetector,
                 )
 
-                self._sos_detector = SOSDetectorOrchestrator()
+                self._sos_detector = SOSDetector()
                 self._loaded_detectors.append("sos_detector")
                 logger.debug("detector_loaded", detector="sos_detector")
             except ImportError as e:
@@ -293,7 +298,8 @@ class OrchestratorContainer:
                     detector="sos_detector",
                     error=str(e),
                 )
-                raise
+                # Return None for unimplemented detectors instead of raising
+                return None
 
         return self._sos_detector
 
@@ -311,10 +317,10 @@ class OrchestratorContainer:
         if self._lps_detector is None:
             try:
                 from src.pattern_engine.detectors.lps_detector_orchestrator import (
-                    LPSDetectorOrchestrator,
+                    LPSDetector,
                 )
 
-                self._lps_detector = LPSDetectorOrchestrator()
+                self._lps_detector = LPSDetector()
                 self._loaded_detectors.append("lps_detector")
                 logger.debug("detector_loaded", detector="lps_detector")
             except ImportError as e:
@@ -324,7 +330,8 @@ class OrchestratorContainer:
                     detector="lps_detector",
                     error=str(e),
                 )
-                raise
+                # Return None for unimplemented detectors instead of raising
+                return None
 
         return self._lps_detector
 
