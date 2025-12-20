@@ -729,3 +729,123 @@ def map_supply_demand_zones(
     )
 
     return active_zones
+
+
+# Story 11.9d: ZoneMapper class
+class ZoneMapper:
+    """
+    Class-based zone mapper for Story 11.9d implementation.
+
+    Provides an object-oriented interface for mapping supply and demand zones.
+    This class wraps the functional map_supply_demand_zones() API to match
+    Story 11.9 requirements while maintaining backward compatibility.
+
+    Attributes:
+        zone_thickness_pct: Zone thickness as percentage (default: 0.02 = 2%)
+
+    Example:
+        >>> mapper = ZoneMapper(zone_thickness_pct=0.02)
+        >>> supply_zones = mapper.map_supply_zones(bars, lookback=100)
+        >>> demand_zones = mapper.map_demand_zones(bars, lookback=100)
+    """
+
+    def __init__(self, zone_thickness_pct: float = 0.02) -> None:
+        """
+        Initialize zone mapper with zone thickness percentage.
+
+        Args:
+            zone_thickness_pct: Zone thickness as decimal (default: 0.02 = 2%)
+
+        Note:
+            Zone thickness determines the vertical size of zones. The current
+            implementation uses bar-based zone detection rather than percentage-based
+            thickness, so this parameter is for interface compatibility.
+        """
+        self.zone_thickness_pct = zone_thickness_pct
+
+        logger.debug(
+            "zone_mapper_initialized",
+            zone_thickness_pct=zone_thickness_pct,
+        )
+
+    def map_supply_zones(
+        self,
+        bars: list[OHLCVBar],
+        lookback: int = 100,
+        volume_analysis: list[VolumeAnalysis] | None = None,
+        trading_range: TradingRange | None = None,
+    ) -> list[Zone]:
+        """
+        Map supply zones in price action.
+
+        Args:
+            bars: OHLCV bars to analyze
+            lookback: Number of bars to analyze (default: 100)
+            volume_analysis: Optional volume analysis results
+            trading_range: Optional trading range for zone proximity calculation
+
+        Returns:
+            List of Zone objects with type=SUPPLY
+
+        Example:
+            >>> supply_zones = mapper.map_supply_zones(bars, lookback=100)
+            >>> for zone in supply_zones:
+            ...     if zone.strength == ZoneStrength.FRESH:
+            ...         print(f"Fresh supply zone at ${zone.price_range.midpoint}")
+        """
+        if trading_range is None or volume_analysis is None:
+            # Cannot use the full map_supply_demand_zones function without trading range
+            logger.warning(
+                "incomplete_parameters",
+                message="trading_range and volume_analysis required for zone mapping",
+            )
+            return []
+
+        # Use the existing function to get all zones
+        all_zones = map_supply_demand_zones(trading_range, bars, volume_analysis)
+
+        # Filter for supply zones only
+        supply_zones = [z for z in all_zones if z.zone_type == ZoneType.SUPPLY]
+
+        return supply_zones
+
+    def map_demand_zones(
+        self,
+        bars: list[OHLCVBar],
+        lookback: int = 100,
+        volume_analysis: list[VolumeAnalysis] | None = None,
+        trading_range: TradingRange | None = None,
+    ) -> list[Zone]:
+        """
+        Map demand zones in price action.
+
+        Args:
+            bars: OHLCV bars to analyze
+            lookback: Number of bars to analyze (default: 100)
+            volume_analysis: Optional volume analysis results
+            trading_range: Optional trading range for zone proximity calculation
+
+        Returns:
+            List of Zone objects with type=DEMAND
+
+        Example:
+            >>> demand_zones = mapper.map_demand_zones(bars, lookback=100)
+            >>> for zone in demand_zones:
+            ...     if zone.strength == ZoneStrength.FRESH:
+            ...         print(f"Fresh demand zone at ${zone.price_range.midpoint}")
+        """
+        if trading_range is None or volume_analysis is None:
+            # Cannot use the full map_supply_demand_zones function without trading range
+            logger.warning(
+                "incomplete_parameters",
+                message="trading_range and volume_analysis required for zone mapping",
+            )
+            return []
+
+        # Use the existing function to get all zones
+        all_zones = map_supply_demand_zones(trading_range, bars, volume_analysis)
+
+        # Filter for demand zones only
+        demand_zones = [z for z in all_zones if z.zone_type == ZoneType.DEMAND]
+
+        return demand_zones

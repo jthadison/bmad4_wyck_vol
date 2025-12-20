@@ -1086,3 +1086,157 @@ def calculate_jump_level(
     )
 
     return jump_level
+
+
+# Story 11.9c: LevelCalculator class
+class LevelCalculator:
+    """
+    Class-based level calculator for Story 11.9c implementation.
+
+    Provides an object-oriented interface for calculating Creek, Ice, and Jump levels.
+    This class wraps the functional calculate_*_level() APIs to match Story 11.9
+    requirements while maintaining backward compatibility.
+
+    The Story 11.9 requirements specify plural methods (calculate_creek_levels, etc.)
+    that return lists, but the existing implementation works with single ranges.
+    This class bridges that gap by providing both interfaces.
+
+    Example:
+        >>> calculator = LevelCalculator()
+        >>> # Single level calculation
+        >>> creek_levels = calculator.calculate_creek_levels(trading_range, bars, volume_analysis)
+        >>> ice_levels = calculator.calculate_ice_levels(trading_range, bars, volume_analysis)
+        >>> jump_levels = calculator.calculate_jump_levels(trading_range, "bullish")
+    """
+
+    def __init__(self) -> None:
+        """Initialize level calculator."""
+        logger.debug("level_calculator_initialized")
+
+    def calculate_creek_levels(
+        self,
+        trading_range: TradingRange,
+        bars: list[OHLCVBar],
+        volume_analysis: list[VolumeAnalysis],
+    ) -> list[CreekLevel]:
+        """
+        Calculate Creek levels (minor S/R) for a trading range.
+
+        In the current implementation, each trading range has one Creek level
+        (the primary support). This method returns it as a single-element list
+        to match the Story 11.9 interface specification.
+
+        Args:
+            trading_range: TradingRange to analyze
+            bars: OHLCV bars for the range period
+            volume_analysis: VolumeAnalysis results matching bars
+
+        Returns:
+            List containing the Creek level for this range
+
+        Example:
+            >>> creek_levels = calculator.calculate_creek_levels(range, bars, vol_analysis)
+            >>> if creek_levels:
+            ...     print(f"Creek support at ${creek_levels[0].price}")
+        """
+        creek_level = calculate_creek_level(trading_range, bars, volume_analysis)
+        return [creek_level] if creek_level else []
+
+    def calculate_ice_levels(
+        self,
+        trading_range: TradingRange,
+        bars: list[OHLCVBar],
+        volume_analysis: list[VolumeAnalysis],
+    ) -> list[IceLevel]:
+        """
+        Calculate Ice levels (major S/R) for a trading range.
+
+        In the current implementation, each trading range has one Ice level
+        (the primary resistance). This method returns it as a single-element list
+        to match the Story 11.9 interface specification.
+
+        Args:
+            trading_range: TradingRange to analyze
+            bars: OHLCV bars for the range period
+            volume_analysis: VolumeAnalysis results matching bars
+
+        Returns:
+            List containing the Ice level for this range
+
+        Example:
+            >>> ice_levels = calculator.calculate_ice_levels(range, bars, vol_analysis)
+            >>> if ice_levels:
+            ...     print(f"Ice resistance at ${ice_levels[0].price}")
+        """
+        ice_level = calculate_ice_level(trading_range, bars, volume_analysis)
+        return [ice_level] if ice_level else []
+
+    def calculate_jump_levels(
+        self,
+        trading_range: TradingRange,
+        direction: str,  # "bullish" or "bearish"
+        creek: CreekLevel | None = None,
+        ice: IceLevel | None = None,
+        bars: list[OHLCVBar] | None = None,
+        volume_analysis: list[VolumeAnalysis] | None = None,
+    ) -> list[JumpLevel]:
+        """
+        Calculate Jump levels (breakout targets) for a trading range.
+
+        Args:
+            trading_range: TradingRange to analyze
+            direction: "bullish" for upside targets, "bearish" for downside targets
+            creek: Optional pre-calculated Creek level (calculated if not provided)
+            ice: Optional pre-calculated Ice level (calculated if not provided)
+            bars: OHLCV bars (required if creek/ice not provided)
+            volume_analysis: Volume analysis (required if creek/ice not provided)
+
+        Returns:
+            List containing the Jump level for this range
+
+        Example:
+            >>> # With pre-calculated levels
+            >>> jump_levels = calculator.calculate_jump_levels(
+            ...     range, "bullish", creek=creek, ice=ice
+            ... )
+            >>>
+            >>> # Calculate levels automatically
+            >>> jump_levels = calculator.calculate_jump_levels(
+            ...     range, "bullish", bars=bars, volume_analysis=vol_analysis
+            ... )
+        """
+        # Calculate Creek and Ice if not provided
+        if creek is None:
+            if bars is None or volume_analysis is None:
+                logger.error(
+                    "missing_parameters",
+                    message="bars and volume_analysis required if creek not provided",
+                )
+                return []
+            creek = calculate_creek_level(trading_range, bars, volume_analysis)
+            if creek is None:
+                return []
+
+        if ice is None:
+            if bars is None or volume_analysis is None:
+                logger.error(
+                    "missing_parameters",
+                    message="bars and volume_analysis required if ice not provided",
+                )
+                return []
+            ice = calculate_ice_level(trading_range, bars, volume_analysis)
+            if ice is None:
+                return []
+
+        # Calculate Jump level
+        # Note: Current implementation only supports bullish (upside) jumps
+        # Bearish (downside) jumps would require implementing the inverse calculation
+        if direction == "bullish":
+            jump_level = calculate_jump_level(trading_range, creek, ice)
+            return [jump_level] if jump_level else []
+        else:
+            logger.warning(
+                "bearish_jump_not_implemented",
+                message="Bearish jump calculation not yet implemented",
+            )
+            return []
