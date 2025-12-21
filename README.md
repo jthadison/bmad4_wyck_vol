@@ -48,6 +48,7 @@ Before setting up the project, ensure you have the following installed:
 - **Docker:** 24 or higher
 - **Docker Compose:** 2.24 or higher
 - **Git:** For version control
+- **Git LFS:** For large file storage (required for labeled pattern datasets)
 
 ## Quick Start
 
@@ -56,6 +57,8 @@ Before setting up the project, ensure you have the following installed:
 ```bash
 git clone <repository-url>
 cd bmad-wyckoff
+git lfs install  # Initialize Git LFS for large file support
+git lfs pull     # Pull LFS-tracked files (Parquet datasets)
 ```
 
 ### 2. Environment Configuration
