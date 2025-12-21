@@ -231,7 +231,7 @@ jobs:
         continue-on-error: true
         run: |
           poetry run pytest tests/integration/test_detector_accuracy_integration.py \
-            --tb=short -v --html=tests/reports/accuracy_test_results.html --self-contained-html
+            --tb=short -v
         env:
           PYTHONPATH: .
 
@@ -278,14 +278,6 @@ jobs:
           path: |
             backend/tests/reports/*.html
             backend/tests/datasets/baselines/*.json
-          retention-days: 30
-
-      - name: Upload pytest HTML report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-accuracy-report
-          path: backend/tests/reports/accuracy_test_results.html
           retention-days: 30
 
       - name: Comment PR with accuracy results
