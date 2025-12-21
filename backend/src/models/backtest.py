@@ -250,6 +250,13 @@ class BacktestConfig(BaseModel):
         default_factory=lambda: {"max_portfolio_heat": 0.10, "max_campaign_risk": 0.05},
         description="Risk limit configuration",
     )
+    # Story 12.5: Commission and Slippage configurations
+    commission_config: Optional["CommissionConfig"] = Field(
+        default=None, description="Commission configuration"
+    )
+    slippage_config: Optional["SlippageConfig"] = Field(
+        default=None, description="Slippage configuration"
+    )
 
 
 class BacktestOrder(BaseModel):
@@ -287,6 +294,13 @@ class BacktestOrder(BaseModel):
     commission: Decimal = Field(default=Decimal("0"), description="Commission cost")
     slippage: Decimal = Field(default=Decimal("0"), description="Slippage cost")
     status: Literal["PENDING", "FILLED", "REJECTED"] = Field(description="Order status")
+    # Story 12.5: Cost breakdown fields
+    commission_breakdown: Optional["CommissionBreakdown"] = Field(
+        default=None, description="Commission calculation breakdown"
+    )
+    slippage_breakdown: Optional["SlippageBreakdown"] = Field(
+        default=None, description="Slippage calculation breakdown"
+    )
 
 
 class BacktestPosition(BaseModel):
@@ -371,6 +385,15 @@ class BacktestTrade(BaseModel):
     pattern_type: Optional[str] = Field(
         default=None, description="Pattern type that triggered trade"
     )
+    # Story 12.5: Detailed cost tracking fields
+    entry_commission: Decimal = Field(default=Decimal("0"), description="Entry commission")
+    exit_commission: Decimal = Field(default=Decimal("0"), description="Exit commission")
+    entry_slippage: Decimal = Field(default=Decimal("0"), description="Entry slippage")
+    exit_slippage: Decimal = Field(default=Decimal("0"), description="Exit slippage")
+    gross_pnl: Decimal = Field(default=Decimal("0"), description="Gross P&L before costs")
+    gross_r_multiple: Decimal = Field(
+        default=Decimal("0"), description="Gross R-multiple before costs"
+    )
 
     # Backward compatibility aliases for Story 11.2
     @property
@@ -428,6 +451,237 @@ class BacktestResult(BaseModel):
     created_at: datetime = Field(
         default_factory=datetime.utcnow, description="When backtest was created"
     )
+    # Story 12.5: Cost summary field
+    cost_summary: Optional["BacktestCostSummary"] = Field(
+        default=None, description="Transaction cost summary"
+    )
+
+
+# ==========================================================================================
+# Story 12.5: Commission and Slippage Modeling
+# ==========================================================================================
+
+
+class CommissionConfig(BaseModel):
+    """Commission configuration for backtesting.
+
+    Defines commission structure for a broker including rate type,
+    costs, and caps.
+
+    Attributes:
+        commission_type: Type of commission calculation
+        commission_per_share: Cost per share for PER_SHARE type
+        commission_percentage: Percentage for PERCENTAGE type
+        fixed_commission_per_trade: Fixed cost for FIXED type
+        min_commission: Minimum commission per trade
+        max_commission: Maximum commission per trade (optional)
+        broker_name: Broker identifier
+    """
+
+    commission_type: Literal["PER_SHARE", "PERCENTAGE", "FIXED"] = Field(
+        default="PER_SHARE", description="Commission calculation type"
+    )
+    commission_per_share: Decimal = Field(
+        default=Decimal("0.005"), ge=Decimal("0"), description="Commission per share"
+    )
+    commission_percentage: Decimal = Field(
+        default=Decimal("0"), ge=Decimal("0"), description="Commission as percentage"
+    )
+    fixed_commission_per_trade: Decimal = Field(
+        default=Decimal("0"), ge=Decimal("0"), description="Fixed commission per trade"
+    )
+    min_commission: Decimal = Field(
+        default=Decimal("1.00"), ge=Decimal("0"), description="Minimum commission per trade"
+    )
+    max_commission: Decimal | None = Field(
+        default=None, description="Maximum commission per trade (optional)"
+    )
+    broker_name: str = Field(default="Interactive Brokers Retail", description="Broker name")
+
+
+class CommissionBreakdown(BaseModel):
+    """Detailed commission calculation breakdown.
+
+    Provides transparency into commission calculation showing
+    base calculation and applied caps.
+
+    Attributes:
+        order_id: Reference to BacktestOrder
+        shares: Share quantity
+        base_commission: Commission before min/max caps
+        applied_commission: Actual commission charged after caps
+        commission_type: Which calculation method was used
+        broker_name: Broker identifier
+    """
+
+    order_id: UUID = Field(description="Order ID")
+    shares: int = Field(gt=0, description="Share quantity")
+    base_commission: Decimal = Field(description="Commission before caps", decimal_places=2)
+    applied_commission: Decimal = Field(description="Commission after caps", decimal_places=2)
+    commission_type: str = Field(description="Commission type used")
+    broker_name: str = Field(description="Broker name")
+
+
+class SlippageConfig(BaseModel):
+    """Slippage configuration for backtesting.
+
+    Defines slippage model parameters including liquidity thresholds
+    and market impact settings.
+
+    Attributes:
+        slippage_model: Type of slippage calculation
+        high_liquidity_threshold: Dollar volume threshold for high liquidity
+        high_liquidity_slippage_pct: Slippage for high liquidity stocks
+        low_liquidity_slippage_pct: Slippage for low liquidity stocks
+        market_impact_enabled: Whether to model market impact
+        market_impact_threshold_pct: Volume participation threshold for impact
+        market_impact_per_increment_pct: Additional slippage per 10% increment
+        fixed_slippage_pct: Fixed slippage for FIXED_PERCENTAGE model
+    """
+
+    slippage_model: Literal["LIQUIDITY_BASED", "FIXED_PERCENTAGE", "VOLUME_WEIGHTED"] = Field(
+        default="LIQUIDITY_BASED", description="Slippage model type"
+    )
+    high_liquidity_threshold: Decimal = Field(
+        default=Decimal("1000000"), ge=Decimal("0"), description="High liquidity threshold ($)"
+    )
+    high_liquidity_slippage_pct: Decimal = Field(
+        default=Decimal("0.0002"), ge=Decimal("0"), description="High liquidity slippage %"
+    )
+    low_liquidity_slippage_pct: Decimal = Field(
+        default=Decimal("0.0005"), ge=Decimal("0"), description="Low liquidity slippage %"
+    )
+    market_impact_enabled: bool = Field(default=True, description="Enable market impact modeling")
+    market_impact_threshold_pct: Decimal = Field(
+        default=Decimal("0.10"), ge=Decimal("0"), description="Volume participation threshold"
+    )
+    market_impact_per_increment_pct: Decimal = Field(
+        default=Decimal("0.0001"), ge=Decimal("0"), description="Impact per 10% increment"
+    )
+    fixed_slippage_pct: Decimal | None = Field(
+        default=None, description="Fixed slippage for FIXED_PERCENTAGE model"
+    )
+
+
+class SlippageBreakdown(BaseModel):
+    """Detailed slippage calculation breakdown.
+
+    Provides transparency into slippage calculation showing
+    liquidity analysis and market impact.
+
+    Attributes:
+        order_id: Reference to BacktestOrder
+        bar_volume: Volume of fill bar
+        bar_avg_dollar_volume: 20-bar average dollar volume
+        order_quantity: Share quantity
+        order_value: Order value in dollars
+        volume_participation_pct: Order as % of bar volume
+        base_slippage_pct: Liquidity-based slippage
+        market_impact_slippage_pct: Additional market impact slippage
+        total_slippage_pct: Total slippage percentage
+        slippage_dollar_amount: Slippage in dollars
+        slippage_model_used: Which model was used
+    """
+
+    order_id: UUID = Field(description="Order ID")
+    bar_volume: int = Field(ge=0, description="Fill bar volume")
+    bar_avg_dollar_volume: Decimal = Field(description="20-bar avg dollar volume", decimal_places=2)
+    order_quantity: int = Field(gt=0, description="Share quantity")
+    order_value: Decimal = Field(description="Order value", decimal_places=2)
+    volume_participation_pct: Decimal = Field(
+        description="Volume participation %", decimal_places=4
+    )
+    base_slippage_pct: Decimal = Field(description="Base slippage %", decimal_places=8)
+    market_impact_slippage_pct: Decimal = Field(
+        description="Market impact slippage %", decimal_places=8
+    )
+    total_slippage_pct: Decimal = Field(description="Total slippage %", decimal_places=8)
+    slippage_dollar_amount: Decimal = Field(description="Slippage amount $", decimal_places=2)
+    slippage_model_used: str = Field(description="Slippage model used")
+
+
+class TransactionCostReport(BaseModel):
+    """Per-trade transaction cost analysis.
+
+    Complete breakdown of commission and slippage costs for a single
+    trade, including impact on P&L and R-multiples.
+
+    Attributes:
+        trade_id: Reference to BacktestTrade
+        entry_commission: Entry commission cost
+        exit_commission: Exit commission cost
+        total_commission: Total commission
+        entry_slippage: Entry slippage cost
+        exit_slippage: Exit slippage cost
+        total_slippage: Total slippage
+        total_transaction_costs: Total costs (commission + slippage)
+        transaction_cost_pct: Costs as % of trade value
+        transaction_cost_r_multiple: Costs in R-multiples
+        gross_pnl: P&L before costs
+        net_pnl: P&L after costs
+        gross_r_multiple: R-multiple before costs
+        net_r_multiple: R-multiple after costs
+    """
+
+    trade_id: UUID = Field(description="Trade ID")
+    entry_commission: Decimal = Field(description="Entry commission", decimal_places=2)
+    exit_commission: Decimal = Field(description="Exit commission", decimal_places=2)
+    total_commission: Decimal = Field(description="Total commission", decimal_places=2)
+    entry_slippage: Decimal = Field(description="Entry slippage", decimal_places=2)
+    exit_slippage: Decimal = Field(description="Exit slippage", decimal_places=2)
+    total_slippage: Decimal = Field(description="Total slippage", decimal_places=2)
+    total_transaction_costs: Decimal = Field(
+        description="Total transaction costs", decimal_places=2
+    )
+    transaction_cost_pct: Decimal = Field(description="Costs as % of trade value", decimal_places=4)
+    transaction_cost_r_multiple: Decimal = Field(
+        description="Costs in R-multiples", decimal_places=4
+    )
+    gross_pnl: Decimal = Field(description="Gross P&L before costs", decimal_places=2)
+    net_pnl: Decimal = Field(description="Net P&L after costs", decimal_places=2)
+    gross_r_multiple: Decimal = Field(description="Gross R-multiple", decimal_places=2)
+    net_r_multiple: Decimal = Field(description="Net R-multiple", decimal_places=2)
+
+
+class BacktestCostSummary(BaseModel):
+    """Aggregate transaction cost summary for backtest.
+
+    Summary of all transaction costs across all trades in a backtest,
+    including R-multiple degradation analysis.
+
+    Attributes:
+        total_trades: Number of trades
+        total_commission_paid: Total commission across all trades
+        total_slippage_cost: Total slippage across all trades
+        total_transaction_costs: Total costs
+        avg_commission_per_trade: Average commission per trade
+        avg_slippage_per_trade: Average slippage per trade
+        avg_transaction_cost_per_trade: Average total cost per trade
+        cost_as_pct_of_total_pnl: Costs as % of total P&L
+        gross_avg_r_multiple: Average R-multiple before costs
+        net_avg_r_multiple: Average R-multiple after costs
+        r_multiple_degradation: Difference (gross - net R-multiple)
+    """
+
+    total_trades: int = Field(ge=0, description="Total number of trades")
+    total_commission_paid: Decimal = Field(description="Total commission paid", decimal_places=2)
+    total_slippage_cost: Decimal = Field(description="Total slippage cost", decimal_places=2)
+    total_transaction_costs: Decimal = Field(
+        description="Total transaction costs", decimal_places=2
+    )
+    avg_commission_per_trade: Decimal = Field(
+        description="Avg commission per trade", decimal_places=2
+    )
+    avg_slippage_per_trade: Decimal = Field(description="Avg slippage per trade", decimal_places=2)
+    avg_transaction_cost_per_trade: Decimal = Field(
+        description="Avg cost per trade", decimal_places=2
+    )
+    cost_as_pct_of_total_pnl: Decimal = Field(
+        description="Cost as % of total P&L", decimal_places=2
+    )
+    gross_avg_r_multiple: Decimal = Field(description="Gross avg R-multiple", decimal_places=2)
+    net_avg_r_multiple: Decimal = Field(description="Net avg R-multiple", decimal_places=2)
+    r_multiple_degradation: Decimal = Field(description="R-multiple degradation", decimal_places=2)
 
 
 # ==========================================================================================
