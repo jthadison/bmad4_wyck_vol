@@ -28,12 +28,12 @@ Story 12.1 Models (Backtesting Engine):
 Author: Story 11.2 Task 1, Story 12.1 Task 1
 """
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, Literal, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class BacktestPreviewRequest(BaseModel):
@@ -427,4 +427,214 @@ class BacktestResult(BaseModel):
     execution_time_seconds: float = Field(default=0.0, ge=0, description="Execution time")
     created_at: datetime = Field(
         default_factory=datetime.utcnow, description="When backtest was created"
+    )
+
+
+# ==========================================================================================
+# Story 12.2: Labeled Pattern Dataset Models
+# ==========================================================================================
+
+
+class LabeledPattern(BaseModel):
+    """
+    Labeled pattern for dataset creation and detector accuracy validation (Story 12.2).
+
+    This model represents ground-truth labeled patterns with comprehensive Wyckoff
+    campaign context for objective detector accuracy measurement (NFR18).
+
+    Key Features:
+    -------------
+    - Wyckoff campaign context (parent campaign, phase validation)
+    - Sequential validity tracking (prerequisite events, confirmation)
+    - Failure case documentation (wrong phase, missing prerequisites)
+    - Complete trade context (entry, stop, target, outcome)
+
+    Attributes:
+    -----------
+        id: Unique pattern identifier
+        symbol: Trading symbol (e.g., AAPL, MSFT)
+        date: Timestamp of pattern bar (UTC)
+        pattern_type: Type of pattern detected
+        confidence: Pattern detection confidence (70-95 range)
+        correctness: Ground truth - was this a valid pattern?
+        outcome_win: Did Jump target get hit?
+        phase: Wyckoff phase (A, B, C, D, E)
+        trading_range_id: Associated trading range identifier
+        entry_price: Pattern entry price
+        stop_loss: Stop loss price
+        target_price: Jump target price
+        volume_ratio: Volume relative to 20-bar average
+        spread_ratio: Spread relative to 20-bar average
+        justification: Explanation for this label
+        reviewer_verified: Has this been independently verified?
+        created_at: Label creation timestamp
+
+    Wyckoff Campaign Context:
+    -------------------------
+        campaign_id: Parent Accumulation/Distribution campaign UUID
+        campaign_type: ACCUMULATION or DISTRIBUTION
+        campaign_phase: Specific phase within campaign (A, B, C, D, E)
+        phase_position: Granular position (early Phase C, late Phase C, mid Phase D)
+        volume_characteristics: Climactic, diminishing, normal volume behavior
+        spread_characteristics: Narrowing, widening, normal spread behavior
+        sr_test_result: Support/resistance test outcome
+        preliminary_events: Prerequisite events leading to pattern (PS, SC, AR)
+        subsequent_confirmation: Did expected confirmation occur?
+        sequential_validity: Does pattern follow correct Wyckoff sequence?
+        false_positive_reason: If correctness=False, why? (wrong phase, no campaign, etc.)
+
+    Examples:
+    ---------
+        Valid Spring in Phase C:
+            - correctness=True
+            - campaign_type=ACCUMULATION
+            - campaign_phase=C
+            - preliminary_events=["PS", "SC", "AR"]
+            - subsequent_confirmation=True (SOS occurred)
+            - sequential_validity=True
+
+        Invalid Spring (wrong phase):
+            - correctness=False
+            - campaign_phase=A (should be C)
+            - sequential_validity=False
+            - false_positive_reason="Spring detected in Phase A instead of Phase C"
+
+    Usage:
+    ------
+        Used in Story 12.3 for detector accuracy testing by comparing detector
+        output against labeled ground truth to measure precision, recall, F1-score.
+
+    Author: Story 12.2 Task 3
+    """
+
+    # Core pattern identification
+    id: UUID = Field(default_factory=uuid4, description="Unique pattern ID")
+    symbol: str = Field(..., max_length=20, description="Trading symbol")
+    date: datetime = Field(..., description="Pattern bar timestamp (UTC)")
+    pattern_type: Literal["SPRING", "SOS", "UTAD", "LPS", "FALSE_SPRING"] = Field(
+        ..., description="Pattern type"
+    )
+    confidence: int = Field(..., ge=70, le=95, description="Detection confidence 70-95")
+    correctness: bool = Field(..., description="Ground truth: valid pattern?")
+    outcome_win: bool = Field(..., description="Did Jump target hit?")
+
+    # Wyckoff context
+    phase: str = Field(..., description="Wyckoff phase (A, B, C, D, E)")
+    trading_range_id: str = Field(..., description="Associated trading range ID")
+
+    # Trade parameters
+    entry_price: Decimal = Field(..., decimal_places=8, description="Entry price")
+    stop_loss: Decimal = Field(..., decimal_places=8, description="Stop loss price")
+    target_price: Decimal = Field(..., decimal_places=8, description="Jump target price")
+    volume_ratio: Decimal = Field(..., decimal_places=4, description="Volume / 20-bar avg")
+    spread_ratio: Decimal = Field(..., decimal_places=4, description="Spread / 20-bar avg")
+
+    # Documentation
+    justification: str = Field(..., description="Label justification text")
+    reviewer_verified: bool = Field(default=False, description="Independently verified?")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Label creation timestamp"
+    )
+
+    # ===== Wyckoff Campaign Context Fields (Story 12.2 - CRITICAL) =====
+    campaign_id: UUID = Field(..., description="Parent campaign UUID")
+    campaign_type: Literal["ACCUMULATION", "DISTRIBUTION"] = Field(..., description="Campaign type")
+    campaign_phase: Literal["A", "B", "C", "D", "E"] = Field(..., description="Campaign phase")
+    phase_position: str = Field(
+        ..., description="Granular phase position (e.g., early Phase C, late Phase C)"
+    )
+    volume_characteristics: dict[str, Any] = Field(
+        default_factory=dict, description="Volume behavior (climactic, diminishing, normal)"
+    )
+    spread_characteristics: dict[str, Any] = Field(
+        default_factory=dict, description="Spread behavior (narrowing, widening, normal)"
+    )
+    sr_test_result: str = Field(
+        ..., description="Support/resistance test result (support held, resistance broken, etc.)"
+    )
+    preliminary_events: list[str] = Field(
+        default_factory=list, description="Prerequisite events (PS, SC, AR, etc.)"
+    )
+    subsequent_confirmation: bool = Field(
+        ..., description="Did expected confirmation occur? (SOS after Spring, etc.)"
+    )
+    sequential_validity: bool = Field(
+        ..., description="Does pattern follow correct Wyckoff sequence?"
+    )
+    false_positive_reason: str | None = Field(
+        default=None,
+        description="If correctness=False, why? (wrong phase, no campaign, missing prerequisites)",
+    )
+
+    # Field validators
+    @field_validator("date", "created_at", mode="before")
+    @classmethod
+    def ensure_utc(cls, v: datetime) -> datetime:
+        """
+        Enforce UTC timezone on all timestamps.
+
+        This follows the same pattern as OHLCVBar to prevent timezone bugs.
+
+        Args:
+            v: Datetime value (may or may not have timezone)
+
+        Returns:
+            Datetime with UTC timezone
+        """
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                return v.replace(tzinfo=UTC)
+            return v.astimezone(UTC)
+        return v
+
+    @field_validator("entry_price", "stop_loss", "target_price", mode="before")
+    @classmethod
+    def convert_to_decimal(cls, v) -> Decimal:
+        """
+        Convert numeric values to Decimal for financial precision.
+
+        Args:
+            v: Numeric value (int, float, str, or Decimal)
+
+        Returns:
+            Decimal representation (rounded to 8 decimal places)
+        """
+        if isinstance(v, Decimal):
+            # Quantize to 8 decimal places to avoid precision errors
+            return v.quantize(Decimal("0.00000001"))
+        # Convert and quantize
+        return Decimal(str(v)).quantize(Decimal("0.00000001"))
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "symbol": "AAPL",
+                "date": "2024-03-15T14:30:00Z",
+                "pattern_type": "SPRING",
+                "confidence": 85,
+                "correctness": True,
+                "outcome_win": True,
+                "phase": "C",
+                "trading_range_id": "TR_AAPL_2024_Q1_001",
+                "entry_price": "172.50",
+                "stop_loss": "170.00",
+                "target_price": "180.00",
+                "volume_ratio": "0.65",
+                "spread_ratio": "0.80",
+                "justification": "Valid Spring in Phase C with SC/AR prerequisites, low volume test",
+                "reviewer_verified": True,
+                "campaign_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "campaign_type": "ACCUMULATION",
+                "campaign_phase": "C",
+                "phase_position": "late Phase C",
+                "volume_characteristics": {"type": "diminishing", "ratio": 0.65},
+                "spread_characteristics": {"type": "narrowing", "ratio": 0.80},
+                "sr_test_result": "support held at Creek level",
+                "preliminary_events": ["PS", "SC", "AR"],
+                "subsequent_confirmation": True,
+                "sequential_validity": True,
+                "false_positive_reason": None,
+            }
+        }
     )

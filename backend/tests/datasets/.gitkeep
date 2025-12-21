@@ -1,0 +1,2 @@
+# This directory stores labeled pattern datasets for backtesting validation (Story 12.2)
+# Parquet files are tracked with Git LFS (see .gitattributes)
