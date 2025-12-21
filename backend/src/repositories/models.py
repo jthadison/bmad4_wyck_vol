@@ -929,3 +929,115 @@ class BacktestResultModel(Base):
             f"<BacktestResult(id={self.id}, backtest_run_id={self.backtest_run_id}, "
             f"symbol={self.symbol}, trades={len(self.trades)})>"
         )
+
+
+class WalkForwardResultModel(Base):
+    """
+    Walk-Forward Test Result database model (Story 12.4 Task 10).
+
+    Stores walk-forward validation test results with rolling windows,
+    summary statistics, stability scores, and statistical significance tests.
+    """
+
+    __tablename__ = "walk_forward_results"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Walk-forward test identification
+    walk_forward_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    # Configuration (JSONB)
+    config: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
+    # Validation windows (JSONB - list of ValidationWindow objects)
+    windows: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    # Summary statistics (JSONB)
+    summary_statistics: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+
+    # Stability score (coefficient of variation)
+    stability_score: Mapped[Decimal] = mapped_column(
+        DECIMAL(6, 4),
+        nullable=False,
+        default=Decimal("0.0"),
+    )
+
+    # Degradation windows (JSONB - list of window numbers)
+    degradation_windows: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    # Statistical significance (JSONB - p-values dict)
+    statistical_significance: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+
+    # Chart data (JSONB - optional)
+    chart_data: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    # Execution metadata
+    total_execution_time_seconds: Mapped[Decimal] = mapped_column(
+        DECIMAL(10, 4),
+        nullable=False,
+        default=Decimal("0.0"),
+    )
+
+    avg_window_execution_time_seconds: Mapped[Decimal] = mapped_column(
+        DECIMAL(10, 4),
+        nullable=False,
+        default=Decimal("0.0"),
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    # Indexes for query performance
+    __table_args__ = (
+        # Index on created_at for sorting
+        Index("ix_walk_forward_results_created_at", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"<WalkForwardResult(id={self.id}, walk_forward_id={self.walk_forward_id}, "
+            f"windows={len(self.windows)})>"
+        )

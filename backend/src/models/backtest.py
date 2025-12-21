@@ -1,11 +1,12 @@
 """
-Backtest Models (Story 11.2 + Story 12.1)
+Backtest Models (Story 11.2 + Story 12.1 + Story 12.4)
 
 Purpose:
 --------
-Pydantic models for backtest preview functionality (Story 11.2) and
-comprehensive backtesting engine (Story 12.1) including configuration,
-order simulation, position tracking, trades, metrics, and results.
+Pydantic models for backtest preview functionality (Story 11.2),
+comprehensive backtesting engine (Story 12.1), and walk-forward validation
+(Story 12.4) including configuration, order simulation, position tracking,
+trades, metrics, results, and walk-forward testing.
 
 Story 11.2 Models:
 ------------------
@@ -25,7 +26,14 @@ Story 12.1 Models (Backtesting Engine):
 - BacktestMetrics: Performance statistics (extended from 11.2)
 - BacktestResult: Complete backtest output
 
-Author: Story 11.2 Task 1, Story 12.1 Task 1
+Story 12.4 Models (Walk-Forward Testing):
+------------------------------------------
+- ValidationWindow: Single train/validate window pair with metrics
+- WalkForwardConfig: Configuration for walk-forward testing
+- WalkForwardChartData: Chart data for visualization
+- WalkForwardResult: Complete walk-forward test results
+
+Author: Story 11.2 Task 1, Story 12.1 Task 1, Story 12.4 Task 1
 """
 
 from datetime import UTC, date, datetime
@@ -33,7 +41,7 @@ from decimal import Decimal
 from typing import Any, Literal, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class BacktestPreviewRequest(BaseModel):
@@ -426,215 +434,189 @@ class BacktestResult(BaseModel):
     )
     execution_time_seconds: float = Field(default=0.0, ge=0, description="Execution time")
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When backtest was created"
+        default_factory=lambda: datetime.now(UTC), description="When backtest was created"
     )
 
 
-# ==========================================================================================
-# Story 12.2: Labeled Pattern Dataset Models
-# ==========================================================================================
+# ============================================================================
+# Story 12.4: Walk-Forward Backtesting Models
+# ============================================================================
 
 
-class LabeledPattern(BaseModel):
-    """
-    Labeled pattern for dataset creation and detector accuracy validation (Story 12.2).
+class ValidationWindow(BaseModel):
+    """Single validation window in walk-forward testing.
 
-    This model represents ground-truth labeled patterns with comprehensive Wyckoff
-    campaign context for objective detector accuracy measurement (NFR18).
-
-    Key Features:
-    -------------
-    - Wyckoff campaign context (parent campaign, phase validation)
-    - Sequential validity tracking (prerequisite events, confirmation)
-    - Failure case documentation (wrong phase, missing prerequisites)
-    - Complete trade context (entry, stop, target, outcome)
+    Represents a train/validate pair with performance metrics for both periods
+    and degradation detection.
 
     Attributes:
-    -----------
-        id: Unique pattern identifier
-        symbol: Trading symbol (e.g., AAPL, MSFT)
-        date: Timestamp of pattern bar (UTC)
-        pattern_type: Type of pattern detected
-        confidence: Pattern detection confidence (70-95 range)
-        correctness: Ground truth - was this a valid pattern?
-        outcome_win: Did Jump target get hit?
-        phase: Wyckoff phase (A, B, C, D, E)
-        trading_range_id: Associated trading range identifier
-        entry_price: Pattern entry price
-        stop_loss: Stop loss price
-        target_price: Jump target price
-        volume_ratio: Volume relative to 20-bar average
-        spread_ratio: Spread relative to 20-bar average
-        justification: Explanation for this label
-        reviewer_verified: Has this been independently verified?
-        created_at: Label creation timestamp
-
-    Wyckoff Campaign Context:
-    -------------------------
-        campaign_id: Parent Accumulation/Distribution campaign UUID
-        campaign_type: ACCUMULATION or DISTRIBUTION
-        campaign_phase: Specific phase within campaign (A, B, C, D, E)
-        phase_position: Granular position (early Phase C, late Phase C, mid Phase D)
-        volume_characteristics: Climactic, diminishing, normal volume behavior
-        spread_characteristics: Narrowing, widening, normal spread behavior
-        sr_test_result: Support/resistance test outcome
-        preliminary_events: Prerequisite events leading to pattern (PS, SC, AR)
-        subsequent_confirmation: Did expected confirmation occur?
-        sequential_validity: Does pattern follow correct Wyckoff sequence?
-        false_positive_reason: If correctness=False, why? (wrong phase, no campaign, etc.)
-
-    Examples:
-    ---------
-        Valid Spring in Phase C:
-            - correctness=True
-            - campaign_type=ACCUMULATION
-            - campaign_phase=C
-            - preliminary_events=["PS", "SC", "AR"]
-            - subsequent_confirmation=True (SOS occurred)
-            - sequential_validity=True
-
-        Invalid Spring (wrong phase):
-            - correctness=False
-            - campaign_phase=A (should be C)
-            - sequential_validity=False
-            - false_positive_reason="Spring detected in Phase A instead of Phase C"
-
-    Usage:
-    ------
-        Used in Story 12.3 for detector accuracy testing by comparing detector
-        output against labeled ground truth to measure precision, recall, F1-score.
-
-    Author: Story 12.2 Task 3
+        window_id: Unique identifier for this validation window
+        window_number: Sequential window number (1, 2, 3...)
+        train_start_date: Start of training period
+        train_end_date: End of training period
+        validate_start_date: Start of validation period
+        validate_end_date: End of validation period
+        train_metrics: Performance during training period
+        validate_metrics: Out-of-sample performance during validation
+        train_backtest_id: Reference to training backtest run
+        validate_backtest_id: Reference to validation backtest run
+        performance_ratio: validate_metric / train_metric (e.g., 0.85 = 85%)
+        degradation_detected: True if validation <80% of training
+        created_at: When window was created (UTC)
     """
 
-    # Core pattern identification
-    id: UUID = Field(default_factory=uuid4, description="Unique pattern ID")
-    symbol: str = Field(..., max_length=20, description="Trading symbol")
-    date: datetime = Field(..., description="Pattern bar timestamp (UTC)")
-    pattern_type: Literal["SPRING", "SOS", "UTAD", "LPS", "FALSE_SPRING"] = Field(
-        ..., description="Pattern type"
+    window_id: UUID = Field(default_factory=uuid4, description="Unique window ID")
+    window_number: int = Field(ge=1, description="Sequential window number")
+    train_start_date: date = Field(description="Training period start")
+    train_end_date: date = Field(description="Training period end")
+    validate_start_date: date = Field(description="Validation period start")
+    validate_end_date: date = Field(description="Validation period end")
+    train_metrics: BacktestMetrics = Field(description="Training performance metrics")
+    validate_metrics: BacktestMetrics = Field(description="Validation performance metrics")
+    train_backtest_id: UUID = Field(description="Training backtest run ID")
+    validate_backtest_id: UUID = Field(description="Validation backtest run ID")
+    performance_ratio: Decimal = Field(
+        description="Validation/training performance ratio",
+        decimal_places=4,
+        max_digits=6,
     )
-    confidence: int = Field(..., ge=70, le=95, description="Detection confidence 70-95")
-    correctness: bool = Field(..., description="Ground truth: valid pattern?")
-    outcome_win: bool = Field(..., description="Did Jump target hit?")
-
-    # Wyckoff context
-    phase: str = Field(..., description="Wyckoff phase (A, B, C, D, E)")
-    trading_range_id: str = Field(..., description="Associated trading range ID")
-
-    # Trade parameters
-    entry_price: Decimal = Field(..., decimal_places=8, description="Entry price")
-    stop_loss: Decimal = Field(..., decimal_places=8, description="Stop loss price")
-    target_price: Decimal = Field(..., decimal_places=8, description="Jump target price")
-    volume_ratio: Decimal = Field(..., decimal_places=4, description="Volume / 20-bar avg")
-    spread_ratio: Decimal = Field(..., decimal_places=4, description="Spread / 20-bar avg")
-
-    # Documentation
-    justification: str = Field(..., description="Label justification text")
-    reviewer_verified: bool = Field(default=False, description="Independently verified?")
+    degradation_detected: bool = Field(description="True if performance degraded")
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC), description="Label creation timestamp"
+        default_factory=lambda: datetime.now(UTC), description="Window creation timestamp (UTC)"
     )
 
-    # ===== Wyckoff Campaign Context Fields (Story 12.2 - CRITICAL) =====
-    campaign_id: UUID = Field(..., description="Parent campaign UUID")
-    campaign_type: Literal["ACCUMULATION", "DISTRIBUTION"] = Field(..., description="Campaign type")
-    campaign_phase: Literal["A", "B", "C", "D", "E"] = Field(..., description="Campaign phase")
-    phase_position: str = Field(
-        ..., description="Granular phase position (e.g., early Phase C, late Phase C)"
-    )
-    volume_characteristics: dict[str, Any] = Field(
-        default_factory=dict, description="Volume behavior (climactic, diminishing, normal)"
-    )
-    spread_characteristics: dict[str, Any] = Field(
-        default_factory=dict, description="Spread behavior (narrowing, widening, normal)"
-    )
-    sr_test_result: str = Field(
-        ..., description="Support/resistance test result (support held, resistance broken, etc.)"
-    )
-    preliminary_events: list[str] = Field(
-        default_factory=list, description="Prerequisite events (PS, SC, AR, etc.)"
-    )
-    subsequent_confirmation: bool = Field(
-        ..., description="Did expected confirmation occur? (SOS after Spring, etc.)"
-    )
-    sequential_validity: bool = Field(
-        ..., description="Does pattern follow correct Wyckoff sequence?"
-    )
-    false_positive_reason: str | None = Field(
-        default=None,
-        description="If correctness=False, why? (wrong phase, no campaign, missing prerequisites)",
-    )
-
-    # Field validators
-    @field_validator("date", "created_at", mode="before")
+    @field_validator("created_at")
     @classmethod
-    def ensure_utc(cls, v: datetime) -> datetime:
-        """
-        Enforce UTC timezone on all timestamps.
-
-        This follows the same pattern as OHLCVBar to prevent timezone bugs.
-
-        Args:
-            v: Datetime value (may or may not have timezone)
-
-        Returns:
-            Datetime with UTC timezone
-        """
-        if isinstance(v, datetime):
-            if v.tzinfo is None:
-                return v.replace(tzinfo=UTC)
-            return v.astimezone(UTC)
+    def validate_utc_timestamp(cls, v: datetime) -> datetime:
+        """Ensure timestamp is UTC."""
+        if v.tzinfo is not None and v.tzinfo.utcoffset(v) is not None:
+            # Convert to UTC if timezone-aware
+            return v.replace(tzinfo=None)
         return v
 
-    @field_validator("entry_price", "stop_loss", "target_price", mode="before")
-    @classmethod
-    def convert_to_decimal(cls, v) -> Decimal:
-        """
-        Convert numeric values to Decimal for financial precision.
 
-        Args:
-            v: Numeric value (int, float, str, or Decimal)
+class WalkForwardConfig(BaseModel):
+    """Configuration for walk-forward testing.
 
-        Returns:
-            Decimal representation (rounded to 8 decimal places)
-        """
-        if isinstance(v, Decimal):
-            # Quantize to 8 decimal places to avoid precision errors
-            return v.quantize(Decimal("0.00000001"))
-        # Convert and quantize
-        return Decimal(str(v)).quantize(Decimal("0.00000001"))
+    Defines parameters for rolling window validation including symbols,
+    date ranges, window sizes, and degradation thresholds.
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "symbol": "AAPL",
-                "date": "2024-03-15T14:30:00Z",
-                "pattern_type": "SPRING",
-                "confidence": 85,
-                "correctness": True,
-                "outcome_win": True,
-                "phase": "C",
-                "trading_range_id": "TR_AAPL_2024_Q1_001",
-                "entry_price": "172.50",
-                "stop_loss": "170.00",
-                "target_price": "180.00",
-                "volume_ratio": "0.65",
-                "spread_ratio": "0.80",
-                "justification": "Valid Spring in Phase C with SC/AR prerequisites, low volume test",
-                "reviewer_verified": True,
-                "campaign_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                "campaign_type": "ACCUMULATION",
-                "campaign_phase": "C",
-                "phase_position": "late Phase C",
-                "volume_characteristics": {"type": "diminishing", "ratio": 0.65},
-                "spread_characteristics": {"type": "narrowing", "ratio": 0.80},
-                "sr_test_result": "support held at Creek level",
-                "preliminary_events": ["PS", "SC", "AR"],
-                "subsequent_confirmation": True,
-                "sequential_validity": True,
-                "false_positive_reason": None,
-            }
-        }
+    Attributes:
+        symbols: Symbols to test (e.g., ["AAPL", "MSFT", "GOOGL", "TSLA"])
+        overall_start_date: Overall test period start (e.g., 2020-01-01)
+        overall_end_date: Overall test period end (e.g., 2024-12-31)
+        train_period_months: Training window size in months (default 6)
+        validate_period_months: Validation window size in months (default 3)
+        backtest_config: Base configuration for running backtests
+        primary_metric: Metric to use for degradation detection (default win_rate)
+        degradation_threshold: Minimum acceptable performance ratio (default 0.80)
+    """
+
+    symbols: list[str] = Field(min_length=1, description="Symbols to test")
+    overall_start_date: date = Field(description="Overall test period start")
+    overall_end_date: date = Field(description="Overall test period end")
+    train_period_months: int = Field(default=6, ge=1, description="Training window months")
+    validate_period_months: int = Field(default=3, ge=1, description="Validation window months")
+    backtest_config: BacktestConfig = Field(description="Base backtest configuration")
+    primary_metric: Literal["win_rate", "avg_r_multiple", "profit_factor", "sharpe_ratio"] = Field(
+        default="win_rate", description="Primary metric for degradation detection"
     )
+    degradation_threshold: Decimal = Field(
+        default=Decimal("0.80"),
+        ge=Decimal("0.0"),
+        le=Decimal("1.0"),
+        description="Minimum performance ratio (default 80%)",
+    )
+
+    @field_validator("overall_end_date")
+    @classmethod
+    def validate_date_range(cls, v: date, info) -> date:
+        """Ensure end date is after start date."""
+        if "overall_start_date" in info.data and v <= info.data["overall_start_date"]:
+            raise ValueError("overall_end_date must be after overall_start_date")
+        return v
+
+
+class WalkForwardChartData(BaseModel):
+    """Chart data for walk-forward visualization.
+
+    Prepares data for frontend charting of train vs validate performance
+    across all windows.
+
+    Attributes:
+        window_labels: Window labels (e.g., ["Window 1", "Window 2", ...])
+        train_win_rates: Training win rates per window
+        validate_win_rates: Validation win rates per window
+        train_avg_r: Training average R-multiple per window
+        validate_avg_r: Validation average R-multiple per window
+        train_profit_factor: Training profit factor per window
+        validate_profit_factor: Validation profit factor per window
+        degradation_flags: True for degraded windows
+    """
+
+    window_labels: list[str] = Field(description="Window labels for charting")
+    train_win_rates: list[Decimal] = Field(description="Training win rates")
+    validate_win_rates: list[Decimal] = Field(description="Validation win rates")
+    train_avg_r: list[Decimal] = Field(description="Training avg R-multiple")
+    validate_avg_r: list[Decimal] = Field(description="Validation avg R-multiple")
+    train_profit_factor: list[Decimal] = Field(description="Training profit factor")
+    validate_profit_factor: list[Decimal] = Field(description="Validation profit factor")
+    degradation_flags: list[bool] = Field(description="Degradation indicators per window")
+
+
+class WalkForwardResult(BaseModel):
+    """Complete walk-forward test result.
+
+    Contains all validation windows, summary statistics, stability metrics,
+    and statistical significance tests.
+
+    Attributes:
+        walk_forward_id: Unique identifier for this walk-forward test
+        config: Configuration used for this test
+        windows: All validation windows tested
+        summary_statistics: Aggregate stats across all windows
+        stability_score: Coefficient of variation of validation performance
+        degradation_windows: Window numbers where degradation detected
+        statistical_significance: P-values for train vs validate differences
+        chart_data: Prepared data for frontend visualization
+        total_execution_time_seconds: Total time to run all backtests
+        avg_window_execution_time_seconds: Average time per window
+        created_at: When test was run (UTC)
+    """
+
+    walk_forward_id: UUID = Field(default_factory=uuid4, description="Unique walk-forward ID")
+    config: WalkForwardConfig = Field(description="Configuration used")
+    windows: list[ValidationWindow] = Field(default_factory=list, description="Validation windows")
+    summary_statistics: dict[str, Any] = Field(
+        default_factory=dict, description="Summary statistics"
+    )
+    stability_score: Decimal = Field(
+        default=Decimal("0"),
+        description="Coefficient of variation (lower = more stable)",
+        decimal_places=4,
+        max_digits=6,
+    )
+    degradation_windows: list[int] = Field(
+        default_factory=list, description="Window numbers with degradation"
+    )
+    statistical_significance: dict[str, float] = Field(
+        default_factory=dict, description="P-values for statistical tests"
+    )
+    chart_data: Optional[WalkForwardChartData] = Field(
+        default=None, description="Chart data for visualization"
+    )
+    total_execution_time_seconds: float = Field(default=0.0, ge=0, description="Total exec time")
+    avg_window_execution_time_seconds: float = Field(
+        default=0.0, ge=0, description="Avg window time"
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Test creation timestamp (UTC)"
+    )
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_utc_timestamp(cls, v: datetime) -> datetime:
+        """Ensure timestamp is UTC."""
+        if v.tzinfo is not None and v.tzinfo.utcoffset(v) is not None:
+            return v.replace(tzinfo=None)
+        return v
