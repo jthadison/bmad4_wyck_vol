@@ -1,0 +1,1 @@
+# Baseline Accuracy Metrics\n\nThis directory stores baseline accuracy metrics for regression detection (Story 12.3).\n\nBaseline files are named: {detector_name}_baseline.json\n\nExample: spring_detector_baseline.json
