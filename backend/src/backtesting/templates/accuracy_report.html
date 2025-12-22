@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ detector_name }} - Accuracy Report</title>
+    <style>
+        /* Story 12.3 Task 8.5: Professional CSS Styling */
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            background: #f3f4f6;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .header-meta {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+
+        /* NFR Badge */
+        .badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .badge-pass {
+            background: #10b981;
+            color: white;
+        }
+
+        .badge-fail {
+            background: #ef4444;
+            color: white;
+        }
+
+        /* Main Content */
+        .content {
+            padding: 2rem;
+        }
+
+        .section {
+            margin-bottom: 3rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 0.5rem;
+        }
+
+        /* Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: #f9fafb;
+            border-left: 4px solid #667eea;
+            padding: 1.5rem;
+            border-radius: 4px;
+        }
+
+        .metric-label {
+            font-size: 0.875rem;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #1f2937;
+            margin-top: 0.5rem;
+        }
+
+        .metric-value.good {
+            color: #10b981;
+        }
+
+        .metric-value.warning {
+            color: #f59e0b;
+        }
+
+        .metric-value.bad {
+            color: #ef4444;
+        }
+
+        /* Confusion Matrix */
+        .confusion-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        .confusion-table th,
+        .confusion-table td {
+            padding: 1rem;
+            text-align: center;
+            border: 1px solid #e5e7eb;
+        }
+
+        .confusion-table th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+
+        .confusion-table td {
+            font-size: 1.25rem;
+        }
+
+        .tp-cell { background: #d1fae5; color: #065f46; font-weight: bold; }
+        .fp-cell { background: #fee2e2; color: #991b1b; font-weight: bold; }
+        .fn-cell { background: #fef3c7; color: #92400e; font-weight: bold; }
+        .tn-cell { background: #dbeafe; color: #1e40af; font-weight: bold; }
+
+        /* Charts */
+        .chart-container {
+            text-align: center;
+            margin: 2rem 0;
+        }
+
+        .chart-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* FP/FN Lists */
+        .fp-fn-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+        }
+
+        .case-list {
+            background: #f9fafb;
+            padding: 1.5rem;
+            border-radius: 4px;
+        }
+
+        .case-item {
+            background: white;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-left: 3px solid #667eea;
+            border-radius: 4px;
+        }
+
+        .case-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .case-header {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .case-detail {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin: 0.25rem 0;
+        }
+
+        /* Phase Breakdown */
+        .breakdown-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        .breakdown-table th,
+        .breakdown-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .breakdown-table th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+
+        .breakdown-table tr:hover {
+            background: #f9fafb;
+        }
+
+        /* Footer */
+        footer {
+            background: #f3f4f6;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            font-size: 0.875rem;
+            color: #6b7280;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .footer-link {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>{{ detector_name }} v{{ detector_version }}</h1>
+            <p class="subtitle">Detector Accuracy Report</p>
+            <div class="header-meta">
+                <div>
+                    <strong>Test Date:</strong> {{ test_date }}<br>
+                    <strong>Dataset:</strong> {{ dataset_version }}
+                </div>
+                <div>
+                    <span class="badge {{ nfr_badge_class }}">
+                        NFR Compliance: {{ nfr_badge_text }}
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="content">
+
+            <!-- Summary Metrics -->
+            <section class="section">
+                <h2>Summary Metrics</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Precision</div>
+                        <div class="metric-value {% if precision_pct >= 75 %}good{% elif precision_pct >= 60 %}warning{% else %}bad{% endif %}">
+                            {{ precision_pct | round(2) }}%
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Recall</div>
+                        <div class="metric-value {% if recall_pct >= 75 %}good{% elif recall_pct >= 60 %}warning{% else %}bad{% endif %}">
+                            {{ recall_pct | round(2) }}%
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">F1-Score</div>
+                        <div class="metric-value {% if f1_score_pct >= 75 %}good{% elif f1_score_pct >= 60 %}warning{% else %}bad{% endif %}">
+                            {{ f1_score_pct | round(2) }}%
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Overall Accuracy</div>
+                        <div class="metric-value">
+                            {{ accuracy_pct | round(2) }}%
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Confusion Matrix -->
+            <section class="section">
+                <h2>Confusion Matrix</h2>
+                <table class="confusion-table">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th colspan="2">Predicted</th>
+                        </tr>
+                        <tr>
+                            <th>Actual</th>
+                            <th>Positive</th>
+                            <th>Negative</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <th>Positive</th>
+                            <td class="tp-cell">{{ tp }}<br><small>True Positives</small></td>
+                            <td class="fn-cell">{{ fn }}<br><small>False Negatives</small></td>
+                        </tr>
+                        <tr>
+                            <th>Negative</th>
+                            <td class="fp-cell">{{ fp }}<br><small>False Positives</small></td>
+                            <td class="tn-cell">{{ tn }}<br><small>True Negatives</small></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                {% if confusion_chart_base64 %}
+                <div class="chart-container">
+                    <img src="data:image/png;base64,{{ confusion_chart_base64 }}" alt="Confusion Matrix Heatmap">
+                </div>
+                {% endif %}
+            </section>
+
+            <!-- Wyckoff-Specific Metrics -->
+            <section class="section">
+                <h2>Wyckoff Methodology Metrics</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Phase Accuracy</div>
+                        <div class="metric-value {% if phase_accuracy_pct >= 85 %}good{% elif phase_accuracy_pct >= 70 %}warning{% else %}bad{% endif %}">
+                            {{ phase_accuracy_pct | round(2) }}%
+                        </div>
+                        <small>Target: ≥85%</small>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Campaign Validity</div>
+                        <div class="metric-value {% if campaign_validity_pct >= 90 %}good{% elif campaign_validity_pct >= 75 %}warning{% else %}bad{% endif %}">
+                            {{ campaign_validity_pct | round(2) }}%
+                        </div>
+                        <small>Target: ≥90%</small>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Sequential Logic</div>
+                        <div class="metric-value {% if sequential_logic_pct >= 80 %}good{% elif sequential_logic_pct >= 65 %}warning{% else %}bad{% endif %}">
+                            {{ sequential_logic_pct | round(2) }}%
+                        </div>
+                        <small>Prerequisite events</small>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Confirmation Rate</div>
+                        <div class="metric-value">
+                            {{ confirmation_rate_pct | round(2) }}%
+                        </div>
+                        <small>Subsequent confirmation</small>
+                    </div>
+                </div>
+
+                {% if phase_breakdown %}
+                <h3 style="margin-top: 2rem; margin-bottom: 1rem;">Phase Breakdown</h3>
+                <table class="breakdown-table">
+                    <thead>
+                        <tr>
+                            <th>Phase</th>
+                            <th>True Positives</th>
+                            <th>False Positives</th>
+                            <th>Accuracy</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for phase, counts in phase_breakdown.items() %}
+                        <tr>
+                            <td><strong>Phase {{ phase }}</strong></td>
+                            <td>{{ counts.TP }}</td>
+                            <td>{{ counts.FP }}</td>
+                            <td>
+                                {% set total = counts.TP + counts.FP %}
+                                {% if total > 0 %}
+                                    {{ (counts.TP / total * 100) | round(1) }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </section>
+
+            <!-- Threshold Tuning Chart -->
+            {% if has_threshold_chart %}
+            <section class="section">
+                <h2>Threshold Tuning Analysis</h2>
+                <div class="chart-container">
+                    <img src="data:image/png;base64,{{ threshold_chart_base64 }}" alt="Threshold Tuning Chart">
+                </div>
+            </section>
+            {% endif %}
+
+            <!-- False Positive/Negative Examples -->
+            <section class="section">
+                <h2>Error Analysis</h2>
+                <div class="fp-fn-grid">
+                    <!-- False Positives -->
+                    <div class="case-list">
+                        <h3 style="margin-bottom: 1rem;">False Positives ({{ total_fp_count }} total, showing top 10)</h3>
+                        {% for fp in false_positives %}
+                        <div class="case-item">
+                            <div class="case-header">{{ fp.labeled_pattern.symbol }} @ {{ fp.labeled_pattern.date.strftime('%Y-%m-%d') }}</div>
+                            <div class="case-detail"><strong>Reason:</strong> {{ fp.reason }}</div>
+                            <div class="case-detail"><strong>Confidence:</strong> {{ fp.detected_confidence }}%</div>
+                            <div class="case-detail"><strong>Phase:</strong> {{ fp.labeled_pattern.campaign_phase }}</div>
+                        </div>
+                        {% endfor %}
+                        {% if total_fp_count == 0 %}
+                        <p style="color: #10b981; font-weight: 600;">No false positives detected! 🎉</p>
+                        {% endif %}
+                    </div>
+
+                    <!-- False Negatives -->
+                    <div class="case-list">
+                        <h3 style="margin-bottom: 1rem;">False Negatives ({{ total_fn_count }} total, showing top 10)</h3>
+                        {% for fn in false_negatives %}
+                        <div class="case-item">
+                            <div class="case-header">{{ fn.labeled_pattern.symbol }} @ {{ fn.labeled_pattern.date.strftime('%Y-%m-%d') }}</div>
+                            <div class="case-detail"><strong>Reason:</strong> {{ fn.reason }}</div>
+                            <div class="case-detail"><strong>Phase:</strong> {{ fn.labeled_pattern.campaign_phase }}</div>
+                            <div class="case-detail"><strong>Confidence:</strong> {{ fn.labeled_pattern.confidence }}%</div>
+                        </div>
+                        {% endfor %}
+                        {% if total_fn_count == 0 %}
+                        <p style="color: #10b981; font-weight: 600;">No false negatives detected! 🎉</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </section>
+
+        </div>
+
+        <!-- Footer -->
+        <footer>
+            <p>Generated at {{ generated_at }} by <a href="https://claude.com/claude-code" class="footer-link">Claude Code</a></p>
+            <p style="margin-top: 0.5rem;">Story 12.3: Detector Accuracy Testing Framework</p>
+        </footer>
+    </div>
+</body>
+</html>
