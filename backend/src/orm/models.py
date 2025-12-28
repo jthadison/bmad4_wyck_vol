@@ -21,9 +21,19 @@ Models:
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Float,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import NUMERIC, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -679,4 +689,152 @@ class TutorialProgressORM(Base):
     __table_args__ = (
         CheckConstraint("current_step > 0", name="chk_current_step_positive"),
         UniqueConstraint("user_id", "tutorial_id", name="uq_user_tutorial"),
+    )
+
+
+class RegressionTestResultORM(Base):
+    """
+    Regression test results storage (Story 12.7 Task 4).
+
+    Table: regression_test_results
+    Primary Key: id (UUID)
+    Unique: test_id
+    JSONB Fields: config, aggregate_metrics, per_symbol_results, baseline_comparison
+    """
+
+    __tablename__ = "regression_test_results"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Test identification
+    test_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    # Codebase version (git commit hash)
+    codebase_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # JSONB fields for complex nested objects
+    config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    aggregate_metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+    per_symbol_results: Mapped[dict] = mapped_column(JSON, nullable=False)
+    baseline_comparison: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    # Regression detection results
+    regression_detected: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    degraded_metrics: Mapped[list] = mapped_column(JSON, nullable=False)
+
+    # Test status: PASS, FAIL, BASELINE_NOT_SET
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+    # Execution metadata
+    execution_time_seconds: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        server_default="0",
+    )
+    test_run_time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PASS', 'FAIL', 'BASELINE_NOT_SET')",
+            name="chk_regression_test_status",
+        ),
+        CheckConstraint(
+            "execution_time_seconds >= 0",
+            name="chk_execution_time_positive",
+        ),
+    )
+
+
+class RegressionBaselineORM(Base):
+    """
+    Regression baselines storage (Story 12.7 Task 5).
+
+    Table: regression_baselines
+    Primary Key: id (UUID)
+    Unique: baseline_id, is_current (partial - only one can be TRUE)
+    JSONB Fields: metrics, per_symbol_metrics
+    """
+
+    __tablename__ = "regression_baselines"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Baseline identification
+    baseline_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    # Test reference
+    test_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+        index=True,
+    )
+
+    # Codebase version (git commit hash)
+    version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # JSONB fields for metrics
+    metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+    per_symbol_metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    # Baseline status
+    is_current: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+    )
+
+    # Timestamps
+    established_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )

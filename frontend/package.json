@@ -59,6 +59,6 @@
     "vue-tsc": "^3.1.6"
   },
   "optionalDependencies": {
-    "@rollup/rollup-win32-x64-msvc": "^4.53.5"
+    "@rollup/rollup-win32-x64-msvc": "^4.54.0"
   }
 }
