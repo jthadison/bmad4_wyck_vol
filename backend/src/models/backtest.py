@@ -482,6 +482,8 @@ class BacktestResult(BaseModel):
     equity curve, trades, metrics, and validation flags.
 
     Extended in Story 12.5 to include transaction cost summary.
+    Extended in Story 12.6A to include enhanced metrics for pattern performance,
+    monthly returns, drawdown analysis, risk metrics, and campaign tracking.
 
     Attributes:
         backtest_run_id: Unique backtest run identifier
@@ -494,6 +496,11 @@ class BacktestResult(BaseModel):
         trades: All completed trades
         metrics: Performance metrics
         cost_summary: Transaction cost summary (Story 12.5)
+        pattern_performance: Per-pattern performance breakdown (Story 12.6A)
+        monthly_returns: Monthly return heatmap data (Story 12.6A)
+        drawdown_periods: Individual drawdown events (Story 12.6A)
+        risk_metrics: Portfolio risk statistics (Story 12.6A)
+        campaign_performance: Wyckoff campaign tracking (Story 12.6A)
         look_ahead_bias_check: Whether look-ahead bias validation passed
         execution_time_seconds: Time taken to run backtest
         created_at: When backtest was run
@@ -513,6 +520,35 @@ class BacktestResult(BaseModel):
     # Story 12.5: Transaction cost summary
     cost_summary: Optional["BacktestCostSummary"] = Field(
         default=None, description="Transaction cost summary (Story 12.5)"
+    )
+    # Story 12.6A: Enhanced metrics
+    pattern_performance: list["PatternPerformance"] = Field(
+        default_factory=list, description="Per-pattern performance metrics (Story 12.6A)"
+    )
+    monthly_returns: list["MonthlyReturn"] = Field(
+        default_factory=list, description="Monthly return breakdown (Story 12.6A)"
+    )
+    drawdown_periods: list["DrawdownPeriod"] = Field(
+        default_factory=list, description="Individual drawdown events (Story 12.6A)"
+    )
+    risk_metrics: Optional["RiskMetrics"] = Field(
+        default=None, description="Portfolio risk statistics (Story 12.6A)"
+    )
+    campaign_performance: list["CampaignPerformance"] = Field(
+        default_factory=list, description="Wyckoff campaign tracking (Story 12.6A)"
+    )
+    # Story 12.6A AC6: Extreme trades and streaks
+    largest_winner: Optional["BacktestTrade"] = Field(
+        default=None, description="Trade with highest P&L (Story 12.6A AC6)"
+    )
+    largest_loser: Optional["BacktestTrade"] = Field(
+        default=None, description="Trade with lowest P&L (Story 12.6A AC6)"
+    )
+    longest_winning_streak: int = Field(
+        default=0, ge=0, description="Consecutive winning trades (Story 12.6A AC6)"
+    )
+    longest_losing_streak: int = Field(
+        default=0, ge=0, description="Consecutive losing trades (Story 12.6A AC6)"
     )
     look_ahead_bias_check: bool = Field(
         default=False, description="Look-ahead bias validation result"
@@ -1389,156 +1425,324 @@ class BacktestCostSummary(BaseModel):
 
 
 # ==========================================================================================
-# Story 12.3: Detector Accuracy Testing Models
+# Story 12.6A: Enhanced Metrics Calculation & Data Models
 # ==========================================================================================
 
 
-class AccuracyMetrics(BaseModel):
+class PatternPerformance(BaseModel):
     """
-    Accuracy metrics for pattern detector testing (Story 12.3 Task 1).
+    Pattern-level performance metrics (Story 12.6A Task 1).
 
-    Measures detector performance against labeled dataset using precision, recall,
-    F1-score, and Wyckoff-specific validation metrics. Used for NFR2/NFR3/NFR4
-    compliance validation and monthly regression detection (NFR21).
+    Tracks performance statistics for each Wyckoff pattern type to enable
+    pattern-by-pattern analysis and optimization.
 
-    Standard Metrics:
-    -----------------
-        detector_name: Name of detector (e.g., "SpringDetector", "SOSDetector")
-        detector_version: Version identifier for tracking changes
-        test_timestamp: UTC timestamp when test was run
-        dataset_version: Labeled dataset version used (e.g., "v1")
-        total_samples: Total number of test cases
-        true_positives: Correctly detected patterns
-        false_positives: Detected but not in ground truth
-        true_negatives: Correctly did not detect
-        false_negatives: Missed patterns that should have been detected
-        precision: TP / (TP + FP) - "Of detections, how many were correct?"
-        recall: TP / (TP + FN) - "Of valid patterns, how many did we detect?"
-        f1_score: Harmonic mean of precision and recall
-        confusion_matrix: Full 2x2 matrix as dict
-        threshold_used: Confidence threshold applied during test
-        passes_nfr_target: Whether precision meets NFR requirement
-        nfr_target: Target precision for this detector type
-        metadata: Additional test details
-
-    Wyckoff-Specific Metrics (Critical for Methodology Validation):
-    ----------------------------------------------------------------
-        phase_accuracy: % of patterns detected in correct Wyckoff phase
-        campaign_validity_rate: % of patterns within valid campaigns
-        sequential_logic_score: % of patterns with correct prerequisite events
-        false_phase_rate: % of patterns incorrectly detected in wrong phase
-        confirmation_rate: % of patterns with subsequent confirmation events
-        phase_breakdown: Accuracy per phase ({"Phase C": {"TP": 10, "FP": 2}, ...})
-        campaign_type_breakdown: Accuracy per campaign type
-        prerequisite_violation_rate: % of detections missing required events
-
-    NFR Targets:
-    ------------
-        - NFR2: Range detection precision ≥ 90%
-        - NFR3: Pattern detection precision ≥ 75%
-        - NFR4: Phase identification accuracy ≥ 80%
-        - NFR21: Monthly regression testing (>5% F1 drop = regression)
+    Attributes:
+        pattern_type: Wyckoff pattern type (SPRING, UTAD, SOS, LPS, etc.)
+        total_trades: Total trades for this pattern
+        winning_trades: Number of winning trades
+        losing_trades: Number of losing trades
+        win_rate: Win rate as decimal (0.0-1.0)
+        avg_r_multiple: Average R-multiple across all trades
+        profit_factor: Total wins / Total losses
+        total_pnl: Sum of all P&L for this pattern
+        avg_trade_duration_hours: Average time in trade (hours)
+        best_trade_pnl: Largest winning trade P&L
+        worst_trade_pnl: Largest losing trade P&L
 
     Example:
-        Spring detector test:
-            detector_name: "SpringDetector"
-            total_samples: 100
-            true_positives: 76
-            false_positives: 9
-            false_negatives: 15
-            precision: 0.8941 (89.41%) - TP/(TP+FP) = 76/85
-            recall: 0.8352 (83.52%) - TP/(TP+FN) = 76/91
-            f1_score: 0.8636 (86.36%)
-            passes_nfr_target: True (≥75% for patterns)
-            phase_accuracy: 0.9211 (92.11%) - most detections in Phase C
-            campaign_validity_rate: 0.9474 (94.74%) - valid campaigns
-
-    Author: Story 12.3 Task 1
+        SPRING pattern: 25 trades, 18 wins, 7 losses, 72% win rate, 1.8 avg R
     """
 
-    # Core identification
-    detector_name: str = Field(..., max_length=100, description="Detector name")
-    detector_version: str = Field(default="1.0", max_length=50, description="Version identifier")
-    test_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(UTC), description="Test run timestamp (UTC)"
+    pattern_type: str = Field(..., max_length=50, description="Pattern type (SPRING, UTAD, etc.)")
+    total_trades: int = Field(..., ge=0, description="Total trades for this pattern")
+    winning_trades: int = Field(..., ge=0, description="Number of winning trades")
+    losing_trades: int = Field(..., ge=0, description="Number of losing trades")
+    win_rate: Decimal = Field(
+        ..., ge=Decimal("0"), le=Decimal("1"), decimal_places=4, description="Win rate (0.0-1.0)"
     )
-    dataset_version: str = Field(default="v1", max_length=20, description="Dataset version")
+    avg_r_multiple: Decimal = Field(..., decimal_places=4, description="Average R-multiple")
+    profit_factor: Decimal = Field(
+        ..., ge=Decimal("0"), decimal_places=4, description="Wins/Losses ratio"
+    )
+    total_pnl: Decimal = Field(..., decimal_places=2, description="Total P&L for pattern")
+    avg_trade_duration_hours: Decimal = Field(
+        ..., ge=Decimal("0"), decimal_places=2, description="Avg time in trade (hours)"
+    )
+    best_trade_pnl: Decimal = Field(..., decimal_places=2, description="Best trade P&L")
+    worst_trade_pnl: Decimal = Field(..., decimal_places=2, description="Worst trade P&L")
 
-    # Sample counts
-    total_samples: int = Field(..., ge=0, description="Total test cases")
-    true_positives: int = Field(..., ge=0, description="Correctly detected patterns")
-    false_positives: int = Field(..., ge=0, description="Incorrectly detected patterns")
-    true_negatives: int = Field(..., ge=0, description="Correctly rejected non-patterns")
-    false_negatives: int = Field(..., ge=0, description="Missed valid patterns")
-
-    # Standard accuracy metrics (use Decimal for financial precision)
-    precision: Decimal = Field(..., decimal_places=4, description="Precision (TP / (TP + FP))")
-    recall: Decimal = Field(..., decimal_places=4, description="Recall (TP / (TP + FN))")
-    f1_score: Decimal = Field(..., decimal_places=4, description="F1-score (harmonic mean)")
-    confusion_matrix: dict[str, int] = Field(
-        ..., description="Full confusion matrix (TP, FP, TN, FN)"
-    )
-
-    # Test configuration
-    threshold_used: Decimal = Field(
-        default=Decimal("0.70"),
-        ge=Decimal("0"),
-        le=Decimal("1.0"),
-        decimal_places=2,
-        description="Confidence threshold applied",
-    )
-
-    # NFR compliance
-    passes_nfr_target: bool = Field(..., description="Meets NFR precision target?")
-    nfr_target: Decimal = Field(..., decimal_places=2, description="NFR target precision")
-
-    # Additional metadata
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional test details")
-
-    # Wyckoff-specific accuracy metrics (Story 12.3 - CRITICAL)
-    phase_accuracy: Decimal = Field(
-        default=Decimal("0"),
-        decimal_places=4,
-        description="% of patterns detected in correct Wyckoff phase",
-    )
-    campaign_validity_rate: Decimal = Field(
-        default=Decimal("0"),
-        decimal_places=4,
-        description="% of patterns within valid Accumulation/Distribution campaigns",
-    )
-    sequential_logic_score: Decimal = Field(
-        default=Decimal("0"),
-        decimal_places=4,
-        description="% of patterns with correct prerequisite events",
-    )
-    false_phase_rate: Decimal = Field(
-        default=Decimal("0"),
-        decimal_places=4,
-        description="% of patterns incorrectly detected in wrong phase",
-    )
-    confirmation_rate: Decimal = Field(
-        default=Decimal("0"),
-        decimal_places=4,
-        description="% of patterns with subsequent confirmation events",
-    )
-    phase_breakdown: dict[str, dict[str, int]] = Field(
-        default_factory=dict,
-        description="Accuracy per phase: {'Phase C': {'TP': 10, 'FP': 2}, ...}",
-    )
-    campaign_type_breakdown: dict[str, dict[str, int]] = Field(
-        default_factory=dict,
-        description="Accuracy per campaign type: {'ACCUMULATION': {...}, 'DISTRIBUTION': {...}}",
-    )
-    prerequisite_violation_rate: Decimal = Field(
-        default=Decimal("0"),
-        decimal_places=4,
-        description="% of detections missing required preliminary events",
-    )
-
-    @field_validator("test_timestamp", mode="before")
+    @field_validator("win_rate", "avg_r_multiple", "profit_factor", mode="before")
     @classmethod
-    def ensure_utc(cls, v: datetime) -> datetime:
-        """Enforce UTC timezone on test timestamp (matches OHLCVBar pattern)."""
+    def convert_to_decimal(cls, v) -> Decimal:
+        """Convert numeric values to Decimal."""
+        if isinstance(v, Decimal):
+            return v
+        return Decimal(str(v))
+
+
+class MonthlyReturn(BaseModel):
+    """
+    Monthly return data for heatmap visualization (Story 12.6A Task 1).
+
+    Provides monthly performance breakdown for calendar heatmap visualization.
+
+    Attributes:
+        year: Calendar year
+        month: Month number (1-12)
+        month_label: Display label (e.g., "Jan 2023")
+        return_pct: Monthly return percentage
+        trade_count: Number of trades closed in this month
+        winning_trades: Number of winning trades
+        losing_trades: Number of losing trades
+
+    Example:
+        Jan 2023: 12.5% return, 8 trades (6 wins, 2 losses)
+    """
+
+    year: int = Field(..., ge=2000, le=2100, description="Calendar year")
+    month: int = Field(..., ge=1, le=12, description="Month (1-12)")
+    month_label: str = Field(..., max_length=20, description="Display label (e.g., 'Jan 2023')")
+    return_pct: Decimal = Field(..., decimal_places=4, description="Monthly return %")
+    trade_count: int = Field(..., ge=0, description="Trades closed this month")
+    winning_trades: int = Field(..., ge=0, description="Winning trades")
+    losing_trades: int = Field(..., ge=0, description="Losing trades")
+
+    @field_validator("return_pct", mode="before")
+    @classmethod
+    def convert_to_decimal(cls, v) -> Decimal:
+        """Convert numeric values to Decimal."""
+        if isinstance(v, Decimal):
+            return v
+        return Decimal(str(v))
+
+
+class DrawdownPeriod(BaseModel):
+    """
+    Drawdown period tracking (Story 12.6A Task 1).
+
+    Tracks individual drawdown events with peak, trough, and recovery information.
+
+    Attributes:
+        peak_date: Date of peak portfolio value before drawdown
+        trough_date: Date of lowest portfolio value (bottom of drawdown)
+        recovery_date: Date portfolio recovered to peak (None if not recovered)
+        peak_value: Portfolio value at peak
+        trough_value: Portfolio value at trough
+        drawdown_pct: Drawdown percentage from peak
+        duration_days: Days from peak to trough
+        recovery_duration_days: Days from trough to recovery (None if not recovered)
+
+    Example:
+        Peak: $115,000 on 2023-01-15
+        Trough: $103,500 on 2023-02-20 (10% drawdown, 36 days)
+        Recovery: $115,000 on 2023-03-10 (18 days to recover)
+    """
+
+    peak_date: datetime = Field(..., description="Peak portfolio value date (UTC)")
+    trough_date: datetime = Field(..., description="Trough (lowest) value date (UTC)")
+    recovery_date: Optional[datetime] = Field(
+        default=None, description="Recovery date (None if not recovered)"
+    )
+    peak_value: Decimal = Field(
+        ..., ge=Decimal("0"), decimal_places=2, description="Peak portfolio value"
+    )
+    trough_value: Decimal = Field(
+        ..., ge=Decimal("0"), decimal_places=2, description="Trough portfolio value"
+    )
+    drawdown_pct: Decimal = Field(
+        ..., ge=Decimal("0"), decimal_places=4, description="Drawdown % from peak"
+    )
+    duration_days: int = Field(..., ge=0, description="Days from peak to trough")
+    recovery_duration_days: Optional[int] = Field(
+        default=None, ge=0, description="Days from trough to recovery"
+    )
+
+    @field_validator("peak_date", "trough_date", "recovery_date", mode="before")
+    @classmethod
+    def ensure_utc(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """Enforce UTC timezone."""
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                return v.replace(tzinfo=UTC)
+            return v.astimezone(UTC)
+        return v
+
+    @field_validator("drawdown_pct", mode="before")
+    @classmethod
+    def convert_to_decimal(cls, v) -> Decimal:
+        """Convert numeric values to Decimal."""
+        if isinstance(v, Decimal):
+            return v
+        return Decimal(str(v))
+
+
+class RiskMetrics(BaseModel):
+    """
+    Portfolio risk statistics (Story 12.6A Task 1).
+
+    Tracks portfolio-level risk metrics including position concentration,
+    portfolio heat, and capital deployment.
+
+    Attributes:
+        max_concurrent_positions: Maximum number of open positions at once
+        avg_concurrent_positions: Average number of open positions
+        max_portfolio_heat: Maximum % of capital at risk simultaneously
+        avg_portfolio_heat: Average % of capital at risk
+        max_position_size_pct: Largest single position as % of portfolio
+        avg_position_size_pct: Average position size as % of portfolio
+        max_capital_deployed_pct: Maximum % of capital deployed in positions
+        avg_capital_deployed_pct: Average % of capital deployed
+
+    Example:
+        Max 3 positions open, avg 1.8 positions
+        Max 6% portfolio heat, avg 3.2% heat
+        Max position 5% of capital, avg 2.8%
+    """
+
+    max_concurrent_positions: int = Field(..., ge=0, description="Max open positions at once")
+    avg_concurrent_positions: Decimal = Field(
+        ..., ge=Decimal("0"), decimal_places=2, description="Avg open positions"
+    )
+    max_portfolio_heat: Decimal = Field(
+        ...,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        decimal_places=4,
+        description="Max % capital at risk",
+    )
+    avg_portfolio_heat: Decimal = Field(
+        ...,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        decimal_places=4,
+        description="Avg % capital at risk",
+    )
+    max_position_size_pct: Decimal = Field(
+        ...,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        decimal_places=4,
+        description="Max single position %",
+    )
+    avg_position_size_pct: Decimal = Field(
+        ..., ge=Decimal("0"), le=Decimal("100"), decimal_places=4, description="Avg position size %"
+    )
+    max_capital_deployed_pct: Decimal = Field(
+        ...,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        decimal_places=4,
+        description="Max % capital deployed",
+    )
+    avg_capital_deployed_pct: Decimal = Field(
+        ...,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        decimal_places=4,
+        description="Avg % capital deployed",
+    )
+
+    @field_validator(
+        "avg_concurrent_positions",
+        "max_portfolio_heat",
+        "avg_portfolio_heat",
+        "max_position_size_pct",
+        "avg_position_size_pct",
+        "max_capital_deployed_pct",
+        "avg_capital_deployed_pct",
+        mode="before",
+    )
+    @classmethod
+    def convert_to_decimal(cls, v) -> Decimal:
+        """Convert numeric values to Decimal."""
+        if isinstance(v, Decimal):
+            return v
+        return Decimal(str(v))
+
+
+class CampaignPerformance(BaseModel):
+    """
+    Wyckoff campaign lifecycle tracking (Story 12.6A Task 1 - CRITICAL).
+
+    Tracks complete Wyckoff Accumulation/Distribution campaigns from start to finish,
+    enabling campaign-level performance analysis beyond individual pattern trades.
+
+    Business Value:
+        - Patterns are part of campaigns: A Spring alone means little without campaign context
+        - Campaign completion rates: How often do campaigns successfully reach Markup/Markdown?
+        - Sequential validation: Did campaign follow proper Wyckoff sequence?
+        - Campaign profitability: Total P&L for complete campaign vs individual trades
+
+    Attributes:
+        campaign_id: Unique campaign identifier
+        campaign_type: ACCUMULATION (bullish) or DISTRIBUTION (bearish)
+        symbol: Trading symbol
+        start_date: Campaign start (PS/BC detection)
+        end_date: Campaign end (Jump/Decline or failure)
+        status: COMPLETED, FAILED, or IN_PROGRESS
+        total_patterns_detected: Number of patterns identified in campaign
+        patterns_traded: Number of patterns actually traded
+        completion_stage: Highest phase reached (Phase C, Phase D, Markup, etc.)
+        pattern_sequence: Ordered pattern list (["PS", "SC", "AR", "SPRING", "SOS", "LPS"])
+        failure_reason: Why campaign failed (if FAILED)
+        total_campaign_pnl: Sum of all trade P&L in campaign
+        risk_reward_realized: Actual R-multiple for full campaign
+        avg_markup_return: For ACCUMULATION, avg return during Markup (if completed)
+        avg_markdown_return: For DISTRIBUTION, avg return during Markdown (if completed)
+        phases_completed: Phases successfully completed (["A", "B", "C", "D"])
+
+    Example:
+        ACCUMULATION campaign (AAPL):
+            - Start: 2023-01-10 (PS detected)
+            - End: 2023-03-15 (Jump confirmed)
+            - Status: COMPLETED
+            - Sequence: ["PS", "SC", "AR", "SPRING", "SOS", "LPS", "JUMP"]
+            - Phases: ["A", "B", "C", "D"]
+            - Total P&L: +$8,450 (3 trades: Spring +$2,100, SOS +$3,200, LPS +$3,150)
+            - Campaign R: 4.2R
+    """
+
+    campaign_id: str = Field(..., max_length=100, description="Unique campaign ID")
+    campaign_type: Literal["ACCUMULATION", "DISTRIBUTION"] = Field(..., description="Campaign type")
+    symbol: str = Field(..., max_length=20, description="Trading symbol")
+    start_date: datetime = Field(..., description="Campaign start date (UTC)")
+    end_date: Optional[datetime] = Field(default=None, description="Campaign end date (UTC)")
+    status: Literal["COMPLETED", "FAILED", "IN_PROGRESS"] = Field(
+        ..., description="Campaign status"
+    )
+    total_patterns_detected: int = Field(..., ge=0, description="Patterns detected in campaign")
+    patterns_traded: int = Field(..., ge=0, description="Patterns actually traded")
+    completion_stage: str = Field(
+        ..., max_length=50, description="Highest phase reached (Phase C, Markup, etc.)"
+    )
+    pattern_sequence: list[str] = Field(
+        default_factory=list, description="Ordered pattern sequence"
+    )
+    failure_reason: Optional[str] = Field(
+        default=None, max_length=200, description="Failure reason (if FAILED)"
+    )
+    total_campaign_pnl: Decimal = Field(..., decimal_places=2, description="Total campaign P&L")
+    risk_reward_realized: Decimal = Field(
+        ..., decimal_places=4, description="Actual R-multiple for campaign"
+    )
+    avg_markup_return: Optional[Decimal] = Field(
+        default=None, decimal_places=4, description="Avg Markup return % (ACCUMULATION)"
+    )
+    avg_markdown_return: Optional[Decimal] = Field(
+        default=None, decimal_places=4, description="Avg Markdown return % (DISTRIBUTION)"
+    )
+    phases_completed: list[str] = Field(
+        default_factory=list, description="Completed phases (['A', 'B', 'C', 'D'])"
+    )
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def ensure_utc(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """Enforce UTC timezone."""
+        if v is None:
+            return None
         if isinstance(v, datetime):
             if v.tzinfo is None:
                 return v.replace(tzinfo=UTC)
@@ -1546,78 +1750,22 @@ class AccuracyMetrics(BaseModel):
         return v
 
     @field_validator(
-        "precision",
-        "recall",
-        "f1_score",
-        "threshold_used",
-        "nfr_target",
-        "phase_accuracy",
-        "campaign_validity_rate",
-        "sequential_logic_score",
-        "false_phase_rate",
-        "confirmation_rate",
-        "prerequisite_violation_rate",
+        "total_campaign_pnl",
+        "risk_reward_realized",
+        "avg_markup_return",
+        "avg_markdown_return",
         mode="before",
     )
     @classmethod
-    def convert_to_decimal(cls, v) -> Decimal:
-        """Convert numeric values to Decimal for financial precision."""
+    def convert_to_decimal(cls, v) -> Optional[Decimal]:
+        """Convert numeric values to Decimal."""
+        if v is None:
+            return None
         if isinstance(v, Decimal):
             return v
         return Decimal(str(v))
 
-    # Computed properties for additional metrics
-    @property
-    def accuracy(self) -> Decimal:
-        """Overall accuracy: (TP + TN) / (TP + TN + FP + FN)."""
-        total = (
-            self.true_positives + self.true_negatives + self.false_positives + self.false_negatives
-        )
-        if total == 0:
-            return Decimal("0")
-        return Decimal(str(self.true_positives + self.true_negatives)) / Decimal(str(total))
 
-    @property
-    def specificity(self) -> Decimal:
-        """Specificity (True Negative Rate): TN / (TN + FP)."""
-        denominator = self.true_negatives + self.false_positives
-        if denominator == 0:
-            return Decimal("0")
-        return Decimal(str(self.true_negatives)) / Decimal(str(denominator))
-
-    @property
-    def negative_predictive_value(self) -> Decimal:
-        """NPV: TN / (TN + FN)."""
-        denominator = self.true_negatives + self.false_negatives
-        if denominator == 0:
-            return Decimal("0")
-        return Decimal(str(self.true_negatives)) / Decimal(str(denominator))
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "detector_name": "SpringDetector",
-                "detector_version": "1.0",
-                "test_timestamp": "2024-12-20T18:30:00Z",
-                "dataset_version": "v1",
-                "total_samples": 100,
-                "true_positives": 76,
-                "false_positives": 9,
-                "true_negatives": 0,
-                "false_negatives": 15,
-                "precision": "0.8941",
-                "recall": "0.8352",
-                "f1_score": "0.8636",
-                "confusion_matrix": {"TP": 76, "FP": 9, "TN": 0, "FN": 15},
-                "threshold_used": "0.70",
-                "passes_nfr_target": True,
-                "nfr_target": "0.75",
-                "phase_accuracy": "0.9211",
-                "campaign_validity_rate": "0.9474",
-                "sequential_logic_score": "0.8421",
-                "false_phase_rate": "0.0789",
-                "confirmation_rate": "0.8158",
-                "prerequisite_violation_rate": "0.1579",
-            }
-        }
-    )
+# ==========================================================================================
+# Story 12.6A: Enhanced Metrics Calculation & Data Models
+# ==========================================================================================
