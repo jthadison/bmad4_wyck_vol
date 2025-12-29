@@ -1,0 +1,24 @@
+{
+  "name": "wyckoff-trading-system",
+  "version": "1.0.0",
+  "description": "Wyckoff Trading System with Regression Testing",
+  "private": true,
+  "scripts": {
+    "test:regression": "cd backend && poetry run python scripts/run_regression_test.py",
+    "test:regression:alert": "cd backend && poetry run python scripts/run_regression_test.py --alert",
+    "test:regression:baseline": "cd backend && poetry run python scripts/run_regression_test.py --establish-baseline",
+    "test:regression:full": "cd backend && poetry run python scripts/run_regression_test.py --alert --output regression_results.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/wyckoff-trading-system.git"
+  },
+  "keywords": [
+    "trading",
+    "wyckoff",
+    "backtesting",
+    "regression-testing"
+  ],
+  "author": "",
+  "license": "ISC"
+}
