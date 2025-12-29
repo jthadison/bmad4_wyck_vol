@@ -1,5 +1,5 @@
 """
-Backtest API Routes (Story 11.2 + Story 12.1 + Story 12.4)
+Backtest API Routes (Story 11.2 + Story 12.1 + Story 12.4 + Story 12.7)
 
 Purpose:
 --------
@@ -19,7 +19,15 @@ Story 12.4 Endpoints (Walk-Forward Testing):
 - GET /api/v1/backtest/walk-forward/{walk_forward_id}: Get walk-forward result
 - GET /api/v1/backtest/walk-forward: List walk-forward results (paginated)
 
-Author: Story 11.2, Story 12.1 Task 8, Story 12.4 Task 9
+Story 12.7 Endpoints (Regression Testing):
+- POST /api/v1/backtest/regression: Run regression test
+- GET /api/v1/backtest/regression/{test_id}: Get regression test result
+- GET /api/v1/backtest/regression: List regression test results (paginated)
+- POST /api/v1/backtest/regression/{test_id}/establish-baseline: Establish baseline
+- GET /api/v1/backtest/regression/baseline/current: Get current baseline
+- GET /api/v1/backtest/regression/baseline/history: List baseline history
+
+Author: Story 11.2, Story 12.1 Task 8, Story 12.4 Task 9, Story 12.7 Task 11
 """
 
 import asyncio
@@ -29,7 +37,6 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.websocket import manager
@@ -42,6 +49,7 @@ from src.models.backtest import (
     BacktestPreviewRequest,
     BacktestPreviewResponse,
     BacktestProgressUpdate,
+    RegressionTestConfig,
     WalkForwardConfig,
 )
 from src.models.ohlcv import OHLCVBar
@@ -892,239 +900,463 @@ async def list_walk_forward_results(
     return results
 
 
-# ==========================================================================================
-# Story 12.6B: Report Generation & Export Endpoints
-# ==========================================================================================
+# ==============================================================================
+# Story 12.7: Regression Testing Endpoints
+# ==============================================================================
+
+# In-memory storage for regression test runs
+regression_test_runs: dict[UUID, dict] = {}
 
 
-@router.get(
-    "/results/{backtest_run_id}/report/html",
-    response_class=HTMLResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_backtest_html_report(
-    backtest_run_id: UUID,
-    session: AsyncSession = Depends(get_db),
-) -> str:
-    """
-    Generate and return HTML report for a backtest result (Story 12.6B Task 6.4).
-
-    This endpoint generates a comprehensive HTML report with charts, metrics,
-    and trade analysis. The report can be viewed directly in a browser.
-
-    Args:
-        backtest_run_id: Backtest run identifier
-        session: Database session
-
-    Returns:
-        HTML report as string (Content-Type: text/html)
-
-    Raises:
-        404 Not Found: Backtest run not found
-        500 Internal Server Error: Report generation failed
-
-    Example:
-        GET /api/v1/backtest/results/{backtest_run_id}/report/html
-        Returns: Full HTML report viewable in browser
-    """
-    from src.backtesting.backtest_report_generator import BacktestReportGenerator
-    from src.repositories.backtest_repository import BacktestRepository
-
-    logger.info("Fetching HTML report", extra={"backtest_run_id": str(backtest_run_id)})
-
-    # Retrieve backtest result from repository
-    repository = BacktestRepository(session)
-    result = await repository.get_result(backtest_run_id)
-
-    if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Backtest run {backtest_run_id} not found",
-        )
-
-    # Generate HTML report
-    try:
-        generator = BacktestReportGenerator()
-        html = generator.generate_html_report(result)
-
-        logger.info(
-            "HTML report generated successfully",
-            extra={"backtest_run_id": str(backtest_run_id), "html_length": len(html)},
-        )
-
-        return html
-
-    except Exception as e:
-        logger.error(
-            "Failed to generate HTML report",
-            extra={"backtest_run_id": str(backtest_run_id), "error": str(e)},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate HTML report: {str(e)}",
-        ) from e
-
-
-@router.get(
-    "/results/{backtest_run_id}/report/pdf",
-    status_code=status.HTTP_200_OK,
-)
-async def get_backtest_pdf_report(
-    backtest_run_id: UUID,
+@router.post("/regression", status_code=status.HTTP_202_ACCEPTED)
+async def run_regression_test(
+    config: RegressionTestConfig,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
 ):
     """
-    Generate and return PDF report for a backtest result (Story 12.6B Task 6.5).
+    Run regression test across multiple symbols.
 
-    This endpoint generates a professional PDF report from the HTML template.
-    The PDF is returned as a downloadable attachment.
+    Story 12.7 Task 11 Subtask 11.1-11.5:
+    Executes regression test as background task and returns immediately with test_id.
 
     Args:
-        backtest_run_id: Backtest run identifier
+        config: RegressionTestConfig with symbols, date range, thresholds
+        background_tasks: FastAPI background tasks
         session: Database session
 
     Returns:
-        PDF report as bytes (Content-Type: application/pdf)
-        Content-Disposition: attachment; filename="backtest_{id}.pdf"
+        test_id and status: RUNNING
 
     Raises:
-        404 Not Found: Backtest run not found
-        500 Internal Server Error: Report generation failed
+        400 Bad Request: Invalid config (empty symbols, invalid date range)
+        503 Service Unavailable: Too many concurrent regression tests
 
-    Example:
-        GET /api/v1/backtest/results/{backtest_run_id}/report/pdf
-        Returns: PDF file download
+    Example Request:
+        {
+            "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"],
+            "start_date": "2020-01-01",
+            "end_date": "2023-12-31",
+            "degradation_thresholds": {
+                "win_rate": 5.0,
+                "average_r_multiple": 10.0,
+                "profit_factor": 15.0
+            }
+        }
+
+    Example Response:
+        {
+            "test_id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "RUNNING"
+        }
     """
-    from fastapi.responses import Response
 
-    from src.backtesting.backtest_report_generator import BacktestReportGenerator
-    from src.repositories.backtest_repository import BacktestRepository
-
-    logger.info("Fetching PDF report", extra={"backtest_run_id": str(backtest_run_id)})
-
-    # Retrieve backtest result from repository
-    repository = BacktestRepository(session)
-    result = await repository.get_result(backtest_run_id)
-
-    if result is None:
+    # Validate config
+    if not config.symbols:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Backtest run {backtest_run_id} not found",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Config must include at least one symbol",
         )
 
-    # Generate PDF report
-    try:
-        generator = BacktestReportGenerator()
-        pdf_bytes = generator.generate_pdf_report(result)
-
-        logger.info(
-            "PDF report generated successfully",
-            extra={"backtest_run_id": str(backtest_run_id), "pdf_size": len(pdf_bytes)},
-        )
-
-        # Return PDF with appropriate headers
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename=backtest_{backtest_run_id}.pdf"},
-        )
-
-    except ImportError as e:
-        logger.error(
-            "WeasyPrint not installed",
-            extra={"backtest_run_id": str(backtest_run_id), "error": str(e)},
-        )
+    if config.start_date >= config.end_date:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="PDF generation not available. WeasyPrint library not installed.",
-        ) from e
-    except Exception as e:
-        logger.error(
-            "Failed to generate PDF report",
-            extra={"backtest_run_id": str(backtest_run_id), "error": str(e)},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be before end_date",
         )
+
+    # Check concurrent test limit (max 3)
+    running_tests = sum(1 for run in regression_test_runs.values() if run["status"] == "RUNNING")
+    if running_tests >= 3:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate PDF report: {str(e)}",
-        ) from e
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Too many concurrent regression tests. Please try again later.",
+        )
+
+    # Generate test_id
+    test_id = uuid4()
+
+    # Initialize tracking
+    regression_test_runs[test_id] = {
+        "status": "RUNNING",
+        "created_at": datetime.now(UTC),
+        "error": None,
+    }
+
+    # Queue background task
+    background_tasks.add_task(
+        run_regression_test_task,
+        test_id,
+        config,
+        session,
+    )
+
+    logger.info(
+        "Regression test queued",
+        extra={
+            "test_id": str(test_id),
+            "symbols": config.symbols,
+            "start_date": str(config.start_date),
+            "end_date": str(config.end_date),
+        },
+    )
+
+    return {"test_id": test_id, "status": "RUNNING"}
 
 
-@router.get(
-    "/results/{backtest_run_id}/trades/csv",
-    status_code=status.HTTP_200_OK,
-)
-async def get_backtest_trades_csv(
-    backtest_run_id: UUID,
-    session: AsyncSession = Depends(get_db),
-):
+async def run_regression_test_task(
+    test_id: UUID,
+    config: RegressionTestConfig,
+    session: AsyncSession,
+) -> None:
     """
-    Export trade list as CSV for a backtest result (Story 12.6B Task 6.6).
-
-    This endpoint generates a CSV file containing all trades with full details.
-    The CSV is returned as a downloadable attachment.
+    Background task to execute regression test.
 
     Args:
-        backtest_run_id: Backtest run identifier
+        test_id: Test identifier
+        config: RegressionTestConfig
         session: Database session
-
-    Returns:
-        CSV file as text (Content-Type: text/csv)
-        Content-Disposition: attachment; filename="backtest_{id}_trades.csv"
-
-    Raises:
-        404 Not Found: Backtest run not found
-        500 Internal Server Error: CSV generation failed
-
-    Example:
-        GET /api/v1/backtest/results/{backtest_run_id}/trades/csv
-        Returns: CSV file download with all trade details
     """
-    from fastapi.responses import Response
+    from src.backtesting.regression_test_engine import RegressionTestEngine
+    from src.repositories.regression_baseline_repository import (
+        RegressionBaselineRepository,
+    )
+    from src.repositories.regression_test_repository import RegressionTestRepository
 
-    from src.backtesting.backtest_report_generator import BacktestReportGenerator
-    from src.repositories.backtest_repository import BacktestRepository
+    try:
+        logger.info("Starting regression test execution", extra={"test_id": str(test_id)})
 
-    logger.info("Fetching trades CSV", extra={"backtest_run_id": str(backtest_run_id)})
+        # Create repositories
+        test_repo = RegressionTestRepository(session)
+        baseline_repo = RegressionBaselineRepository(session)
 
-    # Retrieve backtest result from repository
-    repository = BacktestRepository(session)
-    result = await repository.get_result(backtest_run_id)
-
-    if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Backtest run {backtest_run_id} not found",
+        # Create engine
+        engine = RegressionTestEngine(
+            test_repository=test_repo,
+            baseline_repository=baseline_repo,
         )
 
-    # Generate CSV trade list
-    try:
-        generator = BacktestReportGenerator()
-        csv_content = generator.generate_csv_trade_list(result.trades)
+        # Run regression test
+        result = await engine.run_regression_test(config)
+
+        # Update status
+        regression_test_runs[test_id]["status"] = result.status
+        regression_test_runs[test_id]["result"] = result
 
         logger.info(
-            "CSV trade list generated successfully",
+            "Regression test completed",
             extra={
-                "backtest_run_id": str(backtest_run_id),
-                "trade_count": len(result.trades),
-                "csv_length": len(csv_content),
-            },
-        )
-
-        # Return CSV with appropriate headers
-        return Response(
-            content=csv_content,
-            media_type="text/csv",
-            headers={
-                "Content-Disposition": f"attachment; filename=backtest_{backtest_run_id}_trades.csv"
+                "test_id": str(test_id),
+                "status": result.status,
+                "regression_detected": result.regression_detected,
             },
         )
 
     except Exception as e:
         logger.error(
-            "Failed to generate CSV trade list",
-            extra={"backtest_run_id": str(backtest_run_id), "error": str(e)},
+            "Regression test failed",
+            extra={"test_id": str(test_id), "error": str(e)},
+            exc_info=True,
         )
+        regression_test_runs[test_id]["status"] = "FAILED"
+        regression_test_runs[test_id]["error"] = str(e)
+
+
+@router.get("/regression/{test_id}")
+async def get_regression_test_result(
+    test_id: UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Get regression test result by test_id.
+
+    Story 12.7 Task 11 Subtask 11.6-11.7:
+    Returns result if completed, RUNNING if in progress, 404 if not found.
+
+    Args:
+        test_id: Test identifier
+        session: Database session
+
+    Returns:
+        RegressionTestResult if completed, status if running
+
+    Raises:
+        404 Not Found: Test not found
+
+    Example Response (running):
+        {
+            "test_id": "550e8400...",
+            "status": "RUNNING"
+        }
+
+    Example Response (completed):
+        {
+            "test_id": "550e8400...",
+            "codebase_version": "abc123",
+            "aggregate_metrics": {...},
+            "per_symbol_results": {...},
+            "baseline_comparison": {...},
+            "regression_detected": false,
+            "status": "PASS",
+            ...
+        }
+    """
+    from src.repositories.regression_test_repository import RegressionTestRepository
+
+    # Check in-memory storage first
+    if test_id in regression_test_runs:
+        run_info = regression_test_runs[test_id]
+
+        if run_info["status"] == "RUNNING":
+            return {"test_id": test_id, "status": "RUNNING"}
+        elif run_info["status"] == "FAILED":
+            return {
+                "test_id": test_id,
+                "status": "FAILED",
+                "error": run_info.get("error"),
+            }
+
+    # Query database
+    repository = RegressionTestRepository(session)
+    result = await repository.get_result(test_id)
+
+    if result is None:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate CSV trade list: {str(e)}",
-        ) from e
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regression test {test_id} not found",
+        )
+
+    return result
+
+
+@router.get("/regression")
+async def list_regression_test_results(
+    limit: int = 50,
+    offset: int = 0,
+    status_filter: str | None = None,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    List regression test results with pagination and filtering.
+
+    Story 12.7 Task 11 Subtask 11.8-11.9:
+    Returns paginated list of regression test results.
+
+    Args:
+        limit: Maximum results to return (default 50, max 100)
+        offset: Number of results to skip (default 0)
+        status_filter: Filter by status (PASS/FAIL/BASELINE_NOT_SET)
+        session: Database session
+
+    Returns:
+        List of RegressionTestResult objects
+
+    Example Response:
+        [
+            {
+                "test_id": "550e8400...",
+                "status": "PASS",
+                "regression_detected": false,
+                "test_run_time": "2024-01-15T02:00:00Z",
+                ...
+            },
+            ...
+        ]
+    """
+    from src.repositories.regression_test_repository import RegressionTestRepository
+
+    # Validate pagination
+    if limit > 100:
+        limit = 100
+    if limit < 1:
+        limit = 50
+    if offset < 0:
+        offset = 0
+
+    # Validate status filter
+    if status_filter and status_filter not in ["PASS", "FAIL", "BASELINE_NOT_SET"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="status_filter must be one of: PASS, FAIL, BASELINE_NOT_SET",
+        )
+
+    # Query database
+    repository = RegressionTestRepository(session)
+    results = await repository.list_results(limit=limit, offset=offset, status_filter=status_filter)
+
+    return results
+
+
+@router.post("/regression/{test_id}/establish-baseline")
+async def establish_baseline_from_test(
+    test_id: UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Establish baseline from regression test result.
+
+    Story 12.7 Task 11 Subtask 11.10-11.12:
+    Creates new baseline from specified test result and marks it as current.
+
+    Args:
+        test_id: Test identifier to use as baseline
+        session: Database session
+
+    Returns:
+        RegressionBaseline object
+
+    Raises:
+        404 Not Found: Test not found
+        400 Bad Request: Test status not PASS
+
+    Example Response:
+        {
+            "baseline_id": "660e8400...",
+            "test_id": "550e8400...",
+            "version": "abc123",
+            "metrics": {...},
+            "per_symbol_metrics": {...},
+            "is_current": true,
+            "established_at": "2024-01-15T02:00:00Z"
+        }
+    """
+    from src.backtesting.regression_test_engine import RegressionTestEngine
+    from src.repositories.regression_baseline_repository import (
+        RegressionBaselineRepository,
+    )
+    from src.repositories.regression_test_repository import RegressionTestRepository
+
+    # Get test result
+    test_repo = RegressionTestRepository(session)
+    result = await test_repo.get_result(test_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regression test {test_id} not found",
+        )
+
+    if result.status != "PASS":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot establish baseline from test with status {result.status}. Only PASS tests can be used as baselines.",
+        )
+
+    # Create baseline repository
+    baseline_repo = RegressionBaselineRepository(session)
+
+    # Create engine
+    engine = RegressionTestEngine(
+        test_repository=test_repo,
+        baseline_repository=baseline_repo,
+    )
+
+    # Establish baseline
+    baseline = await engine.establish_baseline(result)
+
+    logger.info(
+        "Baseline established",
+        extra={
+            "baseline_id": str(baseline.baseline_id),
+            "test_id": str(test_id),
+            "version": baseline.version,
+        },
+    )
+
+    return baseline
+
+
+@router.get("/regression/baseline/current")
+async def get_current_baseline(
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Get current active baseline.
+
+    Story 12.7 Task 11 Subtask 11.13-11.14:
+    Returns current baseline or 404 if not set.
+
+    Args:
+        session: Database session
+
+    Returns:
+        RegressionBaseline if exists
+
+    Raises:
+        404 Not Found: No current baseline set
+
+    Example Response:
+        {
+            "baseline_id": "660e8400...",
+            "test_id": "550e8400...",
+            "version": "abc123",
+            "metrics": {...},
+            "per_symbol_metrics": {...},
+            "is_current": true,
+            "established_at": "2024-01-15T02:00:00Z"
+        }
+    """
+    from src.repositories.regression_baseline_repository import (
+        RegressionBaselineRepository,
+    )
+
+    repository = RegressionBaselineRepository(session)
+    baseline = await repository.get_current_baseline()
+
+    if baseline is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No current baseline set. Establish a baseline first.",
+        )
+
+    return baseline
+
+
+@router.get("/regression/baseline/history")
+async def list_baseline_history(
+    limit: int = 10,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    List baseline history with pagination.
+
+    Story 12.7 Task 11 Subtask 11.15-11.16:
+    Returns paginated list of historical baselines.
+
+    Args:
+        limit: Maximum results to return (default 10, max 50)
+        offset: Number of results to skip (default 0)
+        session: Database session
+
+    Returns:
+        List of RegressionBaseline objects ordered by established_at DESC
+
+    Example Response:
+        [
+            {
+                "baseline_id": "660e8400...",
+                "version": "abc123",
+                "is_current": true,
+                "established_at": "2024-01-15T02:00:00Z",
+                ...
+            },
+            ...
+        ]
+    """
+    from src.repositories.regression_baseline_repository import (
+        RegressionBaselineRepository,
+    )
+
+    # Validate pagination
+    if limit > 50:
+        limit = 50
+    if limit < 1:
+        limit = 10
+    if offset < 0:
+        offset = 0
+
+    # Query database
+    repository = RegressionBaselineRepository(session)
+    baselines = await repository.list_baselines(limit=limit, offset=offset)
+
+    return baselines
