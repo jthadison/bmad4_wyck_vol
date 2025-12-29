@@ -107,27 +107,24 @@ def sample_backtest_result_minimal():
         winning_trades=1,
         losing_trades=0,
         win_rate=Decimal("1.0"),
+        total_pnl=Decimal("750.00"),  # 0.75% of 100000
         total_return_pct=Decimal("0.0075"),  # 0.75% as decimal
+        final_equity=Decimal("100750.00"),
         max_drawdown=Decimal("0"),
         sharpe_ratio=Decimal("2.0"),
         cagr=Decimal("0.05"),  # 5% as decimal
-        average_r_multiple=Decimal("2.5"),
+        avg_r_multiple=Decimal("2.5"),
         profit_factor=Decimal("999"),
     )
 
     # Cost summary
     cost_summary = BacktestCostSummary(
-        total_trades=1,
         total_commission_paid=Decimal("10.00"),
         total_slippage_cost=Decimal("5.00"),
         total_transaction_costs=Decimal("15.00"),
         cost_as_pct_of_total_pnl=Decimal("0.02"),  # 2% as decimal
         avg_commission_per_trade=Decimal("10.00"),
         avg_slippage_per_trade=Decimal("5.00"),
-        avg_transaction_cost_per_trade=Decimal("15.00"),
-        gross_avg_r_multiple=Decimal("2.55"),
-        net_avg_r_multiple=Decimal("2.50"),
-        r_multiple_degradation=Decimal("0.05"),
     )
 
     return BacktestResult(
@@ -438,7 +435,7 @@ async def test_get_trades_csv_empty_trades(test_client, monkeypatch):
         total_pnl=Decimal("0"),
         total_return_pct=Decimal("0"),
         final_equity=Decimal("100000"),
-        max_drawdown_pct=Decimal("0"),
+        max_drawdown=Decimal("0"),
         sharpe_ratio=Decimal("0"),
         cagr=Decimal("0"),
         avg_r_multiple=Decimal("0"),

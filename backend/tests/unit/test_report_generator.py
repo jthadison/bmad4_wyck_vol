@@ -121,17 +121,12 @@ def sample_trades():
 def sample_cost_summary():
     """Create sample transaction cost summary."""
     return BacktestCostSummary(
-        total_trades=8,
         total_commission_paid=Decimal("80.00"),  # 8 trades * $10
         total_slippage_cost=Decimal("40.00"),  # 8 trades * $5
-        total_transaction_costs=Decimal("120.00"),
+        total_transaction_costs=Decimal("120.00"),  # commission + slippage
         cost_as_pct_of_total_pnl=Decimal("0.055"),  # 5.5% as decimal
         avg_commission_per_trade=Decimal("10.00"),
         avg_slippage_per_trade=Decimal("5.00"),
-        avg_transaction_cost_per_trade=Decimal("15.00"),
-        gross_avg_r_multiple=Decimal("1.40"),
-        net_avg_r_multiple=Decimal("1.25"),
-        r_multiple_degradation=Decimal("0.15"),
     )
 
 
@@ -156,11 +151,13 @@ def sample_backtest_result(
         winning_trades=winning_trades,
         losing_trades=losing_trades,
         win_rate=Decimal(str(winning_trades / total_trades)),
+        total_pnl=total_pnl,
         total_return_pct=(total_pnl / Decimal("100000")),
-        max_drawdown=Decimal("0.085"),  # 8.5% as decimal
+        final_equity=final_equity,
+        max_drawdown=Decimal("-0.085"),  # 8.5% drawdown (negative)
         sharpe_ratio=Decimal("1.85"),
         cagr=Decimal("0.125"),  # 12.5% as decimal
-        average_r_multiple=Decimal("1.25"),
+        avg_r_multiple=Decimal("1.25"),
         profit_factor=Decimal("2.10"),
     )
 
@@ -281,7 +278,7 @@ def test_html_report_no_trades():
         total_pnl=Decimal("0"),
         total_return_pct=Decimal("0"),
         final_equity=Decimal("100000"),
-        max_drawdown_pct=Decimal("0"),
+        max_drawdown=Decimal("0"),
         sharpe_ratio=Decimal("0"),
         cagr=Decimal("0"),
         avg_r_multiple=Decimal("0"),
@@ -335,7 +332,7 @@ def test_html_report_no_cost_summary():
         total_pnl=Decimal("500"),
         total_return_pct=Decimal("0.5"),
         final_equity=Decimal("100500"),
-        max_drawdown_pct=Decimal("0"),
+        max_drawdown=Decimal("0"),
         sharpe_ratio=Decimal("2.0"),
         cagr=Decimal("5.0"),
         avg_r_multiple=Decimal("2.0"),
@@ -388,9 +385,10 @@ def test_generate_pdf_report(sample_backtest_result):
 
 def test_generate_pdf_report_missing_weasyprint(sample_backtest_result, monkeypatch):
     """Test PDF generation when WeasyPrint is not installed."""
+    import builtins
 
     # Save original import
-    original_import = __builtins__.__import__
+    original_import = builtins.__import__
 
     # Mock WeasyPrint import to raise ImportError
     def mock_import(name, *args, **kwargs):
@@ -398,7 +396,7 @@ def test_generate_pdf_report_missing_weasyprint(sample_backtest_result, monkeypa
             raise ImportError("WeasyPrint not found")
         return original_import(name, *args, **kwargs)
 
-    monkeypatch.setattr("builtins.__import__", mock_import)
+    monkeypatch.setattr(builtins, "__import__", mock_import)
 
     generator = BacktestReportGenerator()
 
