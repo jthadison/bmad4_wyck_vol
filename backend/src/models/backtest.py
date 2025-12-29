@@ -1,13 +1,14 @@
 """
-Backtest Models (Story 11.2 + Story 12.1 + Story 12.3 + Story 12.4 + Story 12.7)
+Backtest Models (Story 11.2 + Story 12.1 + Story 12.3 + Story 12.4 + Story 12.6A + Story 12.7)
 
 Purpose:
 --------
 Pydantic models for backtest preview functionality (Story 11.2),
 comprehensive backtesting engine (Story 12.1), detector accuracy testing
-(Story 12.3), walk-forward validation (Story 12.4), and regression testing
-automation (Story 12.7) including configuration, order simulation, position
-tracking, trades, metrics, results, accuracy testing, walk-forward testing,
+(Story 12.3), walk-forward validation (Story 12.4), enhanced metrics
+data models (Story 12.6A), and regression testing automation (Story 12.7)
+including configuration, order simulation, position tracking, trades, metrics,
+results, accuracy testing, walk-forward testing, comprehensive reporting,
 and regression testing.
 
 Story 11.2 Models:
@@ -40,6 +41,13 @@ Story 12.4 Models (Walk-Forward Testing):
 - WalkForwardChartData: Chart data for visualization
 - WalkForwardResult: Complete walk-forward test results
 
+Story 12.6A Models (Enhanced Metrics & Reporting):
+---------------------------------------------------
+- MonthlyReturn: Monthly return data for heatmap visualization
+- DrawdownPeriod: Drawdown event tracking with peak/trough/recovery
+- RiskMetrics: Portfolio heat and capital deployment metrics
+- CampaignPerformance: Wyckoff campaign lifecycle tracking
+
 Story 12.7 Models (Regression Testing Automation):
 ----------------------------------------------------
 - RegressionTestConfig: Configuration for regression testing
@@ -48,7 +56,7 @@ Story 12.7 Models (Regression Testing Automation):
 - RegressionComparison: Detailed baseline comparison
 - MetricComparison: Individual metric comparison
 
-Author: Story 11.2 Task 1, Story 12.1 Task 1, Story 12.3 Task 1, Story 12.4 Task 1, Story 12.7 Task 1
+Author: Story 11.2 Task 1, Story 12.1 Task 1, Story 12.3 Task 1, Story 12.4 Task 1, Story 12.6A Task 1, Story 12.7 Task 1
 """
 
 from datetime import UTC, date, datetime

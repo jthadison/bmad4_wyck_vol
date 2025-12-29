@@ -187,6 +187,29 @@ class BacktestEngine:
             bars=bars,
         )
 
+        # Story 12.6: Calculate enhanced metrics
+        from src.backtesting.metrics import MetricsCalculator
+
+        metrics_calculator = MetricsCalculator()
+
+        # Calculate extended reporting metrics
+        monthly_returns = metrics_calculator.calculate_monthly_returns(
+            equity_curve=self.equity_curve,
+            initial_capital=self.config.initial_capital,
+        )
+        drawdown_periods = metrics_calculator.calculate_drawdown_periods(
+            equity_curve=self.equity_curve,
+            top_n=5,
+        )
+        risk_metrics = metrics_calculator.calculate_risk_metrics(
+            equity_curve=self.equity_curve,
+            trades=self.position_manager.closed_trades,
+            initial_capital=self.config.initial_capital,
+        )
+        campaign_performance = metrics_calculator.calculate_campaign_performance(
+            trades=self.position_manager.closed_trades
+        )
+
         # Build result
         result = BacktestResult(
             backtest_run_id=uuid4(),
@@ -201,6 +224,11 @@ class BacktestEngine:
             look_ahead_bias_check=bias_check_passed,
             execution_time_seconds=execution_time,
             created_at=end_time,
+            # Story 12.6 enhanced metrics
+            monthly_returns=monthly_returns,
+            drawdown_periods=drawdown_periods,
+            risk_metrics=risk_metrics,
+            campaign_performance=campaign_performance,
         )
 
         return result
