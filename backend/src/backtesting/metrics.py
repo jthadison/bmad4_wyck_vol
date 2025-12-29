@@ -16,7 +16,11 @@ from typing import Any
 from src.models.backtest import (
     BacktestMetrics,
     BacktestTrade,
+    CampaignPerformance,
+    DrawdownPeriod,
     EquityCurvePoint,
+    MonthlyReturn,
+    RiskMetrics,
 )
 
 
@@ -80,8 +84,26 @@ class MetricsCalculator:
             )
         """
         if not equity_curve:
-            # No equity curve - return empty metrics
-            return BacktestMetrics()
+            # No equity curve - return empty metrics with trade stats if trades exist
+            total_trades = len(trades)
+            winning_trades = len([t for t in trades if t.realized_pnl > 0]) if trades else 0
+            losing_trades = len([t for t in trades if t.realized_pnl < 0]) if trades else 0
+            total_pnl = sum(t.realized_pnl for t in trades) if trades else Decimal("0")
+
+            return BacktestMetrics(
+                total_trades=total_trades,
+                winning_trades=winning_trades,
+                losing_trades=losing_trades,
+                win_rate=self._calculate_win_rate(winning_trades, total_trades),
+                total_pnl=total_pnl,
+                total_return_pct=Decimal("0"),
+                final_equity=initial_capital,
+                max_drawdown=Decimal("0"),
+                sharpe_ratio=None,
+                cagr=None,
+                avg_r_multiple=self._calculate_avg_r_multiple(trades) if trades else None,
+                profit_factor=self._calculate_profit_factor(trades) if trades else None,
+            )
 
         # Calculate return metrics
         final_value = equity_curve[-1].portfolio_value
@@ -98,11 +120,18 @@ class MetricsCalculator:
         if not trades:
             # No trades - return metrics with returns/drawdown but no trade stats
             return BacktestMetrics(
+                total_trades=0,
+                winning_trades=0,
+                losing_trades=0,
+                win_rate=Decimal("0"),
+                total_pnl=Decimal("0"),
                 total_return_pct=total_return_pct,
-                cagr=cagr,
-                sharpe_ratio=sharpe_ratio,
+                final_equity=final_value,
                 max_drawdown=max_drawdown,
-                max_drawdown_duration_days=max_dd_duration,
+                sharpe_ratio=sharpe_ratio,
+                cagr=cagr,
+                avg_r_multiple=None,
+                profit_factor=None,
             )
 
         # Trade counts
@@ -119,19 +148,25 @@ class MetricsCalculator:
         # Profit factor
         profit_factor = self._calculate_profit_factor(trades)
 
+        # Calculate total P&L
+        total_pnl = sum(t.realized_pnl for t in trades)
+
+        # Calculate final equity
+        final_equity = final_value
+
         return BacktestMetrics(
-            total_signals=total_trades,
-            win_rate=win_rate,
-            average_r_multiple=avg_r_multiple,
-            profit_factor=profit_factor,
-            max_drawdown=max_drawdown,
-            total_return_pct=total_return_pct,
-            cagr=cagr,
-            sharpe_ratio=sharpe_ratio,
-            max_drawdown_duration_days=max_dd_duration,
             total_trades=total_trades,
             winning_trades=winning_trades,
             losing_trades=losing_trades,
+            win_rate=win_rate,
+            total_pnl=total_pnl,
+            total_return_pct=total_return_pct,
+            final_equity=final_equity,
+            max_drawdown=max_drawdown,
+            sharpe_ratio=sharpe_ratio,
+            cagr=cagr,
+            avg_r_multiple=avg_r_multiple,
+            profit_factor=profit_factor,
         )
 
     def _calculate_total_return_pct(
@@ -218,8 +253,14 @@ class MetricsCalculator:
         if len(equity_curve) < 2:
             return Decimal("0")
 
-        # Extract daily returns
-        daily_returns = [point.daily_return for point in equity_curve[1:]]
+        # Calculate daily returns from equity values
+        daily_returns = []
+        for i in range(1, len(equity_curve)):
+            prev_value = equity_curve[i - 1].equity_value
+            curr_value = equity_curve[i].equity_value
+            if prev_value > 0:
+                daily_return = (curr_value - prev_value) / prev_value
+                daily_returns.append(daily_return)
 
         if not daily_returns:
             return Decimal("0")
@@ -329,8 +370,13 @@ class MetricsCalculator:
         if not trades:
             return Decimal("0")
 
-        total_r = sum(t.r_multiple for t in trades)
-        return total_r / Decimal(len(trades))
+        # Filter trades with r_multiple set
+        trades_with_r = [t for t in trades if t.r_multiple is not None]
+        if not trades_with_r:
+            return Decimal("0")
+
+        total_r = sum(t.r_multiple for t in trades_with_r)
+        return total_r / Decimal(len(trades_with_r))
 
     def _calculate_profit_factor(self, trades: list[BacktestTrade]) -> Decimal:
         """Calculate profit factor.
@@ -356,6 +402,451 @@ class MetricsCalculator:
             return Decimal("0")
 
         return total_wins / total_losses
+
+    # ===========================================================================================
+    # Enhanced Metrics Methods (Story 12.6A IMPL-004)
+    # ===========================================================================================
+
+    def calculate_monthly_returns(
+        self, equity_curve: list[EquityCurvePoint], initial_capital: Decimal
+    ) -> list[MonthlyReturn]:
+        """Calculate monthly return data for heatmap visualization (Story 12.6A AC2).
+
+        Groups equity curve points by year-month and calculates monthly return percentages.
+
+        Args:
+            equity_curve: List of equity curve points
+            initial_capital: Starting capital
+
+        Returns:
+            List of MonthlyReturn objects, one per month with trading activity
+
+        Example:
+            Jan 2024: $100,000 -> $105,000 = 5% return (3 trades)
+            Feb 2024: $105,000 -> $103,000 = -1.9% return (1 trade)
+        """
+        if not equity_curve:
+            return []
+
+        # Group equity points by year-month
+        monthly_data: dict[tuple[int, int], list[EquityCurvePoint]] = {}
+        for point in equity_curve:
+            year_month = (point.timestamp.year, point.timestamp.month)
+            if year_month not in monthly_data:
+                monthly_data[year_month] = []
+            monthly_data[year_month].append(point)
+
+        # Calculate monthly returns
+        monthly_returns: list[MonthlyReturn] = []
+        previous_end_equity = initial_capital
+
+        for (year, month), points in sorted(monthly_data.items()):
+            # Get first and last equity values for the month
+            start_equity = points[0].equity_value
+            end_equity = points[-1].equity_value
+
+            # Use previous month's ending equity if available
+            if monthly_returns:
+                start_equity = previous_end_equity
+
+            # Calculate return percentage
+            if start_equity > 0:
+                return_pct = ((end_equity - start_equity) / start_equity) * Decimal("100")
+            else:
+                return_pct = Decimal("0")
+
+            # Count trades in this month (estimated from equity changes)
+            trades_count = len(points) - 1  # Approximate
+
+            monthly_return = MonthlyReturn(
+                year=year,
+                month=month,
+                return_pct=return_pct,
+                start_equity=start_equity,
+                end_equity=end_equity,
+                trades_count=trades_count,
+            )
+            monthly_returns.append(monthly_return)
+            previous_end_equity = end_equity
+
+        return monthly_returns
+
+    def calculate_drawdown_periods(
+        self, equity_curve: list[EquityCurvePoint], top_n: int = 5
+    ) -> list[DrawdownPeriod]:
+        """Calculate top N drawdown periods (Story 12.6A AC3).
+
+        Tracks equity peaks, troughs, and recovery points to identify significant
+        drawdown events.
+
+        Args:
+            equity_curve: List of equity curve points
+            top_n: Number of top drawdown periods to return (default 5)
+
+        Returns:
+            List of DrawdownPeriod objects sorted by drawdown magnitude (largest first)
+
+        Example:
+            Peak: $115,000 on 2024-03-01
+            Trough: $103,500 on 2024-03-15 (-10%)
+            Recovery: $115,500 on 2024-04-10 (26 days to recover)
+        """
+        if len(equity_curve) < 2:
+            return []
+
+        drawdown_periods: list[DrawdownPeriod] = []
+        peak_value = equity_curve[0].portfolio_value
+        peak_date = equity_curve[0].timestamp
+        trough_value = peak_value
+        trough_date = peak_date
+        in_drawdown = False
+
+        for i, point in enumerate(equity_curve[1:], start=1):
+            current_value = point.portfolio_value
+            current_date = point.timestamp
+
+            if current_value >= peak_value:
+                # End of drawdown period (if we were in one)
+                if in_drawdown and trough_value < peak_value:
+                    drawdown_pct = ((trough_value - peak_value) / peak_value) * Decimal("100")
+                    duration_days = (trough_date - peak_date).days
+                    recovery_duration_days = (current_date - trough_date).days
+
+                    drawdown_period = DrawdownPeriod(
+                        peak_date=peak_date,
+                        trough_date=trough_date,
+                        recovery_date=current_date,
+                        peak_value=peak_value,
+                        trough_value=trough_value,
+                        recovery_value=current_value,
+                        drawdown_pct=drawdown_pct,
+                        duration_days=duration_days,
+                        recovery_duration_days=recovery_duration_days,
+                    )
+                    drawdown_periods.append(drawdown_period)
+
+                # New peak
+                peak_value = current_value
+                peak_date = current_date
+                trough_value = current_value
+                trough_date = current_date
+                in_drawdown = False
+            else:
+                # In drawdown
+                in_drawdown = True
+                if current_value < trough_value:
+                    trough_value = current_value
+                    trough_date = current_date
+
+        # Handle ongoing drawdown at end of period
+        if in_drawdown and trough_value < peak_value:
+            drawdown_pct = ((trough_value - peak_value) / peak_value) * Decimal("100")
+            duration_days = (trough_date - peak_date).days
+
+            drawdown_period = DrawdownPeriod(
+                peak_date=peak_date,
+                trough_date=trough_date,
+                recovery_date=None,  # Not yet recovered
+                peak_value=peak_value,
+                trough_value=trough_value,
+                recovery_value=None,
+                drawdown_pct=drawdown_pct,
+                duration_days=duration_days,
+                recovery_duration_days=None,
+            )
+            drawdown_periods.append(drawdown_period)
+
+        # Sort by drawdown magnitude (most negative first) and return top N
+        drawdown_periods.sort(key=lambda d: d.drawdown_pct)
+        return drawdown_periods[:top_n]
+
+    def calculate_risk_metrics(
+        self,
+        equity_curve: list[EquityCurvePoint],
+        trades: list[BacktestTrade],
+        initial_capital: Decimal,
+    ) -> RiskMetrics:
+        """Calculate portfolio heat and capital deployment metrics (Story 12.6A AC4).
+
+        Analyzes concurrent positions, portfolio heat (capital at risk), and
+        capital deployment over time.
+
+        Args:
+            equity_curve: List of equity curve points
+            trades: List of completed trades
+            initial_capital: Starting capital
+
+        Returns:
+            RiskMetrics with portfolio heat and deployment statistics
+
+        Example:
+            Max concurrent positions: 3
+            Max portfolio heat: 6% (3 positions × 2% risk each)
+            Avg capital deployed: 28.5%
+            Exposure time: 75% (3 months out of 4 with open positions)
+        """
+        if not equity_curve or not trades:
+            return RiskMetrics(
+                max_concurrent_positions=0,
+                avg_concurrent_positions=Decimal("0"),
+                max_portfolio_heat=Decimal("0"),
+                avg_portfolio_heat=Decimal("0"),
+                max_capital_deployed_pct=Decimal("0"),
+                avg_capital_deployed_pct=Decimal("0"),
+                total_exposure_days=0,
+                exposure_time_pct=Decimal("0"),
+            )
+
+        # Calculate backtest duration in days
+        start_date = equity_curve[0].timestamp
+        end_date = equity_curve[-1].timestamp
+        total_days = max((end_date - start_date).days, 1)
+
+        # Track concurrent positions over time
+        position_counts: list[int] = []
+        capital_deployed: list[Decimal] = []
+        days_with_positions = 0
+
+        for point in equity_curve:
+            # Count how many trades were open at this timestamp
+            concurrent = 0
+            deployed = Decimal("0")
+
+            for trade in trades:
+                if (
+                    trade.entry_timestamp
+                    <= point.timestamp
+                    <= (trade.exit_timestamp or point.timestamp)
+                ):
+                    concurrent += 1
+                    # Estimate capital deployed (entry_price × quantity)
+                    deployed += trade.entry_price * Decimal(str(trade.quantity))
+
+            position_counts.append(concurrent)
+            capital_deployed.append(deployed)
+            if concurrent > 0:
+                days_with_positions += 1
+
+        # Calculate statistics
+        max_concurrent = max(position_counts) if position_counts else 0
+        avg_concurrent = (
+            Decimal(str(sum(position_counts))) / Decimal(len(position_counts))
+            if position_counts
+            else Decimal("0")
+        )
+
+        # Calculate capital deployment percentages
+        current_capital = initial_capital
+        deployed_pcts: list[Decimal] = []
+        for i, point in enumerate(equity_curve):
+            current_capital = point.portfolio_value
+            if current_capital > 0:
+                deployed_pct = (capital_deployed[i] / current_capital) * Decimal("100")
+                deployed_pcts.append(deployed_pct)
+
+        max_deployed_pct = max(deployed_pcts) if deployed_pcts else Decimal("0")
+        avg_deployed_pct = (
+            sum(deployed_pcts, Decimal("0")) / Decimal(len(deployed_pcts))
+            if deployed_pcts
+            else Decimal("0")
+        )
+
+        # Estimate portfolio heat (assume 2% risk per position as default)
+        # In real implementation, this would come from position sizing
+        assumed_risk_per_position = Decimal("2")  # 2% per position
+        max_heat = Decimal(str(max_concurrent)) * assumed_risk_per_position
+        avg_heat = avg_concurrent * assumed_risk_per_position
+
+        # Exposure time percentage (cap at 100%)
+        exposure_pct = (Decimal(str(days_with_positions)) / Decimal(str(total_days))) * Decimal(
+            "100"
+        )
+        exposure_pct = min(exposure_pct, Decimal("100"))  # Cap at 100%
+
+        return RiskMetrics(
+            max_concurrent_positions=max_concurrent,
+            avg_concurrent_positions=avg_concurrent,
+            max_portfolio_heat=max_heat,
+            avg_portfolio_heat=avg_heat,
+            max_capital_deployed_pct=max_deployed_pct,
+            avg_capital_deployed_pct=avg_deployed_pct,
+            total_exposure_days=days_with_positions,
+            exposure_time_pct=exposure_pct,
+        )
+
+    def calculate_campaign_performance(
+        self, trades: list[BacktestTrade]
+    ) -> list[CampaignPerformance]:
+        """Calculate Wyckoff campaign lifecycle tracking (Story 12.6A AC5 - CRITICAL).
+
+        Tracks Wyckoff campaign lifecycles and aggregates trades within campaigns.
+
+        NOTE: This is a placeholder implementation. Full campaign detection requires
+        integration with the Wyckoff phase detection system (Story 9.x), which
+        identifies accumulation, markup, distribution, and markdown phases.
+
+        Args:
+            trades: List of completed trades
+
+        Returns:
+            List of CampaignPerformance objects (empty until campaign detection is implemented)
+
+        Example (Future Implementation):
+            Campaign 1: ACCUMULATION -> MARKUP (3 trades, +15% return, COMPLETED)
+            Campaign 2: DISTRIBUTION -> MARKDOWN (2 trades, -5% return, FAILED)
+        """
+
+        if not trades:
+            return []
+
+        # Filter trades with Wyckoff patterns
+        pattern_trades = [t for t in trades if t.pattern_type is not None]
+        if not pattern_trades:
+            return []
+
+        # Sort by entry timestamp for sequential processing
+        sorted_trades = sorted(pattern_trades, key=lambda t: t.entry_timestamp)
+
+        # Map pattern types to Wyckoff phases
+        pattern_to_phase_map = {
+            # Accumulation patterns (Phase A, B, C)
+            "SPRING": "ACCUMULATION",
+            "SC": "ACCUMULATION",  # Selling Climax
+            "AR": "ACCUMULATION",  # Automatic Rally
+            "TEST": "ACCUMULATION",
+            "SECONDARY_TEST": "ACCUMULATION",
+            # Markup patterns (Phase D, E)
+            "SOS": "MARKUP",  # Sign of Strength
+            "LPS": "MARKUP",  # Last Point of Support
+            "SIGN_OF_STRENGTH": "MARKUP",
+            "BACKUP": "MARKUP",
+            # Distribution patterns
+            "UTAD": "DISTRIBUTION",  # Upthrust After Distribution
+            "LPSY": "DISTRIBUTION",  # Last Point of Supply
+            "DISTRIBUTION": "DISTRIBUTION",
+            "BC": "DISTRIBUTION",  # Buying Climax
+            # Markdown patterns
+            "SOW": "MARKDOWN",  # Sign of Weakness
+            "MARKDOWN": "MARKDOWN",
+        }
+
+        # Group trades into campaigns by symbol and temporal proximity
+        campaigns: list[CampaignPerformance] = []
+        campaign_window_days = 30  # Trades within 30 days are part of same campaign
+
+        current_campaign_trades: list[BacktestTrade] = []
+        current_symbol: str | None = None
+        last_trade_date: datetime | None = None
+
+        for trade in sorted_trades:
+            # Check if this trade starts a new campaign
+            start_new_campaign = False
+
+            if current_symbol is None:
+                # First trade ever
+                start_new_campaign = True
+            elif trade.symbol != current_symbol:
+                # Different symbol
+                start_new_campaign = True
+            elif (
+                last_trade_date
+                and (trade.entry_timestamp - last_trade_date).days > campaign_window_days
+            ):
+                # Time gap too large
+                start_new_campaign = True
+
+            if start_new_campaign and current_campaign_trades:
+                # Finalize previous campaign
+                campaign = self._create_campaign_from_trades(
+                    current_campaign_trades, pattern_to_phase_map
+                )
+                campaigns.append(campaign)
+                current_campaign_trades = []
+
+            # Add trade to current campaign
+            current_campaign_trades.append(trade)
+            current_symbol = trade.symbol
+            last_trade_date = trade.entry_timestamp
+
+        # Finalize last campaign
+        if current_campaign_trades:
+            campaign = self._create_campaign_from_trades(
+                current_campaign_trades, pattern_to_phase_map
+            )
+            campaigns.append(campaign)
+
+        return campaigns
+
+    def _create_campaign_from_trades(
+        self, trades: list[BacktestTrade], pattern_to_phase_map: dict[str, str]
+    ) -> CampaignPerformance:
+        """Create a CampaignPerformance object from a group of trades.
+
+        Args:
+            trades: List of trades in this campaign
+            pattern_to_phase_map: Mapping from pattern types to Wyckoff phases
+
+        Returns:
+            CampaignPerformance object with aggregated campaign data
+        """
+        from uuid import uuid4
+
+        # Get campaign metadata
+        first_trade = trades[0]
+        last_trade = trades[-1]
+
+        symbol = first_trade.symbol
+        start_date = first_trade.entry_timestamp
+        end_date = last_trade.exit_timestamp if last_trade.exit_timestamp else None
+
+        # Determine detected phase from first pattern
+        detected_phase = pattern_to_phase_map.get(
+            first_trade.pattern_type.upper() if first_trade.pattern_type else "", "UNKNOWN"
+        )
+
+        # Collect all phases observed
+        phases_observed = []
+        for trade in trades:
+            if trade.pattern_type:
+                phase = pattern_to_phase_map.get(trade.pattern_type.upper(), "UNKNOWN")
+                if phase not in phases_observed:
+                    phases_observed.append(phase)
+
+        # Calculate campaign P&L
+        total_pnl = sum(t.realized_pnl for t in trades)
+        trades_count = len(trades)
+
+        # Determine campaign status
+        if end_date is None:
+            status = "IN_PROGRESS"
+            completion_reason = None
+        elif total_pnl >= Decimal("0"):
+            status = "COMPLETED"
+            completion_reason = "PROFITABLE_EXIT"
+        else:
+            status = "FAILED"
+            completion_reason = "LOSS_REALIZED"
+
+        # Calculate campaign return percentage
+        first_trade_value = first_trade.entry_price * Decimal(str(first_trade.quantity))
+        if first_trade_value > 0:
+            campaign_return_pct = (total_pnl / first_trade_value) * Decimal("100")
+        else:
+            campaign_return_pct = Decimal("0")
+
+        return CampaignPerformance(
+            campaign_id=uuid4(),
+            symbol=symbol,
+            detected_phase=detected_phase,
+            start_date=start_date,
+            end_date=end_date,
+            status=status,
+            completion_reason=completion_reason,
+            trades_count=trades_count,
+            total_pnl=total_pnl,
+            campaign_return_pct=campaign_return_pct,
+            phases_observed=phases_observed,
+        )
 
 
 # Legacy function-based API for backward compatibility

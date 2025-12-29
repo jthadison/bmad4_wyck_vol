@@ -19,7 +19,10 @@ from uuid import uuid4
 import pytest
 
 from src.backtesting.metrics import MetricsCalculator
-from src.models.backtest import BacktestTrade, EquityCurvePoint
+from src.models.backtest import (
+    BacktestTrade,
+    EquityCurvePoint,
+)
 
 
 @pytest.fixture
@@ -39,8 +42,6 @@ def sample_equity_curve():
             portfolio_value=Decimal("100000") + Decimal(str(i * 1000)),
             cash=Decimal("50000"),
             positions_value=Decimal("50000") + Decimal(str(i * 1000)),
-            daily_return=Decimal("0.01") if i > 0 else Decimal("0"),
-            cumulative_return=Decimal(str(i * 0.01)),
         )
         for i in range(10)
     ]
@@ -234,8 +235,6 @@ class TestSharpeRatioCalculation:
                     portfolio_value=portfolio_value,
                     cash=Decimal("50000"),
                     positions_value=portfolio_value - Decimal("50000"),
-                    daily_return=daily_return,
-                    cumulative_return=(portfolio_value - base_value) / base_value,
                 )
             )
 
@@ -254,8 +253,6 @@ class TestSharpeRatioCalculation:
                 portfolio_value=Decimal("100000"),
                 cash=Decimal("100000"),
                 positions_value=Decimal("0"),
-                daily_return=Decimal("0"),
-                cumulative_return=Decimal("0"),
             )
             for i in range(10)
         ]
@@ -272,8 +269,6 @@ class TestSharpeRatioCalculation:
                 portfolio_value=Decimal("100000"),
                 cash=Decimal("100000"),
                 positions_value=Decimal("0"),
-                daily_return=Decimal("0"),
-                cumulative_return=Decimal("0"),
             )
         ]
 
@@ -294,8 +289,6 @@ class TestDrawdownCalculation:
                 equity_value=Decimal("100000"),
                 cash=Decimal("100000"),
                 positions_value=Decimal("0"),
-                daily_return=Decimal("0"),
-                cumulative_return=Decimal("0"),
             ),
             EquityCurvePoint(
                 timestamp=datetime(2024, 1, 2, tzinfo=UTC),
@@ -303,8 +296,6 @@ class TestDrawdownCalculation:
                 equity_value=Decimal("115000"),
                 cash=Decimal("100000"),
                 positions_value=Decimal("15000"),
-                daily_return=Decimal("0.15"),
-                cumulative_return=Decimal("0.15"),
             ),
             EquityCurvePoint(
                 timestamp=datetime(2024, 1, 3, tzinfo=UTC),
@@ -312,8 +303,6 @@ class TestDrawdownCalculation:
                 equity_value=Decimal("110000"),
                 cash=Decimal("100000"),
                 positions_value=Decimal("10000"),
-                daily_return=Decimal("-0.043"),
-                cumulative_return=Decimal("0.10"),
             ),
             EquityCurvePoint(
                 timestamp=datetime(2024, 1, 4, tzinfo=UTC),
@@ -321,8 +310,6 @@ class TestDrawdownCalculation:
                 equity_value=Decimal("103500"),
                 cash=Decimal("100000"),
                 positions_value=Decimal("3500"),
-                daily_return=Decimal("-0.059"),
-                cumulative_return=Decimal("0.035"),
             ),
         ]
 
@@ -342,8 +329,6 @@ class TestDrawdownCalculation:
                 equity_value=Decimal("100000") + Decimal(str(i * 1000)),
                 cash=Decimal("50000"),
                 positions_value=Decimal("50000") + Decimal(str(i * 1000)),
-                daily_return=Decimal("0.01") if i > 0 else Decimal("0"),
-                cumulative_return=Decimal(str(i * 0.01)),
             )
             for i in range(10)
         ]
@@ -448,9 +433,11 @@ class TestFullMetricsCalculation:
         assert metrics.losing_trades == 1
         assert metrics.win_rate == Decimal("2") / Decimal("3")
         assert metrics.profit_factor == Decimal("3.0")
-        assert metrics.average_r_multiple == Decimal("4.0") / Decimal("3")
+        # avg_r_multiple is rounded to 4 decimal places
+        expected_avg_r = Decimal("4.0") / Decimal("3")
+        assert abs(metrics.avg_r_multiple - expected_avg_r) < Decimal("0.0001")
         assert metrics.total_return_pct == Decimal("9")  # $100k -> $109k
-        assert metrics.max_drawdown >= Decimal("0")
+        assert metrics.max_drawdown <= Decimal("0")  # Drawdown should be negative or zero
         assert metrics.cagr >= Decimal("0")
         assert metrics.sharpe_ratio >= Decimal("0")
 
@@ -467,10 +454,10 @@ class TestFullMetricsCalculation:
         assert metrics.total_trades == 0
         assert metrics.winning_trades == 0
         assert metrics.losing_trades == 0
-        # Win rate, avg_r, profit_factor should be None for no trades
-        assert metrics.win_rate is None or metrics.win_rate == Decimal("0")
-        assert metrics.average_r_multiple is None or metrics.average_r_multiple == Decimal("0")
-        assert metrics.profit_factor is None or metrics.profit_factor == Decimal("0")
+        # Win rate, avg_r, profit_factor should be None or zero for no trades
+        assert metrics.win_rate == Decimal("0")
+        assert metrics.avg_r_multiple is None
+        assert metrics.profit_factor is None
 
     def test_calculate_metrics_no_equity_curve(self, calculator, sample_trades):
         """Test metrics calculation with no equity curve."""
@@ -496,8 +483,6 @@ class TestEdgeCases:
                 equity_value=Decimal("100000"),
                 cash=Decimal("100000"),
                 positions_value=Decimal("0"),
-                daily_return=Decimal("0"),
-                cumulative_return=Decimal("0"),
             ),
             EquityCurvePoint(
                 timestamp=datetime(2024, 1, 2, tzinfo=UTC),
@@ -505,8 +490,6 @@ class TestEdgeCases:
                 equity_value=Decimal("100500"),
                 cash=Decimal("100500"),
                 positions_value=Decimal("0"),
-                daily_return=Decimal("0.005"),
-                cumulative_return=Decimal("0.005"),
             ),
         ]
 
@@ -538,3 +521,562 @@ class TestEdgeCases:
         assert metrics.winning_trades == 1
         assert metrics.losing_trades == 0
         assert metrics.win_rate == Decimal("1.0")
+
+
+# ===========================================================================================
+# Enhanced Metrics Tests (Story 12.6A IMPL-004)
+# ===========================================================================================
+
+
+class TestMonthlyReturnsCalculation:
+    """Test monthly returns calculation (Story 12.6A AC2)."""
+
+    def test_calculate_monthly_returns_single_month(self, calculator):
+        """Test monthly returns for a single month."""
+        # January 2024: $100,000 -> $105,000
+        equity_curve = [
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                equity_value=Decimal("100000"),
+                portfolio_value=Decimal("100000"),
+                cash=Decimal("100000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 15, tzinfo=UTC),
+                equity_value=Decimal("102500"),
+                portfolio_value=Decimal("102500"),
+                cash=Decimal("100000"),
+                positions_value=Decimal("2500"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 31, tzinfo=UTC),
+                equity_value=Decimal("105000"),
+                portfolio_value=Decimal("105000"),
+                cash=Decimal("100000"),
+                positions_value=Decimal("5000"),
+            ),
+        ]
+
+        monthly_returns = calculator.calculate_monthly_returns(
+            equity_curve=equity_curve, initial_capital=Decimal("100000")
+        )
+
+        assert len(monthly_returns) == 1
+        assert monthly_returns[0].year == 2024
+        assert monthly_returns[0].month == 1
+        assert monthly_returns[0].return_pct == Decimal("5")  # 5% return
+        assert monthly_returns[0].start_equity == Decimal("100000")
+        assert monthly_returns[0].end_equity == Decimal("105000")
+
+    def test_calculate_monthly_returns_multiple_months(self, calculator):
+        """Test monthly returns across multiple months."""
+        # Jan-Feb-Mar 2024
+        equity_curve = [
+            # January
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                equity_value=Decimal("100000"),
+                portfolio_value=Decimal("100000"),
+                cash=Decimal("100000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 31, tzinfo=UTC),
+                equity_value=Decimal("105000"),
+                portfolio_value=Decimal("105000"),
+                cash=Decimal("105000"),
+                positions_value=Decimal("0"),
+            ),
+            # February
+            EquityCurvePoint(
+                timestamp=datetime(2024, 2, 1, tzinfo=UTC),
+                equity_value=Decimal("105000"),
+                portfolio_value=Decimal("105000"),
+                cash=Decimal("105000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 2, 29, tzinfo=UTC),
+                equity_value=Decimal("103000"),  # Loss
+                portfolio_value=Decimal("103000"),
+                cash=Decimal("103000"),
+                positions_value=Decimal("0"),
+            ),
+            # March
+            EquityCurvePoint(
+                timestamp=datetime(2024, 3, 1, tzinfo=UTC),
+                equity_value=Decimal("103000"),
+                portfolio_value=Decimal("103000"),
+                cash=Decimal("103000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 3, 31, tzinfo=UTC),
+                equity_value=Decimal("108000"),
+                portfolio_value=Decimal("108000"),
+                cash=Decimal("108000"),
+                positions_value=Decimal("0"),
+            ),
+        ]
+
+        monthly_returns = calculator.calculate_monthly_returns(
+            equity_curve=equity_curve, initial_capital=Decimal("100000")
+        )
+
+        assert len(monthly_returns) == 3
+
+        # January: +5%
+        assert monthly_returns[0].year == 2024
+        assert monthly_returns[0].month == 1
+        assert monthly_returns[0].return_pct == Decimal("5")
+
+        # February: -1.9047...% (from 105000 to 103000)
+        assert monthly_returns[1].year == 2024
+        assert monthly_returns[1].month == 2
+        assert monthly_returns[1].return_pct < Decimal("0")  # Negative return
+
+        # March: +4.8543...% (from 103000 to 108000)
+        assert monthly_returns[2].year == 2024
+        assert monthly_returns[2].month == 3
+        assert monthly_returns[2].return_pct > Decimal("0")  # Positive return
+
+    def test_calculate_monthly_returns_empty_equity_curve(self, calculator):
+        """Test monthly returns with empty equity curve."""
+        monthly_returns = calculator.calculate_monthly_returns(
+            equity_curve=[], initial_capital=Decimal("100000")
+        )
+
+        assert monthly_returns == []
+
+
+class TestDrawdownPeriodsCalculation:
+    """Test drawdown periods calculation (Story 12.6A AC3)."""
+
+    def test_calculate_drawdown_periods_with_recovery(self, calculator):
+        """Test drawdown period tracking with recovery."""
+        # Peak -> Trough -> Recovery cycle
+        equity_curve = [
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                portfolio_value=Decimal("100000"),
+                equity_value=Decimal("100000"),
+                cash=Decimal("100000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 15, tzinfo=UTC),
+                portfolio_value=Decimal("115000"),  # Peak
+                equity_value=Decimal("115000"),
+                cash=Decimal("115000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 2, 1, tzinfo=UTC),
+                portfolio_value=Decimal("103500"),  # Trough (-10%)
+                equity_value=Decimal("103500"),
+                cash=Decimal("103500"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 3, 1, tzinfo=UTC),
+                portfolio_value=Decimal("115500"),  # Recovery
+                equity_value=Decimal("115500"),
+                cash=Decimal("115500"),
+                positions_value=Decimal("0"),
+            ),
+        ]
+
+        drawdown_periods = calculator.calculate_drawdown_periods(equity_curve, top_n=5)
+
+        assert len(drawdown_periods) == 1
+        dd = drawdown_periods[0]
+
+        assert dd.peak_date == datetime(2024, 1, 15, tzinfo=UTC)
+        assert dd.trough_date == datetime(2024, 2, 1, tzinfo=UTC)
+        assert dd.recovery_date == datetime(2024, 3, 1, tzinfo=UTC)
+        assert dd.peak_value == Decimal("115000")
+        assert dd.trough_value == Decimal("103500")
+        assert dd.recovery_value == Decimal("115500")
+        assert dd.drawdown_pct == Decimal("-10")  # -10%
+        assert dd.duration_days == 17  # Jan 15 to Feb 1
+        assert dd.recovery_duration_days == 29  # Feb 1 to Mar 1 (2024 is leap year)
+
+    def test_calculate_drawdown_periods_ongoing_drawdown(self, calculator):
+        """Test drawdown period without recovery (ongoing)."""
+        equity_curve = [
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                portfolio_value=Decimal("100000"),
+                equity_value=Decimal("100000"),
+                cash=Decimal("100000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 15, tzinfo=UTC),
+                portfolio_value=Decimal("110000"),  # Peak
+                equity_value=Decimal("110000"),
+                cash=Decimal("110000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 2, 1, tzinfo=UTC),
+                portfolio_value=Decimal("95000"),  # Trough (not recovered)
+                equity_value=Decimal("95000"),
+                cash=Decimal("95000"),
+                positions_value=Decimal("0"),
+            ),
+        ]
+
+        drawdown_periods = calculator.calculate_drawdown_periods(equity_curve, top_n=5)
+
+        assert len(drawdown_periods) == 1
+        dd = drawdown_periods[0]
+
+        assert dd.recovery_date is None
+        assert dd.recovery_value is None
+        assert dd.recovery_duration_days is None
+
+    def test_calculate_drawdown_periods_top_n_limit(self, calculator):
+        """Test top N drawdown periods sorting."""
+        # Create multiple drawdown periods
+        equity_curve = [
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                portfolio_value=Decimal("100000"),
+                equity_value=Decimal("100000"),
+                cash=Decimal("100000"),
+                positions_value=Decimal("0"),
+            ),
+            # First drawdown: -5%
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 10, tzinfo=UTC),
+                portfolio_value=Decimal("105000"),
+                equity_value=Decimal("105000"),
+                cash=Decimal("105000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, 20, tzinfo=UTC),
+                portfolio_value=Decimal("99750"),
+                equity_value=Decimal("99750"),
+                cash=Decimal("99750"),
+                positions_value=Decimal("0"),
+            ),
+            # Second drawdown: -10% (larger)
+            EquityCurvePoint(
+                timestamp=datetime(2024, 2, 1, tzinfo=UTC),
+                portfolio_value=Decimal("110000"),
+                equity_value=Decimal("110000"),
+                cash=Decimal("110000"),
+                positions_value=Decimal("0"),
+            ),
+            EquityCurvePoint(
+                timestamp=datetime(2024, 2, 15, tzinfo=UTC),
+                portfolio_value=Decimal("99000"),
+                equity_value=Decimal("99000"),
+                cash=Decimal("99000"),
+                positions_value=Decimal("0"),
+            ),
+            # Recovery
+            EquityCurvePoint(
+                timestamp=datetime(2024, 3, 1, tzinfo=UTC),
+                portfolio_value=Decimal("115000"),
+                equity_value=Decimal("115000"),
+                cash=Decimal("115000"),
+                positions_value=Decimal("0"),
+            ),
+        ]
+
+        drawdown_periods = calculator.calculate_drawdown_periods(equity_curve, top_n=1)
+
+        # Should return only the largest drawdown (second one at -10%)
+        assert len(drawdown_periods) == 1
+        assert drawdown_periods[0].peak_value == Decimal("110000")
+        assert drawdown_periods[0].trough_value == Decimal("99000")
+
+    def test_calculate_drawdown_periods_no_drawdown(self, calculator):
+        """Test with only upward equity curve (no drawdowns)."""
+        equity_curve = [
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, i + 1, tzinfo=UTC),
+                portfolio_value=Decimal("100000") + Decimal(str(i * 1000)),
+                equity_value=Decimal("100000") + Decimal(str(i * 1000)),
+                cash=Decimal("100000"),
+                positions_value=Decimal(str(i * 1000)),
+            )
+            for i in range(10)
+        ]
+
+        drawdown_periods = calculator.calculate_drawdown_periods(equity_curve, top_n=5)
+
+        assert len(drawdown_periods) == 0
+
+
+class TestRiskMetricsCalculation:
+    """Test risk metrics calculation (Story 12.6A AC4)."""
+
+    def test_calculate_risk_metrics_with_positions(self, calculator):
+        """Test risk metrics with concurrent positions."""
+        # Create equity curve spanning 10 days
+        equity_curve = [
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, i + 1, tzinfo=UTC),
+                portfolio_value=Decimal("100000"),
+                equity_value=Decimal("100000"),
+                cash=Decimal("50000"),
+                positions_value=Decimal("50000"),
+            )
+            for i in range(10)
+        ]
+
+        # Create 3 trades with overlapping periods
+        trades = [
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("150.00"),
+                exit_price=Decimal("155.00"),
+                entry_timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 8, tzinfo=UTC),
+                realized_pnl=Decimal("500.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+            ),
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="MSFT",
+                side="LONG",
+                quantity=50,
+                entry_price=Decimal("300.00"),
+                exit_price=Decimal("310.00"),
+                entry_timestamp=datetime(2024, 1, 3, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 7, tzinfo=UTC),
+                realized_pnl=Decimal("500.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+            ),
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="GOOGL",
+                side="LONG",
+                quantity=25,
+                entry_price=Decimal("120.00"),
+                exit_price=Decimal("125.00"),
+                entry_timestamp=datetime(2024, 1, 5, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 10, tzinfo=UTC),
+                realized_pnl=Decimal("125.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+            ),
+        ]
+
+        risk_metrics = calculator.calculate_risk_metrics(
+            equity_curve=equity_curve, trades=trades, initial_capital=Decimal("100000")
+        )
+
+        # Should have up to 3 concurrent positions
+        assert risk_metrics.max_concurrent_positions == 3
+        assert risk_metrics.avg_concurrent_positions > Decimal("0")
+
+        # Portfolio heat (assuming 2% risk per position)
+        assert risk_metrics.max_portfolio_heat == Decimal("6")  # 3 positions × 2%
+        assert risk_metrics.avg_portfolio_heat > Decimal("0")
+
+        # Capital deployed
+        assert risk_metrics.max_capital_deployed_pct > Decimal("0")
+        assert risk_metrics.avg_capital_deployed_pct > Decimal("0")
+
+        # Exposure time (all 10 days had positions)
+        assert risk_metrics.total_exposure_days == 10
+        assert risk_metrics.exposure_time_pct == Decimal("100")
+
+    def test_calculate_risk_metrics_no_trades(self, calculator):
+        """Test risk metrics with no trades."""
+        equity_curve = [
+            EquityCurvePoint(
+                timestamp=datetime(2024, 1, i + 1, tzinfo=UTC),
+                portfolio_value=Decimal("100000"),
+                equity_value=Decimal("100000"),
+                cash=Decimal("100000"),
+                positions_value=Decimal("0"),
+            )
+            for i in range(10)
+        ]
+
+        risk_metrics = calculator.calculate_risk_metrics(
+            equity_curve=equity_curve, trades=[], initial_capital=Decimal("100000")
+        )
+
+        # All metrics should be zero
+        assert risk_metrics.max_concurrent_positions == 0
+        assert risk_metrics.avg_concurrent_positions == Decimal("0")
+        assert risk_metrics.max_portfolio_heat == Decimal("0")
+        assert risk_metrics.avg_portfolio_heat == Decimal("0")
+        assert risk_metrics.total_exposure_days == 0
+        assert risk_metrics.exposure_time_pct == Decimal("0")
+
+
+class TestCampaignPerformanceCalculation:
+    """Test campaign performance calculation (Story 12.6A AC5)."""
+
+    def test_calculate_campaign_performance_single_trade(self, calculator):
+        """Test campaign performance with single SPRING trade."""
+        trades = [
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("150.00"),
+                exit_price=Decimal("155.00"),
+                entry_timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 5, tzinfo=UTC),
+                realized_pnl=Decimal("500.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+                pattern_type="SPRING",
+            ),
+        ]
+
+        campaign_performance = calculator.calculate_campaign_performance(trades)
+
+        # Should return one campaign
+        assert len(campaign_performance) == 1
+        assert isinstance(campaign_performance, list)
+
+        campaign = campaign_performance[0]
+        assert campaign.symbol == "AAPL"
+        assert campaign.detected_phase == "ACCUMULATION"
+        assert campaign.trades_count == 1
+        assert campaign.total_pnl == Decimal("500.00")
+        assert campaign.status == "COMPLETED"
+        assert campaign.completion_reason == "PROFITABLE_EXIT"
+        assert "ACCUMULATION" in campaign.phases_observed
+
+    def test_calculate_campaign_performance_multiple_trades_same_campaign(self, calculator):
+        """Test campaign grouping with multiple trades in same campaign."""
+        trades = [
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("150.00"),
+                exit_price=Decimal("155.00"),
+                entry_timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 5, tzinfo=UTC),
+                realized_pnl=Decimal("500.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+                pattern_type="SPRING",
+            ),
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("155.00"),
+                exit_price=Decimal("160.00"),
+                entry_timestamp=datetime(2024, 1, 10, tzinfo=UTC),  # Within 30-day window
+                exit_timestamp=datetime(2024, 1, 15, tzinfo=UTC),
+                realized_pnl=Decimal("500.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+                pattern_type="SOS",  # Different phase - MARKUP
+            ),
+        ]
+
+        campaign_performance = calculator.calculate_campaign_performance(trades)
+
+        # Should group into one campaign (same symbol, within 30 days)
+        assert len(campaign_performance) == 1
+        campaign = campaign_performance[0]
+        assert campaign.trades_count == 2
+        assert campaign.total_pnl == Decimal("1000.00")
+        assert campaign.detected_phase == "ACCUMULATION"  # First pattern
+        assert "ACCUMULATION" in campaign.phases_observed
+        assert "MARKUP" in campaign.phases_observed
+
+    def test_calculate_campaign_performance_separate_campaigns(self, calculator):
+        """Test campaign separation by symbol and time gap."""
+        trades = [
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("150.00"),
+                exit_price=Decimal("155.00"),
+                entry_timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 5, tzinfo=UTC),
+                realized_pnl=Decimal("500.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+                pattern_type="SPRING",
+            ),
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("160.00"),
+                exit_price=Decimal("158.00"),
+                entry_timestamp=datetime(2024, 3, 1, tzinfo=UTC),  # >30 days later
+                exit_timestamp=datetime(2024, 3, 5, tzinfo=UTC),
+                realized_pnl=Decimal("-200.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+                pattern_type="UTAD",  # DISTRIBUTION pattern
+            ),
+        ]
+
+        campaign_performance = calculator.calculate_campaign_performance(trades)
+
+        # Should create two separate campaigns (time gap >30 days)
+        assert len(campaign_performance) == 2
+        assert campaign_performance[0].trades_count == 1
+        assert campaign_performance[1].trades_count == 1
+        assert campaign_performance[0].status == "COMPLETED"
+        assert campaign_performance[1].status == "FAILED"  # Negative P&L
+
+    def test_calculate_campaign_performance_no_pattern_trades(self, calculator):
+        """Test campaign performance with no pattern trades."""
+        trades = [
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("150.00"),
+                exit_price=Decimal("155.00"),
+                entry_timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 5, tzinfo=UTC),
+                realized_pnl=Decimal("500.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+                pattern_type=None,  # No pattern
+            ),
+        ]
+
+        campaign_performance = calculator.calculate_campaign_performance(trades)
+
+        # Should return empty list (no pattern trades)
+        assert campaign_performance == []
+
+    def test_calculate_campaign_performance_empty_trades(self, calculator):
+        """Test campaign performance with empty trades list."""
+        campaign_performance = calculator.calculate_campaign_performance([])
+
+        assert campaign_performance == []

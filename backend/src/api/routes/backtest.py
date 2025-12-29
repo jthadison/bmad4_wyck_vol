@@ -29,6 +29,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.websocket import manager
@@ -889,3 +890,241 @@ async def list_walk_forward_results(
     results = await repository.list_results(limit=limit, offset=offset)
 
     return results
+
+
+# ==========================================================================================
+# Story 12.6B: Report Generation & Export Endpoints
+# ==========================================================================================
+
+
+@router.get(
+    "/results/{backtest_run_id}/report/html",
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_backtest_html_report(
+    backtest_run_id: UUID,
+    session: AsyncSession = Depends(get_db),
+) -> str:
+    """
+    Generate and return HTML report for a backtest result (Story 12.6B Task 6.4).
+
+    This endpoint generates a comprehensive HTML report with charts, metrics,
+    and trade analysis. The report can be viewed directly in a browser.
+
+    Args:
+        backtest_run_id: Backtest run identifier
+        session: Database session
+
+    Returns:
+        HTML report as string (Content-Type: text/html)
+
+    Raises:
+        404 Not Found: Backtest run not found
+        500 Internal Server Error: Report generation failed
+
+    Example:
+        GET /api/v1/backtest/results/{backtest_run_id}/report/html
+        Returns: Full HTML report viewable in browser
+    """
+    from src.backtesting.backtest_report_generator import BacktestReportGenerator
+    from src.repositories.backtest_repository import BacktestRepository
+
+    logger.info("Fetching HTML report", extra={"backtest_run_id": str(backtest_run_id)})
+
+    # Retrieve backtest result from repository
+    repository = BacktestRepository(session)
+    result = await repository.get_result(backtest_run_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Backtest run {backtest_run_id} not found",
+        )
+
+    # Generate HTML report
+    try:
+        generator = BacktestReportGenerator()
+        html = generator.generate_html_report(result)
+
+        logger.info(
+            "HTML report generated successfully",
+            extra={"backtest_run_id": str(backtest_run_id), "html_length": len(html)},
+        )
+
+        return html
+
+    except Exception as e:
+        logger.error(
+            "Failed to generate HTML report",
+            extra={"backtest_run_id": str(backtest_run_id), "error": str(e)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate HTML report: {str(e)}",
+        ) from e
+
+
+@router.get(
+    "/results/{backtest_run_id}/report/pdf",
+    status_code=status.HTTP_200_OK,
+)
+async def get_backtest_pdf_report(
+    backtest_run_id: UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Generate and return PDF report for a backtest result (Story 12.6B Task 6.5).
+
+    This endpoint generates a professional PDF report from the HTML template.
+    The PDF is returned as a downloadable attachment.
+
+    Args:
+        backtest_run_id: Backtest run identifier
+        session: Database session
+
+    Returns:
+        PDF report as bytes (Content-Type: application/pdf)
+        Content-Disposition: attachment; filename="backtest_{id}.pdf"
+
+    Raises:
+        404 Not Found: Backtest run not found
+        500 Internal Server Error: Report generation failed
+
+    Example:
+        GET /api/v1/backtest/results/{backtest_run_id}/report/pdf
+        Returns: PDF file download
+    """
+    from fastapi.responses import Response
+
+    from src.backtesting.backtest_report_generator import BacktestReportGenerator
+    from src.repositories.backtest_repository import BacktestRepository
+
+    logger.info("Fetching PDF report", extra={"backtest_run_id": str(backtest_run_id)})
+
+    # Retrieve backtest result from repository
+    repository = BacktestRepository(session)
+    result = await repository.get_result(backtest_run_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Backtest run {backtest_run_id} not found",
+        )
+
+    # Generate PDF report
+    try:
+        generator = BacktestReportGenerator()
+        pdf_bytes = generator.generate_pdf_report(result)
+
+        logger.info(
+            "PDF report generated successfully",
+            extra={"backtest_run_id": str(backtest_run_id), "pdf_size": len(pdf_bytes)},
+        )
+
+        # Return PDF with appropriate headers
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=backtest_{backtest_run_id}.pdf"},
+        )
+
+    except ImportError as e:
+        logger.error(
+            "WeasyPrint not installed",
+            extra={"backtest_run_id": str(backtest_run_id), "error": str(e)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PDF generation not available. WeasyPrint library not installed.",
+        ) from e
+    except Exception as e:
+        logger.error(
+            "Failed to generate PDF report",
+            extra={"backtest_run_id": str(backtest_run_id), "error": str(e)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate PDF report: {str(e)}",
+        ) from e
+
+
+@router.get(
+    "/results/{backtest_run_id}/trades/csv",
+    status_code=status.HTTP_200_OK,
+)
+async def get_backtest_trades_csv(
+    backtest_run_id: UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Export trade list as CSV for a backtest result (Story 12.6B Task 6.6).
+
+    This endpoint generates a CSV file containing all trades with full details.
+    The CSV is returned as a downloadable attachment.
+
+    Args:
+        backtest_run_id: Backtest run identifier
+        session: Database session
+
+    Returns:
+        CSV file as text (Content-Type: text/csv)
+        Content-Disposition: attachment; filename="backtest_{id}_trades.csv"
+
+    Raises:
+        404 Not Found: Backtest run not found
+        500 Internal Server Error: CSV generation failed
+
+    Example:
+        GET /api/v1/backtest/results/{backtest_run_id}/trades/csv
+        Returns: CSV file download with all trade details
+    """
+    from fastapi.responses import Response
+
+    from src.backtesting.backtest_report_generator import BacktestReportGenerator
+    from src.repositories.backtest_repository import BacktestRepository
+
+    logger.info("Fetching trades CSV", extra={"backtest_run_id": str(backtest_run_id)})
+
+    # Retrieve backtest result from repository
+    repository = BacktestRepository(session)
+    result = await repository.get_result(backtest_run_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Backtest run {backtest_run_id} not found",
+        )
+
+    # Generate CSV trade list
+    try:
+        generator = BacktestReportGenerator()
+        csv_content = generator.generate_csv_trade_list(result.trades)
+
+        logger.info(
+            "CSV trade list generated successfully",
+            extra={
+                "backtest_run_id": str(backtest_run_id),
+                "trade_count": len(result.trades),
+                "csv_length": len(csv_content),
+            },
+        )
+
+        # Return CSV with appropriate headers
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=backtest_{backtest_run_id}_trades.csv"
+            },
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to generate CSV trade list",
+            extra={"backtest_run_id": str(backtest_run_id), "error": str(e)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate CSV trade list: {str(e)}",
+        ) from e
