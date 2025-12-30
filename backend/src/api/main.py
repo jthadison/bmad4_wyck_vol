@@ -15,6 +15,7 @@ from src.api.routes import (
     help,
     notifications,
     orchestrator,
+    paper_trading,
     patterns,
     portfolio,
     risk,
@@ -51,6 +52,7 @@ app.include_router(backtest.router)  # Backtest preview routes (Story 11.2)
 app.include_router(notifications.router)  # Notification routes (Story 11.6)
 app.include_router(summary.router)  # Summary routes (Story 10.3)
 app.include_router(help.router)  # Help system routes (Story 11.8a)
+app.include_router(paper_trading.router)  # Paper trading routes (Story 12.8)
 
 
 # WebSocket endpoint for real-time updates
