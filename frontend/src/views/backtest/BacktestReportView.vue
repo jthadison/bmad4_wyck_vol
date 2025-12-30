@@ -383,9 +383,12 @@ const downloadCsv = async () => {
 }
 
 // Formatting helpers
-const formatPercentage = (value: string | number | undefined): string => {
+const formatPercentage = (
+  value: string | number | null | undefined
+): string => {
   try {
-    const num = toBig(value || 0)
+    const stringValue = value != null ? String(value) : '0'
+    const num = toBig(stringValue)
     return `${num.toFixed(2)}%`
   } catch {
     return '0.00%'
