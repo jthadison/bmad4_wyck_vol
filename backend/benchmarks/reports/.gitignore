@@ -1,0 +1,8 @@
+# Ignore all generated HTML reports
+*.html
+
+# Ignore JSON comparison files
+*.json
+
+# Keep README
+!README.md

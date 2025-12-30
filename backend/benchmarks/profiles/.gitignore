@@ -1,0 +1,9 @@
+# Ignore all flame graph SVG files
+*.svg
+
+# Ignore memory profiling reports
+*.dat
+*.prof
+
+# Keep README
+!README.md
