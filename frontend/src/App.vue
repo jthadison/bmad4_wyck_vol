@@ -199,6 +199,49 @@ onMounted(() => {
     }
   )
 
+  // Subscribe to paper trading WebSocket events (Story 12.8)
+  websocketService.subscribe(
+    'paper_position_opened',
+    (message: WebSocketMessage) => {
+      if ('data' in message && message.data) {
+        import('@/stores/paperTradingStore').then(
+          ({ usePaperTradingStore }) => {
+            const paperTradingStore = usePaperTradingStore()
+            paperTradingStore.handlePositionOpened(message.data)
+          }
+        )
+      }
+    }
+  )
+
+  websocketService.subscribe(
+    'paper_position_updated',
+    (message: WebSocketMessage) => {
+      if ('data' in message && message.data) {
+        import('@/stores/paperTradingStore').then(
+          ({ usePaperTradingStore }) => {
+            const paperTradingStore = usePaperTradingStore()
+            paperTradingStore.handlePositionUpdated(message.data)
+          }
+        )
+      }
+    }
+  )
+
+  websocketService.subscribe(
+    'paper_trade_closed',
+    (message: WebSocketMessage) => {
+      if ('data' in message && message.data) {
+        import('@/stores/paperTradingStore').then(
+          ({ usePaperTradingStore }) => {
+            const paperTradingStore = usePaperTradingStore()
+            paperTradingStore.handleTradeClosed(message.data)
+          }
+        )
+      }
+    }
+  )
+
   console.log('[App] WebSocket initialized and subscriptions configured')
 })
 

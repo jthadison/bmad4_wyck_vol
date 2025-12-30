@@ -77,7 +77,7 @@ class EnhancedMetricsCalculator:
             losing_trades = len([t for t in pattern_trades if t.realized_pnl <= 0])
 
             win_rate = (
-                Decimal(str(winning_trades)) / Decimal(str(total_trades))
+                (Decimal(str(winning_trades)) / Decimal(str(total_trades))).quantize(Decimal("0.0001"))
                 if total_trades > 0
                 else Decimal("0")
             )
@@ -85,7 +85,7 @@ class EnhancedMetricsCalculator:
             # Average R-multiple
             r_multiples = [t.r_multiple for t in pattern_trades]
             avg_r = (
-                sum(r_multiples, Decimal("0")) / Decimal(str(len(r_multiples)))
+                (sum(r_multiples, Decimal("0")) / Decimal(str(len(r_multiples)))).quantize(Decimal("0.0001"))
                 if r_multiples
                 else Decimal("0")
             )
@@ -97,7 +97,11 @@ class EnhancedMetricsCalculator:
             total_losses = abs(
                 sum((t.realized_pnl for t in pattern_trades if t.realized_pnl < 0), Decimal("0"))
             )
-            profit_factor = total_wins / total_losses if total_losses > 0 else Decimal("0")
+            profit_factor = (
+                (total_wins / total_losses).quantize(Decimal("0.0001"))
+                if total_losses > 0
+                else Decimal("0")
+            )
 
             # Total P&L
             total_pnl = sum((t.realized_pnl for t in pattern_trades), Decimal("0"))
@@ -393,16 +397,15 @@ class EnhancedMetricsCalculator:
     def calculate_campaign_performance(
         self,
         trades: list[BacktestTrade],
-        # Campaign data would come from campaign tracking system
-        # For now, this is a placeholder structure
     ) -> list[CampaignPerformance]:
         """Calculate Wyckoff campaign lifecycle performance (CRITICAL).
 
-        This is a placeholder implementation. Full campaign tracking requires:
-        - Campaign detection logic (PS/BC/AR pattern sequence)
-        - Phase classification integration
-        - Pattern prerequisite validation
-        - Campaign completion criteria
+        Uses WyckoffCampaignDetector to identify campaigns, validate pattern sequences,
+        track phase progression, and calculate campaign-level metrics.
+
+        This method provides the critical business insight that individual pattern
+        statistics cannot: complete campaign lifecycle analysis from PS→JUMP
+        (Accumulation) or PSY→DECLINE (Distribution).
 
         Args:
             trades: Completed trades with pattern metadata
@@ -410,13 +413,19 @@ class EnhancedMetricsCalculator:
         Returns:
             List of CampaignPerformance objects
 
-        Note:
-            Full implementation requires Story 12.6 Tasks 3-24 (campaign tracking infrastructure).
-            This stub returns empty list until campaign system is built.
+        Example:
+            calculator = EnhancedMetricsCalculator()
+            campaigns = calculator.calculate_campaign_performance(trades)
+            for campaign in campaigns:
+                print(f"{campaign.symbol}: {campaign.status} - {campaign.total_pnl}")
         """
-        # Placeholder - full implementation requires campaign tracking system
-        # from subsequent Story 12.6 tasks
-        return []
+        from src.backtesting.campaign_detector import WyckoffCampaignDetector
+
+        # Use campaign detector to identify and track campaigns
+        detector = WyckoffCampaignDetector()
+        campaigns = detector.detect_campaigns(trades)
+
+        return campaigns
 
     def calculate_trade_streaks(self, trades: list[BacktestTrade]) -> tuple[int, int]:
         """Calculate longest winning and losing streaks.

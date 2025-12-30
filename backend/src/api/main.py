@@ -15,6 +15,7 @@ from src.api.routes import (
     help,
     notifications,
     orchestrator,
+    paper_trading,
     patterns,
     portfolio,
     risk,
@@ -51,6 +52,7 @@ app.include_router(backtest.router)  # Backtest preview routes (Story 11.2)
 app.include_router(notifications.router)  # Notification routes (Story 11.6)
 app.include_router(summary.router)  # Summary routes (Story 10.3)
 app.include_router(help.router)  # Help system routes (Story 11.8a)
+app.include_router(paper_trading.router)  # Paper trading routes (Story 12.8)
 
 
 # WebSocket endpoint for real-time updates
@@ -78,7 +80,7 @@ async def startup_event() -> None:
     """
     FastAPI startup event handler.
 
-    Initializes and starts the real-time market data feed.
+    Initializes and starts the real-time market data feed and paper trading integration.
     """
     global _coordinator
 
@@ -97,6 +99,26 @@ async def startup_event() -> None:
         await _coordinator.start()
     else:
         print("WARNING: Alpaca API keys not configured. Real-time feed disabled.")
+
+    # Initialize paper trading signal routing (Story 12.8)
+    try:
+        from src.database import async_session_maker
+        from src.orchestrator.event_bus import get_event_bus
+        from src.trading.signal_router import get_signal_router
+        from src.trading.signal_event_listener import register_signal_listener
+
+        # Get orchestrator event bus
+        event_bus = get_event_bus()
+
+        # Create signal router with database session factory
+        signal_router = get_signal_router(async_session_maker)
+
+        # Register signal listener with event bus
+        register_signal_listener(event_bus, signal_router)
+
+        print("Paper trading signal routing initialized successfully")
+    except Exception as e:
+        print(f"WARNING: Failed to initialize paper trading signal routing: {str(e)}")
 
 
 @app.on_event("shutdown")
