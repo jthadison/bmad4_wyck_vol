@@ -43,12 +43,17 @@ bleach = "^6.1.0"
 pygments = "^2.17.0"
 scipy = "^1.11.0"
 weasyprint = "^62.3"
+prometheus-client = "^0.19.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
 pytest-asyncio = "^0.23.0"
 pytest-httpx = "^0.30.0"
 pytest-mock = "^3.12.0"
+pytest-benchmark = "^4.0.0"
+py-spy = "^0.3.14"
+memory-profiler = "^0.61.0"
+locust = "^2.20.0"
 mypy = "^1.8.0"
 ruff = "^0.1.0"
 pre-commit = "^3.6.0"
@@ -99,14 +104,22 @@ plugins = ["pydantic.mypy"]
 ignore_errors = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "benchmarks"]
 asyncio_mode = "auto"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "benchmark: marks tests as performance benchmarks",
 ]
+
+[tool.pytest.benchmark]
+warmup = true
+warmup_iterations = 3
+disable_gc = true
+min_rounds = 10
+timer = "time.perf_counter"
 
 [tool.poetry.scripts]
 wyckoff = "src.cli.ingest:main"
