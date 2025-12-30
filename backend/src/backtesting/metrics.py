@@ -538,7 +538,7 @@ class MetricsCalculator:
             if current_value >= peak_value:
                 # End of drawdown period (if we were in one)
                 if in_drawdown and trough_value < peak_value:
-                    drawdown_pct = ((trough_value - peak_value) / peak_value) * Decimal("100")
+                    drawdown_pct = ((peak_value - trough_value) / peak_value) * Decimal("100")
                     duration_days = (trough_date - peak_date).days
                     recovery_duration_days = (current_date - trough_date).days
 
@@ -546,10 +546,10 @@ class MetricsCalculator:
                         peak_date=peak_date,
                         trough_date=trough_date,
                         recovery_date=current_date,
-                        peak_value=peak_value,
-                        trough_value=trough_value,
-                        recovery_value=current_value,
-                        drawdown_pct=drawdown_pct,
+                        peak_value=peak_value.quantize(Decimal("0.01")),
+                        trough_value=trough_value.quantize(Decimal("0.01")),
+                        recovery_value=current_value.quantize(Decimal("0.01")),
+                        drawdown_pct=drawdown_pct.quantize(Decimal("0.0001")),
                         duration_days=duration_days,
                         recovery_duration_days=recovery_duration_days,
                     )
@@ -570,24 +570,24 @@ class MetricsCalculator:
 
         # Handle ongoing drawdown at end of period
         if in_drawdown and trough_value < peak_value:
-            drawdown_pct = ((trough_value - peak_value) / peak_value) * Decimal("100")
+            drawdown_pct = ((peak_value - trough_value) / peak_value) * Decimal("100")
             duration_days = (trough_date - peak_date).days
 
             drawdown_period = DrawdownPeriod(
                 peak_date=peak_date,
                 trough_date=trough_date,
                 recovery_date=None,  # Not yet recovered
-                peak_value=peak_value,
-                trough_value=trough_value,
+                peak_value=peak_value.quantize(Decimal("0.01")),
+                trough_value=trough_value.quantize(Decimal("0.01")),
                 recovery_value=None,
-                drawdown_pct=drawdown_pct,
+                drawdown_pct=drawdown_pct.quantize(Decimal("0.0001")),
                 duration_days=duration_days,
                 recovery_duration_days=None,
             )
             drawdown_periods.append(drawdown_period)
 
-        # Sort by drawdown magnitude (most negative first) and return top N
-        drawdown_periods.sort(key=lambda d: d.drawdown_pct)
+        # Sort by drawdown magnitude (largest first) and return top N
+        drawdown_periods.sort(key=lambda d: d.drawdown_pct, reverse=True)
         return drawdown_periods[:top_n]
 
     def calculate_risk_metrics(
@@ -621,6 +621,8 @@ class MetricsCalculator:
                 avg_concurrent_positions=Decimal("0"),
                 max_portfolio_heat=Decimal("0"),
                 avg_portfolio_heat=Decimal("0"),
+                max_position_size_pct=Decimal("0"),
+                avg_position_size_pct=Decimal("0"),
                 max_capital_deployed_pct=Decimal("0"),
                 avg_capital_deployed_pct=Decimal("0"),
                 total_exposure_days=0,
@@ -635,6 +637,7 @@ class MetricsCalculator:
         # Track concurrent positions over time
         position_counts: list[int] = []
         capital_deployed: list[Decimal] = []
+        position_sizes: list[Decimal] = []
         days_with_positions = 0
 
         for point in equity_curve:
@@ -649,8 +652,12 @@ class MetricsCalculator:
                     <= (trade.exit_timestamp or point.timestamp)
                 ):
                     concurrent += 1
-                    # Estimate capital deployed (entry_price × quantity)
-                    deployed += trade.entry_price * Decimal(str(trade.quantity))
+                    # Calculate position value and size
+                    position_value = trade.entry_price * Decimal(str(trade.quantity))
+                    deployed += position_value
+                    # Position size as % of portfolio at entry
+                    size_pct = (position_value / point.portfolio_value) * Decimal("100")
+                    position_sizes.append(size_pct)
 
             position_counts.append(concurrent)
             capital_deployed.append(deployed)
@@ -681,6 +688,14 @@ class MetricsCalculator:
             else Decimal("0")
         )
 
+        # Calculate position size statistics
+        max_position_size = max(position_sizes) if position_sizes else Decimal("0")
+        avg_position_size = (
+            sum(position_sizes, Decimal("0")) / Decimal(len(position_sizes))
+            if position_sizes
+            else Decimal("0")
+        )
+
         # Estimate portfolio heat (assume 2% risk per position as default)
         # In real implementation, this would come from position sizing
         assumed_risk_per_position = Decimal("2")  # 2% per position
@@ -698,6 +713,8 @@ class MetricsCalculator:
             avg_concurrent_positions=avg_concurrent,
             max_portfolio_heat=max_heat,
             avg_portfolio_heat=avg_heat,
+            max_position_size_pct=max_position_size,
+            avg_position_size_pct=avg_position_size,
             max_capital_deployed_pct=max_deployed_pct,
             avg_capital_deployed_pct=avg_deployed_pct,
             total_exposure_days=days_with_positions,

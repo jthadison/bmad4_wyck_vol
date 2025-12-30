@@ -58,7 +58,7 @@ class TestBacktestSpeed:
 
         # Verify result
         assert result is not None
-        assert result.backtest_metrics is not None
+        assert result.metrics is not None
 
         # Calculate bars per second
         stats = benchmark.stats.stats
