@@ -28,6 +28,13 @@
                 Backtest
               </router-link>
               <router-link
+                to="/backtest/results"
+                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
+                active-class="bg-gray-700 text-blue-400"
+              >
+                Backtest Results
+              </router-link>
+              <router-link
                 to="/tutorials"
                 class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
                 active-class="bg-gray-700 text-blue-400"

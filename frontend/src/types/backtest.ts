@@ -292,6 +292,34 @@ export interface BacktestResult {
   total_bars_analyzed: number
 }
 
+/**
+ * Backtest result summary for list view (Story 12.6D Task 17).
+ *
+ * Lightweight version of BacktestResult without equity_curve and trades arrays
+ * for optimal performance in list view.
+ */
+export interface BacktestResultSummary {
+  backtest_run_id: string // UUID
+  symbol: string
+  timeframe: string // "1d", "4h", etc.
+  start_date: string // ISO 8601 datetime (UTC)
+  end_date: string // ISO 8601 datetime (UTC)
+  initial_capital: string // Decimal
+  final_capital: string // Decimal
+
+  // Summary metrics (for table display)
+  total_return_pct: string // From summary
+  cagr: string // From summary
+  sharpe_ratio: string // From summary
+  max_drawdown_pct: string // From summary
+  win_rate: string // From summary
+  total_trades: number // From summary
+  campaign_completion_rate: string // From summary - CRITICAL
+
+  // Metadata
+  created_at: string // ISO 8601 datetime (UTC)
+}
+
 // ==========================================================================================
 // Helper Types for UI Components (Story 12.6C)
 // ==========================================================================================

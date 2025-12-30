@@ -120,6 +120,29 @@ const routes: RouteRecordRaw[] = [
       ],
     },
   },
+  // Backtest Report Routes (Story 12.6D - Task 24)
+  {
+    path: '/backtest/results',
+    name: 'BacktestResultsList',
+    component: () => import('@/views/backtest/BacktestResultsListView.vue'),
+    meta: {
+      title: 'Backtest Results',
+      breadcrumb: [{ label: 'Backtest Results' }],
+    },
+  },
+  {
+    path: '/backtest/results/:backtest_run_id',
+    name: 'BacktestReportDetail',
+    component: () => import('@/views/backtest/BacktestReportView.vue'),
+    props: true,
+    meta: {
+      title: 'Backtest Report',
+      breadcrumb: [
+        { label: 'Backtest Results', to: '/backtest/results' },
+        { label: 'Report Detail' },
+      ],
+    },
+  },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',

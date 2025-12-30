@@ -1,21 +1,22 @@
 /**
- * useBacktestData Composable (Story 12.6C Task 14)
+ * useBacktestData Composable (Story 12.6C Task 14 + Story 12.6D Task 17)
  *
  * Vue composable for fetching and managing backtest data from the API.
  * Provides methods for fetching results and downloading reports in various formats.
  *
  * Features:
  * - Fetch backtest results with loading/error states
+ * - Fetch list of backtest results for list view (Story 12.6D)
  * - Download HTML, PDF, and CSV reports
  * - Automatic error handling and user-friendly messages
  * - Response caching to avoid redundant API calls
  *
- * Author: Story 12.6C Task 14
+ * Author: Story 12.6C Task 14, Story 12.6D Task 17
  */
 
 import { ref, type Ref } from 'vue'
 import axios from 'axios'
-import type { BacktestResult } from '@/types/backtest'
+import type { BacktestResult, BacktestResultSummary } from '@/types/backtest'
 
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
@@ -38,10 +39,15 @@ const API_BASE_URL =
  * ```
  */
 export function useBacktestData() {
-  // Reactive state
+  // Reactive state for single result
   const backtestResult: Ref<BacktestResult | null> = ref(null)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<string | null> = ref(null)
+
+  // Reactive state for results list (Story 12.6D Task 17)
+  const backtestResultsList: Ref<BacktestResultSummary[]> = ref([])
+  const listLoading: Ref<boolean> = ref(false)
+  const listError: Ref<string | null> = ref(null)
 
   // Cache for fetched results (keyed by backtest_run_id)
   const cache = new Map<string, BacktestResult>()
@@ -212,14 +218,69 @@ export function useBacktestData() {
     }
   }
 
+  /**
+   * Fetch list of backtest results (summary format for list view).
+   * Story 12.6D Task 17 - Subtask 17.3
+   *
+   * Uses ?format=summary query parameter to exclude large arrays (equity_curve, trades)
+   * for performance optimization.
+   *
+   * @example
+   * ```ts
+   * await fetchBacktestResultsList()
+   * if (backtestResultsList.value.length > 0) {
+   *   console.log('Found', backtestResultsList.value.length, 'backtest results')
+   * }
+   * ```
+   */
+  async function fetchBacktestResultsList(): Promise<void> {
+    listLoading.value = true
+    listError.value = null
+
+    try {
+      const response = await axios.get<BacktestResultSummary[]>(
+        `${API_BASE_URL}/backtest/results`,
+        {
+          params: {
+            format: 'summary', // Exclude equity_curve and trades arrays
+          },
+        }
+      )
+
+      backtestResultsList.value = response.data
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 500) {
+          listError.value = 'Server error while fetching backtest results list'
+        } else {
+          listError.value =
+            err.response?.data?.detail ||
+            'Failed to fetch backtest results list'
+        }
+      } else {
+        listError.value = 'An unexpected error occurred'
+      }
+      backtestResultsList.value = []
+      throw err
+    } finally {
+      listLoading.value = false
+    }
+  }
+
   return {
-    // Reactive state
+    // Reactive state (single result)
     backtestResult,
     loading,
     error,
 
+    // Reactive state (results list) - Story 12.6D
+    backtestResultsList,
+    listLoading,
+    listError,
+
     // Methods
     fetchBacktestResult,
+    fetchBacktestResultsList, // Story 12.6D Task 17
     downloadHtmlReport,
     downloadPdfReport,
     downloadCsvTrades,
