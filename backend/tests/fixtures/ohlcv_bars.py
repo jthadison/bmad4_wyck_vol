@@ -41,14 +41,25 @@ def create_ohlcv_bar(
     if timestamp is None:
         timestamp = datetime(2024, 1, 15, 13, 0, 0, tzinfo=UTC)
 
+    from decimal import Decimal
+
+    quantize_precision = Decimal("0.00000001")
+    open_decimal = Decimal(str(open_price)).quantize(quantize_precision)
+    high_decimal = Decimal(str(high)).quantize(quantize_precision)
+    low_decimal = Decimal(str(low)).quantize(quantize_precision)
+    close_decimal = Decimal(str(close)).quantize(quantize_precision)
+    spread = (high_decimal - low_decimal).quantize(quantize_precision)
+
     bar_data = {
         "symbol": symbol,
         "timestamp": timestamp,
-        "open": open_price,
-        "high": high,
-        "low": low,
-        "close": close,
+        "open": open_decimal,
+        "high": high_decimal,
+        "low": low_decimal,
+        "close": close_decimal,
         "volume": volume,
+        "timeframe": "1d",
+        "spread": spread,
     }
     bar_data.update(overrides)
 
