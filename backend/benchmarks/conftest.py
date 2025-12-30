@@ -20,9 +20,6 @@ from benchmarks.benchmark_config import SYNTHETIC_BARS_LARGE, SYNTHETIC_BARS_MED
 from src.backtesting.backtest_engine import BacktestEngine
 from src.models.backtest import BacktestConfig
 from src.models.ohlcv import OHLCVBar
-from src.pattern_engine.detectors.sos_detector import SOSDetector
-from src.pattern_engine.detectors.spring_detector import SpringDetector
-from src.pattern_engine.detectors.utad_detector import UTADDetector
 
 
 def _generate_synthetic_bars(
@@ -126,20 +123,24 @@ def backtest_engine() -> BacktestEngine:
 @pytest.fixture
 def pattern_detectors() -> dict[str, Any]:
     """
-    All pattern detector instances for benchmarking (Subtask 1.4).
+    All pattern detector functions for benchmarking (Subtask 1.4).
 
-    Provides dictionary of detector instances for pattern detection benchmarks.
+    Provides dictionary of detector function references for pattern detection benchmarks.
 
     Returns:
-        Dict mapping pattern names to detector instances:
-        - "spring": SpringDetector
-        - "sos": SOSDetector
-        - "utad": UTADDetector
+        Dict mapping pattern names to detector functions:
+        - "spring": detect_spring function
+        - "sos": detect_sos function
+        - "utad": detect_utad function
     """
+    from src.pattern_engine.detectors.sos_detector import detect_sos
+    from src.pattern_engine.detectors.spring_detector import detect_spring
+    from src.pattern_engine.detectors.utad_detector import detect_utad
+
     return {
-        "spring": SpringDetector(),
-        "sos": SOSDetector(),
-        "utad": UTADDetector(),
+        "spring": detect_spring,
+        "sos": detect_sos,
+        "utad": detect_utad,
     }
 
 
