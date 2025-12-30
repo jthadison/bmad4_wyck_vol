@@ -104,8 +104,8 @@ async def startup_event() -> None:
     try:
         from src.database import async_session_maker
         from src.orchestrator.event_bus import get_event_bus
-        from src.trading.signal_router import get_signal_router
         from src.trading.signal_event_listener import register_signal_listener
+        from src.trading.signal_router import get_signal_router
 
         # Get orchestrator event bus
         event_bus = get_event_bus()
@@ -205,3 +205,24 @@ async def detailed_health_check() -> dict[str, object]:
         health_status["status"] = "degraded"
 
     return health_status
+
+
+@app.get("/api/v1/metrics")
+async def metrics() -> str:
+    """
+    Prometheus metrics endpoint (Story 12.9 Task 11 Subtask 11.7).
+
+    Exports performance metrics in Prometheus text format for monitoring:
+    - Signal generation latency
+    - Backtest execution duration
+    - Database query performance
+    - Pattern detection rates
+
+    Returns:
+        Prometheus-formatted metrics text (application/openmetrics-text)
+    """
+    from fastapi import Response
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    metrics_output = generate_latest()
+    return Response(content=metrics_output, media_type=CONTENT_TYPE_LATEST)
