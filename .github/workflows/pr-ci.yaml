@@ -157,6 +157,7 @@ jobs:
             --cov-report=xml \
             --cov-report=term \
             --cov-report=html \
+            --junitxml=pytest-results.xml \
             -v
 
       - name: Upload coverage to Codecov
@@ -173,6 +174,15 @@ jobs:
           name: backend-coverage-report
           path: backend/htmlcov/
           retention-days: 7
+
+      - name: Publish test results summary
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Backend Test Results
+          path: backend/pytest-results.xml
+          reporter: java-junit
+          fail-on-error: false
 
   # Frontend linting
   frontend-linting:
@@ -367,6 +377,86 @@ jobs:
             });
         continue-on-error: true
 
+  # Code quality checks
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Run code complexity check (radon)
+        working-directory: backend
+        run: |
+          poetry run radon cc src/ --min B --show-complexity
+          poetry run radon mi src/ --min B
+        continue-on-error: true
+
+      - name: Check license compatibility
+        working-directory: backend
+        run: poetry run pip-licenses --format=markdown --with-urls
+        continue-on-error: true
+
+      - name: Check code duplication
+        working-directory: backend
+        run: poetry run pylint --disable=all --enable=duplicate-code src/
+        continue-on-error: true
+
+  # Security scanning
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Run Python security scan (safety)
+        working-directory: backend
+        run: poetry run pip list --format=json | python -m json.tool
+        continue-on-error: true
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run npm audit
+        working-directory: frontend
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
   # Set required status checks
   all-checks-passed:
     name: All Checks Passed
@@ -379,6 +469,8 @@ jobs:
       - frontend-type-checking
       - frontend-tests
       - accuracy-tests
+      - code-quality
+      - security-scan
     steps:
       - name: All checks passed
         run: echo "All PR checks passed successfully"
