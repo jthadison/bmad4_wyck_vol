@@ -59,13 +59,13 @@ def profile_signal_generation() -> int:
         "run",
         "py-spy",
         "record",
-        "--output",
+        "-o",
         str(output_file),
-        "--format",
+        "-f",
         "flamegraph",
-        "--rate",
+        "-r",
         "100",  # Sample 100 times/second
-        "--duration",
+        "-d",
         "30",  # Run for 30 seconds
         "--",
         "pytest",
@@ -77,10 +77,10 @@ def profile_signal_generation() -> int:
     result = subprocess.run(cmd, cwd=Path.cwd())
 
     if result.returncode == 0:
-        print(f"\n✅ Flame graph generated: {output_file}")
-        print("   Open in browser to analyze hot paths")
+        print(f"\n[OK] Flame graph generated: {output_file}")
+        print("     Open in browser to analyze hot paths")
     else:
-        print(f"\n❌ Profiling failed with exit code {result.returncode}")
+        print(f"\n[FAILED] Profiling failed with exit code {result.returncode}")
 
     return result.returncode
 
@@ -104,13 +104,13 @@ def profile_backtest() -> int:
         "run",
         "py-spy",
         "record",
-        "--output",
+        "-o",
         str(output_file),
-        "--format",
+        "-f",
         "flamegraph",
-        "--rate",
+        "-r",
         "100",  # Sample 100 times/second
-        "--duration",
+        "-d",
         "30",  # Run for 30 seconds
         "--",
         "pytest",
@@ -122,10 +122,10 @@ def profile_backtest() -> int:
     result = subprocess.run(cmd, cwd=Path.cwd())
 
     if result.returncode == 0:
-        print(f"\n✅ Flame graph generated: {output_file}")
-        print("   Open in browser to analyze hot paths")
+        print(f"\n[OK] Flame graph generated: {output_file}")
+        print("     Open in browser to analyze hot paths")
     else:
-        print(f"\n❌ Profiling failed with exit code {result.returncode}")
+        print(f"\n[FAILED] Profiling failed with exit code {result.returncode}")
 
     return result.returncode
 
@@ -154,8 +154,8 @@ def profile_all() -> int:
     print("=" * 80)
     print("PROFILING SUMMARY")
     print("=" * 80)
-    print(f"Signal generation: {'✅ SUCCESS' if signal_result == 0 else '❌ FAILED'}")
-    print(f"Backtest:          {'✅ SUCCESS' if backtest_result == 0 else '❌ FAILED'}")
+    print(f"Signal generation: {'[SUCCESS]' if signal_result == 0 else '[FAILED]'}")
+    print(f"Backtest:          {'[SUCCESS]' if backtest_result == 0 else '[FAILED]'}")
     print()
 
     if signal_result == 0 and backtest_result == 0:
@@ -168,7 +168,7 @@ def profile_all() -> int:
         print("4. Re-run benchmarks to verify improvement")
         return 0
     else:
-        print("⚠️  Some profiling runs failed. Check output above for details.")
+        print("[WARNING] Some profiling runs failed. Check output above for details.")
         return 1
 
 
