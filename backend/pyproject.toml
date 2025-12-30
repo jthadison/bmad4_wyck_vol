@@ -51,6 +51,14 @@ pytest-asyncio = "^0.23.0"
 pytest-httpx = "^0.30.0"
 pytest-mock = "^3.12.0"
 pytest-benchmark = "^4.0.0"
+pytest-cov = "^4.1.0"
+pytest-xdist = "^3.5.0"
+pytest-timeout = "^2.2.0"
+pytest-html = "^4.1.0"
+pytest-watch = "^4.2.0"
+pytest-rerunfailures = "^13.0"
+freezegun = "^1.4.0"
+factory-boy = "^3.3.0"
 py-spy = "^0.3.14"
 memory-profiler = "^0.61.0"
 locust = "^2.20.0"
@@ -63,6 +71,8 @@ types-cachetools = "^6.2.0.20251022"
 aiosqlite = "^0.20.0"
 types-bleach = "^6.3.0.20251115"
 types-python-dateutil = "^2.9.0.20251115"
+radon = "^6.0.1"
+pip-licenses = "^4.3.0"
 
 [tool.ruff]
 line-length = 100
@@ -112,6 +122,8 @@ python_functions = ["test_*"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "benchmark: marks tests as performance benchmarks",
+    "slow: marks tests as slow running (deselect with '-m \"not slow\"')",
+    "extended: marks tests as extended backtests for CI only (deselect with '-m \"not extended\"')",
 ]
 
 [tool.pytest.benchmark]
@@ -120,6 +132,29 @@ warmup_iterations = 3
 disable_gc = true
 min_rounds = 10
 timer = "time.perf_counter"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "tests/*",
+    "*/migrations/*",
+    "*/alembic/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
 
 [tool.poetry.scripts]
 wyckoff = "src.cli.ingest:main"

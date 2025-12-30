@@ -77,7 +77,9 @@ class EnhancedMetricsCalculator:
             losing_trades = len([t for t in pattern_trades if t.realized_pnl <= 0])
 
             win_rate = (
-                (Decimal(str(winning_trades)) / Decimal(str(total_trades))).quantize(Decimal("0.0001"))
+                (Decimal(str(winning_trades)) / Decimal(str(total_trades))).quantize(
+                    Decimal("0.0001")
+                )
                 if total_trades > 0
                 else Decimal("0")
             )
@@ -85,7 +87,9 @@ class EnhancedMetricsCalculator:
             # Average R-multiple
             r_multiples = [t.r_multiple for t in pattern_trades]
             avg_r = (
-                (sum(r_multiples, Decimal("0")) / Decimal(str(len(r_multiples)))).quantize(Decimal("0.0001"))
+                (sum(r_multiples, Decimal("0")) / Decimal(str(len(r_multiples)))).quantize(
+                    Decimal("0.0001")
+                )
                 if r_multiples
                 else Decimal("0")
             )

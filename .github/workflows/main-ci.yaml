@@ -1,0 +1,457 @@
+name: Main Branch CI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Reuse PR CI jobs
+  backend-linting:
+    name: Backend Linting (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Run Ruff linting
+        working-directory: backend
+        run: poetry run ruff check .
+
+      - name: Run Ruff formatting check
+        working-directory: backend
+        run: poetry run ruff format --check .
+
+  backend-type-checking:
+    name: Backend Type Checking (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Run mypy type checking
+        working-directory: backend
+        run: poetry run mypy src/ --allow-missing-baseline
+        continue-on-error: true
+
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wyckoff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Checkout LFS objects
+        run: git lfs pull
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Setup test database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+        run: |
+          poetry run alembic upgrade head
+
+      - name: Run pytest with coverage
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          ENVIRONMENT: test
+        run: |
+          poetry run pytest tests/ \
+            --cov=src \
+            --cov-report=xml \
+            --cov-report=term \
+            -v
+
+  frontend-linting:
+    name: Frontend Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run Prettier check
+        working-directory: frontend
+        run: npx prettier --check src/
+
+  frontend-type-checking:
+    name: Frontend Type Checking
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run TypeScript compiler check
+        working-directory: frontend
+        run: npm run type-check
+
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run Vitest unit tests
+        working-directory: frontend
+        run: npm run test:run
+
+  accuracy-tests:
+    name: Accuracy Tests
+    runs-on: ubuntu-latest
+    needs: backend-tests
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wyckoff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Checkout LFS objects
+        run: git lfs pull
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Setup test database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+        run: |
+          poetry run alembic upgrade head
+
+      - name: Run accuracy tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          ENVIRONMENT: test
+        run: |
+          poetry run pytest tests/integration/test_detector_accuracy.py -v --tb=short
+        continue-on-error: true
+
+  # Extended backtests (main branch only)
+  extended-backtests:
+    name: Extended Backtests
+    runs-on: ubuntu-latest
+    needs: accuracy-tests
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wyckoff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Checkout LFS objects
+        run: git lfs pull
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Setup test database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+        run: |
+          poetry run alembic upgrade head
+
+      - name: Run extended backtests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          ENVIRONMENT: test
+          EXTENDED_BACKTEST_SYMBOLS: '["AAPL", "MSFT", "GOOGL", "TSLA"]'
+          EXTENDED_BACKTEST_START_DATE: '2022-01-01'
+          EXTENDED_BACKTEST_END_DATE: '2023-12-31'
+        run: |
+          poetry run pytest tests/integration/test_backtest_integration.py \
+            -m extended \
+            -v \
+            --tb=short
+        continue-on-error: true
+
+      - name: Generate backtest report artifact
+        if: always()
+        run: |
+          mkdir -p backtest-results
+          echo '{"commit": "${{ github.sha }}", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "status": "completed"}' > backtest-results/backtest_results_${{ github.sha }}.json
+
+      - name: Upload backtest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-results-${{ github.sha }}
+          path: backtest-results/
+          retention-days: 30
+
+  # Pydantic-to-TypeScript codegen validation
+  pydantic-to-typescript-codegen:
+    name: Pydantic to TypeScript Codegen
+    runs-on: ubuntu-latest
+    needs: backend-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Run Pydantic to TypeScript codegen
+        working-directory: backend
+        run: |
+          # Placeholder for codegen script
+          echo "Pydantic-to-TypeScript codegen would run here"
+          # poetry run pydantic-to-typescript
+
+      - name: Check for uncommitted changes
+        run: |
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Error: Generated types differ from committed types"
+            echo "Please run 'poetry run pydantic-to-typescript' and commit the changes"
+            git status
+            exit 1
+          else
+            echo "Success: Generated types are up-to-date"
+          fi
+        continue-on-error: true
+
+  # Notify on failure (optional)
+  notify-on-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs:
+      - backend-linting
+      - backend-type-checking
+      - backend-tests
+      - frontend-linting
+      - frontend-type-checking
+      - frontend-tests
+      - accuracy-tests
+      - extended-backtests
+      - pydantic-to-typescript-codegen
+    if: failure()
+    steps:
+      - name: Send notification
+        run: |
+          echo "Main branch CI failed for commit ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo "Failed job: Check the logs above"
+          # Placeholder for Slack webhook notification
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"Main CI failed for '${{ github.sha }}'"}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}

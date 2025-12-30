@@ -4,7 +4,7 @@ Unit tests for WyckoffCampaignDetector (Story 12.8).
 Author: Story 12.8
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -21,7 +21,7 @@ def make_trade(
     days_duration=3,
     pnl=Decimal("200.00"),
     side="LONG",
-    **kwargs
+    **kwargs,
 ):
     """Helper to create BacktestTrade with defaults."""
     entry_date = entry_date or datetime(2024, 1, 1)
@@ -42,7 +42,7 @@ def make_trade(
         commission=Decimal("5.00"),
         slippage=Decimal("2.00"),
         r_multiple=Decimal("2.0"),
-        **kwargs
+        **kwargs,
     )
 
 
