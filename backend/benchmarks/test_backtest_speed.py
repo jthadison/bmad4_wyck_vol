@@ -17,9 +17,6 @@ from src.models.ohlcv import OHLCVBar
 class TestBacktestSpeed:
     """Backtest engine performance benchmarks (Task 3)."""
 
-    @pytest.mark.skip(
-        reason="BacktestEngine.run() has MonthlyReturn model mismatch - existing codebase bug"
-    )
     @pytest.mark.benchmark
     def test_backtest_engine_speed(
         self, benchmark, sample_ohlcv_bars_large: list[OHLCVBar]
@@ -28,12 +25,50 @@ class TestBacktestSpeed:
         Benchmark BacktestEngine bar processing speed.
 
         Target: NFR7 >100 bars/second.
-
-        SKIPPED: The existing BacktestEngine has a model mismatch issue with MonthlyReturn
-        that needs to be fixed in a separate story. Component benchmarks below validate
-        the critical performance characteristics.
         """
-        pass
+        from src.backtesting.backtest_engine import BacktestEngine
+        from src.models.backtest import BacktestConfig
+
+        # Create backtest config
+        config = BacktestConfig(
+            symbol="BENCH_LARGE",
+            start_date=sample_ohlcv_bars_large[0].timestamp.date(),
+            end_date=sample_ohlcv_bars_large[-1].timestamp.date(),
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.02"),
+            commission_per_share=Decimal("0.005"),
+        )
+
+        # Simple buy-and-hold strategy for benchmarking
+        def simple_strategy(bar: OHLCVBar, context: dict) -> str | None:
+            """Buy on first bar, hold forever."""
+            if not context.get("has_position"):
+                context["has_position"] = True
+                return "BUY"
+            return None
+
+        def run_backtest():
+            """Run backtest on 10,000 bars."""
+            engine = BacktestEngine(config)
+            result = engine.run(bars=sample_ohlcv_bars_large, strategy_func=simple_strategy)
+            return result
+
+        # Benchmark the backtest
+        result = benchmark(run_backtest)
+
+        # Verify result
+        assert result is not None
+        assert result.backtest_metrics is not None
+
+        # Calculate bars per second
+        stats = benchmark.stats.stats
+        total_bars = len(sample_ohlcv_bars_large)
+        bars_per_second = total_bars / stats.mean
+
+        # NFR7: Must process >100 bars/second
+        assert (
+            bars_per_second > 100
+        ), f"Backtest too slow: {bars_per_second:.2f} bars/sec (target: >100 bars/sec)"
 
     @pytest.mark.skip(reason="OrderSimulator interface mismatch - needs investigation")
     @pytest.mark.benchmark

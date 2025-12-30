@@ -195,7 +195,7 @@ class BacktestEngine:
         # Calculate extended reporting metrics
         monthly_returns = metrics_calculator.calculate_monthly_returns(
             equity_curve=self.equity_curve,
-            initial_capital=self.config.initial_capital,
+            trades=self.position_manager.closed_trades,
         )
         drawdown_periods = metrics_calculator.calculate_drawdown_periods(
             equity_curve=self.equity_curve,

@@ -408,7 +408,7 @@ class MetricsCalculator:
     # ===========================================================================================
 
     def calculate_monthly_returns(
-        self, equity_curve: list[EquityCurvePoint], initial_capital: Decimal
+        self, equity_curve: list[EquityCurvePoint], trades: list[BacktestTrade]
     ) -> list[MonthlyReturn]:
         """Calculate monthly return data for heatmap visualization (Story 12.6A AC2).
 
@@ -416,14 +416,14 @@ class MetricsCalculator:
 
         Args:
             equity_curve: List of equity curve points
-            initial_capital: Starting capital
+            trades: List of backtest trades for trade counting
 
         Returns:
             List of MonthlyReturn objects, one per month with trading activity
 
         Example:
-            Jan 2024: $100,000 -> $105,000 = 5% return (3 trades)
-            Feb 2024: $105,000 -> $103,000 = -1.9% return (1 trade)
+            Jan 2024: $100,000 -> $105,000 = 5% return (3 trades, 2 wins, 1 loss)
+            Feb 2024: $105,000 -> $103,000 = -1.9% return (1 trade, 0 wins, 1 loss)
         """
         if not equity_curve:
             return []
@@ -436,38 +436,68 @@ class MetricsCalculator:
                 monthly_data[year_month] = []
             monthly_data[year_month].append(point)
 
+        # Group trades by exit month
+        monthly_trades: dict[tuple[int, int], list[BacktestTrade]] = {}
+        for trade in trades:
+            year_month = (trade.exit_timestamp.year, trade.exit_timestamp.month)
+            if year_month not in monthly_trades:
+                monthly_trades[year_month] = []
+            monthly_trades[year_month].append(trade)
+
         # Calculate monthly returns
         monthly_returns: list[MonthlyReturn] = []
-        previous_end_equity = initial_capital
+
+        # Month name labels
+        month_names = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ]
 
         for (year, month), points in sorted(monthly_data.items()):
+            if len(points) < 2:
+                continue  # Need at least 2 points to calculate return
+
             # Get first and last equity values for the month
             start_equity = points[0].equity_value
             end_equity = points[-1].equity_value
 
-            # Use previous month's ending equity if available
-            if monthly_returns:
-                start_equity = previous_end_equity
-
             # Calculate return percentage
             if start_equity > 0:
-                return_pct = ((end_equity - start_equity) / start_equity) * Decimal("100")
+                return_pct = (
+                    ((end_equity - start_equity) / start_equity) * Decimal("100")
+                ).quantize(Decimal("0.0001"))
             else:
                 return_pct = Decimal("0")
 
-            # Count trades in this month (estimated from equity changes)
-            trades_count = len(points) - 1  # Approximate
+            # Get trade stats for this month
+            month_trades = monthly_trades.get((year, month), [])
+            trade_count = len(month_trades)
+            winning_trades = len([t for t in month_trades if t.realized_pnl > 0])
+            losing_trades = len([t for t in month_trades if t.realized_pnl <= 0])
+
+            # Create month label
+            month_label = f"{month_names[month-1]} {year}"
 
             monthly_return = MonthlyReturn(
                 year=year,
                 month=month,
+                month_label=month_label,
                 return_pct=return_pct,
-                start_equity=start_equity,
-                end_equity=end_equity,
-                trades_count=trades_count,
+                trade_count=trade_count,
+                winning_trades=winning_trades,
+                losing_trades=losing_trades,
             )
             monthly_returns.append(monthly_return)
-            previous_end_equity = end_equity
 
         return monthly_returns
 
