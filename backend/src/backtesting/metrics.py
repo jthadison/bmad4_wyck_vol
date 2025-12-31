@@ -704,6 +704,14 @@ class MetricsCalculator:
         max_position_size = max_position_size_raw.quantize(Decimal("0.0001"))
         avg_position_size = avg_position_size_raw.quantize(Decimal("0.0001"))
 
+        # Calculate position size statistics
+        max_position_size = max(position_sizes) if position_sizes else Decimal("0")
+        avg_position_size = (
+            sum(position_sizes, Decimal("0")) / Decimal(len(position_sizes))
+            if position_sizes
+            else Decimal("0")
+        )
+
         # Estimate portfolio heat (assume 2% risk per position as default)
         # In real implementation, this would come from position sizing
         assumed_risk_per_position = Decimal("2")  # 2% per position
