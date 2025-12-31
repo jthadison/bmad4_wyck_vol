@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class VolumeThresholds(BaseModel):
@@ -179,6 +179,13 @@ class SystemConfiguration(BaseModel):
         ... )
     """
 
+    model_config = ConfigDict(
+        json_encoders={
+            Decimal: str,
+            datetime: lambda v: v.isoformat(),
+        }
+    )
+
     id: UUID = Field(default_factory=uuid4)
     version: int = Field(default=1, ge=1, description="Version for optimistic locking")
     volume_thresholds: VolumeThresholds = Field(default_factory=VolumeThresholds)
@@ -188,14 +195,6 @@ class SystemConfiguration(BaseModel):
     applied_at: datetime = Field(default_factory=lambda: datetime.utcnow())
     applied_by: Optional[str] = Field(default=None, max_length=100)
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_encoders = {
-            Decimal: str,
-            datetime: lambda v: v.isoformat(),
-        }
-
 
 class ImpactAnalysisResult(BaseModel):
     """Result of analyzing configuration change impact.
@@ -203,6 +202,12 @@ class ImpactAnalysisResult(BaseModel):
     Provides metrics on how proposed configuration changes would affect
     signal generation and performance based on historical pattern data.
     """
+
+    model_config = ConfigDict(
+        json_encoders={
+            Decimal: str,
+        }
+    )
 
     signal_count_delta: int = Field(
         description="Change in qualifying signals (positive = more signals)"
@@ -227,13 +232,6 @@ class ImpactAnalysisResult(BaseModel):
     risk_impact: Optional[str] = Field(
         default=None, description="Description of risk profile changes"
     )
-
-    class Config:
-        """Pydantic configuration."""
-
-        json_encoders = {
-            Decimal: str,
-        }
 
 
 class Recommendation(BaseModel):

@@ -13,7 +13,7 @@ Tests all 7 calculation methods:
 Author: Story 12.8 Task 6
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -31,7 +31,7 @@ def make_trade(
     days_duration=3,
     pnl=Decimal("200.00"),
     r_multiple=Decimal("2.0"),
-    **kwargs
+    **kwargs,
 ):
     """Helper to create BacktestTrade with defaults."""
     entry_date = entry_date or datetime(2024, 1, 1)
@@ -53,7 +53,7 @@ def make_trade(
         commission=Decimal("5.00"),
         slippage=Decimal("2.00"),
         r_multiple=r_multiple,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -211,7 +211,7 @@ class TestMonthlyReturns:
             make_trade(
                 entry_date=datetime(2024, 1, 5),
                 exit_date=datetime(2024, 1, 10),
-                pnl=Decimal("500.00")
+                pnl=Decimal("500.00"),
             ),
         ]
 
@@ -242,12 +242,12 @@ class TestMonthlyReturns:
             make_trade(
                 entry_date=datetime(2024, 1, 15),
                 exit_date=datetime(2024, 1, 20),
-                pnl=Decimal("500.00")
+                pnl=Decimal("500.00"),
             ),
             make_trade(
                 entry_date=datetime(2024, 2, 10),
                 exit_date=datetime(2024, 2, 15),
-                pnl=Decimal("-200.00")
+                pnl=Decimal("-200.00"),
             ),
         ]
 
@@ -307,8 +307,8 @@ class TestDrawdownPeriods:
         """Test single drawdown that recovers."""
         equity_curve = [
             make_equity_point(datetime(2024, 1, 1), 100000),  # Peak
-            make_equity_point(datetime(2024, 1, 5), 95000),   # Trough
-            make_equity_point(datetime(2024, 1, 10), 101000), # Recovery
+            make_equity_point(datetime(2024, 1, 5), 95000),  # Trough
+            make_equity_point(datetime(2024, 1, 10), 101000),  # Recovery
         ]
 
         result = calculator.calculate_drawdown_periods(equity_curve)
@@ -316,9 +316,9 @@ class TestDrawdownPeriods:
         assert len(result) == 1
         dd = result[0]
         # DrawdownPeriod model enforces UTC timezone, so compare with UTC-aware datetimes
-        assert dd.peak_date == datetime(2024, 1, 1, tzinfo=timezone.utc)
-        assert dd.trough_date == datetime(2024, 1, 5, tzinfo=timezone.utc)
-        assert dd.recovery_date == datetime(2024, 1, 10, tzinfo=timezone.utc)
+        assert dd.peak_date == datetime(2024, 1, 1, tzinfo=UTC)
+        assert dd.trough_date == datetime(2024, 1, 5, tzinfo=UTC)
+        assert dd.recovery_date == datetime(2024, 1, 10, tzinfo=UTC)
         assert dd.peak_value == Decimal("100000")
         assert dd.trough_value == Decimal("95000")
         # Drawdown: (100000 - 95000) / 100000 * 100 = 5%
@@ -330,10 +330,10 @@ class TestDrawdownPeriods:
         """Test multiple drawdown events."""
         equity_curve = [
             make_equity_point(datetime(2024, 1, 1), 100000),  # Peak 1
-            make_equity_point(datetime(2024, 1, 5), 90000),   # Trough 1
-            make_equity_point(datetime(2024, 1, 10), 105000), # Recovery 1 & Peak 2
+            make_equity_point(datetime(2024, 1, 5), 90000),  # Trough 1
+            make_equity_point(datetime(2024, 1, 10), 105000),  # Recovery 1 & Peak 2
             make_equity_point(datetime(2024, 1, 15), 98000),  # Trough 2
-            make_equity_point(datetime(2024, 1, 20), 110000), # Recovery 2
+            make_equity_point(datetime(2024, 1, 20), 110000),  # Recovery 2
         ]
 
         result = calculator.calculate_drawdown_periods(equity_curve)
@@ -348,7 +348,7 @@ class TestDrawdownPeriods:
         """Test drawdown that hasn't recovered yet."""
         equity_curve = [
             make_equity_point(datetime(2024, 1, 1), 100000),  # Peak
-            make_equity_point(datetime(2024, 1, 5), 90000),   # Trough
+            make_equity_point(datetime(2024, 1, 5), 90000),  # Trough
             make_equity_point(datetime(2024, 1, 10), 92000),  # Still below peak
         ]
 
@@ -397,11 +397,11 @@ class TestRiskMetrics:
             [
                 make_position(symbol="AAPL", quantity=100, current_price=Decimal("150.00")),
                 make_position(symbol="TSLA", quantity=50, current_price=Decimal("200.00")),
-            ]
+            ],
         )
         snapshot2 = (
             datetime(2024, 1, 2),
-            [make_position(symbol="AAPL", quantity=100, current_price=Decimal("155.00"))]
+            [make_position(symbol="AAPL", quantity=100, current_price=Decimal("155.00"))],
         )
 
         result = calculator.calculate_risk_metrics([snapshot1, snapshot2], Decimal("100000"))
@@ -496,7 +496,7 @@ class TestTradeStreaks:
             make_trade(exit_date=datetime(2024, 1, 3), pnl=Decimal("150.00")),  # Win
             make_trade(exit_date=datetime(2024, 1, 4), pnl=Decimal("-50.00")),  # Lose
             make_trade(exit_date=datetime(2024, 1, 5), pnl=Decimal("100.00")),  # Win
-            make_trade(exit_date=datetime(2024, 1, 6), pnl=Decimal("-100.00")), # Lose
+            make_trade(exit_date=datetime(2024, 1, 6), pnl=Decimal("-100.00")),  # Lose
             make_trade(exit_date=datetime(2024, 1, 7), pnl=Decimal("-75.00")),  # Lose
         ]
 
@@ -537,7 +537,7 @@ class TestIdentifyExtremeTrades:
         trades = [
             make_trade(pnl=Decimal("100.00")),
             make_trade(pnl=Decimal("500.00")),  # Largest winner
-            make_trade(pnl=Decimal("-200.00")), # Largest loser
+            make_trade(pnl=Decimal("-200.00")),  # Largest loser
             make_trade(pnl=Decimal("150.00")),
         ]
 

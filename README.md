@@ -369,6 +369,116 @@ bmad-wyckoff/
 - **Caching:** Redis (optional)
 - **Containerization:** Docker 24+, Docker Compose 2.24+
 
+## Testing
+
+The project maintains a comprehensive testing suite with 90%+ code coverage requirement (NFR8).
+
+### Pre-commit Hook Setup
+
+Install pre-commit hooks to automatically run linting, type checking, and fast unit tests before each commit:
+
+```bash
+# Install pre-commit hooks
+poetry install  # Backend dependencies (includes pre-commit)
+pre-commit install
+
+# Manual run on all files
+pre-commit run --all-files
+
+# Skip hook in emergency (discouraged)
+git commit --no-verify
+```
+
+The pre-commit hook will:
+- Run Ruff linting and formatting (Python)
+- Run mypy type checking (Python)
+- Run ESLint + Prettier (TypeScript/Vue)
+- Run fast unit tests (excludes slow tests marked with `@pytest.mark.slow`)
+- Check for trailing whitespace, large files, and YAML/JSON syntax
+
+### Running Tests Locally
+
+**Backend Tests:**
+```bash
+cd backend
+
+# All tests
+poetry run pytest
+
+# Unit tests only
+poetry run pytest tests/unit
+
+# Integration tests
+poetry run pytest tests/integration
+
+# Specific test file
+poetry run pytest tests/unit/test_spring_detector.py
+
+# With coverage
+poetry run pytest --cov=backend/src --cov-report=html
+
+# Watch mode
+poetry run ptw
+
+# Debug failing tests
+poetry run pytest --pdb
+```
+
+**Frontend Tests:**
+```bash
+cd frontend
+
+# All tests
+npm run test
+
+# Unit tests
+npm run test:unit
+
+# Component tests
+npm run test:component
+
+# Watch mode
+npm run test:watch
+
+# Coverage
+npm run test:coverage
+
+# UI mode (browser)
+npm run test:ui
+```
+
+**E2E Tests:**
+```bash
+cd frontend
+
+# Run E2E tests
+npm run test:e2e
+
+# Debug mode
+npm run test:e2e:debug
+
+# Headed mode (see browser)
+npm run test:e2e:headed
+```
+
+### Quick Test All
+
+Run all tests (backend + frontend):
+```bash
+npm run test:all
+```
+
+### Coverage Requirements
+
+- **Target:** 90%+ test coverage (NFR8)
+- **Enforcement:** PR CI pipeline fails if coverage < 90%
+- **View Report:** Open `backend/htmlcov/index.html` after running coverage
+
+For detailed testing documentation, see:
+- Backend: [backend/tests/README.md](backend/tests/README.md)
+- Frontend: [frontend/tests/README.md](frontend/tests/README.md)
+- Testing Guide: [docs/testing-guide.md](docs/testing-guide.md)
+
 ## Contributing
 
 Please ensure all tests pass and code quality checks succeed before submitting pull requests:

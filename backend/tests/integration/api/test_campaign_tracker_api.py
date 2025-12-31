@@ -12,9 +12,9 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from src.models.campaign import Campaign as CampaignModel
 from src.models.position import Position as PositionModel
 from src.models.trading_range import TradingRange
+from src.repositories.models import CampaignModel
 
 
 @pytest.mark.asyncio

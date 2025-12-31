@@ -666,11 +666,13 @@ class MetricsCalculator:
 
         # Calculate statistics
         max_concurrent = max(position_counts) if position_counts else 0
-        avg_concurrent = (
+        avg_concurrent_raw = (
             Decimal(str(sum(position_counts))) / Decimal(len(position_counts))
             if position_counts
             else Decimal("0")
         )
+        # Round to 2 decimal places for avg_concurrent_positions field
+        avg_concurrent = avg_concurrent_raw.quantize(Decimal("0.01"))
 
         # Calculate capital deployment percentages
         current_capital = initial_capital
@@ -681,12 +683,26 @@ class MetricsCalculator:
                 deployed_pct = (capital_deployed[i] / current_capital) * Decimal("100")
                 deployed_pcts.append(deployed_pct)
 
-        max_deployed_pct = max(deployed_pcts) if deployed_pcts else Decimal("0")
-        avg_deployed_pct = (
+        max_deployed_pct_raw = max(deployed_pcts) if deployed_pcts else Decimal("0")
+        avg_deployed_pct_raw = (
             sum(deployed_pcts, Decimal("0")) / Decimal(len(deployed_pcts))
             if deployed_pcts
             else Decimal("0")
         )
+        # Round to 4 decimal places for percentage fields
+        max_deployed_pct = max_deployed_pct_raw.quantize(Decimal("0.0001"))
+        avg_deployed_pct = avg_deployed_pct_raw.quantize(Decimal("0.0001"))
+
+        # Calculate position size statistics
+        max_position_size_raw = max(position_sizes) if position_sizes else Decimal("0")
+        avg_position_size_raw = (
+            sum(position_sizes, Decimal("0")) / Decimal(len(position_sizes))
+            if position_sizes
+            else Decimal("0")
+        )
+        # Round to 4 decimal places for percentage fields
+        max_position_size = max_position_size_raw.quantize(Decimal("0.0001"))
+        avg_position_size = avg_position_size_raw.quantize(Decimal("0.0001"))
 
         # Calculate position size statistics
         max_position_size = max(position_sizes) if position_sizes else Decimal("0")
@@ -699,8 +715,11 @@ class MetricsCalculator:
         # Estimate portfolio heat (assume 2% risk per position as default)
         # In real implementation, this would come from position sizing
         assumed_risk_per_position = Decimal("2")  # 2% per position
-        max_heat = Decimal(str(max_concurrent)) * assumed_risk_per_position
-        avg_heat = avg_concurrent * assumed_risk_per_position
+        max_heat_raw = Decimal(str(max_concurrent)) * assumed_risk_per_position
+        avg_heat_raw = avg_concurrent * assumed_risk_per_position
+        # Round to 4 decimal places for percentage fields
+        max_heat = max_heat_raw.quantize(Decimal("0.0001"))
+        avg_heat = avg_heat_raw.quantize(Decimal("0.0001"))
 
         # Exposure time percentage (cap at 100%)
         exposure_pct = (Decimal(str(days_with_positions)) / Decimal(str(total_days))) * Decimal(

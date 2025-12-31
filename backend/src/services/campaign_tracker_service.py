@@ -31,7 +31,6 @@ from uuid import UUID
 
 import structlog
 
-from src.models.campaign import Campaign as CampaignModel
 from src.models.campaign_tracker import (
     CampaignEntryDetail,
     CampaignHealthStatus,
@@ -43,6 +42,7 @@ from src.models.campaign_tracker import (
     TradingRangeLevels,
 )
 from src.models.position import Position as PositionModel
+from src.repositories.models import CampaignModel
 
 logger = structlog.get_logger(__name__)
 

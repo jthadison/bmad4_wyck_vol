@@ -7,7 +7,7 @@ of all calculation methods and template preparation logic.
 Author: Story 12.8 Task 7
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -26,15 +26,10 @@ from src.models.backtest import (
 
 
 def make_backtest_trade(
-    symbol="AAPL",
-    pattern=None,
-    entry_date=None,
-    exit_date=None,
-    pnl=Decimal("200.00"),
-    **kwargs
+    symbol="AAPL", pattern=None, entry_date=None, exit_date=None, pnl=Decimal("200.00"), **kwargs
 ):
     """Helper to create BacktestTrade with defaults."""
-    entry_date = entry_date or datetime(2024, 1, 1, tzinfo=timezone.utc)
+    entry_date = entry_date or datetime(2024, 1, 1, tzinfo=UTC)
     exit_date = exit_date or (entry_date + timedelta(days=3))
 
     return BacktestTrade(
@@ -54,7 +49,7 @@ def make_backtest_trade(
         r_multiple=Decimal("2.0"),
         gross_pnl=pnl + Decimal("7.00"),  # Add back costs
         gross_r_multiple=Decimal("2.1"),
-        **kwargs
+        **kwargs,
     )
 
 
@@ -171,9 +166,9 @@ class TestHTMLReportGeneration:
         ]
 
         equity_curve = [
-            make_equity_point(datetime(2024, 1, 1, tzinfo=timezone.utc), 100000),
-            make_equity_point(datetime(2024, 6, 1, tzinfo=timezone.utc), 107500),
-            make_equity_point(datetime(2024, 12, 31, tzinfo=timezone.utc), 115500),
+            make_equity_point(datetime(2024, 1, 1, tzinfo=UTC), 100000),
+            make_equity_point(datetime(2024, 6, 1, tzinfo=UTC), 107500),
+            make_equity_point(datetime(2024, 12, 31, tzinfo=UTC), 115500),
         ]
 
         cost_summary = BacktestCostSummary(
@@ -199,7 +194,9 @@ class TestHTMLReportGeneration:
         assert "TSLA" in html
         assert len(html) > 1000  # Should be substantial report
 
-    @patch("src.backtesting.backtest_report_generator.BacktestReportGenerator._prepare_template_context")
+    @patch(
+        "src.backtesting.backtest_report_generator.BacktestReportGenerator._prepare_template_context"
+    )
     def test_generate_html_calls_prepare_context(self, mock_prepare, generator):
         """Test that HTML generation calls _prepare_template_context."""
         result = make_backtest_result()
@@ -278,13 +275,13 @@ class TestCSVTradeListGeneration:
                 symbol="AAPL",
                 pattern="SPRING",
                 pnl=Decimal("300.00"),
-                entry_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                entry_date=datetime(2024, 1, 1, tzinfo=UTC),
             ),
             make_backtest_trade(
                 symbol="TSLA",
                 pattern="SOS",
                 pnl=Decimal("-100.00"),
-                entry_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
+                entry_date=datetime(2024, 2, 1, tzinfo=UTC),
             ),
         ]
 
@@ -341,8 +338,8 @@ class TestCSVTradeListGeneration:
 
     def test_generate_csv_iso_date_format(self, generator):
         """Test CSV uses ISO 8601 date format."""
-        entry_date = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        exit_date = datetime(2024, 1, 18, 14, 45, 0, tzinfo=timezone.utc)
+        entry_date = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)
+        exit_date = datetime(2024, 1, 18, 14, 45, 0, tzinfo=UTC)
 
         trade = make_backtest_trade(entry_date=entry_date, exit_date=exit_date)
 
@@ -397,9 +394,9 @@ class TestTemplateContextPreparation:
     def test_prepare_context_equity_curve_data(self, generator):
         """Test equity curve data prepared correctly."""
         equity_curve = [
-            make_equity_point(datetime(2024, 1, 1, tzinfo=timezone.utc), 100000),
-            make_equity_point(datetime(2024, 6, 1, tzinfo=timezone.utc), 107500),
-            make_equity_point(datetime(2024, 12, 31, tzinfo=timezone.utc), 115500),
+            make_equity_point(datetime(2024, 1, 1, tzinfo=UTC), 100000),
+            make_equity_point(datetime(2024, 6, 1, tzinfo=UTC), 107500),
+            make_equity_point(datetime(2024, 12, 31, tzinfo=UTC), 115500),
         ]
         result = make_backtest_result(equity_curve=equity_curve)
 
@@ -476,9 +473,9 @@ class TestMonthlyReturnsCalculation:
     def test_calculate_monthly_returns_single_month(self, generator):
         """Test with single month data."""
         equity_curve = [
-            make_equity_point(datetime(2024, 1, 1, tzinfo=timezone.utc), 100000),
-            make_equity_point(datetime(2024, 1, 15, tzinfo=timezone.utc), 105000),
-            make_equity_point(datetime(2024, 1, 31, tzinfo=timezone.utc), 107000),
+            make_equity_point(datetime(2024, 1, 1, tzinfo=UTC), 100000),
+            make_equity_point(datetime(2024, 1, 15, tzinfo=UTC), 105000),
+            make_equity_point(datetime(2024, 1, 31, tzinfo=UTC), 107000),
         ]
 
         result = generator._calculate_monthly_returns(equity_curve)
@@ -494,10 +491,10 @@ class TestMonthlyReturnsCalculation:
     def test_calculate_monthly_returns_multiple_months(self, generator):
         """Test with multiple months."""
         equity_curve = [
-            make_equity_point(datetime(2024, 1, 1, tzinfo=timezone.utc), 100000),
-            make_equity_point(datetime(2024, 1, 31, tzinfo=timezone.utc), 105000),
-            make_equity_point(datetime(2024, 2, 1, tzinfo=timezone.utc), 105000),
-            make_equity_point(datetime(2024, 2, 28, tzinfo=timezone.utc), 103000),
+            make_equity_point(datetime(2024, 1, 1, tzinfo=UTC), 100000),
+            make_equity_point(datetime(2024, 1, 31, tzinfo=UTC), 105000),
+            make_equity_point(datetime(2024, 2, 1, tzinfo=UTC), 105000),
+            make_equity_point(datetime(2024, 2, 28, tzinfo=UTC), 103000),
         ]
 
         result = generator._calculate_monthly_returns(equity_curve)
@@ -521,9 +518,9 @@ class TestDrawdownPeriodsCalculation:
     def test_calculate_drawdown_no_drawdowns(self, generator):
         """Test with always rising equity curve."""
         equity_curve = [
-            make_equity_point(datetime(2024, 1, 1, tzinfo=timezone.utc), 100000),
-            make_equity_point(datetime(2024, 2, 1, tzinfo=timezone.utc), 105000),
-            make_equity_point(datetime(2024, 3, 1, tzinfo=timezone.utc), 110000),
+            make_equity_point(datetime(2024, 1, 1, tzinfo=UTC), 100000),
+            make_equity_point(datetime(2024, 2, 1, tzinfo=UTC), 105000),
+            make_equity_point(datetime(2024, 3, 1, tzinfo=UTC), 110000),
         ]
 
         result = generator._calculate_drawdown_periods(equity_curve)
@@ -534,9 +531,9 @@ class TestDrawdownPeriodsCalculation:
     def test_calculate_drawdown_single_drawdown(self, generator):
         """Test with single drawdown period."""
         equity_curve = [
-            make_equity_point(datetime(2024, 1, 1, tzinfo=timezone.utc), 100000),  # Peak
-            make_equity_point(datetime(2024, 1, 15, tzinfo=timezone.utc), 95000),  # -5% drawdown
-            make_equity_point(datetime(2024, 2, 1, tzinfo=timezone.utc), 101000),  # Recovery
+            make_equity_point(datetime(2024, 1, 1, tzinfo=UTC), 100000),  # Peak
+            make_equity_point(datetime(2024, 1, 15, tzinfo=UTC), 95000),  # -5% drawdown
+            make_equity_point(datetime(2024, 2, 1, tzinfo=UTC), 101000),  # Recovery
         ]
 
         result = generator._calculate_drawdown_periods(equity_curve)
@@ -553,7 +550,7 @@ class TestDrawdownPeriodsCalculation:
         """Test that only top 5 drawdowns returned."""
         # Create 7 drawdown periods by oscillating equity
         equity_curve = []
-        base_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base_date = datetime(2024, 1, 1, tzinfo=UTC)
 
         for i in range(15):
             value = 100000 + (i % 2) * 5000 - (i // 2) * 2000
@@ -595,8 +592,8 @@ class TestFormatTradeForTemplate:
         trade = make_backtest_trade(
             symbol="AAPL",
             pattern="SPRING",
-            entry_date=datetime(2024, 1, 1, 10, 30, tzinfo=timezone.utc),
-            exit_date=datetime(2024, 1, 5, 14, 45, tzinfo=timezone.utc),
+            entry_date=datetime(2024, 1, 1, 10, 30, tzinfo=UTC),
+            exit_date=datetime(2024, 1, 5, 14, 45, tzinfo=UTC),
             pnl=Decimal("300.00"),
         )
 

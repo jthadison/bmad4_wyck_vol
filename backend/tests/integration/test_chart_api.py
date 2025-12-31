@@ -13,7 +13,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.orm.models import OHLCVBar, Pattern, TradingRange
+from src.models.ohlcv import OHLCVBar
+from src.orm.models import Pattern, TradingRange
 
 
 @pytest.mark.asyncio
