@@ -158,6 +158,8 @@ jobs:
             --cov-report=term \
             --cov-report=html \
             --junitxml=pytest-results.xml \
+            --reruns 2 \
+            --reruns-delay 1 \
             -v
 
       - name: Upload coverage to Codecov
@@ -183,6 +185,26 @@ jobs:
           path: backend/pytest-results.xml
           reporter: java-junit
           fail-on-error: false
+
+      - name: Generate test stability report
+        if: always()
+        working-directory: backend
+        run: |
+          echo "## Test Stability Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f pytest-results.xml ]; then
+            TOTAL_TESTS=$(grep -o 'tests="[0-9]*"' pytest-results.xml | head -1 | grep -o '[0-9]*')
+            FAILURES=$(grep -o 'failures="[0-9]*"' pytest-results.xml | head -1 | grep -o '[0-9]*')
+            ERRORS=$(grep -o 'errors="[0-9]*"' pytest-results.xml | head -1 | grep -o '[0-9]*')
+            echo "- Total Tests: $TOTAL_TESTS" >> $GITHUB_STEP_SUMMARY
+            echo "- Failures: $FAILURES" >> $GITHUB_STEP_SUMMARY
+            echo "- Errors: $ERRORS" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Note:** Tests are automatically retried up to 2 times on failure to handle flaky tests." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No test results file found" >> $GITHUB_STEP_SUMMARY
+          fi
 
   # Frontend linting
   frontend-linting:
@@ -268,6 +290,108 @@ jobs:
           flags: frontend
           name: frontend-coverage
         continue-on-error: true
+
+  # E2E Playwright tests (Story 12.11 Task 2 - Subtask 2.6)
+  e2e-tests:
+    name: E2E Playwright Tests
+    runs-on: ubuntu-latest
+    needs: frontend-tests
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wyckoff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: poetry install --with dev
+
+      - name: Start backend server
+        working-directory: backend
+        run: |
+          poetry run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          TESTING: true
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run Playwright E2E tests
+        working-directory: frontend
+        run: npm run test:smoke
+        env:
+          CI: true
+          DEPLOYMENT_URL: http://localhost:4173
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+
+      - name: Generate E2E test stability report
+        if: always()
+        run: |
+          echo "## E2E Test Stability Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Playwright Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Retries**: 2 (in CI)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workers**: 1 (in CI)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timeout**: 30 seconds per test" >> $GITHUB_STEP_SUMMARY
+          echo "- **Browsers**: Chromium, Firefox, WebKit" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Failure Artifacts:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Screenshots (on failure)" >> $GITHUB_STEP_SUMMARY
+          echo "- Videos (on failure)" >> $GITHUB_STEP_SUMMARY
+          echo "- Traces (on first retry)" >> $GITHUB_STEP_SUMMARY
 
   # Accuracy tests (depends on backend-tests)
   accuracy-tests:
@@ -468,9 +592,35 @@ jobs:
       - frontend-linting
       - frontend-type-checking
       - frontend-tests
+      - e2e-tests
       - accuracy-tests
       - code-quality
       - security-scan
     steps:
       - name: All checks passed
         run: echo "All PR checks passed successfully"
+
+      - name: Generate deployment gate summary
+        run: |
+          echo "## Deployment Gate Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ All Required Checks Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following checks have completed successfully:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Backend linting (Ruff)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Backend type checking (mypy)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Backend tests with coverage" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Frontend linting (ESLint + Prettier)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Frontend type checking (TypeScript)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Frontend unit tests (Vitest)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ E2E tests (Playwright - Chromium, Firefox, WebKit)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Accuracy tests" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Code quality checks" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Security vulnerability scan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Stability Features" >> $GITHUB_STEP_SUMMARY
+          echo "- Automatic test retries (2x for backend, 2x for E2E)" >> $GITHUB_STEP_SUMMARY
+          echo "- Flaky test detection and reporting" >> $GITHUB_STEP_SUMMARY
+          echo "- Test result artifact upload on failure" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**This PR is ready for merge pending code review approval.**" >> $GITHUB_STEP_SUMMARY

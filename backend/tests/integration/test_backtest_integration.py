@@ -362,14 +362,229 @@ async def test_extended_backtest_tsla():
 
 
 @pytest.mark.slow
-@pytest.mark.asyncio
-async def test_backtest_determinism():
+@pytest.mark.benchmark
+@pytest.mark.extended
+def test_backtest_performance():
     """
-    Verify backtest produces identical results on multiple runs.
+    Test backtest performance for 2-year dataset (Story 12.11 Task 3 Subtask 3.2).
 
-    Tests:
-    - Run same backtest twice with same config
-    - Assert results are identical (same trades, same metrics)
-    - Ensures no randomness or time-based logic in backtest
+    Requirements:
+    - Backtest should complete in <60 seconds per symbol
+    - Should not degrade >20% from baseline
+    - Validates NFR7 (>100 bars/second throughput)
+
+    Test Flow:
+    - Generate 2 years of synthetic OHLCV data (~500 bars)
+    - Run BacktestEngine with simple strategy
+    - Measure execution time
+    - Assert performance < 60 seconds
     """
-    pytest.skip("Determinism test implementation pending")
+    import time
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from src.backtesting.backtest_engine import BacktestEngine
+    from src.models.backtest import BacktestConfig
+    from src.models.ohlcv import OHLCVBar
+
+    # Generate 2 years of daily OHLCV data (504 trading days)
+    bars = []
+    start_date = datetime(2022, 1, 1, tzinfo=UTC)
+    base_price = Decimal("150.00")
+
+    for i in range(504):  # ~2 years of trading days
+        # Simulate trending price with noise
+        trend = Decimal(i) * Decimal("0.05")
+        noise = Decimal((i % 10) - 5)
+        price = base_price + trend + noise
+        daily_range = Decimal("5.00")
+
+        bars.append(
+            OHLCVBar(
+                symbol="SYNTH",
+                timeframe="1d",
+                timestamp=start_date + timedelta(days=i),
+                open=price,
+                high=price + daily_range,
+                low=price - daily_range,
+                close=price + (daily_range * Decimal("0.3")),
+                volume=1000000 + (i * 10000),
+                spread=daily_range,
+            )
+        )
+
+    # Simple buy-and-hold strategy
+    def simple_strategy(bar, context):
+        if context.get("bar_count", 0) == 1:
+            return "BUY"
+        return None
+
+    # Create backtest config
+    config = BacktestConfig(
+        symbol="SYNTH",
+        start_date=datetime(2022, 1, 1).date(),
+        end_date=datetime(2023, 12, 31).date(),
+        initial_capital=Decimal("100000"),
+        max_position_size=Decimal("0.02"),
+        commission_per_share=Decimal("0.005"),
+    )
+
+    # Initialize engine
+    engine = BacktestEngine(config)
+
+    # Measure execution time
+    start_time = time.perf_counter()
+    result = engine.run(bars, strategy_func=simple_strategy)
+    end_time = time.perf_counter()
+
+    execution_time = end_time - start_time
+
+    # Assert performance requirement: <60 seconds
+    assert execution_time < 60.0, f"Expected <60s, got {execution_time:.2f}s"
+
+    # Calculate throughput (should be >100 bars/second per NFR7)
+    bars_per_second = len(bars) / execution_time
+    assert bars_per_second > 100, f"Expected >100 bars/s (NFR7), got {bars_per_second:.0f} bars/s"
+
+    # Verify result is valid
+    assert result.backtest_run_id is not None
+    assert len(result.equity_curve) == len(bars)
+    # Note: Trades may be 0 if strategy didn't generate signals - this is OK for performance test
+
+    print(
+        f"\nPerformance: {bars_per_second:.0f} bars/s ({execution_time:.2f}s for {len(bars)} bars, {len(result.trades)} trades)"
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.extended
+def test_backtest_determinism():
+    """
+    Verify backtest produces identical results on multiple runs (Story 12.11 Task 3 Subtask 3.3).
+
+    Requirements:
+    - Run same backtest twice with identical config
+    - Assert all results are identical (trades, metrics, equity curve)
+    - Ensures no randomness or time-based logic
+
+    Test Flow:
+    - Generate deterministic OHLCV dataset
+    - Run BacktestEngine twice with same strategy and config
+    - Compare BacktestResult objects field by field
+    - Assert complete equality
+    """
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from src.backtesting.backtest_engine import BacktestEngine
+    from src.models.backtest import BacktestConfig
+    from src.models.ohlcv import OHLCVBar
+
+    # Generate deterministic OHLCV data (100 bars)
+    bars = []
+    start_date = datetime(2024, 1, 1, tzinfo=UTC)
+    base_price = Decimal("100.00")
+
+    for i in range(100):
+        price = base_price + Decimal(i) * Decimal("0.10")
+        daily_range = Decimal("2.00")
+
+        bars.append(
+            OHLCVBar(
+                symbol="TEST",
+                timeframe="1d",
+                timestamp=start_date + timedelta(days=i),
+                open=price,
+                high=price + daily_range,
+                low=price - daily_range,
+                close=price + daily_range * Decimal("0.5"),
+                volume=1000000,
+                spread=daily_range,
+            )
+        )
+
+    # Deterministic strategy (trades on specific bar indices)
+    def deterministic_strategy(bar, context):
+        bar_count = context.get("bar_count", 0)
+        # Open position on bar 10
+        if bar_count == 10:
+            return "BUY"
+        # Close position on bar 30 (requires open position from bar 10)
+        elif bar_count == 30:
+            return "SELL"
+        # Reopen position on bar 50
+        elif bar_count == 50:
+            return "BUY"
+        # Close position on bar 80 (requires open position from bar 50)
+        elif bar_count == 80:
+            return "SELL"
+        return None
+
+    # Create backtest config
+    config = BacktestConfig(
+        symbol="TEST",
+        start_date=datetime(2024, 1, 1).date(),
+        end_date=datetime(2024, 12, 31).date(),
+        initial_capital=Decimal("100000"),
+        max_position_size=Decimal("0.02"),
+        commission_per_share=Decimal("0.005"),
+    )
+
+    # Run backtest twice
+    engine1 = BacktestEngine(config)
+    result1 = engine1.run(bars, strategy_func=deterministic_strategy)
+
+    engine2 = BacktestEngine(config)
+    result2 = engine2.run(bars, strategy_func=deterministic_strategy)
+
+    # Debug output
+    print(f"\nRun 1: {len(result1.trades)} trades")
+    print(f"Run 2: {len(result2.trades)} trades")
+    if len(result1.trades) > 0:
+        print(
+            f"First trade: entry={result1.trades[0].entry_price}, exit={result1.trades[0].exit_price}"
+        )
+
+    # Assert identical results
+
+    # 1. Same number of trades
+    assert len(result1.trades) == len(
+        result2.trades
+    ), f"Trade count mismatch: {len(result1.trades)} vs {len(result2.trades)}"
+
+    # 2. Same trades (entry/exit prices, quantities, timestamps)
+    for i, (trade1, trade2) in enumerate(zip(result1.trades, result2.trades, strict=False)):
+        assert trade1.entry_price == trade2.entry_price, f"Trade {i}: entry_price mismatch"
+        assert trade1.exit_price == trade2.exit_price, f"Trade {i}: exit_price mismatch"
+        assert trade1.quantity == trade2.quantity, f"Trade {i}: quantity mismatch"
+        assert (
+            trade1.entry_timestamp == trade2.entry_timestamp
+        ), f"Trade {i}: entry_timestamp mismatch"
+        assert trade1.exit_timestamp == trade2.exit_timestamp, f"Trade {i}: exit_timestamp mismatch"
+        assert trade1.pnl == trade2.pnl, f"Trade {i}: pnl mismatch"
+
+    # 3. Same equity curve
+    assert len(result1.equity_curve) == len(result2.equity_curve), "Equity curve length mismatch"
+    for i, (eq1, eq2) in enumerate(zip(result1.equity_curve, result2.equity_curve, strict=False)):
+        assert eq1.timestamp == eq2.timestamp, f"Equity curve {i}: timestamp mismatch"
+        assert eq1.portfolio_value == eq2.portfolio_value, f"Equity curve {i}: value mismatch"
+
+    # 4. Same metrics (from metrics object)
+    assert (
+        result1.metrics.total_return_pct == result2.metrics.total_return_pct
+    ), "total_return_pct mismatch"
+    assert result1.metrics.win_rate == result2.metrics.win_rate, "win_rate mismatch"
+    assert result1.metrics.profit_factor == result2.metrics.profit_factor, "profit_factor mismatch"
+    assert result1.metrics.max_drawdown == result2.metrics.max_drawdown, "max_drawdown mismatch"
+    assert result1.metrics.sharpe_ratio == result2.metrics.sharpe_ratio, "sharpe_ratio mismatch"
+    assert result1.metrics.cagr == result2.metrics.cagr, "cagr mismatch"
+    assert result1.metrics.total_trades == result2.metrics.total_trades, "total_trades mismatch"
+    assert (
+        result1.metrics.winning_trades == result2.metrics.winning_trades
+    ), "winning_trades mismatch"
+    assert result1.metrics.losing_trades == result2.metrics.losing_trades, "losing_trades mismatch"
+
+    # 5. Same backtest run IDs are different (each run gets unique ID)
+    assert result1.backtest_run_id != result2.backtest_run_id, "Run IDs should be different"
+
+    print("\n[PASS] Backtest is deterministic: identical results on both runs")

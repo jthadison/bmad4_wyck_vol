@@ -9,13 +9,13 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from src.models.campaign import Campaign as CampaignModel
 from src.models.campaign_tracker import (
     CampaignHealthStatus,
     CampaignQualityScore,
     PreliminaryEvent,
 )
 from src.models.position import Position as PositionModel
+from src.repositories.models import CampaignModel
 from src.services.campaign_tracker_service import (
     calculate_entry_pnl,
     calculate_health,

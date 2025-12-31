@@ -59,6 +59,8 @@ Story 12.7 Models (Regression Testing Automation):
 Author: Story 11.2 Task 1, Story 12.1 Task 1, Story 12.3 Task 1, Story 12.4 Task 1, Story 12.6A Task 1, Story 12.7 Task 1
 """
 
+from __future__ import annotations
+
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, Literal, Optional
@@ -285,10 +287,10 @@ class BacktestConfig(BaseModel):
         description="Base slippage percentage (deprecated)",
     )
     # Story 12.5: New comprehensive configs
-    commission_config: Optional["CommissionConfig"] = Field(
+    commission_config: Optional[CommissionConfig] = Field(
         default=None, description="Commission configuration (Story 12.5)"
     )
-    slippage_config: Optional["SlippageConfig"] = Field(
+    slippage_config: Optional[SlippageConfig] = Field(
         default=None, description="Slippage configuration (Story 12.5)"
     )
     risk_limits: dict[str, Any] = Field(
@@ -336,10 +338,10 @@ class BacktestOrder(BaseModel):
     commission: Decimal = Field(default=Decimal("0"), description="Commission cost")
     slippage: Decimal = Field(default=Decimal("0"), description="Slippage cost")
     # Story 12.5: Detailed breakdowns
-    commission_breakdown: Optional["CommissionBreakdown"] = Field(
+    commission_breakdown: Optional[CommissionBreakdown] = Field(
         default=None, description="Detailed commission breakdown (Story 12.5)"
     )
-    slippage_breakdown: Optional["SlippageBreakdown"] = Field(
+    slippage_breakdown: Optional[SlippageBreakdown] = Field(
         default=None, description="Detailed slippage breakdown (Story 12.5)"
     )
     status: Literal["PENDING", "FILLED", "REJECTED"] = Field(description="Order status")
@@ -535,30 +537,30 @@ class BacktestResult(BaseModel):
     trades: list[BacktestTrade] = Field(default_factory=list, description="Completed trades")
     metrics: BacktestMetrics = Field(description="Performance metrics")
     # Story 12.5: Transaction cost summary
-    cost_summary: Optional["BacktestCostSummary"] = Field(
+    cost_summary: Optional[BacktestCostSummary] = Field(
         default=None, description="Transaction cost summary (Story 12.5)"
     )
     # Story 12.6A: Enhanced metrics
-    pattern_performance: list["PatternPerformance"] = Field(
+    pattern_performance: list[PatternPerformance] = Field(
         default_factory=list, description="Per-pattern performance metrics (Story 12.6A)"
     )
-    monthly_returns: list["MonthlyReturn"] = Field(
+    monthly_returns: list[MonthlyReturn] = Field(
         default_factory=list, description="Monthly return breakdown (Story 12.6A)"
     )
-    drawdown_periods: list["DrawdownPeriod"] = Field(
+    drawdown_periods: list[DrawdownPeriod] = Field(
         default_factory=list, description="Individual drawdown events (Story 12.6A)"
     )
-    risk_metrics: Optional["RiskMetrics"] = Field(
+    risk_metrics: Optional[RiskMetrics] = Field(
         default=None, description="Portfolio risk statistics (Story 12.6A)"
     )
-    campaign_performance: list["CampaignPerformance"] = Field(
+    campaign_performance: list[CampaignPerformance] = Field(
         default_factory=list, description="Wyckoff campaign tracking (Story 12.6A)"
     )
     # Story 12.6A AC6: Extreme trades and streaks
-    largest_winner: Optional["BacktestTrade"] = Field(
+    largest_winner: Optional[BacktestTrade] = Field(
         default=None, description="Trade with highest P&L (Story 12.6A AC6)"
     )
-    largest_loser: Optional["BacktestTrade"] = Field(
+    largest_loser: Optional[BacktestTrade] = Field(
         default=None, description="Trade with lowest P&L (Story 12.6A AC6)"
     )
     longest_winning_streak: int = Field(
@@ -983,6 +985,63 @@ class AccuracyMetrics(BaseModel):
                 "prerequisite_violation_rate": "0.1579",
             }
         }
+    )
+
+
+class LabeledPattern(BaseModel):
+    """
+    Labeled pattern dataset entry for accuracy testing (Story 12.2/12.3).
+
+    Represents a single labeled pattern from the test dataset used for validating
+    detector accuracy. Each entry contains ground truth labels for pattern identification,
+    phase classification, and campaign context.
+
+    Attributes:
+        symbol: Trading symbol (e.g., AAPL, MSFT)
+        date: Pattern occurrence date
+        pattern_type: Pattern type (SPRING, SOS, UTAD, LPS, FALSE_SPRING)
+        confidence: Expected confidence score (70-95 range)
+        correctness: Ground truth correctness (CORRECT, INCORRECT, AMBIGUOUS)
+        phase: Wyckoff phase context (optional)
+        campaign_id: Associated campaign identifier (optional)
+        notes: Additional context or edge case description (optional)
+
+    Example:
+        >>> pattern = LabeledPattern(
+        ...     symbol="AAPL",
+        ...     date=date(2024, 1, 15),
+        ...     pattern_type="SPRING",
+        ...     confidence=85,
+        ...     correctness="CORRECT"
+        ... )
+    """
+
+    symbol: str = Field(..., max_length=20, description="Trading symbol")
+    pattern_date: date = Field(..., description="Pattern occurrence date", alias="date")
+    pattern_type: str = Field(
+        ..., max_length=50, description="Pattern type (SPRING, SOS, UTAD, LPS, FALSE_SPRING)"
+    )
+    confidence: int = Field(..., ge=0, le=100, description="Confidence score (0-100)")
+    correctness: str = Field(
+        ..., max_length=20, description="Ground truth (CORRECT, INCORRECT, AMBIGUOUS)"
+    )
+    phase: Optional[str] = Field(None, max_length=20, description="Wyckoff phase context")
+    campaign_id: Optional[UUID] = Field(None, description="Associated campaign ID")
+    notes: Optional[str] = Field(None, max_length=500, description="Additional context")
+
+    model_config = ConfigDict(
+        populate_by_name=True,  # Allow both 'pattern_date' and 'date' alias
+        json_schema_extra={
+            "example": {
+                "symbol": "AAPL",
+                "date": "2024-01-15",
+                "pattern_type": "SPRING",
+                "confidence": 85,
+                "correctness": "CORRECT",
+                "phase": "Phase C",
+                "notes": "Strong volume climax, tight stop placement",
+            }
+        },
     )
 
 
