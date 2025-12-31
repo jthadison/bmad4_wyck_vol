@@ -299,3 +299,77 @@ async def test_websocket_completed_message_format():
     assert msg_dict["type"] == "backtest_completed"
     assert "comparison" in msg_dict
     assert msg_dict["comparison"]["recommendation"] == "improvement"
+
+
+# =============================
+# Story 12.10: Extended Backtest Tests
+# =============================
+
+
+@pytest.mark.extended
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_extended_backtest_aapl():
+    """
+    Extended backtest for AAPL (2022-2023).
+
+    Tests:
+    - BacktestResult structure
+    - Trades generated
+    - Metrics calculated (win rate, avg R, profit factor)
+    - Equity curve data
+    - Performance (< 60s per symbol)
+    - Determinism (same results on multiple runs)
+    """
+    # Placeholder for extended backtest implementation
+    # This would:
+    # 1. Load real OHLCV data for AAPL (2022-01-01 to 2023-12-31)
+    # 2. Run BacktestEngine.run_backtest()
+    # 3. Verify BacktestResult structure
+    # 4. Verify trades generated
+    # 5. Verify metrics calculated
+    # 6. Verify equity curve data
+    # 7. Assert backtest completes in < 60 seconds
+    # 8. Run twice and verify identical results
+
+    pytest.skip(
+        "Extended backtest implementation pending - requires BacktestEngine fixes from Story 12.9"
+    )
+
+
+@pytest.mark.extended
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_extended_backtest_msft():
+    """Extended backtest for MSFT (2022-2023)."""
+    pytest.skip("Extended backtest implementation pending")
+
+
+@pytest.mark.extended
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_extended_backtest_googl():
+    """Extended backtest for GOOGL (2022-2023)."""
+    pytest.skip("Extended backtest implementation pending")
+
+
+@pytest.mark.extended
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_extended_backtest_tsla():
+    """Extended backtest for TSLA (2022-2023)."""
+    pytest.skip("Extended backtest implementation pending")
+
+
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_backtest_determinism():
+    """
+    Verify backtest produces identical results on multiple runs.
+
+    Tests:
+    - Run same backtest twice with same config
+    - Assert results are identical (same trades, same metrics)
+    - Ensures no randomness or time-based logic in backtest
+    """
+    pytest.skip("Determinism test implementation pending")

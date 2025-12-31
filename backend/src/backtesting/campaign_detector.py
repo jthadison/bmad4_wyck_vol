@@ -23,7 +23,7 @@ Campaign tracking provides critical insights:
 Author: Story 12.8
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
@@ -126,9 +126,7 @@ class WyckoffCampaignDetector:
         self.campaign_window_days = campaign_window_days
         self.logger = logger.bind(component="campaign_detector")
 
-    def detect_campaigns(
-        self, trades: list[BacktestTrade]
-    ) -> list[CampaignPerformance]:
+    def detect_campaigns(self, trades: list[BacktestTrade]) -> list[CampaignPerformance]:
         """
         Detect all campaigns from backtest trades (Story 12.8 Task 1).
 
@@ -231,9 +229,7 @@ class WyckoffCampaignDetector:
 
         return campaigns_by_symbol
 
-    def _is_valid_next_pattern(
-        self, current_patterns: list[str], new_pattern: str
-    ) -> bool:
+    def _is_valid_next_pattern(self, current_patterns: list[str], new_pattern: str) -> bool:
         """
         Validate if new_pattern is a valid next step in campaign (Story 12.8 Task 2).
 
@@ -327,9 +323,7 @@ class WyckoffCampaignDetector:
         end_date = last_trade.exit_timestamp if last_trade.exit_timestamp else None
 
         # Determine campaign type and pattern sequence
-        pattern_sequence = [
-            t.pattern_type.upper() for t in campaign_trades if t.pattern_type
-        ]
+        pattern_sequence = [t.pattern_type.upper() for t in campaign_trades if t.pattern_type]
         first_pattern = pattern_sequence[0] if pattern_sequence else "UNKNOWN"
 
         if first_pattern in self.ACCUMULATION_PATTERNS:

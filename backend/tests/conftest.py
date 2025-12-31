@@ -293,3 +293,111 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "unit: mark test as a unit test")
     config.addinivalue_line("markers", "integration: mark test as an integration test")
     config.addinivalue_line("markers", "slow: mark test as slow running")
+    config.addinivalue_line("markers", "extended: mark test as extended backtest for CI only")
+
+
+# =============================
+# Story 12.10: New Mock and Fixture Additions
+# =============================
+
+
+@pytest.fixture
+def mock_data_feed():
+    """
+    Provide MockPolygonAdapter instance for testing.
+
+    Returns a mock data feed that returns fixture OHLCV data
+    without making actual API calls.
+    """
+    from tests.mocks.mock_polygon_adapter import MockPolygonAdapter
+
+    return MockPolygonAdapter()
+
+
+@pytest.fixture
+def mock_broker():
+    """
+    Provide MockBrokerAdapter instance for testing.
+
+    Returns a mock broker that simulates order submission/fills
+    without making actual broker API calls.
+    """
+    from tests.mocks.mock_broker_adapter import MockBrokerAdapter
+
+    return MockBrokerAdapter()
+
+
+@pytest.fixture
+def sample_ohlcv_bars():
+    """
+    Provide sample OHLCV bar fixtures for testing.
+
+    Returns a dictionary of fixture scenarios:
+    - spring_pattern: 100 bars with Spring pattern at bar 50
+    - sos_pattern: 100 bars with SOS pattern at bar 60
+    - utad_pattern: 100 bars with UTAD pattern at bar 70
+    - false_spring: 100 bars with false Spring (high-volume breakdown)
+    """
+    from tests.fixtures.ohlcv_bars import (
+        false_spring_bars,
+        sos_pattern_bars,
+        spring_pattern_bars,
+        utad_pattern_bars,
+    )
+
+    return {
+        "spring_pattern": spring_pattern_bars(),
+        "sos_pattern": sos_pattern_bars(),
+        "utad_pattern": utad_pattern_bars(),
+        "false_spring": false_spring_bars(),
+    }
+
+
+@pytest.fixture
+def edge_case_bars():
+    """
+    Provide edge case OHLCV bar fixtures for testing.
+
+    Returns a dictionary of edge case scenarios:
+    - zero_volume: Bar with volume = 0
+    - gap_up: Bar with gap up from previous close
+    - gap_down: Bar with gap down from previous close
+    - extreme_spread: Bar with spread > 5x average
+    - missing_bars: Sequence with missing timestamps
+    - doji: Bar with open == close
+    - narrow_spread: Bar with very narrow spread
+    - extreme_volume: Bar with volume > 10x average
+    """
+    from tests.fixtures.edge_cases import (
+        doji_bar,
+        extreme_spread_bar,
+        extreme_volume_bar,
+        gap_down_bar,
+        gap_up_bar,
+        missing_bars_sequence,
+        narrow_spread_bar,
+        zero_volume_bar,
+    )
+
+    return {
+        "zero_volume": zero_volume_bar(),
+        "gap_up": gap_up_bar(),
+        "gap_down": gap_down_bar(),
+        "extreme_spread": extreme_spread_bar(),
+        "missing_bars": missing_bars_sequence(),
+        "doji": doji_bar(),
+        "narrow_spread": narrow_spread_bar(),
+        "extreme_volume": extreme_volume_bar(),
+    }
+
+
+@pytest.fixture
+def test_db():
+    """
+    Provide test database session (alias for db_session).
+
+    This is an alias fixture for consistency with pytest-postgresql naming.
+    """
+    # Return the db_session fixture
+    # Note: This will be overridden in integration tests that use PostgreSQL
+    return None  # Placeholder - use db_session directly
