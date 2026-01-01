@@ -238,7 +238,7 @@ export function useBacktestData() {
     listError.value = null
 
     try {
-      const response = await axios.get<BacktestResultSummary[]>(
+      const response = await axios.get<{ results: BacktestResultSummary[] }>(
         `${API_BASE_URL}/backtest/results`,
         {
           params: {
@@ -247,7 +247,7 @@ export function useBacktestData() {
         }
       )
 
-      backtestResultsList.value = response.data
+      backtestResultsList.value = response.data.results
     } catch (err) {
       if (axios.isAxiosError(err)) {
         if (err.response?.status === 500) {

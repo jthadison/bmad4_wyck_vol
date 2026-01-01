@@ -157,7 +157,10 @@ class AlpacaAdapter(MarketDataProvider):
             auth_data = json.loads(auth_response)
 
             # Check authentication result
-            if auth_data[0].get("T") == "success" and auth_data[0].get("msg") == "authenticated":
+            if auth_data[0].get("T") == "success" and auth_data[0].get("msg") in [
+                "authenticated",
+                "connected",
+            ]:
                 self._is_connected = True
                 self._consecutive_disconnects = 0
                 self._reconnect_delay = 1.0  # Reset backoff
