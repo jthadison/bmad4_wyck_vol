@@ -1,8 +1,10 @@
 """FastAPI application entry point for BMAD Wyckoff system."""
 
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.routes import (
     audit,
@@ -62,6 +64,44 @@ async def websocket_route(websocket: WebSocket) -> None:
     await websocket_endpoint(websocket)
 
 
+# Custom middleware to ensure CORS headers on all responses, even errors
+class CORSExceptionMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to catch all exceptions and ensure CORS headers are present.
+
+    This catches errors that occur before route handlers (e.g., dependency injection errors)
+    which the global exception handler cannot catch.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        try:
+            response = await call_next(request)
+            return response
+        except Exception as exc:
+            import logging
+            import traceback
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Exception in middleware for {request.method} {request.url.path}: {exc}",
+                exc_info=True,
+            )
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
+
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error", "error": str(exc)},
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                    "Access-Control-Allow-Headers": "*",
+                },
+            )
+
+
+# Add CORS exception middleware first (innermost layer)
+app.add_middleware(CORSExceptionMiddleware)
+
 # Configure CORS - Allow all origins for development
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +110,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Global exception handler to ensure CORS headers are always present
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Global exception handler that ensures CORS headers are present even on errors.
+
+    This prevents CORS errors in the browser when backend endpoints fail.
+    """
+    import logging
+    import traceback
+
+    logger = logging.getLogger(__name__)
+    logger.error(
+        f"Unhandled exception in {request.method} {request.url.path}: {exc}",
+        exc_info=True,
+    )
+
+    # Log full traceback for debugging
+    logger.error(f"Traceback:\n{traceback.format_exc()}")
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "error": str(exc)},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
+
 
 # Global coordinator instance
 _coordinator: MarketDataCoordinator | None = None
@@ -86,17 +158,21 @@ async def startup_event() -> None:
 
     # Only start real-time feed if API keys are configured
     if settings.alpaca_api_key and settings.alpaca_secret_key:
-        # Create Alpaca adapter
-        adapter = AlpacaAdapter(settings=settings, use_paper=False)
+        try:
+            # Create Alpaca adapter
+            adapter = AlpacaAdapter(settings=settings, use_paper=False)
 
-        # Create coordinator
-        _coordinator = MarketDataCoordinator(
-            adapter=adapter,
-            settings=settings,
-        )
+            # Create coordinator
+            _coordinator = MarketDataCoordinator(
+                adapter=adapter,
+                settings=settings,
+            )
 
-        # Start real-time feed
-        await _coordinator.start()
+            # Start real-time feed
+            await _coordinator.start()
+        except Exception as e:
+            print(f"WARNING: Failed to start real-time feed: {str(e)}")
+            print("Application will continue without real-time market data.")
     else:
         print("WARNING: Alpaca API keys not configured. Real-time feed disabled.")
 

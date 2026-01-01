@@ -32,6 +32,13 @@ export default defineConfig({
       },
     },
   },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler', // Use modern Sass API
+      },
+    },
+  },
   build: {
     target: 'esnext',
     minify: 'esbuild',

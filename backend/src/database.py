@@ -111,6 +111,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             return result.scalars().all()
         ```
     """
+    if async_session_maker is None:
+        raise RuntimeError(
+            "Database not initialized. Please ensure DATABASE_URL is configured correctly."
+        )
+
     async with async_session_maker() as session:
         try:
             yield session
@@ -157,9 +162,9 @@ def get_pool_status() -> dict[str, Any]:
         dict: Pool status including size, checked_out connections, etc.
     """
     pool_status = {
-        "pool_size": engine.pool.size(),
-        "checked_out": engine.pool.checkedout(),
-        "overflow": engine.pool.overflow(),
-        "total_connections": engine.pool.size() + engine.pool.overflow(),
+        "pool_size": engine.pool.size(),  # type: ignore[attr-defined]
+        "checked_out": engine.pool.checkedout(),  # type: ignore[attr-defined]
+        "overflow": engine.pool.overflow(),  # type: ignore[attr-defined]
+        "total_connections": engine.pool.size() + engine.pool.overflow(),  # type: ignore[attr-defined]
     }
     return pool_status
