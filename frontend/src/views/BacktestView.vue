@@ -115,7 +115,11 @@
 
         <!-- Advanced Options (Collapsed) -->
         <div class="advanced-section">
-          <button class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+          <button
+            type="button"
+            class="advanced-toggle"
+            @click="showAdvanced = !showAdvanced"
+          >
             <i
               :class="
                 showAdvanced ? 'pi pi-chevron-down' : 'pi pi-chevron-right'

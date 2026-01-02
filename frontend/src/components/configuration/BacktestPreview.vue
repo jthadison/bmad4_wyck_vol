@@ -116,6 +116,7 @@ import { computed, onMounted, onUnmounted } from 'vue'
 import { useBacktestStore } from '@/stores/backtestStore'
 import { useWebSocket } from '@/composables/useWebSocket'
 import type { BacktestPreviewRequest } from '@/types/backtest'
+import type { WebSocketMessage } from '@/types/websocket'
 import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
 import DataTable from 'primevue/datatable'
@@ -123,11 +124,10 @@ import Column from 'primevue/column'
 import Message from 'primevue/message'
 import { useToast } from 'primevue/usetoast'
 import EquityCurveChart from '@/components/charts/EquityCurveChart.vue'
-import Big from 'big.js'
 
 // Props
 interface Props {
-  proposedConfig: Record<string, any>
+  proposedConfig: Record<string, unknown>
   days?: number
   symbol?: string | null
   timeframe?: string
@@ -142,7 +142,7 @@ const props = withDefaults(defineProps<Props>(), {
 // Store and composables
 const backtestStore = useBacktestStore()
 const toast = useToast()
-const { connect, disconnect, onMessage } = useWebSocket()
+const { connect, disconnect, subscribe, unsubscribe } = useWebSocket()
 
 // Computed
 const isRunning = computed(() => backtestStore.isRunning)
@@ -318,32 +318,42 @@ function handleRetry() {
   handleBacktestClick()
 }
 
+// Message handlers
+const handleBacktestProgress = (message: WebSocketMessage) => {
+  backtestStore.handleProgressUpdate(message)
+}
+
+const handleBacktestCompleted = (message: WebSocketMessage) => {
+  backtestStore.handleCompletion(message)
+
+  toast.add({
+    severity: 'success',
+    summary: 'Backtest Complete',
+    detail:
+      (message as { comparison?: { recommendation_text?: string } }).comparison
+        ?.recommendation_text || 'Backtest completed successfully',
+    life: 5000,
+  })
+}
+
 // WebSocket Integration (Task 7)
 onMounted(() => {
   // Connect to WebSocket
   connect()
 
   // Subscribe to backtest progress messages
-  onMessage((message) => {
-    if (message.type === 'backtest_progress') {
-      backtestStore.handleProgressUpdate(message)
-    } else if (message.type === 'backtest_completed') {
-      backtestStore.handleCompletion(message)
-
-      toast.add({
-        severity: 'success',
-        summary: 'Backtest Complete',
-        detail: message.comparison.recommendation_text,
-        life: 5000,
-      })
-    }
-  })
+  subscribe('backtest_progress', handleBacktestProgress)
+  subscribe('backtest_completed', handleBacktestCompleted)
 
   // Fallback: Poll status if WebSocket unavailable
   // This would be implemented with setInterval polling the status endpoint
 })
 
 onUnmounted(() => {
+  // Unsubscribe from events
+  unsubscribe('backtest_progress', handleBacktestProgress)
+  unsubscribe('backtest_completed', handleBacktestCompleted)
+
   disconnect()
 })
 </script>

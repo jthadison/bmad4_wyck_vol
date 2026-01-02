@@ -82,21 +82,21 @@ class BacktestRepository:
             look_ahead_bias_check=result.look_ahead_bias_check,
             execution_time_seconds=result.execution_time_seconds,
             created_at=result.created_at,
-            # Story 12.6 extended fields
-            pattern_performance=[
-                p.model_dump(mode="json") for p in (result.pattern_performance or [])
-            ],
-            monthly_returns=[m.model_dump(mode="json") for m in (result.monthly_returns or [])],
-            drawdown_periods=[d.model_dump(mode="json") for d in (result.drawdown_periods or [])],
-            risk_metrics=result.risk_metrics.model_dump(mode="json")
-            if result.risk_metrics
-            else None,
-            campaign_performance=[
-                c.model_dump(mode="json") for c in (result.campaign_performance or [])
-            ],
-            cost_summary=result.cost_summary.model_dump(mode="json")
-            if result.cost_summary
-            else None,
+            # Story 12.6 extended fields - commented out until schema migration is complete
+            # pattern_performance=[
+            #     p.model_dump(mode="json") for p in (result.pattern_performance or [])
+            # ],
+            # monthly_returns=[m.model_dump(mode="json") for m in (result.monthly_returns or [])],
+            # drawdown_periods=[d.model_dump(mode="json") for d in (result.drawdown_periods or [])],
+            # risk_metrics=result.risk_metrics.model_dump(mode="json")
+            # if result.risk_metrics
+            # else None,
+            # campaign_performance=[
+            #     c.model_dump(mode="json") for c in (result.campaign_performance or [])
+            # ],
+            # cost_summary=result.cost_summary.model_dump(mode="json")
+            # if result.cost_summary
+            # else None,
         )
 
         # Add to session and commit
@@ -218,18 +218,18 @@ class BacktestRepository:
         Returns:
             BacktestResult Pydantic model
         """
-        from src.models.analytics import PatternPerformanceMetrics
-        from src.models.backtest import (
-            BacktestConfig,
-            BacktestMetrics,
-            CampaignPerformance,
-            DrawdownPeriod,
-            MonthlyReturn,
-            RiskMetrics,
-        )
-        from src.models.cost_summary import CostSummary
+        # Story 12.6 imports commented out until those models are implemented
+        # from src.models.analytics import PatternPerformanceMetrics
+        # from src.models.backtest import (
+        #     CampaignPerformance,
+        #     DrawdownPeriod,
+        #     MonthlyReturn,
+        #     RiskMetrics,
+        # )
+        # from src.models.cost_summary import CostSummary
+        from src.models.backtest import BacktestConfig, BacktestMetrics
 
-        # Deserialize equity curve
+        # Deserialize equity_curve
         equity_curve = [EquityCurvePoint(**point) for point in db_result.equity_curve]
 
         # Deserialize trades
@@ -241,29 +241,29 @@ class BacktestRepository:
         # Deserialize metrics
         metrics = BacktestMetrics(**db_result.metrics)
 
-        # Story 12.6: Deserialize extended fields
-        pattern_performance = (
-            [PatternPerformanceMetrics(**p) for p in db_result.pattern_performance]
-            if db_result.pattern_performance
-            else None
-        )
-        monthly_returns = (
-            [MonthlyReturn(**m) for m in db_result.monthly_returns]
-            if db_result.monthly_returns
-            else None
-        )
-        drawdown_periods = (
-            [DrawdownPeriod(**d) for d in db_result.drawdown_periods]
-            if db_result.drawdown_periods
-            else None
-        )
-        risk_metrics = RiskMetrics(**db_result.risk_metrics) if db_result.risk_metrics else None
-        campaign_performance = (
-            [CampaignPerformance(**c) for c in db_result.campaign_performance]
-            if db_result.campaign_performance
-            else None
-        )
-        cost_summary = CostSummary(**db_result.cost_summary) if db_result.cost_summary else None
+        # Story 12.6: Deserialize extended fields - commented out until schema migration
+        # pattern_performance = (
+        #     [PatternPerformanceMetrics(**p) for p in db_result.pattern_performance]
+        #     if db_result.pattern_performance
+        #     else None
+        # )
+        # monthly_returns = (
+        #     [MonthlyReturn(**m) for m in db_result.monthly_returns]
+        #     if db_result.monthly_returns
+        #     else None
+        # )
+        # drawdown_periods = (
+        #     [DrawdownPeriod(**d) for d in db_result.drawdown_periods]
+        #     if db_result.drawdown_periods
+        #     else None
+        # )
+        # risk_metrics = RiskMetrics(**db_result.risk_metrics) if db_result.risk_metrics else None
+        # campaign_performance = (
+        #     [CampaignPerformance(**c) for c in db_result.campaign_performance]
+        #     if db_result.campaign_performance
+        #     else None
+        # )
+        # cost_summary = CostSummary(**db_result.cost_summary) if db_result.cost_summary else None
 
         return BacktestResult(
             backtest_run_id=db_result.backtest_run_id,
@@ -278,11 +278,11 @@ class BacktestRepository:
             look_ahead_bias_check=db_result.look_ahead_bias_check,
             execution_time_seconds=float(db_result.execution_time_seconds),
             created_at=db_result.created_at,
-            # Story 12.6 extended fields
-            pattern_performance=pattern_performance,
-            monthly_returns=monthly_returns,
-            drawdown_periods=drawdown_periods,
-            risk_metrics=risk_metrics,
-            campaign_performance=campaign_performance,
-            cost_summary=cost_summary,
+            # Story 12.6 extended fields - set to empty lists/None until schema migration
+            pattern_performance=[],
+            monthly_returns=[],
+            drawdown_periods=[],
+            risk_metrics=None,
+            campaign_performance=[],
+            cost_summary=None,
         )

@@ -9,7 +9,7 @@ Calculates comprehensive performance metrics from backtest results including:
 Author: Story 12.1 Task 7
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -1043,10 +1043,27 @@ def calculate_equity_curve(
     Returns:
         List of EquityCurvePoint representing equity over time
     """
+    from datetime import datetime
+
+    # If no trades, return a single point at current time with initial capital
+    if not trades:
+        return [
+            EquityCurvePoint(
+                timestamp=datetime.now(UTC),
+                equity_value=initial_capital,
+                portfolio_value=initial_capital,
+                cash=initial_capital,
+                positions_value=Decimal("0"),
+            )
+        ]
+
     equity_curve = [
         EquityCurvePoint(
-            timestamp=trades[0]["entry_timestamp"] if trades else None,
+            timestamp=trades[0]["entry_timestamp"],
             equity_value=initial_capital,
+            portfolio_value=initial_capital,
+            cash=initial_capital,
+            positions_value=Decimal("0"),
         )
     ]
 
@@ -1057,7 +1074,13 @@ def calculate_equity_curve(
         running_equity += profit
 
         equity_curve.append(
-            EquityCurvePoint(timestamp=trade["exit_timestamp"], equity_value=running_equity)
+            EquityCurvePoint(
+                timestamp=trade["exit_timestamp"],
+                equity_value=running_equity,
+                portfolio_value=running_equity,
+                cash=running_equity,  # Simplified: assume all cash after trade exit
+                positions_value=Decimal("0"),
+            )
         )
 
     return equity_curve
