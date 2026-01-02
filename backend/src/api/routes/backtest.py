@@ -42,7 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.websocket import manager
 from src.backtesting.backtest_engine import BacktestEngine
 from src.backtesting.engine import BacktestEngine as PreviewEngine
-from src.database import get_db
+from src.database import async_session_maker, get_db
 from src.models.backtest import (
     BacktestCompletedMessage,
     BacktestConfig,
@@ -119,13 +119,8 @@ async def start_backtest_preview(
     # Estimate duration (roughly 1 second per day of data for 90 days = ~90-120s)
     estimated_duration = int(request.days * 1.5)  # 1.5 seconds per day estimate
 
-    # Queue background task
-    background_tasks.add_task(
-        run_backtest_preview_task,
-        run_id,
-        request,
-        session,  # Pass session if needed
-    )
+    # Queue background task - FastAPI BackgroundTasks supports async functions
+    background_tasks.add_task(run_backtest_preview_task, run_id, request)
 
     logger.info(
         "Backtest preview queued",
@@ -176,16 +171,13 @@ async def get_backtest_status(run_id: UUID) -> dict:
     return {"status": run["status"], "progress": run["progress"], "error": run.get("error")}
 
 
-async def run_backtest_preview_task(
-    run_id: UUID, request: BacktestPreviewRequest, session: AsyncSession
-) -> None:
+async def run_backtest_preview_task(run_id: UUID, request: BacktestPreviewRequest) -> None:
     """
     Background task to execute backtest preview.
 
     Args:
         run_id: Backtest run identifier
         request: Backtest request parameters
-        session: Database session for data access
     """
     try:
         # Update status to running
@@ -198,8 +190,9 @@ async def run_backtest_preview_task(
         total_bars = len(historical_bars)
         backtest_runs[run_id]["progress"]["total_bars"] = total_bars
 
-        # Get current configuration (simplified for MVP)
-        current_config = await get_current_configuration(session)
+        # Get current configuration (simplified for MVP) - create session manually
+        async with async_session_maker() as session:
+            current_config = await get_current_configuration(session)
 
         # Create progress callback for WebSocket updates
         sequence_number = 0
