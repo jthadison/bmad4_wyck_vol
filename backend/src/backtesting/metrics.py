@@ -704,14 +704,6 @@ class MetricsCalculator:
         max_position_size = max_position_size_raw.quantize(Decimal("0.0001"))
         avg_position_size = avg_position_size_raw.quantize(Decimal("0.0001"))
 
-        # Calculate position size statistics
-        max_position_size = max(position_sizes) if position_sizes else Decimal("0")
-        avg_position_size = (
-            sum(position_sizes, Decimal("0")) / Decimal(len(position_sizes))
-            if position_sizes
-            else Decimal("0")
-        )
-
         # Estimate portfolio heat (assume 2% risk per position as default)
         # In real implementation, this would come from position sizing
         assumed_risk_per_position = Decimal("2")  # 2% per position
@@ -725,7 +717,9 @@ class MetricsCalculator:
         exposure_pct = (Decimal(str(days_with_positions)) / Decimal(str(total_days))) * Decimal(
             "100"
         )
-        exposure_pct = min(exposure_pct, Decimal("100"))  # Cap at 100%
+        exposure_pct = min(exposure_pct, Decimal("100")).quantize(
+            Decimal("0.0001")
+        )  # Cap at 100% and round
 
         return RiskMetrics(
             max_concurrent_positions=max_concurrent,
@@ -770,85 +764,6 @@ class MetricsCalculator:
         # Use factory to get appropriate detector based on timeframe
         detector = create_timeframe_optimized_detector(timeframe)
         campaigns = detector.detect_campaigns(trades)
-
-        return campaigns
-
-        # OLD IMPLEMENTATION BELOW - Replaced with proper WyckoffCampaignDetector
-        # Filter trades with Wyckoff patterns
-        pattern_trades = [t for t in trades if t.pattern_type is not None]
-        if not pattern_trades:
-            return []
-
-        # Sort by entry timestamp for sequential processing
-        sorted_trades = sorted(pattern_trades, key=lambda t: t.entry_timestamp)
-
-        # Map pattern types to Wyckoff phases
-        pattern_to_phase_map = {
-            # Accumulation patterns (Phase A, B, C)
-            "SPRING": "ACCUMULATION",
-            "SC": "ACCUMULATION",  # Selling Climax
-            "AR": "ACCUMULATION",  # Automatic Rally
-            "TEST": "ACCUMULATION",
-            "SECONDARY_TEST": "ACCUMULATION",
-            # Markup patterns (Phase D, E)
-            "SOS": "MARKUP",  # Sign of Strength
-            "LPS": "MARKUP",  # Last Point of Support
-            "SIGN_OF_STRENGTH": "MARKUP",
-            "BACKUP": "MARKUP",
-            # Distribution patterns
-            "UTAD": "DISTRIBUTION",  # Upthrust After Distribution
-            "LPSY": "DISTRIBUTION",  # Last Point of Supply
-            "DISTRIBUTION": "DISTRIBUTION",
-            "BC": "DISTRIBUTION",  # Buying Climax
-            # Markdown patterns
-            "SOW": "MARKDOWN",  # Sign of Weakness
-            "MARKDOWN": "MARKDOWN",
-        }
-
-        # Group trades into campaigns by symbol and temporal proximity
-        campaigns: list[CampaignPerformance] = []
-        campaign_window_days = 30  # Trades within 30 days are part of same campaign
-
-        current_campaign_trades: list[BacktestTrade] = []
-        current_symbol: str | None = None
-        last_trade_date: datetime | None = None
-
-        for trade in sorted_trades:
-            # Check if this trade starts a new campaign
-            start_new_campaign = False
-
-            if current_symbol is None:
-                # First trade ever
-                start_new_campaign = True
-            elif trade.symbol != current_symbol:
-                # Different symbol
-                start_new_campaign = True
-            elif (
-                last_trade_date
-                and (trade.entry_timestamp - last_trade_date).days > campaign_window_days
-            ):
-                # Time gap too large
-                start_new_campaign = True
-
-            if start_new_campaign and current_campaign_trades:
-                # Finalize previous campaign
-                campaign = self._create_campaign_from_trades(
-                    current_campaign_trades, pattern_to_phase_map
-                )
-                campaigns.append(campaign)
-                current_campaign_trades = []
-
-            # Add trade to current campaign
-            current_campaign_trades.append(trade)
-            current_symbol = trade.symbol
-            last_trade_date = trade.entry_timestamp
-
-        # Finalize last campaign
-        if current_campaign_trades:
-            campaign = self._create_campaign_from_trades(
-                current_campaign_trades, pattern_to_phase_map
-            )
-            campaigns.append(campaign)
 
         return campaigns
 

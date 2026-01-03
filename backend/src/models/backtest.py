@@ -263,6 +263,7 @@ class BacktestConfig(BaseModel):
     """
 
     symbol: str = Field(description="Trading symbol")
+    timeframe: str = Field(default="1d", description="Data timeframe")
     start_date: date = Field(description="Backtest start date")
     end_date: date = Field(description="Backtest end date")
     initial_capital: Decimal = Field(
