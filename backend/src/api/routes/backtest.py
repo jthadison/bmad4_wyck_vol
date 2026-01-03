@@ -36,23 +36,25 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.websocket import manager
 from src.backtesting.backtest_engine import BacktestEngine
 from src.backtesting.engine import BacktestEngine as PreviewEngine
-from src.database import get_db
+from src.database import async_session_maker, get_db
 from src.models.backtest import (
     BacktestCompletedMessage,
     BacktestConfig,
     BacktestPreviewRequest,
     BacktestPreviewResponse,
     BacktestProgressUpdate,
+    BacktestResult,
     RegressionTestConfig,
     WalkForwardConfig,
 )
 from src.models.ohlcv import OHLCVBar
+from src.repositories.backtest_repository import BacktestRepository
 
 router = APIRouter(prefix="/api/v1/backtest", tags=["backtest"])
 logger = logging.getLogger(__name__)
@@ -66,7 +68,6 @@ backtest_runs: dict[UUID, dict] = {}
 )
 async def start_backtest_preview(
     request: BacktestPreviewRequest,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
 ) -> BacktestPreviewResponse:
     """
@@ -77,7 +78,6 @@ async def start_backtest_preview(
 
     Args:
         request: Backtest preview request with proposed config and parameters
-        background_tasks: FastAPI background tasks for async execution
         session: Database session
 
     Returns:
@@ -95,6 +95,8 @@ async def start_backtest_preview(
             "estimated_duration_seconds": 120
         }
     """
+    print(f"[ROUTE DEBUG] start_backtest_preview called, request={request}", flush=True)
+
     # Check for concurrent backtest limit (MVP: max 5 concurrent)
     running_backtests = sum(
         1 for run in backtest_runs.values() if run["status"] in ["queued", "running"]
@@ -119,13 +121,22 @@ async def start_backtest_preview(
     # Estimate duration (roughly 1 second per day of data for 90 days = ~90-120s)
     estimated_duration = int(request.days * 1.5)  # 1.5 seconds per day estimate
 
-    # Queue background task
-    background_tasks.add_task(
-        run_backtest_preview_task,
-        run_id,
-        request,
-        session,  # Pass session if needed
-    )
+    # Queue background task - Use asyncio.create_task for better Windows compatibility
+    print(f"[QUEUE DEBUG] About to queue task for {run_id}", flush=True)
+    import asyncio
+
+    async def _run_task_with_error_handling():
+        try:
+            await run_backtest_preview_task(run_id, request)
+        except Exception as e:
+            print(f"[ERROR] Background task failed with exception: {e}", flush=True)
+            import traceback
+
+            traceback.print_exc()
+            raise
+
+    asyncio.create_task(_run_task_with_error_handling())
+    print("[QUEUE DEBUG] Task queued successfully", flush=True)
 
     logger.info(
         "Backtest preview queued",
@@ -176,30 +187,39 @@ async def get_backtest_status(run_id: UUID) -> dict:
     return {"status": run["status"], "progress": run["progress"], "error": run.get("error")}
 
 
-async def run_backtest_preview_task(
-    run_id: UUID, request: BacktestPreviewRequest, session: AsyncSession
-) -> None:
+async def run_backtest_preview_task(run_id: UUID, request: BacktestPreviewRequest) -> None:
     """
     Background task to execute backtest preview.
 
     Args:
         run_id: Backtest run identifier
         request: Backtest request parameters
-        session: Database session for data access
     """
+    print(f"[TASK DEBUG] Background task started for {run_id}", flush=True)
     try:
         # Update status to running
+        print(f"[TASK DEBUG] About to update status for {run_id}", flush=True)
         backtest_runs[run_id]["status"] = "running"
+        print("[TASK DEBUG] Status updated to running", flush=True)
 
         logger.info("Starting backtest preview execution", extra={"backtest_run_id": str(run_id)})
+        print("[TASK DEBUG] Logger info called", flush=True)
 
-        # Fetch historical data (MVP: Generate sample data)
-        historical_bars = await fetch_historical_data(request.days, request.symbol)
+        # Fetch historical data from Polygon.io (or fallback to synthetic)
+        print("[TASK DEBUG] About to fetch historical data", flush=True)
+        historical_bars = await fetch_historical_data(
+            request.days, request.symbol, request.timeframe
+        )
+        print(f"[TASK DEBUG] Fetched {len(historical_bars)} bars", flush=True)
         total_bars = len(historical_bars)
         backtest_runs[run_id]["progress"]["total_bars"] = total_bars
 
-        # Get current configuration (simplified for MVP)
-        current_config = await get_current_configuration(session)
+        # Get current configuration (simplified for MVP) - create session manually
+        print("[TASK DEBUG] About to get current configuration", flush=True)
+        async with async_session_maker() as session:
+            print("[TASK DEBUG] Session created, calling get_current_configuration", flush=True)
+            current_config = await get_current_configuration(session)
+            print(f"[TASK DEBUG] Got current config: {current_config}", flush=True)
 
         # Create progress callback for WebSocket updates
         sequence_number = 0
@@ -228,9 +248,12 @@ async def run_backtest_preview_task(
             await manager.broadcast(progress_msg.model_dump(mode="json"))
 
         # Initialize and run backtest engine (Story 11.2 preview engine)
+        print("[TASK DEBUG] Creating PreviewEngine", flush=True)
         engine = PreviewEngine(progress_callback=progress_callback)
+        print("[TASK DEBUG] PreviewEngine created", flush=True)
 
         try:
+            print("[TASK DEBUG] About to call engine.run_preview()", flush=True)
             comparison = await engine.run_preview(
                 backtest_run_id=run_id,
                 current_config=current_config,
@@ -238,21 +261,82 @@ async def run_backtest_preview_task(
                 historical_bars=historical_bars,
                 timeout_seconds=300,  # 5 minutes
             )
+            print("[TASK DEBUG] engine.run_preview() completed", flush=True)
 
             # Mark as completed
+            print("[TASK DEBUG] Marking backtest as completed", flush=True)
             backtest_runs[run_id]["status"] = "completed"
             backtest_runs[run_id]["comparison"] = comparison
+            print("[TASK DEBUG] Backtest marked as completed", flush=True)
+
+            # Save backtest result to database for persistence
+            try:
+                print("[TASK DEBUG] Saving backtest result to database", flush=True)
+
+                # Calculate start and end dates from historical bars
+                start_date = (
+                    datetime.fromisoformat(str(historical_bars[0]["timestamp"])).date()
+                    if historical_bars
+                    else date.today()
+                )
+                end_date = (
+                    datetime.fromisoformat(str(historical_bars[-1]["timestamp"])).date()
+                    if historical_bars
+                    else date.today()
+                )
+
+                # Construct BacktestResult from comparison (using proposed config metrics)
+                backtest_result = BacktestResult(
+                    backtest_run_id=run_id,
+                    symbol=request.symbol or "SYNTHETIC",
+                    timeframe=request.timeframe,
+                    start_date=start_date,
+                    end_date=end_date,
+                    config=BacktestConfig(
+                        symbol=request.symbol or "SYNTHETIC",
+                        start_date=start_date,
+                        end_date=end_date,
+                        # Use defaults for other config fields
+                    ),
+                    equity_curve=comparison.equity_curve_proposed,
+                    trades=[],  # Preview engine doesn't track individual trades
+                    summary=comparison.proposed_metrics,
+                    look_ahead_bias_check=False,
+                    execution_time_seconds=0.0,
+                    created_at=datetime.now(UTC),
+                )
+
+                # Save to database using BacktestRepository
+                async with async_session_maker() as db_session:
+                    repository = BacktestRepository(db_session)
+                    await repository.save_result(backtest_result)
+                    print("[TASK DEBUG] Backtest result saved to database successfully", flush=True)
+                    logger.info(
+                        "Backtest result saved to database",
+                        extra={"backtest_run_id": str(run_id), "symbol": request.symbol},
+                    )
+            except Exception as db_error:
+                # Log database save error but don't fail the backtest
+                logger.error(
+                    "Failed to save backtest result to database",
+                    extra={"backtest_run_id": str(run_id), "error": str(db_error)},
+                    exc_info=True,
+                )
+                print(f"[TASK DEBUG] Database save failed: {db_error}", flush=True)
 
             # Emit completion message via WebSocket
             sequence_number += 1
+            print("[TASK DEBUG] Creating completion message", flush=True)
             completion_msg = BacktestCompletedMessage(
                 sequence_number=sequence_number,
                 backtest_run_id=run_id,
                 comparison=comparison,
                 timestamp=datetime.now(UTC),
             )
+            print("[TASK DEBUG] About to broadcast completion message", flush=True)
 
             await manager.broadcast(completion_msg.model_dump(mode="json"))
+            print("[TASK DEBUG] Broadcast completed", flush=True)
 
             logger.info(
                 "Backtest preview completed successfully",
@@ -285,29 +369,99 @@ async def run_backtest_preview_task(
         )
 
 
-async def fetch_historical_data(days: int, symbol: str | None) -> list[dict]:
+async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = "1d") -> list[dict]:
     """
     Fetch historical OHLCV data for backtest.
 
-    For MVP, this generates sample data. In production, this would:
-    1. Query the database for stored historical bars
-    2. Fetch from Polygon.io API if not available locally
+    Fetches real market data from Polygon.io API. Falls back to synthetic data
+    if symbol is None or if Polygon API fails.
 
     Args:
         days: Number of days of historical data
-        symbol: Optional symbol filter
+        symbol: Stock symbol (e.g., "SPY", "PLTR")
+        timeframe: Bar timeframe (e.g., "1d", "4h", "1h")
 
     Returns:
         List of OHLCV bar dictionaries
     """
-    # Generate sample historical data for MVP
-    # In production, query from database or external API
+    # If no symbol provided, generate synthetic data
+    if not symbol:
+        logger.warning("No symbol provided, generating synthetic data")
+        return _generate_synthetic_data(days)
 
+    try:
+        # Import Polygon adapter
+        from src.market_data.adapters.polygon_adapter import PolygonAdapter
+
+        # Initialize adapter
+        adapter = PolygonAdapter()
+
+        # Calculate date range
+        end_date = datetime.now(UTC).date()
+        start_date = end_date - timedelta(days=days)
+
+        logger.info(
+            "Fetching real market data from Polygon.io",
+            extra={
+                "symbol": symbol,
+                "start_date": str(start_date),
+                "end_date": str(end_date),
+                "timeframe": timeframe,
+            },
+        )
+
+        # Fetch bars from Polygon.io
+        ohlcv_bars = await adapter.fetch_historical_bars(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+        )
+
+        # Convert OHLCVBar objects to dictionaries
+        bars = []
+        for bar in ohlcv_bars:
+            bars.append(
+                {
+                    "timestamp": bar.timestamp,
+                    "open": float(bar.open),
+                    "high": float(bar.high),
+                    "low": float(bar.low),
+                    "close": float(bar.close),
+                    "volume": bar.volume,
+                }
+            )
+
+        logger.info(f"Fetched {len(bars)} bars from Polygon.io for {symbol}")
+        return bars
+
+    except ValueError as e:
+        # Missing API key or configuration error
+        logger.error(f"Polygon.io configuration error: {e}, falling back to synthetic data")
+        return _generate_synthetic_data(days)
+
+    except Exception as e:
+        # Any other error (network, API limit, etc.)
+        logger.error(
+            f"Failed to fetch data from Polygon.io: {e}, falling back to synthetic data",
+            exc_info=True,
+        )
+        return _generate_synthetic_data(days)
+
+
+def _generate_synthetic_data(days: int) -> list[dict]:
+    """
+    Generate synthetic OHLCV data for testing.
+
+    Args:
+        days: Number of days of data to generate
+
+    Returns:
+        List of OHLCV bar dictionaries
+    """
     bars = []
     start_date = datetime.now(UTC) - timedelta(days=days)
 
-    # Generate daily bars (assuming 252 trading days per year)
-    # For 90 days, this gives ~90 bars
     for i in range(days):
         timestamp = start_date + timedelta(days=i)
 
@@ -363,7 +517,6 @@ async def get_current_configuration(session: AsyncSession) -> dict:
 @router.post("/run", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
 async def run_backtest(
     config: BacktestConfig,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -425,11 +578,12 @@ async def run_backtest(
     }
 
     # Queue background task
-    background_tasks.add_task(
-        run_backtest_task,
-        run_id,
-        config,
-        session,
+    asyncio.create_task(
+        run_backtest_task(
+            run_id,
+            config,
+            session,
+        )
     )
 
     logger.info(
@@ -582,7 +736,7 @@ async def get_backtest_html_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate HTML report: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/results/{backtest_run_id}/report/pdf")
@@ -659,7 +813,7 @@ async def get_backtest_pdf_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate PDF report: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/results/{backtest_run_id}/trades/csv")
@@ -743,7 +897,7 @@ async def get_backtest_trades_csv(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate CSV: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/results")
@@ -871,7 +1025,7 @@ async def run_backtest_task(
             extra={
                 "backtest_run_id": str(run_id),
                 "total_trades": len(result.trades),
-                "win_rate": float(result.metrics.win_rate) if result.metrics.win_rate else 0,
+                "win_rate": float(result.summary.win_rate) if result.summary.win_rate else 0,
             },
         )
 
@@ -947,7 +1101,6 @@ walk_forward_runs: dict[UUID, dict] = {}
 )
 async def start_walk_forward_test(
     config: WalkForwardConfig,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -1018,7 +1171,7 @@ async def start_walk_forward_test(
             walk_forward_runs[walk_forward_id]["status"] = "FAILED"
             walk_forward_runs[walk_forward_id]["error"] = str(e)
 
-    background_tasks.add_task(run_walk_forward)
+    asyncio.create_task(run_walk_forward())
 
     # Estimate duration: ~10 seconds per window, assume 10 windows
     estimated_duration = 100
@@ -1154,7 +1307,6 @@ regression_test_runs: dict[UUID, dict] = {}
 @router.post("/regression", status_code=status.HTTP_202_ACCEPTED)
 async def run_regression_test(
     config: RegressionTestConfig,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -1226,11 +1378,12 @@ async def run_regression_test(
     }
 
     # Queue background task
-    background_tasks.add_task(
-        run_regression_test_task,
-        test_id,
-        config,
-        session,
+    asyncio.create_task(
+        run_regression_test_task(
+            test_id,
+            config,
+            session,
+        )
     )
 
     logger.info(

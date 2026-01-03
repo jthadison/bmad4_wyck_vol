@@ -263,6 +263,7 @@ class BacktestConfig(BaseModel):
     """
 
     symbol: str = Field(description="Trading symbol")
+    timeframe: str = Field(default="1d", description="Data timeframe")
     start_date: date = Field(description="Backtest start date")
     end_date: date = Field(description="Backtest end date")
     initial_capital: Decimal = Field(
@@ -513,7 +514,7 @@ class BacktestResult(BaseModel):
         config: Configuration used for this backtest
         equity_curve: Portfolio value over time
         trades: All completed trades
-        metrics: Performance metrics
+        summary: Performance summary metrics
         cost_summary: Transaction cost summary (Story 12.5)
         pattern_performance: Per-pattern performance breakdown (Story 12.6A)
         monthly_returns: Monthly return heatmap data (Story 12.6A)
@@ -535,7 +536,7 @@ class BacktestResult(BaseModel):
         default_factory=list, description="Portfolio value over time"
     )
     trades: list[BacktestTrade] = Field(default_factory=list, description="Completed trades")
-    metrics: BacktestMetrics = Field(description="Performance metrics")
+    summary: BacktestMetrics = Field(description="Performance summary metrics")
     # Story 12.5: Transaction cost summary
     cost_summary: Optional[BacktestCostSummary] = Field(
         default=None, description="Transaction cost summary (Story 12.5)"

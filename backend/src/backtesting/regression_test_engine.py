@@ -105,8 +105,8 @@ class RegressionTestEngine:
                     "symbol_backtest_completed",
                     test_id=str(test_id),
                     symbol=symbol,
-                    win_rate=float(result.metrics.win_rate),
-                    total_trades=result.metrics.total_trades,
+                    win_rate=float(result.summary.win_rate),
+                    total_trades=result.summary.total_trades,
                     execution_time_seconds=result.execution_time_seconds,
                 )
             except Exception as e:
@@ -227,7 +227,7 @@ class RegressionTestEngine:
         gross_losses = Decimal("0")
 
         for result in per_symbol_results.values():
-            metrics = result.metrics
+            metrics = result.summary
             total_trades += metrics.total_trades
             winning_trades += metrics.winning_trades
             losing_trades += metrics.losing_trades
@@ -261,12 +261,12 @@ class RegressionTestEngine:
         # Get max drawdown (worst across all symbols)
         max_drawdown = Decimal("0")
         for result in per_symbol_results.values():
-            if result.metrics.max_drawdown > max_drawdown:
-                max_drawdown = result.metrics.max_drawdown
+            if result.summary.max_drawdown > max_drawdown:
+                max_drawdown = result.summary.max_drawdown
 
         # Calculate portfolio-level Sharpe (simplified - using average)
         sharpe_ratios = [
-            float(result.metrics.sharpe_ratio) for result in per_symbol_results.values()
+            float(result.summary.sharpe_ratio) for result in per_symbol_results.values()
         ]
         sharpe_ratio = Decimal("0")
         if sharpe_ratios:
@@ -305,13 +305,13 @@ class RegressionTestEngine:
 
         # Map of metric names to actual values
         metrics_map = {
-            "win_rate": (baseline.metrics.win_rate, current_metrics.win_rate),
+            "win_rate": (baseline.summary.win_rate, current_metrics.win_rate),
             "avg_r_multiple": (
-                baseline.metrics.average_r_multiple,
+                baseline.summary.average_r_multiple,
                 current_metrics.average_r_multiple,
             ),
-            "profit_factor": (baseline.metrics.profit_factor, current_metrics.profit_factor),
-            "sharpe_ratio": (baseline.metrics.sharpe_ratio, current_metrics.sharpe_ratio),
+            "profit_factor": (baseline.summary.profit_factor, current_metrics.profit_factor),
+            "sharpe_ratio": (baseline.summary.sharpe_ratio, current_metrics.sharpe_ratio),
         }
 
         for metric_name, (baseline_value, current_value) in metrics_map.items():
@@ -389,7 +389,7 @@ class RegressionTestEngine:
 
         # Extract per-symbol metrics
         per_symbol_metrics = {
-            symbol: result.metrics for symbol, result in test_result.per_symbol_results.items()
+            symbol: result.summary for symbol, result in test_result.per_symbol_results.items()
         }
 
         # Mark previous baselines as not current

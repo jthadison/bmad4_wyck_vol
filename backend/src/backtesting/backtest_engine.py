@@ -207,20 +207,21 @@ class BacktestEngine:
             initial_capital=self.config.initial_capital,
         )
         campaign_performance = metrics_calculator.calculate_campaign_performance(
-            trades=self.position_manager.closed_trades
+            trades=self.position_manager.closed_trades,
+            timeframe=self.config.timeframe,
         )
 
         # Build result
         result = BacktestResult(
             backtest_run_id=uuid4(),
             symbol=self.config.symbol,
-            timeframe="1d",
+            timeframe=self.config.timeframe,
             start_date=self.config.start_date,
             end_date=self.config.end_date,
             config=self.config,
             equity_curve=self.equity_curve,
             trades=self.position_manager.closed_trades,
-            metrics=metrics,
+            summary=metrics,
             look_ahead_bias_check=bias_check_passed,
             execution_time_seconds=execution_time,
             created_at=end_time,

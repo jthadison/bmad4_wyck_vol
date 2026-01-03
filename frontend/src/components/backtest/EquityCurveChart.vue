@@ -56,11 +56,17 @@ const props = defineProps<Props>()
 // Calculate total return to determine line color
 const totalReturn = computed(() => {
   if (props.equityCurve.length === 0) return new Big(0)
-  const finalValue = new Big(
-    props.equityCurve[props.equityCurve.length - 1].portfolio_value
-  )
-  const initial = new Big(props.initialCapital)
-  return finalValue.minus(initial)
+  if (!props.initialCapital) return new Big(0)
+  try {
+    const lastPoint = props.equityCurve[props.equityCurve.length - 1]
+    if (!lastPoint?.portfolio_value) return new Big(0)
+    const finalValue = new Big(lastPoint.portfolio_value)
+    const initial = new Big(props.initialCapital)
+    return finalValue.minus(initial)
+  } catch (error) {
+    console.error('Error calculating total return:', error)
+    return new Big(0)
+  }
 })
 
 const isProfitable = computed(() => totalReturn.value.gte(0))
@@ -111,17 +117,22 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
         label: (context) => {
           const value = context.parsed.y
           if (value === null || value === undefined) return ''
-          const initial = new Big(props.initialCapital)
-          const pnl = new Big(value).minus(initial)
-          const pnlSign = pnl.gte(0) ? '+' : '-'
-          const pnlAbs = pnl.abs().toFixed(2)
-          return [
-            `Value: $${value.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}`,
-            `P&L: ${pnlSign}$${pnlAbs}`,
-          ]
+          if (!props.initialCapital) return `Value: $${value}`
+          try {
+            const initial = new Big(props.initialCapital)
+            const pnl = new Big(value).minus(initial)
+            const pnlSign = pnl.gte(0) ? '+' : '-'
+            const pnlAbs = pnl.abs().toFixed(2)
+            return [
+              `Value: $${value.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}`,
+              `P&L: ${pnlSign}$${pnlAbs}`,
+            ]
+          } catch (error) {
+            return `Value: $${value}`
+          }
         },
       },
     },

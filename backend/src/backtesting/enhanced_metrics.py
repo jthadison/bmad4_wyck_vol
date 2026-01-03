@@ -401,32 +401,41 @@ class EnhancedMetricsCalculator:
     def calculate_campaign_performance(
         self,
         trades: list[BacktestTrade],
+        timeframe: str = "1d",
     ) -> list[CampaignPerformance]:
         """Calculate Wyckoff campaign lifecycle performance (CRITICAL).
 
-        Uses WyckoffCampaignDetector to identify campaigns, validate pattern sequences,
-        track phase progression, and calculate campaign-level metrics.
+        Uses WyckoffCampaignDetector (or IntradayCampaignDetector for ≤1h timeframes)
+        to identify campaigns, validate pattern sequences, track phase progression,
+        and calculate campaign-level metrics.
 
         This method provides the critical business insight that individual pattern
         statistics cannot: complete campaign lifecycle analysis from PS→JUMP
         (Accumulation) or PSY→DECLINE (Distribution).
 
+        For intraday timeframes (≤1h), automatically uses IntradayCampaignDetector
+        with session-aware grouping and compressed campaign windows.
+
         Args:
             trades: Completed trades with pattern metadata
+            timeframe: Chart timeframe (e.g., "1d", "1h", "15m") for detector selection
 
         Returns:
             List of CampaignPerformance objects
 
         Example:
             calculator = EnhancedMetricsCalculator()
-            campaigns = calculator.calculate_campaign_performance(trades)
+            # For daily charts
+            campaigns = calculator.calculate_campaign_performance(trades, "1d")
+            # For intraday charts
+            campaigns = calculator.calculate_campaign_performance(trades, "1h")
             for campaign in campaigns:
                 print(f"{campaign.symbol}: {campaign.status} - {campaign.total_pnl}")
         """
-        from src.backtesting.campaign_detector import WyckoffCampaignDetector
+        from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
 
-        # Use campaign detector to identify and track campaigns
-        detector = WyckoffCampaignDetector()
+        # Use factory to get appropriate detector based on timeframe
+        detector = create_timeframe_optimized_detector(timeframe)
         campaigns = detector.detect_campaigns(trades)
 
         return campaigns

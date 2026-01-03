@@ -1,5 +1,16 @@
 """FastAPI application entry point for BMAD Wyckoff system."""
 
+# Fix for Windows: psycopg3 requires SelectorEventLoop on Windows
+# This must be set before any asyncio code runs
+import sys
+
+if sys.platform == "win32":
+    import asyncio
+
+    # Set the event loop policy to use SelectorEventLoop instead of ProactorEventLoop
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    print("[WINDOWS FIX] Set event loop policy to WindowsSelectorEventLoopPolicy", flush=True)
+    print(f"[WINDOWS FIX] Current policy: {asyncio.get_event_loop_policy()}", flush=True)
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware

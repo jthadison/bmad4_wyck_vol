@@ -126,9 +126,11 @@ class PolygonAdapter(MarketDataProvider):
             # Parse JSON response
             data = response.json()
 
-            # Check response status
-            if data.get("status") != "OK":
+            # Check response status (accept both "OK" and "DELAYED" as valid)
+            status = data.get("status")
+            if status not in ("OK", "DELAYED"):
                 error_msg = data.get("error", "Unknown error")
+                log.error("polygon_api_error", status=status, error=error_msg, full_response=data)
                 raise ValueError(f"Polygon.io API error: {error_msg}")
 
             # Extract results
@@ -236,6 +238,7 @@ class PolygonAdapter(MarketDataProvider):
             "5m": (5, "minute"),
             "15m": (15, "minute"),
             "1h": (1, "hour"),
+            "4h": (4, "hour"),
             "1d": (1, "day"),
         }
 

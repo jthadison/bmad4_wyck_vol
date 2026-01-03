@@ -9,7 +9,7 @@ Calculates comprehensive performance metrics from backtest results including:
 Author: Story 12.1 Task 7
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -704,14 +704,6 @@ class MetricsCalculator:
         max_position_size = max_position_size_raw.quantize(Decimal("0.0001"))
         avg_position_size = avg_position_size_raw.quantize(Decimal("0.0001"))
 
-        # Calculate position size statistics
-        max_position_size = max(position_sizes) if position_sizes else Decimal("0")
-        avg_position_size = (
-            sum(position_sizes, Decimal("0")) / Decimal(len(position_sizes))
-            if position_sizes
-            else Decimal("0")
-        )
-
         # Estimate portfolio heat (assume 2% risk per position as default)
         # In real implementation, this would come from position sizing
         assumed_risk_per_position = Decimal("2")  # 2% per position
@@ -725,7 +717,9 @@ class MetricsCalculator:
         exposure_pct = (Decimal(str(days_with_positions)) / Decimal(str(total_days))) * Decimal(
             "100"
         )
-        exposure_pct = min(exposure_pct, Decimal("100"))  # Cap at 100%
+        exposure_pct = min(exposure_pct, Decimal("100")).quantize(
+            Decimal("0.0001")
+        )  # Cap at 100% and round
 
         return RiskMetrics(
             max_concurrent_positions=max_concurrent,
@@ -741,105 +735,35 @@ class MetricsCalculator:
         )
 
     def calculate_campaign_performance(
-        self, trades: list[BacktestTrade]
+        self, trades: list[BacktestTrade], timeframe: str = "1d"
     ) -> list[CampaignPerformance]:
         """Calculate Wyckoff campaign lifecycle tracking (Story 12.6A AC5 - CRITICAL).
 
         Tracks Wyckoff campaign lifecycles and aggregates trades within campaigns.
 
-        NOTE: This is a placeholder implementation. Full campaign detection requires
-        integration with the Wyckoff phase detection system (Story 9.x), which
-        identifies accumulation, markup, distribution, and markdown phases.
+        Uses WyckoffCampaignDetector (or IntradayCampaignDetector for ≤1h timeframes)
+        to identify campaigns, validate pattern sequences, and track phase progression.
 
         Args:
             trades: List of completed trades
+            timeframe: Chart timeframe (e.g., "1d", "1h", "15m") for detector selection
 
         Returns:
-            List of CampaignPerformance objects (empty until campaign detection is implemented)
+            List of CampaignPerformance objects
 
         Example (Future Implementation):
             Campaign 1: ACCUMULATION -> MARKUP (3 trades, +15% return, COMPLETED)
             Campaign 2: DISTRIBUTION -> MARKDOWN (2 trades, -5% return, FAILED)
         """
 
+        from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
+
         if not trades:
             return []
 
-        # Filter trades with Wyckoff patterns
-        pattern_trades = [t for t in trades if t.pattern_type is not None]
-        if not pattern_trades:
-            return []
-
-        # Sort by entry timestamp for sequential processing
-        sorted_trades = sorted(pattern_trades, key=lambda t: t.entry_timestamp)
-
-        # Map pattern types to Wyckoff phases
-        pattern_to_phase_map = {
-            # Accumulation patterns (Phase A, B, C)
-            "SPRING": "ACCUMULATION",
-            "SC": "ACCUMULATION",  # Selling Climax
-            "AR": "ACCUMULATION",  # Automatic Rally
-            "TEST": "ACCUMULATION",
-            "SECONDARY_TEST": "ACCUMULATION",
-            # Markup patterns (Phase D, E)
-            "SOS": "MARKUP",  # Sign of Strength
-            "LPS": "MARKUP",  # Last Point of Support
-            "SIGN_OF_STRENGTH": "MARKUP",
-            "BACKUP": "MARKUP",
-            # Distribution patterns
-            "UTAD": "DISTRIBUTION",  # Upthrust After Distribution
-            "LPSY": "DISTRIBUTION",  # Last Point of Supply
-            "DISTRIBUTION": "DISTRIBUTION",
-            "BC": "DISTRIBUTION",  # Buying Climax
-            # Markdown patterns
-            "SOW": "MARKDOWN",  # Sign of Weakness
-            "MARKDOWN": "MARKDOWN",
-        }
-
-        # Group trades into campaigns by symbol and temporal proximity
-        campaigns: list[CampaignPerformance] = []
-        campaign_window_days = 30  # Trades within 30 days are part of same campaign
-
-        current_campaign_trades: list[BacktestTrade] = []
-        current_symbol: str | None = None
-        last_trade_date: datetime | None = None
-
-        for trade in sorted_trades:
-            # Check if this trade starts a new campaign
-            start_new_campaign = False
-
-            if current_symbol is None:
-                # First trade ever
-                start_new_campaign = True
-            elif trade.symbol != current_symbol:
-                # Different symbol
-                start_new_campaign = True
-            elif (
-                last_trade_date
-                and (trade.entry_timestamp - last_trade_date).days > campaign_window_days
-            ):
-                # Time gap too large
-                start_new_campaign = True
-
-            if start_new_campaign and current_campaign_trades:
-                # Finalize previous campaign
-                campaign = self._create_campaign_from_trades(
-                    current_campaign_trades, pattern_to_phase_map
-                )
-                campaigns.append(campaign)
-                current_campaign_trades = []
-
-            # Add trade to current campaign
-            current_campaign_trades.append(trade)
-            current_symbol = trade.symbol
-            last_trade_date = trade.entry_timestamp
-
-        # Finalize last campaign
-        if current_campaign_trades:
-            campaign = self._create_campaign_from_trades(
-                current_campaign_trades, pattern_to_phase_map
-            )
-            campaigns.append(campaign)
+        # Use factory to get appropriate detector based on timeframe
+        detector = create_timeframe_optimized_detector(timeframe)
+        campaigns = detector.detect_campaigns(trades)
 
         return campaigns
 
@@ -1043,10 +967,27 @@ def calculate_equity_curve(
     Returns:
         List of EquityCurvePoint representing equity over time
     """
+    from datetime import datetime
+
+    # If no trades, return a single point at current time with initial capital
+    if not trades:
+        return [
+            EquityCurvePoint(
+                timestamp=datetime.now(UTC),
+                equity_value=initial_capital,
+                portfolio_value=initial_capital,
+                cash=initial_capital,
+                positions_value=Decimal("0"),
+            )
+        ]
+
     equity_curve = [
         EquityCurvePoint(
-            timestamp=trades[0]["entry_timestamp"] if trades else None,
+            timestamp=trades[0]["entry_timestamp"],
             equity_value=initial_capital,
+            portfolio_value=initial_capital,
+            cash=initial_capital,
+            positions_value=Decimal("0"),
         )
     ]
 
@@ -1057,7 +998,13 @@ def calculate_equity_curve(
         running_equity += profit
 
         equity_curve.append(
-            EquityCurvePoint(timestamp=trade["exit_timestamp"], equity_value=running_equity)
+            EquityCurvePoint(
+                timestamp=trade["exit_timestamp"],
+                equity_value=running_equity,
+                portfolio_value=running_equity,
+                cash=running_equity,  # Simplified: assume all cash after trade exit
+                positions_value=Decimal("0"),
+            )
         )
 
     return equity_curve

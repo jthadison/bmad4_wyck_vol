@@ -143,8 +143,8 @@ class WalkForwardEngine:
 
                 # Calculate performance ratio and degradation
                 performance_ratio = self._calculate_performance_ratio(
-                    train_result.metrics,
-                    validate_result.metrics,
+                    train_result.summary,
+                    validate_result.summary,
                     config.primary_metric,
                 )
 
@@ -159,8 +159,8 @@ class WalkForwardEngine:
                     train_end_date=train_end,
                     validate_start_date=validate_start,
                     validate_end_date=validate_end,
-                    train_metrics=train_result.metrics,
-                    validate_metrics=validate_result.metrics,
+                    train_metrics=train_result.summary,
+                    validate_metrics=validate_result.summary,
                     train_backtest_id=train_result.backtest_run_id,
                     validate_backtest_id=validate_result.backtest_run_id,
                     performance_ratio=performance_ratio,
@@ -177,8 +177,8 @@ class WalkForwardEngine:
                     walk_forward_id=str(walk_forward_id),
                     window_number=window_num,
                     symbol=symbols[0],
-                    train_win_rate=float(train_result.metrics.win_rate),
-                    validate_win_rate=float(validate_result.metrics.win_rate),
+                    train_win_rate=float(train_result.summary.win_rate),
+                    validate_win_rate=float(validate_result.summary.win_rate),
                     performance_ratio=float(performance_ratio),
                     degradation_detected=degradation_detected,
                     execution_time_seconds=window_execution_time,
@@ -367,7 +367,7 @@ class WalkForwardEngine:
             start_date=start_date,
             end_date=end_date,
             config=base_config,
-            metrics=mock_metrics,
+            summary=mock_metrics,
             created_at=datetime.utcnow(),
         )
 
