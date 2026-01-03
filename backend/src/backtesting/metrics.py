@@ -741,30 +741,39 @@ class MetricsCalculator:
         )
 
     def calculate_campaign_performance(
-        self, trades: list[BacktestTrade]
+        self, trades: list[BacktestTrade], timeframe: str = "1d"
     ) -> list[CampaignPerformance]:
         """Calculate Wyckoff campaign lifecycle tracking (Story 12.6A AC5 - CRITICAL).
 
         Tracks Wyckoff campaign lifecycles and aggregates trades within campaigns.
 
-        NOTE: This is a placeholder implementation. Full campaign detection requires
-        integration with the Wyckoff phase detection system (Story 9.x), which
-        identifies accumulation, markup, distribution, and markdown phases.
+        Uses WyckoffCampaignDetector (or IntradayCampaignDetector for ≤1h timeframes)
+        to identify campaigns, validate pattern sequences, and track phase progression.
 
         Args:
             trades: List of completed trades
+            timeframe: Chart timeframe (e.g., "1d", "1h", "15m") for detector selection
 
         Returns:
-            List of CampaignPerformance objects (empty until campaign detection is implemented)
+            List of CampaignPerformance objects
 
         Example (Future Implementation):
             Campaign 1: ACCUMULATION -> MARKUP (3 trades, +15% return, COMPLETED)
             Campaign 2: DISTRIBUTION -> MARKDOWN (2 trades, -5% return, FAILED)
         """
 
+        from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
+
         if not trades:
             return []
 
+        # Use factory to get appropriate detector based on timeframe
+        detector = create_timeframe_optimized_detector(timeframe)
+        campaigns = detector.detect_campaigns(trades)
+
+        return campaigns
+
+        # OLD IMPLEMENTATION BELOW - Replaced with proper WyckoffCampaignDetector
         # Filter trades with Wyckoff patterns
         pattern_trades = [t for t in trades if t.pattern_type is not None]
         if not pattern_trades:
