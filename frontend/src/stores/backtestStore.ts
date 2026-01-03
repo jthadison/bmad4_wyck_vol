@@ -55,7 +55,8 @@ export const useBacktestStore = defineStore('backtest', () => {
     config: BacktestPreviewRequest
   ): Promise<void> {
     try {
-      // Reset state
+      // Reset state - MUST reset backtestRunId to null to allow auto-set from first message
+      backtestRunId.value = null
       error.value = null
       comparison.value = null
       progress.value = { bars_analyzed: 0, total_bars: 0, percent_complete: 0 }
@@ -76,9 +77,24 @@ export const useBacktestStore = defineStore('backtest', () => {
 
       const data: BacktestPreviewResponse = await response.json()
 
-      // Update state
+      // CRITICAL: Set the run ID FIRST before updating other state
+      // This prevents a race condition where WebSocket messages arrive
+      // before we've set the backtestRunId, causing them to be ignored
       backtestRunId.value = data.backtest_run_id
-      status.value = data.status
+      console.log(
+        `[BacktestStore] Set backtestRunId to: ${data.backtest_run_id}`
+      )
+
+      // Update state - BUT only if WebSocket hasn't already updated to completed
+      // (Backend is so fast that completion messages can arrive before this API response)
+      if (status.value !== 'completed') {
+        status.value = data.status
+        console.log(`[BacktestStore] Updated status to: ${data.status}`)
+      } else {
+        console.log(
+          `[BacktestStore] Skipping status update - already completed via WebSocket`
+        )
+      }
       estimatedDuration.value = data.estimated_duration_seconds
 
       console.log(`Backtest preview started: ${data.backtest_run_id}`)
@@ -90,8 +106,27 @@ export const useBacktestStore = defineStore('backtest', () => {
   }
 
   function handleProgressUpdate(update: BacktestProgressUpdate): void {
+    console.log('[BacktestStore] handleProgressUpdate called:', update)
+
+    // If backtestRunId is not set yet, this must be the first message for a new backtest
+    // Set it automatically to avoid race condition with API response
+    if (backtestRunId.value === null) {
+      console.log(
+        '[BacktestStore] Auto-setting backtestRunId from first progress message:',
+        update.backtest_run_id
+      )
+      backtestRunId.value = update.backtest_run_id
+      status.value = 'running'
+    }
+
     // Only process if this is the current backtest
     if (backtestRunId.value !== update.backtest_run_id) {
+      console.log(
+        '[BacktestStore] Ignoring progress update for different run:',
+        update.backtest_run_id,
+        'current:',
+        backtestRunId.value
+      )
       return
     }
 
@@ -102,20 +137,52 @@ export const useBacktestStore = defineStore('backtest', () => {
       percent_complete: update.percent_complete,
     }
 
-    console.log(`Backtest progress: ${update.percent_complete}%`)
+    console.log(
+      `[BacktestStore] Backtest progress: ${update.percent_complete}%`
+    )
   }
 
   function handleCompletion(message: BacktestCompletedMessage): void {
+    console.log('[BacktestStore] handleCompletion called:', message)
+
+    // If backtestRunId is not set yet, this must be the completion for a new backtest
+    // Set it automatically to avoid race condition with API response
+    if (backtestRunId.value === null) {
+      console.log(
+        '[BacktestStore] Auto-setting backtestRunId from completion message:',
+        message.backtest_run_id
+      )
+      backtestRunId.value = message.backtest_run_id
+    }
+
     // Only process if this is the current backtest
     if (backtestRunId.value !== message.backtest_run_id) {
+      console.log(
+        '[BacktestStore] Ignoring completion for different run:',
+        message.backtest_run_id,
+        'current:',
+        backtestRunId.value
+      )
       return
     }
 
+    console.log('[BacktestStore] Setting status to completed')
     status.value = 'completed'
     comparison.value = message.comparison
     progress.value.percent_complete = 100
 
-    console.log(`Backtest completed: ${message.comparison.recommendation}`)
+    console.log(
+      `[BacktestStore] Backtest completed: ${message.comparison.recommendation}`
+    )
+    console.log(
+      '[BacktestStore] Comparison data:',
+      JSON.stringify(message.comparison, null, 2)
+    )
+    console.log(
+      '[BacktestStore] hasResults computed:',
+      status.value === 'completed',
+      comparison.value !== null
+    )
   }
 
   async function fetchStatus(runId: string): Promise<void> {

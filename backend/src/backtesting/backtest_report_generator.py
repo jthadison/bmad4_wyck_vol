@@ -271,7 +271,7 @@ class BacktestReportGenerator:
             dict: Template context with all data
         """
         # Extract metrics
-        metrics = result.metrics
+        metrics = result.summary
 
         # Prepare equity curve chart data (ensure JSON serializable - TEST-001 fix)
         # Note: Using "data" instead of "values" to avoid Jinja2 dict.values() method conflict

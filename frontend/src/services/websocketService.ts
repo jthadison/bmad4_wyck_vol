@@ -140,6 +140,12 @@ class WebSocketService {
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
 
+          console.log(
+            '[WebSocket Client] Received message:',
+            message.type,
+            message
+          )
+
           // Update last message time
           this.lastMessageTime.value = new Date()
 
@@ -163,9 +169,14 @@ class WebSocketService {
             this.lastSequenceNumber = message.sequence_number
           }
 
+          console.log(
+            '[WebSocket Client] About to emit to handlers:',
+            message.type
+          )
           // Emit message to registered handlers
           this.emit(message.type, message)
           this.emit('message', message) // Generic message event
+          console.log('[WebSocket Client] Emitted to handlers:', message.type)
         } catch (error) {
           console.error('[WebSocket] Failed to parse message:', error)
         }

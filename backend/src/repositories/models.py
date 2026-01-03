@@ -881,8 +881,8 @@ class BacktestResultModel(Base):
         default=list,
     )
 
-    # Performance metrics (JSONB)
-    metrics: Mapped[dict] = mapped_column(
+    # Performance summary metrics (JSONB)
+    summary: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,
     )

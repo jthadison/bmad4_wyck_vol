@@ -44,10 +44,13 @@ Author: Story 10.9
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastapi import WebSocket, WebSocketDisconnect
+
+if TYPE_CHECKING:
+    from src.orm.models import Notification
 
 
 class ConnectionManager:
@@ -171,10 +174,13 @@ class ConnectionManager:
         """
         # Create list of connection IDs to avoid modification during iteration
         connection_ids = list(self.active_connections.keys())
+        print(f"[WebSocket] Broadcasting to {len(connection_ids)} connections", flush=True)
 
         for connection_id in connection_ids:
             # Create copy of message for each connection (different sequence numbers)
+            print(f"[WebSocket] Sending to connection {connection_id}", flush=True)
             await self.send_message(connection_id, message.copy())
+            print(f"[WebSocket] Sent to connection {connection_id}", flush=True)
 
     async def emit_pattern_detected(
         self,

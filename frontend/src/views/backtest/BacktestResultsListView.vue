@@ -386,8 +386,21 @@ const filteredResults = computed(() => {
     const aVal = a[sortField.value as keyof typeof a]
     const bVal = b[sortField.value as keyof typeof b]
 
-    // Handle string decimals
-    if (typeof aVal === 'string' && typeof bVal === 'string') {
+    // Define numeric fields that should use Big.js for comparison
+    const numericFields = [
+      'total_return_pct',
+      'cagr',
+      'max_drawdown_pct',
+      'win_rate',
+      'campaign_rate',
+    ]
+
+    // Handle string decimals for numeric fields only
+    if (
+      numericFields.includes(sortField.value) &&
+      typeof aVal === 'string' &&
+      typeof bVal === 'string'
+    ) {
       const aNum = toBig(aVal || '0')
       const bNum = toBig(bVal || '0')
 
@@ -398,7 +411,7 @@ const filteredResults = computed(() => {
       }
     }
 
-    // Handle numbers and strings
+    // Handle numbers and strings (for symbol, dates, etc.)
     if (sortDirection.value === 'asc') {
       return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
     } else {

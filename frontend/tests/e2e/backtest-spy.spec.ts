@@ -14,6 +14,11 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Backtest Functionality - SPY Symbol', () => {
   test.beforeEach(async ({ page }) => {
+    // Listen to console messages
+    page.on('console', (msg) => {
+      console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`)
+    })
+
     // Navigate to the application
     await page.goto('http://localhost:5173')
 
@@ -58,15 +63,18 @@ test.describe('Backtest Functionality - SPY Symbol', () => {
     // Step 5: Wait for completion if not already complete (max 3 minutes)
     await expect(completionMessage).toBeVisible({ timeout: 180000 })
 
+    // Give Vue extra time to fully render the results section
+    await page.waitForTimeout(2000)
+
     // Step 6: Verify results are displayed
     // Check for performance comparison table
     const comparisonTable = page.locator('.comparison-table').first()
     await expect(comparisonTable).toBeVisible()
 
-    // Verify key metrics are shown
-    await expect(page.locator('text=Total Signals')).toBeVisible()
-    await expect(page.locator('text=Win Rate')).toBeVisible()
-    await expect(page.locator('text=Profit Factor')).toBeVisible()
+    // Verify key metrics are shown in the table (be more specific to avoid multiple matches)
+    await expect(comparisonTable.locator('text=Total Signals')).toBeVisible()
+    await expect(comparisonTable.locator('text=Win Rate')).toBeVisible()
+    await expect(comparisonTable.locator('text=Profit Factor')).toBeVisible()
 
     // Verify equity curve chart is displayed
     const equityCurveChart = page.locator('.equity-curve-container').first()

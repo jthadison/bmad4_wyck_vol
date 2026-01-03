@@ -142,7 +142,7 @@ const props = withDefaults(defineProps<Props>(), {
 // Store and composables
 const backtestStore = useBacktestStore()
 const toast = useToast()
-const { connect, disconnect, subscribe, unsubscribe } = useWebSocket()
+const { connect, subscribe, unsubscribe } = useWebSocket()
 
 // Computed
 const isRunning = computed(() => backtestStore.isRunning)
@@ -320,10 +320,12 @@ function handleRetry() {
 
 // Message handlers
 const handleBacktestProgress = (message: WebSocketMessage) => {
+  console.log('[BacktestPreview] handleBacktestProgress called:', message)
   backtestStore.handleProgressUpdate(message)
 }
 
 const handleBacktestCompleted = (message: WebSocketMessage) => {
+  console.log('[BacktestPreview] handleBacktestCompleted called:', message)
   backtestStore.handleCompletion(message)
 
   toast.add({
@@ -338,12 +340,18 @@ const handleBacktestCompleted = (message: WebSocketMessage) => {
 
 // WebSocket Integration (Task 7)
 onMounted(() => {
-  // Connect to WebSocket
+  console.log(
+    '[BacktestPreview] onMounted - setting up WebSocket subscriptions'
+  )
+  // Note: WebSocket connection is managed by App.vue (singleton)
+  // Just ensure we're connected (this is idempotent)
   connect()
 
   // Subscribe to backtest progress messages
   subscribe('backtest_progress', handleBacktestProgress)
+  console.log('[BacktestPreview] Subscribed to backtest_progress')
   subscribe('backtest_completed', handleBacktestCompleted)
+  console.log('[BacktestPreview] Subscribed to backtest_completed')
 
   // Fallback: Poll status if WebSocket unavailable
   // This would be implemented with setInterval polling the status endpoint
@@ -354,7 +362,7 @@ onUnmounted(() => {
   unsubscribe('backtest_progress', handleBacktestProgress)
   unsubscribe('backtest_completed', handleBacktestCompleted)
 
-  disconnect()
+  // Note: Don't disconnect() - the WebSocket is a singleton managed by App.vue
 })
 </script>
 

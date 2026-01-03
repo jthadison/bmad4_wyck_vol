@@ -78,7 +78,7 @@ class BacktestRepository:
             config=result.config.model_dump(mode="json"),
             equity_curve=[point.model_dump(mode="json") for point in result.equity_curve],
             trades=[trade.model_dump(mode="json") for trade in result.trades],
-            metrics=result.metrics.model_dump(mode="json"),
+            summary=result.summary.model_dump(mode="json"),
             look_ahead_bias_check=result.look_ahead_bias_check,
             execution_time_seconds=result.execution_time_seconds,
             created_at=result.created_at,
@@ -127,7 +127,7 @@ class BacktestRepository:
         Example:
             result = await repository.get_result(run_id)
             if result:
-                print(f"Win rate: {result.metrics.win_rate}")
+                print(f"Win rate: {result.summary.win_rate}")
         """
         # Query by backtest_run_id
         stmt = select(BacktestResultModel).where(
@@ -239,7 +239,7 @@ class BacktestRepository:
         config = BacktestConfig(**db_result.config)
 
         # Deserialize metrics
-        metrics = BacktestMetrics(**db_result.metrics)
+        metrics = BacktestMetrics(**db_result.summary)
 
         # Story 12.6: Deserialize extended fields - commented out until schema migration
         # pattern_performance = (
@@ -274,7 +274,7 @@ class BacktestRepository:
             config=config,
             equity_curve=equity_curve,
             trades=trades,
-            metrics=metrics,
+            summary=metrics,
             look_ahead_bias_check=db_result.look_ahead_bias_check,
             execution_time_seconds=float(db_result.execution_time_seconds),
             created_at=db_result.created_at,

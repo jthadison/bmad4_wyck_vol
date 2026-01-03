@@ -220,7 +220,7 @@ class BacktestEngine:
             config=self.config,
             equity_curve=self.equity_curve,
             trades=self.position_manager.closed_trades,
-            metrics=metrics,
+            summary=metrics,
             look_ahead_bias_check=bias_check_passed,
             execution_time_seconds=execution_time,
             created_at=end_time,

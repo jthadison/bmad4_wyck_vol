@@ -28,21 +28,21 @@ const props = defineProps<Props>()
 
 // Computed values for formatting and color coding
 const totalReturnPct = computed(() =>
-  new Big(props.summary.total_return_pct).toFixed(2)
+  new Big(props.summary.total_return_pct || 0).toFixed(2)
 )
 const totalReturnClass = computed(() =>
-  new Big(props.summary.total_return_pct).gte(0)
+  new Big(props.summary.total_return_pct || 0).gte(0)
     ? 'text-green-600'
     : 'text-red-600'
 )
 
-const cagrPct = computed(() => new Big(props.summary.cagr).toFixed(2))
+const cagrPct = computed(() => new Big(props.summary.cagr || 0).toFixed(2))
 
 const sharpeRatio = computed(() =>
-  new Big(props.summary.sharpe_ratio).toFixed(2)
+  new Big(props.summary.sharpe_ratio || 0).toFixed(2)
 )
 const sharpeLabel = computed(() => {
-  const sharpe = new Big(props.summary.sharpe_ratio)
+  const sharpe = new Big(props.summary.sharpe_ratio || 0)
   if (sharpe.gte(3)) return 'Excellent'
   if (sharpe.gte(2)) return 'Very Good'
   if (sharpe.gte(1)) return 'Good'
@@ -50,37 +50,43 @@ const sharpeLabel = computed(() => {
   return 'Poor'
 })
 const sharpeClass = computed(() => {
-  const sharpe = new Big(props.summary.sharpe_ratio)
+  const sharpe = new Big(props.summary.sharpe_ratio || 0)
   if (sharpe.gte(2)) return 'text-green-600'
   if (sharpe.gte(1)) return 'text-blue-600'
   return 'text-yellow-600'
 })
 
 const maxDrawdownPct = computed(() =>
-  new Big(props.summary.max_drawdown_pct).abs().toFixed(2)
+  new Big(props.summary.max_drawdown_pct || props.summary.max_drawdown || 0)
+    .abs()
+    .toFixed(2)
 )
 
 const winRatePct = computed(() =>
-  new Big(props.summary.win_rate).times(100).toFixed(2)
+  new Big(props.summary.win_rate || 0).times(100).toFixed(2)
 )
 const winRateProgress = computed(() =>
-  new Big(props.summary.win_rate).times(100).toNumber()
+  new Big(props.summary.win_rate || 0).times(100).toNumber()
 )
 
 const avgRMultiple = computed(() =>
-  new Big(props.summary.avg_r_multiple).toFixed(2)
+  new Big(
+    props.summary.avg_r_multiple || props.summary.average_r_multiple || 0
+  ).toFixed(2)
 )
 const avgRClass = computed(() =>
-  new Big(props.summary.avg_r_multiple).gte(1)
+  new Big(
+    props.summary.avg_r_multiple || props.summary.average_r_multiple || 0
+  ).gte(1)
     ? 'text-green-600'
     : 'text-red-600'
 )
 
 const profitFactor = computed(() =>
-  new Big(props.summary.profit_factor).toFixed(2)
+  new Big(props.summary.profit_factor || 0).toFixed(2)
 )
 const profitFactorLabel = computed(() => {
-  const pf = new Big(props.summary.profit_factor)
+  const pf = new Big(props.summary.profit_factor || 0)
   if (pf.gte(2)) return 'Excellent'
   if (pf.gte(1.5)) return 'Good'
   if (pf.gt(1)) return 'Profitable'
@@ -88,7 +94,7 @@ const profitFactorLabel = computed(() => {
   return 'Unprofitable'
 })
 const profitFactorClass = computed(() => {
-  const pf = new Big(props.summary.profit_factor)
+  const pf = new Big(props.summary.profit_factor || 0)
   if (pf.gte(1.5)) return 'text-green-600'
   if (pf.gt(1)) return 'text-blue-600'
   if (pf.eq(1)) return 'text-yellow-600'
@@ -96,16 +102,16 @@ const profitFactorClass = computed(() => {
 })
 
 const campaignCompletionPct = computed(() =>
-  new Big(props.summary.campaign_completion_rate).times(100).toFixed(2)
+  new Big(props.summary.campaign_completion_rate || 0).times(100).toFixed(2)
 )
 const campaignCompletionClass = computed(() => {
-  const rate = new Big(props.summary.campaign_completion_rate).times(100)
+  const rate = new Big(props.summary.campaign_completion_rate || 0).times(100)
   if (rate.gte(60)) return 'text-green-600'
   if (rate.gte(40)) return 'text-yellow-600'
   return 'text-red-600'
 })
 const campaignCompletionProgress = computed(() =>
-  new Big(props.summary.campaign_completion_rate).times(100).toNumber()
+  new Big(props.summary.campaign_completion_rate || 0).times(100).toNumber()
 )
 </script>
 
@@ -260,8 +266,8 @@ const campaignCompletionProgress = computed(() =>
               ></div>
             </div>
             <p class="text-xs text-gray-500 mt-1">
-              {{ summary.completed_campaigns }} /
-              {{ summary.total_campaigns_detected }}
+              {{ summary.completed_campaigns || 0 }} /
+              {{ summary.total_campaigns_detected || 0 }}
             </p>
           </div>
           <i class="pi pi-flag text-2xl text-gray-400"></i>
