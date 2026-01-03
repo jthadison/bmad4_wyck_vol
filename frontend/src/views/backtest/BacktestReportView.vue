@@ -176,7 +176,10 @@
         <h2 class="text-2xl font-semibold text-gray-100 mb-4">Summary</h2>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <BacktestSummaryPanel :summary="backtestResult.summary" />
-          <RiskMetricsPanel :risk-metrics="backtestResult.risk_metrics" />
+          <RiskMetricsPanel
+            v-if="backtestResult.risk_metrics"
+            :risk-metrics="backtestResult.risk_metrics"
+          />
         </div>
       </section>
 

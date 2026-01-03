@@ -26,37 +26,37 @@ const props = defineProps<Props>()
 
 // Format risk metrics
 const maxPortfolioHeat = computed(() =>
-  new Big(props.riskMetrics.max_portfolio_heat).toFixed(2)
+  new Big(props.riskMetrics?.max_portfolio_heat || 0).toFixed(2)
 )
 const avgPortfolioHeat = computed(() =>
-  new Big(props.riskMetrics.avg_portfolio_heat).toFixed(2)
+  new Big(props.riskMetrics?.avg_portfolio_heat || 0).toFixed(2)
 )
 const maxPositionSizePct = computed(() =>
-  new Big(props.riskMetrics.max_position_size_pct).toFixed(2)
+  new Big(props.riskMetrics?.max_position_size_pct || 0).toFixed(2)
 )
 const avgPositionSizePct = computed(() =>
-  new Big(props.riskMetrics.avg_position_size_pct).toFixed(2)
+  new Big(props.riskMetrics?.avg_position_size_pct || 0).toFixed(2)
 )
 const maxCapitalDeployedPct = computed(() =>
-  new Big(props.riskMetrics.max_capital_deployed_pct).toFixed(2)
+  new Big(props.riskMetrics?.max_capital_deployed_pct || 0).toFixed(2)
 )
 const avgCapitalDeployedPct = computed(() =>
-  new Big(props.riskMetrics.avg_capital_deployed_pct).toFixed(2)
+  new Big(props.riskMetrics?.avg_capital_deployed_pct || 0).toFixed(2)
 )
 const avgConcurrentPositions = computed(() =>
-  new Big(props.riskMetrics.avg_concurrent_positions).toFixed(1)
+  new Big(props.riskMetrics?.avg_concurrent_positions || 0).toFixed(1)
 )
 
 // Color coding for max portfolio heat
 const maxHeatClass = computed(() => {
-  const heat = new Big(props.riskMetrics.max_portfolio_heat)
+  const heat = new Big(props.riskMetrics?.max_portfolio_heat || 0)
   if (heat.gt(25)) return 'text-red-600'
   if (heat.lt(10)) return 'text-green-600'
   return 'text-yellow-600'
 })
 
 const maxHeatLabel = computed(() => {
-  const heat = new Big(props.riskMetrics.max_portfolio_heat)
+  const heat = new Big(props.riskMetrics?.max_portfolio_heat || 0)
   if (heat.gt(25)) return 'High Risk'
   if (heat.lt(10)) return 'Conservative'
   return 'Moderate'
@@ -78,7 +78,7 @@ const maxHeatLabel = computed(() => {
             >Max Concurrent Positions</span
           >
           <span class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {{ riskMetrics.max_concurrent_positions }}
+            {{ riskMetrics?.max_concurrent_positions || 0 }}
           </span>
         </div>
       </div>
