@@ -1,0 +1,78 @@
+{
+  "scenario": "Valid SOS - Following Spring in Active Campaign",
+  "description": "Sign of Strength detected 75 minutes after Spring, high volume rally confirms Phase D",
+  "symbol": "C:EURUSD",
+  "timeframe": "15m",
+  "timestamp": "2025-12-15T11:00:00Z",
+  "session": "LONDON",
+  "prerequisite_patterns": [
+    {
+      "type": "SPRING",
+      "timestamp": "2025-12-15T09:45:00Z",
+      "low": 1.0520,
+      "support_level": 1.0525
+    }
+  ],
+  "bars": [
+    {"timestamp": "2025-12-15T09:45:00Z", "open": 1.0528, "high": 1.0531, "low": 1.0520, "close": 1.0529, "volume": 1650},
+    {"timestamp": "2025-12-15T10:00:00Z", "open": 1.0529, "high": 1.0534, "low": 1.0527, "close": 1.0532, "volume": 2100},
+    {"timestamp": "2025-12-15T10:15:00Z", "open": 1.0532, "high": 1.0538, "low": 1.0530, "close": 1.0536, "volume": 2400},
+    {"timestamp": "2025-12-15T10:30:00Z", "open": 1.0536, "high": 1.0541, "low": 1.0534, "close": 1.0539, "volume": 2800},
+    {"timestamp": "2025-12-15T10:45:00Z", "open": 1.0539, "high": 1.0543, "low": 1.0537, "close": 1.0541, "volume": 3200},
+    {"timestamp": "2025-12-15T11:00:00Z", "open": 1.0541, "high": 1.0548, "low": 1.0539, "close": 1.0546, "volume": 6200}
+  ],
+  "expected_pattern": {
+    "type": "SOS",
+    "detected": true,
+    "sos_bar": {
+      "timestamp": "2025-12-15T11:00:00Z",
+      "high": 1.0548,
+      "close": 1.0546,
+      "volume": 6200,
+      "rally_from_spring_low": {
+        "spring_low": 1.0520,
+        "sos_high": 1.0548,
+        "rally_pips": 28,
+        "rally_pct": 2.66
+      }
+    },
+    "volume_analysis": {
+      "current_volume": 6200,
+      "session_avg_volume": 2800,
+      "volume_ratio": 2.21,
+      "threshold": 2.0,
+      "passes": true,
+      "calculation_method": "session_relative",
+      "note": "High volume (221% of London avg) indicates institutional buying"
+    },
+    "session_validation": {
+      "session": "LONDON",
+      "valid_for_entry": true
+    },
+    "time_analysis": {
+      "time_since_spring_minutes": 75,
+      "time_since_spring_bars": 5,
+      "within_campaign_window": true
+    }
+  },
+  "campaign_context": {
+    "campaign_state": "ACTIVE",
+    "patterns_in_campaign": ["SPRING", "SOS"],
+    "current_phase": "D",
+    "phase_progression": "A→C→D",
+    "campaign_duration_minutes": 75,
+    "campaign_window_hours": 48,
+    "valid_campaign": true
+  },
+  "test_assertions": {
+    "should_detect_pattern": true,
+    "pattern_type": "SOS",
+    "rejection_reason": null,
+    "volume_passes": true,
+    "session_passes": true,
+    "rally_sufficient": true,
+    "campaign_active": true,
+    "phase_d_entry_signal": true
+  },
+  "notes": "Classic Spring → SOS sequence. High volume SOS (2.2x session avg) following low volume Spring (0.6x) confirms institutional accumulation. Phase D entry signal - markup likely to follow."
+}

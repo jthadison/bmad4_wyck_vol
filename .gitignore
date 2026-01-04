@@ -206,3 +206,7 @@ expansion-packs/
 playwright-report/
 playwright-report-dev/
 test-results/
+playwright-test-output.txt
+
+# Backtest Output Files
+backtest-response.json

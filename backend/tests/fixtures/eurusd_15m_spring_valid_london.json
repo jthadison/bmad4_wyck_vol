@@ -1,0 +1,55 @@
+{
+  "scenario": "Valid Spring - London Session",
+  "description": "EUR/USD 15m Spring detected during London session with low volume and strong close",
+  "symbol": "C:EURUSD",
+  "timeframe": "15m",
+  "timestamp": "2025-12-15T09:45:00Z",
+  "session": "LONDON",
+  "bars": [
+    {"timestamp": "2025-12-15T08:00:00Z", "open": 1.0550, "high": 1.0555, "low": 1.0545, "close": 1.0548, "volume": 2800},
+    {"timestamp": "2025-12-15T08:15:00Z", "open": 1.0548, "high": 1.0552, "low": 1.0540, "close": 1.0542, "volume": 2650},
+    {"timestamp": "2025-12-15T08:30:00Z", "open": 1.0542, "high": 1.0545, "low": 1.0538, "close": 1.0540, "volume": 2900},
+    {"timestamp": "2025-12-15T08:45:00Z", "open": 1.0540, "high": 1.0543, "low": 1.0535, "close": 1.0537, "volume": 3100},
+    {"timestamp": "2025-12-15T09:00:00Z", "open": 1.0537, "high": 1.0540, "low": 1.0532, "close": 1.0534, "volume": 2750},
+    {"timestamp": "2025-12-15T09:15:00Z", "open": 1.0534, "high": 1.0536, "low": 1.0528, "close": 1.0530, "volume": 2600},
+    {"timestamp": "2025-12-15T09:30:00Z", "open": 1.0530, "high": 1.0533, "low": 1.0526, "close": 1.0528, "volume": 2800},
+    {"timestamp": "2025-12-15T09:45:00Z", "open": 1.0528, "high": 1.0531, "low": 1.0520, "close": 1.0529, "volume": 1650}
+  ],
+  "expected_pattern": {
+    "type": "SPRING",
+    "detected": true,
+    "support_level": 1.0525,
+    "ice_distance_pct": 0.048,
+    "ice_distance_pips": 5,
+    "spring_bar": {
+      "timestamp": "2025-12-15T09:45:00Z",
+      "low": 1.0520,
+      "close": 1.0529,
+      "volume": 1650,
+      "close_position_in_range": 0.818,
+      "bar_range": 0.0011
+    },
+    "volume_analysis": {
+      "current_volume": 1650,
+      "session_avg_volume": 2800,
+      "volume_ratio": 0.589,
+      "threshold": 0.7,
+      "passes": true,
+      "calculation_method": "session_relative"
+    },
+    "session_validation": {
+      "session": "LONDON",
+      "valid_for_entry": true,
+      "session_filter_enabled": true
+    }
+  },
+  "test_assertions": {
+    "should_detect_pattern": true,
+    "pattern_type": "SPRING",
+    "rejection_reason": null,
+    "volume_passes": true,
+    "session_passes": true,
+    "ice_within_threshold": true
+  },
+  "notes": "This is the baseline valid Spring pattern. Low volume (59% of London avg), new low below support, strong close at 82% of bar range."
+}

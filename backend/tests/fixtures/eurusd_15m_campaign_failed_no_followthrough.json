@@ -1,0 +1,86 @@
+{
+  "scenario": "Failed Campaign - Spring Without Follow-Through",
+  "description": "Spring detected but no SOS/LPS within 48-hour window - campaign expires",
+  "symbol": "C:EURUSD",
+  "timeframe": "15m",
+  "campaign_timeline": [
+    {
+      "timestamp": "2025-12-15T09:45:00Z",
+      "event": "Spring detected",
+      "pattern": "SPRING",
+      "campaign_state": "FORMING",
+      "patterns_count": 1,
+      "hours_elapsed": 0
+    },
+    {
+      "timestamp": "2025-12-15T15:00:00Z",
+      "event": "5 hours elapsed, no follow-up",
+      "campaign_state": "FORMING",
+      "patterns_count": 1,
+      "hours_elapsed": 5.25,
+      "note": "Still within 48-hour window"
+    },
+    {
+      "timestamp": "2025-12-16T10:00:00Z",
+      "event": "24 hours elapsed, no follow-up",
+      "campaign_state": "FORMING",
+      "patterns_count": 1,
+      "hours_elapsed": 24.25,
+      "note": "Still within window, but campaign not progressing"
+    },
+    {
+      "timestamp": "2025-12-17T12:00:00Z",
+      "event": "50 hours elapsed - CAMPAIGN EXPIRES",
+      "campaign_state": "FAILED",
+      "patterns_count": 1,
+      "hours_elapsed": 50.25,
+      "failure_reason": "No follow-through pattern (SOS/LPS) detected within 48-hour window",
+      "note": "Campaign marked as FAILED - exceeded max_pattern_gap_hours"
+    }
+  ],
+  "spring_pattern": {
+    "timestamp": "2025-12-15T09:45:00Z",
+    "low": 1.0520,
+    "close": 1.0529,
+    "volume_ratio": 0.59,
+    "session": "LONDON",
+    "valid": true
+  },
+  "market_behavior_after_spring": {
+    "description": "Price consolidated in tight range near Spring level, no institutional follow-through",
+    "price_action": [
+      {"timestamp": "2025-12-15T12:00:00Z", "price_range": "1.0525-1.0535", "volume": "low"},
+      {"timestamp": "2025-12-16T09:00:00Z", "price_range": "1.0522-1.0532", "volume": "low"},
+      {"timestamp": "2025-12-17T09:00:00Z", "price_range": "1.0518-1.0530", "volume": "low"}
+    ],
+    "interpretation": "Lack of volume and price movement suggests Composite Operator did not complete accumulation. False start."
+  },
+  "campaign_rules": {
+    "min_patterns_for_active": 2,
+    "max_pattern_gap_hours": 48,
+    "campaign_window_hours": 48,
+    "expiration_hours": 72,
+    "patterns_detected": 1,
+    "state_transitions": "FORMING → (50 hours) → FAILED"
+  },
+  "expected_behavior": {
+    "campaign_state": "FAILED",
+    "should_trade": false,
+    "failure_reason": "Exceeded 48-hour pattern gap without follow-through",
+    "lessons": [
+      "Not all Springs lead to markup (success rate ~60-70%)",
+      "Time window validation prevents holding dead campaigns",
+      "Failed campaigns indicate Composite Operator abandoned accumulation"
+    ]
+  },
+  "test_assertions": {
+    "initial_campaign_state": "FORMING",
+    "final_campaign_state": "FAILED",
+    "patterns_count": 1,
+    "hours_until_expiration": 50.25,
+    "exceeds_48h_window": true,
+    "should_trade_campaign": false,
+    "campaign_failure_logged": true
+  },
+  "notes": "This demonstrates campaign lifecycle management. Spring alone is not enough - we need confirmation (SOS/LPS) within 48 hours. Prevents holding positions in dead campaigns. Real-world analog: Composite Operator started accumulation but market conditions changed, abandoned the campaign."
+}

@@ -1,0 +1,57 @@
+{
+  "scenario": "Invalid Spring - Asian Session (Rejected)",
+  "description": "Pattern meets all technical criteria but detected during Asian session - rejected due to low liquidity",
+  "symbol": "C:EURUSD",
+  "timeframe": "15m",
+  "timestamp": "2025-12-16T04:30:00Z",
+  "session": "ASIAN",
+  "bars": [
+    {"timestamp": "2025-12-16T03:00:00Z", "open": 1.0550, "high": 1.0553, "low": 1.0545, "close": 1.0548, "volume": 900},
+    {"timestamp": "2025-12-16T03:15:00Z", "open": 1.0548, "high": 1.0550, "low": 1.0542, "close": 1.0544, "volume": 850},
+    {"timestamp": "2025-12-16T03:30:00Z", "open": 1.0544, "high": 1.0546, "low": 1.0538, "close": 1.0540, "volume": 920},
+    {"timestamp": "2025-12-16T03:45:00Z", "open": 1.0540, "high": 1.0542, "low": 1.0535, "close": 1.0537, "volume": 880},
+    {"timestamp": "2025-12-16T04:00:00Z", "open": 1.0537, "high": 1.0539, "low": 1.0532, "close": 1.0534, "volume": 910},
+    {"timestamp": "2025-12-16T04:15:00Z", "open": 1.0534, "high": 1.0536, "low": 1.0528, "close": 1.0530, "volume": 870},
+    {"timestamp": "2025-12-16T04:30:00Z", "open": 1.0530, "high": 1.0532, "low": 1.0520, "close": 1.0529, "volume": 780}
+  ],
+  "expected_pattern": {
+    "type": "SPRING",
+    "detected": false,
+    "support_level": 1.0525,
+    "ice_distance_pct": 0.048,
+    "spring_bar": {
+      "timestamp": "2025-12-16T04:30:00Z",
+      "low": 1.0520,
+      "close": 1.0529,
+      "volume": 780,
+      "close_position_in_range": 0.75,
+      "bar_range": 0.0012
+    },
+    "volume_analysis": {
+      "current_volume": 780,
+      "session_avg_volume": 1200,
+      "volume_ratio": 0.65,
+      "threshold": 0.7,
+      "passes": true,
+      "calculation_method": "session_relative",
+      "note": "Volume test passes technically, but session filter overrides"
+    },
+    "session_validation": {
+      "session": "ASIAN",
+      "valid_for_entry": false,
+      "session_filter_enabled": true,
+      "rejection_reason": "Asian session - low liquidity causes false breakouts"
+    }
+  },
+  "test_assertions": {
+    "should_detect_pattern": false,
+    "pattern_type": null,
+    "rejection_reason": "Asian session - low liquidity filter applied",
+    "volume_passes": true,
+    "session_passes": false,
+    "ice_within_threshold": true,
+    "technical_criteria_met": true,
+    "filtered_by_session": true
+  },
+  "notes": "This demonstrates session filtering. Technically valid Spring (low volume, new low, strong close), but Asian session makes it unreliable. Win rate for Asian Springs: ~28% vs 68% for London Springs."
+}

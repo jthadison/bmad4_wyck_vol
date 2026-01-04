@@ -1,0 +1,66 @@
+{
+  "scenario": "Invalid Spring - High Volume Breakdown",
+  "description": "New low with high volume indicates genuine breakdown, not a Spring (no shake-out)",
+  "symbol": "C:EURUSD",
+  "timeframe": "15m",
+  "timestamp": "2025-12-18T10:30:00Z",
+  "session": "LONDON",
+  "bars": [
+    {"timestamp": "2025-12-18T09:00:00Z", "open": 1.0550, "high": 1.0555, "low": 1.0545, "close": 1.0548, "volume": 2800},
+    {"timestamp": "2025-12-18T09:15:00Z", "open": 1.0548, "high": 1.0550, "low": 1.0542, "close": 1.0544, "volume": 2650},
+    {"timestamp": "2025-12-18T09:30:00Z", "open": 1.0544, "high": 1.0546, "low": 1.0538, "close": 1.0540, "volume": 2900},
+    {"timestamp": "2025-12-18T09:45:00Z", "open": 1.0540, "high": 1.0542, "low": 1.0535, "close": 1.0537, "volume": 3100},
+    {"timestamp": "2025-12-18T10:00:00Z", "open": 1.0537, "high": 1.0539, "low": 1.0530, "close": 1.0532, "volume": 2750},
+    {"timestamp": "2025-12-18T10:15:00Z", "open": 1.0532, "high": 1.0534, "low": 1.0526, "close": 1.0528, "volume": 2600},
+    {"timestamp": "2025-12-18T10:30:00Z", "open": 1.0528, "high": 1.0529, "low": 1.0515, "close": 1.0518, "volume": 4800}
+  ],
+  "expected_pattern": {
+    "type": "SPRING",
+    "detected": false,
+    "support_level": 1.0525,
+    "ice_distance_pct": 0.095,
+    "breakdown_bar": {
+      "timestamp": "2025-12-18T10:30:00Z",
+      "low": 1.0515,
+      "close": 1.0518,
+      "volume": 4800,
+      "close_position_in_range": 0.214,
+      "bar_range": 0.0014,
+      "note": "Close near low (21% of range) indicates selling pressure"
+    },
+    "volume_analysis": {
+      "current_volume": 4800,
+      "session_avg_volume": 2800,
+      "volume_ratio": 1.71,
+      "threshold": 0.7,
+      "passes": false,
+      "calculation_method": "session_relative",
+      "interpretation": "HIGH VOLUME = GENUINE BREAKDOWN, NOT SPRING"
+    },
+    "session_validation": {
+      "session": "LONDON",
+      "valid_for_entry": true,
+      "note": "Session is valid, but volume rejects pattern"
+    }
+  },
+  "wyckoff_interpretation": {
+    "pattern_type": "BREAKDOWN",
+    "not_spring_because": [
+      "High volume (1.7x session avg) indicates institutional selling",
+      "Close near low (21% of range) shows no recovery/absorption",
+      "Large Ice distance (10 pips / 0.95%) suggests genuine breakdown, not shake-out"
+    ],
+    "expected_behavior": "Continued downtrend likely. Spring requires LOW volume (absorption by Composite Operator). High volume = distribution continuing."
+  },
+  "test_assertions": {
+    "should_detect_pattern": false,
+    "pattern_type": null,
+    "rejection_reason": "Volume too high (1.71x > 0.7x threshold) - genuine breakdown, not Spring",
+    "volume_passes": false,
+    "session_passes": true,
+    "ice_within_threshold": false,
+    "is_breakdown": true,
+    "is_spring": false
+  },
+  "notes": "FR12 NON-NEGOTIABLE volume validation. High volume on breakdown = institutions are selling, not absorbing. Spring MUST have low volume to indicate shake-out. This is a critical distinction - prevents trading false Springs that continue downward."
+}
