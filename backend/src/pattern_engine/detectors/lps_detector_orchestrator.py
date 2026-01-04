@@ -61,6 +61,11 @@ from src.models.ohlcv import OHLCVBar
 from src.models.sos_breakout import SOSBreakout
 from src.models.trading_range import TradingRange
 from src.pattern_engine.detectors.lps_detector import detect_lps
+from src.pattern_engine.timeframe_config import (
+    ICE_DISTANCE_BASE,
+    get_scaled_threshold,
+    validate_timeframe,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -132,9 +137,63 @@ class LPSDetector:
     Author: Story 6.7
     """
 
-    def __init__(self) -> None:
-        """Initialize LPSDetector with structured logging."""
+    def __init__(
+        self,
+        timeframe: str = "1d",
+        intraday_volume_analyzer: Optional[object] = None,
+        session_filter_enabled: bool = False,
+    ) -> None:
+        """
+        Initialize LPSDetector with timeframe-adaptive thresholds.
+
+        Args:
+            timeframe: Timeframe for threshold scaling ("1m", "5m", "15m", "1h", "1d").
+                Defaults to "1d" for backward compatibility (Story 13.1 AC1.6).
+            intraday_volume_analyzer: Optional IntradayVolumeAnalyzer instance for
+                session-relative volume calculations (Story 13.2).
+            session_filter_enabled: Enable forex session filtering for intraday
+                timeframes (Story 13.2).
+
+        Sets up:
+        - Structured logger instance
+        - Timeframe-scaled Ice threshold (Story 13.1 AC1.2)
+        - Volume thresholds remain constant (Story 13.1 AC1.7)
+
+        Threshold Scaling (Story 13.1):
+        --------------------------------
+        - Ice distance: BASE_ICE * multiplier (e.g., 2% * 0.30 = 0.6% for 15m)
+        - Volume threshold: CONSTANT across timeframes (ratio-based)
+
+        Example:
+            >>> # Default daily timeframe (backward compatible)
+            >>> detector = LPSDetector()
+            >>> assert detector.timeframe == "1d"
+            >>> assert detector.ice_threshold == Decimal("0.02")  # 2%
+            >>>
+            >>> # Intraday 15m timeframe
+            >>> detector = LPSDetector(timeframe="15m")
+            >>> assert detector.ice_threshold == Decimal("0.006")  # 0.6% (2% * 0.30)
+
+        Raises:
+            ValueError: If timeframe is not supported
+        """
         self.logger = structlog.get_logger(__name__)
+
+        # Validate and store timeframe (Story 13.1 AC1.1)
+        self.timeframe = validate_timeframe(timeframe)
+        self.session_filter_enabled = session_filter_enabled
+        self.intraday_volume_analyzer = intraday_volume_analyzer
+
+        # Calculate timeframe-scaled Ice threshold (Story 13.1 AC1.2)
+        self.ice_threshold = get_scaled_threshold(ICE_DISTANCE_BASE, self.timeframe)
+
+        # Log initialization with scaled thresholds (Story 13.1 AC1.8)
+        self.logger.info(
+            "LPSDetector initialized",
+            timeframe=self.timeframe,
+            ice_threshold_pct=float(self.ice_threshold * 100),
+            session_filter_enabled=session_filter_enabled,
+        )
 
     def detect(
         self,

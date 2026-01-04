@@ -77,6 +77,14 @@ from src.models.spring_signal import SpringSignal
 from src.models.test import Test
 from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.scoring.scorer_factory import detect_asset_class, get_scorer
+from src.pattern_engine.timeframe_config import (
+    CREEK_MIN_RALLY_BASE,
+    ICE_DISTANCE_BASE,
+    MAX_PENETRATION_BASE,
+    SPRING_VOLUME_THRESHOLD,
+    get_scaled_threshold,
+    validate_timeframe,
+)
 from src.pattern_engine.volume_analyzer import calculate_volume_ratio
 from src.pattern_engine.volume_cache import VolumeCache
 
@@ -1643,16 +1651,77 @@ class SpringDetector:
     Author: Story 5.6 - SpringDetector Module Integration
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        timeframe: str = "1d",
+        intraday_volume_analyzer: Optional[object] = None,
+        session_filter_enabled: bool = False,
+    ):
         """
-        Initialize SpringDetector with default configuration.
+        Initialize SpringDetector with timeframe-adaptive thresholds.
+
+        Args:
+            timeframe: Timeframe for threshold scaling ("1m", "5m", "15m", "1h", "1d").
+                Defaults to "1d" for backward compatibility (Story 13.1 AC1.6).
+            intraday_volume_analyzer: Optional IntradayVolumeAnalyzer instance for
+                session-relative volume calculations (Story 13.2).
+            session_filter_enabled: Enable forex session filtering for intraday
+                timeframes (Story 13.2).
 
         Sets up:
         - Structured logger instance
+        - Timeframe-scaled Ice/Creek thresholds (Story 13.1 AC1.2, AC1.3)
+        - Constant volume threshold (Story 13.1 AC1.7)
         - Thread-safety lock for concurrent detection (future use)
         - Detection cache for symbol-based tracking
+
+        Threshold Scaling (Story 13.1):
+        --------------------------------
+        - Ice distance: BASE_ICE * multiplier (e.g., 2% * 0.30 = 0.6% for 15m)
+        - Creek rally: BASE_CREEK * multiplier (e.g., 5% * 0.30 = 1.5% for 15m)
+        - Max penetration: BASE_PENETRATION * multiplier
+        - Volume threshold: CONSTANT 0.7x across all timeframes (ratio, not percentage)
+
+        Example:
+            >>> # Default daily timeframe (backward compatible)
+            >>> detector = SpringDetector()
+            >>> assert detector.timeframe == "1d"
+            >>> assert detector.ice_threshold == Decimal("0.02")  # 2%
+            >>>
+            >>> # Intraday 15m timeframe
+            >>> detector = SpringDetector(timeframe="15m")
+            >>> assert detector.ice_threshold == Decimal("0.006")  # 0.6% (2% * 0.30)
+            >>> assert detector.volume_threshold == Decimal("0.7")  # Constant
+
+        Raises:
+            ValueError: If timeframe is not supported
         """
         self.logger = structlog.get_logger(__name__)
+
+        # Validate and store timeframe (Story 13.1 AC1.1)
+        self.timeframe = validate_timeframe(timeframe)
+        self.session_filter_enabled = session_filter_enabled
+        self.intraday_volume_analyzer = intraday_volume_analyzer
+
+        # Calculate timeframe-scaled thresholds (Story 13.1 AC1.2, AC1.3)
+        self.ice_threshold = get_scaled_threshold(ICE_DISTANCE_BASE, self.timeframe)
+        self.creek_min_rally = get_scaled_threshold(CREEK_MIN_RALLY_BASE, self.timeframe)
+        self.max_penetration = get_scaled_threshold(MAX_PENETRATION_BASE, self.timeframe)
+
+        # Volume threshold remains CONSTANT across timeframes (Story 13.1 AC1.7)
+        self.volume_threshold = SPRING_VOLUME_THRESHOLD
+
+        # Log initialization with scaled thresholds (Story 13.1 AC1.8)
+        self.logger.info(
+            "SpringDetector initialized",
+            timeframe=self.timeframe,
+            ice_threshold_pct=float(self.ice_threshold * 100),
+            creek_min_rally_pct=float(self.creek_min_rally * 100),
+            max_penetration_pct=float(self.max_penetration * 100),
+            volume_threshold=float(self.volume_threshold),
+            session_filter_enabled=session_filter_enabled,
+        )
+
         # Thread-safety lock removed for MVP - can add later if needed
         # self._detection_lock = Lock()
 
@@ -1778,7 +1847,7 @@ class SpringDetector:
         )
 
         # STEP 3: Multi-spring iteration loop
-        detected_indices = set()
+        detected_indices: set[int] = set()
         start_index = 20  # Minimum for volume calculation
         springs_with_tests: list[
             tuple[Spring, Test]
@@ -1790,6 +1859,7 @@ class SpringDetector:
                 range,
                 bars,
                 phase,
+                range.symbol,
                 start_index=start_index,
                 skip_indices=detected_indices,
                 volume_cache=volume_cache,  # Pass cache for O(1) lookups

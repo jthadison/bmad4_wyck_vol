@@ -113,6 +113,13 @@ from src.models.sos_signal import SOSSignal
 from src.models.trading_range import TradingRange
 from src.pattern_engine.detectors.sos_detector import detect_sos_breakout
 from src.pattern_engine.scoring.sos_confidence_scorer import calculate_sos_confidence
+from src.pattern_engine.timeframe_config import (
+    CREEK_MIN_RALLY_BASE,
+    ICE_DISTANCE_BASE,
+    SOS_VOLUME_THRESHOLD,
+    get_scaled_threshold,
+    validate_timeframe,
+)
 from src.signal_generator.sos_signal_generator import (
     generate_lps_signal,
     generate_sos_direct_signal,
@@ -214,9 +221,73 @@ class SOSDetector:
     Author: Story 6.7
     """
 
-    def __init__(self) -> None:
-        """Initialize SOSDetector with structured logging."""
+    def __init__(
+        self,
+        timeframe: str = "1d",
+        intraday_volume_analyzer: Optional[object] = None,
+        session_filter_enabled: bool = False,
+    ) -> None:
+        """
+        Initialize SOSDetector with timeframe-adaptive thresholds.
+
+        Args:
+            timeframe: Timeframe for threshold scaling ("1m", "5m", "15m", "1h", "1d").
+                Defaults to "1d" for backward compatibility (Story 13.1 AC1.6).
+            intraday_volume_analyzer: Optional IntradayVolumeAnalyzer instance for
+                session-relative volume calculations (Story 13.2).
+            session_filter_enabled: Enable forex session filtering for intraday
+                timeframes (Story 13.2).
+
+        Sets up:
+        - Structured logger instance
+        - Timeframe-scaled Ice/Creek thresholds (Story 13.1 AC1.2, AC1.3)
+        - Constant volume threshold (Story 13.1 AC1.7)
+        - Pending SOS pattern tracking (AC 9)
+
+        Threshold Scaling (Story 13.1):
+        --------------------------------
+        - Ice distance: BASE_ICE * multiplier (e.g., 2% * 0.30 = 0.6% for 15m)
+        - Creek rally: BASE_CREEK * multiplier (e.g., 5% * 0.30 = 1.5% for 15m)
+        - Volume threshold: CONSTANT 2.0x across all timeframes (ratio, not percentage)
+
+        Example:
+            >>> # Default daily timeframe (backward compatible)
+            >>> detector = SOSDetector()
+            >>> assert detector.timeframe == "1d"
+            >>> assert detector.ice_threshold == Decimal("0.02")  # 2%
+            >>>
+            >>> # Intraday 15m timeframe
+            >>> detector = SOSDetector(timeframe="15m")
+            >>> assert detector.ice_threshold == Decimal("0.006")  # 0.6% (2% * 0.30)
+            >>> assert detector.volume_threshold == Decimal("2.0")  # Constant
+
+        Raises:
+            ValueError: If timeframe is not supported
+        """
         self.logger = structlog.get_logger(__name__)
+
+        # Validate and store timeframe (Story 13.1 AC1.1)
+        self.timeframe = validate_timeframe(timeframe)
+        self.session_filter_enabled = session_filter_enabled
+        self.intraday_volume_analyzer = intraday_volume_analyzer
+
+        # Calculate timeframe-scaled thresholds (Story 13.1 AC1.2, AC1.3)
+        self.ice_threshold = get_scaled_threshold(ICE_DISTANCE_BASE, self.timeframe)
+        self.creek_min_rally = get_scaled_threshold(CREEK_MIN_RALLY_BASE, self.timeframe)
+
+        # Volume threshold remains CONSTANT across timeframes (Story 13.1 AC1.7)
+        self.volume_threshold = SOS_VOLUME_THRESHOLD
+
+        # Log initialization with scaled thresholds (Story 13.1 AC1.8)
+        self.logger.info(
+            "SOSDetector initialized",
+            timeframe=self.timeframe,
+            ice_threshold_pct=float(self.ice_threshold * 100),
+            creek_min_rally_pct=float(self.creek_min_rally * 100),
+            volume_threshold=float(self.volume_threshold),
+            session_filter_enabled=session_filter_enabled,
+        )
+
         # AC 9: Track pending SOS patterns waiting for LPS
         self._pending_sos: dict[str, dict] = {}  # {symbol: {sos, range, bars_since_sos}}
 
