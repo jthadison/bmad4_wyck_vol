@@ -76,6 +76,7 @@ from src.models.spring_history import SpringHistory
 from src.models.spring_signal import SpringSignal
 from src.models.test import Test
 from src.models.trading_range import RangeStatus, TradingRange
+from src.pattern_engine.intraday_volume_analyzer import IntradayVolumeAnalyzer
 from src.pattern_engine.scoring.scorer_factory import detect_asset_class, get_scorer
 from src.pattern_engine.timeframe_config import (
     CREEK_MIN_RALLY_BASE,
@@ -102,6 +103,8 @@ def detect_spring(
     start_index: int = 20,
     skip_indices: Optional[set[int]] = None,
     volume_cache: Optional[VolumeCache] = None,
+    timeframe: str = "1d",
+    intraday_volume_analyzer: Optional[IntradayVolumeAnalyzer] = None,
 ) -> Optional[Spring]:
     """
     Detect Spring patterns (penetration below Creek with low volume and rapid recovery).
@@ -118,6 +121,10 @@ def detect_spring(
         start_index: Index to start scanning from (default: 20 for volume calculation)
         skip_indices: Set of bar indices to skip (already detected springs)
         volume_cache: Optional VolumeCache for O(1) volume ratio lookups (Task 2A performance optimization)
+        timeframe: Timeframe for pattern detection (default: "1d"). Story 13.2 AC2.2
+        intraday_volume_analyzer: Optional IntradayVolumeAnalyzer for session-relative volume
+            calculations. If provided AND timeframe ≤ 1h, uses session-relative volume.
+            Otherwise uses standard global volume. Story 13.2 AC2.1, AC2.2, AC2.3
 
     Returns:
         Optional[Spring]: Spring if detected, None if not found or rejected
@@ -280,7 +287,18 @@ def detect_spring(
         # CRITICAL VOLUME VALIDATION (FR12)
         # ============================================================
 
-        # Calculate volume ratio - use cache if available (Task 2A optimization)
+        # Calculate volume ratio - Story 13.2: Session-relative or global
+        # Decision logic (AC2.2): Use session-relative if intraday_volume_analyzer
+        # provided AND timeframe <= 1h
+        use_session_relative = intraday_volume_analyzer is not None and timeframe in [
+            "1m",
+            "5m",
+            "15m",
+            "1h",
+        ]
+
+        session_name = None  # For logging (AC2.4)
+
         if volume_cache is not None:
             # O(1) cache lookup (5-10x faster for multi-spring detection)
             volume_ratio = volume_cache.get_ratio(bar.timestamp)
@@ -293,8 +311,31 @@ def detect_spring(
                     message="VolumeCache returned None (timestamp not in cache)",
                 )
                 continue  # Skip candidate
+        elif use_session_relative:
+            # Story 13.2 AC2.2: Use session-relative volume for intraday
+            session = intraday_volume_analyzer._detect_session(bar.timestamp)
+            session_name = session.value if hasattr(session, "value") else str(session)
+
+            volume_ratio_float = intraday_volume_analyzer.calculate_session_relative_volume(
+                bars, i, session
+            )
+
+            if volume_ratio_float is None:
+                logger.error(
+                    "session_relative_volume_calculation_failed",
+                    bar_timestamp=bar.timestamp.isoformat(),
+                    bar_index=i,
+                    session=session_name,
+                    message="IntradayVolumeAnalyzer returned None (insufficient session data)",
+                )
+                continue  # Skip candidate
+
+            # Convert float to Decimal and quantize to 4 decimal places
+            volume_ratio = Decimal(str(volume_ratio_float)).quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
+            )
         else:
-            # Fallback to VolumeAnalyzer (backward compatible)
+            # Story 13.2 AC2.3: Fallback to standard VolumeAnalyzer (backward compatible)
             volume_ratio_float = calculate_volume_ratio(bars, i)
 
             if volume_ratio_float is None:
@@ -313,16 +354,28 @@ def detect_spring(
             )
 
         # FR12 enforcement - NON-NEGOTIABLE binary rejection (AC 5)
+        # Story 13.2 AC2.8: Volume threshold remains 0.7x regardless of calculation method
         if volume_ratio >= Decimal("0.7"):
+            # Story 13.2 AC2.4: Enhanced logging with session info
+            log_data = {
+                "symbol": bar.symbol,
+                "bar_timestamp": bar.timestamp.isoformat(),
+                "volume_ratio": float(volume_ratio),
+                "threshold": 0.7,
+                "calculation_method": "session-relative"
+                if use_session_relative
+                else "global average",
+            }
+            if session_name:
+                log_data["session"] = session_name
+
             logger.warning(
                 "spring_invalid_high_volume",
-                symbol=bar.symbol,
-                bar_timestamp=bar.timestamp.isoformat(),
-                volume_ratio=float(volume_ratio),
-                threshold=0.7,
+                **log_data,
                 message=(
-                    f"SPRING INVALID: Volume {volume_ratio:.2f}x >= 0.7x "
-                    "threshold (HIGH VOLUME = BREAKDOWN, NOT SPRING) [FR12]"
+                    f"SPRING INVALID: Volume {volume_ratio:.2f}x >= 0.7x threshold "
+                    f"({'session-relative ' + session_name if session_name else 'global avg'}) "
+                    "[FR12]"
                 ),
             )
             continue  # REJECT immediately - no further processing
@@ -376,21 +429,40 @@ def detect_spring(
         )
 
         # Volume interpretation logging based on asset class (Story 0.5 AC 13-14)
+        # Story 13.2 AC2.4: Enhanced logging with session information
+        volume_log_data = {
+            "symbol": symbol,
+            "volume_ratio": float(volume_ratio),
+            "threshold": 0.7,
+            "result": "PASS",
+            "calculation_method": "session-relative" if use_session_relative else "global average",
+        }
+        if session_name:
+            volume_log_data["session"] = session_name
+
         if scorer.volume_reliability == "HIGH":
-            logger.debug(
-                "volume_interpretation",
-                symbol=symbol,
-                volume_ratio=float(volume_ratio),
+            logger.info(
+                "spring_volume_validation",
+                **volume_log_data,
                 interpretation="Institutional volume - confirms accumulation/distribution",
                 volume_type="Real shares/contracts traded",
+                message=(
+                    f"Volume: {volume_ratio:.2f}x "
+                    f"({'session-relative ' + session_name + ' avg' if session_name else 'global avg'}) "
+                    f"(threshold: <0.7x) ✅"
+                ),
             )
         else:
-            logger.debug(
-                "volume_interpretation",
-                symbol=symbol,
-                tick_volume_ratio=float(volume_ratio),
+            logger.info(
+                "spring_volume_validation",
+                **volume_log_data,
                 interpretation="Tick volume - shows activity only, NOT institutional confirmation",
                 volume_type="Price changes per period",
+                message=(
+                    f"Volume: {volume_ratio:.2f}x "
+                    f"({'session-relative ' + session_name + ' avg' if session_name else 'global avg'}) "
+                    f"(threshold: <0.7x) ✅"
+                ),
             )
 
         logger.info(
@@ -1654,7 +1726,7 @@ class SpringDetector:
     def __init__(
         self,
         timeframe: str = "1d",
-        intraday_volume_analyzer: Optional[object] = None,
+        intraday_volume_analyzer: Optional[IntradayVolumeAnalyzer] = None,
         session_filter_enabled: bool = False,
     ):
         """
@@ -1863,6 +1935,8 @@ class SpringDetector:
                 start_index=start_index,
                 skip_indices=detected_indices,
                 volume_cache=volume_cache,  # Pass cache for O(1) lookups
+                timeframe=self.timeframe,  # Story 13.2 AC2.2
+                intraday_volume_analyzer=self.intraday_volume_analyzer,  # Story 13.2 AC2.1
             )
 
             if spring is None:

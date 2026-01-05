@@ -279,27 +279,62 @@ def detect_sos_breakout(
         # Low-volume breakouts are false breakouts (absorption at resistance)
 
         if volume_ratio < Decimal("1.5"):
+            # Story 13.2 AC2.4: Enhanced logging with session information
+            rejection_log_data = {
+                "symbol": bar.symbol,
+                "bar_timestamp": bar.timestamp.isoformat(),
+                "volume_ratio": float(volume_ratio),
+                "threshold": 1.5,
+                "close_price": float(close_price),
+                "ice_level": float(ice_level),
+                "breakout_pct": float(breakout_pct),
+            }
+
+            # Add session information if available
+            session_name = volume_data.get("session")
+            calculation_method = volume_data.get("calculation_method", "global average")
+
+            if session_name:
+                rejection_log_data["session"] = session_name
+                rejection_log_data["calculation_method"] = calculation_method
+
             logger.warning(
                 "sos_invalid_low_volume",
-                symbol=bar.symbol,
-                bar_timestamp=bar.timestamp.isoformat(),
-                volume_ratio=float(volume_ratio),
-                threshold=1.5,
-                close_price=float(close_price),
-                ice_level=float(ice_level),
-                breakout_pct=float(breakout_pct),
-                message=f"SOS INVALID: Volume {float(volume_ratio):.2f}x < 1.5x - insufficient confirmation (FR12 - LOW VOLUME = FALSE BREAKOUT)",
+                **rejection_log_data,
+                message=(
+                    f"SOS INVALID: Volume {float(volume_ratio):.2f}x < 1.5x "
+                    f"({calculation_method + ' ' + session_name if session_name else calculation_method}) "
+                    f"- insufficient confirmation (FR12 - LOW VOLUME = FALSE BREAKOUT)"
+                ),
             )
             continue  # REJECT immediately - no further processing
 
         # Volume validation passed
-        logger.debug(
+        # Story 13.2 AC2.4: Enhanced logging with session information
+        volume_log_data = {
+            "symbol": bar.symbol,
+            "bar_timestamp": bar.timestamp.isoformat(),
+            "volume_ratio": float(volume_ratio),
+            "threshold": 2.0,  # SOS threshold
+            "result": "PASS",
+        }
+
+        # Add session information if available (Story 13.2 AC2.4)
+        session_name = volume_data.get("session")
+        calculation_method = volume_data.get("calculation_method", "global average")
+
+        if session_name:
+            volume_log_data["session"] = session_name
+            volume_log_data["calculation_method"] = calculation_method
+
+        logger.info(
             "sos_volume_validated",
-            symbol=bar.symbol,
-            bar_timestamp=bar.timestamp.isoformat(),
-            volume_ratio=float(volume_ratio),
-            threshold=1.5,
-            message=f"Volume expansion confirmed: {float(volume_ratio):.2f}x >= 1.5x (FR12)",
+            **volume_log_data,
+            message=(
+                f"Volume: {float(volume_ratio):.2f}x "
+                f"({calculation_method + ' ' + session_name if session_name else calculation_method}) "
+                f"(threshold: >=2.0x) ✅ [FR12]"
+            ),
         )
 
         # ============================================================
