@@ -112,6 +112,7 @@ from src.models.sos_breakout import SOSBreakout
 from src.models.sos_signal import SOSSignal
 from src.models.trading_range import TradingRange
 from src.pattern_engine.detectors.sos_detector import detect_sos_breakout
+from src.pattern_engine.intraday_volume_analyzer import IntradayVolumeAnalyzer
 from src.pattern_engine.scoring.sos_confidence_scorer import calculate_sos_confidence
 from src.pattern_engine.timeframe_config import (
     CREEK_MIN_RALLY_BASE,
@@ -224,7 +225,7 @@ class SOSDetector:
     def __init__(
         self,
         timeframe: str = "1d",
-        intraday_volume_analyzer: Optional[object] = None,
+        intraday_volume_analyzer: Optional[IntradayVolumeAnalyzer] = None,
         session_filter_enabled: bool = False,
     ) -> None:
         """
@@ -362,11 +363,72 @@ class SOSDetector:
         )
 
         # ============================================================
+        # STEP 0: Build volume analysis with session-relative calculation (Story 13.2)
+        # ============================================================
+        # Story 13.2 AC2.7: Use session-relative volume for intraday timeframes
+        # Decision logic (AC2.2): Use session-relative if intraday_volume_analyzer
+        # provided AND timeframe <= 1h
+        use_session_relative = self.intraday_volume_analyzer is not None and self.timeframe in [
+            "1m",
+            "5m",
+            "15m",
+            "1h",
+        ]
+
+        # Enhance volume_analysis with session information if using session-relative
+        enhanced_volume_analysis = volume_analysis.copy()
+
+        if use_session_relative:
+            # Add session-relative volume calculations to volume_analysis
+
+            for bar in bars:
+                if bar.timestamp in enhanced_volume_analysis:
+                    # Already has volume data - check if we need to recalculate with session-relative
+                    session = self.intraday_volume_analyzer._detect_session(bar.timestamp)
+                    bar_index = bars.index(bar)
+
+                    session_volume_ratio = (
+                        self.intraday_volume_analyzer.calculate_session_relative_volume(
+                            bars, bar_index, session
+                        )
+                    )
+
+                    if session_volume_ratio is not None:
+                        # Replace with session-relative volume
+                        enhanced_volume_analysis[bar.timestamp]["volume_ratio"] = Decimal(
+                            str(session_volume_ratio)
+                        )
+                        enhanced_volume_analysis[bar.timestamp]["session"] = (
+                            session.value if hasattr(session, "value") else str(session)
+                        )
+                        enhanced_volume_analysis[bar.timestamp][
+                            "calculation_method"
+                        ] = "session-relative"
+
+            self.logger.debug(
+                "using_session_relative_volume",
+                symbol=symbol,
+                timeframe=self.timeframe,
+                message="Using session-relative volume calculations for SOS detection",
+            )
+        else:
+            self.logger.debug(
+                "using_global_volume",
+                symbol=symbol,
+                timeframe=self.timeframe,
+                message="Using global average volume calculations for SOS detection",
+            )
+
+        # ============================================================
         # STEP 1: Detect SOS breakout (Story 6.1)
         # ============================================================
 
         sos = detect_sos_breakout(
-            range=range, bars=bars, volume_analysis=volume_analysis, phase=phase
+            range=range,
+            bars=bars,
+            volume_analysis=enhanced_volume_analysis,
+            phase=phase,
+            symbol=symbol,
         )
 
         if sos is None:
