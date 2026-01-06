@@ -68,6 +68,7 @@ from typing import Optional
 import structlog
 
 from src.models.creek_level import CreekLevel
+from src.models.forex import ForexSession, get_forex_session
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
 from src.models.spring import Spring
@@ -95,6 +96,48 @@ logger = structlog.get_logger(__name__)
 MINIMUM_CONFIDENCE_THRESHOLD = 70
 
 
+def _calculate_session_penalty(session: ForexSession, filter_enabled: bool) -> int:
+    """
+    Calculate confidence penalty based on session quality (Story 13.3.1).
+
+    Session Quality Tiers:
+    - LONDON/OVERLAP: Premium (no penalty) - Best liquidity
+    - NY: Good (minor penalty) - 70% of London liquidity, positive expectancy
+    - ASIAN: Poor (major penalty) - Low liquidity, false breakouts common
+    - NY_CLOSE: Very Poor (severe penalty) - Declining liquidity
+
+    When filter_enabled=True, ASIAN/NY_CLOSE get maximum penalty (-25)
+    to strongly discourage trading while still tracking for phase analysis.
+
+    Args:
+        session: ForexSession when pattern occurred
+        filter_enabled: Whether session filtering is also enabled
+
+    Returns:
+        int: Confidence penalty (0, -5, -20, or -25)
+
+    Example:
+        >>> _calculate_session_penalty(ForexSession.LONDON, False)
+        0
+        >>> _calculate_session_penalty(ForexSession.NY, False)
+        -5
+        >>> _calculate_session_penalty(ForexSession.ASIAN, False)
+        -20
+        >>> _calculate_session_penalty(ForexSession.ASIAN, True)
+        -25
+    """
+    if session in [ForexSession.LONDON, ForexSession.OVERLAP]:
+        return 0  # Premium sessions, no penalty
+    elif session == ForexSession.NY:
+        return -5  # Minor penalty, still tradeable
+    elif session == ForexSession.ASIAN:
+        return -25 if filter_enabled else -20  # Major penalty
+    elif session == ForexSession.NY_CLOSE:
+        return -25  # Severe penalty always
+
+    return 0  # Default: no penalty
+
+
 def detect_spring(
     trading_range: TradingRange,
     bars: list[OHLCVBar],
@@ -105,6 +148,8 @@ def detect_spring(
     volume_cache: Optional[VolumeCache] = None,
     timeframe: str = "1d",
     intraday_volume_analyzer: Optional[IntradayVolumeAnalyzer] = None,
+    session_filter_enabled: bool = False,
+    session_confidence_scoring_enabled: bool = False,
 ) -> Optional[Spring]:
     """
     Detect Spring patterns (penetration below Creek with low volume and rapid recovery).
@@ -125,6 +170,13 @@ def detect_spring(
         intraday_volume_analyzer: Optional IntradayVolumeAnalyzer for session-relative volume
             calculations. If provided AND timeframe ≤ 1h, uses session-relative volume.
             Otherwise uses standard global volume. Story 13.2 AC2.1, AC2.2, AC2.3
+        session_filter_enabled: Enable forex session filtering for intraday timeframes.
+            When True, rejects patterns in ASIAN (0-8 UTC) and NY_CLOSE (20-22 UTC) sessions.
+            Default False for backward compatibility. Story 13.3 AC3.1, AC3.2, AC3.3
+        session_confidence_scoring_enabled: Enable session-based confidence penalties for intraday patterns.
+            When True, applies confidence penalties based on session quality (LONDON/OVERLAP: 0, NY: -5,
+            ASIAN: -20, NY_CLOSE: -25). Patterns are still detected but marked as non-tradeable if
+            confidence drops below 70. Default False for backward compatibility. Story 13.3.1 AC1.1, AC1.2
 
     Returns:
         Optional[Spring]: Spring if detected, None if not found or rejected
@@ -410,8 +462,45 @@ def detect_spring(
             continue  # Try next penetration candidate
 
         # ============================================================
+        # SESSION FILTERING (Story 13.3 AC3.1-AC3.4, AC3.7)
+        # ============================================================
+
+        # Apply session filtering only for intraday timeframes when enabled
+        if session_filter_enabled and timeframe in ["1m", "5m", "15m", "1h"]:
+            session = get_forex_session(bar.timestamp)
+
+            # Reject patterns in low-liquidity sessions (AC3.2, AC3.3)
+            if session in [ForexSession.ASIAN, ForexSession.NY_CLOSE]:
+                rejection_reasons = {
+                    ForexSession.ASIAN: "Low liquidity (~900 avg volume) - false breakouts common",
+                    ForexSession.NY_CLOSE: "Declining liquidity (20-22 UTC) - session close",
+                }
+
+                logger.info(
+                    "spring_rejected_session_filter",
+                    symbol=bar.symbol,
+                    bar_timestamp=bar.timestamp.isoformat(),
+                    session=session.value,
+                    reason=rejection_reasons[session],
+                    message=f"Pattern rejected - session filter ({session.value})",
+                )
+                continue  # Reject pattern, try next candidate
+
+            # Log accepted sessions for debugging (AC3.4)
+            logger.debug(
+                "spring_session_accepted",
+                symbol=bar.symbol,
+                bar_timestamp=bar.timestamp.isoformat(),
+                session=session.value,
+                message=f"Pattern accepted - valid session ({session.value})",
+            )
+
+        # ============================================================
         # CREATE SPRING INSTANCE (AC 7, Story 0.5 AC 4)
         # ============================================================
+
+        # Determine session for session-based scoring (Story 13.3.1)
+        pattern_session = get_forex_session(bar.timestamp)
 
         spring = Spring(
             bar=bar,
@@ -426,7 +515,38 @@ def detect_spring(
             trading_range_id=trading_range.id,
             asset_class=scorer.asset_class,  # Story 0.5 AC 4
             volume_reliability=scorer.volume_reliability,  # Story 0.5 AC 4
+            session_quality=pattern_session,  # Story 13.3.1 AC1.4
         )
+
+        # Apply session-based confidence scoring if enabled (Story 13.3.1 AC1.1, AC1.2, AC1.3)
+        if session_confidence_scoring_enabled and timeframe in ["1m", "5m", "15m", "1h"]:
+            penalty = _calculate_session_penalty(pattern_session, session_filter_enabled)
+            spring.session_confidence_penalty = penalty
+
+            # Calculate estimated base confidence for is_tradeable determination
+            # Full confidence scoring happens in calculate_spring_confidence(), but we need
+            # a quick estimate here to set the is_tradeable flag (AC1.4, AC2.1, AC2.2)
+            base_confidence = 85  # Assume good base confidence (typical for valid Spring)
+            final_confidence = base_confidence + penalty  # penalty is negative
+
+            # Set is_tradeable flag based on minimum threshold (AC2.1, AC2.2)
+            spring.is_tradeable = final_confidence >= MINIMUM_CONFIDENCE_THRESHOLD
+
+            logger.info(
+                "spring_detected_with_session_penalty",
+                symbol=bar.symbol,
+                bar_timestamp=bar.timestamp.isoformat(),
+                session=pattern_session.value,
+                base_confidence=base_confidence,
+                session_penalty=penalty,
+                final_confidence=final_confidence,
+                is_tradeable=spring.is_tradeable,
+                message=(
+                    f"Spring detected in {pattern_session.value} session - "
+                    f"confidence penalty {penalty} applied, final={final_confidence}, "
+                    f"tradeable={spring.is_tradeable}"
+                ),
+            )
 
         # Volume interpretation logging based on asset class (Story 0.5 AC 13-14)
         # Story 13.2 AC2.4: Enhanced logging with session information
@@ -1728,6 +1848,7 @@ class SpringDetector:
         timeframe: str = "1d",
         intraday_volume_analyzer: Optional[IntradayVolumeAnalyzer] = None,
         session_filter_enabled: bool = False,
+        session_confidence_scoring_enabled: bool = False,
     ):
         """
         Initialize SpringDetector with timeframe-adaptive thresholds.
@@ -1738,7 +1859,9 @@ class SpringDetector:
             intraday_volume_analyzer: Optional IntradayVolumeAnalyzer instance for
                 session-relative volume calculations (Story 13.2).
             session_filter_enabled: Enable forex session filtering for intraday
-                timeframes (Story 13.2).
+                timeframes (Story 13.3).
+            session_confidence_scoring_enabled: Enable session-based confidence penalties
+                for intraday patterns (Story 13.3.1).
 
         Sets up:
         - Structured logger instance
@@ -1773,6 +1896,7 @@ class SpringDetector:
         # Validate and store timeframe (Story 13.1 AC1.1)
         self.timeframe = validate_timeframe(timeframe)
         self.session_filter_enabled = session_filter_enabled
+        self.session_confidence_scoring_enabled = session_confidence_scoring_enabled
         self.intraday_volume_analyzer = intraday_volume_analyzer
 
         # Calculate timeframe-scaled thresholds (Story 13.1 AC1.2, AC1.3)
@@ -1937,6 +2061,8 @@ class SpringDetector:
                 volume_cache=volume_cache,  # Pass cache for O(1) lookups
                 timeframe=self.timeframe,  # Story 13.2 AC2.2
                 intraday_volume_analyzer=self.intraday_volume_analyzer,  # Story 13.2 AC2.1
+                session_filter_enabled=self.session_filter_enabled,  # Story 13.3 AC3.1
+                session_confidence_scoring_enabled=self.session_confidence_scoring_enabled,  # Story 13.3.1 AC1.1
             )
 
             if spring is None:

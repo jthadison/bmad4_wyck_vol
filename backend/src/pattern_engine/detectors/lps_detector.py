@@ -88,6 +88,7 @@ from typing import Any, Optional
 
 import structlog
 
+from src.models.forex import ForexSession, get_forex_session
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
 from src.models.sos_breakout import SOSBreakout
@@ -96,12 +97,45 @@ from src.models.trading_range import TradingRange
 logger = structlog.get_logger(__name__)
 
 # Constants
+MINIMUM_CONFIDENCE_THRESHOLD = 70  # Story 13.3.1 AC2.1
 PULLBACK_WINDOW = 10  # AC 3: LPS must occur within 10 bars after SOS
 TIER_1_MAX_DISTANCE = Decimal("1.0")  # 1% above Ice (premium)
 TIER_2_MAX_DISTANCE = Decimal("2.0")  # 2% above Ice (quality)
 TIER_3_MAX_DISTANCE = Decimal("3.0")  # 3% above Ice (acceptable)
 SUPPORT_TOLERANCE = Decimal("0.98")  # Ice - 2% (critical minimum)
 BOUNCE_THRESHOLD_PCT = Decimal("1.01")  # 1% above pullback low for bounce
+
+
+def _calculate_session_penalty(session: ForexSession, filter_enabled: bool) -> int:
+    """
+    Calculate confidence penalty based on session quality (Story 13.3.1).
+
+    Session Quality Tiers:
+    - LONDON/OVERLAP: Premium (no penalty) - Best liquidity
+    - NY: Good (minor penalty) - 70% of London liquidity, positive expectancy
+    - ASIAN: Poor (major penalty) - Low liquidity, false breakouts common
+    - NY_CLOSE: Very Poor (severe penalty) - Declining liquidity
+
+    When filter_enabled=True, ASIAN/NY_CLOSE get maximum penalty (-25)
+    to strongly discourage trading while still tracking for phase analysis.
+
+    Args:
+        session: ForexSession when pattern occurred
+        filter_enabled: Whether session filtering is also enabled
+
+    Returns:
+        int: Confidence penalty (0, -5, -20, or -25)
+    """
+    if session in [ForexSession.LONDON, ForexSession.OVERLAP]:
+        return 0  # Premium sessions, no penalty
+    elif session == ForexSession.NY:
+        return -5  # Minor penalty, still tradeable
+    elif session == ForexSession.ASIAN:
+        return -25 if filter_enabled else -20  # Major penalty
+    elif session == ForexSession.NY_CLOSE:
+        return -25  # Severe penalty always
+
+    return 0  # Default: no penalty
 
 
 def get_bars_for_range(range: TradingRange, all_bars: list[OHLCVBar]) -> list[OHLCVBar]:
@@ -452,6 +486,9 @@ def detect_lps(
     sos: SOSBreakout,
     bars: list[OHLCVBar],
     volume_analysis: dict,
+    timeframe: str = "1d",
+    session_filter_enabled: bool = False,
+    session_confidence_scoring_enabled: bool = False,
 ) -> Optional[LPS]:
     """
     Detect LPS (Last Point of Support) after SOS breakout.
@@ -465,6 +502,13 @@ def detect_lps(
         sos: Previously detected SOS breakout (required context)
         bars: OHLCV bars following the SOS breakout (minimum 3 bars for pullback pattern)
         volume_analysis: Pre-calculated volume_ratio from VolumeAnalyzer (Story 2.5)
+        timeframe: Timeframe for pattern detection (default: "1d"). Story 13.3
+        session_filter_enabled: Enable forex session filtering for intraday timeframes.
+            When True, rejects patterns in ASIAN (0-8 UTC) and NY_CLOSE (20-22 UTC) sessions.
+            Default False for backward compatibility. Story 13.3 AC3.1, AC3.2, AC3.3
+        session_confidence_scoring_enabled: Enable session-based confidence penalties for intraday patterns.
+            When True, applies confidence penalties based on session quality. Default False for backward
+            compatibility. Story 13.3.1 AC1.1, AC1.2
 
     Returns:
         Optional[LPS]: LPS if detected and confirmed, None if not found or invalidated
@@ -819,7 +863,44 @@ def detect_lps(
     volume_trend_quality = volume_trend_analysis["trend_quality"]
     volume_trend_bonus = volume_trend_analysis["confidence_bonus"]
 
+    # ============================================================
+    # SESSION FILTERING (Story 13.3 AC3.1-AC3.4, AC3.7)
+    # ============================================================
+
+    # Apply session filtering only for intraday timeframes when enabled
+    if session_filter_enabled and timeframe in ["1m", "5m", "15m", "1h"]:
+        session = get_forex_session(pullback_low_bar.timestamp)
+
+        # Reject patterns in low-liquidity sessions (AC3.2, AC3.3)
+        if session in [ForexSession.ASIAN, ForexSession.NY_CLOSE]:
+            rejection_reasons = {
+                ForexSession.ASIAN: "Low liquidity (~900 avg volume) - false breakouts common",
+                ForexSession.NY_CLOSE: "Declining liquidity (20-22 UTC) - session close",
+            }
+
+            logger.info(
+                "lps_rejected_session_filter",
+                symbol=pullback_low_bar.symbol,
+                bar_timestamp=pullback_low_bar.timestamp.isoformat(),
+                session=session.value,
+                reason=rejection_reasons[session],
+                message=f"Pattern rejected - session filter ({session.value})",
+            )
+            return None  # Reject pattern
+
+        # Log accepted sessions for debugging (AC3.4)
+        logger.debug(
+            "lps_session_accepted",
+            symbol=pullback_low_bar.symbol,
+            bar_timestamp=pullback_low_bar.timestamp.isoformat(),
+            session=session.value,
+            message=f"Pattern accepted - valid session ({session.value})",
+        )
+
     # STEP 11: Create LPS Instance
+    # Determine session for session-based scoring (Story 13.3.1)
+    pattern_session = get_forex_session(pullback_low_bar.timestamp)
+
     lps = LPS(
         bar=pullback_low_bar,
         distance_from_ice=distance_from_ice_pct,
@@ -855,7 +936,37 @@ def detect_lps(
         volume_trend=volume_trend,
         volume_trend_quality=volume_trend_quality,
         volume_trend_bonus=volume_trend_bonus,
+        # Session-based confidence scoring (Story 13.3.1 AC1.4)
+        session_quality=pattern_session,
     )
+
+    # Apply session-based confidence scoring if enabled (Story 13.3.1 AC1.1, AC1.2, AC1.3)
+    if session_confidence_scoring_enabled and timeframe in ["1m", "5m", "15m", "1h"]:
+        penalty = _calculate_session_penalty(pattern_session, session_filter_enabled)
+        lps.session_confidence_penalty = penalty
+
+        # Calculate estimated base confidence for is_tradeable determination
+        base_confidence = 85  # Assume good base confidence (typical for valid LPS)
+        final_confidence = base_confidence + penalty  # penalty is negative
+
+        # Set is_tradeable flag based on minimum threshold (AC2.1, AC2.2)
+        lps.is_tradeable = final_confidence >= MINIMUM_CONFIDENCE_THRESHOLD
+
+        logger.info(
+            "lps_detected_with_session_penalty",
+            symbol=pullback_low_bar.symbol,
+            bar_timestamp=pullback_low_bar.timestamp.isoformat(),
+            session=pattern_session.value,
+            base_confidence=base_confidence,
+            session_penalty=penalty,
+            final_confidence=final_confidence,
+            is_tradeable=lps.is_tradeable,
+            message=(
+                f"LPS detected in {pattern_session.value} session - "
+                f"confidence penalty {penalty} applied, final={final_confidence}, "
+                f"tradeable={lps.is_tradeable}"
+            ),
+        )
 
     logger.info(
         "lps_detected",

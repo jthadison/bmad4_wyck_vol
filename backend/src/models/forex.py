@@ -24,15 +24,17 @@ class ForexSession(str, Enum):
     Sessions:
     ---------
     - ASIAN: Tokyo session (0:00-8:00 UTC) - Low liquidity, ranging
-    - LONDON: London session (8:00-17:00 UTC) - High liquidity, trending
-    - NY: New York session (13:00-22:00 UTC) - High liquidity, continuation
+    - LONDON: London session (8:00-13:00 UTC) - High liquidity, trending
     - OVERLAP: London/NY overlap (13:00-17:00 UTC) - Peak institutional activity
+    - NY: New York session (17:00-20:00 UTC) - Good liquidity, continuation
+    - NY_CLOSE: Late NY session (20:00-22:00 UTC) - Declining liquidity
     """
 
     ASIAN = "ASIAN"
     LONDON = "LONDON"
-    NY = "NY"
     OVERLAP = "OVERLAP"
+    NY = "NY"
+    NY_CLOSE = "NY_CLOSE"
 
 
 class NewsImpactLevel(str, Enum):
@@ -87,10 +89,11 @@ def get_forex_session(timestamp: datetime) -> ForexSession:
 
     Trading Sessions (UTC):
     -----------------------
-    - ASIAN: 0:00-8:00 UTC (Tokyo)
-    - LONDON: 8:00-17:00 UTC (excluding overlap)
-    - NY: 13:00-22:00 UTC (excluding overlap)
-    - OVERLAP: 13:00-17:00 UTC (London/NY overlap - peak activity)
+    - ASIAN: 0:00-8:00 UTC (Tokyo) - Low liquidity
+    - LONDON: 8:00-13:00 UTC - High liquidity
+    - OVERLAP: 13:00-17:00 UTC (London/NY overlap) - Peak institutional activity
+    - NY: 17:00-20:00 UTC - Good liquidity
+    - NY_CLOSE: 20:00-22:00 UTC - Declining liquidity
 
     Args:
         timestamp: UTC datetime to classify
@@ -104,20 +107,26 @@ def get_forex_session(timestamp: datetime) -> ForexSession:
         <ForexSession.OVERLAP: 'OVERLAP'>
         >>> get_forex_session(datetime(2025, 12, 1, 3, 0, tzinfo=UTC))
         <ForexSession.ASIAN: 'ASIAN'>
+        >>> get_forex_session(datetime(2025, 12, 1, 21, 0, tzinfo=UTC))
+        <ForexSession.NY_CLOSE: 'NY_CLOSE'>
     """
     hour_utc = timestamp.hour
+
+    # Asian session (0:00-8:00 UTC and 22:00-24:00 UTC)
+    if 0 <= hour_utc < 8 or 22 <= hour_utc < 24:
+        return ForexSession.ASIAN
+
+    # London session (8:00-13:00 UTC)
+    if 8 <= hour_utc < 13:
+        return ForexSession.LONDON
 
     # London/NY overlap (13:00-17:00 UTC) - Peak institutional activity
     if 13 <= hour_utc < 17:
         return ForexSession.OVERLAP
 
-    # London session (8:00-13:00 UTC before overlap, 17:00-17:00 after - just before)
-    if 8 <= hour_utc < 13:
-        return ForexSession.LONDON
-
-    # NY session (17:00-22:00 UTC after overlap)
-    if 17 <= hour_utc < 22:
+    # NY session (17:00-20:00 UTC)
+    if 17 <= hour_utc < 20:
         return ForexSession.NY
 
-    # Asian session (all other hours: 22:00-8:00 UTC)
-    return ForexSession.ASIAN
+    # NY_CLOSE session (20:00-22:00 UTC)
+    return ForexSession.NY_CLOSE

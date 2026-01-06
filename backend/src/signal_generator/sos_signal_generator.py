@@ -155,6 +155,17 @@ def generate_lps_signal(
         >>> if signal:
         ...     print(f"LPS Entry: ${signal.entry_price}, R: {signal.r_multiple}R")
     """
+    # Story 13.3.1: Check is_tradeable flag (respects session-based confidence scoring)
+    if not lps.is_tradeable:
+        logger.warning(
+            "lps_signal_rejected_not_tradeable",
+            confidence=confidence,
+            session=lps.session_quality.value,
+            session_penalty=lps.session_confidence_penalty,
+            message="Story 13.3.1: Pattern not tradeable (session confidence penalty applied)",
+        )
+        return None
+
     # Validate Ice and Jump levels exist
     if range.ice is None or range.ice.price is None:
         logger.error(
@@ -345,6 +356,17 @@ def generate_sos_direct_signal(
         >>> if signal:
         ...     print(f"SOS Direct Entry: ${signal.entry_price}, R: {signal.r_multiple}R")
     """
+    # Story 13.3.1: Check is_tradeable flag (respects session-based confidence scoring)
+    if not sos.is_tradeable:
+        logger.warning(
+            "sos_signal_rejected_not_tradeable",
+            confidence=confidence,
+            session=sos.session_quality.value,
+            session_penalty=sos.session_confidence_penalty,
+            message="Story 13.3.1: Pattern not tradeable (session confidence penalty applied)",
+        )
+        return None
+
     # Validate Ice and Jump levels exist
     if range.ice is None or range.ice.price is None:
         logger.error(
