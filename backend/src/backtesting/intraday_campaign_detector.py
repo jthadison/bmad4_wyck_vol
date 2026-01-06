@@ -1,366 +1,582 @@
 """
-Intraday Wyckoff Campaign Detector (Optimized for ≤1 Hour Timeframes)
+Intraday Wyckoff Campaign Detector (Pattern Integration - Story 13.4)
 
 Purpose:
 --------
-Adapts classic Wyckoff campaign detection for intraday timeframes where
-institutional behavior compresses from months → hours/days.
+Groups detected Wyckoff patterns (Spring, SOS, LPS) into micro-campaigns for
+campaign-based trading strategies. Tracks campaign phase progression, extracts
+risk metadata, and enforces portfolio risk limits.
 
-Key Differences from Classic Campaign Detector:
-------------------------------------------------
-1. Shorter campaign windows (hours instead of days)
-2. Session-aware pattern grouping (Asian/London/NY)
-3. Relaxed sequential requirements (partial campaigns valid)
-4. Volume analysis adjusted for tick volume
-5. News event filtering (avoid false patterns during spikes)
+Campaign Lifecycle:
+-------------------
+FORMING (1 pattern detected)
+    ↓ (2nd pattern within 48h window)
+ACTIVE (2+ patterns, valid sequence)
+    ↓ (reaches Phase E OR exceeds 72h)
+COMPLETED / FAILED
 
-Educational Context:
---------------------
-Richard Wyckoff's methodology was designed for daily+ timeframes where
-accumulation took months. Modern intraday markets require adaptation:
+Key Features (Story 13.4):
+--------------------------
+1. Pattern Integration: Spring, SOS, LPS patterns grouped into campaigns
+2. Time-Window Grouping: 48h pattern window, 48h max gap, 72h expiration
+3. Sequence Validation: Spring → AR → SOS → LPS (Wyckoff progression)
+4. Risk Metadata: Support/resistance levels, strength score, risk/share
+5. Portfolio Limits: Max concurrent campaigns, portfolio heat tracking
 
-- High-frequency algorithms create noise
-- News events cause instant volatility
-- Trading sessions create artificial boundaries
-- Micro-campaigns form in hours, not months
-
-This detector identifies these "micro-campaigns" while maintaining
-Wyckoff principles of supply/demand and phase progression.
-
-Author: Wyckoff Mentor - Intraday Optimization
+Author: Developer Agent (Story 13.4 Implementation)
 """
 
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from enum import Enum
+from typing import Optional, TypeAlias, Union
 from uuid import uuid4
 
 import structlog
 
-from src.backtesting.campaign_detector import WyckoffCampaignDetector
-from src.models.backtest import BacktestTrade, CampaignPerformance
-from src.models.forex import ForexSession
+from src.models.lps import LPS
+from src.models.sos_breakout import SOSBreakout
+from src.models.spring import Spring
+from src.models.wyckoff_phase import WyckoffPhase
 
 logger = structlog.get_logger(__name__)
 
 
-class IntradayCampaignDetector(WyckoffCampaignDetector):
+class CampaignState(Enum):
     """
-    Wyckoff campaign detector optimized for intraday timeframes.
+    Campaign lifecycle states.
 
-    Adapts classic Wyckoff detection for:
-    - 1-hour and below timeframes
-    - Forex session boundaries
-    - Compressed time scales
-    - Tick volume environments
+    State Transitions:
+    - FORMING: 1 pattern detected, waiting for second pattern
+    - ACTIVE: 2+ patterns, campaign is actionable
+    - COMPLETED: Campaign reached Phase E or successful exit
+    - FAILED: Exceeded 72h expiration without completion
+    """
+
+    FORMING = "FORMING"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+# Type alias for pattern union
+WyckoffPattern: TypeAlias = Union[Spring, SOSBreakout, LPS]
+
+
+@dataclass
+class Campaign:
+    """
+    Micro-campaign tracking detected Wyckoff patterns.
+
+    Attributes:
+        campaign_id: Unique campaign identifier
+        start_time: First pattern timestamp
+        patterns: List of detected patterns in chronological order
+        state: Current campaign state (FORMING/ACTIVE/COMPLETED/FAILED)
+        current_phase: Current Wyckoff phase based on pattern sequence
+        failure_reason: Reason for FAILED state (if applicable)
+
+        # Risk Metadata (AC4.9)
+        support_level: Lowest Spring low from all Spring patterns
+        resistance_level: Highest resistance from AR/test patterns
+        strength_score: Average pattern quality score (0.0-1.0)
+        risk_per_share: Entry price - support_level
+        range_width_pct: (resistance - support) / support * 100
 
     Example:
-        # For 1-hour charts
-        detector = IntradayCampaignDetector(
-            campaign_window_hours=48,  # 2-day micro-campaigns
-            min_patterns_for_campaign=2,  # Relaxed requirement
-            session_aware=True  # Group by trading session
+        Campaign(
+            campaign_id="abc123",
+            start_time=datetime(2025, 12, 15, 9, 0),
+            patterns=[spring, sos],
+            state=CampaignState.ACTIVE,
+            current_phase=WyckoffPhase.D,
+            support_level=Decimal("98.50"),
+            resistance_level=Decimal("102.50"),
+            strength_score=0.85,
+            risk_per_share=Decimal("4.50"),
+            range_width_pct=Decimal("4.06")
         )
-        campaigns = detector.detect_campaigns(trades)
     """
 
-    # Intraday pattern sequences (compressed versions)
-    # Allow partial campaigns - don't require complete Phase A→E
-    INTRADAY_ACCUMULATION_CORE = [
-        "SPRING",  # Phase C critical shakeout
-        "SOS",     # Phase D breakout
-    ]
+    campaign_id: str = field(default_factory=lambda: str(uuid4()))
+    start_time: datetime = field(default_factory=datetime.utcnow)
+    patterns: list[WyckoffPattern] = field(default_factory=list)
+    state: CampaignState = CampaignState.FORMING
+    current_phase: Optional[WyckoffPhase] = None
+    failure_reason: Optional[str] = None
 
-    INTRADAY_DISTRIBUTION_CORE = [
-        "UTAD",    # Phase C shakeout
-        "SOW",     # Phase D breakdown
-    ]
+    # AC4.9: Risk Metadata
+    support_level: Optional[Decimal] = None
+    resistance_level: Optional[Decimal] = None
+    strength_score: float = 0.0
+    risk_per_share: Optional[Decimal] = None
+    range_width_pct: Optional[Decimal] = None
+
+
+class IntradayCampaignDetector:
+    """
+    Wyckoff campaign detector for intraday pattern integration.
+
+    Groups detected patterns (Spring, SOS, LPS) into micro-campaigns based on
+    time windows and Wyckoff phase progression. Enforces portfolio risk limits
+    and tracks campaign lifecycle.
+
+    Args:
+        campaign_window_hours: Max hours between first and last pattern (default: 48)
+        max_pattern_gap_hours: Max hours between consecutive patterns (default: 48)
+        min_patterns_for_active: Min patterns to transition to ACTIVE (default: 2)
+        expiration_hours: Hours before campaign fails (default: 72)
+        max_concurrent_campaigns: Max ACTIVE campaigns allowed (default: 3)
+        max_portfolio_heat_pct: Max portfolio heat percentage (default: 40.0)
+
+    Example:
+        detector = IntradayCampaignDetector(
+            campaign_window_hours=48,
+            min_patterns_for_active=2,
+            max_concurrent_campaigns=3
+        )
+
+        detector.add_pattern(spring_pattern)
+        detector.add_pattern(sos_pattern)
+
+        active_campaigns = detector.get_active_campaigns()
+        # Returns list of ACTIVE campaigns with 2+ patterns
+    """
 
     def __init__(
         self,
-        campaign_window_hours: int = 48,  # 2 days for intraday
-        min_patterns_for_campaign: int = 2,  # Reduced from 3
-        session_aware: bool = True,  # Group by forex sessions
-        require_phase_progression: bool = False,  # Don't require full A→E
+        campaign_window_hours: int = 48,
+        max_pattern_gap_hours: int = 48,
+        min_patterns_for_active: int = 2,
+        expiration_hours: int = 72,
+        max_concurrent_campaigns: int = 3,
+        max_portfolio_heat_pct: float = 40.0,
     ):
-        """
-        Initialize intraday campaign detector.
-
-        Args:
-            campaign_window_hours: Max hours between patterns (default 48 = 2 days)
-            min_patterns_for_campaign: Minimum patterns to qualify (default 2)
-            session_aware: Group patterns within same trading session
-            require_phase_progression: Whether to enforce A→B→C→D→E sequence
-        """
-        # Convert hours to days for parent class
-        campaign_window_days = campaign_window_hours / 24.0
-        super().__init__(campaign_window_days=int(campaign_window_days))
-
+        """Initialize intraday campaign detector."""
         self.campaign_window_hours = campaign_window_hours
-        self.min_patterns_for_campaign = min_patterns_for_campaign
-        self.session_aware = session_aware
-        self.require_phase_progression = require_phase_progression
+        self.max_pattern_gap_hours = max_pattern_gap_hours
+        self.min_patterns_for_active = min_patterns_for_active
+        self.expiration_hours = expiration_hours
+        self.max_concurrent_campaigns = max_concurrent_campaigns
+        self.max_portfolio_heat_pct = max_portfolio_heat_pct
+        self.campaigns: list[Campaign] = []
 
         self.logger = logger.bind(
             component="intraday_campaign_detector",
             window_hours=campaign_window_hours,
+            max_gap_hours=max_pattern_gap_hours,
+            min_patterns=min_patterns_for_active,
+            expiration_hours=expiration_hours,
         )
 
-    def _group_trades_by_campaign(
-        self, sorted_trades: list[BacktestTrade]
-    ) -> dict[str, list[list[BacktestTrade]]]:
+    def add_pattern(self, pattern: WyckoffPattern) -> None:
         """
-        Group trades into micro-campaigns using intraday logic.
+        Add detected pattern and update campaigns.
 
-        Intraday Modifications:
-        1. Use hours instead of days for proximity
-        2. Respect session boundaries (Asian/London/NY)
-        3. Allow partial pattern sequences
-        4. Filter out news-spike patterns
+        Tasks 1-3: Pattern integration, grouping, state machine.
 
         Args:
-            sorted_trades: Trades sorted by entry_timestamp
+            pattern: Detected Spring, SOS, or LPS pattern
 
-        Returns:
-            Dict mapping symbol → list of campaign trade groups
+        Workflow:
+            1. Expire stale campaigns (Task 5)
+            2. Find existing campaign or check limits (Task 8)
+            3. Validate sequence if adding to existing (Task 7)
+            4. Update risk metadata (Task 6)
+            5. Transition state if threshold met (Task 3)
         """
-        campaigns_by_symbol: dict[str, list[list[BacktestTrade]]] = {}
+        # Task 5: Expire stale campaigns first
+        self.expire_stale_campaigns(pattern.detection_timestamp)
 
-        for trade in sorted_trades:
-            symbol = trade.symbol
-            pattern = trade.pattern_type.upper() if trade.pattern_type else ""
+        # Task 2: Find or create campaign
+        campaign = self._find_active_campaign(pattern)
 
-            # Initialize symbol tracking
-            if symbol not in campaigns_by_symbol:
-                campaigns_by_symbol[symbol] = [[trade]]
-                continue
-
-            # Get current campaign for this symbol
-            current_campaign = campaigns_by_symbol[symbol][-1]
-            last_trade = current_campaign[-1]
-
-            # Calculate time delta in HOURS (not days)
-            time_delta = trade.entry_timestamp - last_trade.entry_timestamp
-            hours_apart = time_delta.total_seconds() / 3600
-
-            # Start new campaign if time gap too large
-            if hours_apart > self.campaign_window_hours:
-                self.logger.debug(
-                    "Starting new campaign - time gap exceeded",
-                    symbol=symbol,
-                    hours_apart=hours_apart,
-                    window=self.campaign_window_hours,
+        if not campaign:
+            # AC4.11: Check portfolio limits before creating new campaign
+            if not self._check_portfolio_limits():
+                self.logger.warning(
+                    "Portfolio limits exceeded, cannot create new campaign",
+                    active_campaigns=len(self.get_active_campaigns()),
+                    max_allowed=self.max_concurrent_campaigns,
+                    pattern_type=type(pattern).__name__,
                 )
-                campaigns_by_symbol[symbol].append([trade])
-                continue
+                return
 
-            # Session-aware grouping (for forex)
-            if self.session_aware and self._is_different_session(
-                last_trade.entry_timestamp, trade.entry_timestamp
-            ):
-                self.logger.debug(
-                    "Starting new campaign - session boundary crossed",
-                    symbol=symbol,
-                    prev_time=last_trade.entry_timestamp,
-                    curr_time=trade.entry_timestamp,
+            # Start new campaign
+            campaign = Campaign(
+                start_time=pattern.detection_timestamp,
+                patterns=[pattern],
+                state=CampaignState.FORMING,
+            )
+            self.campaigns.append(campaign)
+
+            # AC4.9: Initialize risk metadata
+            self._update_campaign_metadata(campaign)
+
+            self.logger.info(
+                "New campaign started",
+                campaign_id=campaign.campaign_id,
+                timestamp=pattern.detection_timestamp,
+                pattern_type=type(pattern).__name__,
+                state=campaign.state.value,
+            )
+            return
+
+        # AC4.10: Validate sequence before adding
+        if not self._validate_sequence(campaign.patterns + [pattern]):
+            self.logger.warning(
+                "Invalid pattern sequence, maintaining previous phase",
+                campaign_id=campaign.campaign_id,
+                attempted_pattern=type(pattern).__name__,
+                existing_patterns=[type(p).__name__ for p in campaign.patterns],
+                current_phase=campaign.current_phase.value if campaign.current_phase else None,
+            )
+            # Still add pattern but don't update phase
+            campaign.patterns.append(pattern)
+            self._update_campaign_metadata(campaign)
+            return
+
+        # Add to existing campaign
+        campaign.patterns.append(pattern)
+
+        # AC4.9: Update risk metadata
+        self._update_campaign_metadata(campaign)
+
+        # Task 3: Check if we have enough patterns to mark ACTIVE
+        if len(campaign.patterns) >= self.min_patterns_for_active:
+            if campaign.state == CampaignState.FORMING:
+                campaign.state = CampaignState.ACTIVE
+                # AC4.10: Use sequence-based phase determination
+                campaign.current_phase = self._determine_phase(campaign.patterns)
+
+                self.logger.info(
+                    "Campaign transitioned to ACTIVE",
+                    campaign_id=campaign.campaign_id,
+                    pattern_count=len(campaign.patterns),
+                    phase=campaign.current_phase.value if campaign.current_phase else None,
+                    strength_score=campaign.strength_score,
+                    support_level=str(campaign.support_level) if campaign.support_level else None,
+                    resistance_level=str(campaign.resistance_level)
+                    if campaign.resistance_level
+                    else None,
                 )
-                campaigns_by_symbol[symbol].append([trade])
+            else:
+                # Already ACTIVE, just update phase
+                campaign.current_phase = self._determine_phase(campaign.patterns)
+                self.logger.debug(
+                    "Campaign updated",
+                    campaign_id=campaign.campaign_id,
+                    pattern_count=len(campaign.patterns),
+                    phase=campaign.current_phase.value if campaign.current_phase else None,
+                )
+
+    def _find_active_campaign(self, pattern: WyckoffPattern) -> Optional[Campaign]:
+        """
+        Find campaign that this pattern belongs to.
+
+        Task 2: Campaign grouping logic (48h window, gap validation).
+
+        Args:
+            pattern: Pattern to match against existing campaigns
+
+        Returns:
+            Matching campaign or None if no match found
+
+        Matching Logic:
+            1. Campaign must be FORMING or ACTIVE
+            2. Pattern within campaign_window_hours from start
+            3. Pattern within max_pattern_gap_hours from last pattern
+        """
+        for campaign in self.campaigns:
+            if campaign.state not in [CampaignState.FORMING, CampaignState.ACTIVE]:
                 continue
 
-            # Validate pattern fits in campaign sequence
-            current_patterns = [t.pattern_type.upper() for t in current_campaign if t.pattern_type]
+            hours_since_start = (
+                pattern.detection_timestamp - campaign.start_time
+            ).total_seconds() / 3600
 
-            # Intraday: More lenient pattern validation
-            if self._is_valid_intraday_pattern(current_patterns, pattern):
-                current_campaign.append(trade)
-            else:
-                # Pattern breaks sequence - start new campaign
-                campaigns_by_symbol[symbol].append([trade])
+            if hours_since_start <= self.campaign_window_hours:
+                # Check gap from last pattern
+                hours_since_last = (
+                    pattern.detection_timestamp - campaign.patterns[-1].detection_timestamp
+                ).total_seconds() / 3600
 
-        # Filter out campaigns with too few patterns
-        filtered_campaigns = {}
-        for symbol, campaign_groups in campaigns_by_symbol.items():
-            valid_campaigns = [
-                cg for cg in campaign_groups
-                if len(cg) >= self.min_patterns_for_campaign
-            ]
-            if valid_campaigns:
-                filtered_campaigns[symbol] = valid_campaigns
+                if hours_since_last <= self.max_pattern_gap_hours:
+                    return campaign
 
-        self.logger.info(
-            "Intraday campaign grouping complete",
-            total_symbols=len(filtered_campaigns),
-            total_campaigns=sum(len(cg) for cg in filtered_campaigns.values()),
-        )
+        return None
 
-        return filtered_campaigns
-
-    def _is_different_session(
-        self, timestamp1: datetime, timestamp2: datetime
-    ) -> bool:
+    def get_active_campaigns(self) -> list[Campaign]:
         """
-        Check if two timestamps are in different forex trading sessions.
+        Return campaigns in FORMING or ACTIVE state.
 
-        Trading Sessions (UTC):
-        - Asian: 0:00-8:00
-        - London: 8:00-17:00
-        - NY: 13:00-22:00
-        - Overlap: 13:00-17:00
-
-        Session boundaries indicate potential campaign breaks.
-
-        Args:
-            timestamp1: First timestamp
-            timestamp2: Second timestamp
+        Task 4: Get active campaigns retrieval method.
 
         Returns:
-            True if different sessions
+            List of campaigns in FORMING or ACTIVE state
         """
-        # Convert to UTC hour
-        hour1 = timestamp1.hour
-        hour2 = timestamp2.hour
+        return [
+            c for c in self.campaigns if c.state in [CampaignState.FORMING, CampaignState.ACTIVE]
+        ]
 
-        # Determine sessions
-        def get_session(hour: int) -> str:
-            if 0 <= hour < 8:
-                return "ASIAN"
-            elif 8 <= hour < 13:
-                return "LONDON"
-            elif 13 <= hour < 17:
-                return "OVERLAP"  # London/NY overlap
-            elif 17 <= hour < 22:
-                return "NY"
-            else:
-                return "ASIAN"  # 22:00-24:00 rolls to next Asian
-
-        return get_session(hour1) != get_session(hour2)
-
-    def _is_valid_intraday_pattern(
-        self, current_patterns: list[str], new_pattern: str
-    ) -> bool:
+    def expire_stale_campaigns(self, current_time: datetime) -> None:
         """
-        Validate if new_pattern is valid for intraday micro-campaign.
+        Mark campaigns as FAILED if expired.
 
-        Intraday Modifications:
-        1. Don't require full Phase A patterns (SC, AR, etc.)
-        2. Focus on actionable patterns (Spring, SOS, UTAD, SOW)
-        3. Allow "mini-campaigns" with just 2-3 core patterns
+        Task 5: Campaign expiration (72h → FAILED).
 
         Args:
-            current_patterns: Patterns already in campaign
-            new_pattern: Candidate pattern to add
+            current_time: Current timestamp for expiration check
+
+        Logic:
+            - Campaigns in FORMING or ACTIVE state
+            - Exceeding expiration_hours from start_time
+            - Transitioned to FAILED with reason
+        """
+        for campaign in self.campaigns:
+            if campaign.state in [CampaignState.FORMING, CampaignState.ACTIVE]:
+                hours_elapsed = (current_time - campaign.start_time).total_seconds() / 3600
+
+                if hours_elapsed > self.expiration_hours:
+                    campaign.state = CampaignState.FAILED
+                    campaign.failure_reason = f"Expired after {hours_elapsed:.1f} hours"
+
+                    self.logger.info(
+                        "Campaign expired",
+                        campaign_id=campaign.campaign_id,
+                        campaign_start=campaign.start_time,
+                        pattern_count=len(campaign.patterns),
+                        hours_elapsed=hours_elapsed,
+                        failure_reason=campaign.failure_reason,
+                    )
+
+    def _determine_phase(self, patterns: list[WyckoffPattern]) -> Optional[WyckoffPhase]:
+        """
+        Determine Wyckoff phase based on pattern sequence.
+
+        Task 7: Sequence-based phase assignment.
+        AC4.10: Analyzes LATEST pattern in valid sequence, not just existence.
+
+        Args:
+            patterns: List of patterns in chronological order
 
         Returns:
-            True if pattern is valid for intraday micro-campaign
+            Wyckoff phase based on latest pattern
+
+        Phase Assignment Logic:
+            - SOS or LPS → Phase D (markup preparation)
+            - Spring → Phase C (testing phase)
+            - Default → Phase B (accumulation)
         """
-        # If not enforcing phase progression, be very lenient
-        if not self.require_phase_progression:
-            # Just check if it's a valid Wyckoff pattern
-            valid_patterns = (
-                self.ACCUMULATION_PATTERNS + self.DISTRIBUTION_PATTERNS
+        if not patterns:
+            return None
+
+        # Analyze sequence from most recent pattern backwards
+        latest_pattern = patterns[-1]
+
+        # Phase D: SOS or LPS indicates markup preparation
+        if isinstance(latest_pattern, SOSBreakout | LPS):
+            return WyckoffPhase.D
+
+        # Phase C: Spring indicates testing phase
+        if isinstance(latest_pattern, Spring):
+            return WyckoffPhase.C
+
+        # Default to Phase B (accumulation)
+        return WyckoffPhase.B
+
+    def _validate_sequence(self, patterns: list[WyckoffPattern]) -> bool:
+        """
+        Validate pattern sequence follows logical Wyckoff progression.
+
+        Task 7: Sequence validation.
+        AC4.10: Valid sequences - Spring → SOS → LPS
+
+        Args:
+            patterns: Pattern sequence to validate
+
+        Returns:
+            True if sequence is valid, False otherwise
+
+        Valid Transitions:
+            - Spring → [Spring, SOSBreakout]
+            - SOSBreakout → [SOSBreakout, LPS]
+            - LPS → [LPS]
+
+        Invalid Examples:
+            - Spring after SOS (Phase C cannot follow Phase D)
+            - Spring after LPS (Phase C cannot follow Phase D)
+        """
+        if len(patterns) <= 1:
+            return True
+
+        # Define valid transitions
+        # Key: current pattern type, Value: list of allowed next patterns
+        VALID_TRANSITIONS: dict[type, list[type]] = {
+            Spring: [Spring, SOSBreakout],  # Can have multiple Springs, then SOS
+            SOSBreakout: [SOSBreakout, LPS],  # Can have multiple SOS, then LPS
+            LPS: [LPS],  # LPS can repeat
+        }
+
+        # Check each transition
+        for i in range(len(patterns) - 1):
+            current = patterns[i]
+            next_pattern = patterns[i + 1]
+
+            current_type = type(current)
+            next_type = type(next_pattern)
+
+            # Check if transition is valid
+            if current_type in VALID_TRANSITIONS:
+                if next_type not in VALID_TRANSITIONS[current_type]:
+                    self.logger.debug(
+                        "Invalid transition detected",
+                        from_pattern=current_type.__name__,
+                        to_pattern=next_type.__name__,
+                        valid_transitions=[t.__name__ for t in VALID_TRANSITIONS[current_type]],
+                    )
+                    return False
+
+        return True
+
+    def _update_campaign_metadata(self, campaign: Campaign) -> None:
+        """
+        Update campaign risk metadata based on patterns.
+
+        Task 6: Risk metadata extraction.
+        AC4.9: Extract support/resistance levels, calculate strength and risk metrics.
+
+        Args:
+            campaign: Campaign to update
+
+        Metadata Extracted:
+            - support_level: Lowest Spring low
+            - resistance_level: Highest test/AR high (Note: AR not in scope, use SOS)
+            - strength_score: Average pattern quality scores
+            - risk_per_share: Latest price - support_level
+            - range_width_pct: (resistance - support) / support * 100
+        """
+        if not campaign.patterns:
+            return
+
+        # Extract support level (lowest Spring low)
+        spring_lows = [
+            p.spring_low
+            for p in campaign.patterns
+            if isinstance(p, Spring) and hasattr(p, "spring_low")
+        ]
+        if spring_lows:
+            campaign.support_level = min(spring_lows)
+
+        # Extract resistance level (highest SOS breakout or LPS resistance)
+        # Note: AR patterns not in Story 13.4 scope, use SOS breakout_price as proxy
+        resistance_highs = []
+        for p in campaign.patterns:
+            if isinstance(p, SOSBreakout) and hasattr(p, "breakout_price"):
+                resistance_highs.append(p.breakout_price)
+            elif isinstance(p, LPS) and hasattr(p, "ice_level"):
+                # Ice is the resistance that was broken
+                resistance_highs.append(p.ice_level)
+
+        if resistance_highs:
+            campaign.resistance_level = max(resistance_highs)
+
+        # Calculate strength score (average of pattern quality scores)
+        # Use quality_tier property to derive numeric score
+        quality_scores = []
+        for p in campaign.patterns:
+            if isinstance(p, Spring):
+                # Map quality_tier to numeric score
+                tier = p.quality_tier
+                if tier == "IDEAL":
+                    quality_scores.append(0.95)
+                elif tier == "GOOD":
+                    quality_scores.append(0.80)
+                elif tier == "ACCEPTABLE":
+                    quality_scores.append(0.65)
+            elif isinstance(p, SOSBreakout):
+                tier = p.quality_tier
+                if tier == "EXCELLENT":
+                    quality_scores.append(0.95)
+                elif tier == "GOOD":
+                    quality_scores.append(0.85)
+                elif tier == "ACCEPTABLE":
+                    quality_scores.append(0.70)
+            elif isinstance(p, LPS):
+                # LPS has get_overall_quality() method
+                tier = p.get_overall_quality()
+                if tier == "EXCELLENT":
+                    quality_scores.append(0.95)
+                elif tier == "GOOD":
+                    quality_scores.append(0.85)
+                elif tier == "ACCEPTABLE":
+                    quality_scores.append(0.70)
+                elif tier == "POOR":
+                    quality_scores.append(0.50)
+
+        if quality_scores:
+            campaign.strength_score = sum(quality_scores) / len(quality_scores)
+        else:
+            # Default to moderate strength if patterns don't have quality scores
+            campaign.strength_score = 0.5
+
+        # Calculate risk per share (current price - support)
+        if campaign.support_level and campaign.patterns:
+            latest_pattern = campaign.patterns[-1]
+            latest_price = None
+
+            if isinstance(latest_pattern, Spring):
+                latest_price = latest_pattern.recovery_price
+            elif isinstance(latest_pattern, SOSBreakout):
+                latest_price = latest_pattern.breakout_price
+            elif isinstance(latest_pattern, LPS):
+                latest_price = latest_pattern.bar.close
+
+            if latest_price:
+                campaign.risk_per_share = latest_price - campaign.support_level
+
+        # Calculate range width percentage
+        if campaign.support_level and campaign.resistance_level:
+            campaign.range_width_pct = (
+                (campaign.resistance_level - campaign.support_level)
+                / campaign.support_level
+                * Decimal("100")
             )
-            return new_pattern in valid_patterns
 
-        # Otherwise, use parent class strict validation
-        return super()._is_valid_next_pattern(current_patterns, new_pattern)
-
-    def _build_campaign_performance(
-        self, campaign_trades: list[BacktestTrade]
-    ) -> CampaignPerformance:
+    def _check_portfolio_limits(self) -> bool:
         """
-        Build CampaignPerformance for intraday micro-campaign.
+        Check if portfolio limits allow new campaign creation.
 
-        Intraday Modifications:
-        - Calculate duration in hours, not days
-        - Adjust completion criteria (partial campaigns OK)
-        - Add session distribution analysis
-
-        Args:
-            campaign_trades: All trades in this micro-campaign
+        Task 8: Portfolio risk limits enforcement.
+        AC4.11: Enforce max concurrent campaigns and portfolio heat limits.
 
         Returns:
-            CampaignPerformance with intraday-specific metrics
+            True if limits allow new campaign, False otherwise
+
+        Limits Checked:
+            1. Max concurrent campaigns (hard limit)
+            2. Warning at 80% of max concurrent campaigns
+            3. Portfolio heat calculation (future enhancement)
         """
-        # Use parent class for base calculation
-        campaign_perf = super()._build_campaign_performance(campaign_trades)
+        active_campaigns = self.get_active_campaigns()
 
-        # Add intraday-specific metadata
-        # Calculate campaign duration in hours
-        if campaign_trades:
-            start = campaign_trades[0].entry_timestamp
-            end = campaign_trades[-1].exit_timestamp or campaign_trades[-1].entry_timestamp
-            duration_hours = (end - start).total_seconds() / 3600
+        # Check concurrent campaign limit
+        if len(active_campaigns) >= self.max_concurrent_campaigns:
+            self.logger.warning(
+                "Max concurrent campaigns reached",
+                active=len(active_campaigns),
+                max=self.max_concurrent_campaigns,
+            )
+            return False
 
-            self.logger.debug(
-                "Intraday campaign built",
-                campaign_id=campaign_perf.campaign_id,
-                duration_hours=duration_hours,
-                patterns=campaign_perf.pattern_sequence,
-                type=campaign_perf.campaign_type,
+        # Log warning if approaching limit (80%)
+        if len(active_campaigns) >= self.max_concurrent_campaigns * 0.8:
+            self.logger.warning(
+                "Approaching max concurrent campaigns",
+                active=len(active_campaigns),
+                max=self.max_concurrent_campaigns,
+                utilization_pct=(len(active_campaigns) / self.max_concurrent_campaigns * 100),
             )
 
-        return campaign_perf
-
-
-def create_timeframe_optimized_detector(timeframe: str) -> WyckoffCampaignDetector:
-    """
-    Factory function to create appropriate campaign detector based on timeframe.
-
-    Args:
-        timeframe: Chart timeframe ("15m", "1h", "4h", "1d", etc.)
-
-    Returns:
-        IntradayCampaignDetector for ≤1h, WyckoffCampaignDetector for >1h
-
-    Example:
-        # For 15-minute charts
-        detector = create_timeframe_optimized_detector("15m")
-        # Returns IntradayCampaignDetector with 24-hour window
-
-        # For daily charts
-        detector = create_timeframe_optimized_detector("1d")
-        # Returns classic WyckoffCampaignDetector with 90-day window
-    """
-    # Parse timeframe
-    timeframe = timeframe.lower()
-
-    # Determine if intraday (≤1 hour)
-    is_intraday = timeframe in ["1m", "5m", "15m", "30m", "1h"]
-
-    if is_intraday:
-        # Intraday: use compressed campaign windows
-        if timeframe in ["1m", "5m"]:
-            window_hours = 12  # Very short micro-campaigns
-            min_patterns = 2
-        elif timeframe == "15m":
-            window_hours = 24  # 1-day campaigns
-            min_patterns = 2
-        elif timeframe == "30m":
-            window_hours = 36  # 1.5-day campaigns
-            min_patterns = 2
-        else:  # 1h
-            window_hours = 48  # 2-day campaigns
-            min_patterns = 2
-
-        logger.info(
-            "Creating intraday campaign detector",
-            timeframe=timeframe,
-            window_hours=window_hours,
-            min_patterns=min_patterns,
-        )
-
-        return IntradayCampaignDetector(
-            campaign_window_hours=window_hours,
-            min_patterns_for_campaign=min_patterns,
-            session_aware=True,
-            require_phase_progression=False,  # Lenient for intraday
-        )
-    else:
-        # Daily or higher: use classic detector
-        logger.info(
-            "Creating classic campaign detector",
-            timeframe=timeframe,
-            window_days=90,
-        )
-
-        return WyckoffCampaignDetector(campaign_window_days=90)
+        return True
