@@ -123,6 +123,7 @@ def detect_sos_breakout(
     timeframe: str = "1d",
     session_filter_enabled: bool = False,
     session_confidence_scoring_enabled: bool = False,
+    store_rejected_patterns: bool = True,
 ) -> Optional[SOSBreakout]:
     """
     Detect SOS (Sign of Strength) breakout patterns.
@@ -145,6 +146,10 @@ def detect_sos_breakout(
         session_confidence_scoring_enabled: Enable session-based confidence penalties for intraday patterns.
             When True, applies confidence penalties based on session quality. Default False for backward
             compatibility. Story 13.3.1 AC1.1, AC1.2
+        store_rejected_patterns: Store rejected patterns with rejection metadata for CO intelligence.
+            When True (default), rejected patterns are stored in database with rejection metadata.
+            When False, preserves Story 13.3 behavior (rejected patterns not stored).
+            Story 13.3.2 AC1.1, AC1.2, AC6.2
 
     Returns:
         Optional[SOSBreakout]: SOS if detected, None if not found or rejected
@@ -469,6 +474,11 @@ def detect_sos_breakout(
         # SESSION FILTERING (Story 13.3 AC3.1-AC3.4, AC3.7)
         # ============================================================
 
+        # Track rejection status for this pattern
+        rejected_by_filter = False
+        rejection_reason_text: Optional[str] = None
+        rejection_ts: Optional[datetime] = None
+
         # Apply session filtering only for intraday timeframes when enabled
         if session_filter_enabled and timeframe in ["1m", "5m", "15m", "1h"]:
             session = get_forex_session(bar.timestamp)
@@ -480,24 +490,42 @@ def detect_sos_breakout(
                     ForexSession.NY_CLOSE: "Declining liquidity (20-22 UTC) - session close",
                 }
 
+                rejection_reason_text = rejection_reasons[session]
+                rejection_ts = datetime.now(UTC)
+                rejected_by_filter = True
+
+                # Story 13.3.2: Decide whether to store or discard rejected pattern
+                if not store_rejected_patterns:
+                    # Preserve Story 13.3 behavior: discard rejected patterns
+                    logger.info(
+                        "sos_rejected_session_filter",
+                        symbol=bar.symbol,
+                        bar_timestamp=bar.timestamp.isoformat(),
+                        session=session.value,
+                        reason=rejection_reason_text,
+                        message=f"Pattern rejected - session filter ({session.value})",
+                    )
+                    continue  # Reject pattern, try next candidate
+
+                # Story 13.3.2: Store rejected pattern for CO analysis
                 logger.info(
-                    "sos_rejected_session_filter",
+                    "rejected_pattern_stored_for_intelligence",
+                    pattern_type="SOS",
+                    timestamp=bar.timestamp.isoformat(),
+                    session=session.value,
+                    rejection_reason=rejection_reason_text,
+                    message="Pattern rejected by session filter but stored for CO analysis",
+                )
+
+            # Log accepted sessions for debugging (AC3.4)
+            if not rejected_by_filter:
+                logger.debug(
+                    "sos_session_accepted",
                     symbol=bar.symbol,
                     bar_timestamp=bar.timestamp.isoformat(),
                     session=session.value,
-                    reason=rejection_reasons[session],
-                    message=f"Pattern rejected - session filter ({session.value})",
+                    message=f"Pattern accepted - valid session ({session.value})",
                 )
-                continue  # Reject pattern, try next candidate
-
-            # Log accepted sessions for debugging (AC3.4)
-            logger.debug(
-                "sos_session_accepted",
-                symbol=bar.symbol,
-                bar_timestamp=bar.timestamp.isoformat(),
-                session=session.value,
-                message=f"Pattern accepted - valid session ({session.value})",
-            )
 
         # ============================================================
         # CREATE SOS BREAKOUT INSTANCE - Task 6, Story 0.5 AC 9
@@ -523,6 +551,10 @@ def detect_sos_breakout(
             volume_reliability=scorer.volume_reliability,
             # Session-based confidence scoring (Story 13.3.1 AC1.4)
             session_quality=pattern_session,
+            # Story 13.3.2: Rejection metadata
+            rejected_by_session_filter=rejected_by_filter,
+            rejection_reason=rejection_reason_text,
+            rejection_timestamp=rejection_ts,
         )
 
         # Apply session-based confidence scoring if enabled (Story 13.3.1 AC1.1, AC1.2, AC1.3)
@@ -535,7 +567,10 @@ def detect_sos_breakout(
             final_confidence = base_confidence + penalty  # penalty is negative
 
             # Set is_tradeable flag based on minimum threshold (AC2.1, AC2.2)
-            sos_breakout.is_tradeable = final_confidence >= MINIMUM_CONFIDENCE_THRESHOLD
+            # Story 13.3.2: Rejected patterns are always non-tradeable
+            sos_breakout.is_tradeable = (
+                not rejected_by_filter and final_confidence >= MINIMUM_CONFIDENCE_THRESHOLD
+            )
 
             logger.info(
                 "sos_detected_with_session_penalty",

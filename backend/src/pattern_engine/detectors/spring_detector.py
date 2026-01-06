@@ -150,6 +150,7 @@ def detect_spring(
     intraday_volume_analyzer: Optional[IntradayVolumeAnalyzer] = None,
     session_filter_enabled: bool = False,
     session_confidence_scoring_enabled: bool = False,
+    store_rejected_patterns: bool = True,
 ) -> Optional[Spring]:
     """
     Detect Spring patterns (penetration below Creek with low volume and rapid recovery).
@@ -177,9 +178,13 @@ def detect_spring(
             When True, applies confidence penalties based on session quality (LONDON/OVERLAP: 0, NY: -5,
             ASIAN: -20, NY_CLOSE: -25). Patterns are still detected but marked as non-tradeable if
             confidence drops below 70. Default False for backward compatibility. Story 13.3.1 AC1.1, AC1.2
+        store_rejected_patterns: Store rejected patterns with rejection metadata for CO intelligence.
+            When True (default), rejected patterns are stored in database with rejection metadata.
+            When False, preserves Story 13.3 behavior (rejected patterns not stored).
+            Story 13.3.2 AC1.1, AC1.2, AC6.2
 
     Returns:
-        Optional[Spring]: Spring if detected, None if not found or rejected
+        Optional[Spring]: Spring if detected, None if not found or completely rejected
 
     Raises:
         ValueError: If trading_range is None, trading_range.creek is None,
@@ -462,8 +467,13 @@ def detect_spring(
             continue  # Try next penetration candidate
 
         # ============================================================
-        # SESSION FILTERING (Story 13.3 AC3.1-AC3.4, AC3.7)
+        # SESSION FILTERING (Story 13.3 AC3.1-AC3.4, Story 13.3.2 AC1.1-AC3.2)
         # ============================================================
+
+        # Track rejection status for this pattern
+        rejected_by_filter = False
+        rejection_reason_text: Optional[str] = None
+        rejection_ts: Optional[datetime] = None
 
         # Apply session filtering only for intraday timeframes when enabled
         if session_filter_enabled and timeframe in ["1m", "5m", "15m", "1h"]:
@@ -476,24 +486,43 @@ def detect_spring(
                     ForexSession.NY_CLOSE: "Declining liquidity (20-22 UTC) - session close",
                 }
 
+                rejection_reason_text = rejection_reasons[session]
+                rejection_ts = datetime.now(UTC)
+                rejected_by_filter = True
+
+                # Story 13.3.2: Decide whether to store or discard rejected pattern
+                if not store_rejected_patterns:
+                    # Story 13.3 behavior: Reject and discard
+                    logger.info(
+                        "spring_rejected_session_filter",
+                        symbol=bar.symbol,
+                        bar_timestamp=bar.timestamp.isoformat(),
+                        session=session.value,
+                        reason=rejection_reason_text,
+                        message=f"Pattern rejected - session filter ({session.value})",
+                    )
+                    continue  # Reject pattern, try next candidate
+
+                # Story 13.3.2: Store rejected pattern for CO intelligence
                 logger.info(
-                    "spring_rejected_session_filter",
+                    "rejected_pattern_stored_for_intelligence",
+                    symbol=bar.symbol,
+                    pattern_type="SPRING",
+                    timestamp=bar.timestamp.isoformat(),
+                    session=session.value,
+                    rejection_reason=rejection_reason_text,
+                    message="Pattern rejected by session filter but stored for CO analysis",
+                )
+
+            else:
+                # Log accepted sessions for debugging (AC3.4)
+                logger.debug(
+                    "spring_session_accepted",
                     symbol=bar.symbol,
                     bar_timestamp=bar.timestamp.isoformat(),
                     session=session.value,
-                    reason=rejection_reasons[session],
-                    message=f"Pattern rejected - session filter ({session.value})",
+                    message=f"Pattern accepted - valid session ({session.value})",
                 )
-                continue  # Reject pattern, try next candidate
-
-            # Log accepted sessions for debugging (AC3.4)
-            logger.debug(
-                "spring_session_accepted",
-                symbol=bar.symbol,
-                bar_timestamp=bar.timestamp.isoformat(),
-                session=session.value,
-                message=f"Pattern accepted - valid session ({session.value})",
-            )
 
         # ============================================================
         # CREATE SPRING INSTANCE (AC 7, Story 0.5 AC 4)
@@ -516,6 +545,10 @@ def detect_spring(
             asset_class=scorer.asset_class,  # Story 0.5 AC 4
             volume_reliability=scorer.volume_reliability,  # Story 0.5 AC 4
             session_quality=pattern_session,  # Story 13.3.1 AC1.4
+            # Story 13.3.2: Rejection metadata
+            rejected_by_session_filter=rejected_by_filter,
+            rejection_reason=rejection_reason_text,
+            rejection_timestamp=rejection_ts,
         )
 
         # Apply session-based confidence scoring if enabled (Story 13.3.1 AC1.1, AC1.2, AC1.3)
@@ -530,7 +563,10 @@ def detect_spring(
             final_confidence = base_confidence + penalty  # penalty is negative
 
             # Set is_tradeable flag based on minimum threshold (AC2.1, AC2.2)
-            spring.is_tradeable = final_confidence >= MINIMUM_CONFIDENCE_THRESHOLD
+            # Story 13.3.2: Rejected patterns are always non-tradeable
+            spring.is_tradeable = (
+                not rejected_by_filter and final_confidence >= MINIMUM_CONFIDENCE_THRESHOLD
+            )
 
             logger.info(
                 "spring_detected_with_session_penalty",
@@ -1849,6 +1885,7 @@ class SpringDetector:
         intraday_volume_analyzer: Optional[IntradayVolumeAnalyzer] = None,
         session_filter_enabled: bool = False,
         session_confidence_scoring_enabled: bool = False,
+        store_rejected_patterns: bool = True,
     ):
         """
         Initialize SpringDetector with timeframe-adaptive thresholds.
@@ -1862,6 +1899,8 @@ class SpringDetector:
                 timeframes (Story 13.3).
             session_confidence_scoring_enabled: Enable session-based confidence penalties
                 for intraday patterns (Story 13.3.1).
+            store_rejected_patterns: Store rejected patterns with rejection metadata for
+                CO intelligence tracking. Default True (Story 13.3.2).
 
         Sets up:
         - Structured logger instance
@@ -1897,6 +1936,7 @@ class SpringDetector:
         self.timeframe = validate_timeframe(timeframe)
         self.session_filter_enabled = session_filter_enabled
         self.session_confidence_scoring_enabled = session_confidence_scoring_enabled
+        self.store_rejected_patterns = store_rejected_patterns  # Story 13.3.2
         self.intraday_volume_analyzer = intraday_volume_analyzer
 
         # Calculate timeframe-scaled thresholds (Story 13.1 AC1.2, AC1.3)
@@ -2063,6 +2103,7 @@ class SpringDetector:
                 intraday_volume_analyzer=self.intraday_volume_analyzer,  # Story 13.2 AC2.1
                 session_filter_enabled=self.session_filter_enabled,  # Story 13.3 AC3.1
                 session_confidence_scoring_enabled=self.session_confidence_scoring_enabled,  # Story 13.3.1 AC1.1
+                store_rejected_patterns=self.store_rejected_patterns,  # Story 13.3.2 AC1.1
             )
 
             if spring is None:

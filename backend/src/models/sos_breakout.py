@@ -147,6 +147,20 @@ class SOSBreakout(BaseModel):
         description="Whether pattern meets minimum confidence threshold (>=70) for trade signals",
     )
 
+    # Rejected Pattern Intelligence Tracking (Story 13.3.2)
+    rejected_by_session_filter: bool = Field(
+        default=False,
+        description="Whether pattern was rejected by session filter (vs detected normally)",
+    )
+    rejection_reason: str | None = Field(
+        default=None,
+        description="Human-readable reason for rejection (from session filter messages)",
+    )
+    rejection_timestamp: datetime | None = Field(
+        default=None,
+        description="When rejection occurred (UTC)",
+    )
+
     @field_validator("detection_timestamp", mode="before")
     @classmethod
     def ensure_utc(cls, v: datetime) -> datetime:

@@ -369,14 +369,19 @@ def generate_spring_signal(
         )
         return None
 
-    # Story 13.3.1: Check is_tradeable flag (respects session-based confidence scoring)
-    if not spring.is_tradeable:
+    # Story 13.3.1 & 13.3.2: Check is_tradeable flag and rejected status
+    # Double-check: rejected patterns should never generate signals (AC5.1)
+    if not spring.is_tradeable or spring.rejected_by_session_filter:
         logger.warning(
             "spring_signal_rejected_not_tradeable",
             confidence=confidence,
             session=spring.session_quality.value,
             session_penalty=spring.session_confidence_penalty,
-            message="Story 13.3.1: Pattern not tradeable (session confidence penalty applied)",
+            rejected_by_session_filter=spring.rejected_by_session_filter,
+            message=(
+                "Pattern not tradeable - "
+                f"{'rejected by session filter' if spring.rejected_by_session_filter else 'low confidence'}"
+            ),
         )
         return None
 

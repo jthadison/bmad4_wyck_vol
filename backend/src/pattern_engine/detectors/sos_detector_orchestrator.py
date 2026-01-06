@@ -227,6 +227,7 @@ class SOSDetector:
         timeframe: str = "1d",
         intraday_volume_analyzer: Optional[IntradayVolumeAnalyzer] = None,
         session_filter_enabled: bool = False,
+        store_rejected_patterns: bool = True,
     ) -> None:
         """
         Initialize SOSDetector with timeframe-adaptive thresholds.
@@ -271,6 +272,7 @@ class SOSDetector:
         self.timeframe = validate_timeframe(timeframe)
         self.session_filter_enabled = session_filter_enabled
         self.intraday_volume_analyzer = intraday_volume_analyzer
+        self.store_rejected_patterns = store_rejected_patterns
 
         # Calculate timeframe-scaled thresholds (Story 13.1 AC1.2, AC1.3)
         self.ice_threshold = get_scaled_threshold(ICE_DISTANCE_BASE, self.timeframe)
@@ -429,6 +431,9 @@ class SOSDetector:
             volume_analysis=enhanced_volume_analysis,
             phase=phase,
             symbol=symbol,
+            timeframe=self.timeframe,
+            session_filter_enabled=self.session_filter_enabled,
+            store_rejected_patterns=self.store_rejected_patterns,
         )
 
         if sos is None:
