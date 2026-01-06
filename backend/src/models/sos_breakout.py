@@ -26,6 +26,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
+from src.models.forex import ForexSession
+
 # Import models - avoid circular imports
 from src.models.ohlcv import OHLCVBar
 
@@ -129,6 +131,20 @@ class SOSBreakout(BaseModel):
     volume_reliability: str = Field(
         default="HIGH",
         description="Volume reliability ('HIGH'=real volume, 'LOW'=tick volume only)",
+    )
+
+    # Session-Based Confidence Scoring (Story 13.3.1)
+    session_quality: ForexSession = Field(
+        default=ForexSession.LONDON,
+        description="Forex session when pattern occurred (affects confidence scoring)",
+    )
+    session_confidence_penalty: int = Field(
+        default=0,
+        description="Confidence points deducted for session quality (0, -5, -20, -25)",
+    )
+    is_tradeable: bool = Field(
+        default=True,
+        description="Whether pattern meets minimum confidence threshold (>=70) for trade signals",
     )
 
     @field_validator("detection_timestamp", mode="before")

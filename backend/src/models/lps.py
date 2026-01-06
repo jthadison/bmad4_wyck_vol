@@ -33,6 +33,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
+from src.models.forex import ForexSession
 from src.models.ohlcv import OHLCVBar
 
 
@@ -238,6 +239,20 @@ class LPS(BaseModel):
         ..., description="Volume trend quality: EXCELLENT, NEUTRAL, WARNING"
     )
     volume_trend_bonus: int = Field(..., description="Confidence bonus/penalty: +5, 0, -5")
+
+    # Session-Based Confidence Scoring (Story 13.3.1)
+    session_quality: ForexSession = Field(
+        default=ForexSession.LONDON,
+        description="Forex session when pattern occurred (affects confidence scoring)",
+    )
+    session_confidence_penalty: int = Field(
+        default=0,
+        description="Confidence points deducted for session quality (0, -5, -20, -25)",
+    )
+    is_tradeable: bool = Field(
+        default=True,
+        description="Whether pattern meets minimum confidence threshold (>=70) for trade signals",
+    )
 
     @field_validator("bars_after_sos")
     @classmethod
