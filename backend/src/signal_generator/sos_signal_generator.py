@@ -155,14 +155,19 @@ def generate_lps_signal(
         >>> if signal:
         ...     print(f"LPS Entry: ${signal.entry_price}, R: {signal.r_multiple}R")
     """
-    # Story 13.3.1: Check is_tradeable flag (respects session-based confidence scoring)
-    if not lps.is_tradeable:
+    # Story 13.3.1 & 13.3.2: Check is_tradeable flag and rejected status
+    # Double-check: rejected patterns should never generate signals (AC5.1)
+    if not lps.is_tradeable or lps.rejected_by_session_filter:
         logger.warning(
             "lps_signal_rejected_not_tradeable",
             confidence=confidence,
             session=lps.session_quality.value,
             session_penalty=lps.session_confidence_penalty,
-            message="Story 13.3.1: Pattern not tradeable (session confidence penalty applied)",
+            rejected_by_session_filter=lps.rejected_by_session_filter,
+            message=(
+                "Pattern not tradeable - "
+                f"{'rejected by session filter' if lps.rejected_by_session_filter else 'low confidence'}"
+            ),
         )
         return None
 
@@ -356,14 +361,19 @@ def generate_sos_direct_signal(
         >>> if signal:
         ...     print(f"SOS Direct Entry: ${signal.entry_price}, R: {signal.r_multiple}R")
     """
-    # Story 13.3.1: Check is_tradeable flag (respects session-based confidence scoring)
-    if not sos.is_tradeable:
+    # Story 13.3.1 & 13.3.2: Check is_tradeable flag and rejected status
+    # Double-check: rejected patterns should never generate signals (AC5.1)
+    if not sos.is_tradeable or sos.rejected_by_session_filter:
         logger.warning(
             "sos_signal_rejected_not_tradeable",
             confidence=confidence,
             session=sos.session_quality.value,
             session_penalty=sos.session_confidence_penalty,
-            message="Story 13.3.1: Pattern not tradeable (session confidence penalty applied)",
+            rejected_by_session_filter=sos.rejected_by_session_filter,
+            message=(
+                "Pattern not tradeable - "
+                f"{'rejected by session filter' if sos.rejected_by_session_filter else 'low confidence'}"
+            ),
         )
         return None
 

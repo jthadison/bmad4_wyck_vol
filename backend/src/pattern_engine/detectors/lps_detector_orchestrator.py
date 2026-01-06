@@ -142,6 +142,7 @@ class LPSDetector:
         timeframe: str = "1d",
         intraday_volume_analyzer: Optional[object] = None,
         session_filter_enabled: bool = False,
+        store_rejected_patterns: bool = True,
     ) -> None:
         """
         Initialize LPSDetector with timeframe-adaptive thresholds.
@@ -183,6 +184,7 @@ class LPSDetector:
         self.timeframe = validate_timeframe(timeframe)
         self.session_filter_enabled = session_filter_enabled
         self.intraday_volume_analyzer = intraday_volume_analyzer
+        self.store_rejected_patterns = store_rejected_patterns
 
         # Calculate timeframe-scaled Ice threshold (Story 13.1 AC1.2)
         self.ice_threshold = get_scaled_threshold(ICE_DISTANCE_BASE, self.timeframe)
@@ -245,7 +247,15 @@ class LPSDetector:
         )
 
         # Story 6.3: Detect LPS pullback
-        lps = detect_lps(range=range, sos=sos, bars=bars, volume_analysis=volume_analysis)
+        lps = detect_lps(
+            range=range,
+            sos=sos,
+            bars=bars,
+            volume_analysis=volume_analysis,
+            timeframe=self.timeframe,
+            session_filter_enabled=self.session_filter_enabled,
+            store_rejected_patterns=self.store_rejected_patterns,
+        )
 
         if lps is None:
             self.logger.debug(

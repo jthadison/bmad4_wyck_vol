@@ -257,8 +257,16 @@ class Pattern(Base):
         TIMESTAMP(timezone=True), nullable=True
     )
 
-    # Rejection
+    # Rejection (Story 13.3.2 - Rejected Pattern Intelligence Tracking)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejected_by_session_filter: Mapped[bool] = mapped_column(
+        Boolean, server_default="false", nullable=False
+    )
+    rejection_timestamp: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    is_tradeable: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+    session: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Pattern metadata (use different name to avoid SQLAlchemy reserved 'metadata')
     # Use JSON type (compatible with both SQLite and PostgreSQL)
