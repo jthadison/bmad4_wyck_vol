@@ -179,9 +179,9 @@ def upgrade() -> None:
     # 2. Create campaign_positions table (AC: 2)
     # ==========================================================================
     op.create_table(
-        "campaign_positions",
+        "positions",
         sa.Column(
-            "position_id",
+            "id",
             postgresql.UUID(as_uuid=True),
             server_default=sa.text("gen_random_uuid()"),
             primary_key=True,
@@ -318,24 +318,24 @@ def upgrade() -> None:
         unique=True,  # Already enforced by constraint, but helps queries
     )
 
-    # Campaign positions table indexes
+    # Positions table indexes
     op.create_index(
         "idx_positions_campaign",
-        "campaign_positions",
+        "positions",
         ["campaign_id"],
         unique=False,
     )
 
     op.create_index(
         "idx_positions_signal",
-        "campaign_positions",
+        "positions",
         ["signal_id"],
         unique=False,
     )
 
     op.create_index(
         "idx_positions_status",
-        "campaign_positions",
+        "positions",
         ["status"],
         unique=False,
     )
@@ -349,15 +349,15 @@ def downgrade() -> None:
     """
 
     # Drop indexes
-    op.drop_index("idx_positions_status", table_name="campaign_positions")
-    op.drop_index("idx_positions_signal", table_name="campaign_positions")
-    op.drop_index("idx_positions_campaign", table_name="campaign_positions")
+    op.drop_index("idx_positions_status", table_name="positions")
+    op.drop_index("idx_positions_signal", table_name="positions")
+    op.drop_index("idx_positions_campaign", table_name="positions")
     op.drop_index("idx_campaigns_campaign_id", table_name="campaigns")
     op.drop_index("idx_campaigns_trading_range", table_name="campaigns")
     op.drop_index("idx_campaigns_symbol_status", table_name="campaigns")
 
-    # Drop campaign_positions table
-    op.drop_table("campaign_positions")
+    # Drop positions table
+    op.drop_table("positions")
 
     # Remove added columns from campaigns table
     op.drop_column("campaigns", "invalidation_reason")
