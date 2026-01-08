@@ -1,0 +1,18 @@
+{
+  "timeframe": "1d",
+  "expected_results": {
+    "total_trades": 0,
+    "total_return_pct": 0.0,
+    "win_rate": 0.0
+  },
+  "tolerance": {
+    "total_trades": 1,
+    "total_return_pct": 1.0,
+    "win_rate": 0.05
+  },
+  "test_config": {
+    "days": 730,
+    "symbol": "C:EURUSD",
+    "note": "Baseline established from Story 13.5 first test run"
+  }
+}

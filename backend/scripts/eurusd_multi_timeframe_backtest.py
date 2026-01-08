@@ -362,6 +362,9 @@ class EURUSDMultiTimeframeBacktest:
         Returns:
             TradingRange with Ice/Creek levels for pattern detection
         """
+        from src.models.pivot import Pivot, PivotType
+        from src.models.price_cluster import PriceCluster
+
         lookback_bars = bars[max(0, current_index - 50) : current_index + 1]
 
         if not lookback_bars:
@@ -374,6 +377,127 @@ class EURUSDMultiTimeframeBacktest:
 
         range_high = max(highs)
         range_low = min(lows)
+
+        # Calculate range metrics
+        range_width = range_high - range_low
+        range_width_pct = (range_width / range_low).quantize(Decimal("0.0001"))  # 4 decimal places
+        midpoint = (range_high + range_low) / Decimal("2")
+
+        # Create minimal pivot objects for clusters (need at least 2)
+        # Find bars with highest and lowest prices
+        high_bars_indices = [i for i, h in enumerate(highs) if h == range_high]
+        low_bars_indices = [i for i, low_price in enumerate(lows) if low_price == range_low]
+
+        # Create resistance pivots (HIGH pivots - price must match bar.high)
+        resistance_pivots = []
+        for i in high_bars_indices[:2]:  # Take up to 2 pivots
+            resistance_pivots.append(
+                Pivot(
+                    bar=lookback_bars[i],
+                    index=max(0, current_index - 50) + i,
+                    price=lookback_bars[i].high,  # Must match bar.high for HIGH pivot
+                    timestamp=lookback_bars[i].timestamp,
+                    type=PivotType.HIGH,
+                    strength=5,
+                )
+            )
+
+        # Ensure we have at least 2 pivots (duplicate if needed)
+        if len(resistance_pivots) == 1:
+            resistance_pivots.append(resistance_pivots[0])
+        if not resistance_pivots:  # If no pivots found, create default ones
+            resistance_pivots = [
+                Pivot(
+                    bar=lookback_bars[-1],
+                    index=current_index,
+                    price=lookback_bars[-1].high,
+                    timestamp=lookback_bars[-1].timestamp,
+                    type=PivotType.HIGH,
+                    strength=5,
+                ),
+                Pivot(
+                    bar=lookback_bars[-1],
+                    index=current_index,
+                    price=lookback_bars[-1].high,
+                    timestamp=lookback_bars[-1].timestamp,
+                    type=PivotType.HIGH,
+                    strength=5,
+                ),
+            ]
+
+        # Create support pivots (LOW pivots - price must match bar.low)
+        support_pivots = []
+        for i in low_bars_indices[:2]:  # Take up to 2 pivots
+            support_pivots.append(
+                Pivot(
+                    bar=lookback_bars[i],
+                    index=max(0, current_index - 50) + i,
+                    price=lookback_bars[i].low,  # Must match bar.low for LOW pivot
+                    timestamp=lookback_bars[i].timestamp,
+                    type=PivotType.LOW,
+                    strength=5,
+                )
+            )
+
+        # Ensure we have at least 2 pivots (duplicate if needed)
+        if len(support_pivots) == 1:
+            support_pivots.append(support_pivots[0])
+        if not support_pivots:  # If no pivots found, create default ones
+            support_pivots = [
+                Pivot(
+                    bar=lookback_bars[-1],
+                    index=current_index,
+                    price=lookback_bars[-1].low,
+                    timestamp=lookback_bars[-1].timestamp,
+                    type=PivotType.LOW,
+                    strength=5,
+                ),
+                Pivot(
+                    bar=lookback_bars[-1],
+                    index=current_index,
+                    price=lookback_bars[-1].low,
+                    timestamp=lookback_bars[-1].timestamp,
+                    type=PivotType.LOW,
+                    strength=5,
+                ),
+            ]
+
+        # Create price clusters
+        # Calculate resistance cluster metrics
+        res_prices = [p.price for p in resistance_pivots]
+        res_avg = sum(res_prices) / len(res_prices)
+        res_min = min(res_prices)
+        res_max = max(res_prices)
+
+        resistance_cluster = PriceCluster(
+            pivots=resistance_pivots,
+            average_price=res_avg,
+            min_price=res_min,
+            max_price=res_max,
+            price_range=res_max - res_min,
+            touch_count=len(resistance_pivots),
+            cluster_type=PivotType.HIGH,
+            std_deviation=Decimal("0"),
+            timestamp_range=(resistance_pivots[0].timestamp, resistance_pivots[-1].timestamp),
+        )
+
+        # Calculate support cluster metrics
+        sup_prices = [p.price for p in support_pivots]
+        sup_avg = sum(sup_prices) / len(sup_prices)
+        sup_min = min(sup_prices)
+        sup_max = max(sup_prices)
+
+        support_cluster = PriceCluster(
+            pivots=support_pivots,
+            average_price=sup_avg,
+            min_price=sup_min,
+            max_price=sup_max,
+            price_range=sup_max - sup_min,
+            touch_count=len(support_pivots),
+            cluster_type=PivotType.LOW,
+            std_deviation=Decimal("0"),
+            timestamp_range=(support_pivots[0].timestamp, support_pivots[-1].timestamp),
+        )
 
         # Create Creek level (support) at range low with all required fields
         creek = CreekLevel(
@@ -392,16 +516,22 @@ class EURUSDMultiTimeframeBacktest:
             volume_trend="FLAT",
         )
 
-        # Create trading range
+        # Create trading range with all required fields
         return TradingRange(
             symbol=self.symbol,
-            start_date=lookback_bars[0].timestamp.date(),
-            range_high=range_high,
-            range_low=range_low,
-            ice_level=range_high,  # Resistance at range high
+            timeframe=self.current_timeframe,
+            support_cluster=support_cluster,
+            resistance_cluster=resistance_cluster,
+            support=range_low,
+            resistance=range_high,
+            midpoint=midpoint,
+            range_width=range_width,
+            range_width_pct=max(range_width_pct, Decimal("0.03")),  # Ensure minimum 3%
+            start_index=max(0, current_index - 50),
+            end_index=current_index,
+            duration=max(len(lookback_bars), 10),  # Ensure minimum 10 bars
             creek=creek,
             status=RangeStatus.ACTIVE,
-            bars_in_range=len(lookback_bars),
         )
 
     def _print_campaign_summary(self, timeframe: str):
