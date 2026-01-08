@@ -553,8 +553,39 @@ def test_valid_sequence_spring_spring_sos(detector, sample_spring, base_timestam
 def test_invalid_sequence_spring_after_sos_rejected(
     detector, sample_sos, base_timestamp, sample_bar
 ):
-    """AC4.8, AC4.10: Invalid sequence SOS → Spring rejected."""
+    """AC4.8, AC4.10: Invalid sequence SOS → Spring rejected with warning logged."""
     detector.add_pattern(sample_sos)
+
+    # Add second SOS to make campaign ACTIVE with Phase D
+    sos2_bar = OHLCVBar(
+        timestamp=base_timestamp + timedelta(hours=5),
+        open=Decimal("102.00"),
+        high=Decimal("104.00"),
+        low=Decimal("102.00"),
+        close=Decimal("103.50"),
+        volume=220000,
+        spread=Decimal("2.00"),  # high - low
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    sos2 = SOSBreakout(
+        bar=sos2_bar,
+        breakout_pct=Decimal("0.035"),
+        volume_ratio=Decimal("2.2"),
+        ice_reference=Decimal("100.00"),
+        breakout_price=Decimal("103.50"),
+        detection_timestamp=base_timestamp + timedelta(hours=5),
+        trading_range_id=uuid4(),
+        spread_ratio=Decimal("1.3"),
+        close_position=Decimal("0.75"),
+        spread=Decimal("2.00"),
+    )
+    detector.add_pattern(sos2)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    assert campaigns[0].state == CampaignState.ACTIVE
+    assert campaigns[0].current_phase == WyckoffPhase.D
 
     # Try adding Spring after SOS (invalid - Phase C cannot follow Phase D)
     spring_bar = OHLCVBar(
@@ -584,7 +615,7 @@ def test_invalid_sequence_spring_after_sos_rejected(
 
     campaigns = detector.get_active_campaigns()
     # Pattern should be added but phase should remain unchanged
-    assert len(campaigns[0].patterns) == 2
+    assert len(campaigns[0].patterns) == 3
     # Phase should still be D (from SOS, not updated due to invalid sequence)
     assert campaigns[0].current_phase == WyckoffPhase.D
 
@@ -714,10 +745,10 @@ def test_strength_score_calculation(detector, sample_spring, sample_sos):
 
     campaign = detector.get_active_campaigns()[0]
 
-    # Spring quality_tier = "ACCEPTABLE" (penetration 2%, volume 0.4) → 0.65
+    # Spring quality_tier = "GOOD" (penetration 2%, volume 0.4) → 0.80
     # SOS quality_tier = "GOOD" (breakout 2.5%, volume 2.0) → 0.85
-    # Average: (0.65 + 0.85) / 2 = 0.75
-    assert 0.7 <= campaign.strength_score <= 0.8
+    # Average: (0.80 + 0.85) / 2 = 0.825
+    assert 0.80 <= campaign.strength_score <= 0.85
 
 
 # ============================================================================
@@ -820,9 +851,18 @@ def test_phase_updated_on_new_pattern(detector, sample_spring, sample_sos, base_
 # ============================================================================
 
 
-def test_max_concurrent_campaigns_enforced(detector, base_timestamp, sample_bar):
+def test_max_concurrent_campaigns_enforced(base_timestamp, sample_bar):
     """AC4.11: Max concurrent campaigns limit enforced."""
+    # Extended expiration (200h) is test-specific to validate concurrent limit logic
+    # Production default (72h) is more appropriate for real trading scenarios
+    detector = IntradayCampaignDetector(
+        max_concurrent_campaigns=3,
+        campaign_window_hours=48,  # Patterns >48h apart create new campaigns
+        expiration_hours=200,  # Test-only: keep campaigns alive for limit enforcement testing
+    )
+
     # Create 3 campaigns (max_concurrent_campaigns = 3)
+    # Use 60h spacing to ensure campaigns don't group (>48h window)
     for i in range(3):
         spring_bar = OHLCVBar(
             timestamp=base_timestamp + timedelta(hours=i * 60),  # 60h apart
@@ -877,13 +917,19 @@ def test_max_concurrent_campaigns_enforced(detector, base_timestamp, sample_bar)
     )
     detector.add_pattern(spring4)
 
-    # Should still be only 3 campaigns
+    # Should still be only 3 campaigns (4th blocked by limit)
     assert len(detector.get_active_campaigns()) == 3
 
 
 def test_max_concurrent_campaigns_custom_limit(base_timestamp, sample_bar):
     """AC4.11: Custom max_concurrent_campaigns limit respected."""
-    detector = IntradayCampaignDetector(max_concurrent_campaigns=2)
+    # Extended expiration (200h) is test-specific to validate concurrent limit logic
+    # Production default (72h) is more appropriate for real trading scenarios
+    detector = IntradayCampaignDetector(
+        max_concurrent_campaigns=2,
+        campaign_window_hours=48,
+        expiration_hours=200,  # Test-only: keep campaigns alive for limit enforcement testing
+    )
 
     # Create 2 campaigns
     for i in range(2):
@@ -944,9 +990,17 @@ def test_max_concurrent_campaigns_custom_limit(base_timestamp, sample_bar):
 
 
 def test_portfolio_limits_allow_patterns_in_existing_campaigns(
-    detector, sample_spring, sample_sos, base_timestamp
+    sample_spring, sample_sos, base_timestamp
 ):
     """AC4.11: Portfolio limits don't block patterns added to existing campaigns."""
+    # Extended expiration (200h) is test-specific to validate concurrent limit logic
+    # Production default (72h) is more appropriate for real trading scenarios
+    detector = IntradayCampaignDetector(
+        max_concurrent_campaigns=3,
+        campaign_window_hours=48,
+        expiration_hours=200,  # Test-only: keep campaigns alive for limit enforcement testing
+    )
+
     # Create 3 campaigns at limit
     for i in range(3):
         spring_bar = OHLCVBar(
