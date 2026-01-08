@@ -48,6 +48,7 @@ Story 12.6A Models (Enhanced Metrics & Reporting):
 - RiskMetrics: Portfolio heat and capital deployment metrics
 - CampaignPerformance: Wyckoff campaign lifecycle tracking
 
+
 Story 12.7 Models (Regression Testing Automation):
 ----------------------------------------------------
 - RegressionTestConfig: Configuration for regression testing
@@ -455,6 +456,10 @@ class BacktestTrade(BaseModel):
     r_multiple: Decimal = Field(default=Decimal("0"), description="Risk-adjusted return")
     pattern_type: Optional[str] = Field(
         default=None, description="Pattern type that triggered trade"
+    )
+    # Story 13.6: Wyckoff exit reason tracking (FR6.7)
+    exit_reason: Optional[str] = Field(
+        default=None, description="Reason for exit (JUMP_LEVEL_HIT, UTAD_DETECTED, etc.)"
     )
 
     # Backward compatibility aliases for Story 11.2

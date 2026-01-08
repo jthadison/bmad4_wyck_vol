@@ -354,6 +354,73 @@ class TradingRange(BaseModel):
         """
         return len(self.get_events_by_type(event_type)) > 0
 
+    def calculate_jump_level(self) -> Decimal | None:
+        """
+        Calculate Jump Level (measured move target) from trading range.
+
+        Wyckoff Principle: "The cause (accumulation) determines the effect (markup)".
+        Jump Level = Ice + (Ice - Creek) = Ice + range_width
+
+        Args:
+            None
+
+        Returns:
+            Decimal: Jump Level price target, or None if Ice/Creek not available
+
+        Example:
+            Creek (Spring low): $1.0500
+            Ice (Resistance):   $1.0600
+            Range Width:        $0.0100 (100 pips)
+            Jump Level = $1.0600 + ($1.0600 - $1.0500) = $1.0700
+
+        Story 13.6 FR6.1: Jump Level calculation for exit targets
+        """
+        # Check if we have Ice level (resistance)
+        ice_price = None
+        if self.ice and hasattr(self.ice, "price"):
+            ice_price = self.ice.price
+        elif self.resistance:
+            ice_price = self.resistance
+
+        # Check if we have Creek level (support)
+        creek_price = None
+        if self.creek and hasattr(self.creek, "price"):
+            creek_price = self.creek.price
+        elif self.support:
+            creek_price = self.support
+
+        # Calculate Jump Level if we have both Ice and Creek
+        if ice_price and creek_price:
+            range_width = ice_price - creek_price
+            jump_level = ice_price + range_width
+            return jump_level
+
+        return None
+
+    @property
+    def ice_level(self) -> Decimal | None:
+        """
+        Get Ice level price (resistance).
+
+        Returns:
+            Decimal: Ice price, or resistance if Ice not set
+        """
+        if self.ice and hasattr(self.ice, "price"):
+            return self.ice.price
+        return self.resistance
+
+    @property
+    def creek_level(self) -> Decimal | None:
+        """
+        Get Creek level price (support).
+
+        Returns:
+            Decimal: Creek price, or support if Creek not set
+        """
+        if self.creek and hasattr(self.creek, "price"):
+            return self.creek.price
+        return self.support
+
 
 # Rebuild model after Zone is imported to resolve forward references
 def _rebuild_model():
