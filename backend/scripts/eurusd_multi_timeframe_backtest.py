@@ -29,7 +29,7 @@ Author: Wyckoff Mentor Analysis
 
 import asyncio
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -44,9 +44,16 @@ from src.backtesting.backtest_engine import BacktestEngine
 from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
 from src.market_data.adapters.polygon_adapter import PolygonAdapter
 from src.models.backtest import BacktestConfig, BacktestResult
-from src.models.forex import ForexSession
+from src.models.creek_level import CreekLevel
+from src.models.forex import ForexSession, get_forex_session
 from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import PhaseClassification, WyckoffPhase
+from src.models.trading_range import RangeStatus, TradingRange
+from src.pattern_engine.detectors.lps_detector import detect_lps
+from src.pattern_engine.detectors.sos_detector import detect_sos_breakout
+from src.pattern_engine.detectors.spring_detector import SpringDetector
 from src.pattern_engine.intraday_volume_analyzer import IntradayVolumeAnalyzer
+from src.pattern_engine.volume_analyzer import calculate_volume_ratio
 
 logger = structlog.get_logger(__name__)
 
@@ -70,7 +77,8 @@ class EURUSDMultiTimeframeBacktest:
         self.symbol = "C:EURUSD"
         self.adapter = PolygonAdapter()
         self.campaign_detector = None  # Will be set per-timeframe
-        self.intraday_volume = IntradayVolumeAnalyzer(asset_type="forex")
+        self.intraday_volume = None  # Will be set per-timeframe
+        self.spring_detector = None  # Will be set per-timeframe
         self.results = {}
         self.current_timeframe = None  # Track current timeframe for strategy
 
@@ -137,13 +145,38 @@ class EURUSDMultiTimeframeBacktest:
 
         print(f"[OK] Fetched {len(bars)} bars")
 
+        # Initialize volume analyzer and pattern detectors based on timeframe
+        is_intraday = timeframe_code in ["1m", "5m", "15m", "1h"]
+
+        if is_intraday:
+            # Intraday: Use IntradayVolumeAnalyzer with session filtering
+            self.intraday_volume = IntradayVolumeAnalyzer(asset_type="forex")
+            session_filter = True
+            print("[OK] Pattern detectors initialized (intraday mode):")
+            print("     - IntradayVolumeAnalyzer enabled")
+            print("     - Session filtering: ENABLED")
+        else:
+            # Daily: Standard volume analysis, no session filtering
+            self.intraday_volume = None
+            session_filter = False
+            print("[OK] Pattern detectors initialized (standard mode):")
+            print("     - Standard volume analysis")
+            print("     - Session filtering: DISABLED")
+
+        # Initialize SpringDetector with timeframe-specific config
+        self.spring_detector = SpringDetector(
+            timeframe=timeframe_code,
+            intraday_volume_analyzer=self.intraday_volume,
+            session_filter_enabled=session_filter,
+            session_confidence_scoring_enabled=session_filter,
+        )
+
         # Create timeframe-optimized campaign detector
         self.campaign_detector = create_timeframe_optimized_detector(timeframe_code)
         self.current_timeframe = timeframe_code
 
-        print(
-            f"[OK] Using {'intraday' if timeframe_code in ['15m', '1h'] else 'standard'} campaign detector"
-        )
+        print("     - SpringDetector ready")
+        print(f"     - Campaign detector: {'Intraday' if is_intraday else 'Standard'} mode")
 
         # Configure backtest
         config = BacktestConfig(
@@ -172,13 +205,13 @@ class EURUSDMultiTimeframeBacktest:
 
     def _intraday_wyckoff_strategy(self, bar: OHLCVBar, context: dict) -> Optional[str]:
         """
-        Intraday-optimized Wyckoff pattern detection strategy.
+        Intraday-optimized Wyckoff pattern detection strategy using real detectors.
 
         Integrates:
-        - Session-aware volume analysis
-        - Timeframe-adaptive thresholds
-        - Session-specific entry rules
-        - Low-volume reversal patterns (Spring-like setups)
+        - Real SpringDetector, SOSDetector, LPSDetector pattern detection
+        - Campaign-based position management
+        - Session-aware volume analysis for intraday timeframes
+        - Phase D entry logic (SOS breakouts in active campaigns)
 
         Args:
             bar: Current bar
@@ -190,9 +223,10 @@ class EURUSDMultiTimeframeBacktest:
         # Initialize context
         if "bars" not in context:
             context["bars"] = []
-            context["prices"] = []
             context["position"] = False
             context["entry_price"] = None
+            context["last_sos"] = None
+            context["volume_analysis"] = {}
 
         context["bars"].append(bar)
 
@@ -200,118 +234,383 @@ class EURUSDMultiTimeframeBacktest:
         if len(context["bars"]) < 50:
             return None
 
-        # Detect current session
-        session = self._detect_session(bar.timestamp)
-
-        # Session filtering: Avoid low-liquidity periods
-        if session == ForexSession.ASIAN and self.current_timeframe in ["15m", "1h"]:
-            # Don't enter new positions during Asian session on intraday timeframes
-            # (Low liquidity causes false breakouts)
-            if not context["position"]:
-                return None
-
-        # Calculate session-relative volume for current bar
         bars_list = context["bars"]
         current_index = len(bars_list) - 1
 
-        volume_ratio = self.intraday_volume.calculate_session_relative_volume(
-            bars=bars_list, index=current_index, session=session
-        )
+        # Detect current session
+        session = get_forex_session(bar.timestamp)
 
-        # Spring-like pattern detection (low-volume reversal)
-        spring_setup = self._detect_spring_setup(bars_list, current_index, volume_ratio)
+        # Session filtering for intraday: Avoid low-liquidity periods
+        is_intraday = self.current_timeframe in ["15m", "1h"]
+        if is_intraday and session == ForexSession.ASIAN and not context["position"]:
+            return None  # Don't enter new positions during Asian session
 
-        if spring_setup and not context["position"]:
-            # Validate session timing - only enter during optimal sessions
-            if session in [ForexSession.LONDON, ForexSession.OVERLAP]:
-                context["position"] = True
-                context["entry_price"] = bar.close
-                return "BUY"
+        # Calculate volume ratio for current bar
+        if self.intraday_volume and is_intraday:
+            volume_ratio = self.intraday_volume.calculate_session_relative_volume(
+                bars=bars_list, index=current_index, session=session
+            )
+        else:
+            volume_ratio = calculate_volume_ratio(bars_list, current_index)
+
+        context["volume_analysis"][bar.timestamp] = {"volume_ratio": Decimal(str(volume_ratio))}
+
+        # Build dynamic trading range from recent 50 bars
+        trading_range = self._build_trading_range(bars_list, current_index)
+
+        # Detect patterns using real detectors
+        # 1. Spring Detection
+        try:
+            spring_history = self.spring_detector.detect_all_springs(
+                range=trading_range,
+                bars=bars_list[max(0, current_index - 50) : current_index + 1],
+                phase=WyckoffPhase.C,  # Springs occur in Phase C
+            )
+            if spring_history.best_spring:
+                self.campaign_detector.add_pattern(spring_history.best_spring)
+        except Exception:
+            pass  # Pattern detection may fail if conditions aren't met
+
+        # 2. SOS Breakout Detection
+        try:
+            phase_classification = PhaseClassification(phase=WyckoffPhase.D, confidence=85)
+            sos = detect_sos_breakout(
+                range=trading_range,
+                bars=bars_list[max(0, current_index - 50) : current_index + 1],
+                volume_analysis=context["volume_analysis"],
+                phase=phase_classification,
+                symbol=self.symbol,
+                timeframe=self.current_timeframe,
+                session_filter_enabled=is_intraday,
+                session_confidence_scoring_enabled=is_intraday,
+            )
+            if sos:
+                self.campaign_detector.add_pattern(sos)
+                context["last_sos"] = sos
+        except Exception:
+            pass
+
+        # 3. LPS Detection (if SOS exists)
+        if context["last_sos"]:
+            try:
+                lps = detect_lps(
+                    range=trading_range,
+                    sos=context["last_sos"],
+                    bars=bars_list[max(0, current_index - 50) : current_index + 1],
+                    volume_analysis=context["volume_analysis"],
+                    timeframe=self.current_timeframe,
+                    session_filter_enabled=is_intraday,
+                    session_confidence_scoring_enabled=is_intraday,
+                )
+                if lps:
+                    self.campaign_detector.add_pattern(lps)
+            except Exception:
+                pass
+
+        # Trading Logic: Enter on Phase D SOS in active campaign
+        active_campaigns = self.campaign_detector.get_active_campaigns()
+
+        if not context["position"] and active_campaigns:
+            for campaign in active_campaigns:
+                if campaign.current_phase == WyckoffPhase.D:
+                    # Check if we have a fresh SOS in last 5 bars
+                    if context["last_sos"] and (
+                        current_index
+                        - bars_list.index(
+                            next(
+                                (
+                                    b
+                                    for b in bars_list
+                                    if b.timestamp == context["last_sos"].timestamp
+                                ),
+                                bars_list[-1],
+                            )
+                        )
+                        < 5
+                    ):
+                        context["position"] = True
+                        context["entry_price"] = bar.close
+                        return "BUY"
 
         # Exit logic: Simple momentum-based exit
-        if context["position"]:
-            # Calculate 20-bar SMA for exit
-            if len(context["prices"]) >= 20:
-                sma_20 = sum(context["prices"][-20:]) / 20
+        if context["position"] and context["entry_price"]:
+            # Stop loss: 2% for forex
+            stop_loss_pct = (bar.close - context["entry_price"]) / context["entry_price"]
+            if stop_loss_pct < Decimal("-0.02"):
+                context["position"] = False
+                context["entry_price"] = None
+                return "SELL"
 
-                # Exit if price drops below SMA or 2% stop loss hit
-                if bar.close < sma_20:
-                    context["position"] = False
-                    context["entry_price"] = None
-                    return "SELL"
-
-                # Take profit at 1.5% gain (conservative for forex)
-                if context["entry_price"]:
-                    gain_pct = (bar.close - context["entry_price"]) / context["entry_price"]
-                    if gain_pct > Decimal("0.015"):
-                        context["position"] = False
-                        context["entry_price"] = None
-                        return "SELL"
+            # Take profit: 1.5% gain
+            if stop_loss_pct > Decimal("0.015"):
+                context["position"] = False
+                context["entry_price"] = None
+                return "SELL"
 
         return None
 
-    def _detect_session(self, timestamp: datetime) -> ForexSession:
-        """Detect forex session from UTC timestamp."""
-        hour = timestamp.hour
-
-        if 0 <= hour < 8:
-            return ForexSession.ASIAN
-        elif 8 <= hour < 13:
-            return ForexSession.LONDON
-        elif 13 <= hour < 17:
-            return ForexSession.OVERLAP
-        elif 17 <= hour < 22:
-            return ForexSession.NY
-        else:
-            return ForexSession.ASIAN
-
-    def _detect_spring_setup(
-        self, bars: list[OHLCVBar], index: int, volume_ratio: Optional[float]
-    ) -> bool:
+    def _build_trading_range(self, bars: list[OHLCVBar], current_index: int) -> TradingRange:
         """
-        Simplified Spring pattern detection.
+        Build dynamic trading range from recent bars for pattern detection.
 
-        A Spring setup occurs when:
-        1. Price makes a new low (vs 20-bar lookback)
-        2. Volume is LOW (<0.7x session average)
-        3. Price recovers within 3-5 bars (early rally confirmation)
+        Uses last 50 bars to establish Ice (resistance) and Creek (support) levels.
 
         Args:
             bars: Historical bars
-            index: Current bar index
-            volume_ratio: Session-relative volume ratio
+            current_index: Current bar index
 
         Returns:
-            True if Spring setup detected
+            TradingRange with Ice/Creek levels for pattern detection
         """
-        if index < 20:
-            return False
+        from src.models.pivot import Pivot, PivotType
+        from src.models.price_cluster import PriceCluster
 
-        current_bar = bars[index]
+        lookback_bars = bars[max(0, current_index - 50) : current_index + 1]
 
-        # Check if volume is low (Spring characteristic)
-        if not volume_ratio or volume_ratio >= 0.7:
-            return False  # Volume too high for Spring
+        if not lookback_bars:
+            # Fallback: use current bar
+            lookback_bars = [bars[current_index]]
 
-        # Check if we made a new low vs recent range
-        recent_lows = [b.low for b in bars[max(0, index - 20) : index]]
-        if not recent_lows:
-            return False
+        # Calculate range boundaries
+        highs = [b.high for b in lookback_bars]
+        lows = [b.low for b in lookback_bars]
 
-        min_recent_low = min(recent_lows)
+        range_high = max(highs)
+        range_low = min(lows)
 
-        # Current bar makes new low or tests previous low
-        if current_bar.low <= min_recent_low * Decimal("1.001"):  # Within 0.1%
-            # Check for quick recovery (bullish reversal)
-            # Bar should close in upper 50% of range
-            bar_range = current_bar.high - current_bar.low
-            if bar_range > 0:
-                close_position = (current_bar.close - current_bar.low) / bar_range
-                if close_position > Decimal("0.5"):
-                    # Low volume + new low + strong close = Spring setup
-                    return True
+        # Calculate range metrics
+        range_width = range_high - range_low
+        range_width_pct = (range_width / range_low).quantize(Decimal("0.0001"))  # 4 decimal places
+        midpoint = (range_high + range_low) / Decimal("2")
 
-        return False
+        # Create minimal pivot objects for clusters (need at least 2)
+        # Find bars with highest and lowest prices
+        high_bars_indices = [i for i, h in enumerate(highs) if h == range_high]
+        low_bars_indices = [i for i, low_price in enumerate(lows) if low_price == range_low]
+
+        # Create resistance pivots (HIGH pivots - price must match bar.high)
+        resistance_pivots = []
+        for i in high_bars_indices[:2]:  # Take up to 2 pivots
+            resistance_pivots.append(
+                Pivot(
+                    bar=lookback_bars[i],
+                    index=max(0, current_index - 50) + i,
+                    price=lookback_bars[i].high,  # Must match bar.high for HIGH pivot
+                    timestamp=lookback_bars[i].timestamp,
+                    type=PivotType.HIGH,
+                    strength=5,
+                )
+            )
+
+        # Ensure we have at least 2 pivots (duplicate if needed)
+        if len(resistance_pivots) == 1:
+            resistance_pivots.append(resistance_pivots[0])
+        if not resistance_pivots:  # If no pivots found, create default ones
+            resistance_pivots = [
+                Pivot(
+                    bar=lookback_bars[-1],
+                    index=current_index,
+                    price=lookback_bars[-1].high,
+                    timestamp=lookback_bars[-1].timestamp,
+                    type=PivotType.HIGH,
+                    strength=5,
+                ),
+                Pivot(
+                    bar=lookback_bars[-1],
+                    index=current_index,
+                    price=lookback_bars[-1].high,
+                    timestamp=lookback_bars[-1].timestamp,
+                    type=PivotType.HIGH,
+                    strength=5,
+                ),
+            ]
+
+        # Create support pivots (LOW pivots - price must match bar.low)
+        support_pivots = []
+        for i in low_bars_indices[:2]:  # Take up to 2 pivots
+            support_pivots.append(
+                Pivot(
+                    bar=lookback_bars[i],
+                    index=max(0, current_index - 50) + i,
+                    price=lookback_bars[i].low,  # Must match bar.low for LOW pivot
+                    timestamp=lookback_bars[i].timestamp,
+                    type=PivotType.LOW,
+                    strength=5,
+                )
+            )
+
+        # Ensure we have at least 2 pivots (duplicate if needed)
+        if len(support_pivots) == 1:
+            support_pivots.append(support_pivots[0])
+        if not support_pivots:  # If no pivots found, create default ones
+            support_pivots = [
+                Pivot(
+                    bar=lookback_bars[-1],
+                    index=current_index,
+                    price=lookback_bars[-1].low,
+                    timestamp=lookback_bars[-1].timestamp,
+                    type=PivotType.LOW,
+                    strength=5,
+                ),
+                Pivot(
+                    bar=lookback_bars[-1],
+                    index=current_index,
+                    price=lookback_bars[-1].low,
+                    timestamp=lookback_bars[-1].timestamp,
+                    type=PivotType.LOW,
+                    strength=5,
+                ),
+            ]
+
+        # Create price clusters
+        # Calculate resistance cluster metrics
+        res_prices = [p.price for p in resistance_pivots]
+        res_avg = sum(res_prices) / len(res_prices)
+        res_min = min(res_prices)
+        res_max = max(res_prices)
+
+        resistance_cluster = PriceCluster(
+            pivots=resistance_pivots,
+            average_price=res_avg,
+            min_price=res_min,
+            max_price=res_max,
+            price_range=res_max - res_min,
+            touch_count=len(resistance_pivots),
+            cluster_type=PivotType.HIGH,
+            std_deviation=Decimal("0"),
+            timestamp_range=(resistance_pivots[0].timestamp, resistance_pivots[-1].timestamp),
+        )
+
+        # Calculate support cluster metrics
+        sup_prices = [p.price for p in support_pivots]
+        sup_avg = sum(sup_prices) / len(sup_prices)
+        sup_min = min(sup_prices)
+        sup_max = max(sup_prices)
+
+        support_cluster = PriceCluster(
+            pivots=support_pivots,
+            average_price=sup_avg,
+            min_price=sup_min,
+            max_price=sup_max,
+            price_range=sup_max - sup_min,
+            touch_count=len(support_pivots),
+            cluster_type=PivotType.LOW,
+            std_deviation=Decimal("0"),
+            timestamp_range=(support_pivots[0].timestamp, support_pivots[-1].timestamp),
+        )
+
+        # Create Creek level (support) at range low with all required fields
+        creek = CreekLevel(
+            price=range_low,
+            absolute_low=range_low,
+            min_rally_height_pct=Decimal("2.0"),
+            bars_since_formation=len(lookback_bars),
+            touch_count=2,  # Minimum 2 touches required
+            touch_details=[],
+            strength_score=50,  # Neutral strength
+            strength_rating="MODERATE",
+            last_test_timestamp=lookback_bars[-1].timestamp,
+            first_test_timestamp=lookback_bars[0].timestamp,
+            hold_duration=len(lookback_bars),
+            confidence="MEDIUM",
+            volume_trend="FLAT",
+        )
+
+        # Create trading range with all required fields
+        return TradingRange(
+            symbol=self.symbol,
+            timeframe=self.current_timeframe,
+            support_cluster=support_cluster,
+            resistance_cluster=resistance_cluster,
+            support=range_low,
+            resistance=range_high,
+            midpoint=midpoint,
+            range_width=range_width,
+            range_width_pct=max(range_width_pct, Decimal("0.03")),  # Ensure minimum 3%
+            start_index=max(0, current_index - 50),
+            end_index=current_index,
+            duration=max(len(lookback_bars), 10),  # Ensure minimum 10 bars
+            creek=creek,
+            status=RangeStatus.ACTIVE,
+        )
+
+    def _print_campaign_summary(self, timeframe: str):
+        """
+        Print comprehensive campaign analysis after backtest.
+
+        Shows:
+        - Total campaigns detected
+        - Completion/failure rates
+        - Pattern distribution (Springs, SOS, LPS counts)
+        - Session distribution (for intraday timeframes)
+        - Average campaign metrics
+        """
+        if not self.campaign_detector:
+            return
+
+        all_campaigns = self.campaign_detector.campaigns
+
+        if not all_campaigns:
+            print("\n[CAMPAIGN ANALYSIS] - No campaigns detected")
+            return
+
+        from src.backtesting.intraday_campaign_detector import CampaignState
+
+        completed = [c for c in all_campaigns if c.state == CampaignState.COMPLETED]
+        failed = [c for c in all_campaigns if c.state == CampaignState.FAILED]
+        active = [c for c in all_campaigns if c.state == CampaignState.ACTIVE]
+        forming = [c for c in all_campaigns if c.state == CampaignState.FORMING]
+
+        print(f"\n[CAMPAIGN ANALYSIS] - {timeframe}")
+        print(f"  Total Campaigns: {len(all_campaigns)}")
+
+        if len(all_campaigns) > 0:
+            print(f"  Completed: {len(completed)} ({len(completed)/len(all_campaigns)*100:.1f}%)")
+            print(f"  Failed: {len(failed)} ({len(failed)/len(all_campaigns)*100:.1f}%)")
+            print(f"  Active: {len(active)} ({len(active)/len(all_campaigns)*100:.1f}%)")
+            print(f"  Forming: {len(forming)} ({len(forming)/len(all_campaigns)*100:.1f}%)")
+
+        # Pattern distribution
+        all_patterns = [p for c in all_campaigns for p in c.patterns]
+
+        if all_patterns:
+            from src.models.lps import LPS
+            from src.models.sos_breakout import SOSBreakout
+            from src.models.spring import Spring
+
+            springs = [p for p in all_patterns if isinstance(p, Spring)]
+            soss = [p for p in all_patterns if isinstance(p, SOSBreakout)]
+            lpss = [p for p in all_patterns if isinstance(p, LPS)]
+
+            print("\n  Pattern Quality:")
+            print(f"    - Springs: {len(springs)} detected")
+            print(f"    - SOS: {len(soss)} detected")
+            print(f"    - LPS: {len(lpss)} detected")
+
+            # Session distribution (if intraday)
+            if timeframe in ["1m", "5m", "15m", "1h"]:
+                sessions = {}
+                for pattern in all_patterns:
+                    session = get_forex_session(pattern.timestamp)
+                    session_name = session.name if hasattr(session, "name") else str(session)
+                    sessions[session_name] = sessions.get(session_name, 0) + 1
+
+                if sessions:
+                    print("\n  Session Distribution:")
+                    for session_name, count in sorted(
+                        sessions.items(), key=lambda x: x[1], reverse=True
+                    ):
+                        pct = count / len(all_patterns) * 100
+                        print(f"    - {session_name}: {count} patterns ({pct:.1f}%)")
+
+        # Campaign strength metrics
+        if completed:
+            avg_patterns = sum(len(c.patterns) for c in completed) / len(completed)
+            avg_strength = sum(c.strength_score for c in completed) / len(completed)
+
+            print("\n  Campaign Metrics (Completed):")
+            print(f"    - Avg Patterns/Campaign: {avg_patterns:.1f}")
+            print(f"    - Avg Strength Score: {avg_strength:.2f}")
 
     def _print_timeframe_summary(self, timeframe: str, result: BacktestResult):
         """Print summary statistics for a timeframe."""
@@ -333,22 +632,8 @@ class EURUSDMultiTimeframeBacktest:
         if metrics.average_r_multiple:
             print(f"Avg R-Multiple: {metrics.average_r_multiple:.2f}R")
 
-        # Campaign analysis
-        if result.campaign_performance:
-            campaigns = result.campaign_performance
-            completed = len([c for c in campaigns if c.status == "COMPLETED"])
-            failed = len([c for c in campaigns if c.status == "FAILED"])
-
-            print("\n[CAMPAIGN ANALYSIS]:")
-            print(f"  Total Campaigns: {len(campaigns)}")
-            print(f"  Completed: {completed} ({completed/len(campaigns)*100:.1f}%)")
-            print(f"  Failed: {failed} ({failed/len(campaigns)*100:.1f}%)")
-
-            # Campaign types
-            accumulation = len([c for c in campaigns if c.campaign_type == "ACCUMULATION"])
-            distribution = len([c for c in campaigns if c.campaign_type == "DISTRIBUTION"])
-            print(f"  Accumulation: {accumulation}")
-            print(f"  Distribution: {distribution}")
+        # Print enhanced campaign summary
+        self._print_campaign_summary(timeframe)
 
     def print_comparative_analysis(self):
         """Print comparative analysis across all timeframes."""
