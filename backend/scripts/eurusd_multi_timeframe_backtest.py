@@ -201,6 +201,16 @@ class EURUSDMultiTimeframeBacktest:
 
         print(f"[OK] Backtest complete: {len(result.trades)} trades executed")
 
+        # FR6.7: Update trade exit reasons from strategy context
+        if hasattr(engine, "strategy_context") and "exit_reasons" in engine.strategy_context:
+            exit_reasons = engine.strategy_context["exit_reasons"]
+            for i, trade in enumerate(result.trades):
+                if i < len(exit_reasons):
+                    trade.exit_reason = exit_reasons[i]
+
+        # FR6.7: Print exit analysis for educational insights
+        self._print_exit_analysis(result.trades)
+
         return result
 
     def _intraday_wyckoff_strategy(self, bar: OHLCVBar, context: dict) -> Optional[str]:
@@ -227,6 +237,7 @@ class EURUSDMultiTimeframeBacktest:
             context["entry_price"] = None
             context["last_sos"] = None
             context["volume_analysis"] = {}
+            context["exit_reasons"] = []  # FR6.7: Track exit reasons for analysis
 
         context["bars"].append(bar)
 
@@ -330,21 +341,19 @@ class EURUSDMultiTimeframeBacktest:
                     ):
                         context["position"] = True
                         context["entry_price"] = bar.close
+                        context["entry_bar_index"] = current_index
                         return "BUY"
 
-        # Exit logic: Simple momentum-based exit
+        # FR6.5: Wyckoff-based multi-tier exit logic (Story 13.6)
         if context["position"] and context["entry_price"]:
-            # Stop loss: 2% for forex
-            stop_loss_pct = (bar.close - context["entry_price"]) / context["entry_price"]
-            if stop_loss_pct < Decimal("-0.02"):
-                context["position"] = False
-                context["entry_price"] = None
-                return "SELL"
+            should_exit, exit_reason = self._wyckoff_exit_logic(
+                bar=bar, context=context, active_campaigns=active_campaigns
+            )
 
-            # Take profit: 1.5% gain
-            if stop_loss_pct > Decimal("0.015"):
+            if should_exit:
                 context["position"] = False
                 context["entry_price"] = None
+                context["exit_reasons"].append(exit_reason)  # FR6.7: Track exit reason
                 return "SELL"
 
         return None
@@ -532,6 +541,231 @@ class EURUSDMultiTimeframeBacktest:
             duration=max(len(lookback_bars), 10),  # Ensure minimum 10 bars
             creek=creek,
             status=RangeStatus.ACTIVE,
+        )
+
+    def _detect_volume_divergence(self, bars: list[OHLCVBar], context: dict) -> bool:
+        """
+        Detect volume divergence (new price highs with declining volume).
+
+        FR6.3: Volume divergence detection for exit signals.
+
+        Args:
+            bars: Historical bars
+            context: Strategy context with volume analysis
+
+        Returns:
+            True if 2+ consecutive divergences detected, False otherwise
+
+        Logic:
+            - Track last 5 price highs and their volumes
+            - Count consecutive new highs with lower volume
+            - 2+ divergences = distribution signal (exit)
+        """
+        if "divergence_tracking" not in context:
+            context["divergence_tracking"] = []
+
+        # Need at least 10 bars for analysis
+        if len(bars) < 10:
+            return False
+
+        # Track price highs and volumes
+        tracking = context["divergence_tracking"]
+        current_bar = bars[-1]
+
+        # Check if current bar is a new high (higher than last 5 bars)
+        recent_highs = [b.high for b in bars[-6:-1]] if len(bars) >= 6 else []
+        if not recent_highs:
+            return False
+
+        is_new_high = current_bar.high > max(recent_highs)
+
+        if is_new_high:
+            # Get current volume ratio
+            current_volume_ratio = (
+                context["volume_analysis"]
+                .get(current_bar.timestamp, {})
+                .get("volume_ratio", Decimal("1.0"))
+            )
+
+            # Add to tracking list
+            tracking.append({"price": current_bar.high, "volume_ratio": current_volume_ratio})
+
+            # Keep only last 5 highs
+            if len(tracking) > 5:
+                tracking.pop(0)
+
+            # Count consecutive divergences
+            divergence_count = 0
+            for i in range(1, len(tracking)):
+                if (
+                    tracking[i]["price"] > tracking[i - 1]["price"]
+                    and tracking[i]["volume_ratio"] < tracking[i - 1]["volume_ratio"]
+                ):
+                    divergence_count += 1
+
+            # 2+ consecutive divergences = distribution signal
+            if divergence_count >= 2:
+                return True
+
+        return False
+
+    def _wyckoff_exit_logic(
+        self,
+        bar: OHLCVBar,
+        context: dict,
+        active_campaigns: list,
+    ) -> tuple[bool, str]:
+        """
+        Wyckoff-based exit logic with multi-tier priority.
+
+        FR6.2-FR6.6: Multi-tier exit strategy with structural signals.
+
+        Args:
+            bar: Current bar
+            context: Strategy context
+            active_campaigns: List of active campaigns
+
+        Returns:
+            Tuple (should_exit: bool, exit_reason: str)
+
+        Exit Priority (Story 13.6 FR6.5):
+            1. Support Invalidation (Creek break) - FAILED pattern
+            2. Jump Level Target - PROFIT TARGET
+            3. UTAD (Phase E completion) - DISTRIBUTION
+            4. Volume Divergence - DISTRIBUTION
+            5. Time Limit (50 bars) - SAFETY
+
+        Educational Note:
+            Wyckoff exits focus on structural signals (Jump, UTAD, divergence)
+            rather than arbitrary percentages. The pattern tells us when to exit.
+        """
+        if not context["position"] or not context["entry_price"]:
+            return (False, "NO_POSITION")
+
+        if not active_campaigns:
+            return (False, "NO_ACTIVE_CAMPAIGN")
+
+        campaign = active_campaigns[0]  # Primary campaign
+        bars_list = context["bars"]
+        current_index = len(bars_list) - 1
+
+        # FR6.4: Priority 1 - Support Invalidation (Creek break)
+        if campaign.support_level and bar.close < campaign.support_level:
+            return (
+                True,
+                f"SUPPORT_BREAK (close ${bar.close} < Creek ${campaign.support_level})",
+            )
+
+        # FR6.1: Priority 2 - Jump Level Target (measured move)
+        if campaign.jump_level and bar.high >= campaign.jump_level:
+            return (True, f"JUMP_LEVEL_HIT (high ${bar.high} >= Jump ${campaign.jump_level})")
+
+        # FR6.2: Priority 3 - UTAD (Phase E completion signal)
+        if campaign.resistance_level:
+            from src.pattern_engine.detectors.utad_detector import UTADDetector
+
+            utad_detector = UTADDetector(max_penetration_pct=Decimal("5.0"))
+
+            # Build minimal trading range for UTAD detection
+            trading_range = self._build_trading_range(bars_list, current_index)
+
+            utad = utad_detector.detect_utad(
+                trading_range=trading_range,
+                bars=bars_list[max(0, current_index - 50) : current_index + 1],
+                ice_level=campaign.resistance_level,
+            )
+
+            if utad and utad.confidence >= 70:
+                return (
+                    True,
+                    f"UTAD_DETECTED (penetration {utad.penetration_pct:.2f}%, "
+                    f"volume {utad.volume_ratio:.2f}x, confidence {utad.confidence})",
+                )
+
+        # FR6.3: Priority 4 - Volume Divergence (distribution signal)
+        if self._detect_volume_divergence(bars_list, context):
+            return (True, "VOLUME_DIVERGENCE (2+ consecutive new highs with declining volume)")
+
+        # Priority 5 - Time Limit (safety backstop)
+        bars_in_position = current_index - context.get("entry_bar_index", current_index)
+        if bars_in_position >= 50:
+            return (True, f"TIME_LIMIT ({bars_in_position} bars in position)")
+
+        return (False, "HOLD")
+
+    def _print_exit_analysis(self, trades: list) -> None:
+        """
+        Print exit reason analysis for educational purposes.
+
+        FR6.7: Exit reason tracking and reporting.
+
+        Args:
+            trades: List of completed trades with exit metadata
+
+        Output:
+            - Exit reason distribution (count and percentage)
+            - Average profit per exit reason
+            - Educational insights on Wyckoff exit effectiveness
+        """
+        if not trades:
+            print("\n[EXIT ANALYSIS] - No trades to analyze")
+            return
+
+        print("\n" + "=" * 60)
+        print("[EXIT ANALYSIS] - Wyckoff Exit Performance")
+        print("=" * 60)
+
+        # Count exit reasons
+        exit_reasons = {}
+        exit_profits = {}
+
+        for trade in trades:
+            reason = getattr(trade, "exit_reason", "UNKNOWN")
+            profit_pct = ((trade.exit_price - trade.entry_price) / trade.entry_price) * 100
+
+            if reason not in exit_reasons:
+                exit_reasons[reason] = 0
+                exit_profits[reason] = []
+
+            exit_reasons[reason] += 1
+            exit_profits[reason].append(profit_pct)
+
+        # Print distribution
+        total_trades = len(trades)
+        print(f"\nTotal Exits: {total_trades}\n")
+        print(f"{'Exit Reason':<40} {'Count':<8} {'%':<8} {'Avg Profit %':<12}")
+        print("-" * 70)
+
+        for reason in sorted(exit_reasons.keys()):
+            count = exit_reasons[reason]
+            pct = (count / total_trades) * 100
+            avg_profit = sum(exit_profits[reason]) / len(exit_profits[reason])
+
+            print(f"{reason:<40} {count:<8} {pct:<7.1f}% {avg_profit:>+11.2f}%")
+
+        # Educational insights
+        print("\n" + "=" * 60)
+        print("[EDUCATIONAL INSIGHTS]")
+        print("=" * 60)
+
+        jump_exits = exit_reasons.get("JUMP_LEVEL_HIT", 0) + sum(
+            v for k, v in exit_reasons.items() if "JUMP" in k
+        )
+        utad_exits = sum(v for k, v in exit_reasons.items() if "UTAD" in k)
+        divergence_exits = sum(v for k, v in exit_reasons.items() if "DIVERGENCE" in k)
+        support_breaks = sum(v for k, v in exit_reasons.items() if "SUPPORT" in k)
+
+        structural_exits = jump_exits + utad_exits + divergence_exits
+        structural_pct = (structural_exits / total_trades) * 100
+
+        print(f"\nStructural Exits (Jump/UTAD/Divergence): {structural_pct:.1f}%")
+        print(f"  - Jump Level: {jump_exits} exits")
+        print(f"  - UTAD: {utad_exits} exits")
+        print(f"  - Volume Divergence: {divergence_exits} exits")
+        print(f"\nSupport Invalidations: {support_breaks} exits")
+        print(
+            f"\nWyckoff Principle: {structural_pct:.1f}% of exits were based on "
+            f"market structure, not arbitrary stops."
         )
 
     def _print_campaign_summary(self, timeframe: str):

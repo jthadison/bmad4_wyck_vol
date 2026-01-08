@@ -113,6 +113,9 @@ class Campaign:
     risk_per_share: Optional[Decimal] = None
     range_width_pct: Optional[Decimal] = None
 
+    # FR6.1: Wyckoff Exit Logic - Jump Level
+    jump_level: Optional[Decimal] = None  # Measured move target (Ice + range_width)
+
 
 class IntradayCampaignDetector:
     """
@@ -543,6 +546,12 @@ class IntradayCampaignDetector:
                 / campaign.support_level
                 * Decimal("100")
             )
+
+        # FR6.1: Calculate Jump Level (measured move target)
+        # Jump = Ice + (Ice - Creek) = Ice + range_width
+        if campaign.support_level and campaign.resistance_level:
+            range_width = campaign.resistance_level - campaign.support_level
+            campaign.jump_level = campaign.resistance_level + range_width
 
     def _check_portfolio_limits(self) -> bool:
         """
