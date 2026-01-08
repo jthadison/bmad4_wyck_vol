@@ -853,11 +853,12 @@ def test_phase_updated_on_new_pattern(detector, sample_spring, sample_sos, base_
 
 def test_max_concurrent_campaigns_enforced(base_timestamp, sample_bar):
     """AC4.11: Max concurrent campaigns limit enforced."""
-    # Use extended expiration to allow campaigns at 60h intervals without expiring
+    # Extended expiration (200h) is test-specific to validate concurrent limit logic
+    # Production default (72h) is more appropriate for real trading scenarios
     detector = IntradayCampaignDetector(
         max_concurrent_campaigns=3,
         campaign_window_hours=48,  # Patterns >48h apart create new campaigns
-        expiration_hours=200,  # Extended to prevent expiration during test
+        expiration_hours=200,  # Test-only: keep campaigns alive for limit enforcement testing
     )
 
     # Create 3 campaigns (max_concurrent_campaigns = 3)
@@ -922,11 +923,12 @@ def test_max_concurrent_campaigns_enforced(base_timestamp, sample_bar):
 
 def test_max_concurrent_campaigns_custom_limit(base_timestamp, sample_bar):
     """AC4.11: Custom max_concurrent_campaigns limit respected."""
-    # Use extended expiration to allow campaigns at 60h intervals without expiring
+    # Extended expiration (200h) is test-specific to validate concurrent limit logic
+    # Production default (72h) is more appropriate for real trading scenarios
     detector = IntradayCampaignDetector(
         max_concurrent_campaigns=2,
         campaign_window_hours=48,
-        expiration_hours=200,
+        expiration_hours=200,  # Test-only: keep campaigns alive for limit enforcement testing
     )
 
     # Create 2 campaigns
@@ -991,11 +993,12 @@ def test_portfolio_limits_allow_patterns_in_existing_campaigns(
     sample_spring, sample_sos, base_timestamp
 ):
     """AC4.11: Portfolio limits don't block patterns added to existing campaigns."""
-    # Use extended expiration to allow campaigns at 60h intervals without expiring
+    # Extended expiration (200h) is test-specific to validate concurrent limit logic
+    # Production default (72h) is more appropriate for real trading scenarios
     detector = IntradayCampaignDetector(
         max_concurrent_campaigns=3,
         campaign_window_hours=48,
-        expiration_hours=200,
+        expiration_hours=200,  # Test-only: keep campaigns alive for limit enforcement testing
     )
 
     # Create 3 campaigns at limit
