@@ -580,3 +580,44 @@ class IntradayCampaignDetector:
             )
 
         return True
+
+
+def create_timeframe_optimized_detector(timeframe: str) -> IntradayCampaignDetector:
+    """
+    Factory function to create timeframe-optimized campaign detector.
+
+    Creates IntradayCampaignDetector with parameters tuned for specific timeframes:
+    - Intraday (15m, 1h): Shorter windows, tighter expiration
+    - Daily: Standard windows for traditional Wyckoff analysis
+
+    Args:
+        timeframe: Timeframe code ("15m", "1h", "1d", etc.)
+
+    Returns:
+        IntradayCampaignDetector configured for timeframe
+
+    Example:
+        >>> detector = create_timeframe_optimized_detector("15m")
+        >>> detector.add_pattern(spring_pattern)
+    """
+    # Intraday timeframes: Use micro-campaign windows
+    if timeframe in ["1m", "5m", "15m", "1h"]:
+        return IntradayCampaignDetector(
+            campaign_window_hours=48,  # 48h pattern window
+            max_pattern_gap_hours=48,  # 48h max gap between patterns
+            min_patterns_for_active=2,  # 2 patterns → ACTIVE
+            expiration_hours=72,  # 72h expiration
+            max_concurrent_campaigns=3,  # Max 3 concurrent campaigns
+            max_portfolio_heat_pct=40.0,  # 40% max portfolio heat
+        )
+
+    # Daily and longer: Use standard Wyckoff campaign windows
+    else:
+        return IntradayCampaignDetector(
+            campaign_window_hours=240,  # 10 days pattern window
+            max_pattern_gap_hours=120,  # 5 days max gap
+            min_patterns_for_active=2,  # 2 patterns → ACTIVE
+            expiration_hours=360,  # 15 days expiration
+            max_concurrent_campaigns=5,  # Max 5 concurrent campaigns
+            max_portfolio_heat_pct=50.0,  # 50% max portfolio heat
+        )
