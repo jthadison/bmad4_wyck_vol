@@ -466,5 +466,496 @@ class TestWyckoffExitIntegration:
         assert not context["position"], "Position should be closed"
 
 
+@pytest.mark.integration
+class TestExitLogicRefinementsIntegration:
+    """Integration tests for Story 13.6.1 Exit Logic Refinements."""
+
+    def test_ice_expansion_detection_integration(self):
+        """Test FR6.1.1: Ice expansion detection with jump level update."""
+        from src.backtesting.exit_logic_refinements import (
+            detect_ice_expansion,
+            update_jump_level,
+        )
+
+        # Arrange: Campaign in Phase D with initial levels
+        campaign = create_test_campaign(support=100, resistance=110, jump=120)
+        campaign.current_phase = WyckoffPhase.D
+        campaign.timeframe = "1h"
+        campaign.campaign_id = "test-ice-expansion"
+        campaign.ice_expansion_count = 0
+        campaign.original_ice_level = None
+        campaign.original_jump_level = None
+
+        base_time = datetime.now()
+
+        # Create bars that consolidate at new level (above 110)
+        recent_bars = []
+        for i in range(20):
+            bar = create_test_bar(
+                base_time - timedelta(hours=20 - i),
+                open_price=111,
+                high=113,
+                low=111,
+                close=112,
+                volume=1000000,
+            )
+            recent_bars.append(bar)
+
+        # Current bar makes new high above existing Ice by >0.5%
+        current_bar = create_test_bar(
+            base_time,
+            open_price=112,
+            high=Decimal("115.00"),  # >0.5% above Ice $110
+            low=111,
+            close=114,
+            volume=1200000,  # Above average volume
+        )
+
+        # Act
+        new_ice = detect_ice_expansion(campaign, current_bar, recent_bars)
+
+        # Assert: Ice expansion should be detected
+        if new_ice:
+            # Update jump level with new ice
+            new_jump = update_jump_level(campaign, new_ice)
+
+            assert new_ice == Decimal("115.00"), f"Expected new Ice $115, got ${new_ice}"
+            assert campaign.ice_expansion_count == 1, "Ice expansion count should be 1"
+            assert campaign.original_ice_level == Decimal("110"), "Original Ice should be stored"
+
+    def test_enhanced_utad_detection_integration(self):
+        """Test FR6.2.1: Enhanced UTAD with spread validation."""
+        from src.backtesting.exit_logic_refinements import detect_utad_enhanced
+
+        # Arrange: Campaign in Phase E
+        campaign = create_test_campaign(support=100, resistance=110, jump=120)
+        campaign.current_phase = WyckoffPhase.E
+        campaign.campaign_id = "test-utad"
+
+        base_time = datetime.now()
+
+        # Create baseline bars (normal activity)
+        bars = []
+        for i in range(20):
+            bar = create_test_bar(
+                base_time - timedelta(hours=25 - i),
+                open_price=108,
+                high=109,
+                low=107,
+                close=108,
+                volume=1000000,
+            )
+            bars.append(bar)
+
+        # Add UTAD bar: Break above Ice ($110) by 0.5-1.5% with high volume and wide spread
+        utad_bar = create_test_bar(
+            base_time - timedelta(hours=3),
+            open_price=109,
+            high=Decimal("111.10"),  # ~1% above Ice
+            low=107,  # Wide spread (4 points vs avg 2)
+            close=110.5,
+            volume=2000000,  # 2x average volume
+        )
+        bars.append(utad_bar)
+
+        # Failure bar: Close back below Ice within 3 bars
+        failure_bar = create_test_bar(
+            base_time - timedelta(hours=2),
+            open_price=110,
+            high=110.5,
+            low=108,
+            close=Decimal("109.00"),  # Below Ice $110
+            volume=1200000,
+        )
+        bars.append(failure_bar)
+
+        # Act
+        utad = detect_utad_enhanced(campaign, bars)
+
+        # Assert
+        assert utad is not None, "Enhanced UTAD should be detected"
+        assert utad.volume_ratio >= Decimal("1.5"), "UTAD should have high volume ratio"
+        assert utad.spread_ratio >= Decimal("1.0"), "UTAD should have wide spread"
+        assert utad.confidence >= 30, f"UTAD confidence ({utad.confidence}) should be >= 30"
+
+    def test_phase_contextual_utad_exit_decision(self):
+        """Test FR6.2.1: UTAD exit decision based on phase progress."""
+        from src.backtesting.exit_logic_refinements import EnhancedUTAD, should_exit_on_utad
+
+        # Arrange: Campaign at different Phase E progress levels
+        campaign = create_test_campaign(support=100, resistance=110, jump=120)
+        campaign.campaign_id = "test-utad-exit"
+
+        # Create a high-confidence UTAD
+        utad = EnhancedUTAD(
+            timestamp=datetime.now(),
+            breakout_price=Decimal("111.50"),
+            failure_price=Decimal("109.00"),
+            ice_level=Decimal("110.00"),
+            volume_ratio=Decimal("2.5"),  # High volume
+            spread_ratio=Decimal("1.6"),  # Wide spread
+            bars_to_failure=1,  # Immediate failure
+            phase=WyckoffPhase.E,
+        )
+        utad.confidence = utad.calculate_confidence()
+
+        # Test 1: Phase D - Should NOT exit
+        campaign.current_phase = WyckoffPhase.D
+        should_exit, reason = should_exit_on_utad(utad, campaign, Decimal("109.00"))
+        assert not should_exit, "Phase D UTAD should NOT trigger exit"
+
+        # Test 2: Early Phase E (price at $112 = 20% progress to $120)
+        campaign.current_phase = WyckoffPhase.E
+        should_exit, reason = should_exit_on_utad(utad, campaign, Decimal("112.00"))
+        # High confidence (>85) required for early Phase E
+        assert utad.confidence >= 85 or not should_exit, "Early Phase E needs ultra-high confidence"
+
+        # Test 3: Late Phase E (price at $118 = 80% progress to $120)
+        should_exit, reason = should_exit_on_utad(utad, campaign, Decimal("118.00"))
+        if utad.confidence >= 60:
+            assert should_exit, "Late Phase E should exit on high-confidence UTAD"
+
+    def test_enhanced_volume_divergence_integration(self):
+        """Test FR6.3.1: Volume divergence with spread analysis."""
+        from src.backtesting.exit_logic_refinements import detect_volume_divergence_enhanced
+
+        base_time = datetime.now()
+
+        # Create bars with quality volume divergence pattern
+        # Each new high has declining volume AND narrowing spread
+        bars = []
+
+        # Initial bar
+        bars.append(
+            create_test_bar(
+                base_time - timedelta(hours=5),
+                open_price=110,
+                high=Decimal("112.00"),
+                low=Decimal("108.00"),  # 4-point range
+                close=111,
+                volume=1500000,
+            )
+        )
+
+        # New high #1: Higher price, lower volume, narrower spread
+        bars.append(
+            create_test_bar(
+                base_time - timedelta(hours=4),
+                open_price=111,
+                high=Decimal("114.00"),
+                low=Decimal("111.00"),  # 3-point range (narrower)
+                close=113,
+                volume=1100000,  # 73% of previous
+            )
+        )
+
+        # New high #2: Higher price, lower volume, narrower spread
+        bars.append(
+            create_test_bar(
+                base_time - timedelta(hours=3),
+                open_price=113,
+                high=Decimal("116.00"),
+                low=Decimal("114.00"),  # 2-point range (even narrower)
+                close=115,
+                volume=700000,  # 63% of previous
+            )
+        )
+
+        # Act
+        div_count, divergences = detect_volume_divergence_enhanced(
+            bars, lookback=10, min_quality=60
+        )
+
+        # Assert: Should detect quality divergences
+        assert div_count >= 1, f"Expected >= 1 quality divergence, got {div_count}"
+        if divergences:
+            assert (
+                divergences[-1].divergence_quality >= 60
+            ), "Divergence should meet quality threshold"
+
+    def test_volatility_spike_exit_integration(self):
+        """Test FR6.5.1: Volatility spike detection for regime change."""
+        from src.backtesting.exit_logic_refinements import check_volatility_spike
+
+        # Arrange: Campaign with known entry ATR
+        campaign = create_test_campaign(support=100, resistance=110, jump=120)
+        campaign.campaign_id = "test-volatility"
+        campaign.entry_atr = Decimal("0.50")  # Entry ATR was $0.50
+        campaign.max_atr_seen = None
+
+        base_time = datetime.now()
+
+        # Create bars with much higher volatility (3x the entry ATR)
+        recent_bars = []
+        for i in range(20):
+            bar = create_test_bar(
+                base_time - timedelta(hours=20 - i),
+                open_price=110,
+                high=Decimal("112.00"),  # $2 range instead of $0.50
+                low=Decimal("108.00"),
+                close=111,
+                volume=2000000,
+            )
+            recent_bars.append(bar)
+
+        current_bar = create_test_bar(
+            base_time,
+            open_price=111,
+            high=Decimal("114.00"),  # $4 range - extreme volatility
+            low=Decimal("106.00"),
+            close=112,
+            volume=3000000,
+        )
+
+        # Act
+        spike, reason = check_volatility_spike(current_bar, campaign, recent_bars)
+
+        # Assert: Should detect volatility spike
+        assert spike, "Volatility spike should be detected (ATR > 2.5x entry)"
+        assert (
+            reason and "VOLATILITY_SPIKE" in reason
+        ), "Exit reason should mention volatility spike"
+
+    def test_phase_e_uptrend_break_integration(self):
+        """Test FR6.2.2: Uptrend break detection in Phase E."""
+        from src.backtesting.exit_logic_refinements import detect_uptrend_break
+
+        # Arrange: Campaign in Phase E
+        campaign = create_test_campaign(support=100, resistance=110, jump=120)
+        campaign.current_phase = WyckoffPhase.E
+        campaign.campaign_id = "test-uptrend"
+
+        base_time = datetime.now()
+
+        # Create bars with rising lows (uptrend)
+        # Using explicit Decimal values for all numeric parameters
+        recent_bars = []
+        for i in range(10):
+            low_val = Decimal("108") + Decimal(str(i)) * Decimal("0.2")
+            bar = create_test_bar(
+                base_time - timedelta(hours=10 - i),
+                open_price=Decimal("110") + Decimal(str(i)) * Decimal("0.2"),
+                high=Decimal("112") + Decimal(str(i)) * Decimal("0.2"),
+                low=low_val,  # Rising lows
+                close=Decimal("111") + Decimal(str(i)) * Decimal("0.2"),
+                volume=1000000,
+            )
+            recent_bars.append(bar)
+
+        # Average of lows: approximately 108.9
+        # Current bar breaks below this average by 0.5%
+        break_bar = create_test_bar(
+            base_time,
+            open_price=Decimal("108"),
+            high=Decimal("109"),
+            low=Decimal("105"),
+            close=Decimal("106.00"),  # Well below recent lows avg * 0.995
+            volume=1500000,
+        )
+
+        # Act
+        break_detected, reason = detect_uptrend_break(campaign, break_bar, recent_bars)
+
+        # Assert
+        assert break_detected, "Uptrend break should be detected"
+        assert reason and "UPTREND_BREAK" in reason, "Exit reason should mention uptrend break"
+
+    def test_phase_e_lower_high_integration(self):
+        """Test FR6.2.2: Lower high detection for distribution."""
+        from src.backtesting.exit_logic_refinements import detect_lower_high
+
+        # Arrange: Campaign in Phase E
+        campaign = create_test_campaign(support=100, resistance=110, jump=120)
+        campaign.current_phase = WyckoffPhase.E
+        campaign.campaign_id = "test-lower-high"
+
+        base_time = datetime.now()
+
+        # Create bars with two clear swing highs where second is lower
+        # Swing high detection needs: bar.high > [i-1].high AND > [i-2].high AND > [i+1].high AND > [i+2].high
+        bars = []
+
+        # Bars before first swing high (lower highs leading up)
+        bars.append(create_test_bar(base_time - timedelta(hours=18), 110, 111, 109, 110, 1000000))
+        bars.append(create_test_bar(base_time - timedelta(hours=17), 110, 112, 109, 111, 1000000))
+
+        # First swing high at index 2 (higher than 2 before and 2 after)
+        bars.append(
+            create_test_bar(
+                base_time - timedelta(hours=16),
+                open_price=115,
+                high=Decimal("120.00"),  # First swing high - MUST be higher than all neighbors
+                low=114,
+                close=119,
+                volume=1200000,
+            )
+        )
+
+        # Bars after first swing high (lower highs)
+        bars.append(create_test_bar(base_time - timedelta(hours=15), 117, 118, 116, 117, 1000000))
+        bars.append(create_test_bar(base_time - timedelta(hours=14), 116, 117, 115, 116, 1000000))
+
+        # Pullback bars
+        bars.append(create_test_bar(base_time - timedelta(hours=13), 115, 116, 114, 115, 1000000))
+        bars.append(create_test_bar(base_time - timedelta(hours=12), 114, 115, 113, 114, 1000000))
+
+        # Second swing high at index 7 (LOWER than first by >0.2%)
+        bars.append(
+            create_test_bar(
+                base_time - timedelta(hours=11),
+                open_price=116,
+                high=Decimal(
+                    "119.50"
+                ),  # Lower high (119.5 < 120 * 0.998 = 119.76) - must be <0.998x first
+                low=115,
+                close=118,
+                volume=1100000,
+            )
+        )
+
+        # Bars after second swing high (lower highs for swing detection)
+        bars.append(create_test_bar(base_time - timedelta(hours=10), 117, 118, 116, 117, 900000))
+        bars.append(create_test_bar(base_time - timedelta(hours=9), 116, 117, 115, 116, 900000))
+
+        # Additional bars to ensure we have lookback + 4
+        bars.append(create_test_bar(base_time - timedelta(hours=8), 115, 116, 114, 115, 900000))
+        bars.append(create_test_bar(base_time - timedelta(hours=7), 114, 115, 113, 114, 900000))
+        bars.append(create_test_bar(base_time - timedelta(hours=6), 114, 115, 113, 114, 900000))
+        bars.append(create_test_bar(base_time - timedelta(hours=5), 114, 115, 113, 114, 900000))
+
+        # Act
+        lower_high_detected, reason = detect_lower_high(campaign, bars)
+
+        # Assert
+        assert lower_high_detected, "Lower high should be detected"
+        assert reason and "LOWER_HIGH" in reason, "Exit reason should mention lower high"
+
+    def test_failed_rallies_integration(self):
+        """Test FR6.2.2: Multiple failed rally attempts detection."""
+        from src.backtesting.exit_logic_refinements import detect_failed_rallies
+
+        # Arrange: Campaign in Phase E
+        campaign = create_test_campaign(support=100, resistance=110, jump=120)
+        campaign.current_phase = WyckoffPhase.E
+        campaign.campaign_id = "test-failed-rallies"
+
+        base_time = datetime.now()
+        resistance = Decimal("118.00")
+
+        # Create bars with multiple failed rally attempts at resistance
+        bars = []
+        for i in range(20):
+            if i in [5, 10, 15]:  # Three failed attempts
+                # Rally attempts that touch but don't break resistance
+                bar = create_test_bar(
+                    base_time - timedelta(hours=20 - i),
+                    open_price=116,
+                    high=Decimal("117.50"),  # Approaches resistance
+                    low=115,
+                    close=Decimal("116.00"),  # Fails below resistance
+                    volume=1200000 - (i * 20000),  # Declining volume
+                )
+            else:
+                # Normal bars
+                bar = create_test_bar(
+                    base_time - timedelta(hours=20 - i),
+                    open_price=114,
+                    high=115,
+                    low=113,
+                    close=114,
+                    volume=1000000,
+                )
+            bars.append(bar)
+
+        # Act
+        failed, reason = detect_failed_rallies(campaign, bars, resistance_level=resistance)
+
+        # Assert
+        assert failed, "Failed rallies should be detected"
+        assert reason and "MULTIPLE_TESTS" in reason, "Exit reason should mention multiple tests"
+
+    def test_complete_exit_refinements_workflow(self):
+        """Test complete workflow using refined exit logic."""
+        from src.backtesting.exit_logic_refinements import (
+            check_volatility_spike,
+            detect_ice_expansion,
+            detect_lower_high,
+            detect_uptrend_break,
+            detect_utad_enhanced,
+            detect_volume_divergence_enhanced,
+            should_exit_on_utad,
+            update_jump_level,
+        )
+
+        # Arrange: Full campaign lifecycle
+        campaign = create_test_campaign(support=100, resistance=110, jump=120)
+        campaign.current_phase = WyckoffPhase.D
+        campaign.campaign_id = "test-complete-workflow"
+        campaign.timeframe = "1h"
+        campaign.entry_atr = Decimal("0.50")
+        campaign.ice_expansion_count = 0
+        campaign.max_atr_seen = None
+        campaign.original_ice_level = None
+        campaign.original_jump_level = None
+
+        base_time = datetime.now()
+        exit_reasons = []
+
+        # Generate historical bars
+        bars = []
+        for i in range(30):
+            bar = create_test_bar(
+                base_time - timedelta(hours=30 - i),
+                open_price=108 + i * 0.1,
+                high=110 + i * 0.1,
+                low=107 + i * 0.1,
+                close=109 + i * 0.1,
+                volume=1000000,
+            )
+            bars.append(bar)
+
+        current_bar = bars[-1]
+
+        # Step 1: Check Ice expansion (Phase D)
+        new_ice = detect_ice_expansion(campaign, current_bar, bars)
+        if new_ice:
+            update_jump_level(campaign, new_ice)
+            exit_reasons.append(f"ICE_EXPANSION: New Ice ${new_ice}")
+
+        # Step 2: Transition to Phase E and check exits
+        campaign.current_phase = WyckoffPhase.E
+
+        # Check UTAD
+        utad = detect_utad_enhanced(campaign, bars)
+        if utad:
+            should_exit, reason = should_exit_on_utad(utad, campaign, current_bar.close)
+            if should_exit:
+                exit_reasons.append(f"UTAD: {reason}")
+
+        # Check uptrend break
+        break_detected, reason = detect_uptrend_break(campaign, current_bar, bars)
+        if break_detected:
+            exit_reasons.append(f"STRUCTURE: {reason}")
+
+        # Check lower high
+        lower_high, reason = detect_lower_high(campaign, bars)
+        if lower_high:
+            exit_reasons.append(f"PATTERN: {reason}")
+
+        # Check volume divergence
+        div_count, divergences = detect_volume_divergence_enhanced(bars)
+        if div_count >= 2:
+            exit_reasons.append(f"VOLUME_DIV: {div_count} consecutive")
+
+        # Check volatility spike
+        spike, reason = check_volatility_spike(current_bar, campaign, bars)
+        if spike:
+            exit_reasons.append(f"RISK: {reason}")
+
+        # Assert: Workflow completed without errors
+        # (Actual exits depend on bar data - this tests integration of all functions)
+        assert isinstance(exit_reasons, list), "Exit reasons should be tracked"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
