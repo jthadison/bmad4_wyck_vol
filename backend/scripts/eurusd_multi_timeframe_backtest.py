@@ -41,6 +41,18 @@ sys.path.insert(0, str(backend_path))
 import structlog
 
 from src.backtesting.backtest_engine import BacktestEngine
+from src.backtesting.exit_logic_refinements import (
+    calculate_atr,
+    check_volatility_spike,
+    detect_failed_rallies,
+    detect_ice_expansion,
+    detect_lower_high,
+    detect_uptrend_break,
+    detect_utad_enhanced,
+    detect_volume_divergence_enhanced,
+    should_exit_on_utad,
+    update_jump_level,
+)
 from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
 from src.market_data.adapters.polygon_adapter import PolygonAdapter
 from src.models.backtest import BacktestConfig, BacktestResult
@@ -342,11 +354,26 @@ class EURUSDMultiTimeframeBacktest:
                         context["position"] = True
                         context["entry_price"] = bar.close
                         context["entry_bar_index"] = current_index
+
+                        # Story 13.6.1: Initialize campaign entry_atr and timeframe
+                        if active_campaigns:
+                            campaign = active_campaigns[0]
+                            campaign.entry_atr = calculate_atr(bars_list, period=14) or Decimal("0.0001")
+                            campaign.timeframe = self.current_timeframe
+
                         return "BUY"
 
-        # FR6.5: Wyckoff-based multi-tier exit logic (Story 13.6)
+        # Story 13.6.1: Dynamic Jump Level Updates
+        if context["position"] and active_campaigns:
+            campaign = active_campaigns[0]
+            new_ice = detect_ice_expansion(campaign, bar, bars_list, lookback=5)
+            if new_ice:
+                update_jump_level(campaign, new_ice)
+                campaign.last_ice_update_bar = current_index
+
+        # FR6.5: Wyckoff-based multi-tier exit logic (Story 13.6 + 13.6.1 enhancements)
         if context["position"] and context["entry_price"]:
-            should_exit, exit_reason = self._wyckoff_exit_logic(
+            should_exit, exit_reason = self._wyckoff_exit_logic_enhanced(
                 bar=bar, context=context, active_campaigns=active_campaigns
             )
 
@@ -609,16 +636,26 @@ class EURUSDMultiTimeframeBacktest:
 
         return False
 
-    def _wyckoff_exit_logic(
+    def _wyckoff_exit_logic_enhanced(
         self,
         bar: OHLCVBar,
         context: dict,
         active_campaigns: list,
     ) -> tuple[bool, str]:
         """
-        Wyckoff-based exit logic with multi-tier priority.
+        Enhanced Wyckoff-based exit logic with Story 13.6.1 refinements.
 
-        FR6.2-FR6.6: Multi-tier exit strategy with structural signals.
+        Exit Priority (Story 13.6.1 Enhanced):
+            1. Support Invalidation (Creek break) - FAILED pattern
+            1.5. Volatility Spike - REGIME CHANGE
+            2. Jump Level Target - PROFIT TARGET
+            3. Phase E Completion Signals:
+               - Phase-Contextual UTAD (quality-filtered)
+               - Uptrend Break
+               - Lower High
+               - Failed Rallies
+            4. Enhanced Volume Divergence (spread-filtered)
+            5. Time Limit (50 bars) - SAFETY
 
         Args:
             bar: Current bar
@@ -627,17 +664,6 @@ class EURUSDMultiTimeframeBacktest:
 
         Returns:
             Tuple (should_exit: bool, exit_reason: str)
-
-        Exit Priority (Story 13.6 FR6.5):
-            1. Support Invalidation (Creek break) - FAILED pattern
-            2. Jump Level Target - PROFIT TARGET
-            3. UTAD (Phase E completion) - DISTRIBUTION
-            4. Volume Divergence - DISTRIBUTION
-            5. Time Limit (50 bars) - SAFETY
-
-        Educational Note:
-            Wyckoff exits focus on structural signals (Jump, UTAD, divergence)
-            rather than arbitrary percentages. The pattern tells us when to exit.
         """
         if not context["position"] or not context["entry_price"]:
             return (False, "NO_POSITION")
@@ -649,44 +675,57 @@ class EURUSDMultiTimeframeBacktest:
         bars_list = context["bars"]
         current_index = len(bars_list) - 1
 
-        # FR6.4: Priority 1 - Support Invalidation (Creek break)
+        # Priority 1: Support Invalidation (Creek break)
         if campaign.support_level and bar.close < campaign.support_level:
             return (
                 True,
                 f"SUPPORT_BREAK (close ${bar.close} < Creek ${campaign.support_level})",
             )
 
-        # FR6.1: Priority 2 - Jump Level Target (measured move)
+        # Priority 1.5: Volatility Spike (Story 13.6.1 FR6.5.1)
+        vol_spike, reason = check_volatility_spike(
+            bar, campaign, bars_list, atr_period=14, spike_threshold=Decimal("2.5")
+        )
+        if vol_spike and reason:
+            return (True, reason)
+
+        # Priority 2: Jump Level Target (measured move)
         if campaign.jump_level and bar.high >= campaign.jump_level:
             return (True, f"JUMP_LEVEL_HIT (high ${bar.high} >= Jump ${campaign.jump_level})")
 
-        # FR6.2: Priority 3 - UTAD (Phase E completion signal)
-        if campaign.resistance_level:
-            from src.pattern_engine.detectors.utad_detector import UTADDetector
+        # Priority 3: Phase E Completion Signals (Story 13.6.1 FR6.2.1 + FR6.2.2)
+        if campaign.current_phase == WyckoffPhase.E:
+            # 3a. Phase-Contextual UTAD (Story 13.6.1 FR6.2.1)
+            utad = detect_utad_enhanced(campaign, bars_list, lookback=10)
+            if utad:
+                should_exit, reason = should_exit_on_utad(utad, campaign, bar.close)
+                if should_exit:
+                    return (True, reason)
 
-            utad_detector = UTADDetector(max_penetration_pct=Decimal("5.0"))
+            # 3b. Uptrend Break (Story 13.6.1 FR6.2.2)
+            uptrend_break, reason = detect_uptrend_break(campaign, bar, bars_list)
+            if uptrend_break and reason:
+                return (True, reason)
 
-            # Build minimal trading range for UTAD detection
-            trading_range = self._build_trading_range(bars_list, current_index)
+            # 3c. Lower High (Story 13.6.1 FR6.2.2)
+            lower_high, reason = detect_lower_high(campaign, bars_list, lookback=10)
+            if lower_high and reason:
+                return (True, reason)
 
-            utad = utad_detector.detect_utad(
-                trading_range=trading_range,
-                bars=bars_list[max(0, current_index - 50) : current_index + 1],
-                ice_level=campaign.resistance_level,
-            )
+            # 3d. Multiple Failed Rallies (Story 13.6.1 FR6.2.2)
+            failed_rallies, reason = detect_failed_rallies(campaign, bars_list, lookback=20)
+            if failed_rallies and reason:
+                return (True, reason)
 
-            if utad and utad.confidence >= 70:
-                return (
-                    True,
-                    f"UTAD_DETECTED (penetration {utad.penetration_pct:.2f}%, "
-                    f"volume {utad.volume_ratio:.2f}x, confidence {utad.confidence})",
-                )
+        # Priority 4: Enhanced Volume Divergence (Story 13.6.1 FR6.3.1)
+        div_count, divergences = detect_volume_divergence_enhanced(
+            bars_list, lookback=10, min_quality=60
+        )
+        if div_count >= 2 and divergences:
+            avg_quality = sum(d.divergence_quality for d in divergences) / len(divergences)
+            return (True, f"VOLUME_DIVERGENCE - {div_count} quality divergences (avg quality {avg_quality:.0f})")
 
-        # FR6.3: Priority 4 - Volume Divergence (distribution signal)
-        if self._detect_volume_divergence(bars_list, context):
-            return (True, "VOLUME_DIVERGENCE (2+ consecutive new highs with declining volume)")
-
-        # Priority 5 - Time Limit (safety backstop)
+        # Priority 5: Time Limit (safety backstop)
         bars_in_position = current_index - context.get("entry_bar_index", current_index)
         if bars_in_position >= 50:
             return (True, f"TIME_LIMIT ({bars_in_position} bars in position)")

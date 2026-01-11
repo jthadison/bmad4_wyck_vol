@@ -116,6 +116,20 @@ class Campaign:
     # FR6.1: Wyckoff Exit Logic - Jump Level
     jump_level: Optional[Decimal] = None  # Measured move target (Ice + range_width)
 
+    # FR6.1.1: Dynamic Jump Level Updates (Story 13.6.1)
+    original_ice_level: Optional[Decimal] = None  # Ice at campaign start
+    original_jump_level: Optional[Decimal] = None  # Jump at campaign start
+    ice_expansion_count: int = 0  # Number of expansions detected
+    last_ice_update_bar: Optional[int] = None
+
+    # FR6.2.1: Phase E Tracking (Story 13.6.1)
+    phase_e_progress_percent: Decimal = Decimal("0")  # % to Jump Level
+
+    # FR6.5.1: Risk Tracking (Story 13.6.1)
+    entry_atr: Optional[Decimal] = None  # ATR at entry
+    max_atr_seen: Optional[Decimal] = None  # Highest ATR during campaign
+    timeframe: str = "1d"  # Timeframe for intraday adjustments
+
 
 class IntradayCampaignDetector:
     """
