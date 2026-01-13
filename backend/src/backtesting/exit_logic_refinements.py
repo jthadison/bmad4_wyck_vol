@@ -1,5 +1,5 @@
 """
-Exit Logic Refinements - Story 13.6.1
+Exit Logic Refinements - Story 13.6.1 & 13.6.3
 
 Purpose:
 --------
@@ -9,10 +9,13 @@ Enhanced Wyckoff exit logic with:
 - Additional Phase E completion signals (FR6.2.2)
 - Enhanced volume divergence with spread analysis (FR6.3.1)
 - Risk-based exit conditions (FR6.5.1)
+- Session-relative volume normalization (FR6.6.1 - Story 13.6.3)
+- Excessive phase duration detection (FR6.6.2 - Story 13.6.3)
 
-Author: Story 13.6.1 Implementation
+Author: Story 13.6.1 & 13.6.3 Implementation
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -917,5 +920,406 @@ def detect_failed_rallies(
                 attempts=len(rally_attempts),
             )
             return (True, f"MULTIPLE_TESTS - {len(rally_attempts)} failed rally attempts")
+
+    return (False, None)
+
+
+# ============================================================================
+# FR6.6.1: Session-Relative Volume (Story 13.6.3)
+# ============================================================================
+
+
+@dataclass
+class SessionVolumeProfile:
+    """
+    Session volume profile for intraday trading.
+
+    Maps hour-of-day to average volume for fair intraday volume comparison.
+    Prevents false signals from comparing high-activity hours (9am) to
+    low-activity hours (3pm).
+
+    Attributes:
+        symbol: Trading symbol (e.g., "EUR/USD")
+        timeframe: Timeframe code (e.g., "15m", "1h")
+        hourly_averages: Hour (0-23) -> average volume
+        sample_days: Number of days used to build profile
+
+    Example:
+        SessionVolumeProfile(
+            symbol="EUR/USD",
+            timeframe="15m",
+            hourly_averages={9: Decimal("75000"), 15: Decimal("25000")},
+            sample_days=20
+        )
+    """
+
+    symbol: str
+    timeframe: str
+    hourly_averages: dict[int, Decimal]  # hour (0-23) -> avg volume
+    sample_days: int
+
+
+def build_session_volume_profile(
+    bars: list[OHLCVBar],
+    timeframe: str,
+    lookback_days: int = 20,
+) -> SessionVolumeProfile:
+    """
+    Build average volume by hour-of-day from historical data.
+
+    Story 13.6.3 - Task 2 (AC1): Session volume profile building.
+
+    Aggregates volume data by hour-of-day to create session profile.
+    Requires minimum 20 bars per hour for statistical validity.
+
+    Args:
+        bars: Historical OHLCV bars (minimum 20 days recommended)
+        timeframe: Timeframe code (e.g., "15m", "1h")
+        lookback_days: Number of days to analyze (default: 20)
+
+    Returns:
+        SessionVolumeProfile with hourly averages
+
+    Raises:
+        ValueError: If bars list is empty or symbol/timeframe inconsistent
+
+    Example:
+        >>> bars = get_historical_bars("EUR/USD", "15m", days=20)
+        >>> profile = build_session_volume_profile(bars, "15m")
+        >>> print(profile.hourly_averages[9])  # 9am average volume
+        Decimal('75000')
+    """
+    if not bars:
+        raise ValueError("Cannot build session profile from empty bars list")
+
+    # Validate consistency
+    symbol = bars[0].symbol
+    if not all(bar.symbol == symbol for bar in bars):
+        raise ValueError("All bars must have same symbol")
+
+    # Group volumes by hour-of-day
+    hourly_volumes: dict[int, list[Decimal]] = defaultdict(list)
+    for bar in bars:
+        hour = bar.timestamp.hour
+        hourly_volumes[hour].append(bar.volume)
+
+    # Calculate averages (only for hours with sufficient samples)
+    hourly_averages = {}
+    for hour, volumes in hourly_volumes.items():
+        if len(volumes) >= 20:  # Minimum sample size
+            avg_volume = sum(volumes) / Decimal(str(len(volumes)))
+            hourly_averages[hour] = avg_volume
+        else:
+            logger.debug(
+                "insufficient_samples_for_hour",
+                symbol=symbol,
+                hour=hour,
+                sample_count=len(volumes),
+                minimum_required=20,
+            )
+
+    # Calculate sample days
+    if bars:
+        time_span = bars[-1].timestamp - bars[0].timestamp
+        sample_days = min(lookback_days, max(1, int(time_span.days)))
+    else:
+        sample_days = 0
+
+    logger.info(
+        "session_volume_profile_built",
+        symbol=symbol,
+        timeframe=timeframe,
+        hours_covered=len(hourly_averages),
+        sample_days=sample_days,
+        total_bars=len(bars),
+    )
+
+    return SessionVolumeProfile(
+        symbol=symbol,
+        timeframe=timeframe,
+        hourly_averages=hourly_averages,
+        sample_days=sample_days,
+    )
+
+
+def get_session_relative_volume(
+    bar: OHLCVBar,
+    session_profile: SessionVolumeProfile,
+) -> Decimal:
+    """
+    Calculate volume ratio vs session average (1.0 = average).
+
+    Story 13.6.3 - Task 2 (AC2): Session-relative volume calculation.
+
+    Normalizes bar volume by hour-of-day average for fair comparison.
+    Example: 30k volume at 3pm (avg 25k) = 1.2x stronger than
+             50k volume at 9am (avg 75k) = 0.67x
+
+    Args:
+        bar: Bar to analyze
+        session_profile: Session volume profile
+
+    Returns:
+        Volume ratio (1.0 = session average, >1.0 = above average)
+        Returns 1.0 if hour not in profile (neutral)
+
+    Example:
+        >>> bar_9am = OHLCVBar(timestamp=datetime(..., 9, 0), volume=50000, ...)
+        >>> bar_3pm = OHLCVBar(timestamp=datetime(..., 15, 0), volume=30000, ...)
+        >>> profile = SessionVolumeProfile(hourly_averages={9: 75000, 15: 25000}, ...)
+        >>> get_session_relative_volume(bar_9am, profile)  # 50k/75k = 0.67x
+        Decimal('0.67')
+        >>> get_session_relative_volume(bar_3pm, profile)  # 30k/25k = 1.2x
+        Decimal('1.20')
+    """
+    hour = bar.timestamp.hour
+
+    # Check if hour is in profile
+    if hour not in session_profile.hourly_averages:
+        logger.debug(
+            "hour_not_in_session_profile",
+            symbol=bar.symbol,
+            hour=hour,
+            timestamp=bar.timestamp.isoformat(),
+            message="Returning neutral 1.0 ratio",
+        )
+        return Decimal("1.0")
+
+    session_avg = session_profile.hourly_averages[hour]
+
+    # Avoid division by zero
+    if session_avg == 0:
+        logger.warning(
+            "zero_session_average",
+            symbol=bar.symbol,
+            hour=hour,
+            message="Returning neutral 1.0 ratio",
+        )
+        return Decimal("1.0")
+
+    # Calculate ratio
+    ratio = bar.volume / session_avg
+
+    logger.debug(
+        "session_relative_volume_calculated",
+        symbol=bar.symbol,
+        hour=hour,
+        bar_volume=str(bar.volume),
+        session_avg=str(session_avg),
+        ratio=str(ratio),
+    )
+
+    return ratio
+
+
+def detect_volume_divergence_intraday(
+    recent_bars: list[OHLCVBar],
+    session_profile: SessionVolumeProfile,
+    min_quality: int = 60,
+) -> tuple[int, list[VolumeDivergence]]:
+    """
+    Detect high-quality volume divergences using session-relative volume.
+
+    Story 13.6.3 - Task 3 (AC3): Intraday divergence detection.
+
+    Uses session-relative volume ratios instead of absolute volume to prevent
+    false positives during low-volume sessions (e.g., comparing 3pm to 9am).
+
+    Args:
+        recent_bars: Recent bars to analyze
+        session_profile: Session volume profile for normalization
+        min_quality: Minimum quality score to accept (default: 60)
+
+    Returns:
+        tuple: (consecutive_divergence_count, list of detected divergences)
+
+    Example:
+        >>> bars = get_recent_bars("EUR/USD", "15m", count=10)
+        >>> profile = build_session_volume_profile(historical_bars, "15m")
+        >>> div_count, divergences = detect_volume_divergence_intraday(bars, profile)
+        >>> if div_count >= 2:
+        ...     print(f"Exit signal: {div_count} quality divergences")
+    """
+    if len(recent_bars) < 2:
+        return (0, [])
+
+    divergences: list[VolumeDivergence] = []
+    consecutive_count = 0
+    prev_high: Optional[Decimal] = None
+    prev_volume_ratio: Optional[Decimal] = None
+    prev_range: Optional[Decimal] = None
+
+    for bar in recent_bars:
+        # Calculate session-relative volume for current bar
+        current_volume_ratio = get_session_relative_volume(bar, session_profile)
+
+        if prev_high is not None and prev_volume_ratio is not None and prev_range is not None:
+            # Check for new high
+            if bar.high > prev_high:
+                # Calculate spread ratio
+                bar_range = bar.high - bar.low
+                spread_ratio = bar_range / prev_range
+
+                # Check for volume decline (using SESSION-RELATIVE ratios)
+                volume_decline_ratio = current_volume_ratio / prev_volume_ratio
+
+                if volume_decline_ratio < Decimal("0.9"):
+                    # Potential divergence - create divergence object
+                    # Store actual volumes for logging, but quality uses session-relative ratios
+                    divergence = VolumeDivergence(
+                        timestamp=bar.timestamp,
+                        price_high=bar.high,
+                        prev_high=prev_high,
+                        volume=bar.volume,
+                        prev_volume=recent_bars[recent_bars.index(bar) - 1].volume,
+                        bar_range=bar_range,
+                        prev_range=prev_range,
+                        volume_ratio=volume_decline_ratio,  # Session-relative ratio
+                        spread_ratio=spread_ratio,
+                        divergence_quality=0,
+                    )
+                    divergence.divergence_quality = divergence.calculate_quality()
+
+                    # Check quality threshold
+                    if divergence.divergence_quality >= min_quality:
+                        divergences.append(divergence)
+                        consecutive_count += 1
+
+                        logger.debug(
+                            "intraday_quality_volume_divergence_detected",
+                            timestamp=bar.timestamp.isoformat(),
+                            hour=bar.timestamp.hour,
+                            quality=divergence.divergence_quality,
+                            session_relative_volume_ratio=str(volume_decline_ratio),
+                            spread_ratio=str(spread_ratio),
+                            message="Using session-relative volume",
+                        )
+                    else:
+                        # Low quality - reset counter
+                        consecutive_count = 0
+                else:
+                    # No volume decline - reset counter
+                    consecutive_count = 0
+            else:
+                # No new high - reset counter if price dropped
+                if bar.high <= prev_high:
+                    consecutive_count = 0
+
+        prev_high = bar.high
+        prev_volume_ratio = current_volume_ratio
+        prev_range = bar.high - bar.low
+
+    logger.info(
+        "intraday_divergence_detection_complete",
+        total_bars_analyzed=len(recent_bars),
+        divergences_found=len(divergences),
+        consecutive_count=consecutive_count,
+    )
+
+    return (consecutive_count, divergences)
+
+
+# ============================================================================
+# FR6.6.2: Excessive Phase E Duration (Story 13.6.3)
+# ============================================================================
+
+
+def detect_excessive_phase_e_duration(
+    campaign: Campaign,
+    current_bar_index: int,
+    max_ratio: Decimal = Decimal("2.5"),
+) -> tuple[bool, Optional[str]]:
+    """
+    Detect if Phase E duration exceeds expected ratio to Phase C.
+
+    Story 13.6.3 - Task 4 (AC5): Excessive phase duration detection.
+
+    Stalled markups indicate distribution. If Phase E takes too long
+    relative to Phase C accumulation, exit position.
+
+    Args:
+        campaign: Active campaign with phase tracking
+        current_bar_index: Current bar index in backtest
+        max_ratio: Maximum Phase E / Phase C duration ratio (default: 2.5)
+
+    Returns:
+        tuple: (should_exit: bool, exit_reason: str or None)
+
+    Example:
+        >>> campaign.phase_c_start_bar = 100
+        >>> campaign.phase_d_start_bar = 120  # Phase C = 20 bars
+        >>> campaign.phase_e_start_bar = 130
+        >>> should_exit, reason = detect_excessive_phase_e_duration(campaign, 185)
+        >>> # Phase E = 55 bars (185-130), max = 20 * 2.5 = 50
+        >>> # should_exit = True, reason = "EXCESSIVE_DURATION - Phase E 55 bars (max 50)"
+    """
+    # Validate required fields are present
+    if campaign.phase_c_start_bar is None:
+        logger.debug(
+            "phase_c_start_bar_missing",
+            campaign_id=campaign.campaign_id,
+            message="Cannot calculate Phase C duration",
+        )
+        return (False, None)
+
+    if campaign.phase_d_start_bar is None:
+        logger.debug(
+            "phase_d_start_bar_missing",
+            campaign_id=campaign.campaign_id,
+            message="Cannot calculate Phase C duration",
+        )
+        return (False, None)
+
+    if campaign.phase_e_start_bar is None:
+        logger.debug(
+            "phase_e_start_bar_missing",
+            campaign_id=campaign.campaign_id,
+            message="Campaign not in Phase E",
+        )
+        return (False, None)
+
+    # Calculate Phase C duration
+    phase_c_duration = campaign.phase_d_start_bar - campaign.phase_c_start_bar
+
+    # Validate Phase C duration is positive
+    if phase_c_duration <= 0:
+        logger.warning(
+            "invalid_phase_c_duration",
+            campaign_id=campaign.campaign_id,
+            phase_c_start=campaign.phase_c_start_bar,
+            phase_d_start=campaign.phase_d_start_bar,
+            duration=phase_c_duration,
+        )
+        return (False, None)
+
+    # Calculate Phase E duration
+    phase_e_duration = current_bar_index - campaign.phase_e_start_bar
+
+    # Calculate maximum allowed Phase E duration
+    max_phase_e_duration = int(phase_c_duration * max_ratio)
+
+    logger.debug(
+        "phase_e_duration_check",
+        campaign_id=campaign.campaign_id,
+        phase_c_duration=phase_c_duration,
+        phase_e_duration=phase_e_duration,
+        max_allowed=max_phase_e_duration,
+        ratio=float(Decimal(str(phase_e_duration)) / Decimal(str(phase_c_duration))),
+    )
+
+    # Check if Phase E exceeds maximum
+    if phase_e_duration > max_phase_e_duration:
+        logger.warning(
+            "excessive_phase_e_duration_detected",
+            campaign_id=campaign.campaign_id,
+            phase_c_duration=phase_c_duration,
+            phase_e_duration=phase_e_duration,
+            max_allowed=max_phase_e_duration,
+            message="Stalled markup - distribution likely",
+        )
+        return (
+            True,
+            f"EXCESSIVE_DURATION - Phase E {phase_e_duration} bars (max {max_phase_e_duration})",
+        )
 
     return (False, None)
