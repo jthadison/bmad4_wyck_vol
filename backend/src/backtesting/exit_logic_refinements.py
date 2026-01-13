@@ -1,5 +1,5 @@
 """
-Exit Logic Refinements - Story 13.6.1 & 13.6.3
+Exit Logic Refinements - Story 13.6.1, 13.6.3 & 13.6.5
 
 Purpose:
 --------
@@ -11,21 +11,25 @@ Enhanced Wyckoff exit logic with:
 - Risk-based exit conditions (FR6.5.1)
 - Session-relative volume normalization (FR6.6.1 - Story 13.6.3)
 - Excessive phase duration detection (FR6.6.2 - Story 13.6.3)
+- Unified exit integration with priority ordering (Story 13.6.5)
 
-Author: Story 13.6.1 & 13.6.3 Implementation
+Author: Story 13.6.1, 13.6.3 & 13.6.5 Implementation
 """
 
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import structlog
 
 from src.backtesting.intraday_campaign_detector import Campaign
 from src.models.ohlcv import OHLCVBar
 from src.models.wyckoff_phase import WyckoffPhase
+
+if TYPE_CHECKING:
+    from src.backtesting.portfolio_risk import PortfolioRiskState
 
 logger = structlog.get_logger(__name__)
 
@@ -1323,3 +1327,606 @@ def detect_excessive_phase_e_duration(
         )
 
     return (False, None)
+
+
+# ============================================================================
+# Story 13.6.5: Unified Exit Integration
+# ============================================================================
+
+
+def _build_exit_metadata(
+    exit_type: str,
+    priority: int,
+    details: dict[str, Any],
+    bar: OHLCVBar,
+) -> dict[str, Any]:
+    """
+    Build standardized exit metadata dictionary.
+
+    Story 13.6.5 - Task 3 (AC5): Exit metadata builder.
+
+    Args:
+        exit_type: The exit reason category (e.g., "SUPPORT_BREAK")
+        priority: The priority number (1-12)
+        details: Condition-specific details
+        bar: Current bar for timestamp
+
+    Returns:
+        Standardized metadata dictionary
+
+    Example:
+        >>> metadata = _build_exit_metadata(
+        ...     "JUMP_LEVEL", 3, {"target": "1.0650"}, bar
+        ... )
+        >>> metadata["priority"]
+        3
+    """
+    return {
+        "exit_type": exit_type,
+        "priority": priority,
+        "details": details,
+        "timestamp": bar.timestamp.isoformat(),
+        "bar_index": getattr(bar, "index", None),
+    }
+
+
+def _check_support_break(
+    bar: OHLCVBar,
+    campaign: Campaign,
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 1: Support break (structure invalidated).
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    if not campaign.support_level:
+        return (False, None, None)
+
+    if bar.close < campaign.support_level:
+        details = {
+            "close": str(bar.close),
+            "support_level": str(campaign.support_level),
+            "break_amount": str(campaign.support_level - bar.close),
+        }
+        metadata = _build_exit_metadata("SUPPORT_BREAK", 1, details, bar)
+        reason = f"SUPPORT_BREAK - close ${bar.close} < Creek ${campaign.support_level}"
+
+        logger.warning(
+            "support_break_exit",
+            campaign_id=campaign.campaign_id,
+            close=str(bar.close),
+            support_level=str(campaign.support_level),
+        )
+
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_volatility_spike_wrapper(
+    bar: OHLCVBar,
+    campaign: Campaign,
+    recent_bars: list[OHLCVBar],
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 2: Volatility spike (regime change).
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+        recent_bars: Historical bars for ATR calculation
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    spike, reason = check_volatility_spike(bar, campaign, recent_bars)
+
+    if spike and reason:
+        details = {
+            "entry_atr": str(campaign.entry_atr) if campaign.entry_atr else None,
+            "max_atr_seen": str(campaign.max_atr_seen) if campaign.max_atr_seen else None,
+        }
+        metadata = _build_exit_metadata("VOLATILITY_SPIKE", 2, details, bar)
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_jump_level(
+    bar: OHLCVBar,
+    campaign: Campaign,
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 3: Jump Level reached (profit target).
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    if not campaign.jump_level:
+        return (False, None, None)
+
+    if bar.high >= campaign.jump_level:
+        details = {
+            "high": str(bar.high),
+            "jump_level": str(campaign.jump_level),
+            "original_jump": str(campaign.original_jump_level)
+            if campaign.original_jump_level
+            else None,
+        }
+        metadata = _build_exit_metadata("JUMP_LEVEL", 3, details, bar)
+        reason = f"JUMP_LEVEL - high ${bar.high} >= Jump ${campaign.jump_level}"
+
+        logger.info(
+            "jump_level_exit",
+            campaign_id=campaign.campaign_id,
+            high=str(bar.high),
+            jump_level=str(campaign.jump_level),
+        )
+
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_portfolio_heat_wrapper(
+    bar: OHLCVBar,
+    campaign: Campaign,
+    portfolio: Optional["PortfolioRiskState"],
+    current_price: Optional[Decimal],
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 4: Portfolio heat limit (risk capacity).
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+        portfolio: Optional portfolio state
+        current_price: Current price for campaign symbol
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    if portfolio is None or current_price is None:
+        return (False, None, None)
+
+    # Import here to avoid circular import
+    from src.backtesting.portfolio_risk import check_portfolio_heat
+
+    should_exit, reason = check_portfolio_heat(portfolio, campaign, current_price)
+
+    if should_exit and reason:
+        details = {
+            "total_heat": str(portfolio.total_heat_pct),
+            "max_heat": str(portfolio.max_heat_pct),
+            "active_campaigns": len(portfolio.active_campaigns),
+        }
+        metadata = _build_exit_metadata("PORTFOLIO_HEAT", 4, details, bar)
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_phase_e_utad_wrapper(
+    bar: OHLCVBar,
+    campaign: Campaign,
+    recent_bars: list[OHLCVBar],
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 5: Phase E UTAD (distribution signal).
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+        recent_bars: Historical bars for UTAD detection
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    if campaign.current_phase != WyckoffPhase.E:
+        return (False, None, None)
+
+    utad = detect_utad_enhanced(campaign, recent_bars, lookback=10)
+
+    if utad:
+        should_exit, reason = should_exit_on_utad(utad, campaign, bar.close)
+
+        if should_exit:
+            details = {
+                "utad_confidence": utad.confidence,
+                "volume_ratio": str(utad.volume_ratio),
+                "spread_ratio": str(utad.spread_ratio),
+                "bars_to_failure": utad.bars_to_failure,
+            }
+            metadata = _build_exit_metadata("PHASE_E_UTAD", 5, details, bar)
+            return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_uptrend_break_wrapper(
+    bar: OHLCVBar,
+    campaign: Campaign,
+    recent_bars: list[OHLCVBar],
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 6: Uptrend break (structure failed).
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+        recent_bars: Historical bars
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    break_detected, reason = detect_uptrend_break(campaign, bar, recent_bars)
+
+    if break_detected and reason:
+        details = {
+            "close": str(bar.close),
+            "phase": campaign.current_phase.value if campaign.current_phase else None,
+        }
+        metadata = _build_exit_metadata("UPTREND_BREAK", 6, details, bar)
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_lower_high_wrapper(
+    campaign: Campaign,
+    recent_bars: list[OHLCVBar],
+    bar: OHLCVBar,
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 7: Lower high (distribution pattern).
+
+    Args:
+        campaign: Active campaign
+        recent_bars: Historical bars
+        bar: Current bar for metadata
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    lower_high_detected, reason = detect_lower_high(campaign, recent_bars, lookback=10)
+
+    if lower_high_detected and reason:
+        details = {
+            "phase": campaign.current_phase.value if campaign.current_phase else None,
+        }
+        metadata = _build_exit_metadata("LOWER_HIGH", 7, details, bar)
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_failed_rallies_wrapper(
+    campaign: Campaign,
+    recent_bars: list[OHLCVBar],
+    bar: OHLCVBar,
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 8: Failed rallies (supply absorption).
+
+    Args:
+        campaign: Active campaign
+        recent_bars: Historical bars
+        bar: Current bar for metadata
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    failed, reason = detect_failed_rallies(campaign, recent_bars, lookback=20)
+
+    if failed and reason:
+        details = {
+            "phase": campaign.current_phase.value if campaign.current_phase else None,
+            "resistance": str(campaign.jump_level) if campaign.jump_level else None,
+        }
+        metadata = _build_exit_metadata("FAILED_RALLIES", 8, details, bar)
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_excessive_duration_wrapper(
+    campaign: Campaign,
+    current_bar_index: int,
+    bar: OHLCVBar,
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 9: Excessive duration (stalled markup).
+
+    Args:
+        campaign: Active campaign
+        current_bar_index: Current bar index
+        bar: Current bar for metadata
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    should_exit, reason = detect_excessive_phase_e_duration(
+        campaign, current_bar_index, max_ratio=Decimal("2.5")
+    )
+
+    if should_exit and reason:
+        phase_c_duration = (
+            campaign.phase_d_start_bar - campaign.phase_c_start_bar
+            if campaign.phase_d_start_bar and campaign.phase_c_start_bar
+            else None
+        )
+        phase_e_duration = (
+            current_bar_index - campaign.phase_e_start_bar if campaign.phase_e_start_bar else None
+        )
+        details = {
+            "phase_c_duration": phase_c_duration,
+            "phase_e_duration": phase_e_duration,
+            "max_ratio": "2.5",
+        }
+        metadata = _build_exit_metadata("EXCESSIVE_DURATION", 9, details, bar)
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_correlation_cascade_wrapper(
+    bar: OHLCVBar,
+    campaign: Campaign,
+    portfolio: Optional["PortfolioRiskState"],
+    current_prices: Optional[dict[str, Decimal]],
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 10: Correlation cascade (systemic risk).
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+        portfolio: Optional portfolio state
+        current_prices: Dict mapping symbol -> current price
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    if portfolio is None or current_prices is None:
+        return (False, None, None)
+
+    # Import here to avoid circular import
+    from src.backtesting.portfolio_risk import check_correlation_cascade
+
+    should_exit, reason = check_correlation_cascade(portfolio, campaign, current_prices)
+
+    if should_exit and reason:
+        details = {
+            "active_campaigns": len(portfolio.active_campaigns),
+        }
+        metadata = _build_exit_metadata("CORRELATION_CASCADE", 10, details, bar)
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_volume_divergence_wrapper(
+    recent_bars: list[OHLCVBar],
+    session_profile: Optional[SessionVolumeProfile],
+    bar: OHLCVBar,
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 11: Volume divergence (weakening momentum).
+
+    Uses session-relative volume if profile provided, else absolute.
+
+    Args:
+        recent_bars: Historical bars
+        session_profile: Optional session volume profile
+        bar: Current bar for metadata
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    if session_profile:
+        # Use intraday session-relative divergence
+        div_count, divergences = detect_volume_divergence_intraday(
+            recent_bars, session_profile, min_quality=60
+        )
+    else:
+        # Use standard divergence detection
+        div_count, divergences = detect_volume_divergence_enhanced(
+            recent_bars, lookback=10, min_quality=60
+        )
+
+    if div_count >= 2 and divergences:
+        avg_quality = sum(d.divergence_quality for d in divergences) / len(divergences)
+        details = {
+            "consecutive_count": div_count,
+            "avg_quality": round(avg_quality, 1),
+            "session_relative": session_profile is not None,
+        }
+        metadata = _build_exit_metadata("VOLUME_DIVERGENCE", 11, details, bar)
+        reason = (
+            f"VOLUME_DIVERGENCE - {div_count} quality divergences (avg quality {avg_quality:.0f})"
+        )
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def _check_time_limit(
+    bar: OHLCVBar,
+    campaign: Campaign,
+    current_bar_index: int,
+    time_limit_bars: int,
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Check Priority 12: Time limit (safety backstop).
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+        current_bar_index: Current bar index
+        time_limit_bars: Maximum bars before exit
+
+    Returns:
+        tuple: (should_exit, exit_reason, metadata)
+    """
+    if not campaign.entry_bar_index:
+        return (False, None, None)
+
+    bars_in_position = current_bar_index - campaign.entry_bar_index
+
+    if bars_in_position >= time_limit_bars:
+        details = {
+            "bars_in_position": bars_in_position,
+            "time_limit": time_limit_bars,
+            "entry_bar_index": campaign.entry_bar_index,
+        }
+        metadata = _build_exit_metadata("TIME_LIMIT", 12, details, bar)
+        reason = f"TIME_LIMIT - {bars_in_position} bars in position (max {time_limit_bars})"
+
+        logger.info(
+            "time_limit_exit",
+            campaign_id=campaign.campaign_id,
+            bars_in_position=bars_in_position,
+            time_limit=time_limit_bars,
+        )
+
+        return (True, reason, metadata)
+
+    return (False, None, None)
+
+
+def wyckoff_exit_logic_unified(
+    bar: OHLCVBar,
+    campaign: Campaign,
+    recent_bars: list[OHLCVBar],
+    current_bar_index: int = 0,
+    portfolio: Optional["PortfolioRiskState"] = None,
+    session_profile: Optional[SessionVolumeProfile] = None,
+    current_prices: Optional[dict[str, Decimal]] = None,
+    time_limit_bars: int = 500,
+) -> tuple[bool, Optional[str], Optional[dict[str, Any]]]:
+    """
+    Unified Wyckoff + Risk exit logic with all conditions.
+
+    Story 13.6.5 - Task 1 (AC1, AC2, AC3): Main unified exit function.
+
+    Exit Priority Order (highest to lowest):
+    1. SUPPORT_BREAK - Structure invalidated
+    2. VOLATILITY_SPIKE - Market regime changed
+    3. JUMP_LEVEL - Profit target reached
+    4. PORTFOLIO_HEAT - Risk capacity limit (if portfolio provided)
+    5. PHASE_E_UTAD - Distribution signal (phase-contextual)
+    6. UPTREND_BREAK - Structure failed
+    7. LOWER_HIGH - Distribution pattern
+    8. FAILED_RALLIES - Supply absorption
+    9. EXCESSIVE_DURATION - Stalled markup
+    10. CORRELATION_CASCADE - Systemic risk (if portfolio provided)
+    11. VOLUME_DIVERGENCE - Weakening momentum
+    12. TIME_LIMIT - Safety backstop
+
+    Args:
+        bar: Current bar
+        campaign: Active campaign
+        recent_bars: Historical bars for analysis
+        current_bar_index: Current bar index for duration calculations
+        portfolio: Optional portfolio state for risk checks
+        session_profile: Optional session volume profile for intraday
+        current_prices: Optional dict of symbol -> current price for portfolio
+        time_limit_bars: Maximum bars before time-based exit (default: 500)
+
+    Returns:
+        tuple: (should_exit, exit_reason, exit_metadata)
+            - should_exit: True if exit triggered
+            - exit_reason: String describing exit reason
+            - exit_metadata: Dict with exit_type, priority, details, timestamp
+
+    Example:
+        >>> should_exit, reason, metadata = wyckoff_exit_logic_unified(
+        ...     bar, campaign, recent_bars, current_bar_index=150
+        ... )
+        >>> if should_exit:
+        ...     print(f"Exit: {reason}, Priority: {metadata['priority']}")
+    """
+    # Get current price for portfolio checks
+    current_price = bar.close
+
+    # Priority 1: SUPPORT_BREAK - Structure invalidated
+    should_exit, reason, metadata = _check_support_break(bar, campaign)
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 2: VOLATILITY_SPIKE - Market regime changed
+    should_exit, reason, metadata = _check_volatility_spike_wrapper(bar, campaign, recent_bars)
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 3: JUMP_LEVEL - Profit target reached
+    should_exit, reason, metadata = _check_jump_level(bar, campaign)
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 4: PORTFOLIO_HEAT - Risk capacity limit (optional)
+    should_exit, reason, metadata = _check_portfolio_heat_wrapper(
+        bar, campaign, portfolio, current_price
+    )
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 5: PHASE_E_UTAD - Distribution signal
+    should_exit, reason, metadata = _check_phase_e_utad_wrapper(bar, campaign, recent_bars)
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 6: UPTREND_BREAK - Structure failed
+    should_exit, reason, metadata = _check_uptrend_break_wrapper(bar, campaign, recent_bars)
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 7: LOWER_HIGH - Distribution pattern
+    should_exit, reason, metadata = _check_lower_high_wrapper(campaign, recent_bars, bar)
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 8: FAILED_RALLIES - Supply absorption
+    should_exit, reason, metadata = _check_failed_rallies_wrapper(campaign, recent_bars, bar)
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 9: EXCESSIVE_DURATION - Stalled markup
+    should_exit, reason, metadata = _check_excessive_duration_wrapper(
+        campaign, current_bar_index, bar
+    )
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 10: CORRELATION_CASCADE - Systemic risk (optional)
+    should_exit, reason, metadata = _check_correlation_cascade_wrapper(
+        bar, campaign, portfolio, current_prices
+    )
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 11: VOLUME_DIVERGENCE - Weakening momentum
+    should_exit, reason, metadata = _check_volume_divergence_wrapper(
+        recent_bars, session_profile, bar
+    )
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # Priority 12: TIME_LIMIT - Safety backstop
+    should_exit, reason, metadata = _check_time_limit(
+        bar, campaign, current_bar_index, time_limit_bars
+    )
+    if should_exit:
+        return (should_exit, reason, metadata)
+
+    # No exit triggered
+    return (False, None, None)
