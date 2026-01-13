@@ -130,6 +130,11 @@ class Campaign:
     max_atr_seen: Optional[Decimal] = None  # Highest ATR during campaign
     timeframe: str = "1d"  # Timeframe for intraday adjustments
 
+    # FR6.6.2: Phase Duration Tracking (Story 13.6.3)
+    phase_c_start_bar: Optional[int] = None  # Bar index when Phase C started
+    phase_d_start_bar: Optional[int] = None  # Bar index when Phase D started
+    phase_e_start_bar: Optional[int] = None  # Bar index when Phase E started
+
 
 class IntradayCampaignDetector:
     """
@@ -402,6 +407,54 @@ class IntradayCampaignDetector:
 
         # Default to Phase B (accumulation)
         return WyckoffPhase.B
+
+    def update_phase_with_bar_index(
+        self, campaign: Campaign, new_phase: WyckoffPhase, bar_index: int
+    ) -> None:
+        """
+        Update campaign phase and track bar index for phase transitions.
+
+        Story 13.6.3 - Task 1: Phase duration tracking.
+        Records bar index when entering Phase C, D, or E.
+
+        Args:
+            campaign: Campaign to update
+            new_phase: New Wyckoff phase
+            bar_index: Current bar index in backtest
+
+        Example:
+            >>> detector.update_phase_with_bar_index(campaign, WyckoffPhase.E, 150)
+            >>> # campaign.phase_e_start_bar now set to 150
+        """
+        # Only track if phase is actually changing
+        if campaign.current_phase == new_phase:
+            return
+
+        # Track phase start bar indices
+        if new_phase == WyckoffPhase.C and campaign.phase_c_start_bar is None:
+            campaign.phase_c_start_bar = bar_index
+            self.logger.debug(
+                "phase_c_started",
+                campaign_id=campaign.campaign_id,
+                bar_index=bar_index,
+            )
+        elif new_phase == WyckoffPhase.D and campaign.phase_d_start_bar is None:
+            campaign.phase_d_start_bar = bar_index
+            self.logger.debug(
+                "phase_d_started",
+                campaign_id=campaign.campaign_id,
+                bar_index=bar_index,
+            )
+        elif new_phase == WyckoffPhase.E and campaign.phase_e_start_bar is None:
+            campaign.phase_e_start_bar = bar_index
+            self.logger.debug(
+                "phase_e_started",
+                campaign_id=campaign.campaign_id,
+                bar_index=bar_index,
+            )
+
+        # Update phase
+        campaign.current_phase = new_phase
 
     def _validate_sequence(self, patterns: list[WyckoffPattern]) -> bool:
         """

@@ -16,15 +16,20 @@ import pytest
 
 from src.backtesting.exit_logic_refinements import (
     EnhancedUTAD,
+    SessionVolumeProfile,
     VolumeDivergence,
+    build_session_volume_profile,
     calculate_atr,
     check_volatility_spike,
+    detect_excessive_phase_e_duration,
     detect_failed_rallies,
     detect_ice_expansion,
     detect_lower_high,
     detect_uptrend_break,
     detect_utad_enhanced,
     detect_volume_divergence_enhanced,
+    detect_volume_divergence_intraday,
+    get_session_relative_volume,
     should_exit_on_utad,
     update_jump_level,
 )
@@ -664,6 +669,402 @@ class TestIntegration:
         # Test UTAD detection in Phase E would work correctly
         assert campaign.current_phase == WyckoffPhase.E
         assert campaign.jump_level is not None
+
+
+class TestSessionVolumeProfile:
+    """Test FR6.6.1: Session-Relative Volume (Story 13.6.3)"""
+
+    def test_build_session_volume_profile_basic(self):
+        """AC1: Build session volume profile with hour-of-day aggregation"""
+        base_time = datetime(2025, 1, 1, 9, 0)  # Start at 9am
+
+        # Create 20+ bars for each of 3 hours (9am, 10am, 11am)
+        bars = []
+        for day in range(25):  # 25 days
+            for hour_offset in [0, 1, 2]:  # 9am, 10am, 11am
+                bars.append(
+                    create_test_bar(
+                        timestamp=base_time + timedelta(days=day, hours=hour_offset),
+                        open_price=Decimal("1.0600"),
+                        high=Decimal("1.0610"),
+                        low=Decimal("1.0590"),
+                        close=Decimal("1.0600"),
+                        volume=1000 + (hour_offset * 100),  # 9am=1000, 10am=1100, 11am=1200
+                        symbol="EUR/USD",
+                        timeframe="1h",
+                    )
+                )
+
+        profile = build_session_volume_profile(bars, "1h", lookback_days=25)
+
+        assert profile.symbol == "EUR/USD"
+        assert profile.timeframe == "1h"
+        assert 9 in profile.hourly_averages
+        assert 10 in profile.hourly_averages
+        assert 11 in profile.hourly_averages
+
+        # Check averages are correct
+        assert profile.hourly_averages[9] == Decimal("1000")
+        assert profile.hourly_averages[10] == Decimal("1100")
+        assert profile.hourly_averages[11] == Decimal("1200")
+
+    def test_build_session_volume_profile_minimum_sample_size(self):
+        """AC1: Verify minimum sample size handling (20+ bars required)"""
+        base_time = datetime(2025, 1, 1, 9, 0)
+
+        # Create only 15 bars for 9am (below minimum)
+        bars = [
+            create_test_bar(
+                timestamp=base_time + timedelta(days=i),
+                open_price=Decimal("1.0600"),
+                high=Decimal("1.0610"),
+                low=Decimal("1.0590"),
+                close=Decimal("1.0600"),
+                volume=1000,
+            )
+            for i in range(15)
+        ]
+
+        profile = build_session_volume_profile(bars, "1h")
+
+        # 9am should NOT be in profile (insufficient samples)
+        assert 9 not in profile.hourly_averages
+
+    def test_build_session_volume_profile_edge_cases(self):
+        """AC1: Edge cases - empty bars, sparse data"""
+        # Empty bars
+        with pytest.raises(ValueError, match="Cannot build session profile from empty bars list"):
+            build_session_volume_profile([], "1h")
+
+        # Mixed symbols
+        base_time = datetime(2025, 1, 1, 9, 0)
+        bars = [
+            create_test_bar(
+                timestamp=base_time,
+                open_price=Decimal("1.0600"),
+                high=Decimal("1.0610"),
+                low=Decimal("1.0590"),
+                close=Decimal("1.0600"),
+                volume=1000,
+                symbol="EUR/USD",
+            ),
+            create_test_bar(
+                timestamp=base_time + timedelta(hours=1),
+                open_price=Decimal("1.2600"),
+                high=Decimal("1.2610"),
+                low=Decimal("1.2590"),
+                close=Decimal("1.2600"),
+                volume=1000,
+                symbol="GBP/USD",  # Different symbol
+            ),
+        ]
+
+        with pytest.raises(ValueError, match="All bars must have same symbol"):
+            build_session_volume_profile(bars, "1h")
+
+    def test_get_session_relative_volume_9am_vs_3pm(self):
+        """AC2: Session-relative volume calculation - 9am vs 3pm comparison"""
+        # Build profile with 9am avg=75k, 3pm avg=25k
+        profile = SessionVolumeProfile(
+            symbol="EUR/USD",
+            timeframe="15m",
+            hourly_averages={9: Decimal("75000"), 15: Decimal("25000")},
+            sample_days=20,
+        )
+
+        # 9am bar with 50k volume
+        bar_9am = create_test_bar(
+            timestamp=datetime(2025, 1, 1, 9, 0),
+            open_price=Decimal("1.0600"),
+            high=Decimal("1.0610"),
+            low=Decimal("1.0590"),
+            close=Decimal("1.0600"),
+            volume=50000,
+        )
+
+        # 3pm bar with 30k volume
+        bar_3pm = create_test_bar(
+            timestamp=datetime(2025, 1, 1, 15, 0),
+            open_price=Decimal("1.0600"),
+            high=Decimal("1.0610"),
+            low=Decimal("1.0590"),
+            close=Decimal("1.0600"),
+            volume=30000,
+        )
+
+        ratio_9am = get_session_relative_volume(bar_9am, profile)
+        ratio_3pm = get_session_relative_volume(bar_3pm, profile)
+
+        # 50k / 75k = 0.6667
+        assert abs(ratio_9am - Decimal("0.6666666666666666666666666667")) < Decimal("0.01")
+
+        # 30k / 25k = 1.2
+        assert ratio_3pm == Decimal("1.2")
+
+        # 3pm bar is relatively stronger despite lower absolute volume
+        assert ratio_3pm > ratio_9am
+
+    def test_get_session_relative_volume_hour_not_in_profile(self):
+        """AC2: Edge case - hour not in profile returns neutral 1.0"""
+        profile = SessionVolumeProfile(
+            symbol="EUR/USD",
+            timeframe="15m",
+            hourly_averages={9: Decimal("75000")},  # Only 9am
+            sample_days=20,
+        )
+
+        # Bar at 3pm (not in profile)
+        bar_3pm = create_test_bar(
+            timestamp=datetime(2025, 1, 1, 15, 0),
+            open_price=Decimal("1.0600"),
+            high=Decimal("1.0610"),
+            low=Decimal("1.0590"),
+            close=Decimal("1.0600"),
+            volume=30000,
+        )
+
+        ratio = get_session_relative_volume(bar_3pm, profile)
+
+        # Should return neutral 1.0 for missing hour
+        assert ratio == Decimal("1.0")
+
+    def test_get_session_relative_volume_zero_average(self):
+        """AC2: Edge case - zero session average returns neutral 1.0"""
+        profile = SessionVolumeProfile(
+            symbol="EUR/USD",
+            timeframe="15m",
+            hourly_averages={9: Decimal("0")},  # Zero average (edge case)
+            sample_days=20,
+        )
+
+        bar = create_test_bar(
+            timestamp=datetime(2025, 1, 1, 9, 0),
+            open_price=Decimal("1.0600"),
+            high=Decimal("1.0610"),
+            low=Decimal("1.0590"),
+            close=Decimal("1.0600"),
+            volume=30000,
+        )
+
+        ratio = get_session_relative_volume(bar, profile)
+
+        # Should return neutral 1.0 to avoid division by zero
+        assert ratio == Decimal("1.0")
+
+
+class TestIntradayVolumeDivergence:
+    """Test FR6.6.1: Intraday Volume Divergence Detection (Story 13.6.3)"""
+
+    def test_detect_volume_divergence_intraday_basic(self):
+        """AC3: Intraday divergence using session-relative volume"""
+        # Build session profile with varying volumes by hour
+        profile = SessionVolumeProfile(
+            symbol="EUR/USD",
+            timeframe="15m",
+            hourly_averages={
+                9: Decimal("100000"),  # High volume hour
+                15: Decimal("30000"),  # Low volume hour
+            },
+            sample_days=20,
+        )
+
+        base_time = datetime(2025, 1, 1, 15, 0)  # Start at 3pm (low volume hour)
+
+        # Bar 1: Baseline at 3pm with 30k volume (1.0x session avg)
+        bars = [
+            create_test_bar(
+                timestamp=base_time,
+                open_price=Decimal("1.0655"),
+                high=Decimal("1.0670"),
+                low=Decimal("1.0650"),
+                close=Decimal("1.0670"),
+                volume=30000,  # 1.0x session avg
+            )
+        ]
+
+        # Bar 2: New high at 3pm with 21k volume (0.7x session avg)
+        # Session-relative: 0.7 / 1.0 = 0.7x decline
+        bars.append(
+            create_test_bar(
+                timestamp=base_time + timedelta(minutes=15),
+                open_price=Decimal("1.0670"),
+                high=Decimal("1.0675"),  # New high
+                low=Decimal("1.0665"),
+                close=Decimal("1.0674"),
+                volume=21000,  # 0.7x session avg
+            )
+        )
+
+        # Bar 3: Another new high with further decline
+        bars.append(
+            create_test_bar(
+                timestamp=base_time + timedelta(minutes=30),
+                open_price=Decimal("1.0674"),
+                high=Decimal("1.0678"),  # New high
+                low=Decimal("1.0672"),
+                close=Decimal("1.0677"),
+                volume=18000,  # 0.6x session avg
+            )
+        )
+
+        div_count, divergences = detect_volume_divergence_intraday(bars, profile, min_quality=60)
+
+        assert div_count >= 1
+        assert len(divergences) >= 1
+        assert all(d.divergence_quality >= 60 for d in divergences)
+
+    def test_detect_volume_divergence_intraday_false_positive_reduction(self):
+        """AC3: Reduces false positives vs absolute volume method"""
+        # Scenario: 9am has higher absolute volume than 3pm, but both are average for their sessions
+        profile = SessionVolumeProfile(
+            symbol="EUR/USD",
+            timeframe="15m",
+            hourly_averages={
+                9: Decimal("100000"),  # 9am session avg
+                15: Decimal("30000"),  # 3pm session avg
+            },
+            sample_days=20,
+        )
+
+        base_time = datetime(2025, 1, 1, 9, 0)  # Start at 9am
+
+        # Bar 1: 9am with 100k volume (1.0x session avg for 9am)
+        bars = [
+            create_test_bar(
+                timestamp=base_time,
+                open_price=Decimal("1.0655"),
+                high=Decimal("1.0670"),
+                low=Decimal("1.0650"),
+                close=Decimal("1.0670"),
+                volume=100000,  # 1.0x for 9am
+            )
+        ]
+
+        # Transition to 3pm
+        # Bar 2: 3pm with 30k volume (1.0x session avg for 3pm)
+        # Absolute volume dropped 70% (100k → 30k), but session-relative stayed same (1.0x)
+        bars.append(
+            create_test_bar(
+                timestamp=datetime(2025, 1, 1, 15, 0),  # Jump to 3pm
+                open_price=Decimal("1.0670"),
+                high=Decimal("1.0675"),  # New high
+                low=Decimal("1.0665"),
+                close=Decimal("1.0674"),
+                volume=30000,  # 1.0x for 3pm
+            )
+        )
+
+        div_count, divergences = detect_volume_divergence_intraday(bars, profile, min_quality=60)
+
+        # Should NOT detect divergence (session-relative volume unchanged)
+        # This is the false positive reduction
+        assert div_count == 0
+
+
+class TestExcessivePhaseDuration:
+    """Test FR6.6.2: Excessive Phase E Duration (Story 13.6.3)"""
+
+    def test_detect_excessive_phase_e_duration_no_exit(self):
+        """AC5: Phase E at 2.4x (below threshold, no exit)"""
+        campaign = Campaign(
+            phase_c_start_bar=100,
+            phase_d_start_bar=120,  # Phase C = 20 bars
+            phase_e_start_bar=130,
+        )
+
+        # Phase E = 48 bars (178 - 130)
+        # Max allowed = 20 * 2.5 = 50 bars
+        # 48 < 50, so no exit
+        current_bar_index = 178
+
+        should_exit, reason = detect_excessive_phase_e_duration(
+            campaign, current_bar_index, max_ratio=Decimal("2.5")
+        )
+
+        assert should_exit is False
+        assert reason is None
+
+    def test_detect_excessive_phase_e_duration_exit(self):
+        """AC5: Phase E at 2.6x (exceeds threshold, triggers exit)"""
+        campaign = Campaign(
+            phase_c_start_bar=100,
+            phase_d_start_bar=120,  # Phase C = 20 bars
+            phase_e_start_bar=130,
+        )
+
+        # Phase E = 55 bars (185 - 130)
+        # Max allowed = 20 * 2.5 = 50 bars
+        # 55 > 50, so exit
+        current_bar_index = 185
+
+        should_exit, reason = detect_excessive_phase_e_duration(
+            campaign, current_bar_index, max_ratio=Decimal("2.5")
+        )
+
+        assert should_exit is True
+        assert reason is not None
+        assert "EXCESSIVE_DURATION" in reason
+        assert "Phase E 55 bars" in reason
+        assert "max 50" in reason
+
+    def test_detect_excessive_phase_e_duration_missing_phase_c(self):
+        """AC5: Graceful handling - missing Phase C start bar"""
+        campaign = Campaign(
+            phase_c_start_bar=None,  # Missing
+            phase_d_start_bar=120,
+            phase_e_start_bar=130,
+        )
+
+        should_exit, reason = detect_excessive_phase_e_duration(campaign, 185)
+
+        assert should_exit is False
+        assert reason is None
+
+    def test_detect_excessive_phase_e_duration_missing_phase_d(self):
+        """AC5: Graceful handling - missing Phase D start bar"""
+        campaign = Campaign(
+            phase_c_start_bar=100,
+            phase_d_start_bar=None,  # Missing
+            phase_e_start_bar=130,
+        )
+
+        should_exit, reason = detect_excessive_phase_e_duration(campaign, 185)
+
+        assert should_exit is False
+        assert reason is None
+
+    def test_detect_excessive_phase_e_duration_missing_phase_e(self):
+        """AC5: Graceful handling - missing Phase E start bar (not in Phase E)"""
+        campaign = Campaign(
+            phase_c_start_bar=100,
+            phase_d_start_bar=120,
+            phase_e_start_bar=None,  # Not in Phase E yet
+        )
+
+        should_exit, reason = detect_excessive_phase_e_duration(campaign, 185)
+
+        assert should_exit is False
+        assert reason is None
+
+    def test_detect_excessive_phase_e_duration_custom_ratio(self):
+        """AC5: Custom max_ratio parameter (3.0x instead of 2.5x)"""
+        campaign = Campaign(
+            phase_c_start_bar=100,
+            phase_d_start_bar=120,  # Phase C = 20 bars
+            phase_e_start_bar=130,
+        )
+
+        # Phase E = 55 bars (185 - 130)
+        # With 2.5x: max = 50 bars (exit)
+        # With 3.0x: max = 60 bars (no exit)
+        current_bar_index = 185
+
+        should_exit, reason = detect_excessive_phase_e_duration(
+            campaign, current_bar_index, max_ratio=Decimal("3.0")
+        )
+
+        assert should_exit is False
+        assert reason is None
 
 
 if __name__ == "__main__":
