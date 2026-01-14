@@ -63,13 +63,27 @@ repos:
       - id: check-json
         exclude: ^frontend/tsconfig.*\.json$
 
-  # Fast unit tests (exclude slow tests for pre-commit speed)
-  # - repo: local
-  #   hooks:
-  #     - id: pytest-fast
-  #       name: pytest fast unit tests
-  #       entry: bash -c 'cd backend && poetry run pytest tests/unit -m "not slow" -q --tb=short || exit 1'
-  #       language: system
-  #       pass_filenames: false
-  #       files: ^backend/(src|tests)/.*\.py$
-  #       stages: [commit]
+    #Fast unit tests (exclude slow tests for pre-commit speed)
+  - repo: local
+    hooks:
+      - id: pytest-fast
+        name: pytest fast unit tests
+        #entry: bash -c 'cd backend && poetry run pytest tests/unit -m "not slow" -q --tb=short || exit 1'
+        entry: python -m pytest
+        args: [
+            "backend/tests/unit",
+            "-p", "no:cov",
+            "-p", "no:benchmark",
+            "-p", "no:faker",
+            "-x",                    # Stop on first failure
+            "-q",                    # Quiet output
+            "--tb=line",             # Minimal traceback
+            "--no-header",           # Skip header
+            "-m", "not slow and not integration and not database",
+            "--ignore=backend/tests/unit/help",  # Skip tests with missing deps
+            "--ignore=backend/tests/unit/market_data/adapters/test_polygon_adapter.py"
+          ]
+        language: system
+        pass_filenames: false
+        files: ^backend/
+        stages: [pre-commit]
