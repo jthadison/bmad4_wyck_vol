@@ -201,8 +201,9 @@ class EURUSDMultiTimeframeBacktest:
         self.volume_logger = VolumeLogger()
 
         # Story 13.9 (AC9.1): Initialize BacktestRiskManager with FR18 limits
+        # Note: Uses same capital as BacktestConfig below ($100k)
         self.risk_manager = BacktestRiskManager(
-            initial_capital=config.initial_capital,
+            initial_capital=Decimal("100000"),
             max_risk_per_trade_pct=Decimal("2.0"),
             max_campaign_risk_pct=Decimal("5.0"),
             max_portfolio_heat_pct=Decimal("10.0"),
