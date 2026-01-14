@@ -270,8 +270,16 @@ class BacktestEngine:
         if signal == "BUY":
             # Check if we already have a position
             if not self.position_manager.has_position(self.config.symbol):
-                # Calculate position size
-                quantity = self._calculate_position_size(bar)
+                # Story 13.9: Use dynamic position size from strategy context if available
+                # This allows RiskManager-calculated position sizes to override fixed sizing
+                dynamic_size = self.strategy_context.get("position_size")
+                if dynamic_size is not None and dynamic_size > 0:
+                    # Convert Decimal to int units for order submission
+                    quantity = int(dynamic_size)
+                else:
+                    # Fallback to config-based calculation
+                    quantity = self._calculate_position_size(bar)
+
                 if quantity > 0:
                     # Submit buy order (filled on next bar)
                     self.order_simulator.submit_order(
