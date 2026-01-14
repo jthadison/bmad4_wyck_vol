@@ -481,3 +481,115 @@ class TestEdgeCases:
         else:
             # Still have room
             assert is_valid is True or (heat + Decimal("2.0") > Decimal("10.0"))
+
+
+class TestBacktestEngineDynamicPositionSize:
+    """Test that BacktestEngine uses dynamic position size from context (Story 13.9 fix)."""
+
+    def test_process_signal_uses_dynamic_position_size_from_context(self):
+        """Verify _process_signal uses context['position_size'] when set."""
+        from unittest.mock import MagicMock
+
+        from src.backtesting.backtest_engine import BacktestConfig, BacktestEngine
+        from src.models.ohlcv import OHLCVBar
+
+        config = BacktestConfig(
+            symbol="C:EURUSD",
+            start_date=(datetime.now() - timedelta(days=30)).date(),
+            end_date=datetime.now().date(),
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.02"),  # Fixed 2%
+            commission_per_share=Decimal("0.00002"),
+            timeframe="15m",
+        )
+
+        engine = BacktestEngine(config)
+
+        # Create a test bar
+        bar = OHLCVBar(
+            symbol="C:EURUSD",
+            timeframe="15m",
+            timestamp=datetime.now(),
+            open=Decimal("1.0580"),
+            high=Decimal("1.0590"),
+            low=Decimal("1.0570"),
+            close=Decimal("1.0580"),
+            volume=100000,
+            spread=Decimal("0.0020"),
+        )
+
+        # Set dynamic position size in strategy context
+        dynamic_size = Decimal("50000")
+        engine.strategy_context["position_size"] = dynamic_size
+
+        # Mock position_manager and order_simulator
+        engine.position_manager.has_position = MagicMock(return_value=False)
+        engine.order_simulator.submit_order = MagicMock()
+
+        # Call _process_signal with BUY
+        engine._process_signal("BUY", bar)
+
+        # Verify submit_order was called with the dynamic size
+        engine.order_simulator.submit_order.assert_called_once()
+        call_args = engine.order_simulator.submit_order.call_args
+        quantity = call_args.kwargs.get("quantity") or call_args[1].get("quantity")
+
+        # Should be int(dynamic_size) = 50000, not the fixed 2% (~1889)
+        assert quantity == 50000, (
+            f"Expected dynamic position size 50000, got {quantity}. "
+            f"BacktestEngine._process_signal is not using context['position_size']"
+        )
+
+    def test_process_signal_falls_back_to_config_when_no_dynamic_size(self):
+        """Verify _process_signal falls back to config when context has no position_size."""
+        from unittest.mock import MagicMock
+
+        from src.backtesting.backtest_engine import BacktestConfig, BacktestEngine
+        from src.models.ohlcv import OHLCVBar
+
+        config = BacktestConfig(
+            symbol="C:EURUSD",
+            start_date=(datetime.now() - timedelta(days=30)).date(),
+            end_date=datetime.now().date(),
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.02"),  # 2% = ~1889 units at 1.0580
+            commission_per_share=Decimal("0.00002"),
+            timeframe="15m",
+        )
+
+        engine = BacktestEngine(config)
+
+        # Create a test bar
+        bar = OHLCVBar(
+            symbol="C:EURUSD",
+            timeframe="15m",
+            timestamp=datetime.now(),
+            open=Decimal("1.0580"),
+            high=Decimal("1.0590"),
+            low=Decimal("1.0570"),
+            close=Decimal("1.0580"),
+            volume=100000,
+            spread=Decimal("0.0020"),
+        )
+
+        # Do NOT set position_size in context
+        # (it should be None or missing)
+        engine.strategy_context["position_size"] = None
+
+        # Mock position_manager and order_simulator
+        engine.position_manager.has_position = MagicMock(return_value=False)
+        engine.order_simulator.submit_order = MagicMock()
+
+        # Call _process_signal with BUY
+        engine._process_signal("BUY", bar)
+
+        # Verify submit_order was called
+        engine.order_simulator.submit_order.assert_called_once()
+        call_args = engine.order_simulator.submit_order.call_args
+        quantity = call_args.kwargs.get("quantity") or call_args[1].get("quantity")
+
+        # Should be around 1889 (2% of $100k at 1.0580), NOT 50000
+        assert quantity < 5000, (
+            f"Expected fixed position size ~1889, got {quantity}. "
+            f"BacktestEngine._process_signal is not falling back to config"
+        )
