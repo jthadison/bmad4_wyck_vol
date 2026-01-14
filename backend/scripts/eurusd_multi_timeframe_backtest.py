@@ -66,6 +66,7 @@ from src.pattern_engine.phase_validator import (
     validate_pattern_phase_and_level,
 )
 from src.pattern_engine.volume_analyzer import VolumeAnalyzer, calculate_volume_ratio
+from src.pattern_engine.volume_logger import VolumeLogger
 
 logger = structlog.get_logger(__name__)
 
@@ -93,6 +94,7 @@ class EURUSDMultiTimeframeBacktest:
         self.spring_detector = None  # Will be set per-timeframe
         self.phase_detector = None  # Story 13.7: PhaseDetector integration (AC7.1)
         self.volume_analyzer = None  # Story 13.7: VolumeAnalyzer for phase detection
+        self.volume_logger = None  # Story 13.8: Enhanced volume logging
         self.results = {}
         self.current_timeframe = None  # Track current timeframe for strategy
 
@@ -193,7 +195,11 @@ class EURUSDMultiTimeframeBacktest:
         self.phase_detector = PhaseDetector()
         self.volume_analyzer = VolumeAnalyzer()
 
+        # Story 13.8: Initialize VolumeLogger for enhanced volume logging
+        self.volume_logger = VolumeLogger()
+
         print("     - SpringDetector ready")
+        print("     - VolumeLogger ready (Story 13.8)")
         print("     - PhaseDetector ready (Story 13.7)")
         print(f"     - Campaign detector: {'Intraday' if is_intraday else 'Standard'} mode")
 
@@ -229,6 +235,10 @@ class EURUSDMultiTimeframeBacktest:
 
         # FR6.7: Print exit analysis for educational insights
         self._print_exit_analysis(result.trades)
+
+        # Story 13.8 (AC8.7): Print volume analysis report
+        if self.volume_logger:
+            self.volume_logger.print_volume_analysis_report(timeframe_code)
 
         return result
 
@@ -294,6 +304,46 @@ class EURUSDMultiTimeframeBacktest:
             volume_ratio = calculate_volume_ratio(bars_list, current_index)
 
         context["volume_analysis"][bar.timestamp] = {"volume_ratio": Decimal(str(volume_ratio))}
+
+        # Story 13.8 (AC8.3): Log session-relative volume context for intraday
+        if self.volume_logger and is_intraday and self.intraday_volume:
+            # Calculate session average for context logging
+            session_bars = self.intraday_volume._get_recent_session_bars(
+                bars=bars_list, end_index=current_index, session=session, lookback_sessions=3
+            )
+            if len(session_bars) >= 5:
+                import numpy as np
+
+                session_avg = Decimal(str(np.mean([b.volume for b in session_bars])))
+                overall_avg = Decimal(
+                    str(
+                        np.mean(
+                            [
+                                b.volume
+                                for b in bars_list[max(0, current_index - 100) : current_index]
+                            ]
+                        )
+                    )
+                )
+                self.volume_logger.log_session_context(bar, session, session_avg, overall_avg)
+
+        # Story 13.8 (AC8.5): Detect volume spikes
+        if self.volume_logger and current_index >= 20:
+            import numpy as np
+
+            avg_vol = Decimal(
+                str(np.mean([b.volume for b in bars_list[current_index - 20 : current_index]]))
+            )
+            self.volume_logger.detect_volume_spike(bar, avg_vol)
+
+        # Story 13.8 (AC8.4): Analyze volume trends periodically (every 50 bars)
+        if self.volume_logger and current_index >= 50 and current_index % 50 == 0:
+            phase_context = f"Phase {context.get('current_phase', 'Unknown')} analysis"
+            self.volume_logger.analyze_volume_trend(bars_list, lookback=20, context=phase_context)
+
+        # Story 13.8 (AC8.6): Detect volume divergences when in position
+        if self.volume_logger and context.get("position") and current_index >= 10:
+            self.volume_logger.detect_volume_divergence(bars_list, lookback=10)
 
         # Story 13.7 (AC7.1): Generate volume analysis for PhaseDetector
         recent_bars = bars_list[max(0, current_index - 50) : current_index + 1]
@@ -364,6 +414,25 @@ class EURUSDMultiTimeframeBacktest:
                     current_price=Decimal(str(bar.close)),
                 )
                 if is_valid:
+                    # Story 13.8 (AC8.1, AC8.8): Validate Spring volume
+                    if self.volume_logger:
+                        volume_valid = self.volume_logger.validate_pattern_volume(
+                            pattern_type="Spring",
+                            volume_ratio=Decimal(str(volume_ratio)),
+                            timestamp=bar.timestamp,
+                            asset_class="forex",
+                            session=session if is_intraday else None,
+                        )
+                        if not volume_valid:
+                            # Pattern rejected due to volume violation
+                            logger.debug(
+                                "spring_rejected_volume_validation",
+                                volume_ratio=volume_ratio,
+                                bar_index=current_index,
+                            )
+                            is_valid = False
+
+                if is_valid:
                     # Story 13.7 (FR7.4.1): Adjust confidence for phase and volume
                     adjusted_confidence = adjust_pattern_confidence_for_phase_and_volume(
                         pattern_confidence=spring_history.best_spring.confidence,
@@ -401,6 +470,24 @@ class EURUSDMultiTimeframeBacktest:
                     trading_range=trading_range,
                     current_price=Decimal(str(bar.close)),
                 )
+                if is_valid:
+                    # Story 13.8 (AC8.1, AC8.8): Validate SOS volume
+                    if self.volume_logger:
+                        volume_valid = self.volume_logger.validate_pattern_volume(
+                            pattern_type="SOS",
+                            volume_ratio=Decimal(str(volume_ratio)),
+                            timestamp=bar.timestamp,
+                            asset_class="forex",
+                            session=session if is_intraday else None,
+                        )
+                        if not volume_valid:
+                            logger.debug(
+                                "sos_rejected_volume_validation",
+                                volume_ratio=volume_ratio,
+                                bar_index=current_index,
+                            )
+                            is_valid = False
+
                 if is_valid:
                     # Story 13.7 (FR7.4.1): Adjust confidence for phase and volume
                     adjusted_confidence = adjust_pattern_confidence_for_phase_and_volume(
@@ -440,6 +527,24 @@ class EURUSDMultiTimeframeBacktest:
                         trading_range=trading_range,
                         current_price=Decimal(str(bar.close)),
                     )
+                    if is_valid:
+                        # Story 13.8 (AC8.1, AC8.8): Validate LPS volume
+                        if self.volume_logger:
+                            volume_valid = self.volume_logger.validate_pattern_volume(
+                                pattern_type="LPS",
+                                volume_ratio=Decimal(str(volume_ratio)),
+                                timestamp=bar.timestamp,
+                                asset_class="forex",
+                                session=session if is_intraday else None,
+                            )
+                            if not volume_valid:
+                                logger.debug(
+                                    "lps_rejected_volume_validation",
+                                    volume_ratio=volume_ratio,
+                                    bar_index=current_index,
+                                )
+                                is_valid = False
+
                     if is_valid:
                         # Story 13.7 (FR7.4.1): Adjust confidence for phase and volume
                         adjusted_confidence = adjust_pattern_confidence_for_phase_and_volume(
