@@ -59,7 +59,13 @@ from src.pattern_engine.detectors.lps_detector import detect_lps
 from src.pattern_engine.detectors.sos_detector import detect_sos_breakout
 from src.pattern_engine.detectors.spring_detector import SpringDetector
 from src.pattern_engine.intraday_volume_analyzer import IntradayVolumeAnalyzer
-from src.pattern_engine.volume_analyzer import calculate_volume_ratio
+from src.pattern_engine.phase_detector_v2 import PhaseDetector
+from src.pattern_engine.phase_validator import (
+    adjust_pattern_confidence_for_phase_and_volume,
+    is_valid_phase_transition,
+    validate_pattern_phase_and_level,
+)
+from src.pattern_engine.volume_analyzer import VolumeAnalyzer, calculate_volume_ratio
 
 logger = structlog.get_logger(__name__)
 
@@ -85,6 +91,8 @@ class EURUSDMultiTimeframeBacktest:
         self.campaign_detector = None  # Will be set per-timeframe
         self.intraday_volume = None  # Will be set per-timeframe
         self.spring_detector = None  # Will be set per-timeframe
+        self.phase_detector = None  # Story 13.7: PhaseDetector integration (AC7.1)
+        self.volume_analyzer = None  # Story 13.7: VolumeAnalyzer for phase detection
         self.results = {}
         self.current_timeframe = None  # Track current timeframe for strategy
 
@@ -181,7 +189,12 @@ class EURUSDMultiTimeframeBacktest:
         self.campaign_detector = create_timeframe_optimized_detector(timeframe_code)
         self.current_timeframe = timeframe_code
 
+        # Story 13.7 (AC7.1, AC7.2): Initialize PhaseDetector and VolumeAnalyzer
+        self.phase_detector = PhaseDetector()
+        self.volume_analyzer = VolumeAnalyzer()
+
         print("     - SpringDetector ready")
+        print("     - PhaseDetector ready (Story 13.7)")
         print(f"     - Campaign detector: {'Intraday' if is_intraday else 'Standard'} mode")
 
         # Configure backtest
@@ -223,6 +236,12 @@ class EURUSDMultiTimeframeBacktest:
         """
         Intraday-optimized Wyckoff pattern detection strategy using real detectors.
 
+        Story 13.7 Integration:
+        - PhaseDetector.detect_phase() replaces hardcoded phases (AC7.1, AC7.2)
+        - Pattern-phase validation ensures pattern-phase alignment (AC7.3, AC7.4)
+        - Volume-phase confidence integration (FR7.4.1 - Victoria)
+        - Campaign phase progression tracking (FR7.3)
+
         Integrates:
         - Real SpringDetector, SOSDetector, LPSDetector pattern detection
         - Campaign-based position management
@@ -243,7 +262,11 @@ class EURUSDMultiTimeframeBacktest:
             context["entry_price"] = None
             context["last_sos"] = None
             context["volume_analysis"] = {}
+            context["volume_analysis_list"] = []  # Story 13.7: For PhaseDetector
             context["exit_reasons"] = []  # FR6.7: Track exit reasons for analysis
+            context["current_phase"] = None  # Story 13.7: Track detected phase
+            context["phase_info"] = None  # Story 13.7: PhaseInfo from PhaseDetector
+            context["phase_transitions"] = []  # Story 13.7: Campaign phase history (AC7.5)
 
         context["bars"].append(bar)
 
@@ -272,55 +295,166 @@ class EURUSDMultiTimeframeBacktest:
 
         context["volume_analysis"][bar.timestamp] = {"volume_ratio": Decimal(str(volume_ratio))}
 
+        # Story 13.7 (AC7.1): Generate volume analysis for PhaseDetector
+        recent_bars = bars_list[max(0, current_index - 50) : current_index + 1]
+        try:
+            volume_analysis_list = self.volume_analyzer.analyze(recent_bars)
+            context["volume_analysis_list"] = volume_analysis_list
+        except Exception:
+            volume_analysis_list = []
+
         # Build dynamic trading range from recent 50 bars
         trading_range = self._build_trading_range(bars_list, current_index)
 
-        # Detect patterns using real detectors
-        # 1. Spring Detection
+        # Story 13.7 (AC7.2): Use PhaseDetector.detect_phase() instead of hardcoded phases
+        detected_phase_classification = None
+        try:
+            if self.phase_detector and volume_analysis_list:
+                phase_info = self.phase_detector.detect_phase(
+                    trading_range=trading_range,
+                    bars=recent_bars,
+                    volume_analysis=volume_analysis_list,
+                )
+                context["phase_info"] = phase_info
+                context["current_phase"] = phase_info.phase
+
+                # Story 13.7 (AC7.5, AC7.6): Track phase transitions for campaign
+                if phase_info.phase and context.get("previous_phase") != phase_info.phase:
+                    if is_valid_phase_transition(context.get("previous_phase"), phase_info.phase):
+                        context["phase_transitions"].append(
+                            {
+                                "from": context.get("previous_phase"),
+                                "to": phase_info.phase,
+                                "bar_index": current_index,
+                                "timestamp": bar.timestamp,
+                            }
+                        )
+                    context["previous_phase"] = phase_info.phase
+
+                # Create PhaseClassification for pattern detectors
+                detected_phase_classification = PhaseClassification(
+                    phase=phase_info.phase,
+                    confidence=phase_info.confidence,
+                )
+        except Exception:
+            pass  # PhaseDetector may fail if conditions aren't met
+
+        # Fallback: If no phase detected, use context-based heuristics
+        if not detected_phase_classification:
+            # Fallback to prior approach for initial bars
+            detected_phase_classification = PhaseClassification(
+                phase=WyckoffPhase.B,  # Default to Phase B (building cause)
+                confidence=50,  # Low confidence when not detected
+            )
+
+        # Detect patterns using real detectors with detected phase
+        # 1. Spring Detection - requires Phase C
         try:
             spring_history = self.spring_detector.detect_all_springs(
                 range=trading_range,
-                bars=bars_list[max(0, current_index - 50) : current_index + 1],
-                phase=WyckoffPhase.C,  # Springs occur in Phase C
+                bars=recent_bars,
+                phase=detected_phase_classification.phase or WyckoffPhase.C,
             )
             if spring_history.best_spring:
-                self.campaign_detector.add_pattern(spring_history.best_spring)
+                # Story 13.7 (AC7.3, AC7.4): Validate pattern-phase consistency
+                is_valid, reason = validate_pattern_phase_and_level(
+                    pattern=spring_history.best_spring,
+                    detected_phase=detected_phase_classification,
+                    trading_range=trading_range,
+                    current_price=Decimal(str(bar.close)),
+                )
+                if is_valid:
+                    # Story 13.7 (FR7.4.1): Adjust confidence for phase and volume
+                    adjusted_confidence = adjust_pattern_confidence_for_phase_and_volume(
+                        pattern_confidence=spring_history.best_spring.confidence,
+                        phase_classification=detected_phase_classification,
+                        volume_ratio=float(volume_ratio),
+                    )
+                    spring_history.best_spring.confidence = adjusted_confidence
+                    self.campaign_detector.add_pattern(spring_history.best_spring)
+                else:
+                    logger.debug(
+                        "spring_rejected_phase_validation",
+                        reason=reason,
+                        bar_index=current_index,
+                    )
         except Exception:
             pass  # Pattern detection may fail if conditions aren't met
 
-        # 2. SOS Breakout Detection
+        # 2. SOS Breakout Detection - requires Phase D
         try:
-            phase_classification = PhaseClassification(phase=WyckoffPhase.D, confidence=85)
             sos = detect_sos_breakout(
                 range=trading_range,
-                bars=bars_list[max(0, current_index - 50) : current_index + 1],
+                bars=recent_bars,
                 volume_analysis=context["volume_analysis"],
-                phase=phase_classification,
+                phase=detected_phase_classification,
                 symbol=self.symbol,
                 timeframe=self.current_timeframe,
                 session_filter_enabled=is_intraday,
                 session_confidence_scoring_enabled=is_intraday,
             )
             if sos:
-                self.campaign_detector.add_pattern(sos)
-                context["last_sos"] = sos
+                # Story 13.7 (AC7.3, AC7.4): Validate pattern-phase consistency
+                is_valid, reason = validate_pattern_phase_and_level(
+                    pattern=sos,
+                    detected_phase=detected_phase_classification,
+                    trading_range=trading_range,
+                    current_price=Decimal(str(bar.close)),
+                )
+                if is_valid:
+                    # Story 13.7 (FR7.4.1): Adjust confidence for phase and volume
+                    adjusted_confidence = adjust_pattern_confidence_for_phase_and_volume(
+                        pattern_confidence=sos.confidence,
+                        phase_classification=detected_phase_classification,
+                        volume_ratio=float(volume_ratio),
+                    )
+                    sos.confidence = adjusted_confidence
+                    self.campaign_detector.add_pattern(sos)
+                    context["last_sos"] = sos
+                else:
+                    logger.debug(
+                        "sos_rejected_phase_validation",
+                        reason=reason,
+                        bar_index=current_index,
+                    )
         except Exception:
             pass
 
-        # 3. LPS Detection (if SOS exists)
+        # 3. LPS Detection (if SOS exists) - requires Phase D or E (AC7.23)
         if context["last_sos"]:
             try:
                 lps = detect_lps(
                     range=trading_range,
                     sos=context["last_sos"],
-                    bars=bars_list[max(0, current_index - 50) : current_index + 1],
+                    bars=recent_bars,
                     volume_analysis=context["volume_analysis"],
                     timeframe=self.current_timeframe,
                     session_filter_enabled=is_intraday,
                     session_confidence_scoring_enabled=is_intraday,
                 )
                 if lps:
-                    self.campaign_detector.add_pattern(lps)
+                    # Story 13.7 (AC7.23): LPS can occur in Phase D (late) or Phase E
+                    is_valid, reason = validate_pattern_phase_and_level(
+                        pattern=lps,
+                        detected_phase=detected_phase_classification,
+                        trading_range=trading_range,
+                        current_price=Decimal(str(bar.close)),
+                    )
+                    if is_valid:
+                        # Story 13.7 (FR7.4.1): Adjust confidence for phase and volume
+                        adjusted_confidence = adjust_pattern_confidence_for_phase_and_volume(
+                            pattern_confidence=lps.confidence,
+                            phase_classification=detected_phase_classification,
+                            volume_ratio=float(volume_ratio),
+                        )
+                        lps.confidence = adjusted_confidence
+                        self.campaign_detector.add_pattern(lps)
+                    else:
+                        logger.debug(
+                            "lps_rejected_phase_validation",
+                            reason=reason,
+                            bar_index=current_index,
+                        )
             except Exception:
                 pass
 
@@ -847,6 +981,13 @@ class EURUSDMultiTimeframeBacktest:
             print("\n  Campaign Metrics (Completed):")
             print(f"    - Avg Patterns/Campaign: {avg_patterns:.1f}")
             print(f"    - Avg Strength Score: {avg_strength:.2f}")
+
+        # Story 13.7 (AC7.8): Phase Context Reporting
+        print("\n  Phase Detection Context (Story 13.7):")
+        print("    - PhaseDetector: Active")
+        print("    - Pattern-Phase Validation: Enabled")
+        print("    - Volume-Phase Confidence: Enabled")
+        print("    - Campaign Phase Tracking: Enabled")
 
     def _print_timeframe_summary(self, timeframe: str, result: BacktestResult):
         """Print summary statistics for a timeframe."""
