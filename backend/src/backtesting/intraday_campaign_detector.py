@@ -84,6 +84,10 @@ class Campaign:
         risk_per_share: Entry price - support_level
         range_width_pct: (resistance - support) / support * 100
 
+        # Phase History (FR7.3 / AC7.5 - Story 13.7)
+        phase_history: List of (timestamp, phase) tuples tracking all transitions
+        phase_transition_count: Number of phase transitions in this campaign
+
     Example:
         Campaign(
             campaign_id="abc123",
@@ -95,7 +99,9 @@ class Campaign:
             resistance_level=Decimal("102.50"),
             strength_score=0.85,
             risk_per_share=Decimal("4.50"),
-            range_width_pct=Decimal("4.06")
+            range_width_pct=Decimal("4.06"),
+            phase_history=[(datetime(...), WyckoffPhase.C), (datetime(...), WyckoffPhase.D)],
+            phase_transition_count=2
         )
     """
 
@@ -135,6 +141,10 @@ class Campaign:
     phase_d_start_bar: Optional[int] = None  # Bar index when Phase D started
     phase_e_start_bar: Optional[int] = None  # Bar index when Phase E started
 
+    # FR7.3 / AC7.5: Phase History Tracking (Story 13.7)
+    phase_history: list[tuple[datetime, WyckoffPhase]] = field(default_factory=list)
+    phase_transition_count: int = 0
+
 
 class IntradayCampaignDetector:
     """
@@ -173,7 +183,7 @@ class IntradayCampaignDetector:
         min_patterns_for_active: int = 2,
         expiration_hours: int = 72,
         max_concurrent_campaigns: int = 3,
-        max_portfolio_heat_pct: float = 40.0,
+        max_portfolio_heat_pct: float = 10.0,
     ):
         """Initialize intraday campaign detector."""
         self.campaign_window_hours = campaign_window_hours
@@ -270,7 +280,9 @@ class IntradayCampaignDetector:
             if campaign.state == CampaignState.FORMING:
                 campaign.state = CampaignState.ACTIVE
                 # AC4.10: Use sequence-based phase determination
-                campaign.current_phase = self._determine_phase(campaign.patterns)
+                new_phase = self._determine_phase(campaign.patterns)
+                # FR7.3 / AC7.5: Track phase history
+                self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
 
                 self.logger.info(
                     "Campaign transitioned to ACTIVE",
@@ -285,7 +297,9 @@ class IntradayCampaignDetector:
                 )
             else:
                 # Already ACTIVE, just update phase
-                campaign.current_phase = self._determine_phase(campaign.patterns)
+                new_phase = self._determine_phase(campaign.patterns)
+                # FR7.3 / AC7.5: Track phase history
+                self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
                 self.logger.debug(
                     "Campaign updated",
                     campaign_id=campaign.campaign_id,
@@ -409,26 +423,38 @@ class IntradayCampaignDetector:
         return WyckoffPhase.B
 
     def update_phase_with_bar_index(
-        self, campaign: Campaign, new_phase: WyckoffPhase, bar_index: int
+        self,
+        campaign: Campaign,
+        new_phase: WyckoffPhase,
+        bar_index: int,
+        timestamp: Optional[datetime] = None,
     ) -> None:
         """
         Update campaign phase and track bar index for phase transitions.
 
         Story 13.6.3 - Task 1: Phase duration tracking.
+        Story 13.7 - AC7.5: Phase history tracking.
         Records bar index when entering Phase C, D, or E.
 
         Args:
             campaign: Campaign to update
             new_phase: New Wyckoff phase
             bar_index: Current bar index in backtest
+            timestamp: Optional timestamp for phase history (defaults to utcnow)
 
         Example:
             >>> detector.update_phase_with_bar_index(campaign, WyckoffPhase.E, 150)
             >>> # campaign.phase_e_start_bar now set to 150
+            >>> # campaign.phase_history contains [(timestamp, WyckoffPhase.E)]
         """
         # Only track if phase is actually changing
         if campaign.current_phase == new_phase:
             return
+
+        # FR7.3 / AC7.5: Track phase history
+        transition_time = timestamp or datetime.utcnow()
+        campaign.phase_history.append((transition_time, new_phase))
+        campaign.phase_transition_count += 1
 
         # Track phase start bar indices
         if new_phase == WyckoffPhase.C and campaign.phase_c_start_bar is None:
@@ -452,6 +478,34 @@ class IntradayCampaignDetector:
                 campaign_id=campaign.campaign_id,
                 bar_index=bar_index,
             )
+
+        # Update phase
+        campaign.current_phase = new_phase
+
+    def _update_phase_with_history(
+        self, campaign: Campaign, new_phase: Optional[WyckoffPhase], timestamp: datetime
+    ) -> None:
+        """
+        Update campaign phase with history tracking (no bar_index).
+
+        FR7.3 / AC7.5: Phase history tracking helper.
+        Used when bar_index is not available (e.g., in add_pattern).
+
+        Args:
+            campaign: Campaign to update
+            new_phase: New Wyckoff phase (or None)
+            timestamp: Timestamp for the phase transition
+        """
+        if new_phase is None:
+            return
+
+        # Only track if phase is actually changing
+        if campaign.current_phase == new_phase:
+            return
+
+        # Track phase history
+        campaign.phase_history.append((timestamp, new_phase))
+        campaign.phase_transition_count += 1
 
         # Update phase
         campaign.current_phase = new_phase
@@ -684,7 +738,7 @@ def create_timeframe_optimized_detector(timeframe: str) -> IntradayCampaignDetec
             min_patterns_for_active=2,  # 2 patterns → ACTIVE
             expiration_hours=72,  # 72h expiration
             max_concurrent_campaigns=3,  # Max 3 concurrent campaigns
-            max_portfolio_heat_pct=40.0,  # 40% max portfolio heat
+            max_portfolio_heat_pct=10.0,  # 10% max portfolio heat (FR7.7/AC7.14)
         )
 
     # Daily and longer: Use standard Wyckoff campaign windows
@@ -695,5 +749,5 @@ def create_timeframe_optimized_detector(timeframe: str) -> IntradayCampaignDetec
             min_patterns_for_active=2,  # 2 patterns → ACTIVE
             expiration_hours=360,  # 15 days expiration
             max_concurrent_campaigns=5,  # Max 5 concurrent campaigns
-            max_portfolio_heat_pct=50.0,  # 50% max portfolio heat
+            max_portfolio_heat_pct=10.0,  # 10% max portfolio heat (FR7.7/AC7.14)
         )

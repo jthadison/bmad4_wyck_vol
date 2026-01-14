@@ -276,7 +276,7 @@ class US30MultiTimeframeBacktest:
             min_patterns_for_active=2,
             expiration_hours=72,
             max_concurrent_campaigns=3,
-            max_portfolio_heat_pct=40.0,
+            max_portfolio_heat_pct=10.0,  # FR7.7/AC7.14
         )
 
     def _wyckoff_campaign_strategy(self, bar: OHLCVBar, context: dict) -> Optional[str]:
