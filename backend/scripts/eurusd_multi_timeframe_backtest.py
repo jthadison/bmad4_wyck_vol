@@ -48,6 +48,7 @@ from src.backtesting.exit_logic_refinements import (
     wyckoff_exit_logic_unified,
 )
 from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
+from src.backtesting.risk_integration import BacktestRiskManager
 from src.market_data.adapters.polygon_adapter import PolygonAdapter
 from src.models.backtest import BacktestConfig, BacktestResult
 from src.models.creek_level import CreekLevel
@@ -95,6 +96,7 @@ class EURUSDMultiTimeframeBacktest:
         self.phase_detector = None  # Story 13.7: PhaseDetector integration (AC7.1)
         self.volume_analyzer = None  # Story 13.7: VolumeAnalyzer for phase detection
         self.volume_logger = None  # Story 13.8: Enhanced volume logging
+        self.risk_manager = None  # Story 13.9: Risk manager integration (AC9.1)
         self.results = {}
         self.current_timeframe = None  # Track current timeframe for strategy
 
@@ -198,9 +200,19 @@ class EURUSDMultiTimeframeBacktest:
         # Story 13.8: Initialize VolumeLogger for enhanced volume logging
         self.volume_logger = VolumeLogger()
 
+        # Story 13.9 (AC9.1): Initialize BacktestRiskManager with FR18 limits
+        self.risk_manager = BacktestRiskManager(
+            initial_capital=config.initial_capital,
+            max_risk_per_trade_pct=Decimal("2.0"),
+            max_campaign_risk_pct=Decimal("5.0"),
+            max_portfolio_heat_pct=Decimal("10.0"),
+            max_correlated_risk_pct=Decimal("6.0"),
+        )
+
         print("     - SpringDetector ready")
         print("     - VolumeLogger ready (Story 13.8)")
         print("     - PhaseDetector ready (Story 13.7)")
+        print("     - RiskManager ready (Story 13.9)")
         print(f"     - Campaign detector: {'Intraday' if is_intraday else 'Standard'} mode")
 
         # Configure backtest
@@ -239,6 +251,10 @@ class EURUSDMultiTimeframeBacktest:
         # Story 13.8 (AC8.7): Print volume analysis report
         if self.volume_logger:
             self.volume_logger.print_volume_analysis_report(timeframe_code)
+
+        # Story 13.9 (AC9.7): Print risk management report
+        if self.risk_manager:
+            self.risk_manager.print_risk_management_report()
 
         return result
 
@@ -584,9 +600,65 @@ class EURUSDMultiTimeframeBacktest:
                         )
                         < 5
                     ):
+                        # Story 13.9 (AC9.6): Risk validation before entry
+                        entry_price = Decimal(str(bar.close))
+                        # Calculate stop loss from trading range support (Creek)
+                        stop_loss = (
+                            trading_range.creek.price
+                            if trading_range.creek
+                            else (
+                                entry_price * Decimal("0.995")  # 0.5% fallback
+                            )
+                        )
+                        # Calculate target from Jump level if available
+                        target_price = (
+                            campaign.jump_level
+                            if hasattr(campaign, "jump_level") and campaign.jump_level
+                            else entry_price * Decimal("1.02")  # 2% fallback
+                        )
+
+                        # Validate risk limits (FR9.6)
+                        if self.risk_manager:
+                            (
+                                can_trade,
+                                position_size,
+                                rejection_reason,
+                            ) = self.risk_manager.validate_and_size_position(
+                                symbol=self.symbol,
+                                entry_price=entry_price,
+                                stop_loss=stop_loss,
+                                campaign_id=str(campaign.campaign_id),
+                                target_price=target_price,
+                            )
+
+                            if not can_trade:
+                                # Story 13.9 (AC9.7): Log rejection
+                                logger.warning(
+                                    "[RISK REJECTION] Entry rejected",
+                                    reason=rejection_reason,
+                                    symbol=self.symbol,
+                                    entry=float(entry_price),
+                                    stop=float(stop_loss),
+                                )
+                                continue  # Skip this entry
+
+                            # Register position with risk manager
+                            self.risk_manager.register_position(
+                                symbol=self.symbol,
+                                campaign_id=str(campaign.campaign_id),
+                                entry_price=entry_price,
+                                stop_loss=stop_loss,
+                                position_size=position_size,
+                                timestamp=bar.timestamp,
+                            )
+
+                            # Store position size in context for exit P&L calculation
+                            context["position_size"] = position_size
+
                         context["position"] = True
                         context["entry_price"] = bar.close
                         context["entry_bar_index"] = current_index
+                        context["stop_loss"] = stop_loss  # Track for exit logic
 
                         # Story 13.6.1: Initialize campaign entry_atr and timeframe
                         if active_campaigns:
@@ -613,8 +685,18 @@ class EURUSDMultiTimeframeBacktest:
             )
 
             if should_exit:
+                # Story 13.9 (AC9.7): Close position in risk manager
+                if self.risk_manager:
+                    exit_price = Decimal(str(bar.close))
+                    self.risk_manager.close_all_positions_for_symbol(
+                        symbol=self.symbol,
+                        exit_price=exit_price,
+                    )
+
                 context["position"] = False
                 context["entry_price"] = None
+                context["stop_loss"] = None
+                context["position_size"] = None
                 context["exit_reasons"].append(exit_reason)  # FR6.7: Track exit reason
                 return "SELL"
 
