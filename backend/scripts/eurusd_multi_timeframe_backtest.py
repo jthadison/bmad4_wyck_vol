@@ -43,15 +43,9 @@ import structlog
 from src.backtesting.backtest_engine import BacktestEngine
 from src.backtesting.exit_logic_refinements import (
     calculate_atr,
-    check_volatility_spike,
-    detect_failed_rallies,
     detect_ice_expansion,
-    detect_lower_high,
-    detect_uptrend_break,
-    detect_utad_enhanced,
-    detect_volume_divergence_enhanced,
-    should_exit_on_utad,
     update_jump_level,
+    wyckoff_exit_logic_unified,
 )
 from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
 from src.market_data.adapters.polygon_adapter import PolygonAdapter
@@ -358,7 +352,9 @@ class EURUSDMultiTimeframeBacktest:
                         # Story 13.6.1: Initialize campaign entry_atr and timeframe
                         if active_campaigns:
                             campaign = active_campaigns[0]
-                            campaign.entry_atr = calculate_atr(bars_list, period=14) or Decimal("0.0001")
+                            campaign.entry_atr = calculate_atr(bars_list, period=14) or Decimal(
+                                "0.0001"
+                            )
                             campaign.timeframe = self.current_timeframe
 
                         return "BUY"
@@ -643,19 +639,22 @@ class EURUSDMultiTimeframeBacktest:
         active_campaigns: list,
     ) -> tuple[bool, str]:
         """
-        Enhanced Wyckoff-based exit logic with Story 13.6.1 refinements.
+        Enhanced Wyckoff-based exit logic using unified function (Story 13.6.5).
 
-        Exit Priority (Story 13.6.1 Enhanced):
-            1. Support Invalidation (Creek break) - FAILED pattern
-            1.5. Volatility Spike - REGIME CHANGE
-            2. Jump Level Target - PROFIT TARGET
-            3. Phase E Completion Signals:
-               - Phase-Contextual UTAD (quality-filtered)
-               - Uptrend Break
-               - Lower High
-               - Failed Rallies
-            4. Enhanced Volume Divergence (spread-filtered)
-            5. Time Limit (50 bars) - SAFETY
+        Delegates to wyckoff_exit_logic_unified() which implements all 12 exit
+        conditions in priority order:
+            1. SUPPORT_BREAK - Structure invalidated
+            2. VOLATILITY_SPIKE - Market regime changed
+            3. JUMP_LEVEL - Profit target reached
+            4. PORTFOLIO_HEAT - Risk capacity limit
+            5. PHASE_E_UTAD - Distribution signal
+            6. UPTREND_BREAK - Structure failed
+            7. LOWER_HIGH - Distribution pattern
+            8. FAILED_RALLIES - Supply absorption
+            9. EXCESSIVE_DURATION - Stalled markup
+            10. CORRELATION_CASCADE - Systemic risk
+            11. VOLUME_DIVERGENCE - Weakening momentum
+            12. TIME_LIMIT - Safety backstop
 
         Args:
             bar: Current bar
@@ -675,60 +674,24 @@ class EURUSDMultiTimeframeBacktest:
         bars_list = context["bars"]
         current_index = len(bars_list) - 1
 
-        # Priority 1: Support Invalidation (Creek break)
-        if campaign.support_level and bar.close < campaign.support_level:
-            return (
-                True,
-                f"SUPPORT_BREAK (close ${bar.close} < Creek ${campaign.support_level})",
-            )
+        # Ensure campaign has entry_bar_index for time limit calculation
+        if not hasattr(campaign, "entry_bar_index") or campaign.entry_bar_index is None:
+            campaign.entry_bar_index = context.get("entry_bar_index", current_index)
 
-        # Priority 1.5: Volatility Spike (Story 13.6.1 FR6.5.1)
-        vol_spike, reason = check_volatility_spike(
-            bar, campaign, bars_list, atr_period=14, spike_threshold=Decimal("2.5")
+        # Story 13.6.5: Use unified exit logic with all 12 exit conditions
+        should_exit, reason, metadata = wyckoff_exit_logic_unified(
+            bar=bar,
+            campaign=campaign,
+            recent_bars=bars_list,
+            current_bar_index=current_index,
+            portfolio=None,  # Portfolio risk not tracked in this backtest
+            session_profile=None,  # Session profile for intraday (future enhancement)
+            current_prices=None,  # For portfolio correlation (future enhancement)
+            time_limit_bars=50,  # Backtest uses 50-bar time limit
         )
-        if vol_spike and reason:
+
+        if should_exit and reason:
             return (True, reason)
-
-        # Priority 2: Jump Level Target (measured move)
-        if campaign.jump_level and bar.high >= campaign.jump_level:
-            return (True, f"JUMP_LEVEL_HIT (high ${bar.high} >= Jump ${campaign.jump_level})")
-
-        # Priority 3: Phase E Completion Signals (Story 13.6.1 FR6.2.1 + FR6.2.2)
-        if campaign.current_phase == WyckoffPhase.E:
-            # 3a. Phase-Contextual UTAD (Story 13.6.1 FR6.2.1)
-            utad = detect_utad_enhanced(campaign, bars_list, lookback=10)
-            if utad:
-                should_exit, reason = should_exit_on_utad(utad, campaign, bar.close)
-                if should_exit:
-                    return (True, reason)
-
-            # 3b. Uptrend Break (Story 13.6.1 FR6.2.2)
-            uptrend_break, reason = detect_uptrend_break(campaign, bar, bars_list)
-            if uptrend_break and reason:
-                return (True, reason)
-
-            # 3c. Lower High (Story 13.6.1 FR6.2.2)
-            lower_high, reason = detect_lower_high(campaign, bars_list, lookback=10)
-            if lower_high and reason:
-                return (True, reason)
-
-            # 3d. Multiple Failed Rallies (Story 13.6.1 FR6.2.2)
-            failed_rallies, reason = detect_failed_rallies(campaign, bars_list, lookback=20)
-            if failed_rallies and reason:
-                return (True, reason)
-
-        # Priority 4: Enhanced Volume Divergence (Story 13.6.1 FR6.3.1)
-        div_count, divergences = detect_volume_divergence_enhanced(
-            bars_list, lookback=10, min_quality=60
-        )
-        if div_count >= 2 and divergences:
-            avg_quality = sum(d.divergence_quality for d in divergences) / len(divergences)
-            return (True, f"VOLUME_DIVERGENCE - {div_count} quality divergences (avg quality {avg_quality:.0f})")
-
-        # Priority 5: Time Limit (safety backstop)
-        bars_in_position = current_index - context.get("entry_bar_index", current_index)
-        if bars_in_position >= 50:
-            return (True, f"TIME_LIMIT ({bars_in_position} bars in position)")
 
         return (False, "HOLD")
 
