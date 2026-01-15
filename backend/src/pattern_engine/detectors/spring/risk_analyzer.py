@@ -108,7 +108,7 @@ class SpringRiskAnalyzer:
             ... )
             >>> print(f"Stop: {stop}, Valid: {valid}")
         """
-        # Stop = Spring low - buffer
+        # Stop = Spring low * (1 - buffer_pct), e.g., 2% buffer means stop at 98% of spring_low
         stop_loss = spring_low * (Decimal("1") - self.config.stop_buffer_pct)
 
         # Validate stop distance doesn't exceed maximum (FR17: 10%)
@@ -318,7 +318,10 @@ class SpringRiskAnalyzer:
         # Calculate R:R ratio
         rr_ratio = self._calculate_rr_ratio(entry_price, stop_loss, target)
 
-        # Get position recommendation
+        # Get position recommendation (logged for analysis, not returned in profile)
+        # Note: recommendation is used for logging/debugging purposes.
+        # SpringRiskProfile focuses on raw values; position sizing decisions
+        # are made by the caller based on is_favorable and risk_reward_ratio.
         recommendation = self._calculate_position_recommendation(rr_ratio, stop_valid)
 
         logger.info(

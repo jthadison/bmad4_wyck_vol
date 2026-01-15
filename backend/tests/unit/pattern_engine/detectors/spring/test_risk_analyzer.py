@@ -499,5 +499,9 @@ class TestEdgeCases:
             target=Decimal("110.111111111"),
         )
 
-        # Should round to 2 decimal places
+        # Risk = 100.123456789 - 96.987654321 = 3.135802468
+        # Reward = 110.111111111 - 100.123456789 = 9.987654322
+        # R:R = 9.987654322 / 3.135802468 ≈ 3.185... → rounds to 3.19
+        assert rr == Decimal("3.19")
+        # Also verify 2 decimal places
         assert len(str(rr).split(".")[-1]) <= 2
