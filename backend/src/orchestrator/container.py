@@ -5,7 +5,7 @@ Provides lazy-loaded access to all detector modules from previous epics.
 Supports production, test, and mock modes for flexible testing.
 
 Story 8.1: Master Orchestrator Architecture (AC: 4)
-Updated: Fixed detector imports to use correct class names and return None for unimplemented detectors
+Story 18.3: Fix Inconsistent Error Handling - Uses DetectorLoader for consistent error handling
 """
 
 from typing import Any, Literal
@@ -13,6 +13,7 @@ from typing import Any, Literal
 import structlog
 
 from src.orchestrator.config import OrchestratorConfig
+from src.orchestrator.detector_loader import DetectorLoader, DetectorLoadError, HealthStatus
 
 logger = structlog.get_logger(__name__)
 
@@ -26,6 +27,10 @@ class OrchestratorContainer:
     - production: Real detector implementations
     - test: Real implementations with test-friendly configuration
     - mock: Mock implementations for unit testing
+
+    All detectors are loaded via DetectorLoader for consistent error handling.
+    Critical detectors raise DetectorLoadError on failure.
+    Optional detectors return None on failure.
 
     Detectors loaded:
     - Volume analyzers (Stories 2.1-2.4)
@@ -54,20 +59,10 @@ class OrchestratorContainer:
         """
         self._config = config or OrchestratorConfig()
         self._mode = mode or self._config.detector_mode
+        self._loader = DetectorLoader()
 
         # Lazy-loaded detector instances
-        self._volume_analyzer: Any = None
-        self._range_detector: Any = None
-        self._phase_detector: Any = None
-        self._spring_detector: Any = None
-        self._sos_detector: Any = None
-        self._lps_detector: Any = None
-        self._risk_manager: Any = None
-        self._trading_range_detector: Any = None
-        self._pivot_detector: Any = None
-        self._range_quality_scorer: Any = None
-        self._level_calculator: Any = None
-        self._zone_mapper: Any = None
+        self._detectors: dict[str, Any] = {}
 
         # Mock implementations for testing
         self._mocks: dict[str, Any] = {}
@@ -75,6 +70,7 @@ class OrchestratorContainer:
         # Health tracking
         self._loaded_detectors: list[str] = []
         self._failed_detectors: list[str] = []
+        self._load_errors: list[DetectorLoadError] = []
 
         logger.info(
             "orchestrator_container_initialized",
@@ -86,6 +82,59 @@ class OrchestratorContainer:
         """Get current detector mode."""
         return self._mode
 
+    def _load_detector(
+        self,
+        name: str,
+        import_path: str,
+        class_name: str,
+        critical: bool,
+    ) -> Any | None:
+        """
+        Load a detector using the centralized DetectorLoader.
+
+        Args:
+            name: Detector name for tracking and mocking
+            import_path: Module path to import
+            class_name: Class to instantiate
+            critical: If True, raises on failure; if False, returns None
+
+        Returns:
+            Detector instance, or None for non-critical failures
+
+        Raises:
+            DetectorLoadError: If critical detector fails to load
+        """
+        # Check for mock first
+        if self._mode == "mock" and name in self._mocks:
+            return self._mocks[name]
+
+        # Return cached instance if already loaded
+        if name in self._detectors:
+            return self._detectors[name]
+
+        # Skip if already failed
+        if name in self._failed_detectors:
+            return None
+
+        try:
+            if critical:
+                instance = self._loader.load(name, import_path, class_name)
+            else:
+                instance = self._loader.load_optional(name, import_path, class_name)
+
+            if instance is not None:
+                self._detectors[name] = instance
+                self._loaded_detectors.append(name)
+            else:
+                self._failed_detectors.append(name)
+
+            return instance
+
+        except DetectorLoadError as e:
+            self._failed_detectors.append(name)
+            self._load_errors.append(e)
+            raise
+
     # Volume Analysis (Epic 2)
 
     @property
@@ -96,59 +145,34 @@ class OrchestratorContainer:
         Returns:
             VolumeAnalyzer for volume ratio, spread ratio, close position,
             and effort/result classification.
+
+        Raises:
+            DetectorLoadError: If volume analyzer fails to load (critical detector)
         """
-        if self._mode == "mock" and "volume_analyzer" in self._mocks:
-            return self._mocks["volume_analyzer"]
-
-        if self._volume_analyzer is None:
-            try:
-                from src.pattern_engine.volume_analyzer import VolumeAnalyzer
-
-                self._volume_analyzer = VolumeAnalyzer()
-                self._loaded_detectors.append("volume_analyzer")
-                logger.debug("detector_loaded", detector="volume_analyzer")
-            except ImportError as e:
-                self._failed_detectors.append("volume_analyzer")
-                logger.error(
-                    "detector_load_failed",
-                    detector="volume_analyzer",
-                    error=str(e),
-                )
-                raise
-
-        return self._volume_analyzer
+        return self._load_detector(
+            "volume_analyzer",
+            "src.pattern_engine.volume_analyzer",
+            "VolumeAnalyzer",
+            critical=True,
+        )
 
     # Range Detection (Epic 3)
 
     @property
-    def pivot_detector(self) -> Any:
+    def pivot_detector(self) -> Any | None:
         """
         Get PivotDetector instance (Story 3.1).
 
         Returns:
-            PivotDetector for identifying pivot highs and lows.
+            PivotDetector for identifying pivot highs and lows,
+            or None if not available.
         """
-        if self._mode == "mock" and "pivot_detector" in self._mocks:
-            return self._mocks["pivot_detector"]
-
-        if self._pivot_detector is None:
-            try:
-                from src.pattern_engine.pivot_detector import PivotDetector
-
-                self._pivot_detector = PivotDetector()
-                self._loaded_detectors.append("pivot_detector")
-                logger.debug("detector_loaded", detector="pivot_detector")
-            except ImportError as e:
-                self._failed_detectors.append("pivot_detector")
-                logger.error(
-                    "detector_load_failed",
-                    detector="pivot_detector",
-                    error=str(e),
-                )
-                # Return None for unimplemented detectors instead of raising
-                return None
-
-        return self._pivot_detector
+        return self._load_detector(
+            "pivot_detector",
+            "src.pattern_engine.pivot_detector",
+            "PivotDetector",
+            critical=False,
+        )
 
     @property
     def trading_range_detector(self) -> Any:
@@ -157,183 +181,98 @@ class OrchestratorContainer:
 
         Returns:
             TradingRangeDetector for range clustering and detection.
+
+        Raises:
+            DetectorLoadError: If trading range detector fails to load (critical detector)
         """
-        if self._mode == "mock" and "trading_range_detector" in self._mocks:
-            return self._mocks["trading_range_detector"]
-
-        if self._trading_range_detector is None:
-            try:
-                from src.pattern_engine.trading_range_detector import TradingRangeDetector
-
-                self._trading_range_detector = TradingRangeDetector()
-                self._loaded_detectors.append("trading_range_detector")
-                logger.debug("detector_loaded", detector="trading_range_detector")
-            except ImportError as e:
-                self._failed_detectors.append("trading_range_detector")
-                logger.error(
-                    "detector_load_failed",
-                    detector="trading_range_detector",
-                    error=str(e),
-                )
-                raise
-
-        return self._trading_range_detector
+        return self._load_detector(
+            "trading_range_detector",
+            "src.pattern_engine.trading_range_detector",
+            "TradingRangeDetector",
+            critical=True,
+        )
 
     @property
-    def range_quality_scorer(self) -> Any:
+    def range_quality_scorer(self) -> Any | None:
         """
         Get RangeQualityScorer instance (Story 3.3).
 
         Returns:
-            RangeQualityScorer for scoring trading range quality.
+            RangeQualityScorer for scoring trading range quality,
+            or None if not available.
         """
-        if self._mode == "mock" and "range_quality_scorer" in self._mocks:
-            return self._mocks["range_quality_scorer"]
-
-        if self._range_quality_scorer is None:
-            try:
-                from src.pattern_engine.range_quality import RangeQualityScorer
-
-                self._range_quality_scorer = RangeQualityScorer()
-                self._loaded_detectors.append("range_quality_scorer")
-                logger.debug("detector_loaded", detector="range_quality_scorer")
-            except ImportError as e:
-                self._failed_detectors.append("range_quality_scorer")
-                logger.error(
-                    "detector_load_failed",
-                    detector="range_quality_scorer",
-                    error=str(e),
-                )
-                # Return None for unimplemented detectors instead of raising
-                return None
-
-        return self._range_quality_scorer
+        return self._load_detector(
+            "range_quality_scorer",
+            "src.pattern_engine.range_quality",
+            "RangeQualityScorer",
+            critical=False,
+        )
 
     @property
-    def level_calculator(self) -> Any:
+    def level_calculator(self) -> Any | None:
         """
         Get LevelCalculator instance (Stories 3.4-3.6).
 
         Returns:
-            LevelCalculator for Creek, Ice, and Jump level calculation.
+            LevelCalculator for Creek, Ice, and Jump level calculation,
+            or None if not available.
         """
-        if self._mode == "mock" and "level_calculator" in self._mocks:
-            return self._mocks["level_calculator"]
-
-        if self._level_calculator is None:
-            try:
-                from src.pattern_engine.level_calculator import LevelCalculator
-
-                self._level_calculator = LevelCalculator()
-                self._loaded_detectors.append("level_calculator")
-                logger.debug("detector_loaded", detector="level_calculator")
-            except ImportError as e:
-                self._failed_detectors.append("level_calculator")
-                logger.error(
-                    "detector_load_failed",
-                    detector="level_calculator",
-                    error=str(e),
-                )
-                # Return None for unimplemented detectors instead of raising
-                return None
-
-        return self._level_calculator
+        return self._load_detector(
+            "level_calculator",
+            "src.pattern_engine.level_calculator",
+            "LevelCalculator",
+            critical=False,
+        )
 
     @property
-    def zone_mapper(self) -> Any:
+    def zone_mapper(self) -> Any | None:
         """
         Get ZoneMapper instance (Story 3.7).
 
         Returns:
-            ZoneMapper for supply/demand zone detection.
+            ZoneMapper for supply/demand zone detection,
+            or None if not available.
         """
-        if self._mode == "mock" and "zone_mapper" in self._mocks:
-            return self._mocks["zone_mapper"]
-
-        if self._zone_mapper is None:
-            try:
-                from src.pattern_engine.zone_mapper import ZoneMapper
-
-                self._zone_mapper = ZoneMapper()
-                self._loaded_detectors.append("zone_mapper")
-                logger.debug("detector_loaded", detector="zone_mapper")
-            except ImportError as e:
-                self._failed_detectors.append("zone_mapper")
-                logger.error(
-                    "detector_load_failed",
-                    detector="zone_mapper",
-                    error=str(e),
-                )
-                # Return None for unimplemented detectors instead of raising
-                return None
-
-        return self._zone_mapper
+        return self._load_detector(
+            "zone_mapper",
+            "src.pattern_engine.zone_mapper",
+            "ZoneMapper",
+            critical=False,
+        )
 
     # Pattern Detection (Epics 5-6)
 
     @property
-    def sos_detector(self) -> Any:
+    def sos_detector(self) -> Any | None:
         """
         Get SOS Detector Orchestrator instance (Stories 6.1-6.5).
 
         Returns:
-            SOSDetectorOrchestrator for Sign of Strength detection.
+            SOSDetectorOrchestrator for Sign of Strength detection,
+            or None if not available.
         """
-        if self._mode == "mock" and "sos_detector" in self._mocks:
-            return self._mocks["sos_detector"]
-
-        if self._sos_detector is None:
-            try:
-                from src.pattern_engine.detectors.sos_detector_orchestrator import (
-                    SOSDetector,
-                )
-
-                self._sos_detector = SOSDetector()
-                self._loaded_detectors.append("sos_detector")
-                logger.debug("detector_loaded", detector="sos_detector")
-            except ImportError as e:
-                self._failed_detectors.append("sos_detector")
-                logger.error(
-                    "detector_load_failed",
-                    detector="sos_detector",
-                    error=str(e),
-                )
-                # Return None for unimplemented detectors instead of raising
-                return None
-
-        return self._sos_detector
+        return self._load_detector(
+            "sos_detector",
+            "src.pattern_engine.detectors.sos_detector_orchestrator",
+            "SOSDetector",
+            critical=False,
+        )
 
     @property
-    def lps_detector(self) -> Any:
+    def lps_detector(self) -> Any | None:
         """
         Get LPS Detector Orchestrator instance (Stories 6.6-6.7).
 
         Returns:
-            LPSDetectorOrchestrator for Last Point of Support detection.
+            LPSDetectorOrchestrator for Last Point of Support detection,
+            or None if not available.
         """
-        if self._mode == "mock" and "lps_detector" in self._mocks:
-            return self._mocks["lps_detector"]
-
-        if self._lps_detector is None:
-            try:
-                from src.pattern_engine.detectors.lps_detector_orchestrator import (
-                    LPSDetector,
-                )
-
-                self._lps_detector = LPSDetector()
-                self._loaded_detectors.append("lps_detector")
-                logger.debug("detector_loaded", detector="lps_detector")
-            except ImportError as e:
-                self._failed_detectors.append("lps_detector")
-                logger.error(
-                    "detector_load_failed",
-                    detector="lps_detector",
-                    error=str(e),
-                )
-                # Return None for unimplemented detectors instead of raising
-                return None
-
-        return self._lps_detector
+        return self._load_detector(
+            "lps_detector",
+            "src.pattern_engine.detectors.lps_detector_orchestrator",
+            "LPSDetector",
+            critical=False,
+        )
 
     # Risk Management (Epic 7)
 
@@ -344,27 +283,16 @@ class OrchestratorContainer:
 
         Returns:
             RiskManager for unified risk validation and position sizing.
+
+        Raises:
+            DetectorLoadError: If risk manager fails to load (critical detector)
         """
-        if self._mode == "mock" and "risk_manager" in self._mocks:
-            return self._mocks["risk_manager"]
-
-        if self._risk_manager is None:
-            try:
-                from src.risk_management.risk_manager import RiskManager
-
-                self._risk_manager = RiskManager()
-                self._loaded_detectors.append("risk_manager")
-                logger.debug("detector_loaded", detector="risk_manager")
-            except ImportError as e:
-                self._failed_detectors.append("risk_manager")
-                logger.error(
-                    "detector_load_failed",
-                    detector="risk_manager",
-                    error=str(e),
-                )
-                raise
-
-        return self._risk_manager
+        return self._load_detector(
+            "risk_manager",
+            "src.risk_management.risk_manager",
+            "RiskManager",
+            critical=True,
+        )
 
     # Mock injection for testing
 
@@ -386,57 +314,96 @@ class OrchestratorContainer:
 
     # Health check
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> HealthStatus:
         """
         Perform health check on all detectors.
 
         Returns:
-            Dictionary with:
-            - status: "healthy", "degraded", or "unhealthy"
-            - loaded: List of successfully loaded detectors
-            - failed: List of failed detectors
-            - mode: Current detector mode
+            HealthStatus with detailed results including:
+            - healthy: Overall health status
+            - detectors_loaded: Count of loaded detectors
+            - detectors_failed: Count of failed detectors
+            - failures: List of specific failure reasons
+            - details: Per-detector health status
+
+        Note:
+            This method attempts to load all detectors and checks their health.
+            Failures are logged and included in the result, not swallowed.
         """
+        details: dict[str, bool] = {}
+        failures: list[str] = []
+
         # Try to load all detectors
-        detectors = [
-            ("volume_analyzer", lambda: self.volume_analyzer),
-            ("pivot_detector", lambda: self.pivot_detector),
-            ("trading_range_detector", lambda: self.trading_range_detector),
-            ("range_quality_scorer", lambda: self.range_quality_scorer),
-            ("level_calculator", lambda: self.level_calculator),
-            ("zone_mapper", lambda: self.zone_mapper),
-            ("sos_detector", lambda: self.sos_detector),
-            ("lps_detector", lambda: self.lps_detector),
-            ("risk_manager", lambda: self.risk_manager),
+        detector_accessors = [
+            ("volume_analyzer", lambda: self.volume_analyzer, True),
+            ("pivot_detector", lambda: self.pivot_detector, False),
+            ("trading_range_detector", lambda: self.trading_range_detector, True),
+            ("range_quality_scorer", lambda: self.range_quality_scorer, False),
+            ("level_calculator", lambda: self.level_calculator, False),
+            ("zone_mapper", lambda: self.zone_mapper, False),
+            ("sos_detector", lambda: self.sos_detector, False),
+            ("lps_detector", lambda: self.lps_detector, False),
+            ("risk_manager", lambda: self.risk_manager, True),
         ]
 
-        for name, loader in detectors:
-            if name not in self._loaded_detectors and name not in self._failed_detectors:
-                try:
-                    loader()
-                except Exception:
-                    pass  # Error already logged
+        for name, accessor, critical in detector_accessors:
+            try:
+                detector = accessor()
 
-        # Determine status
-        total = len(detectors)
-        loaded = len(self._loaded_detectors)
-        failed = len(self._failed_detectors)
+                if detector is None:
+                    details[name] = False
+                    failures.append(f"{name}: not available (returned None)")
+                    logger.warning(
+                        "health_check_detector_unavailable",
+                        detector=name,
+                    )
+                elif hasattr(detector, "health_check"):
+                    # Call detector's own health check if available
+                    try:
+                        is_healthy = detector.health_check()
+                        details[name] = bool(is_healthy)
+                        if not is_healthy:
+                            failures.append(f"{name}: health check returned False")
+                    except Exception as e:
+                        details[name] = False
+                        failures.append(f"{name}: health check raised {type(e).__name__}: {e}")
+                        logger.error(
+                            "health_check_failed",
+                            detector=name,
+                            error=str(e),
+                        )
+                else:
+                    # Detector loaded successfully, no health_check method
+                    details[name] = True
 
-        if failed == 0:
-            status = "healthy"
-        elif failed < total / 2:
-            status = "degraded"
-        else:
-            status = "unhealthy"
+            except DetectorLoadError as e:
+                details[name] = False
+                failures.append(f"{name}: {e}")
+                logger.error(
+                    "health_check_load_failed",
+                    detector=name,
+                    error=str(e),
+                )
 
-        return {
-            "status": status,
-            "loaded": self._loaded_detectors.copy(),
-            "failed": self._failed_detectors.copy(),
-            "mode": self._mode,
-            "loaded_count": loaded,
-            "failed_count": failed,
-        }
+        loaded_count = sum(1 for v in details.values() if v)
+        failed_count = sum(1 for v in details.values() if not v)
+
+        return HealthStatus(
+            healthy=failed_count == 0,
+            detectors_loaded=loaded_count,
+            detectors_failed=failed_count,
+            failures=failures,
+            details=details,
+        )
+
+    def get_load_errors(self) -> list[DetectorLoadError]:
+        """
+        Get list of detector load errors encountered.
+
+        Returns:
+            List of DetectorLoadError exceptions from failed loads
+        """
+        return self._load_errors.copy()
 
 
 # Singleton instance
