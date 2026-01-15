@@ -83,7 +83,7 @@ class MetricsFacade:
         """
         # Handle empty equity curve case
         if not equity_curve:
-            return self._calculate_metrics_without_equity(trades, initial_capital)
+            return self._calculate_metrics_without_equity(trades)
 
         # Convert to EquityPoint for sub-calculators
         equity_points = self._convert_equity_curve(equity_curve)
@@ -103,14 +103,7 @@ class MetricsFacade:
         if max_drawdown_result and max_drawdown_result.value > 0:
             # Convert from percentage (10%) to decimal (0.10)
             max_drawdown = max_drawdown_result.value / Decimal("100")
-            # Get duration from drawdown periods
-            periods = self._drawdown.find_drawdown_periods(equity_points)
-            if periods:
-                # Find the period with max drawdown to get duration
-                max_period = max(periods, key=lambda p: p.drawdown_pct)
-                max_drawdown_duration = max_period.duration_days
-            else:
-                max_drawdown_duration = 0
+            max_drawdown_duration = self._get_max_drawdown_duration(equity_points)
         else:
             max_drawdown = Decimal("0")
             max_drawdown_duration = 0
@@ -151,13 +144,11 @@ class MetricsFacade:
     def _calculate_metrics_without_equity(
         self,
         trades: list[BacktestTrade],
-        initial_capital: Decimal,
     ) -> BacktestMetrics:
         """Calculate metrics when no equity curve is available.
 
         Args:
             trades: List of completed trades
-            initial_capital: Starting capital
 
         Returns:
             BacktestMetrics with trade stats only
@@ -206,6 +197,21 @@ class MetricsFacade:
             EquityPoint(timestamp=point.timestamp, value=point.portfolio_value)
             for point in equity_curve
         ]
+
+    def _get_max_drawdown_duration(self, equity_points: list[EquityPoint]) -> int:
+        """Get duration of max drawdown period.
+
+        Args:
+            equity_points: List of equity points
+
+        Returns:
+            Duration in days of the maximum drawdown period
+        """
+        periods = self._drawdown.find_drawdown_periods(equity_points)
+        if periods:
+            max_period = max(periods, key=lambda p: p.drawdown_pct)
+            return max_period.duration_days
+        return 0
 
     # =========================================================================
     # Delegated methods for individual calculations
@@ -277,15 +283,7 @@ class MetricsFacade:
         if result is None or result.value == Decimal("0"):
             return Decimal("0"), 0
 
-        # Get duration from drawdown periods
-        periods = self._drawdown.find_drawdown_periods(equity_points)
-        if periods:
-            # Find the period with max drawdown to get duration
-            max_period = max(periods, key=lambda p: p.drawdown_pct)
-            duration = max_period.duration_days
-        else:
-            duration = 0
-
+        duration = self._get_max_drawdown_duration(equity_points)
         return result.value, duration
 
     def calculate_cagr(

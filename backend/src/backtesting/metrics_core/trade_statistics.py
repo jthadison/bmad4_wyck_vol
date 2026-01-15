@@ -14,6 +14,7 @@ Calculations:
 Author: Story 18.7.3
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional, Protocol, runtime_checkable
@@ -78,11 +79,11 @@ class TradeStatisticsCalculator:
         stats = calculator.calculate_statistics(trades)
     """
 
-    def calculate_statistics(self, trades: list) -> TradeStatistics:
+    def calculate_statistics(self, trades: Sequence[TradeProtocol]) -> TradeStatistics:
         """Calculate comprehensive trade statistics.
 
         Args:
-            trades: List of trade objects with realized_pnl and r_multiple
+            trades: Sequence of trade objects with realized_pnl and r_multiple
 
         Returns:
             TradeStatistics with all calculated metrics
@@ -153,13 +154,13 @@ class TradeStatisticsCalculator:
 
         return Decimal(winning_trades) / Decimal(total_trades)
 
-    def calculate_profit_factor(self, trades: list) -> Optional[Decimal]:
+    def calculate_profit_factor(self, trades: Sequence[TradeProtocol]) -> Optional[Decimal]:
         """Calculate profit factor from trades.
 
         Profit factor = sum(winning P&L) / abs(sum(losing P&L))
 
         Args:
-            trades: List of trade objects with realized_pnl
+            trades: Sequence of trade objects with realized_pnl
 
         Returns:
             Profit factor (>1.0 means profitable), None if no losses
@@ -191,14 +192,14 @@ class TradeStatisticsCalculator:
 
         return gross_profit / gross_loss
 
-    def calculate_avg_r_multiple(self, trades: list) -> Optional[Decimal]:
+    def calculate_avg_r_multiple(self, trades: Sequence[TradeProtocol]) -> Optional[Decimal]:
         """Calculate average R-multiple.
 
         R-multiple measures profit/loss relative to initial risk (R).
         Average R-multiple = sum(r_multiples) / count
 
         Args:
-            trades: List of trade objects with r_multiple attribute
+            trades: Sequence of trade objects with r_multiple attribute
 
         Returns:
             Average R-multiple, None if no trades have r_multiple set
@@ -215,7 +216,7 @@ class TradeStatisticsCalculator:
         total_r = sum(t.r_multiple for t in trades_with_r)
         return total_r / Decimal(len(trades_with_r))
 
-    def calculate_expectancy(self, trades: list) -> Optional[Decimal]:
+    def calculate_expectancy(self, trades: Sequence[TradeProtocol]) -> Optional[Decimal]:
         """Calculate trading expectancy.
 
         Expectancy = (Win Rate × Average Win) - (Loss Rate × Average Loss)
@@ -225,7 +226,7 @@ class TradeStatisticsCalculator:
         expect to make on average per trade over time.
 
         Args:
-            trades: List of trade objects with r_multiple attribute
+            trades: Sequence of trade objects with r_multiple attribute
 
         Returns:
             Expectancy in R-multiples, None if insufficient data
