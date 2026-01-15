@@ -17,11 +17,29 @@ Core Responsibilities:
 
 Key Features:
 -------------
-- Singleton pattern with async context manager lifecycle
+- Thread-safe singleton via double-checked locking factory function (Story 18.2)
 - Thread-safe operations using asyncio.Lock
 - Optimistic locking for database updates (ConcurrencyError on conflict)
 - Performance target: All operations < 50ms (AC #8)
 - Event-driven architecture (emit state change events)
+- Dependency injection for testability
+
+Usage:
+------
+Do NOT instantiate CampaignManager directly. Use the factory function:
+
+    from src.campaign_management.campaign_manager import get_campaign_manager
+
+    # Production usage (thread-safe singleton)
+    manager = get_campaign_manager(campaign_repository, portfolio_value)
+
+    # Testing usage (fresh instance with mocks)
+    manager = create_campaign_manager_for_testing(
+        campaign_repository=mock_repo,
+        portfolio_value=Decimal("100000"),
+        allocator=mock_allocator,
+        event_bus=mock_event_bus,
+    )
 
 Integration:
 ------------
@@ -30,11 +48,13 @@ Integration:
 - Story 8.10: Called by MasterOrchestrator for campaign coordination
 - Epic 7: Integrates with RiskManagementService for portfolio heat validation
 - Story 9.4: Uses CampaignRepository for persistence
+- Story 18.2: Thread-safe singleton via DI pattern (CF-004)
 
-Author: Story 9.7 Task 1
+Author: Story 9.7 Task 1, Updated Story 18.2
 """
 
 import asyncio
+import threading
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -46,6 +66,7 @@ from pydantic import BaseModel
 from src.campaign_management.allocator import CampaignAllocator
 from src.campaign_management.events import (
     CampaignCreatedEvent,
+    EventBus,
     get_event_bus,
 )
 from src.models.allocation import AllocationPlan
@@ -114,12 +135,13 @@ class CampaignManager:
     """
     Unified manager for all campaign operations (AC #1).
 
-    Singleton pattern ensures single instance coordinates all campaigns.
+    Thread-safe singleton behavior achieved via double-checked locking factory function.
+    Do NOT instantiate directly - use get_campaign_manager() factory.
     Thread-safe operations using asyncio.Lock for state mutations.
 
     Attributes
     ----------
-    _lock : asyncio.Lock
+    _operation_lock : asyncio.Lock
         Lock for thread-safe campaign state mutations
     _campaign_repo : CampaignRepository
         Repository for campaign persistence
@@ -127,24 +149,22 @@ class CampaignManager:
         Event bus for state change notifications
     _allocator : CampaignAllocator
         BMAD allocator for risk allocation
+
+    Note
+    ----
+    Story 18.2: Removed __new__ singleton pattern and hasattr check.
+    Thread-safety now provided by double-checked locking in factory function.
     """
-
-    _instance: "CampaignManager | None" = None
-    _lock: asyncio.Lock = asyncio.Lock()
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> "CampaignManager":
-        """Singleton pattern: return same instance."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
 
     def __init__(
         self,
         campaign_repository: CampaignRepository,
         portfolio_value: Decimal,
+        allocator: CampaignAllocator | None = None,
+        event_bus: EventBus | None = None,
     ):
         """
-        Initialize CampaignManager with dependencies.
+        Initialize CampaignManager with injected dependencies.
 
         Parameters
         ----------
@@ -152,17 +172,21 @@ class CampaignManager:
             Repository for campaign persistence
         portfolio_value : Decimal
             Current portfolio equity for risk calculations
-        """
-        # Only initialize once (singleton)
-        if hasattr(self, "_initialized"):
-            return
+        allocator : CampaignAllocator | None
+            BMAD allocator for risk allocation (default: creates new one)
+        event_bus : EventBus | None
+            Event bus for state change notifications (default: uses global)
 
+        Note
+        ----
+        Story 18.2: All dependencies are now injectable for testing.
+        Use create_campaign_manager_for_testing() for test instances.
+        """
         self._campaign_repo = campaign_repository
-        self._event_bus = get_event_bus()
-        self._allocator = CampaignAllocator(portfolio_value)
+        self._event_bus = event_bus if event_bus is not None else get_event_bus()
+        self._allocator = allocator if allocator is not None else CampaignAllocator(portfolio_value)
         self._operation_lock = asyncio.Lock()  # For campaign state mutations
         self.logger = logger.bind(component="CampaignManager")
-        self._initialized = True
 
     async def create_campaign(
         self, signal: TradeSignal, trading_range_id: UUID, range_start_date: str
@@ -393,29 +417,156 @@ class CampaignManager:
         )
 
 
-# Global singleton instance
+# =============================================================================
+# Thread-Safe Factory Functions (Story 18.2)
+# =============================================================================
+
+# Module-level singleton state with thread-safe access
 _campaign_manager: CampaignManager | None = None
+_singleton_lock = threading.Lock()
 
 
 def get_campaign_manager(
-    campaign_repository: CampaignRepository, portfolio_value: Decimal
+    campaign_repository: CampaignRepository,
+    portfolio_value: Decimal,
 ) -> CampaignManager:
     """
-    Get global CampaignManager singleton instance.
+    Get thread-safe singleton CampaignManager instance.
+
+    Thread-safety is guaranteed by double-checked locking pattern with
+    threading.Lock. Only the first call creates an instance, all subsequent
+    calls return the same instance.
 
     Parameters
     ----------
     campaign_repository : CampaignRepository
         Repository for campaign persistence
     portfolio_value : Decimal
-        Current portfolio equity
+        Current portfolio equity for risk calculations
 
     Returns
     -------
     CampaignManager
-        Global campaign manager instance
+        Thread-safe singleton instance
+
+    Example
+    -------
+    >>> from src.campaign_management.campaign_manager import get_campaign_manager
+    >>> manager = get_campaign_manager(campaign_repo, Decimal("100000"))
+    >>> # All subsequent calls return same instance
+
+    Note
+    ----
+    Story 18.2: Replaced thread-unsafe global variable pattern with
+    double-checked locking for thread-safe singleton behavior.
+    CF-004 fix for race condition during initialization.
     """
     global _campaign_manager
-    if _campaign_manager is None:
-        _campaign_manager = CampaignManager(campaign_repository, portfolio_value)
+
+    # Fast path: instance already exists (no lock needed)
+    if _campaign_manager is not None:
+        return _campaign_manager
+
+    # Slow path: acquire lock and double-check
+    with _singleton_lock:
+        # Re-check after acquiring lock (another thread may have initialized)
+        if _campaign_manager is None:
+            _campaign_manager = CampaignManager(
+                campaign_repository=campaign_repository,
+                portfolio_value=portfolio_value,
+            )
     return _campaign_manager
+
+
+def create_campaign_manager_for_testing(
+    campaign_repository: CampaignRepository,
+    portfolio_value: Decimal,
+    allocator: CampaignAllocator | None = None,
+    event_bus: EventBus | None = None,
+) -> CampaignManager:
+    """
+    Create CampaignManager instance for testing with optional mock dependencies.
+
+    Does NOT use singleton - each call creates a new instance. Use this for
+    unit tests that need isolated CampaignManager instances with mock deps.
+
+    Parameters
+    ----------
+    campaign_repository : CampaignRepository
+        Repository for campaign persistence (can be mock)
+    portfolio_value : Decimal
+        Current portfolio equity for risk calculations
+    allocator : CampaignAllocator | None
+        Optional mock allocator (default: creates real one)
+    event_bus : EventBus | None
+        Optional mock event bus (default: uses global)
+
+    Returns
+    -------
+    CampaignManager
+        Fresh instance for testing (NOT singleton)
+
+    Example
+    -------
+    >>> from unittest.mock import Mock, AsyncMock
+    >>> mock_repo = Mock(spec=CampaignRepository)
+    >>> mock_repo.get_campaign_by_range = AsyncMock(return_value=None)
+    >>> manager = create_campaign_manager_for_testing(
+    ...     campaign_repository=mock_repo,
+    ...     portfolio_value=Decimal("100000"),
+    ... )
+
+    Note
+    ----
+    Story 18.2: Added for AC2.4 (unit testable with mock dependencies).
+    """
+    return CampaignManager(
+        campaign_repository=campaign_repository,
+        portfolio_value=portfolio_value,
+        allocator=allocator,
+        event_bus=event_bus,
+    )
+
+
+def reset_campaign_manager_singleton() -> None:
+    """
+    Reset the singleton instance (for testing only).
+
+    Clears the singleton so next call to get_campaign_manager() creates
+    a new instance. Use sparingly - primarily for test setup/teardown.
+
+    Example
+    -------
+    >>> reset_campaign_manager_singleton()
+    >>> # Next get_campaign_manager() call creates fresh instance
+
+    Note
+    ----
+    Story 18.2: Added for test isolation between test cases.
+    """
+    global _campaign_manager
+    with _singleton_lock:
+        _campaign_manager = None
+
+
+def is_singleton_initialized() -> bool:
+    """
+    Check if the singleton CampaignManager is initialized.
+
+    Useful for health checks and debugging. Thread-safe read.
+
+    Returns
+    -------
+    bool
+        True if singleton exists, False otherwise
+
+    Example
+    -------
+    >>> if is_singleton_initialized():
+    ...     print("CampaignManager ready")
+    """
+    return _campaign_manager is not None
+
+
+# Type alias for singleton usage clarity
+CampaignManagerSingleton = CampaignManager
