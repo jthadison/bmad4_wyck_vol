@@ -20,6 +20,35 @@ from src.pattern_engine.detectors.spring.confidence_scorer import (
 )
 
 
+# ================================================================
+# Shared Fixtures
+# ================================================================
+
+
+@pytest.fixture
+def scorer():
+    """Create scorer instance for all tests."""
+    return SpringConfidenceScorer()
+
+
+@pytest.fixture
+def mock_spring():
+    """Create mock Spring with ideal values."""
+    spring = MagicMock()
+    spring.volume_ratio = Decimal("0.35")  # EXCELLENT: 30 pts
+    spring.penetration_pct = Decimal("0.015")  # IDEAL: 35 pts
+    spring.recovery_bars = 2  # STRONG: 20 pts
+    return spring
+
+
+@pytest.fixture
+def mock_creek():
+    """Create mock Creek with excellent strength."""
+    creek = MagicMock()
+    creek.strength_score = 85  # EXCELLENT: 10 pts bonus
+    return creek
+
+
 class TestScoreResult:
     """Tests for ScoreResult dataclass."""
 
@@ -35,21 +64,12 @@ class TestScoreResult:
 class TestSpringConfidenceScorer:
     """Tests for SpringConfidenceScorer class."""
 
-    @pytest.fixture
-    def scorer(self):
-        """Create scorer instance for tests."""
-        return SpringConfidenceScorer()
-
     # ================================================================
     # Volume Scoring Tests (_score_volume)
     # ================================================================
 
     class TestScoreVolume:
         """Tests for _score_volume method."""
-
-        @pytest.fixture
-        def scorer(self):
-            return SpringConfidenceScorer()
 
         def test_exceptional_volume_under_0_3(self, scorer):
             """Volume < 0.3x earns 40 points (EXCEPTIONAL)."""
@@ -101,10 +121,6 @@ class TestSpringConfidenceScorer:
     class TestScorePenetration:
         """Tests for _score_penetration method."""
 
-        @pytest.fixture
-        def scorer(self):
-            return SpringConfidenceScorer()
-
         def test_ideal_penetration_1_to_2_percent(self, scorer):
             """Penetration 1-2% earns 35 points (IDEAL)."""
             result = scorer._score_penetration(Decimal("0.015"))
@@ -130,12 +146,11 @@ class TestSpringConfidenceScorer:
             assert result.points == 5
             assert result.quality == "DEEP"
 
-        def test_penetration_below_1_percent_is_good(self, scorer):
-            """Penetration < 1% falls into GOOD tier (between ideal ranges)."""
+        def test_penetration_below_1_percent_is_shallow(self, scorer):
+            """Penetration < 1% is SHALLOW (valid but less convincing shakeout)."""
             result = scorer._score_penetration(Decimal("0.005"))
-            # Below 1% doesn't match 1-2% ideal range, falls through to GOOD
-            assert result.points == 25
-            assert result.quality == "GOOD"
+            assert result.points == 20
+            assert result.quality == "SHALLOW"
 
         def test_penetration_boundary_at_1_percent(self, scorer):
             """Boundary: 1% exactly is IDEAL."""
@@ -155,10 +170,6 @@ class TestSpringConfidenceScorer:
 
     class TestScoreRecovery:
         """Tests for _score_recovery method."""
-
-        @pytest.fixture
-        def scorer(self):
-            return SpringConfidenceScorer()
 
         def test_immediate_recovery_1_bar(self, scorer):
             """Recovery in 1 bar earns 25 points (IMMEDIATE)."""
@@ -198,10 +209,6 @@ class TestSpringConfidenceScorer:
     class TestScoreFollowThrough:
         """Tests for _score_follow_through method."""
 
-        @pytest.fixture
-        def scorer(self):
-            return SpringConfidenceScorer()
-
         def test_test_present_earns_20_points(self, scorer):
             """Test confirmation present earns 20 points."""
             result = scorer._score_follow_through(has_test=True)
@@ -221,10 +228,6 @@ class TestSpringConfidenceScorer:
 
     class TestScoreCreekStrength:
         """Tests for _score_creek_strength method."""
-
-        @pytest.fixture
-        def scorer(self):
-            return SpringConfidenceScorer()
 
         def test_excellent_creek_80_plus(self, scorer):
             """Creek strength >= 80 earns 10 points (EXCELLENT)."""
@@ -269,10 +272,6 @@ class TestSpringConfidenceScorer:
 
     class TestScoreVolumeTrend:
         """Tests for _score_volume_trend method."""
-
-        @pytest.fixture
-        def scorer(self):
-            return SpringConfidenceScorer()
 
         def test_insufficient_data_less_than_2_tests(self, scorer):
             """Less than 2 previous tests returns 0 points."""
@@ -325,16 +324,34 @@ class TestSpringConfidenceScorer:
             assert result.points == 0
             assert result.quality == "INSUFFICIENT_DATA"
 
+        def test_zero_volume_ratio_in_tests(self, scorer):
+            """Zero volume ratios in tests returns INVALID_DATA."""
+            test1 = MagicMock()
+            test1.volume_ratio = Decimal("0")
+            test2 = MagicMock()
+            test2.volume_ratio = Decimal("0")
+
+            result = scorer._score_volume_trend(Decimal("0.4"), [test1, test2])
+            assert result.points == 0
+            assert result.quality == "INVALID_DATA"
+
+        def test_negative_volume_ratio_in_tests(self, scorer):
+            """Negative volume ratios in tests returns INVALID_DATA."""
+            test1 = MagicMock()
+            test1.volume_ratio = Decimal("-0.5")
+            test2 = MagicMock()
+            test2.volume_ratio = Decimal("-0.3")
+
+            result = scorer._score_volume_trend(Decimal("0.4"), [test1, test2])
+            assert result.points == 0
+            assert result.quality == "INVALID_DATA"
+
     # ================================================================
     # Quality Tier Tests (_determine_quality_tier)
     # ================================================================
 
     class TestDetermineQualityTier:
         """Tests for _determine_quality_tier method."""
-
-        @pytest.fixture
-        def scorer(self):
-            return SpringConfidenceScorer()
 
         def test_excellent_tier_90_plus(self, scorer):
             """Score >= 90 is EXCELLENT."""
@@ -362,26 +379,6 @@ class TestSpringConfidenceScorer:
 
     class TestCalculate:
         """Tests for calculate method (integration of all scoring)."""
-
-        @pytest.fixture
-        def scorer(self):
-            return SpringConfidenceScorer()
-
-        @pytest.fixture
-        def mock_spring(self):
-            """Create mock Spring with ideal values."""
-            spring = MagicMock()
-            spring.volume_ratio = Decimal("0.35")  # EXCELLENT: 30 pts
-            spring.penetration_pct = Decimal("0.015")  # IDEAL: 35 pts
-            spring.recovery_bars = 2  # STRONG: 20 pts
-            return spring
-
-        @pytest.fixture
-        def mock_creek(self):
-            """Create mock Creek with excellent strength."""
-            creek = MagicMock()
-            creek.strength_score = 85  # EXCELLENT: 10 pts bonus
-            return creek
 
         def test_calculate_with_ideal_spring(self, scorer, mock_spring, mock_creek):
             """Test calculate with ideal spring values."""

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import structlog
 
@@ -45,6 +45,26 @@ class ScoreResult:
     points: int
     quality: str
     max_points: int
+
+
+class ComponentScores(TypedDict):
+    """Component scores breakdown from confidence calculation."""
+
+    volume_quality: int
+    penetration_depth: int
+    recovery_speed: int
+    test_confirmation: int
+    creek_strength_bonus: int
+    volume_trend_bonus: int
+    raw_total: int
+
+
+class ConfidenceResult(TypedDict):
+    """Result from SpringConfidenceScorer.calculate()."""
+
+    total_score: int
+    component_scores: ComponentScores
+    quality_tier: str
 
 
 class SpringConfidenceScorer:
@@ -112,7 +132,8 @@ class SpringConfidenceScorer:
         """
         Score penetration depth (35 points max).
 
-        Optimal shakeout depth is 1-2% below Creek level.
+        Optimal shakeout depth is 1-2% below Creek level. Shallow penetrations
+        (<1%) are still valid but less convincing as shakeouts.
 
         Args:
             penetration_pct: Penetration percentage (e.g., 0.015 = 1.5%)
@@ -122,6 +143,9 @@ class SpringConfidenceScorer:
         """
         if self.PENETRATION_IDEAL_MIN <= penetration_pct < self.PENETRATION_IDEAL_MAX:
             return ScoreResult(points=35, quality="IDEAL", max_points=35)
+        elif penetration_pct < self.PENETRATION_IDEAL_MIN:
+            # Shallow penetration: valid spring but less convincing shakeout
+            return ScoreResult(points=20, quality="SHALLOW", max_points=35)
         elif penetration_pct < self.PENETRATION_GOOD_MAX:
             return ScoreResult(points=25, quality="GOOD", max_points=35)
         elif penetration_pct < self.PENETRATION_ACCEPTABLE_MAX:
@@ -207,7 +231,7 @@ class SpringConfidenceScorer:
         prev_volumes = [test.volume_ratio for test in previous_tests[-2:]]
         avg_prev_volume = sum(prev_volumes, Decimal("0")) / len(prev_volumes)
 
-        if avg_prev_volume == Decimal("0"):
+        if avg_prev_volume <= Decimal("0"):
             return ScoreResult(points=0, quality="INVALID_DATA", max_points=10)
 
         volume_change_pct = (avg_prev_volume - spring_volume) / avg_prev_volume
@@ -241,7 +265,7 @@ class SpringConfidenceScorer:
         spring: Spring,
         creek: CreekLevel,
         previous_tests: list[Test] | None = None,
-    ) -> dict:
+    ) -> ConfidenceResult:
         """
         Calculate total confidence score for Spring pattern.
 
@@ -253,7 +277,7 @@ class SpringConfidenceScorer:
             previous_tests: Optional list of previous tests for trend analysis
 
         Returns:
-            Dict with total_score, component_scores, and quality_tier
+            ConfidenceResult with total_score, component_scores, and quality_tier
 
         Raises:
             ValueError: If spring or creek is None

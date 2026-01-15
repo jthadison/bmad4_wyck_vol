@@ -40,6 +40,8 @@ FR Requirements:
 """
 
 from src.pattern_engine.detectors.spring.confidence_scorer import (
+    ComponentScores,
+    ConfidenceResult,
     ScoreResult,
     SpringConfidenceScorer,
 )
@@ -53,4 +55,6 @@ __all__ = [
     "SpringRiskProfile",
     "SpringConfidenceScorer",
     "ScoreResult",
+    "ConfidenceResult",
+    "ComponentScores",
 ]
