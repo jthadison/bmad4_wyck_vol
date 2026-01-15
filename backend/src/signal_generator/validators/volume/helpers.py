@@ -229,7 +229,7 @@ def calculate_volume_percentile(current_volume: Decimal, historical_volumes: lis
     >>> calculate_volume_percentile(Decimal("750"), historical)
     60  # 750 is at 60th percentile (above 60% of historical bars)
     """
-    if not historical_volumes or len(historical_volumes) == 0:
+    if not historical_volumes:
         logger.warning(
             "volume_percentile_calculation_failed",
             reason="Empty historical volumes",

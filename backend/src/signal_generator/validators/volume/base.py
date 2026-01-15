@@ -159,19 +159,28 @@ class VolumeValidationStrategy(ABC):
         Get appropriate threshold based on asset class and session.
 
         Override this method for patterns with session-specific thresholds
-        (e.g., Asian session adjustments).
+        (e.g., Asian session adjustments). The default implementation uses
+        strategy-defined thresholds; subclasses can leverage config for
+        user-configurable overrides.
 
         Parameters:
         -----------
         context : ValidationContext
             Context with asset_class and forex_session
         config : VolumeValidationConfig
-            Configuration with all threshold values
+            Configuration with all threshold values (available for subclass overrides)
 
         Returns:
         --------
         Decimal
             Threshold value to use for validation
+
+        Note:
+        -----
+        The config parameter is included in the signature for subclasses that
+        need configurable thresholds. The base implementation uses strategy
+        defaults for simplicity; concrete strategies (Story 18.6.2+) may
+        leverage config values like config.spring_max_volume.
         """
         if context.asset_class == "FOREX":
             return self.default_forex_threshold

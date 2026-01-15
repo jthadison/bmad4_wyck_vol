@@ -51,8 +51,15 @@ class VolumeStrategyRegistry:
     --------------
     The registry uses a class-level dict which is thread-safe for reads.
     Registration should happen at startup, not during request handling.
+
+    Implementation Note:
+    --------------------
+    The class-level `_strategies` dict is intentionally shared across all
+    instances (singleton-like pattern). This enables global strategy
+    registration without requiring explicit instance passing.
     """
 
+    # Class-level shared registry (intentional singleton pattern)
     _strategies: dict[str, VolumeValidationStrategy] = {}
 
     @classmethod
