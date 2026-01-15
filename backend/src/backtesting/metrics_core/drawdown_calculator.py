@@ -11,6 +11,7 @@ Both algorithms are O(n) time complexity with O(1) additional space
 Author: Story 18.7.1
 """
 
+import heapq
 from collections.abc import Sequence
 from decimal import Decimal
 
@@ -20,12 +21,16 @@ from src.backtesting.metrics_core.base import DrawdownPeriod, EquityPoint, Metri
 class DrawdownCalculator:
     """Calculate drawdown metrics using O(n) algorithms.
 
+    Stateless calculator - all methods are pure functions.
+
     Example:
         calculator = DrawdownCalculator()
         equity_curve = [EquityPoint(ts1, 100), EquityPoint(ts2, 95), ...]
         max_dd = calculator.calculate_max_drawdown(equity_curve)
         periods = calculator.find_drawdown_periods(equity_curve)
     """
+
+    __slots__ = ()
 
     def calculate_max_drawdown(self, equity_curve: Sequence[EquityPoint]) -> MetricResult:
         """Calculate maximum drawdown in a single O(n) pass.
@@ -150,6 +155,9 @@ class DrawdownCalculator:
     ) -> list[DrawdownPeriod]:
         """Get top N drawdown periods by magnitude.
 
+        Uses heapq.nlargest for O(n log k) complexity where k = top_n,
+        more efficient than full sort O(n log n) when k << n.
+
         Args:
             equity_curve: Sequence of equity points ordered by timestamp
             top_n: Number of top drawdowns to return (default 5)
@@ -158,5 +166,4 @@ class DrawdownCalculator:
             List of DrawdownPeriod objects sorted by drawdown_pct (largest first)
         """
         periods = self.find_drawdown_periods(equity_curve)
-        periods.sort(key=lambda p: p.drawdown_pct, reverse=True)
-        return periods[:top_n]
+        return heapq.nlargest(top_n, periods, key=lambda p: p.drawdown_pct)
