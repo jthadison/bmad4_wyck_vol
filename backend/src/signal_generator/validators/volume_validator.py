@@ -1,8 +1,14 @@
 """
-Volume Validation Stage (Story 8.3 + Story 8.3.1 Forex Support)
+Volume Validation Stage Facade (Story 18.6.3)
 
 FR12: Volume validation is a non-negotiable gatekeeper. All volume failures
 result in immediate signal rejection (FAIL status).
+
+This module is now a facade that delegates to extracted analyzers (Story 18.6.3):
+- NewsEventDetector: Detects news-driven tick spikes
+- VolumeAnomalyDetector: Detects volume spike anomalies
+- ForexThresholdAdjuster: Session-aware threshold calculation
+- PercentileCalculator: Broker-relative percentile calculation
 
 Pattern-specific volume requirements (WYCKOFF ENHANCED):
 - Spring (FR4): volume_ratio < 0.7x (low volume confirms selling exhaustion)
@@ -14,25 +20,17 @@ Pattern-specific volume requirements (WYCKOFF ENHANCED):
 - LPS (FR7): volume_ratio < 1.0x OR absorption pattern (WYCKOFF ENHANCEMENT)
 - Test (FR13): test_volume < pattern_volume (decreased volume confirms test)
 
-Forex Extensions (Story 8.3.1):
--------------------------------
-- Session-aware baselines (compare to London/NY/Asian avg, not daily)
-- News event filtering (reject patterns during NFP/FOMC tick spikes)
-- Broker-relative percentile calculations (not absolute tick counts)
-- Asian session stricter thresholds (60% spring, 200% SOS)
+Refactored per CF-006 from Critical Foundation Refactoring document.
 
-Author: Story 8.3, Story 8.3.1
+Author: Story 8.3, Story 8.3.1, Story 18.6.3 (Facade Refactoring)
 """
 
 from decimal import Decimal
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import structlog
-import yaml
 
 from src.models.effort_result import EffortResult
-from src.models.forex import ForexSession, NewsEvent
 from src.models.validation import (
     StageValidationResult,
     ValidationContext,
@@ -40,6 +38,12 @@ from src.models.validation import (
     VolumeValidationConfig,
 )
 from src.signal_generator.validators.base import BaseValidator
+from src.signal_generator.validators.volume.analyzers import (
+    NewsEventDetector,
+    PercentileCalculator,
+    VolumeAnomalyDetector,
+)
+from src.signal_generator.validators.volume.forex import ForexThresholdAdjuster
 
 logger = structlog.get_logger()
 
@@ -50,6 +54,14 @@ class VolumeValidator(BaseValidator):
 
     This is the FIRST stage in the validation chain (FR20). Early exit on
     volume failure avoids expensive phase/level/risk validation.
+
+    Story 18.6.3 Refactoring:
+    -------------------------
+    This class is now a facade that delegates to extracted analyzers:
+    - NewsEventDetector: For news-driven tick spike detection
+    - VolumeAnomalyDetector: For volume anomaly detection
+    - ForexThresholdAdjuster: For session-aware threshold calculation
+    - PercentileCalculator: For broker-relative percentile calculation
 
     Pattern-Specific Validation Rules:
     ----------------------------------
@@ -71,6 +83,13 @@ class VolumeValidator(BaseValidator):
     >>> print(result.status)  # ValidationStatus.PASS or FAIL
     """
 
+    def __init__(self) -> None:
+        """Initialize the facade with analyzer instances."""
+        self._news_detector = NewsEventDetector()
+        self._anomaly_detector = VolumeAnomalyDetector()
+        self._threshold_adjuster = ForexThresholdAdjuster()
+        self._percentile_calculator = PercentileCalculator()
+
     @property
     def validator_id(self) -> str:
         """Unique identifier for this validator."""
@@ -80,68 +99,6 @@ class VolumeValidator(BaseValidator):
     def stage_name(self) -> str:
         """Human-readable stage name."""
         return "Volume"
-
-    # Class-level cache for volume threshold config (Story 9.1)
-    _threshold_config_cache: Optional[dict[str, Any]] = None
-
-    @classmethod
-    def _load_volume_thresholds_from_config(cls) -> dict[str, Any]:
-        """
-        Load volume thresholds from YAML configuration file (Story 9.1).
-
-        This method loads session-specific UTAD thresholds optimized through
-        backtesting. The config is cached at class level to avoid repeated
-        file I/O.
-
-        Returns:
-            Dict with threshold configuration including forex_session_overrides
-
-        Example:
-            >>> config = VolumeValidator._load_volume_thresholds_from_config()
-            >>> print(config["forex"]["utad_min_volume"])  # 2.5 (baseline)
-            >>> print(config["forex_session_overrides"]["OVERLAP"]["utad_min_volume"])  # 2.2
-        """
-        # Return cached config if available
-        if cls._threshold_config_cache is not None:
-            return cls._threshold_config_cache
-
-        # Locate config file
-        config_path = (
-            Path(__file__).parent.parent.parent.parent / "config" / "volume_thresholds.yaml"
-        )
-
-        if not config_path.exists():
-            logger.warning(
-                "volume_thresholds_config_not_found",
-                config_path=str(config_path),
-                note="Using VolumeValidationConfig defaults",
-            )
-            cls._threshold_config_cache = {}
-            return cls._threshold_config_cache
-
-        # Load YAML
-        try:
-            with open(config_path, encoding="utf-8") as f:
-                config = yaml.safe_load(f)
-
-            logger.info(
-                "volume_thresholds_config_loaded",
-                config_path=str(config_path),
-                has_session_overrides="forex_session_overrides" in config,
-            )
-
-            # Cache the config
-            cls._threshold_config_cache = config
-            return config
-
-        except Exception as e:
-            logger.error(
-                "volume_thresholds_config_load_error",
-                config_path=str(config_path),
-                error=str(e),
-            )
-            cls._threshold_config_cache = {}
-            return cls._threshold_config_cache
 
     def _load_config(self, context: ValidationContext) -> VolumeValidationConfig:
         """
@@ -164,226 +121,43 @@ class VolumeValidator(BaseValidator):
         self, current_volume: Decimal, historical_volumes: list[Decimal]
     ) -> int:
         """
-        Calculate broker-relative percentile for tick volume (Story 8.3.1, AC 5).
+        Calculate broker-relative percentile for tick volume.
 
-        Tick volume varies by broker, so absolute values are meaningless.
-        Percentile ranking within broker's own historical data provides
-        comparable measurements.
+        Delegates to PercentileCalculator (Story 18.6.3).
 
-        Args:
-            current_volume: Current bar tick volume
-            historical_volumes: Last 100+ bars of tick volume from same broker
+        Parameters:
+        -----------
+        current_volume : Decimal
+            Current bar tick volume
+        historical_volumes : list[Decimal]
+            Last 100+ bars of tick volume from same broker
 
         Returns:
-            int: Percentile (0-100) where current volume ranks
-
-        Example:
-            >>> historical = [Decimal(str(v)) for v in [500, 600, 700, 800, 900]]
-            >>> self._calculate_volume_percentile(Decimal("750"), historical)
-            60  # 750 is at 60th percentile (above 60% of historical bars)
+        --------
+        int
+            Percentile (0-100) where current volume ranks
         """
-        if not historical_volumes or len(historical_volumes) == 0:
-            logger.warning("forex_percentile_calculation_failed", reason="Empty historical volumes")
-            return 50  # Default to median if no data
-
-        # Sort volumes in ascending order
-        sorted_volumes = sorted(historical_volumes)
-
-        # Find position of current volume
-        position = sum(1 for v in sorted_volumes if v <= current_volume)
-
-        # Calculate percentile (0-100)
-        percentile = int((position / len(sorted_volumes)) * 100)
-
-        logger.debug(
-            "forex_volume_percentile_calculated",
-            current_volume=float(current_volume),
-            percentile=percentile,
-            sample_size=len(historical_volumes),
-        )
-
-        return percentile
+        return self._percentile_calculator.calculate(current_volume, historical_volumes)
 
     def _interpret_volume_percentile(self, percentile: int, pattern_type: str) -> str:
         """
-        Generate human-readable interpretation of volume percentile (Wyckoff crew P2).
+        Generate human-readable interpretation of volume percentile.
 
-        Args:
-            percentile: Volume percentile (0-100)
-            pattern_type: Pattern type (SPRING, SOS, etc.)
+        Delegates to PercentileCalculator (Story 18.6.3).
 
-        Returns:
-            str: Human-readable interpretation explaining what the percentile means
-
-        Example:
-            >>> self._interpret_volume_percentile(15, "SPRING")
-            "Very low activity (bottom 15% of recent volume). This supports the Wyckoff principle of 'selling exhaustion' - weak sellers are giving up."
-        """
-        if percentile < 10:
-            if pattern_type == "SPRING":
-                return (
-                    f"Extremely low activity (bottom {percentile}% of recent volume). "
-                    "This strongly supports the Wyckoff principle of 'selling exhaustion' - "
-                    "supply has dried up, indicating sellers are depleted."
-                )
-            else:
-                return (
-                    f"Extremely low activity (bottom {percentile}% of recent volume). "
-                    "This is unusually quiet and may indicate lack of institutional participation."
-                )
-        elif percentile < 25:
-            if pattern_type == "SPRING":
-                return (
-                    f"Very low activity (bottom 25% of recent volume, specifically {percentile}th percentile). "
-                    "This supports 'selling exhaustion' - weak hands are exiting without conviction."
-                )
-            else:
-                return (
-                    f"Very low activity (bottom 25%, specifically {percentile}th percentile). "
-                    "Below-average participation suggests caution."
-                )
-        elif percentile < 50:
-            return (
-                f"Below average activity ({percentile}th percentile). "
-                f"Volume is in the lower half of recent history."
-            )
-        elif percentile < 75:
-            if pattern_type == "SOS":
-                return (
-                    f"Above average activity ({percentile}th percentile). "
-                    "This shows increased participation, supporting institutional accumulation."
-                )
-            else:
-                return (
-                    f"Above average activity ({percentile}th percentile). "
-                    "Volume is in the upper half of recent history."
-                )
-        elif percentile < 90:
-            if pattern_type == "SOS":
-                return (
-                    f"High activity (top 25%, specifically {percentile}th percentile). "
-                    "Strong participation confirms demand overwhelming supply (Wyckoff 'sign of strength')."
-                )
-            else:
-                return (
-                    f"High activity (top 25%, specifically {percentile}th percentile). "
-                    "This indicates elevated institutional interest."
-                )
-        else:  # percentile >= 90
-            if pattern_type == "SOS":
-                return (
-                    f"Climactic activity (top {100 - percentile}% of recent volume). "
-                    "Exceptional participation confirms institutional accumulation completing (Wyckoff climax)."
-                )
-            else:
-                return (
-                    f"Climactic activity (top {100 - percentile}% of recent volume). "
-                    "This represents extreme participation and potential turning point."
-                )
-
-    async def _check_volume_spike_anomaly(
-        self, context: ValidationContext, volume_ratio: Decimal
-    ) -> tuple[bool, str | None]:
-        """
-        Detect volume spike anomalies beyond news events (Wyckoff crew P2).
-
-        Catches flash crashes, broker outages, 'fat finger' orders, and other
-        non-Wyckoff volume spikes that news event filtering misses.
-
-        Args:
-            context: ValidationContext with volume_analysis
-            volume_ratio: Current bar volume ratio
+        Parameters:
+        -----------
+        percentile : int
+            Volume percentile (0-100)
+        pattern_type : str
+            Pattern type (SPRING, SOS, etc.)
 
         Returns:
-            tuple[bool, str | None]: (is_anomaly, reason if anomaly detected)
-
-        Example:
-            >>> # 5.5x volume spike without news event
-            >>> is_anomaly, reason = await self._check_volume_spike_anomaly(context, Decimal("5.5"))
-            >>> print(is_anomaly)  # True
-            >>> print(reason)      # "Volume spike 5.5x exceeds 5.0x anomaly threshold..."
+        --------
+        str
+            Human-readable interpretation
         """
-        # Only applies to forex (stocks have different spike characteristics)
-        if context.asset_class != "FOREX":
-            return False, None
-
-        # Define anomaly threshold: 5x volume spike is NEVER normal Wyckoff activity
-        ANOMALY_THRESHOLD = Decimal("5.0")
-
-        if volume_ratio >= ANOMALY_THRESHOLD:
-            reason = (
-                f"Volume spike {volume_ratio}x exceeds {ANOMALY_THRESHOLD}x anomaly threshold. "
-                f"This is NOT normal Wyckoff activity - may be flash crash, broker outage, "
-                f"or 'fat finger' order. Symbol: {context.symbol}, "
-                f"Pattern bar: {context.pattern.pattern_bar_timestamp.isoformat()}"
-            )
-            logger.warning(
-                "forex_volume_spike_anomaly",
-                volume_ratio=float(volume_ratio),
-                threshold=float(ANOMALY_THRESHOLD),
-                symbol=context.symbol,
-                pattern_type=context.pattern.pattern_type,
-                pattern_bar=context.pattern.pattern_bar_timestamp.isoformat(),
-            )
-            return True, reason
-
-        return False, None
-
-    async def _check_news_event_tick_spike(
-        self, context: ValidationContext
-    ) -> tuple[bool, str | None]:
-        """
-        Check if pattern occurred during news-driven tick volume spike (Story 8.3.1, AC 4).
-
-        High-impact forex events (NFP, FOMC, ECB) cause 500-1000% tick spikes that
-        are NOT Wyckoff climactic volume - they're noise from retail panic/algos.
-
-        Args:
-            context: ValidationContext with pattern and market_context
-
-        Returns:
-            tuple[bool, str | None]: (is_news_spike, event_type if spike detected)
-
-        Example:
-            >>> # Pattern at 8:30am EST during NFP release
-            >>> is_spike, event = await self._check_news_event_tick_spike(context)
-            >>> print(is_spike)  # True
-            >>> print(event)     # "NFP"
-        """
-        # Only applies to forex
-        if context.asset_class != "FOREX":
-            return False, None
-
-        # Check if market_context has news events
-        if context.market_context is None:
-            return False, None
-
-        # Extract news event if present
-        news_event: NewsEvent | None = getattr(context.market_context, "news_event", None)
-        if news_event is None:
-            return False, None
-
-        # Only high-impact events cause problematic tick spikes
-        if news_event.impact_level != "HIGH":
-            return False, None
-
-        # Check if pattern bar within ±1 hour of event
-        pattern_time = context.pattern.pattern_bar_timestamp
-        event_time = news_event.event_date
-
-        time_diff_hours = abs((pattern_time - event_time).total_seconds() / 3600)
-
-        if time_diff_hours < 1.0:
-            logger.warning(
-                "forex_news_spike_detected",
-                event_type=news_event.event_type,
-                event_time=event_time.isoformat(),
-                pattern_time=pattern_time.isoformat(),
-                time_diff_hours=round(time_diff_hours, 2),
-            )
-            return True, news_event.event_type
-
-        return False, None
+        return self._percentile_calculator.interpret(percentile, pattern_type)
 
     def _get_forex_threshold(
         self,
@@ -393,79 +167,27 @@ class VolumeValidator(BaseValidator):
         context: ValidationContext,
     ) -> Decimal:
         """
-        Get forex-specific threshold with session adjustments (Story 8.3.1 + Story 9.1).
+        Get forex-specific threshold with session adjustments.
 
-        Applies session-based adjustments:
-        - Asian session: Stricter thresholds (low liquidity)
-        - UTAD: Session-specific optimized thresholds from YAML config (Story 9.1)
+        Delegates to ForexThresholdAdjuster (Story 18.6.3).
 
-        Args:
-            pattern_type: Pattern type (SPRING, SOS, UTAD, etc.)
-            threshold_type: "max" or "min"
-            config: VolumeValidationConfig with forex thresholds
-            context: ValidationContext with forex_session
+        Parameters:
+        -----------
+        pattern_type : str
+            Pattern type (SPRING, SOS, UTAD, etc.)
+        threshold_type : str
+            "max" or "min"
+        config : VolumeValidationConfig
+            VolumeValidationConfig with forex thresholds
+        context : ValidationContext
+            Context with forex_session
 
         Returns:
-            Decimal: Session-adjusted threshold
-
-        Example:
-            >>> # UTAD during OVERLAP session (Story 9.1 optimization)
-            >>> threshold = self._get_forex_threshold("UTAD", "min", config, context)
-            >>> print(threshold)  # Decimal("2.20") - optimized from 2.50!
-            >>>
-            >>> # UTAD during ASIAN session
-            >>> threshold = self._get_forex_threshold("UTAD", "min", config, context)
-            >>> print(threshold)  # Decimal("2.80") - stricter for low liquidity!
+        --------
+        Decimal
+            Session-adjusted threshold
         """
-        forex_session = context.forex_session
-
-        # Story 9.1: Check for session-specific UTAD threshold overrides
-        if pattern_type == "UTAD" and threshold_type == "min":
-            yaml_config = self._load_volume_thresholds_from_config()
-            overrides = yaml_config.get("forex_session_overrides", {})
-
-            if overrides and forex_session is not None:
-                session_name = forex_session.value
-                session_override = overrides.get(session_name, {})
-
-                if "utad_min_volume" in session_override:
-                    override_threshold = Decimal(str(session_override["utad_min_volume"]))
-
-                    logger.debug(
-                        "forex_utad_session_override_applied",
-                        session=session_name,
-                        baseline_threshold=float(config.forex_utad_min_volume),
-                        override_threshold=float(override_threshold),
-                        story="9.1",
-                    )
-
-                    return override_threshold
-
-            # Fall through to baseline if no override found
-            return config.forex_utad_min_volume
-
-        # Asian session uses stricter thresholds (low liquidity) - Story 8.3.1
-        if forex_session == ForexSession.ASIAN:
-            if pattern_type == "SPRING" and threshold_type == "max":
-                return config.forex_asian_spring_max_volume
-            elif pattern_type == "SOS" and threshold_type == "min":
-                return config.forex_asian_sos_min_volume
-
-        # All other sessions use standard forex thresholds
-        if pattern_type == "SPRING" and threshold_type == "max":
-            return config.forex_spring_max_volume
-        elif pattern_type == "TEST" and threshold_type == "max":
-            return config.forex_test_max_volume
-        elif pattern_type == "SOS" and threshold_type == "min":
-            return config.forex_sos_min_volume
-        elif pattern_type == "UTAD" and threshold_type == "min":
-            return config.forex_utad_min_volume
-        else:
-            # Fallback to stock thresholds if unknown pattern
-            if threshold_type == "max":
-                return config.spring_max_volume
-            else:
-                return config.sos_min_volume
+        return self._threshold_adjuster.get_threshold(pattern_type, threshold_type, config, context)
 
     async def validate(self, context: ValidationContext) -> StageValidationResult:
         """
@@ -474,11 +196,15 @@ class VolumeValidator(BaseValidator):
         Supports both stock (actual volume) and forex (tick volume) validation
         with session-aware thresholds and news event filtering.
 
-        Args:
-            context: ValidationContext with pattern and volume_analysis
+        Parameters:
+        -----------
+        context : ValidationContext
+            ValidationContext with pattern and volume_analysis
 
         Returns:
-            StageValidationResult with PASS or FAIL (never WARN per FR12)
+        --------
+        StageValidationResult
+            Result with PASS or FAIL (never WARN per FR12)
         """
         logger.debug(
             "volume_validation_started",
@@ -513,18 +239,11 @@ class VolumeValidator(BaseValidator):
         # Get volume ratio early for checks
         volume_ratio = context.volume_analysis.volume_ratio
 
-        # Forex-specific: Check for volume spike anomaly (Wyckoff crew P2)
+        # Forex-specific: Check for volume spike anomaly (delegates to VolumeAnomalyDetector)
         if context.asset_class == "FOREX":
-            is_anomaly, anomaly_reason = await self._check_volume_spike_anomaly(
-                context, volume_ratio
-            )
+            is_anomaly, anomaly_reason = await self._anomaly_detector.check(context, volume_ratio)
             if is_anomaly:
-                metadata = {
-                    "volume_ratio": float(volume_ratio),
-                    "anomaly_threshold": 5.0,
-                    "pattern_bar_timestamp": context.pattern.pattern_bar_timestamp.isoformat(),
-                    "symbol": context.symbol,
-                }
+                metadata = self._anomaly_detector.build_rejection_metadata(volume_ratio, context)
                 logger.error(
                     "volume_validation_failed",
                     reason="Volume spike anomaly",
@@ -533,21 +252,12 @@ class VolumeValidator(BaseValidator):
                 )
                 return self.create_result(ValidationStatus.FAIL, anomaly_reason, metadata)
 
-        # Forex-specific: Check for news event tick spike (Story 8.3.1, AC 4)
+        # Forex-specific: Check for news event tick spike (delegates to NewsEventDetector)
         if context.asset_class == "FOREX":
-            is_news_spike, event_type = await self._check_news_event_tick_spike(context)
+            is_news_spike, event_type = await self._news_detector.check(context)
             if is_news_spike:
-                reason = (
-                    f"Pattern bar occurred during {event_type} news event. "
-                    f"Tick volume spike is news-driven, not institutional Wyckoff activity. "
-                    f"Symbol: {context.symbol}, "
-                    f"Pattern: {context.pattern.pattern_bar_timestamp.isoformat()}"
-                )
-                metadata = {
-                    "news_event": event_type,
-                    "pattern_bar_timestamp": context.pattern.pattern_bar_timestamp.isoformat(),
-                    "symbol": context.symbol,
-                }
+                reason = self._news_detector.build_rejection_reason(event_type, context)
+                metadata = self._news_detector.build_rejection_metadata(event_type, context)
                 logger.error(
                     "volume_validation_failed",
                     reason="News-driven tick spike",
@@ -639,7 +349,6 @@ class VolumeValidator(BaseValidator):
                         current_volume, context.historical_volumes
                     )
                     metadata["volume_percentile"] = percentile
-                    # Use Wyckoff crew P2 interpretation helper
                     metadata["volume_interpretation"] = self._interpret_volume_percentile(
                         percentile, "SPRING"
                     )
@@ -702,7 +411,6 @@ class VolumeValidator(BaseValidator):
                     current_volume, context.historical_volumes
                 )
                 pass_metadata["volume_percentile"] = percentile
-                # Use Wyckoff crew P2 interpretation helper
                 pass_metadata["volume_interpretation"] = self._interpret_volume_percentile(
                     percentile, "SPRING"
                 )
@@ -770,7 +478,6 @@ class VolumeValidator(BaseValidator):
                         current_volume, context.historical_volumes
                     )
                     metadata["volume_percentile"] = percentile
-                    # Use Wyckoff crew P2 interpretation helper
                     metadata["volume_interpretation"] = self._interpret_volume_percentile(
                         percentile, "SOS"
                     )
@@ -801,7 +508,6 @@ class VolumeValidator(BaseValidator):
                     current_volume, context.historical_volumes
                 )
                 pass_metadata["volume_percentile"] = percentile
-                # Use Wyckoff crew P2 interpretation helper
                 pass_metadata["volume_interpretation"] = self._interpret_volume_percentile(
                     percentile, "SOS"
                 )
@@ -819,7 +525,7 @@ class VolumeValidator(BaseValidator):
     def _validate_lps(
         self, context: ValidationContext, volume_ratio: Decimal, config: VolumeValidationConfig
     ) -> StageValidationResult:
-        """Validate LPS volume requirements (FR7 - WYCKOFF ENHANCED)"""
+        """Validate LPS volume requirements (FR7 - WYCKOFF ENHANCED)."""
         # FR7: Standard LPS requires volume < 1.0x (reduced volume shows resting)
         if volume_ratio < config.lps_max_volume:
             # Standard quiet LPS - validation passed
@@ -893,7 +599,7 @@ class VolumeValidator(BaseValidator):
     def _validate_utad(
         self, context: ValidationContext, volume_ratio: Decimal, config: VolumeValidationConfig
     ) -> StageValidationResult:
-        """Validate UTAD volume requirements (FR5 - WYCKOFF ENHANCEMENT)"""
+        """Validate UTAD volume requirements (FR5 - WYCKOFF ENHANCEMENT)."""
         # WYCKOFF ENHANCEMENT: UTAD requires elevated volume (supply climax)
         # Threshold: 1.2x average (stock), 2.5x (forex)
 
