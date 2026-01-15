@@ -9,6 +9,8 @@ Public Exports:
 ---------------
 - SpringCandidate: Intermediate detection candidate
 - SpringRiskProfile: Risk analysis for position sizing
+- SpringConfidenceScorer: Confidence scoring with testable methods
+- ScoreResult: Individual scoring method result
 
 Usage:
 ------
@@ -23,6 +25,13 @@ Usage:
 ...     creek_level=Decimal("100.00")
 ... )
 
+Confidence Scoring:
+-------------------
+>>> from src.pattern_engine.detectors.spring import SpringConfidenceScorer
+>>> scorer = SpringConfidenceScorer()
+>>> result = scorer.calculate(spring, creek, previous_tests)
+>>> print(f"Confidence: {result['total_score']}%")
+
 FR Requirements:
 ----------------
 - FR4: Spring detection (0-5% penetration below Creek)
@@ -30,6 +39,10 @@ FR Requirements:
 - FR16: Position sizing based on risk profile
 """
 
+from src.pattern_engine.detectors.spring.confidence_scorer import (
+    ScoreResult,
+    SpringConfidenceScorer,
+)
 from src.pattern_engine.detectors.spring.models import (
     SpringCandidate,
     SpringRiskProfile,
@@ -38,4 +51,6 @@ from src.pattern_engine.detectors.spring.models import (
 __all__ = [
     "SpringCandidate",
     "SpringRiskProfile",
+    "SpringConfidenceScorer",
+    "ScoreResult",
 ]
