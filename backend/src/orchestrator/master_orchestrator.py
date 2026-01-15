@@ -1515,10 +1515,10 @@ class MasterOrchestrator:
         cache_metrics = self._cache.get_metrics()
         event_bus_metrics = self._event_bus.get_metrics()
 
-        # Determine overall status
-        if container_health["status"] == "unhealthy":
+        # Determine overall status based on HealthStatus dataclass
+        if container_health.status == "unhealthy":
             status = "unhealthy"
-        elif container_health["status"] == "degraded" or self._error_count > 10:
+        elif container_health.status == "degraded" or self._error_count > 10:
             status = "degraded"
         else:
             status = "healthy"
@@ -1526,7 +1526,14 @@ class MasterOrchestrator:
         return {
             "status": status,
             "components": {
-                "container": container_health,
+                "container": {
+                    "status": container_health.status,
+                    "healthy": container_health.healthy,
+                    "detectors_loaded": container_health.detectors_loaded,
+                    "detectors_failed": container_health.detectors_failed,
+                    "failures": container_health.failures,
+                    "details": container_health.details,
+                },
                 "cache": cache_metrics,
                 "event_bus": event_bus_metrics,
             },
