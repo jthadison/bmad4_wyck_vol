@@ -81,6 +81,7 @@ from src.models.ohlcv import OHLCVBar
 from src.models.touch_detail import TouchDetail
 from src.models.trading_range import TradingRange
 from src.models.volume_analysis import VolumeAnalysis
+from src.shared.validation_helpers import validate_level_calculator_inputs
 
 logger = structlog.get_logger(__name__)
 
@@ -134,8 +135,14 @@ def calculate_creek_level(
         >>> print(f"Volume Trend: {creek.volume_trend}")
         >>> print(f"Entry: ${creek.price:.2f}, Stop: ${creek.absolute_low * 0.98:.2f}")
     """
-    # Validate inputs
-    _validate_inputs(trading_range, bars, volume_analysis)
+    # Validate inputs (Story 18.1: uses shared validation helper)
+    validate_level_calculator_inputs(
+        trading_range,
+        bars,
+        volume_analysis,
+        level_type="Creek",
+        cluster_attr="support_cluster",
+    )
 
     symbol = (
         bars[trading_range.start_index].symbol
@@ -251,56 +258,6 @@ def calculate_creek_level(
     )
 
     return creek_level
-
-
-def _validate_inputs(
-    trading_range: TradingRange, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
-) -> None:
-    """
-    Validate inputs for creek calculation.
-
-    Raises:
-        ValueError: If validation fails
-    """
-    # Validate trading_range exists
-    if trading_range is None:
-        raise ValueError("trading_range cannot be None")
-
-    # Validate quality score >= 70 (Story 3.3 requirement)
-    if trading_range.quality_score is None or trading_range.quality_score < 70:
-        logger.error(
-            "low_quality_range",
-            range_id=str(trading_range.id),
-            quality_score=trading_range.quality_score,
-            message="Creek calculation requires quality score >= 70",
-        )
-        raise ValueError(
-            f"Cannot calculate creek for range with quality score {trading_range.quality_score} (minimum 70)"
-        )
-
-    # Validate support cluster exists
-    if not trading_range.support_cluster or trading_range.support_cluster.touch_count < 2:
-        logger.error(
-            "invalid_support_cluster",
-            range_id=str(trading_range.id),
-            message="Support cluster missing or insufficient touches",
-        )
-        raise ValueError(
-            "Invalid support cluster for creek calculation (minimum 2 touches required)"
-        )
-
-    # Validate bars not empty
-    if not bars:
-        raise ValueError("Bars list cannot be empty")
-
-    # Validate volume_analysis matches bars
-    if len(volume_analysis) != len(bars):
-        logger.error(
-            "bars_volume_mismatch", bars_count=len(bars), volume_count=len(volume_analysis)
-        )
-        raise ValueError(
-            f"Bars and volume_analysis length mismatch ({len(bars)} vs {len(volume_analysis)})"
-        )
 
 
 def _collect_creek_touches(
@@ -604,8 +561,14 @@ def calculate_ice_level(
         >>> # SOS breakout detection
         >>> sos = bar.close > ice.price and bar.volume_ratio >= 1.5
     """
-    # Validate inputs
-    _validate_ice_inputs(trading_range, bars, volume_analysis)
+    # Validate inputs (Story 18.1: uses shared validation helper)
+    validate_level_calculator_inputs(
+        trading_range,
+        bars,
+        volume_analysis,
+        level_type="Ice",
+        cluster_attr="resistance_cluster",
+    )
 
     symbol = (
         bars[trading_range.start_index].symbol
@@ -721,56 +684,6 @@ def calculate_ice_level(
     )
 
     return ice_level
-
-
-def _validate_ice_inputs(
-    trading_range: TradingRange, bars: list[OHLCVBar], volume_analysis: list[VolumeAnalysis]
-) -> None:
-    """
-    Validate inputs for ice calculation.
-
-    Raises:
-        ValueError: If validation fails
-    """
-    # Validate trading_range exists
-    if trading_range is None:
-        raise ValueError("trading_range cannot be None")
-
-    # Validate quality score >= 70 (Story 3.3 requirement)
-    if trading_range.quality_score is None or trading_range.quality_score < 70:
-        logger.error(
-            "low_quality_range",
-            range_id=str(trading_range.id),
-            quality_score=trading_range.quality_score,
-            message="Ice calculation requires quality score >= 70",
-        )
-        raise ValueError(
-            f"Cannot calculate ice for range with quality score {trading_range.quality_score} (minimum 70)"
-        )
-
-    # Validate resistance cluster exists
-    if not trading_range.resistance_cluster or trading_range.resistance_cluster.touch_count < 2:
-        logger.error(
-            "invalid_resistance_cluster",
-            range_id=str(trading_range.id),
-            message="Resistance cluster missing or insufficient touches",
-        )
-        raise ValueError(
-            "Invalid resistance cluster for ice calculation (minimum 2 touches required)"
-        )
-
-    # Validate bars not empty
-    if not bars:
-        raise ValueError("Bars list cannot be empty")
-
-    # Validate volume_analysis matches bars
-    if len(volume_analysis) != len(bars):
-        logger.error(
-            "bars_volume_mismatch", bars_count=len(bars), volume_count=len(volume_analysis)
-        )
-        raise ValueError(
-            f"Bars and volume_analysis length mismatch ({len(bars)} vs {len(volume_analysis)})"
-        )
 
 
 def _collect_ice_touches(
