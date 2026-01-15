@@ -13,6 +13,7 @@ Author: Story 18.6.2
 
 from decimal import Decimal
 
+from src.models.forex import ForexSession
 from src.models.validation import (
     StageValidationResult,
     ValidationContext,
@@ -89,7 +90,7 @@ class SpringVolumeStrategy(VolumeValidationStrategy):
         """
         if context.asset_class == "FOREX":
             # Asian session uses stricter threshold due to low liquidity
-            if context.forex_session and context.forex_session.value == "ASIAN":
+            if context.forex_session == ForexSession.ASIAN:
                 return config.forex_asian_spring_max_volume
             return config.forex_spring_max_volume
         return config.spring_max_volume

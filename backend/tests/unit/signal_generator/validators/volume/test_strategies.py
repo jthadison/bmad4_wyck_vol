@@ -14,12 +14,12 @@ Author: Story 18.6.2
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from enum import Enum
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 
+from src.models.forex import ForexSession
 from src.models.validation import (
     ValidationContext,
     ValidationStatus,
@@ -37,15 +37,6 @@ from src.signal_generator.validators.volume import (
 # ============================================================================
 # Test Fixtures
 # ============================================================================
-
-
-class ForexSession(str, Enum):
-    """Mock forex session enum."""
-
-    ASIAN = "ASIAN"
-    LONDON = "LONDON"
-    NEW_YORK = "NEW_YORK"
-    OVERLAP = "OVERLAP"
 
 
 class MockPattern:
@@ -191,6 +182,16 @@ class TestSpringVolumeStrategy:
         result = strategy.validate(asian_forex_context, default_config)
         assert result.status == ValidationStatus.FAIL
 
+    def test_validate_boundary_volume_equals_threshold(self, stock_context, default_config):
+        """Test boundary case: volume_ratio == threshold fails (Spring requires < threshold)."""
+        strategy = SpringVolumeStrategy()
+        # Volume ratio exactly at 0.7 threshold - should FAIL (>= comparison)
+        stock_context.volume_analysis = MockVolumeAnalysis(Decimal("0.7"))
+        result = strategy.validate(stock_context, default_config)
+        assert result.status == ValidationStatus.FAIL
+        assert result.metadata["actual_volume_ratio"] == 0.7
+        assert result.metadata["threshold"] == 0.7
+
     def test_get_threshold_uses_config(self, stock_context, default_config):
         """Test get_threshold uses config values."""
         strategy = SpringVolumeStrategy()
@@ -292,6 +293,17 @@ class TestSOSVolumeStrategy:
         result = strategy.validate(asian_forex_context, default_config)
         assert result.status == ValidationStatus.PASS
 
+    def test_validate_boundary_volume_equals_threshold(self, stock_context, default_config):
+        """Test boundary case: volume_ratio == threshold passes (SOS requires >= threshold)."""
+        strategy = SOSVolumeStrategy()
+        stock_context.pattern = MockPattern("SOS")
+        # Volume ratio exactly at 1.5 threshold - should PASS (< comparison, so == passes)
+        stock_context.volume_analysis = MockVolumeAnalysis(Decimal("1.5"))
+        result = strategy.validate(stock_context, default_config)
+        assert result.status == ValidationStatus.PASS
+        assert result.metadata["actual_volume_ratio"] == 1.5
+        assert result.metadata["threshold"] == 1.5
+
     def test_get_threshold_uses_config(self, stock_context, default_config):
         """Test get_threshold uses config values."""
         strategy = SOSVolumeStrategy()
@@ -343,6 +355,17 @@ class TestLPSVolumeStrategy:
         stock_context.volume_analysis = MockVolumeAnalysis(Decimal("1.2"))
         result = strategy.validate(stock_context, default_config)
         assert result.status == ValidationStatus.FAIL
+
+    def test_validate_boundary_volume_equals_threshold(self, stock_context, default_config):
+        """Test boundary case: volume_ratio == threshold fails (LPS requires < threshold)."""
+        strategy = LPSVolumeStrategy()
+        stock_context.pattern = MockPattern("LPS")
+        # Volume ratio exactly at 1.0 threshold - should FAIL (>= comparison)
+        stock_context.volume_analysis = MockVolumeAnalysis(Decimal("1.0"))
+        result = strategy.validate(stock_context, default_config)
+        assert result.status == ValidationStatus.FAIL
+        assert result.metadata["actual_volume_ratio"] == 1.0
+        assert result.metadata["threshold"] == 1.0
 
     def test_absorption_not_enabled_by_default(self, stock_context, default_config):
         """Test absorption feature is not enabled by default."""
@@ -495,6 +518,17 @@ class TestUTADVolumeStrategy:
         forex_context.volume_analysis = MockVolumeAnalysis(Decimal("2.0"))
         result = strategy.validate(forex_context, default_config)
         assert result.status == ValidationStatus.FAIL
+
+    def test_validate_boundary_volume_equals_threshold(self, stock_context, default_config):
+        """Test boundary case: volume_ratio == threshold passes (UTAD requires >= threshold)."""
+        strategy = UTADVolumeStrategy()
+        stock_context.pattern = MockPattern("UTAD")
+        # Volume ratio exactly at 1.2 threshold - should PASS (< comparison, so == passes)
+        stock_context.volume_analysis = MockVolumeAnalysis(Decimal("1.2"))
+        result = strategy.validate(stock_context, default_config)
+        assert result.status == ValidationStatus.PASS
+        assert result.metadata["actual_volume_ratio"] == 1.2
+        assert result.metadata["threshold"] == 1.2
 
     def test_get_threshold_uses_config(self, stock_context, default_config):
         """Test get_threshold uses config values."""
