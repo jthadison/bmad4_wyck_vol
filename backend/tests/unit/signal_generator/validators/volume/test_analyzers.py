@@ -8,15 +8,18 @@ Tests the analyzers extracted from volume_validator.py:
 - ForexThresholdAdjuster
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+import yaml
 
 from src.models.effort_result import EffortResult
 from src.models.forex import ForexSession
+from src.models.market_context import AssetClass, MarketContext, MarketRegime, NewsEvent
 from src.models.ohlcv import OHLCVBar
 from src.models.validation import (
     ValidationContext,
@@ -191,6 +194,94 @@ class TestNewsEventDetector:
         assert metadata["news_event"] == "FOMC"
         assert "pattern_bar_timestamp" in metadata
         assert metadata["symbol"] == "EURUSD"
+
+    @pytest.mark.asyncio
+    async def test_check_at_exactly_one_hour_boundary_not_spike(
+        self, forex_context: ValidationContext
+    ) -> None:
+        """Test that event at exactly 1.0 hour boundary is NOT detected as spike.
+
+        The detector uses strict less-than comparison (time_diff < 1.0), so exactly
+        1.0 hours should NOT trigger a spike detection.
+        """
+        detector = NewsEventDetector()
+
+        # Create pattern timestamp
+        pattern_time = datetime(2024, 1, 15, 14, 30, tzinfo=UTC)
+        forex_context.pattern.pattern_bar_timestamp = pattern_time
+
+        # Create news event exactly 1.0 hour before pattern
+        event_time = pattern_time - timedelta(hours=1.0)
+        news_event = NewsEvent(
+            symbol="EURUSD",
+            event_date=event_time,
+            event_type="NFP",
+            impact_level="HIGH",
+            description="Non-Farm Payrolls",
+        )
+
+        # Create market context with the news event
+        market_context = MarketContext(
+            asset_class=AssetClass.FOREX,
+            symbol="EURUSD",
+            current_volatility=Decimal("0.5"),
+            volatility_percentile=50,
+            volume_percentile=50,
+            market_regime=MarketRegime.SIDEWAYS,
+            time_of_day=time(14, 30),
+            market_session="REGULAR",
+            forex_session=ForexSession.LONDON,
+            news_event=news_event,
+        )
+        forex_context.market_context = market_context
+
+        is_spike, event = await detector.check(forex_context)
+
+        # At exactly 1.0 hour, should NOT be detected as spike (strict < comparison)
+        assert is_spike is False
+        assert event is None
+
+    @pytest.mark.asyncio
+    async def test_check_just_under_one_hour_is_spike(
+        self, forex_context: ValidationContext
+    ) -> None:
+        """Test that event just under 1.0 hour IS detected as spike."""
+        detector = NewsEventDetector()
+
+        # Create pattern timestamp
+        pattern_time = datetime(2024, 1, 15, 14, 30, tzinfo=UTC)
+        forex_context.pattern.pattern_bar_timestamp = pattern_time
+
+        # Create news event 59 minutes before pattern (just under 1 hour)
+        event_time = pattern_time - timedelta(minutes=59)
+        news_event = NewsEvent(
+            symbol="EURUSD",
+            event_date=event_time,
+            event_type="NFP",
+            impact_level="HIGH",
+            description="Non-Farm Payrolls",
+        )
+
+        # Create market context with the news event
+        market_context = MarketContext(
+            asset_class=AssetClass.FOREX,
+            symbol="EURUSD",
+            current_volatility=Decimal("0.5"),
+            volatility_percentile=50,
+            volume_percentile=50,
+            market_regime=MarketRegime.SIDEWAYS,
+            time_of_day=time(14, 30),
+            market_session="REGULAR",
+            forex_session=ForexSession.LONDON,
+            news_event=news_event,
+        )
+        forex_context.market_context = market_context
+
+        is_spike, event = await detector.check(forex_context)
+
+        # Just under 1.0 hour SHOULD be detected as spike
+        assert is_spike is True
+        assert event == "NFP"
 
 
 # ============================================================================
