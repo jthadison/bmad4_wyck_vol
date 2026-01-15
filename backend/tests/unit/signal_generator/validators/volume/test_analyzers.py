@@ -584,18 +584,25 @@ class TestForexThresholdAdjuster:
 
         assert ForexThresholdAdjuster._threshold_config_cache is None
 
-    @patch("src.signal_generator.validators.volume.forex.threshold_adjuster.Path")
-    def test_load_config_file_not_found(self, mock_path: MagicMock) -> None:
-        """Test config loading when file doesn't exist."""
-        mock_path_instance = MagicMock()
-        mock_path_instance.exists.return_value = False
-        mock_path.return_value.parent.parent.parent.parent.parent.__truediv__.return_value = (
-            mock_path_instance
-        )
+    def test_load_config_file_not_found(self, tmp_path: Path) -> None:
+        """Test config loading when file doesn't exist.
 
-        ForexThresholdAdjuster.clear_cache()
-        config = ForexThresholdAdjuster._load_volume_thresholds_from_config()
+        Uses tmp_path fixture for cleaner testing without complex Path mocks.
+        """
+        # Create a fake module path structure that will resolve to tmp_path
+        fake_module = tmp_path / "a" / "b" / "c" / "d" / "e" / "fake.py"
+        fake_module.parent.mkdir(parents=True, exist_ok=True)
 
+        # Patch Path(__file__) to return our fake path
+        with patch(
+            "src.signal_generator.validators.volume.forex.threshold_adjuster.Path"
+        ) as mock_path:
+            mock_path.return_value = fake_module
+
+            ForexThresholdAdjuster.clear_cache()
+            config = ForexThresholdAdjuster._load_volume_thresholds_from_config()
+
+        # Config should be empty dict when file doesn't exist
         assert config == {}
 
 

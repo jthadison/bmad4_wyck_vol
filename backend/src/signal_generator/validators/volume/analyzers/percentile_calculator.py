@@ -11,6 +11,7 @@ Extracted from volume_validator.py per CF-006.
 Author: Story 18.6.3
 """
 
+import bisect
 from decimal import Decimal
 
 import structlog
@@ -65,8 +66,9 @@ class PercentileCalculator:
         # Sort volumes in ascending order
         sorted_volumes = sorted(historical_volumes)
 
-        # Find position of current volume
-        position = sum(1 for v in sorted_volumes if v <= current_volume)
+        # Find position of current volume using bisect for O(log n) lookup
+        # bisect_right returns insertion point after any equal values
+        position = bisect.bisect_right(sorted_volumes, current_volume)
 
         # Calculate percentile (0-100)
         percentile = int((position / len(sorted_volumes)) * 100)
