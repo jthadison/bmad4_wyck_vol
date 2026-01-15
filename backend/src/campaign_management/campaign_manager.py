@@ -57,7 +57,7 @@ import asyncio
 import threading
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -73,9 +73,6 @@ from src.models.allocation import AllocationPlan
 from src.models.campaign_lifecycle import Campaign, CampaignStatus
 from src.models.signal import TradeSignal
 from src.repositories.campaign_repository import CampaignRepository
-
-if TYPE_CHECKING:
-    pass  # Future type imports if needed
 
 logger = structlog.get_logger(__name__)
 
@@ -138,7 +135,7 @@ class CampaignManager:
     """
     Unified manager for all campaign operations (AC #1).
 
-    Thread-safe singleton behavior achieved via @lru_cache factory function.
+    Thread-safe singleton behavior achieved via double-checked locking factory function.
     Do NOT instantiate directly - use get_campaign_manager() factory.
     Thread-safe operations using asyncio.Lock for state mutations.
 
@@ -156,7 +153,7 @@ class CampaignManager:
     Note
     ----
     Story 18.2: Removed __new__ singleton pattern and hasattr check.
-    Thread-safety now provided by @lru_cache on factory function.
+    Thread-safety now provided by double-checked locking in factory function.
     """
 
     def __init__(
@@ -550,3 +547,26 @@ def reset_campaign_manager_singleton() -> None:
     global _campaign_manager
     with _singleton_lock:
         _campaign_manager = None
+
+
+def is_singleton_initialized() -> bool:
+    """
+    Check if the singleton CampaignManager is initialized.
+
+    Useful for health checks and debugging. Thread-safe read.
+
+    Returns
+    -------
+    bool
+        True if singleton exists, False otherwise
+
+    Example
+    -------
+    >>> if is_singleton_initialized():
+    ...     print("CampaignManager ready")
+    """
+    return _campaign_manager is not None
+
+
+# Type alias for singleton usage clarity
+CampaignManagerSingleton = CampaignManager

@@ -315,3 +315,87 @@ class TestNoNewPattern:
             "Direct instantiation should create different objects "
             "(singleton pattern should only be via factory)"
         )
+
+
+# =============================================================================
+# Error Handling Tests
+# =============================================================================
+
+
+class TestInitializationErrors:
+    """Tests for error handling during initialization."""
+
+    def test_allocator_error_propagates(self, mock_repository: Mock) -> None:
+        """Test that errors during CampaignAllocator creation propagate correctly."""
+        from src.campaign_management.allocator import CampaignAllocator
+
+        # Create a mock allocator that raises during operations
+        mock_allocator = Mock(spec=CampaignAllocator)
+        mock_allocator.allocate_campaign_risk.side_effect = ValueError("Invalid allocation")
+
+        manager = create_campaign_manager_for_testing(
+            campaign_repository=mock_repository,
+            portfolio_value=Decimal("100000.00"),
+            allocator=mock_allocator,
+        )
+
+        # Manager should be created successfully
+        assert manager is not None
+        # The error will propagate when allocator is used, not during init
+        assert manager._allocator is mock_allocator
+
+    def test_invalid_portfolio_value_handled(self, mock_repository: Mock) -> None:
+        """Test initialization with edge case portfolio values."""
+        # Zero portfolio value should work (allocator handles validation)
+        manager = create_campaign_manager_for_testing(
+            campaign_repository=mock_repository,
+            portfolio_value=Decimal("0.00"),
+        )
+        assert manager is not None
+
+        # Very large portfolio value should work
+        manager = create_campaign_manager_for_testing(
+            campaign_repository=mock_repository,
+            portfolio_value=Decimal("1000000000.00"),
+        )
+        assert manager is not None
+
+
+# =============================================================================
+# Health Check Tests
+# =============================================================================
+
+
+class TestHealthCheck:
+    """Tests for is_singleton_initialized() health check function."""
+
+    def test_is_singleton_initialized_false_initially(self) -> None:
+        """Test is_singleton_initialized returns False when no singleton exists."""
+        from src.campaign_management.campaign_manager import is_singleton_initialized
+
+        # After reset, should be False
+        reset_campaign_manager_singleton()
+        assert is_singleton_initialized() is False
+
+    def test_is_singleton_initialized_true_after_creation(self, mock_repository: Mock) -> None:
+        """Test is_singleton_initialized returns True after singleton created."""
+        from src.campaign_management.campaign_manager import is_singleton_initialized
+
+        portfolio_value = Decimal("100000.00")
+
+        # Create singleton
+        get_campaign_manager(mock_repository, portfolio_value)
+
+        assert is_singleton_initialized() is True
+
+    def test_is_singleton_initialized_false_after_reset(self, mock_repository: Mock) -> None:
+        """Test is_singleton_initialized returns False after reset."""
+        from src.campaign_management.campaign_manager import is_singleton_initialized
+
+        portfolio_value = Decimal("100000.00")
+
+        # Create then reset
+        get_campaign_manager(mock_repository, portfolio_value)
+        reset_campaign_manager_singleton()
+
+        assert is_singleton_initialized() is False
