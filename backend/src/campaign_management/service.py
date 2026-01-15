@@ -43,6 +43,7 @@ from uuid import UUID
 import structlog
 
 from src.campaign_management.allocator import CampaignAllocator
+from src.campaign_management.utils import create_position_from_signal, generate_campaign_id
 from src.models.allocation import AllocationPlan
 from src.models.campaign_lifecycle import (
     VALID_CAMPAIGN_TRANSITIONS,
@@ -602,6 +603,8 @@ class CampaignService:
         """
         Generate human-readable campaign ID (AC: 3).
 
+        Delegates to shared utility function from campaign_management.utils.
+
         Format: {symbol}-{range_start_date}
         Example: "AAPL-2024-10-15"
 
@@ -610,17 +613,15 @@ class CampaignService:
         symbol : str
             Ticker symbol
         trading_range : TradingRange
-            Trading range with start_time
+            Trading range with created_at timestamp
 
         Returns:
         --------
         str
             Campaign ID
         """
-        # Extract start date from trading range
-        # TradingRange doesn't have start_time, using created_at as proxy
-        start_date = trading_range.created_at.strftime("%Y-%m-%d")
-        return f"{symbol}-{start_date}"
+        # Use shared utility with trading_range.created_at
+        return generate_campaign_id(symbol, trading_range.created_at)
 
     def _create_position_from_signal(
         self, signal: TradeSignal, allocation_plan: AllocationPlan
@@ -628,8 +629,7 @@ class CampaignService:
         """
         Create CampaignPosition from TradeSignal with AllocationPlan (Story 9.2).
 
-        Maps signal fields to position fields using BMAD allocation from AllocationPlan.
-        Uses actual_risk_pct from allocation plan for precise allocation tracking.
+        Delegates to shared utility function from campaign_management.utils.
 
         Parameters:
         -----------
@@ -643,20 +643,5 @@ class CampaignService:
         CampaignPosition
             Position ready to add to campaign with correct allocation
         """
-        # Use actual_risk_pct from allocation plan (Story 9.2)
-        allocation_percent = allocation_plan.actual_risk_pct
-
-        return CampaignPosition(
-            signal_id=signal.id,
-            pattern_type=signal.pattern_type,  # type: ignore
-            entry_date=signal.timestamp,
-            entry_price=signal.entry_price,
-            shares=signal.position_size,
-            stop_loss=signal.stop_loss,
-            target_price=signal.target_levels.primary_target,
-            current_price=signal.entry_price,  # Initially same as entry
-            current_pnl=Decimal("0.00"),  # Not yet filled
-            status="OPEN",
-            allocation_percent=allocation_percent,
-            risk_amount=signal.risk_amount,
-        )
+        # Use shared utility
+        return create_position_from_signal(signal, allocation_plan)

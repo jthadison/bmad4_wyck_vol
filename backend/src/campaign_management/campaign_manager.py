@@ -48,6 +48,7 @@ from src.campaign_management.events import (
     CampaignCreatedEvent,
     get_event_bus,
 )
+from src.campaign_management.utils import generate_campaign_id
 from src.models.allocation import AllocationPlan
 from src.models.campaign_lifecycle import Campaign, CampaignStatus
 from src.models.signal import TradeSignal
@@ -213,8 +214,8 @@ class CampaignManager:
             if existing:
                 raise ValueError(f"Campaign already exists for trading range {trading_range_id}")
 
-            # Generate campaign_id
-            campaign_id_str = f"{signal.symbol}-{range_start_date}"
+            # Generate campaign_id using shared utility
+            campaign_id_str = generate_campaign_id(signal.symbol, range_start_date)
 
             # Determine initial phase based on pattern type
             initial_phase = "C" if signal.pattern_type in ["SPRING", "LPS"] else "D"
