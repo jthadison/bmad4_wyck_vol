@@ -6,7 +6,7 @@ Provides forex trading session detection and session-aware validation.
 Story 18.10.5: Services Extraction and Orchestrator Facade (AC1)
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import NamedTuple
 
 import structlog
@@ -50,7 +50,7 @@ class ForexSessionService:
 
     def get_current_session(self) -> ForexSession:
         """Get current forex trading session based on UTC time."""
-        return get_forex_session(datetime.utcnow())
+        return get_forex_session(datetime.now(UTC))
 
     def get_session_info(self, timestamp: datetime) -> SessionInfo:
         """

@@ -164,21 +164,31 @@ class PipelineCoordinator:
         Returns:
             CoordinatorResult with output from executed stages
         """
-        # Find stage indices
+        stage_names = [s.name for s in self._stages]
+
+        # Find stage indices with validation
         start_idx = 0
         end_idx = len(self._stages)
 
         if start_stage:
-            for i, stage in enumerate(self._stages):
-                if stage.name == start_stage:
-                    start_idx = i
-                    break
+            if start_stage not in stage_names:
+                logger.warning(
+                    "invalid_start_stage",
+                    start_stage=start_stage,
+                    available_stages=stage_names,
+                )
+            else:
+                start_idx = stage_names.index(start_stage)
 
         if end_stage:
-            for i, stage in enumerate(self._stages):
-                if stage.name == end_stage:
-                    end_idx = i + 1
-                    break
+            if end_stage not in stage_names:
+                logger.warning(
+                    "invalid_end_stage",
+                    end_stage=end_stage,
+                    available_stages=stage_names,
+                )
+            else:
+                end_idx = stage_names.index(end_stage) + 1
 
         # Create subset coordinator
         subset_stages = self._stages[start_idx:end_idx]

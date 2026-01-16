@@ -18,7 +18,7 @@ from src.orchestrator.cache import OrchestratorCache, get_orchestrator_cache
 from src.orchestrator.config import OrchestratorConfig
 from src.orchestrator.container import OrchestratorContainer, get_orchestrator_container
 from src.orchestrator.event_bus import EventBus, get_event_bus
-from src.orchestrator.master_orchestrator import CircuitBreaker, TradeSignal
+from src.orchestrator.master_orchestrator import TradeSignal
 from src.orchestrator.pipeline import PipelineContextBuilder, PipelineCoordinator
 from src.orchestrator.services import PortfolioMonitor
 
@@ -51,12 +51,6 @@ class MasterOrchestratorFacade:
         self._event_bus = event_bus or get_event_bus()
         self._cache = cache or get_orchestrator_cache(self._config)
         self._campaign_manager = campaign_manager
-
-        # Circuit breaker for detector failures
-        self._circuit_breaker = CircuitBreaker(
-            threshold=self._config.circuit_breaker_threshold,
-            reset_seconds=self._config.circuit_breaker_reset_seconds,
-        )
 
         # Pipeline coordinator
         self._coordinator = self._build_coordinator()

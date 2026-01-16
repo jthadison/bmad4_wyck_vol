@@ -54,12 +54,21 @@ class PortfolioMonitor:
         >>> risk_manager.validate(signal, context)
     """
 
+    # Default configuration values
+    DEFAULT_EQUITY = Decimal("100000.00")
+    DEFAULT_MAX_SECTOR_CORRELATION = Decimal("6.0")
+    DEFAULT_MAX_ASSET_CLASS_CORRELATION = Decimal("15.0")
+    DEFAULT_ENFORCEMENT_MODE = "strict"
+
     def __init__(
         self,
         position_repo: PositionRepository | None = None,
         campaign_repo: CampaignRepository | None = None,
         account_service: AccountService | None = None,
-        default_equity: Decimal = Decimal("100000.00"),
+        default_equity: Decimal = DEFAULT_EQUITY,
+        max_sector_correlation: Decimal = DEFAULT_MAX_SECTOR_CORRELATION,
+        max_asset_class_correlation: Decimal = DEFAULT_MAX_ASSET_CLASS_CORRELATION,
+        enforcement_mode: str = DEFAULT_ENFORCEMENT_MODE,
     ) -> None:
         """
         Initialize portfolio monitor with optional dependencies.
@@ -69,11 +78,17 @@ class PortfolioMonitor:
             campaign_repo: Repository for campaign data
             account_service: Service for account data
             default_equity: Default equity when account service unavailable
+            max_sector_correlation: Max allowed sector correlation (default 6.0%)
+            max_asset_class_correlation: Max allowed asset class correlation (default 15.0%)
+            enforcement_mode: Correlation enforcement mode (default "strict")
         """
         self._position_repo = position_repo
         self._campaign_repo = campaign_repo
         self._account_service = account_service
         self._default_equity = default_equity
+        self._max_sector_correlation = max_sector_correlation
+        self._max_asset_class_correlation = max_asset_class_correlation
+        self._enforcement_mode = enforcement_mode
 
     async def build_context(self) -> PortfolioContext:
         """
@@ -100,9 +115,9 @@ class PortfolioMonitor:
             active_campaigns=campaigns,
             sector_mappings={},
             correlation_config=CorrelationConfig(
-                max_sector_correlation=Decimal("6.0"),
-                max_asset_class_correlation=Decimal("15.0"),
-                enforcement_mode="strict",
+                max_sector_correlation=self._max_sector_correlation,
+                max_asset_class_correlation=self._max_asset_class_correlation,
+                enforcement_mode=self._enforcement_mode,
                 sector_mappings={},
             ),
             r_multiple_config={},

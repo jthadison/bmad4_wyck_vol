@@ -66,15 +66,23 @@ class EmergencyExitService:
         ...     logger.info("Emergency exit executed")
     """
 
-    def __init__(self, exit_manager: ExitManager | None = None) -> None:
+    DEFAULT_MAX_HISTORY_SIZE = 1000
+
+    def __init__(
+        self,
+        exit_manager: ExitManager | None = None,
+        max_history_size: int = DEFAULT_MAX_HISTORY_SIZE,
+    ) -> None:
         """
         Initialize emergency exit service.
 
         Args:
             exit_manager: Manager for executing exits (optional)
+            max_history_size: Maximum number of exit results to retain in history
         """
         self._exit_manager = exit_manager
         self._exit_history: list[EmergencyExitResult] = []
+        self._max_history_size = max_history_size
 
     async def trigger_exit(self, request: EmergencyExitRequest) -> EmergencyExitResult:
         """
@@ -130,6 +138,10 @@ class EmergencyExitService:
         )
 
         self._exit_history.append(result)
+
+        # Enforce max history size
+        if len(self._exit_history) > self._max_history_size:
+            self._exit_history = self._exit_history[-self._max_history_size :]
 
         logger.info(
             "emergency_exit_complete",
