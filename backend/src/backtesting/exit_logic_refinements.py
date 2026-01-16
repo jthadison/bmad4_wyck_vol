@@ -53,7 +53,6 @@ be added to the facade. Consider migrating to the facade for future-proofing.
 Author: Story 13.6.1, 13.6.3, 13.6.5 & 18.11.3 Implementation
 """
 
-import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -67,7 +66,6 @@ from src.backtesting.exit import (
     ConsolidationConfig,
     ConsolidationDetector,
     ConsolidationZone,
-    ExitContext,
     ExitSignal,
     ExitStrategyRegistry,
 )
@@ -2040,6 +2038,7 @@ class ExitLogicRefinements:
             Campaign repository for state persistence
         """
         self._state_manager = CampaignStateManager(repository)
+        # Store class reference - ExitStrategyRegistry uses class methods (singleton pattern)
         self._strategy_registry = ExitStrategyRegistry
         self._consolidation_detector = ConsolidationDetector()
 
