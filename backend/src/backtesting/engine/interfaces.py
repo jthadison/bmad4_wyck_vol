@@ -12,7 +12,7 @@ Protocols:
 
 Dataclasses:
 ------------
-- BacktestConfig: Engine-level configuration for backtesting
+- EngineConfig: Engine-level configuration for backtesting
 
 Reference: CF-002 from Critical Foundation Refactoring document.
 Author: Story 18.9.1
@@ -130,13 +130,13 @@ class CostModel(Protocol):
 
 
 @dataclass
-class BacktestConfig:
+class EngineConfig:
     """
     Engine-level configuration for backtesting.
 
     Simplified configuration dataclass for the consolidated backtest engine.
     Provides essential parameters needed for running a backtest without
-    the complexity of the full BacktestConfig model.
+    the complexity of the full BacktestConfig model in src.models.backtest.
 
     Attributes:
     -----------
@@ -153,11 +153,11 @@ class BacktestConfig:
         Maximum risk per trade as fraction of capital (default: 0.02 = 2%)
 
     max_open_positions : int
-        Maximum number of concurrent open positions (default: 5)
+        Maximum number of concurrent open positions (default: 5, max: 100)
 
     Example:
     --------
-    >>> config = BacktestConfig(
+    >>> config = EngineConfig(
     ...     initial_capital=Decimal("50000"),
     ...     max_position_size=Decimal("0.05"),
     ...     enable_cost_model=True
@@ -178,5 +178,5 @@ class BacktestConfig:
             raise ValueError(f"max_position_size must be in (0, 1], got {self.max_position_size}")
         if not Decimal("0") < self.risk_per_trade <= Decimal("1"):
             raise ValueError(f"risk_per_trade must be in (0, 1], got {self.risk_per_trade}")
-        if self.max_open_positions < 1:
-            raise ValueError(f"max_open_positions must be >= 1, got {self.max_open_positions}")
+        if not 1 <= self.max_open_positions <= 100:
+            raise ValueError(f"max_open_positions must be in [1, 100], got {self.max_open_positions}")

@@ -1,7 +1,7 @@
 """
 Unit Tests for Engine Package Interfaces (Story 18.9.1)
 
-Tests for protocol definitions and BacktestConfig dataclass.
+Tests for protocol definitions and EngineConfig dataclass.
 Validates that protocols can be implemented and config validation works.
 
 Author: Story 18.9.1
@@ -12,17 +12,17 @@ from typing import Optional
 
 import pytest
 
-from src.backtesting.engine import BacktestConfig, CostModel, SignalDetector
+from src.backtesting.engine import CostModel, EngineConfig, SignalDetector
 from src.models.backtest import BacktestOrder
 from src.models.ohlcv import OHLCVBar
 
 
-class TestBacktestConfig:
-    """Tests for BacktestConfig dataclass."""
+class TestEngineConfig:
+    """Tests for EngineConfig dataclass."""
 
     def test_default_values(self):
-        """AC4: BacktestConfig has sensible defaults."""
-        config = BacktestConfig()
+        """AC4: EngineConfig has sensible defaults."""
+        config = EngineConfig()
 
         assert config.initial_capital == Decimal("100000")
         assert config.max_position_size == Decimal("0.02")
@@ -31,8 +31,8 @@ class TestBacktestConfig:
         assert config.max_open_positions == 5
 
     def test_custom_values(self):
-        """AC4: BacktestConfig accepts custom values."""
-        config = BacktestConfig(
+        """AC4: EngineConfig accepts custom values."""
+        config = EngineConfig(
             initial_capital=Decimal("50000"),
             max_position_size=Decimal("0.05"),
             enable_cost_model=False,
@@ -47,40 +47,52 @@ class TestBacktestConfig:
         assert config.max_open_positions == 3
 
     def test_initial_capital_must_be_positive(self):
-        """AC4: BacktestConfig validates initial_capital > 0."""
+        """AC4: EngineConfig validates initial_capital > 0."""
         with pytest.raises(ValueError, match="initial_capital must be positive"):
-            BacktestConfig(initial_capital=Decimal("0"))
+            EngineConfig(initial_capital=Decimal("0"))
 
         with pytest.raises(ValueError, match="initial_capital must be positive"):
-            BacktestConfig(initial_capital=Decimal("-1000"))
+            EngineConfig(initial_capital=Decimal("-1000"))
 
     def test_max_position_size_must_be_in_valid_range(self):
-        """AC4: BacktestConfig validates 0 < max_position_size <= 1."""
+        """AC4: EngineConfig validates 0 < max_position_size <= 1."""
         with pytest.raises(ValueError, match="max_position_size must be in"):
-            BacktestConfig(max_position_size=Decimal("0"))
+            EngineConfig(max_position_size=Decimal("0"))
 
         with pytest.raises(ValueError, match="max_position_size must be in"):
-            BacktestConfig(max_position_size=Decimal("1.5"))
+            EngineConfig(max_position_size=Decimal("1.5"))
 
         # Edge case: exactly 1.0 should be valid
-        config = BacktestConfig(max_position_size=Decimal("1.0"))
+        config = EngineConfig(max_position_size=Decimal("1.0"))
         assert config.max_position_size == Decimal("1.0")
 
     def test_risk_per_trade_must_be_in_valid_range(self):
-        """AC4: BacktestConfig validates 0 < risk_per_trade <= 1."""
+        """AC4: EngineConfig validates 0 < risk_per_trade <= 1."""
         with pytest.raises(ValueError, match="risk_per_trade must be in"):
-            BacktestConfig(risk_per_trade=Decimal("0"))
+            EngineConfig(risk_per_trade=Decimal("0"))
 
         with pytest.raises(ValueError, match="risk_per_trade must be in"):
-            BacktestConfig(risk_per_trade=Decimal("1.1"))
+            EngineConfig(risk_per_trade=Decimal("1.1"))
 
-    def test_max_open_positions_must_be_positive(self):
-        """AC4: BacktestConfig validates max_open_positions >= 1."""
-        with pytest.raises(ValueError, match="max_open_positions must be >= 1"):
-            BacktestConfig(max_open_positions=0)
+    def test_max_open_positions_must_be_in_valid_range(self):
+        """AC4: EngineConfig validates 1 <= max_open_positions <= 100."""
+        # Test lower bound
+        with pytest.raises(ValueError, match="max_open_positions must be in"):
+            EngineConfig(max_open_positions=0)
 
-        with pytest.raises(ValueError, match="max_open_positions must be >= 1"):
-            BacktestConfig(max_open_positions=-1)
+        with pytest.raises(ValueError, match="max_open_positions must be in"):
+            EngineConfig(max_open_positions=-1)
+
+        # Test upper bound
+        with pytest.raises(ValueError, match="max_open_positions must be in"):
+            EngineConfig(max_open_positions=101)
+
+        # Edge cases: exactly 1 and 100 should be valid
+        config_min = EngineConfig(max_open_positions=1)
+        assert config_min.max_open_positions == 1
+
+        config_max = EngineConfig(max_open_positions=100)
+        assert config_max.max_open_positions == 100
 
 
 class TestSignalDetectorProtocol:
@@ -176,14 +188,14 @@ class TestPublicExports:
     def test_all_exports_available(self):
         """AC5: Package __init__.py exports all public interfaces."""
         from src.backtesting.engine import (
-            BacktestConfig,
+            EngineConfig,
             BacktestEngine,
             CostModel,
             SignalDetector,
         )
 
         # All exports should be importable
-        assert BacktestConfig is not None
+        assert EngineConfig is not None
         assert SignalDetector is not None
         assert CostModel is not None
         assert BacktestEngine is not None
@@ -193,7 +205,7 @@ class TestPublicExports:
         import src.backtesting.engine as engine_module
 
         expected_exports = {
-            "BacktestConfig",
+            "EngineConfig",
             "SignalDetector",
             "CostModel",
             "BacktestEngine",

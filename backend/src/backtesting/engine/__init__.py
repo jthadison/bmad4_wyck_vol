@@ -8,15 +8,15 @@ Public Exports:
 ---------------
 - SignalDetector: Protocol for signal detection strategy
 - CostModel: Protocol for transaction cost calculation
-- BacktestConfig: Engine-level configuration dataclass
+- EngineConfig: Engine-level configuration dataclass
 - BacktestEngine: Preview engine (backward compatibility)
 
 Example Usage:
 --------------
->>> from src.backtesting.engine import SignalDetector, CostModel, BacktestConfig
+>>> from src.backtesting.engine import SignalDetector, CostModel, EngineConfig
 >>>
 >>> # Create a configuration
->>> config = BacktestConfig(
+>>> config = EngineConfig(
 ...     initial_capital=Decimal("100000"),
 ...     enable_cost_model=True
 ... )
@@ -32,14 +32,14 @@ Author: Story 18.9.1
 
 from src.backtesting.engine.backtest_engine import BacktestEngine
 from src.backtesting.engine.interfaces import (
-    BacktestConfig,
     CostModel,
+    EngineConfig,
     SignalDetector,
 )
 
 __all__ = [
     "SignalDetector",
     "CostModel",
-    "BacktestConfig",
+    "EngineConfig",
     "BacktestEngine",
 ]
