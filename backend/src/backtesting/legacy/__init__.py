@@ -32,18 +32,12 @@ Example Migration:
 >>> result = engine.run(bars)
 
 Author: Story 18.9.4
+
+Note: Deprecation warnings are emitted by the stub modules
+(src.backtesting.backtest_engine, src.backtesting.engine_enhanced)
+that redirect here. Direct imports from this module do not emit
+warnings as they indicate intentional use of legacy code.
 """
-
-import warnings
-
-# Emit deprecation warning on module import
-warnings.warn(
-    "The src.backtesting.legacy module is deprecated. "
-    "Use src.backtesting.engine.UnifiedBacktestEngine instead. "
-    "See migration guide in module docstring.",
-    DeprecationWarning,
-    stacklevel=2,
-)
 
 from src.backtesting.legacy.backtest_engine import BacktestEngine
 from src.backtesting.legacy.engine_enhanced import EnhancedBacktestEngine

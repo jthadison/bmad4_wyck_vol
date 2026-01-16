@@ -213,6 +213,31 @@ class TestRealisticCostModel:
         expected = Decimal("5.00") * Decimal("0.001")
         assert slippage == expected
 
+    def test_slippage_zero_spread_bar(self, cost_model):
+        """Slippage is zero when bar has no spread (high == low, doji bar)."""
+        zero_spread_bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+            open=Decimal("150.00"),
+            high=Decimal("150.00"),  # high == low
+            low=Decimal("150.00"),
+            close=Decimal("150.00"),
+            volume=1000000,
+            spread=Decimal("0.00"),
+        )
+        buy_order = BacktestOrder(
+            order_id=uuid4(),
+            symbol="AAPL",
+            order_type="MARKET",
+            side="BUY",
+            quantity=100,
+            status="PENDING",
+            created_bar_timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+        )
+        slippage = cost_model.calculate_slippage(buy_order, zero_spread_bar)
+        assert slippage == Decimal("0")
+
     def test_invalid_negative_commission(self):
         """Negative commission per share raises ValueError."""
         with pytest.raises(ValueError, match="Commission per share cannot be negative"):
