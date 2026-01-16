@@ -188,9 +188,9 @@ class TestPublicExports:
     def test_all_exports_available(self):
         """AC5: Package __init__.py exports all public interfaces."""
         from src.backtesting.engine import (
-            EngineConfig,
             BacktestEngine,
             CostModel,
+            EngineConfig,
             SignalDetector,
         )
 
@@ -209,6 +209,7 @@ class TestPublicExports:
             "SignalDetector",
             "CostModel",
             "BacktestEngine",
+            "UnifiedBacktestEngine",  # Story 18.9.2
         }
         actual_exports = set(engine_module.__all__)
 

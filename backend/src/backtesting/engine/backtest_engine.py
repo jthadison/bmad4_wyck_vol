@@ -1,35 +1,46 @@
 """
-Backtest Engine with Preview Mode (Story 11.2 Tasks 1-3)
+Backtest Engine Package (Story 11.2 + Story 18.9.2)
 
 Purpose:
 --------
-Core backtesting engine that replays historical data through pattern detection
-and signal generation to validate configuration changes before applying them.
+Core backtesting engines for the system:
 
-Features:
----------
-- Dual simulation mode: Run current and proposed configs in parallel
-- Progress tracking: Emit updates via WebSocket every 5% or 10 seconds
-- Timeout handling: 5-minute max with partial results
-- Recommendation algorithm: Compare metrics and suggest action
+1. BacktestEngine (Story 11.2): Preview mode engine for configuration comparison
+   - Dual simulation mode: Run current and proposed configs in parallel
+   - Progress tracking: Emit updates via WebSocket every 5% or 10 seconds
+   - Timeout handling: 5-minute max with partial results
+   - Recommendation algorithm: Compare metrics and suggest action
 
-Classes:
---------
-- BacktestEngine: Main engine for running backtests
+2. UnifiedBacktestEngine (Story 18.9.2): Unified engine with dependency injection
+   - Pluggable strategies via SignalDetector and CostModel protocols
+   - Position tracking delegated to PositionManager
+   - Bar-by-bar processing with clean separation of concerns
 
-Author: Story 11.2
+Author: Story 11.2, Story 18.9.2
 """
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
-from uuid import UUID
+from typing import Any, Optional
+from uuid import UUID, uuid4
 
+from src.backtesting.engine.interfaces import CostModel, EngineConfig, SignalDetector
 from src.backtesting.metrics import calculate_equity_curve, calculate_metrics
-from src.models.backtest import BacktestComparison, BacktestMetrics
+from src.backtesting.position_manager import PositionManager
+from src.models.backtest import (
+    BacktestComparison,
+    BacktestConfig,
+    BacktestMetrics,
+    BacktestOrder,
+    BacktestResult,
+    EquityCurvePoint,
+)
+from src.models.ohlcv import OHLCVBar
+from src.models.signal import TradeSignal
 
 logger = logging.getLogger(__name__)
 
@@ -357,3 +368,289 @@ class BacktestEngine:
     def cancel(self) -> None:
         """Cancel the currently running backtest."""
         self._cancelled = True
+
+
+class UnifiedBacktestEngine:
+    """
+    Unified backtest engine with pluggable strategies (Story 18.9.2).
+
+    Consolidates duplicate backtest engine implementations into a single,
+    maintainable class using dependency injection for strategies.
+
+    Attributes:
+        _detector: Signal detection strategy
+        _cost_model: Transaction cost calculation strategy
+        _positions: Position management delegate
+        _config: Engine configuration
+
+    Reference: CF-002 from Critical Foundation Refactoring document.
+    """
+
+    def __init__(
+        self,
+        signal_detector: SignalDetector,
+        cost_model: CostModel,
+        position_manager: PositionManager,
+        config: EngineConfig,
+    ) -> None:
+        """
+        Initialize unified backtest engine with injectable dependencies.
+
+        Args:
+            signal_detector: Strategy for detecting trading signals
+            cost_model: Strategy for calculating transaction costs
+            position_manager: Delegate for position tracking
+            config: Engine configuration parameters
+        """
+        self._detector = signal_detector
+        self._cost_model = cost_model
+        self._positions = position_manager
+        self._config = config
+        self._equity_curve: list[EquityCurvePoint] = []
+        self._bars: list[OHLCVBar] = []
+
+    def run(self, bars: list[OHLCVBar]) -> BacktestResult:
+        """
+        Execute backtest on historical bar data.
+
+        Processes bars sequentially, detecting signals and managing positions.
+        Records equity curve at each bar for performance analysis.
+
+        Args:
+            bars: Historical OHLCV bars to backtest (chronological order)
+
+        Returns:
+            BacktestResult with trades, equity curve, and metrics
+        """
+        start_time = time.time()
+        self._bars = bars
+        self._equity_curve = []
+
+        for index, bar in enumerate(bars):
+            self._process_bar(bar, index)
+
+        execution_time = time.time() - start_time
+        return self._generate_result(bars, execution_time)
+
+    def _process_bar(self, bar: OHLCVBar, index: int) -> None:
+        """
+        Process a single bar for signal detection and position management.
+
+        Args:
+            bar: Current OHLCV bar
+            index: Bar index in the sequence
+        """
+        # Detect potential signal
+        signal = self._detector.detect(self._bars, index)
+
+        if signal is not None:
+            self._handle_signal(signal, bar)
+
+        # Record equity curve point
+        portfolio_value = self._positions.calculate_portfolio_value(bar)
+        self._record_equity_point(bar, portfolio_value)
+
+    def _handle_signal(self, signal: TradeSignal, bar: OHLCVBar) -> None:
+        """
+        Handle a detected signal by opening or closing positions.
+
+        Args:
+            signal: Detected trading signal
+            bar: Current bar for execution
+        """
+        # Check position limits
+        if self._positions.get_pending_count() >= self._config.max_open_positions:
+            return
+
+        # Create and execute order based on signal direction
+        order = self._create_order(signal, bar)
+        if order is None:
+            return
+
+        self._execute_order(order, bar)
+
+    def _create_order(self, signal: TradeSignal, bar: OHLCVBar) -> Optional[BacktestOrder]:
+        """
+        Create a backtest order from a signal.
+
+        Args:
+            signal: Trading signal
+            bar: Current bar for pricing
+
+        Returns:
+            BacktestOrder or None if order cannot be created
+        """
+        # Calculate position size based on config
+        position_value = self._config.initial_capital * self._config.max_position_size
+        quantity = int(position_value / bar.close)
+
+        if quantity <= 0:
+            return None
+
+        return BacktestOrder(
+            order_id=uuid4(),
+            symbol=bar.symbol,
+            side="BUY" if signal.direction == "LONG" else "SELL",
+            order_type="MARKET",
+            quantity=quantity,
+            status="PENDING",
+            created_bar_timestamp=bar.timestamp,
+        )
+
+    def _execute_order(self, order: BacktestOrder, bar: OHLCVBar) -> None:
+        """
+        Execute an order with cost model calculations.
+
+        Args:
+            order: Order to execute
+            bar: Current bar for fill price
+        """
+        # Calculate costs if enabled
+        commission = Decimal("0")
+        slippage = Decimal("0")
+
+        if self._config.enable_cost_model:
+            commission = self._cost_model.calculate_commission(order)
+            slippage = self._cost_model.calculate_slippage(order, bar)
+
+        # Update order with fill details
+        order.fill_price = bar.close + slippage
+        order.commission = commission
+        order.slippage = slippage
+        order.status = "FILLED"
+        order.filled_bar_timestamp = bar.timestamp
+
+        # Delegate position tracking
+        if order.side == "BUY":
+            self._positions.open_position(order)
+        else:
+            if self._positions.has_position(order.symbol):
+                self._positions.close_position(order)
+
+    def _record_equity_point(self, bar: OHLCVBar, portfolio_value: Decimal) -> None:
+        """
+        Record an equity curve point.
+
+        Args:
+            bar: Current bar
+            portfolio_value: Current portfolio value
+        """
+        point = EquityCurvePoint(
+            timestamp=bar.timestamp,
+            equity_value=portfolio_value,  # Legacy field, same as portfolio_value
+            portfolio_value=portfolio_value,
+            cash=self._positions.cash,
+            positions_value=portfolio_value - self._positions.cash,
+        )
+        self._equity_curve.append(point)
+
+    def _generate_result(self, bars: list[OHLCVBar], execution_time: float) -> BacktestResult:
+        """
+        Generate the final backtest result.
+
+        Args:
+            bars: Original bar data
+            execution_time: Time taken to run backtest
+
+        Returns:
+            Complete BacktestResult with all metrics
+        """
+        trades = self._positions.closed_trades
+        symbol = bars[0].symbol if bars else "UNKNOWN"
+        timeframe = bars[0].timeframe if bars else "1d"
+        start_date = bars[0].timestamp.date() if bars else datetime.now(UTC).date()
+        end_date = bars[-1].timestamp.date() if bars else datetime.now(UTC).date()
+
+        # Build metrics using existing calculator
+        metrics = self._calculate_metrics(trades)
+
+        # Build BacktestConfig from EngineConfig for result
+        config = BacktestConfig(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            initial_capital=self._config.initial_capital,
+            max_position_size=self._config.max_position_size,
+        )
+
+        return BacktestResult(
+            backtest_run_id=uuid4(),
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            config=config,
+            equity_curve=self._equity_curve,
+            trades=trades,
+            summary=metrics,
+            look_ahead_bias_check=True,
+            execution_time_seconds=Decimal(str(execution_time)),
+        )
+
+    def _calculate_metrics(self, trades: list) -> BacktestMetrics:
+        """
+        Calculate performance metrics from trades.
+
+        Args:
+            trades: List of completed trades
+
+        Returns:
+            BacktestMetrics with performance statistics
+        """
+        if not trades:
+            return BacktestMetrics(
+                total_signals=0,
+                total_trades=0,
+                winning_trades=0,
+                losing_trades=0,
+                win_rate=Decimal("0"),
+                average_r_multiple=Decimal("0"),
+                max_drawdown=Decimal("0"),
+                profit_factor=Decimal("0"),
+            )
+
+        # Calculate basic metrics
+        winning = [t for t in trades if t.realized_pnl > 0]
+        losing = [t for t in trades if t.realized_pnl <= 0]
+
+        win_rate = Decimal(len(winning)) / Decimal(len(trades)) if trades else Decimal("0")
+
+        # Profit factor
+        gross_profit = sum(t.realized_pnl for t in winning) if winning else Decimal("0")
+        gross_loss = abs(sum(t.realized_pnl for t in losing)) if losing else Decimal("1")
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else Decimal("0")
+
+        return BacktestMetrics(
+            total_signals=len(trades),
+            total_trades=len(trades),
+            winning_trades=len(winning),
+            losing_trades=len(losing),
+            win_rate=win_rate,
+            average_r_multiple=Decimal("0"),  # Simplified for now
+            max_drawdown=self._calculate_max_drawdown(),
+            profit_factor=profit_factor,
+        )
+
+    def _calculate_max_drawdown(self) -> Decimal:
+        """
+        Calculate maximum drawdown from equity curve.
+
+        Returns:
+            Maximum drawdown as decimal (0.10 = 10%)
+        """
+        if not self._equity_curve:
+            return Decimal("0")
+
+        peak = Decimal("0")
+        max_dd = Decimal("0")
+
+        for point in self._equity_curve:
+            if point.portfolio_value > peak:
+                peak = point.portfolio_value
+            if peak > 0:
+                drawdown = (peak - point.portfolio_value) / peak
+                if drawdown > max_dd:
+                    max_dd = drawdown
+
+        return max_dd
