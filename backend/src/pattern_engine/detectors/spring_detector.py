@@ -1,10 +1,22 @@
 """
-Spring Pattern Detector Module
+Spring Pattern Detector Module - FACADE
 
 Purpose:
 --------
 Detects Spring patterns (penetration below Creek with low volume and rapid recovery).
 Springs are high-probability long entry signals in Wyckoff methodology.
+
+FACADE MODULE - Backward Compatibility Layer (Story 18.8.4):
+------------------------------------------------------------
+This module provides backward compatibility for existing code using spring detection.
+New code should import directly from the spring package:
+
+    from src.pattern_engine.detectors.spring import (
+        SpringDetectorCore,
+        SpringConfidenceScorer,
+        SpringRiskAnalyzer,
+        analyze_spring_timing,
+    )
 
 FR Requirements:
 ----------------
@@ -12,55 +24,12 @@ FR Requirements:
 - FR12: NON-NEGOTIABLE volume validation (≥0.7x = immediate rejection)
 - FR15: Phase validation (Springs only valid in Phase C)
 
-Detection Criteria:
--------------------
-1. Price penetrates below Creek level (0-5% maximum)
-2. Volume <0.7x average (STRICT - no exceptions)
-3. Price recovers above Creek within 1-5 bars
-4. Must occur in Phase C (final test before markup)
-
-Volume Rejection (FR12):
-------------------------
-If volume_ratio >= 0.7x:
-- REJECT immediately (binary pass/fail)
-- Log: "SPRING INVALID: Volume {ratio}x >= 0.7x threshold (HIGH VOLUME = BREAKDOWN, NOT SPRING)"
-- NO confidence degradation - this is non-negotiable
-
-Ideal Volume Ranges:
---------------------
-- <0.3x: Ultra-bullish (extremely low volume spring)
-- 0.3x - 0.5x: Ideal range (low public interest)
-- 0.5x - 0.69x: Acceptable
-- ≥0.7x: REJECTED (breakdown, not spring)
-
-Usage:
-------
->>> from src.pattern_engine.detectors.spring_detector import detect_spring
->>> from src.models.phase_classification import WyckoffPhase
->>>
->>> spring = detect_spring(
->>>     range=trading_range,      # From Epic 3 (has Creek level: range.creek)
->>>     bars=ohlcv_bars,          # Last 20+ bars
->>>     phase=WyckoffPhase.C      # Current phase (from PhaseDetector)
->>> )
->>>
->>> if spring:
->>>     print(f"Spring detected: {spring.penetration_pct:.2%} penetration")
->>>     print(f"Volume: {spring.volume_ratio:.2f}x (ideal: <0.5x)")
->>>     print(f"Recovery: {spring.recovery_bars} bars")
-
-Integration:
-------------
-- Epic 3 (Trading Range): Provides Creek level for penetration detection
-- Story 2.5 (VolumeAnalyzer): Provides volume_ratio for FR12 validation
-- Story 4.4 (PhaseDetector): Provides current phase for FR15 validation
-- Story 5.3 (Test Confirmation): Will use Spring output to detect test
-
-Author: Generated for Story 5.1
+Author: Generated for Story 5.1, refactored as facade in Story 18.8.4
 """
 
 from __future__ import annotations
 
+import warnings
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
@@ -77,6 +46,11 @@ from src.models.spring_history import SpringHistory
 from src.models.spring_signal import SpringSignal
 from src.models.test import Test
 from src.models.trading_range import RangeStatus, TradingRange
+
+# Facade imports from spring package (Story 18.8.4)
+from src.pattern_engine.detectors.spring.timing_analyzer import (
+    analyze_spring_timing as _analyze_spring_timing,
+)
 from src.pattern_engine.intraday_volume_analyzer import IntradayVolumeAnalyzer
 from src.pattern_engine.scoring.scorer_factory import detect_asset_class, get_scorer
 from src.pattern_engine.timeframe_config import (
@@ -1519,115 +1493,26 @@ def analyze_spring_timing(springs: list[Spring]) -> tuple[str, list[int], float]
     """
     Analyze temporal spacing between springs for campaign quality assessment.
 
-    Evaluates bar-to-bar intervals between successive springs to determine if
-    the accumulation campaign exhibits professional characteristics (healthy spacing)
-    or amateur/weak characteristics (compressed timing).
+    .. deprecated:: 18.8.4
+        Use :func:`src.pattern_engine.detectors.spring.timing_analyzer.analyze_spring_timing`
+        directly for new code.
+
+    This function delegates to the spring.timing_analyzer module.
+    See that module for full documentation.
 
     Args:
         springs: Chronologically ordered list of detected springs
 
     Returns:
         tuple[timing_classification, intervals, avg_interval]
-        - timing_classification: "COMPRESSED" | "NORMAL" | "HEALTHY" | "SINGLE_SPRING"
-        - intervals: List of bar counts between successive springs
-        - avg_interval: Average spacing (bars) between springs
-
-    Timing Classifications:
-        - COMPRESSED (<10 bars avg): Warning - excessive testing, weak hands present
-        - NORMAL (10-25 bars): Standard accumulation pace
-        - HEALTHY (>25 bars): Ideal - strong absorption between tests
-        - SINGLE_SPRING: Only one spring detected (no timing analysis possible)
-
-    Wyckoff Principle:
-        Professional operators allow time for absorption between springs. Rapid
-        successive springs (compressed timing) indicate weak hands still dumping stock.
-        Healthy spacing (25+ bars) proves strong accumulation between tests.
-
-    Examples:
-        **COMPRESSED Timing (Warning Sign):**
-        >>> # Springs at bars: 100, 105, 113, 119 (avg: 6.3 bars)
-        >>> spring1 = Spring(..., bar_index=100)
-        >>> spring2 = Spring(..., bar_index=105)  # 5 bars later
-        >>> spring3 = Spring(..., bar_index=113)  # 8 bars later
-        >>> spring4 = Spring(..., bar_index=119)  # 6 bars later
-        >>> timing, intervals, avg = analyze_spring_timing([spring1, spring2, spring3, spring4])
-        >>> print(timing)  # "COMPRESSED"
-        >>> print(intervals)  # [5, 8, 6]
-        >>> print(avg)  # 6.33
-        >>> # Interpretation: Excessive testing, weak campaign ⚠️
-
-        **NORMAL Timing (Standard Accumulation):**
-        >>> # Springs at bars: 100, 112, 130, 145 (avg: 15 bars)
-        >>> spring1 = Spring(..., bar_index=100)
-        >>> spring2 = Spring(..., bar_index=112)  # 12 bars later
-        >>> spring3 = Spring(..., bar_index=130)  # 18 bars later
-        >>> spring4 = Spring(..., bar_index=145)  # 15 bars later
-        >>> timing, intervals, avg = analyze_spring_timing([spring1, spring2, spring3, spring4])
-        >>> print(timing)  # "NORMAL"
-        >>> print(avg)  # 15.0
-
-        **HEALTHY Timing (Professional Accumulation - Ideal):**
-        >>> # Springs at bars: 100, 130, 165, 197 (avg: 32.3 bars)
-        >>> spring1 = Spring(..., bar_index=100)
-        >>> spring2 = Spring(..., bar_index=130)  # 30 bars later
-        >>> spring3 = Spring(..., bar_index=165)  # 35 bars later
-        >>> spring4 = Spring(..., bar_index=197)  # 32 bars later
-        >>> timing, intervals, avg = analyze_spring_timing([spring1, spring2, spring3, spring4])
-        >>> print(timing)  # "HEALTHY"
-        >>> print(avg)  # 32.33
-        >>> # Interpretation: Professional operators allowing absorption time ✅
-
-        **SINGLE_SPRING (No Timing Analysis):**
-        >>> spring1 = Spring(..., bar_index=100)
-        >>> timing, intervals, avg = analyze_spring_timing([spring1])
-        >>> print(timing)  # "SINGLE_SPRING"
-        >>> print(intervals)  # []
-        >>> print(avg)  # 0.0
     """
-    if len(springs) < 2:
-        logger.debug(
-            "spring_timing_single_spring",
-            spring_count=len(springs),
-            message="Single spring detected - no timing analysis possible",
-        )
-        return ("SINGLE_SPRING", [], 0.0)
-
-    # Calculate intervals between successive springs (bar indices)
-    intervals = [springs[i + 1].bar_index - springs[i].bar_index for i in range(len(springs) - 1)]
-
-    # Calculate average interval
-    avg_interval = sum(intervals) / len(intervals)
-
-    # Classify timing based on average interval
-    if avg_interval < 10:
-        classification = "COMPRESSED"
-        logger.warning(
-            "spring_timing_compressed",
-            spring_count=len(springs),
-            intervals=intervals,
-            avg_interval=avg_interval,
-            message="COMPRESSED timing (<10 bars avg) - excessive testing, weak campaign ⚠️",
-        )
-    elif avg_interval < 25:
-        classification = "NORMAL"
-        logger.info(
-            "spring_timing_normal",
-            spring_count=len(springs),
-            intervals=intervals,
-            avg_interval=avg_interval,
-            message="NORMAL timing (10-25 bars) - standard accumulation pace",
-        )
-    else:
-        classification = "HEALTHY"
-        logger.info(
-            "spring_timing_healthy",
-            spring_count=len(springs),
-            intervals=intervals,
-            avg_interval=avg_interval,
-            message="HEALTHY timing (>25 bars avg) - professional absorption ✅",
-        )
-
-    return (classification, intervals, avg_interval)
+    warnings.warn(
+        "analyze_spring_timing is deprecated. "
+        "Use src.pattern_engine.detectors.spring.timing_analyzer.analyze_spring_timing instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _analyze_spring_timing(springs)
 
 
 def analyze_test_quality_progression(
