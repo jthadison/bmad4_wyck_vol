@@ -24,6 +24,7 @@ class PipelineResult(Generic[T]):
         success: Whether the stage completed successfully
         output: Stage output data (type T)
         error: Error message if stage failed
+        exception: Original exception for debugging (preserved for production diagnostics)
         execution_time_ms: Stage execution time in milliseconds
         warnings: Non-fatal warnings from the stage
         stage_name: Name of the stage that produced this result
@@ -33,6 +34,7 @@ class PipelineResult(Generic[T]):
     success: bool
     output: T | None = None
     error: str | None = None
+    exception: Exception | None = None
     execution_time_ms: float = 0.0
     warnings: list[str] = field(default_factory=list)
     stage_name: str = ""
@@ -68,13 +70,18 @@ class PipelineResult(Generic[T]):
 
     @classmethod
     def fail(
-        cls, error: str, stage_name: str, execution_time_ms: float = 0.0
+        cls,
+        error: str,
+        stage_name: str,
+        execution_time_ms: float = 0.0,
+        exception: Exception | None = None,
     ) -> "PipelineResult[Any]":
-        """Create a failed result."""
+        """Create a failed result with optional exception preservation."""
         return cls(
             success=False,
             output=None,
             error=error,
+            exception=exception,
             stage_name=stage_name,
             execution_time_ms=execution_time_ms,
         )

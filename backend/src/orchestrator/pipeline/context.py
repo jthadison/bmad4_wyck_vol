@@ -8,6 +8,7 @@ Story 18.10.1: Pipeline Base Class and Context (AC3)
 
 from __future__ import annotations
 
+import copy
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -57,6 +58,12 @@ class PipelineContext:
     - Timing tracking per stage
     - Error recording
     - Arbitrary data storage for stage-to-stage communication
+
+    Thread Safety:
+        This class is NOT thread-safe. Each pipeline execution should use its own
+        PipelineContext instance. Do not share context instances across concurrent
+        pipeline runs. For parallel stage execution within a pipeline, use proper
+        synchronization or separate context instances per parallel branch.
 
     Attributes:
         correlation_id: Unique identifier for this pipeline run
@@ -168,7 +175,8 @@ class PipelineContextBuilder:
         """
         Build the PipelineContext.
 
-        Generates a correlation ID if not provided.
+        Generates a correlation ID if not provided. Uses deep copy for data
+        to ensure nested mutable objects are not shared between contexts.
 
         Returns:
             Configured PipelineContext instance
@@ -177,5 +185,5 @@ class PipelineContextBuilder:
             correlation_id=self._correlation_id or uuid4(),
             symbol=self._symbol,
             timeframe=self._timeframe,
-            data=self._data.copy(),
+            data=copy.deepcopy(self._data),
         )

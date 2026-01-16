@@ -312,3 +312,23 @@ class TestPipelineContextBuilder:
         # Modifying one doesn't affect the other
         context1.set("data", "value1")
         assert context2.get("data") is None
+
+    def test_deep_copy_nested_mutable_data(self):
+        """Test that nested mutable data is deep copied."""
+        nested_data = {"inner": {"value": 1}, "list": [1, 2, 3]}
+        builder = PipelineContextBuilder().with_data("nested", nested_data)
+
+        context1 = builder.build()
+        context2 = builder.build()
+
+        # Modify nested structure in context1
+        context1.get("nested")["inner"]["value"] = 999
+        context1.get("nested")["list"].append(4)
+
+        # context2 should be unaffected (deep copy)
+        assert context2.get("nested")["inner"]["value"] == 1
+        assert context2.get("nested")["list"] == [1, 2, 3]
+
+        # Original builder data should also be unaffected
+        assert nested_data["inner"]["value"] == 1
+        assert nested_data["list"] == [1, 2, 3]

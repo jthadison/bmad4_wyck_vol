@@ -117,6 +117,29 @@ class TestPipelineResult:
         assert result.stage_name == "failed_stage"
         assert result.execution_time_ms == 5.0
 
+    def test_fail_with_exception_preservation(self):
+        """Test PipelineResult.fail() preserves exception for debugging."""
+        original_exception = ValueError("Original error with traceback info")
+        result = PipelineResult.fail(
+            error="Stage failed",
+            stage_name="failed_stage",
+            execution_time_ms=5.0,
+            exception=original_exception,
+        )
+
+        assert result.success is False
+        assert result.error == "Stage failed"
+        assert result.exception is original_exception
+        assert isinstance(result.exception, ValueError)
+
+    def test_exception_default_none(self):
+        """Test exception is None by default."""
+        result: PipelineResult[str] = PipelineResult(success=True, output="test")
+        assert result.exception is None
+
+        result_fail = PipelineResult.fail(error="Error", stage_name="test")
+        assert result_fail.exception is None
+
     def test_generic_type_with_list(self):
         """Test PipelineResult with list output type."""
         data = [1, 2, 3, 4, 5]

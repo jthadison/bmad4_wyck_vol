@@ -6,7 +6,6 @@ Provides abstract base class for all pipeline stages with timing and error handl
 Story 18.10.1: Pipeline Base Class and Context (AC2)
 """
 
-import time
 from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
 
@@ -81,7 +80,7 @@ class PipelineStage(ABC, Generic[TInput, TOutput]):
         Run stage with timing and error handling.
 
         Wraps execute() with:
-        - Timing via context.timer()
+        - Timing via context.timer() (single source of truth)
         - Structured logging
         - Error capture and result creation
 
@@ -100,13 +99,11 @@ class PipelineStage(ABC, Generic[TInput, TOutput]):
             correlation_id=str(context.correlation_id),
         )
 
-        start_time = time.perf_counter()
-
         try:
-            with context.timer(self.name):
+            with context.timer(self.name) as timing:
                 output = await self.execute(input, context)
 
-            execution_time_ms = (time.perf_counter() - start_time) * 1000
+            execution_time_ms = timing.duration_ms
 
             logger.debug(
                 "pipeline_stage_complete",
@@ -124,7 +121,9 @@ class PipelineStage(ABC, Generic[TInput, TOutput]):
             )
 
         except Exception as e:
-            execution_time_ms = (time.perf_counter() - start_time) * 1000
+            # Get timing from context (timer records even on exception)
+            timing = context.get_timing(self.name)
+            execution_time_ms = timing.duration_ms if timing else 0.0
             context.add_error(self.name, e)
 
             logger.error(
@@ -141,4 +140,5 @@ class PipelineStage(ABC, Generic[TInput, TOutput]):
                 error=str(e),
                 stage_name=self.name,
                 execution_time_ms=execution_time_ms,
+                exception=e,
             )

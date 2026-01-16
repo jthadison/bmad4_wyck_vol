@@ -75,6 +75,9 @@ class TestPipelineStage:
         assert result.output is None
         assert result.error == "Processing failed"
         assert result.stage_name == "failing_stage"
+        # Exception preservation for debugging
+        assert result.exception is not None
+        assert isinstance(result.exception, ValueError)
 
     @pytest.mark.asyncio
     async def test_run_records_error_in_context(self):
