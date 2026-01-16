@@ -39,8 +39,8 @@ class ExitContext:
         Current trailing stop price
     target_price : Decimal | None
         Optional profit target price
-    entry_time : datetime
-        Position entry timestamp
+    entry_time : datetime | None
+        Optional position entry timestamp
     max_hold_bars : int
         Maximum number of bars to hold position
     bars_held : int
@@ -51,7 +51,7 @@ class ExitContext:
 
     trailing_stop: Decimal
     target_price: Optional[Decimal] = None
-    entry_time: datetime = None
+    entry_time: Optional[datetime] = None
     max_hold_bars: int = 100
     bars_held: int = 0
     campaign_phase: Optional[str] = None

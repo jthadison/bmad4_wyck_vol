@@ -80,6 +80,31 @@ def sample_context():
     )
 
 
+@pytest.fixture
+def registry_cleanup():
+    """
+    Automatically cleanup custom strategies registered during tests.
+
+    Yields the strategy names to cleanup, then removes them from registry
+    after test completes. Use this fixture when testing custom strategy
+    registration to avoid registry pollution across tests.
+
+    Usage:
+    ------
+    def test_custom_strategy(registry_cleanup):
+        registry_cleanup.append("custom_exit")
+        ExitStrategyRegistry.register_strategy("custom_exit", CustomStrategy)
+        # Test runs...
+        # Cleanup happens automatically after test
+    """
+    cleanup_list = []
+    yield cleanup_list
+    # Cleanup registered strategies after test
+    for strategy_name in cleanup_list:
+        if strategy_name in ExitStrategyRegistry._strategies:
+            del ExitStrategyRegistry._strategies[strategy_name]
+
+
 # ============================================================================
 # TrailingStopStrategy Tests
 # ============================================================================
@@ -293,7 +318,7 @@ class TestExitStrategyRegistry:
         assert "time_exit" in strategies
         assert len(strategies) == 3
 
-    def test_register_custom_strategy(self):
+    def test_register_custom_strategy(self, registry_cleanup):
         """Test registering a custom strategy."""
 
         class CustomExitStrategy(ExitStrategy):
@@ -303,6 +328,9 @@ class TestExitStrategyRegistry:
 
             def should_exit(self, position, bar, context):
                 return None
+
+        # Register for automatic cleanup
+        registry_cleanup.append("custom_exit")
 
         # Register custom strategy
         ExitStrategyRegistry.register_strategy("custom_exit", CustomExitStrategy)
@@ -314,9 +342,6 @@ class TestExitStrategyRegistry:
         strategy = ExitStrategyRegistry.get_strategy("custom_exit")
         assert isinstance(strategy, CustomExitStrategy)
         assert strategy.name == "custom_exit"
-
-        # Clean up - remove from registry
-        del ExitStrategyRegistry._strategies["custom_exit"]
 
     def test_register_duplicate_strategy_raises_error(self):
         """Test registering duplicate strategy name raises ValueError."""

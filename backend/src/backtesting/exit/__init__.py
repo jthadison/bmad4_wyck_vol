@@ -6,6 +6,31 @@ Purpose:
 Pluggable exit strategy framework for backtesting engine.
 Provides base classes, concrete implementations, and registry.
 
+This package is Part 1 of refactoring exit_logic_refinements.py (CF-008).
+It extracts the core exit strategy pattern into a reusable framework.
+
+Relationship with exit_logic_refinements.py:
+--------------------------------------------
+- **exit_logic_refinements.py**: Contains Wyckoff-specific exit logic including
+  dynamic Jump Level updates, UTAD detection, volume divergence analysis, and
+  risk-based exit conditions. This module implements complex, domain-specific
+  exit logic tailored to the Wyckoff methodology.
+
+- **exit/ package**: Provides generic, reusable exit strategies (trailing stop,
+  target exit, time-based) using the Strategy pattern. These strategies are
+  pattern-agnostic and can be used across different trading methodologies.
+
+Future Integration:
+-------------------
+In subsequent stories, exit_logic_refinements.py will be refactored to:
+1. Use this package's strategies for basic exit logic (stops, targets, time)
+2. Focus on Wyckoff-specific refinements (Jump Level updates, UTAD, etc.)
+3. Build domain-specific exit strategies using the ExitStrategy base class
+
+This separation follows Single Responsibility Principle:
+- exit/ package: Generic exit mechanisms
+- exit_logic_refinements.py: Wyckoff domain logic
+
 Public API:
 -----------
 Base Classes:
