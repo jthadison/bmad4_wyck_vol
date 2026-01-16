@@ -16,10 +16,10 @@ Public Exports:
 - ExitSignal: Signal to exit a position (Story 18.9.3)
 - OrderExecutor: Order execution with cost modeling (Story 18.9.3)
 - ExecutionResult: Result of order execution (Story 18.9.3)
-- SimpleCostModel: Fixed-cost model implementation (Story 18.9.3)
+- SimpleCostModel: Fixed per-trade commission model (Story 18.9.3)
 - NoCostModel: Zero-cost model implementation (Story 18.9.3)
-- RealisticCostModel: Commission-rate + spread-based slippage (Story 18.9.4)
-- ZeroCostModel: Alias for NoCostModel (Story 18.9.4)
+- ZeroCostModel: Zero-cost model for simple backtests (Story 18.9.4)
+- RealisticCostModel: Per-share commission + spread-based slippage (Story 18.9.4)
 
 Example Usage:
 --------------
@@ -62,9 +62,7 @@ from src.backtesting.engine.bar_processor import (
 )
 from src.backtesting.engine.cost_model import (
     RealisticCostModel,
-)
-from src.backtesting.engine.cost_model import (
-    SimpleCostModel as ZeroCostModel,
+    ZeroCostModel,
 )
 from src.backtesting.engine.interfaces import (
     CostModel,

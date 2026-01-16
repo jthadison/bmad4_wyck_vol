@@ -1,7 +1,7 @@
 """
 Unit Tests for Cost Models (Story 18.9.4)
 
-Tests for pluggable cost model implementations including SimpleCostModel
+Tests for pluggable cost model implementations including ZeroCostModel
 (zero-cost) and RealisticCostModel (per-share commission + spread-based slippage).
 
 Author: Story 18.9.4
@@ -15,19 +15,19 @@ import pytest
 
 from src.backtesting.engine.cost_model import (
     RealisticCostModel,
-    SimpleCostModel,
+    ZeroCostModel,
 )
 from src.models.backtest import BacktestOrder
 from src.models.ohlcv import OHLCVBar
 
 
-class TestSimpleCostModel:
-    """Tests for SimpleCostModel (zero-cost model)."""
+class TestZeroCostModel:
+    """Tests for ZeroCostModel (zero-cost model)."""
 
     @pytest.fixture
     def cost_model(self):
-        """Create SimpleCostModel instance."""
-        return SimpleCostModel()
+        """Create ZeroCostModel instance."""
+        return ZeroCostModel()
 
     @pytest.fixture
     def sample_order(self):
@@ -58,17 +58,17 @@ class TestSimpleCostModel:
         )
 
     def test_zero_commission(self, cost_model, sample_order):
-        """AC1: SimpleCostModel returns zero commission."""
+        """AC1: ZeroCostModel returns zero commission."""
         commission = cost_model.calculate_commission(sample_order)
         assert commission == Decimal("0")
 
     def test_zero_slippage(self, cost_model, sample_order, sample_bar):
-        """AC1: SimpleCostModel returns zero slippage."""
+        """AC1: ZeroCostModel returns zero slippage."""
         slippage = cost_model.calculate_slippage(sample_order, sample_bar)
         assert slippage == Decimal("0")
 
     def test_zero_slippage_sell_order(self, cost_model, sample_bar):
-        """AC1: SimpleCostModel returns zero slippage for sell orders."""
+        """AC1: ZeroCostModel returns zero slippage for sell orders."""
         sell_order = BacktestOrder(
             order_id=uuid4(),
             symbol="AAPL",
@@ -129,14 +129,30 @@ class TestRealisticCostModel:
     def test_default_values(self, cost_model):
         """AC2: RealisticCostModel has sensible defaults."""
         assert cost_model.commission_per_share == Decimal("0.005")  # $0.005 per share (IB-like)
+        assert cost_model.minimum_commission == Decimal("1.00")  # $1.00 minimum
         assert cost_model.slippage_pct == Decimal("0.0005")  # 0.05%
 
-    def test_commission_calculation(self, cost_model, sample_order):
-        """AC2: Commission is calculated as per-share rate * quantity."""
-        # 100 shares * $0.005 per share = $0.50
-        commission = cost_model.calculate_commission(sample_order)
-        expected = Decimal("100") * Decimal("0.005")
+    def test_commission_calculation_above_minimum(self, cost_model):
+        """AC2: Commission is per-share when above minimum."""
+        # 500 shares * $0.005 per share = $2.50 > $1.00 minimum
+        large_order = BacktestOrder(
+            order_id=uuid4(),
+            symbol="AAPL",
+            order_type="MARKET",
+            side="BUY",
+            quantity=500,
+            status="PENDING",
+            created_bar_timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+        )
+        commission = cost_model.calculate_commission(large_order)
+        expected = Decimal("500") * Decimal("0.005")  # $2.50
         assert commission == expected
+
+    def test_commission_calculation_at_minimum(self, cost_model, sample_order):
+        """AC2: Commission uses minimum when per-share is below it."""
+        # 100 shares * $0.005 per share = $0.50 < $1.00 minimum
+        commission = cost_model.calculate_commission(sample_order)
+        assert commission == Decimal("1.00")  # Minimum kicks in
 
     def test_custom_commission_rate(self, custom_cost_model):
         """AC2: Custom per-share commission is applied correctly."""
@@ -202,6 +218,11 @@ class TestRealisticCostModel:
         with pytest.raises(ValueError, match="Commission per share cannot be negative"):
             RealisticCostModel(commission_per_share=Decimal("-0.001"))
 
+    def test_invalid_negative_minimum_commission(self):
+        """Negative minimum commission raises ValueError."""
+        with pytest.raises(ValueError, match="Minimum commission cannot be negative"):
+            RealisticCostModel(minimum_commission=Decimal("-1.00"))
+
     def test_invalid_slippage_percentage_too_high(self):
         """Slippage percentage > 100% raises ValueError."""
         with pytest.raises(ValueError, match="Slippage percentage must be in"):
@@ -215,7 +236,27 @@ class TestRealisticCostModel:
     def test_property_accessors(self, custom_cost_model):
         """Property accessors return correct values."""
         assert custom_cost_model.commission_per_share == Decimal("0.01")
+        assert custom_cost_model.minimum_commission == Decimal("1.00")  # default
         assert custom_cost_model.slippage_pct == Decimal("0.001")
+
+    def test_custom_minimum_commission(self):
+        """Custom minimum commission is applied correctly."""
+        cost_model = RealisticCostModel(
+            commission_per_share=Decimal("0.005"),
+            minimum_commission=Decimal("2.00"),  # $2.00 minimum
+        )
+        order = BacktestOrder(
+            order_id=uuid4(),
+            symbol="AAPL",
+            order_type="MARKET",
+            side="BUY",
+            quantity=100,
+            status="PENDING",
+            created_bar_timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+        )
+        # 100 * $0.005 = $0.50 < $2.00 minimum
+        commission = cost_model.calculate_commission(order)
+        assert commission == Decimal("2.00")
 
 
 class TestCostModelProtocolCompliance:
@@ -249,9 +290,9 @@ class TestCostModelProtocolCompliance:
             spread=Decimal("3.00"),
         )
 
-    def test_simple_cost_model_has_required_methods(self, sample_order, sample_bar):
-        """SimpleCostModel has all required CostModel methods."""
-        model = SimpleCostModel()
+    def test_zero_cost_model_has_required_methods(self, sample_order, sample_bar):
+        """ZeroCostModel has all required CostModel methods."""
+        model = ZeroCostModel()
 
         # Should have calculate_commission method
         assert hasattr(model, "calculate_commission")

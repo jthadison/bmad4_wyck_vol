@@ -103,7 +103,7 @@ engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
 
 ## Cost Model Options
 
-### ZeroCostModel / SimpleCostModel (Zero-Cost)
+### ZeroCostModel (Zero-Cost)
 
 Use when testing signal detection logic without transaction costs:
 
@@ -111,36 +111,40 @@ Use when testing signal detection logic without transaction costs:
 from src.backtesting.engine import ZeroCostModel
 
 cost_model = ZeroCostModel()
-# or
-from src.backtesting.engine.cost_model import SimpleCostModel
-cost_model = SimpleCostModel()
 ```
 
-### SimpleCostModel (Fixed Commission)
+### SimpleCostModel (Fixed Per-Trade Commission)
 
-For simple cost modeling with fixed commission per trade:
+For simple cost modeling with fixed commission per trade and percentage slippage:
 
 ```python
 from src.backtesting.engine import SimpleCostModel
 
 cost_model = SimpleCostModel(
-    commission_per_trade=Decimal("1.00"),  # $1 per trade
-    slippage_pct=Decimal("0.001"),  # 0.1% slippage
+    commission_per_trade=Decimal("1.00"),  # $1 per trade (fixed)
+    slippage_pct=Decimal("0.001"),  # 0.1% of close price
 )
 ```
 
 ### RealisticCostModel (Per-Share + Spread-Based)
 
-For realistic cost modeling similar to actual brokers:
+For realistic cost modeling similar to actual brokers (e.g., Interactive Brokers):
 
 ```python
 from src.backtesting.engine import RealisticCostModel
 
 cost_model = RealisticCostModel(
-    commission_per_share=Decimal("0.005"),  # $0.005/share (IB-like)
-    slippage_pct=Decimal("0.0005"),  # 0.05% of bar spread
+    commission_per_share=Decimal("0.005"),  # $0.005/share
+    minimum_commission=Decimal("1.00"),      # $1.00 minimum per order
+    slippage_pct=Decimal("0.0005"),          # 0.05% of bar spread
 )
 ```
+
+**Slippage Semantics:**
+- Slippage is calculated as a percentage of the bar's spread (high - low)
+- BUY orders: Positive slippage (adds to fill price)
+- SELL orders: Negative slippage (subtracts from fill price)
+- Apply as: `fill_price = base_price + slippage`
 
 ## Deprecation Timeline
 
