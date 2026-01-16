@@ -1,8 +1,8 @@
 """
-Backtest Engine Package (Story 18.9.1 + Story 18.9.2 + Story 18.9.3)
+Backtest Engine Package (Story 18.9.1 - Story 18.9.4)
 
 Package structure and interface definitions for the consolidated backtest engine.
-Part 1-3 of CF-002 (Critical Foundation Refactoring) - Engine Consolidation.
+Part 1-4 of CF-002 (Critical Foundation Refactoring) - Engine Consolidation.
 
 Public Exports:
 ---------------
@@ -16,14 +16,16 @@ Public Exports:
 - ExitSignal: Signal to exit a position (Story 18.9.3)
 - OrderExecutor: Order execution with cost modeling (Story 18.9.3)
 - ExecutionResult: Result of order execution (Story 18.9.3)
-- SimpleCostModel: Simple cost model implementation (Story 18.9.3)
+- SimpleCostModel: Fixed-cost model implementation (Story 18.9.3)
 - NoCostModel: Zero-cost model implementation (Story 18.9.3)
+- RealisticCostModel: Commission-rate + spread-based slippage (Story 18.9.4)
+- ZeroCostModel: Alias for NoCostModel (Story 18.9.4)
 
 Example Usage:
 --------------
 >>> from src.backtesting.engine import (
 ...     SignalDetector, CostModel, EngineConfig, UnifiedBacktestEngine,
-...     BarProcessor, OrderExecutor, SimpleCostModel
+...     BarProcessor, OrderExecutor, RealisticCostModel
 ... )
 >>> from src.backtesting.position_manager import PositionManager
 >>>
@@ -31,9 +33,12 @@ Example Usage:
 >>> config = EngineConfig(initial_capital=Decimal("100000"))
 >>> position_manager = PositionManager(config.initial_capital)
 >>>
->>> # Create bar processor and order executor (Story 18.9.3)
+>>> # Create bar processor and order executor
 >>> bar_processor = BarProcessor(stop_loss_pct=Decimal("0.02"))
->>> cost_model = SimpleCostModel(commission_per_trade=Decimal("1.00"))
+>>> cost_model = RealisticCostModel(
+...     commission_per_share=Decimal("0.005"),
+...     slippage_pct=Decimal("0.0005")
+... )
 >>> order_executor = OrderExecutor(cost_model, enable_costs=True)
 >>>
 >>> # Implement strategies
@@ -46,7 +51,7 @@ Example Usage:
 >>> engine = UnifiedBacktestEngine(MyDetector(), cost_model, position_manager, config)
 >>> result = engine.run(bars)
 
-Author: Story 18.9.1, Story 18.9.2, Story 18.9.3
+Author: Story 18.9.1, Story 18.9.2, Story 18.9.3, Story 18.9.4
 """
 
 from src.backtesting.engine.backtest_engine import BacktestEngine, UnifiedBacktestEngine
@@ -54,6 +59,12 @@ from src.backtesting.engine.bar_processor import (
     BarProcessingResult,
     BarProcessor,
     ExitSignal,
+)
+from src.backtesting.engine.cost_model import (
+    RealisticCostModel,
+)
+from src.backtesting.engine.cost_model import (
+    SimpleCostModel as ZeroCostModel,
 )
 from src.backtesting.engine.interfaces import (
     CostModel,
@@ -84,4 +95,7 @@ __all__ = [
     "ExecutionResult",
     "SimpleCostModel",
     "NoCostModel",
+    # Cost models (Story 18.9.4)
+    "RealisticCostModel",
+    "ZeroCostModel",
 ]
