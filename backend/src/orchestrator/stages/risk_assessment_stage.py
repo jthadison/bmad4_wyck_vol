@@ -4,6 +4,19 @@ Risk Assessment Pipeline Stage.
 Applies risk management and position sizing to signals.
 
 Story 18.10.4: Signal Generation and Risk Assessment Stages (AC2, AC4)
+
+Type Flexibility Note:
+    This stage uses `Any` for signal types intentionally. The pipeline
+    supports multiple signal types (TradeSignal, pattern-specific signals)
+    and the assessor may return enhanced versions. Using `Any` allows
+    different assessor implementations without requiring a common base class.
+    Type safety is enforced at the assessor implementation level.
+
+Error Handling Policy:
+    Individual signal errors are logged but do NOT fail the entire stage.
+    This is intentional - a single bad signal should not prevent other
+    valid signals from being assessed. All errors are logged at WARNING
+    level with full context for debugging.
 """
 
 from typing import Any, Protocol, runtime_checkable
@@ -174,7 +187,9 @@ class RiskAssessmentStage(PipelineStage[list[Any], list[Any]]):
                     )
 
             except Exception as e:
-                # Log error but don't fail entire stage
+                # INTENTIONAL: Log error but don't fail entire stage.
+                # A single bad signal should not prevent other valid signals
+                # from being assessed. See module docstring for policy.
                 logger.warning(
                     "risk_assessment_signal_error",
                     signal_index=i,

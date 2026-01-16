@@ -4,6 +4,19 @@ Signal Generation Pipeline Stage.
 Generates trade signals from validated patterns.
 
 Story 18.10.4: Signal Generation and Risk Assessment Stages (AC1, AC3)
+
+Type Flexibility Note:
+    This stage uses `Any` for pattern and signal types intentionally.
+    The pipeline supports multiple pattern types (Spring, SOS, LPS, UTAD)
+    and signal types (TradeSignal, pattern-specific signals). Using `Any`
+    allows different generator implementations without requiring a common
+    base class. Type safety is enforced at the generator implementation level.
+
+Error Handling Policy:
+    Individual pattern errors are logged but do NOT fail the entire stage.
+    This is intentional - a single bad pattern should not prevent other
+    valid patterns from generating signals. All errors are logged at WARNING
+    level with full context for debugging.
 """
 
 from typing import Any, Protocol, runtime_checkable
@@ -182,7 +195,9 @@ class SignalGenerationStage(PipelineStage[ValidationResults, list[Any]]):
                     )
 
             except Exception as e:
-                # Log error but don't fail entire stage
+                # INTENTIONAL: Log error but don't fail entire stage.
+                # A single bad pattern should not prevent other valid patterns
+                # from generating signals. See module docstring for policy.
                 logger.warning(
                     "signal_generation_pattern_error",
                     pattern_index=i,
