@@ -440,42 +440,52 @@ class UnifiedBacktestEngine:
             bar: Current OHLCV bar
             index: Bar index in the sequence
         """
-        # Detect potential signal
-        signal = self._detector.detect(self._bars, index)
+        # Calculate portfolio value once per bar (avoid double calculation)
+        portfolio_value = self._positions.calculate_portfolio_value(bar)
+
+        # Detect potential signal - pass only bars up to current index to prevent look-ahead
+        # This enforces that detectors cannot access future data
+        visible_bars = self._bars[: index + 1]
+        signal = self._detector.detect(visible_bars, index)
 
         if signal is not None:
-            self._handle_signal(signal, bar)
+            self._handle_signal(signal, bar, portfolio_value)
 
         # Record equity curve point
-        portfolio_value = self._positions.calculate_portfolio_value(bar)
         self._record_equity_point(bar, portfolio_value)
 
-    def _handle_signal(self, signal: TradeSignal, bar: OHLCVBar) -> None:
+    def _handle_signal(
+        self, signal: TradeSignal, bar: OHLCVBar, portfolio_value: Decimal
+    ) -> None:
         """
         Handle a detected signal by opening or closing positions.
 
         Args:
             signal: Detected trading signal
             bar: Current bar for execution
+            portfolio_value: Current portfolio value for position sizing
         """
         # Check position limits
         if self._positions.get_pending_count() >= self._config.max_open_positions:
             return
 
         # Create and execute order based on signal direction
-        order = self._create_order(signal, bar)
+        order = self._create_order(signal, bar, portfolio_value)
         if order is None:
             return
 
         self._execute_order(order, bar)
 
-    def _create_order(self, signal: TradeSignal, bar: OHLCVBar) -> Optional[BacktestOrder]:
+    def _create_order(
+        self, signal: TradeSignal, bar: OHLCVBar, portfolio_value: Decimal
+    ) -> Optional[BacktestOrder]:
         """
         Create a backtest order from a signal.
 
         Args:
             signal: Trading signal
             bar: Current bar for pricing
+            portfolio_value: Current portfolio value for position sizing
 
         Returns:
             BacktestOrder or None if order cannot be created
@@ -487,9 +497,8 @@ class UnifiedBacktestEngine:
             )
             return None
 
-        # Calculate position size based on current equity (not initial capital)
-        current_equity = self._positions.calculate_portfolio_value(bar)
-        position_value = current_equity * self._config.max_position_size
+        # Calculate position size based on current equity (passed in, not recalculated)
+        position_value = portfolio_value * self._config.max_position_size
         quantity = int(position_value / bar.close)
 
         if quantity <= 0:
@@ -568,10 +577,19 @@ class UnifiedBacktestEngine:
             Complete BacktestResult with all metrics
         """
         trades = self._positions.closed_trades
-        symbol = bars[0].symbol if bars else "UNKNOWN"
-        timeframe = bars[0].timeframe if bars else "1d"
-        start_date = bars[0].timestamp.date() if bars else datetime.now(UTC).date()
-        end_date = bars[-1].timestamp.date() if bars else datetime.now(UTC).date()
+
+        # Handle empty bars case with warning
+        if not bars:
+            logger.warning("Backtest run with empty bars list - returning empty result")
+            symbol = "EMPTY"
+            timeframe = "1d"
+            start_date = datetime.now(UTC).date()
+            end_date = datetime.now(UTC).date()
+        else:
+            symbol = bars[0].symbol
+            timeframe = bars[0].timeframe
+            start_date = bars[0].timestamp.date()
+            end_date = bars[-1].timestamp.date()
 
         # Build metrics using existing calculator
         metrics = self._calculate_metrics(trades)
@@ -628,10 +646,16 @@ class UnifiedBacktestEngine:
 
         win_rate = Decimal(len(winning)) / Decimal(len(trades)) if trades else Decimal("0")
 
-        # Profit factor
+        # Profit factor: ratio of gross profit to gross loss
+        # When no losing trades, use a high cap (999.99) to indicate excellent performance
         gross_profit = sum(t.realized_pnl for t in winning) if winning else Decimal("0")
-        gross_loss = abs(sum(t.realized_pnl for t in losing)) if losing else Decimal("1")
-        profit_factor = gross_profit / gross_loss if gross_loss > 0 else Decimal("0")
+        gross_loss = abs(sum(t.realized_pnl for t in losing)) if losing else Decimal("0")
+        if gross_loss > 0:
+            profit_factor = gross_profit / gross_loss
+        elif gross_profit > 0:
+            profit_factor = Decimal("999.99")  # Cap for "infinite" profit factor
+        else:
+            profit_factor = Decimal("0")
 
         return BacktestMetrics(
             total_signals=len(trades),

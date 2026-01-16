@@ -152,15 +152,16 @@ def mock_cost_model() -> MockCostModel:
 class TestUnifiedBacktestEngineInit:
     """Tests for UnifiedBacktestEngine initialization."""
 
-    def test_init_stores_dependencies(
+    def test_init_accepts_dependencies(
         self,
         default_config: EngineConfig,
         mock_detector: MockSignalDetector,
         mock_cost_model: MockCostModel,
     ):
-        """AC2: Engine stores injected dependencies."""
+        """AC2: Engine accepts injected dependencies without error."""
         position_manager = PositionManager(default_config.initial_capital)
 
+        # Should not raise - verifies constructor accepts all dependencies
         engine = UnifiedBacktestEngine(
             signal_detector=mock_detector,
             cost_model=mock_cost_model,
@@ -168,30 +169,34 @@ class TestUnifiedBacktestEngineInit:
             config=default_config,
         )
 
-        assert engine._detector is mock_detector
-        assert engine._cost_model is mock_cost_model
-        assert engine._positions is position_manager
-        assert engine._config is default_config
+        # Verify engine is usable (tests behavior, not internal state)
+        assert engine is not None
 
-    def test_init_initializes_empty_state(
+    def test_injected_dependencies_are_used(
         self,
+        sample_bars: list[OHLCVBar],
         default_config: EngineConfig,
-        mock_detector: MockSignalDetector,
         mock_cost_model: MockCostModel,
     ):
-        """Engine initializes with empty state."""
+        """AC2: Injected dependencies are actually used during execution."""
+        # Create detector that returns a signal
+        signal = MockTradeSignal(direction="LONG")
+        detector = MockSignalDetector(signals={2: signal})
         position_manager = PositionManager(default_config.initial_capital)
 
         engine = UnifiedBacktestEngine(
-            signal_detector=mock_detector,
+            signal_detector=detector,
             cost_model=mock_cost_model,
             position_manager=position_manager,
             config=default_config,
         )
 
-        assert engine._equity_curve == []
-        assert engine._bars == []
+        engine.run(sample_bars)
 
+        # Verify detector was called (dependency was used)
+        assert len(detector.detect_calls) == len(sample_bars)
+        # Verify cost model was called when signal triggered
+        assert len(mock_cost_model.commission_calls) > 0
 
 class TestUnifiedBacktestEngineRun:
     """Tests for UnifiedBacktestEngine.run() method."""
@@ -257,7 +262,7 @@ class TestUnifiedBacktestEngineRun:
         mock_detector: MockSignalDetector,
         mock_cost_model: MockCostModel,
     ):
-        """run() handles empty bar list."""
+        """run() handles empty bar list with warning."""
         position_manager = PositionManager(default_config.initial_capital)
         engine = UnifiedBacktestEngine(
             mock_detector, mock_cost_model, position_manager, default_config
@@ -265,7 +270,7 @@ class TestUnifiedBacktestEngineRun:
 
         result = engine.run([])
 
-        assert result.symbol == "UNKNOWN"
+        assert result.symbol == "EMPTY"  # Changed from UNKNOWN to EMPTY with warning
         assert result.trades == []
         assert result.equity_curve == []
 
@@ -738,3 +743,79 @@ class TestUnifiedBacktestEngineEdgeCases:
         # No orders should be created due to invalid direction
         assert len(mock_cost_model.commission_calls) == 0
         assert result is not None
+
+    def test_look_ahead_prevention(
+        self,
+        sample_bars: list[OHLCVBar],
+        default_config: EngineConfig,
+        mock_cost_model: MockCostModel,
+    ):
+        """Detector only receives bars up to current index (no future data)."""
+
+        class LookAheadCheckingDetector:
+            """Detector that verifies it only sees past/current bars."""
+
+            def __init__(self):
+                self.max_bars_seen: list[int] = []
+
+            def detect(self, bars: list[OHLCVBar], index: int) -> Optional[Any]:
+                # Record how many bars we can see at each index
+                self.max_bars_seen.append(len(bars))
+                # Verify we can only see bars up to and including current index
+                assert len(bars) == index + 1, (
+                    f"Look-ahead detected: at index {index}, "
+                    f"detector received {len(bars)} bars instead of {index + 1}"
+                )
+                return None
+
+        detector = LookAheadCheckingDetector()
+        position_manager = PositionManager(default_config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, mock_cost_model, position_manager, default_config
+        )
+
+        # This will raise assertion error if look-ahead is detected
+        result = engine.run(sample_bars)
+
+        # Verify detector was called for each bar with correct visible bars
+        assert detector.max_bars_seen == list(range(1, len(sample_bars) + 1))
+
+    def test_profit_factor_with_only_winning_trades(
+        self,
+        default_config: EngineConfig,
+        mock_detector: MockSignalDetector,
+        mock_cost_model: MockCostModel,
+    ):
+        """Profit factor uses cap (999.99) when all trades are winners."""
+        from src.models.backtest import BacktestTrade
+
+        position_manager = PositionManager(default_config.initial_capital)
+        engine = UnifiedBacktestEngine(
+            mock_detector, mock_cost_model, position_manager, default_config
+        )
+
+        # Create only winning trades
+        winning_trades = [
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("100.00"),
+                exit_price=Decimal("110.00"),
+                entry_timestamp=datetime(2024, 1, 15, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 16, tzinfo=UTC),
+                realized_pnl=Decimal("1000.00"),
+                commission=Decimal("2.00"),
+                slippage=Decimal("0.02"),
+            ),
+        ]
+
+        metrics = engine._calculate_metrics(winning_trades)
+
+        # With no losing trades, profit factor should be capped at 999.99
+        assert metrics.profit_factor == Decimal("999.99")
+        assert metrics.winning_trades == 1
+        assert metrics.losing_trades == 0
