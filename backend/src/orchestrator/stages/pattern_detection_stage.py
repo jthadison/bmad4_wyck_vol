@@ -289,9 +289,10 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                 # Fallback to generic detect
                 result = detector.detect(trading_range, bars, phase)
                 if result:
-                    patterns.append(result) if not isinstance(result, list) else patterns.extend(
-                        result
-                    )
+                    if isinstance(result, list):
+                        patterns.extend(result)
+                    else:
+                        patterns.append(result)
 
         elif phase in (WyckoffPhase.D, WyckoffPhase.E):
             # SOS/LPS detection
@@ -316,9 +317,10 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                     and not hasattr(result, "lps_detected")
                 ):
                     # Generic result
-                    patterns.append(result) if not isinstance(result, list) else patterns.extend(
-                        result
-                    )
+                    if isinstance(result, list):
+                        patterns.extend(result)
+                    else:
+                        patterns.append(result)
 
         else:
             # Phase A/B - no patterns expected

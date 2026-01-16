@@ -401,6 +401,53 @@ class TestPatternDetectionStage:
         mock_sos_detector.detect.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_execute_phase_b_returns_empty_patterns(
+        self,
+        sample_bars,
+        sample_volume_analysis,
+        mock_trading_range,
+    ):
+        """Test Phase B returns empty patterns (not a trading phase).
+
+        Phase B is early accumulation - no patterns expected.
+        Even with a registered detector, Phase B should not attempt detection.
+        """
+        # Create mock detector that should NOT be called
+        mock_detector = MagicMock()
+        mock_detector.detect = MagicMock(return_value=None)
+
+        registry = DetectorRegistry()
+        registry.register(WyckoffPhase.B, mock_detector)
+        stage = PatternDetectionStage(registry)
+
+        # Create phase info for Phase B with trading allowed
+        mock_phase_info_b = MagicMock()
+        mock_phase_info_b.phase = WyckoffPhase.B
+        mock_phase_info_b.confidence = 70
+        mock_phase_info_b.duration = 20
+        mock_phase_info_b.is_trading_allowed.return_value = True
+
+        context = (
+            PipelineContextBuilder()
+            .with_symbol("AAPL")
+            .with_timeframe("1d")
+            .with_data("bars", sample_bars)
+            .with_data("volume_analysis", sample_volume_analysis)
+            .with_data("current_trading_range", mock_trading_range)
+            .build()
+        )
+
+        result = await stage.run(mock_phase_info_b, context)
+
+        # Phase B should return empty patterns
+        assert result.success is True
+        assert result.output == []
+        # Detector should NOT be called for Phase B
+        mock_detector.detect.assert_not_called()
+        # Patterns should be set in context as empty list
+        assert context.get("patterns") == []
+
+    @pytest.mark.asyncio
     async def test_execute_stores_in_context(
         self,
         mock_spring_detector,
