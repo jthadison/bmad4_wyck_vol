@@ -291,6 +291,16 @@ class TestConsolidationDetector:
         assert zone is not None
         assert zone.end_index - zone.start_index == 2  # min_bars - 1
 
+    def test_detect_consolidation_negative_start_index(self, sample_bars_consolidating):
+        """Test validation raises error for negative start_index."""
+        detector = ConsolidationDetector()
+
+        with pytest.raises(ValueError) as exc_info:
+            detector.detect_consolidation(sample_bars_consolidating, start_index=-1)
+
+        assert "start_index must be non-negative" in str(exc_info.value)
+        assert "got -1" in str(exc_info.value)
+
 
 # ============================================================================
 # ConsolidationDetector Private Method Tests
@@ -339,6 +349,67 @@ class TestConsolidationDetectorPrivateMethods:
         result = detector._has_sufficient_bars(bars, start_index=0)
 
         assert result is True
+
+    def test_get_high_low(self, sample_bars_consolidating):
+        """Test _get_high_low extracts correct high and low prices."""
+        detector = ConsolidationDetector()
+
+        window = sample_bars_consolidating[0:5]
+        high, low = detector._get_high_low(window)
+
+        assert high == max(bar.high for bar in window)
+        assert low == min(bar.low for bar in window)
+        assert isinstance(high, Decimal)
+        assert isinstance(low, Decimal)
+
+    def test_has_meaningful_volume_ratio_true(self, sample_bars_consolidating):
+        """Test _has_meaningful_volume_ratio returns True for varying ratios."""
+        detector = ConsolidationDetector()
+
+        # Bars with varying volume_ratio (not all 1.0)
+        result = detector._has_meaningful_volume_ratio(sample_bars_consolidating[0:5])
+
+        assert result is True
+
+    def test_has_meaningful_volume_ratio_false_all_default(self):
+        """Test _has_meaningful_volume_ratio returns False when all default."""
+        detector = ConsolidationDetector()
+
+        # Create bars with all volume_ratio = 1.0 (default)
+        bars = [
+            OHLCVBar(
+                symbol="AAPL",
+                timeframe="1h",
+                timestamp=datetime.now(UTC),
+                open=Decimal("100.00"),
+                high=Decimal("100.50"),
+                low=Decimal("99.80"),
+                close=Decimal("100.20"),
+                volume=500000,
+                spread=Decimal("0.70"),
+                volume_ratio=Decimal("1.0"),  # All default
+            )
+            for _ in range(5)
+        ]
+
+        result = detector._has_meaningful_volume_ratio(bars)
+
+        assert result is False
+
+    def test_has_meaningful_volume_ratio_false_no_attribute(self):
+        """Test _has_meaningful_volume_ratio returns False without attribute."""
+        detector = ConsolidationDetector()
+
+        # Create bars without volume_ratio attribute
+        class SimpleBar:
+            def __init__(self):
+                self.volume = 500000
+
+        bars = [SimpleBar() for _ in range(5)]
+
+        result = detector._has_meaningful_volume_ratio(bars)
+
+        assert result is False
 
     def test_is_range_narrow_true(self, sample_bars_consolidating):
         """Test _is_range_narrow returns True for narrow range."""
