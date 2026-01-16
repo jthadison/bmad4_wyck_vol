@@ -621,3 +621,135 @@ class TestStageChaining:
 
         # Verify timing for all stages
         assert len(context.timings) == 3
+
+
+# =============================
+# Exception Propagation Tests
+# =============================
+
+
+class TestExceptionPropagation:
+    """Tests for analyzer/detector exception propagation."""
+
+    @pytest.mark.asyncio
+    async def test_volume_analyzer_exception_propagates(self, sample_bars):
+        """Test that VolumeAnalyzer exceptions are captured in result."""
+        mock_analyzer = MagicMock()
+        mock_analyzer.analyze.side_effect = RuntimeError("Analyzer internal error")
+
+        stage = VolumeAnalysisStage(mock_analyzer)
+        context = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+
+        result = await stage.run(sample_bars, context)
+
+        assert result.success is False
+        assert "Analyzer internal error" in result.error
+
+    @pytest.mark.asyncio
+    async def test_range_detector_exception_propagates(self, mock_volume_analyzer, sample_bars):
+        """Test that TradingRangeDetector exceptions are captured in result."""
+        mock_detector = MagicMock()
+        mock_detector.detect_ranges.side_effect = ValueError("Detection failed")
+
+        volume_stage = VolumeAnalysisStage(mock_volume_analyzer)
+        range_stage = RangeDetectionStage(mock_detector)
+        context = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+
+        # First run volume stage to set up context
+        await volume_stage.run(sample_bars, context)
+
+        result = await range_stage.run(sample_bars, context)
+
+        assert result.success is False
+        assert "Detection failed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_phase_detector_exception_propagates(
+        self, mock_volume_analyzer, mock_range_detector, sample_bars
+    ):
+        """Test that PhaseDetector exceptions are captured in result."""
+        mock_range_detector.detect_ranges.return_value = [create_mock_trading_range()]
+
+        mock_phase = MagicMock()
+        mock_phase.detect_phase.side_effect = RuntimeError("Phase detection failed")
+
+        volume_stage = VolumeAnalysisStage(mock_volume_analyzer)
+        range_stage = RangeDetectionStage(mock_range_detector)
+        phase_stage = PhaseDetectionStage(mock_phase)
+        context = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+
+        # Set up context
+        await volume_stage.run(sample_bars, context)
+        await range_stage.run(sample_bars, context)
+
+        result = await phase_stage.run(sample_bars, context)
+
+        assert result.success is False
+        assert "Phase detection failed" in result.error
+
+
+# =============================
+# Type Validation Tests
+# =============================
+
+
+class TestTypeValidation:
+    """Tests for runtime type validation of input data."""
+
+    @pytest.mark.asyncio
+    async def test_volume_stage_invalid_input_type(self, mock_volume_analyzer):
+        """Test VolumeAnalysisStage rejects non-list input."""
+        stage = VolumeAnalysisStage(mock_volume_analyzer)
+        context = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+
+        result = await stage.run("not a list", context)  # type: ignore
+
+        assert result.success is False
+        assert "Expected list[OHLCVBar]" in result.error
+
+    @pytest.mark.asyncio
+    async def test_volume_stage_invalid_item_type(self, mock_volume_analyzer):
+        """Test VolumeAnalysisStage rejects list with wrong item types."""
+        stage = VolumeAnalysisStage(mock_volume_analyzer)
+        context = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+
+        result = await stage.run([{"fake": "bar"}], context)  # type: ignore
+
+        assert result.success is False
+        assert "Expected OHLCVBar items" in result.error
+
+    @pytest.mark.asyncio
+    async def test_range_stage_invalid_input_type(
+        self, mock_range_detector, mock_volume_analyzer, sample_bars
+    ):
+        """Test RangeDetectionStage rejects non-list input."""
+        volume_stage = VolumeAnalysisStage(mock_volume_analyzer)
+        range_stage = RangeDetectionStage(mock_range_detector)
+        context = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+
+        await volume_stage.run(sample_bars, context)
+
+        result = await range_stage.run("not a list", context)  # type: ignore
+
+        assert result.success is False
+        assert "Expected list[OHLCVBar]" in result.error
+
+    @pytest.mark.asyncio
+    async def test_phase_stage_invalid_input_type(
+        self, mock_phase_detector, mock_volume_analyzer, mock_range_detector, sample_bars
+    ):
+        """Test PhaseDetectionStage rejects non-list input."""
+        mock_range_detector.detect_ranges.return_value = [create_mock_trading_range()]
+
+        volume_stage = VolumeAnalysisStage(mock_volume_analyzer)
+        range_stage = RangeDetectionStage(mock_range_detector)
+        phase_stage = PhaseDetectionStage(mock_phase_detector)
+        context = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+
+        await volume_stage.run(sample_bars, context)
+        await range_stage.run(sample_bars, context)
+
+        result = await phase_stage.run("not a list", context)  # type: ignore
+
+        assert result.success is False
+        assert "Expected list[OHLCVBar]" in result.error

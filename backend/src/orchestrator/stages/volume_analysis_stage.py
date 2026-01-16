@@ -57,9 +57,7 @@ class VolumeAnalysisStage(PipelineStage[list[OHLCVBar], list[VolumeAnalysis]]):
         """Unique identifier for this stage."""
         return "volume_analysis"
 
-    async def execute(
-        self, input: list[OHLCVBar], context: PipelineContext
-    ) -> list[VolumeAnalysis]:
+    async def execute(self, bars: list[OHLCVBar], context: PipelineContext) -> list[VolumeAnalysis]:
         """
         Execute volume analysis on input bars.
 
@@ -67,33 +65,38 @@ class VolumeAnalysisStage(PipelineStage[list[OHLCVBar], list[VolumeAnalysis]]):
         results in context for downstream stages.
 
         Args:
-            input: List of OHLCV bars to analyze
+            bars: List of OHLCV bars to analyze
             context: Pipeline context for data passing
 
         Returns:
             List of VolumeAnalysis results, one per input bar
 
         Raises:
-            ValueError: If input bars list is empty
+            ValueError: If bars list is empty
+            TypeError: If bars is not a list or contains non-OHLCVBar items
         """
-        if not input:
+        if not isinstance(bars, list):
+            raise TypeError(f"Expected list[OHLCVBar], got {type(bars).__name__}")
+        if not bars:
             raise ValueError("Cannot analyze empty bars list")
+        if bars and not isinstance(bars[0], OHLCVBar):
+            raise TypeError(f"Expected OHLCVBar items, got {type(bars[0]).__name__}")
 
         logger.debug(
             "volume_analysis_executing",
-            bar_count=len(input),
+            bar_count=len(bars),
             symbol=context.symbol,
             timeframe=context.timeframe,
             correlation_id=str(context.correlation_id),
         )
 
-        volume_analysis = self._analyzer.analyze(input)
+        volume_analysis = self._analyzer.analyze(bars)
 
         context.set(self.CONTEXT_KEY, volume_analysis)
 
         logger.debug(
             "volume_analysis_complete",
-            bar_count=len(input),
+            bar_count=len(bars),
             analysis_count=len(volume_analysis),
             symbol=context.symbol,
             correlation_id=str(context.correlation_id),

@@ -61,7 +61,7 @@ class RangeDetectionStage(PipelineStage[list[OHLCVBar], list[TradingRange]]):
         """Unique identifier for this stage."""
         return "range_detection"
 
-    async def execute(self, input: list[OHLCVBar], context: PipelineContext) -> list[TradingRange]:
+    async def execute(self, bars: list[OHLCVBar], context: PipelineContext) -> list[TradingRange]:
         """
         Execute trading range detection on input bars.
 
@@ -69,18 +69,23 @@ class RangeDetectionStage(PipelineStage[list[OHLCVBar], list[TradingRange]]):
         Requires volume analysis data from context (set by VolumeAnalysisStage).
 
         Args:
-            input: List of OHLCV bars to analyze
+            bars: List of OHLCV bars to analyze
             context: Pipeline context with volume_analysis data
 
         Returns:
             List of TradingRange objects with levels and zones
 
         Raises:
-            ValueError: If input bars list is empty
+            ValueError: If bars list is empty
+            TypeError: If bars is not a list or contains non-OHLCVBar items
             RuntimeError: If volume_analysis not found in context
         """
-        if not input:
+        if not isinstance(bars, list):
+            raise TypeError(f"Expected list[OHLCVBar], got {type(bars).__name__}")
+        if not bars:
             raise ValueError("Cannot detect ranges on empty bars list")
+        if bars and not isinstance(bars[0], OHLCVBar):
+            raise TypeError(f"Expected OHLCVBar items, got {type(bars[0]).__name__}")
 
         volume_analysis: list[VolumeAnalysis] | None = context.get(self.VOLUME_CONTEXT_KEY)
         if volume_analysis is None:
@@ -91,14 +96,14 @@ class RangeDetectionStage(PipelineStage[list[OHLCVBar], list[TradingRange]]):
 
         logger.debug(
             "range_detection_executing",
-            bar_count=len(input),
+            bar_count=len(bars),
             volume_analysis_count=len(volume_analysis),
             symbol=context.symbol,
             timeframe=context.timeframe,
             correlation_id=str(context.correlation_id),
         )
 
-        trading_ranges = self._detector.detect_ranges(input, volume_analysis)
+        trading_ranges = self._detector.detect_ranges(bars, volume_analysis)
 
         context.set(self.CONTEXT_KEY, trading_ranges)
 
@@ -106,7 +111,7 @@ class RangeDetectionStage(PipelineStage[list[OHLCVBar], list[TradingRange]]):
 
         logger.debug(
             "range_detection_complete",
-            bar_count=len(input),
+            bar_count=len(bars),
             ranges_detected=len(trading_ranges),
             active_ranges=active_count,
             symbol=context.symbol,

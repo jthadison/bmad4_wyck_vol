@@ -65,7 +65,7 @@ class PhaseDetectionStage(PipelineStage[list[OHLCVBar], PhaseInfo | None]):
         """Unique identifier for this stage."""
         return "phase_detection"
 
-    async def execute(self, input: list[OHLCVBar], context: PipelineContext) -> PhaseInfo | None:
+    async def execute(self, bars: list[OHLCVBar], context: PipelineContext) -> PhaseInfo | None:
         """
         Execute Wyckoff phase detection on input bars.
 
@@ -73,7 +73,7 @@ class PhaseDetectionStage(PipelineStage[list[OHLCVBar], PhaseInfo | None]):
         Requires volume analysis and trading ranges from context.
 
         Args:
-            input: List of OHLCV bars to analyze
+            bars: List of OHLCV bars to analyze
             context: Pipeline context with volume_analysis and trading_ranges
 
         Returns:
@@ -81,11 +81,16 @@ class PhaseDetectionStage(PipelineStage[list[OHLCVBar], PhaseInfo | None]):
             or None if no active trading range found
 
         Raises:
-            ValueError: If input bars list is empty
+            ValueError: If bars list is empty
+            TypeError: If bars is not a list or contains non-OHLCVBar items
             RuntimeError: If required context keys not found
         """
-        if not input:
+        if not isinstance(bars, list):
+            raise TypeError(f"Expected list[OHLCVBar], got {type(bars).__name__}")
+        if not bars:
             raise ValueError("Cannot detect phase on empty bars list")
+        if bars and not isinstance(bars[0], OHLCVBar):
+            raise TypeError(f"Expected OHLCVBar items, got {type(bars[0]).__name__}")
 
         volume_analysis: list[VolumeAnalysis] | None = context.get(self.VOLUME_CONTEXT_KEY)
         if volume_analysis is None:
@@ -103,7 +108,7 @@ class PhaseDetectionStage(PipelineStage[list[OHLCVBar], PhaseInfo | None]):
 
         logger.debug(
             "phase_detection_executing",
-            bar_count=len(input),
+            bar_count=len(bars),
             volume_analysis_count=len(volume_analysis),
             ranges_count=len(trading_ranges),
             symbol=context.symbol,
@@ -126,7 +131,7 @@ class PhaseDetectionStage(PipelineStage[list[OHLCVBar], PhaseInfo | None]):
 
         phase_info = self._detector.detect_phase(
             trading_range=current_range,
-            bars=input,
+            bars=bars,
             volume_analysis=volume_analysis,
         )
 
