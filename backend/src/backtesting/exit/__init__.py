@@ -62,6 +62,11 @@ Author: Story 18.11.1
 """
 
 from src.backtesting.exit.base import ExitContext, ExitSignal, ExitStrategy
+from src.backtesting.exit.consolidation_detector import (
+    ConsolidationConfig,
+    ConsolidationDetector,
+    ConsolidationZone,
+)
 from src.backtesting.exit.target_exit import TargetExitStrategy
 from src.backtesting.exit.time_based import TimeBasedExitStrategy
 from src.backtesting.exit.trailing_stop import TrailingStopStrategy
@@ -75,6 +80,10 @@ __all__ = [
     "TrailingStopStrategy",
     "TargetExitStrategy",
     "TimeBasedExitStrategy",
+    # Consolidation detection
+    "ConsolidationDetector",
+    "ConsolidationConfig",
+    "ConsolidationZone",
     # Registry
     "ExitStrategyRegistry",
 ]
