@@ -1,13 +1,20 @@
 """
 Pipeline Stages Package.
 
-Provides base class for pipeline stages.
+Provides pipeline stages for the analysis pipeline.
 
 Story 18.10.1: Pipeline Base Class and Context (AC1)
+Story 18.10.2: Volume, Range, and Phase Analysis Stages (AC1-5)
 """
 
 from src.orchestrator.stages.base import PipelineStage
+from src.orchestrator.stages.phase_detection_stage import PhaseDetectionStage
+from src.orchestrator.stages.range_detection_stage import RangeDetectionStage
+from src.orchestrator.stages.volume_analysis_stage import VolumeAnalysisStage
 
 __all__ = [
     "PipelineStage",
+    "PhaseDetectionStage",
+    "RangeDetectionStage",
+    "VolumeAnalysisStage",
 ]
