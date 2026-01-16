@@ -205,11 +205,24 @@ class TestPublicExports:
         import src.backtesting.engine as engine_module
 
         expected_exports = {
+            # Story 18.9.1
             "EngineConfig",
             "SignalDetector",
             "CostModel",
+            # Story 11.2, 18.9.2
             "BacktestEngine",
-            "UnifiedBacktestEngine",  # Story 18.9.2
+            "UnifiedBacktestEngine",
+            # Story 18.9.3
+            "BarProcessor",
+            "BarProcessingResult",
+            "ExitSignal",
+            "OrderExecutor",
+            "ExecutionResult",
+            "SimpleCostModel",
+            "NoCostModel",
+            # Story 18.9.4
+            "RealisticCostModel",
+            "ZeroCostModel",
         }
         actual_exports = set(engine_module.__all__)
 
