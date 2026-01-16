@@ -480,8 +480,16 @@ class UnifiedBacktestEngine:
         Returns:
             BacktestOrder or None if order cannot be created
         """
-        # Calculate position size based on config
-        position_value = self._config.initial_capital * self._config.max_position_size
+        # Validate signal direction explicitly
+        if signal.direction not in ("LONG", "SHORT"):
+            logger.warning(
+                f"Invalid signal direction '{signal.direction}' for {bar.symbol}, skipping"
+            )
+            return None
+
+        # Calculate position size based on current equity (not initial capital)
+        current_equity = self._positions.calculate_portfolio_value(bar)
+        position_value = current_equity * self._config.max_position_size
         quantity = int(position_value / bar.close)
 
         if quantity <= 0:
@@ -526,6 +534,10 @@ class UnifiedBacktestEngine:
         else:
             if self._positions.has_position(order.symbol):
                 self._positions.close_position(order)
+            else:
+                logger.debug(
+                    f"SELL order skipped for {order.symbol}: no open position to close"
+                )
 
     def _record_equity_point(self, bar: OHLCVBar, portfolio_value: Decimal) -> None:
         """

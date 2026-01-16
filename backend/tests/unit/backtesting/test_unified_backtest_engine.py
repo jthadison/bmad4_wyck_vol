@@ -717,3 +717,24 @@ class TestUnifiedBacktestEngineEdgeCases:
 
         # Drawdown from 110000 to 99000 = 11000/110000 = 0.10 (10%)
         assert max_dd == Decimal("0.1")
+
+    def test_invalid_signal_direction_skipped(
+        self,
+        sample_bars: list[OHLCVBar],
+        default_config: EngineConfig,
+        mock_cost_model: MockCostModel,
+    ):
+        """Invalid signal direction is logged and skipped."""
+        invalid_signal = MockTradeSignal(direction="INVALID")
+        detector = MockSignalDetector(signals={2: invalid_signal})
+        position_manager = PositionManager(default_config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, mock_cost_model, position_manager, default_config
+        )
+
+        result = engine.run(sample_bars)
+
+        # No orders should be created due to invalid direction
+        assert len(mock_cost_model.commission_calls) == 0
+        assert result is not None
