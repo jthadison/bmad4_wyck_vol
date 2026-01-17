@@ -550,5 +550,59 @@ def test_multiple_ar_patterns(
     assert campaign.strength_score <= 1.0
 
 
+# ============================================================================
+# Test Case 11: AR Boundary - Quality Score Exactly 0.7
+# ============================================================================
+
+
+def test_ar_boundary_quality_score_exactly_0_7(detector, sample_spring, base_timestamp):
+    """
+    Test Case 11: AR with quality_score = 0.7 exactly (boundary condition)
+
+    Expected: quality_score = 0.7 exactly should NOT auto-activate (>0.7 required)
+    Campaign should transition to ACTIVE via 2-pattern rule instead
+    Story 14.2: AR activation threshold is >0.7, not >=0.7
+    """
+    # Create AR with quality_score exactly at boundary
+    ar_boundary = AutomaticRally(
+        bar={
+            "timestamp": base_timestamp + timedelta(hours=1),
+            "open": 98.5,
+            "high": 101.2,
+            "low": 98.0,
+            "close": 101.0,
+            "volume": 130000,
+        },
+        bar_index=103,
+        rally_pct=Decimal("0.0327"),  # 3.27% rally
+        bars_after_sc=3,
+        sc_reference={"low": 98.0},
+        sc_low=Decimal("98.00"),
+        ar_high=Decimal("101.20"),
+        volume_profile="NORMAL",  # Legacy field
+        detection_timestamp=base_timestamp + timedelta(hours=1),
+        # Story 14.1 fields
+        quality_score=0.7,  # Exactly at threshold (should NOT activate)
+        recovery_percent=Decimal("0.45"),  # 45% recovery
+        volume_trend="NEUTRAL",
+        prior_pattern_bar=100,
+        prior_pattern_type="SPRING",
+    )
+
+    # Add Spring (campaign FORMING)
+    detector.add_pattern(sample_spring)
+    campaign = detector.campaigns[0]
+    assert campaign.state == CampaignState.FORMING
+
+    # Add AR with quality_score = 0.7 exactly
+    detector.add_pattern(ar_boundary)
+
+    # Campaign should now be ACTIVE due to 2-pattern rule, NOT AR activation
+    # (AR activation requires >0.7, not >=0.7)
+    assert campaign.state == CampaignState.ACTIVE
+    assert len(campaign.patterns) == 2
+    assert campaign.current_phase == WyckoffPhase.C  # AR after Spring = Phase C
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

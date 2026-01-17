@@ -43,6 +43,10 @@ from src.models.wyckoff_phase import WyckoffPhase
 
 logger = structlog.get_logger(__name__)
 
+# AR Pattern Quality Thresholds (Story 14.2)
+AR_ACTIVATION_QUALITY_THRESHOLD = 0.7  # Minimum quality for AR to activate FORMING campaigns
+AR_HIGH_QUALITY_BONUS_THRESHOLD = 0.75  # Minimum quality for AR progression bonus
+
 
 class CampaignState(Enum):
     """
@@ -203,6 +207,34 @@ class IntradayCampaignDetector:
             expiration_hours=expiration_hours,
         )
 
+    def _handle_ar_activation(self, campaign: Campaign, pattern: AutomaticRally) -> bool:
+        """
+        Handle AR pattern activation logic (Story 14.2).
+
+        High-quality AR patterns (quality_score > 0.7) can activate FORMING campaigns
+        immediately without waiting for a second pattern.
+
+        Args:
+            campaign: Campaign to potentially activate
+            pattern: AR pattern to evaluate
+
+        Returns:
+            bool: True if campaign was activated, False otherwise
+        """
+        if pattern.quality_score > AR_ACTIVATION_QUALITY_THRESHOLD:
+            campaign.state = CampaignState.ACTIVE
+            new_phase = self._determine_phase(campaign.patterns)
+            self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
+            self.logger.info(
+                "Campaign activated by high-quality AR",
+                campaign_id=campaign.campaign_id,
+                ar_quality_score=pattern.quality_score,
+                pattern_count=len(campaign.patterns),
+                phase=campaign.current_phase.value if campaign.current_phase else None,
+            )
+            return True
+        return False
+
     def add_pattern(self, pattern: WyckoffPattern) -> None:
         """
         Add detected pattern and update campaigns.
@@ -248,18 +280,21 @@ class IntradayCampaignDetector:
             self._update_campaign_metadata(campaign)
 
             # Story 14.2: High-quality AR can activate new campaign immediately
-            if isinstance(pattern, AutomaticRally) and pattern.quality_score > 0.7:
-                campaign.state = CampaignState.ACTIVE
-                new_phase = self._determine_phase(campaign.patterns)
-                self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
-                self.logger.info(
-                    "New campaign started and activated by high-quality AR",
-                    campaign_id=campaign.campaign_id,
-                    timestamp=pattern.detection_timestamp,
-                    ar_quality_score=pattern.quality_score,
-                    state=campaign.state.value,
-                    phase=campaign.current_phase.value if campaign.current_phase else None,
-                )
+            if isinstance(pattern, AutomaticRally):
+                if self._handle_ar_activation(campaign, pattern):
+                    self.logger.info(
+                        "New campaign started and activated by AR",
+                        campaign_id=campaign.campaign_id,
+                        timestamp=pattern.detection_timestamp,
+                    )
+                else:
+                    self.logger.info(
+                        "New campaign started (AR quality insufficient for activation)",
+                        campaign_id=campaign.campaign_id,
+                        timestamp=pattern.detection_timestamp,
+                        ar_quality_score=pattern.quality_score,
+                        state=campaign.state.value,
+                    )
             else:
                 self.logger.info(
                     "New campaign started",
@@ -292,19 +327,8 @@ class IntradayCampaignDetector:
 
         # Story 14.2: AR can activate FORMING campaign if high quality
         if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
-            # High-quality AR (quality_score > 0.7) can activate campaign
-            if pattern.quality_score > 0.7:
-                campaign.state = CampaignState.ACTIVE
-                new_phase = self._determine_phase(campaign.patterns)
-                self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
-                self.logger.info(
-                    "Campaign activated by high-quality AR",
-                    campaign_id=campaign.campaign_id,
-                    ar_quality_score=pattern.quality_score,
-                    pattern_count=len(campaign.patterns),
-                    phase=campaign.current_phase.value if campaign.current_phase else None,
-                )
-                return
+            if self._handle_ar_activation(campaign, pattern):
+                return  # Activated by AR, skip normal activation logic
 
         # Task 3: Check if we have enough patterns to mark ACTIVE
         if len(campaign.patterns) >= self.min_patterns_for_active:
@@ -546,9 +570,9 @@ class IntradayCampaignDetector:
             # Additional bonus for high-quality AR
             ar_patterns = [p for p in patterns if isinstance(p, AutomaticRally)]
             if ar_patterns:
-                # Check if any AR has high quality (>0.75)
+                # Check if any AR has high quality
                 for ar in ar_patterns:
-                    if ar.quality_score > 0.75:
+                    if ar.quality_score > AR_HIGH_QUALITY_BONUS_THRESHOLD:
                         score += 0.05  # High-quality AR bonus
                         break  # Only add once
 
