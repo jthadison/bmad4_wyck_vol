@@ -25,7 +25,9 @@ import pytest
 
 from src.backtesting.intraday_campaign_detector import (
     CampaignState,
+    EffortVsResult,
     IntradayCampaignDetector,
+    VolumeProfile,
 )
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
@@ -1196,7 +1198,7 @@ def test_volume_profile_declining_trend(detector, base_timestamp):
     campaign = campaigns[0]
 
     # Should detect DECLINING trend (bullish)
-    assert campaign.volume_profile == "DECLINING"
+    assert campaign.volume_profile == VolumeProfile.DECLINING
     assert campaign.volume_trend_quality > 0.8
     assert len(campaign.volume_history) == 5
 
@@ -1238,7 +1240,7 @@ def test_volume_profile_increasing_trend(detector, base_timestamp):
     campaign = campaigns[0]
 
     # Should detect INCREASING trend (bearish)
-    assert campaign.volume_profile == "INCREASING"
+    assert campaign.volume_profile == VolumeProfile.INCREASING
     assert campaign.volume_trend_quality > 0.8
     assert len(campaign.volume_history) == 5
 
@@ -1280,7 +1282,7 @@ def test_volume_profile_neutral_trend(detector, base_timestamp):
     campaign = campaigns[0]
 
     # Should detect NEUTRAL trend
-    assert campaign.volume_profile == "NEUTRAL"
+    assert campaign.volume_profile == VolumeProfile.NEUTRAL
     assert campaign.volume_trend_quality == 0.5
 
 
@@ -1318,7 +1320,7 @@ def test_effort_vs_result_harmony(detector, base_timestamp):
     campaign = campaigns[0]
 
     # Should detect HARMONY (high volume + large price move)
-    assert campaign.effort_vs_result == "HARMONY"
+    assert campaign.effort_vs_result == EffortVsResult.HARMONY
 
 
 def test_effort_vs_result_divergence_bullish(detector, base_timestamp):
@@ -1355,7 +1357,7 @@ def test_effort_vs_result_divergence_bullish(detector, base_timestamp):
     campaign = campaigns[0]
 
     # Should detect DIVERGENCE at Spring (bullish absorption)
-    assert campaign.effort_vs_result == "DIVERGENCE"
+    assert campaign.effort_vs_result == EffortVsResult.DIVERGENCE
 
 
 def test_effort_vs_result_divergence_bearish(detector, base_timestamp):
@@ -1419,7 +1421,7 @@ def test_effort_vs_result_divergence_bearish(detector, base_timestamp):
     campaign = campaigns[0]
 
     # Should detect DIVERGENCE at SOS (bearish distribution warning)
-    assert campaign.effort_vs_result == "DIVERGENCE"
+    assert campaign.effort_vs_result == EffortVsResult.DIVERGENCE
 
 
 def test_climax_detection_selling(detector, base_timestamp):
@@ -1605,5 +1607,58 @@ def test_volume_profile_insufficient_data(detector, base_timestamp):
     campaign = campaigns[0]
 
     # Should remain UNKNOWN with insufficient data
-    assert campaign.volume_profile == "UNKNOWN"
+    assert campaign.volume_profile == VolumeProfile.UNKNOWN
     assert campaign.volume_trend_quality == 0.0
+
+
+def test_volume_profile_exactly_three_patterns(
+    detector: IntradayCampaignDetector,
+) -> None:
+    """
+    Test volume profile calculation with exactly 3 patterns (minimum boundary).
+
+    This tests the boundary condition where we have exactly VOLUME_MINIMUM_PATTERNS
+    patterns, which should be sufficient to calculate a volume profile.
+
+    Issue #7: Missing boundary test for exactly 3 patterns.
+    """
+    base_timestamp = datetime.now(UTC)
+
+    # Create exactly 3 Spring patterns with declining volume
+    trading_range_id = uuid4()
+    volume_ratios = [Decimal("0.6"), Decimal("0.5"), Decimal("0.4")]  # Declining trend
+
+    for i, vol_ratio in enumerate(volume_ratios):
+        bar = OHLCVBar(
+            timestamp=base_timestamp + timedelta(hours=i * 2),
+            open=Decimal("100.00"),
+            high=Decimal("101.00"),
+            low=Decimal("98.00"),
+            close=Decimal("100.50"),
+            volume=int(100000 * float(vol_ratio)),
+            spread=Decimal("3.00"),
+            timeframe="15m",
+            symbol="EUR/USD",
+        )
+        spring = Spring(
+            bar=bar,
+            bar_index=i,
+            penetration_pct=Decimal("0.02"),
+            volume_ratio=vol_ratio,
+            recovery_bars=1,
+            creek_reference=Decimal("100.00"),
+            spring_low=Decimal("98.00"),
+            recovery_price=Decimal("100.50"),
+            detection_timestamp=base_timestamp + timedelta(hours=i * 2),
+            trading_range_id=trading_range_id,
+        )
+        detector.add_pattern(spring)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should calculate volume profile with exactly 3 patterns
+    assert campaign.volume_profile == VolumeProfile.DECLINING  # 100% declining (2/2 comparisons)
+    assert campaign.volume_trend_quality > 0.0
+    assert len(campaign.volume_history) == 3
