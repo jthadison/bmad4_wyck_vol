@@ -84,6 +84,10 @@ class Campaign:
         risk_per_share: Entry price - support_level
         range_width_pct: (resistance - support) / support * 100
 
+        # Position Sizing & Portfolio Heat (Story 14.3)
+        position_size: Shares/contracts for this campaign
+        dollar_risk: Dollar risk exposure (risk_per_share × position_size)
+
         # Phase History (FR7.3 / AC7.5 - Story 13.7)
         phase_history: List of (timestamp, phase) tuples tracking all transitions
         phase_transition_count: Number of phase transitions in this campaign
@@ -100,6 +104,8 @@ class Campaign:
             strength_score=0.85,
             risk_per_share=Decimal("4.50"),
             range_width_pct=Decimal("4.06"),
+            position_size=Decimal("400"),
+            dollar_risk=Decimal("1800"),
             phase_history=[(datetime(...), WyckoffPhase.C), (datetime(...), WyckoffPhase.D)],
             phase_transition_count=2
         )
@@ -118,6 +124,10 @@ class Campaign:
     strength_score: float = 0.0
     risk_per_share: Optional[Decimal] = None
     range_width_pct: Optional[Decimal] = None
+
+    # Story 14.3: Position Sizing and Portfolio Heat
+    position_size: Decimal = Decimal("0")  # Shares/contracts for this campaign
+    dollar_risk: Decimal = Decimal("0")  # Dollar risk (risk_per_share × position_size)
 
     # FR6.1: Wyckoff Exit Logic - Jump Level
     jump_level: Optional[Decimal] = None  # Measured move target (Ice + range_width)
@@ -144,6 +154,56 @@ class Campaign:
     # FR7.3 / AC7.5: Phase History Tracking (Story 13.7)
     phase_history: list[tuple[datetime, WyckoffPhase]] = field(default_factory=list)
     phase_transition_count: int = 0
+
+
+def calculate_position_size(
+    account_size: Decimal,
+    risk_pct_per_trade: Decimal,
+    risk_per_share: Decimal,
+) -> Decimal:
+    """
+    Calculate position size based on risk parameters (Story 14.3).
+
+    Formula: position_size = (account_size × risk_pct) / risk_per_share
+
+    Args:
+        account_size: Total account size in dollars
+        risk_pct_per_trade: Risk percentage per trade (e.g., 2.0 for 2%)
+        risk_per_share: Dollar risk per share (entry_price - stop_loss)
+
+    Returns:
+        Position size in shares/contracts (rounded to whole shares)
+
+    Example:
+        >>> calculate_position_size(
+        ...     account_size=Decimal("100000"),
+        ...     risk_pct_per_trade=Decimal("2.0"),
+        ...     risk_per_share=Decimal("5.00")
+        ... )
+        Decimal("400")  # $100,000 × 2% / $5.00 = 400 shares
+    """
+    if risk_per_share <= Decimal("0"):
+        logger.warning(
+            "Invalid risk_per_share for position sizing",
+            risk_per_share=str(risk_per_share),
+        )
+        return Decimal("0")
+
+    if account_size <= Decimal("0"):
+        logger.warning(
+            "Invalid account_size for position sizing",
+            account_size=str(account_size),
+        )
+        return Decimal("0")
+
+    # Calculate risk dollars
+    risk_dollars = account_size * (risk_pct_per_trade / Decimal("100"))
+
+    # Calculate position size
+    position_size = risk_dollars / risk_per_share
+
+    # Round to whole shares
+    return position_size.quantize(Decimal("1"))
 
 
 class IntradayCampaignDetector:
@@ -202,21 +262,33 @@ class IntradayCampaignDetector:
             expiration_hours=expiration_hours,
         )
 
-    def add_pattern(self, pattern: WyckoffPattern) -> None:
+    def add_pattern(
+        self,
+        pattern: WyckoffPattern,
+        account_size: Optional[Decimal] = None,
+        risk_pct_per_trade: Decimal = Decimal("2.0"),
+    ) -> Optional[Campaign]:
         """
         Add detected pattern and update campaigns.
 
         Tasks 1-3: Pattern integration, grouping, state machine.
+        Story 14.3: Added position sizing and portfolio heat checking.
 
         Args:
             pattern: Detected Spring, SOS, or LPS pattern
+            account_size: Total account size for position sizing (optional)
+            risk_pct_per_trade: Risk percentage per trade (default 2.0%)
+
+        Returns:
+            Campaign that pattern was added to, or None if rejected
 
         Workflow:
             1. Expire stale campaigns (Task 5)
             2. Find existing campaign or check limits (Task 8)
-            3. Validate sequence if adding to existing (Task 7)
-            4. Update risk metadata (Task 6)
-            5. Transition state if threshold met (Task 3)
+            3. Calculate position size and heat (Story 14.3)
+            4. Validate sequence if adding to existing (Task 7)
+            5. Update risk metadata (Task 6)
+            6. Transition state if threshold met (Task 3)
         """
         # Task 5: Expire stale campaigns first
         self.expire_stale_campaigns(pattern.detection_timestamp)
@@ -225,25 +297,47 @@ class IntradayCampaignDetector:
         campaign = self._find_active_campaign(pattern)
 
         if not campaign:
-            # AC4.11: Check portfolio limits before creating new campaign
-            if not self._check_portfolio_limits():
-                self.logger.warning(
-                    "Portfolio limits exceeded, cannot create new campaign",
-                    active_campaigns=len(self.get_active_campaigns()),
-                    max_allowed=self.max_concurrent_campaigns,
-                    pattern_type=type(pattern).__name__,
-                )
-                return
-
-            # Start new campaign
+            # Story 14.3: Create campaign first to calculate risk_per_share
+            # Start new campaign (temporary, no position sizing yet)
             campaign = Campaign(
                 start_time=pattern.detection_timestamp,
                 patterns=[pattern],
                 state=CampaignState.FORMING,
             )
+
+            # AC4.9: Initialize risk metadata to calculate risk_per_share
+            self._update_campaign_metadata(campaign)
+
+            # Story 14.3: Calculate position sizing and check heat limits
+            position_size = Decimal("0")
+            new_campaign_risk = None
+
+            if account_size and account_size > Decimal("0"):
+                # Use campaign's calculated risk_per_share
+                if campaign.risk_per_share and campaign.risk_per_share > Decimal("0"):
+                    # Calculate position size
+                    position_size = calculate_position_size(
+                        account_size, risk_pct_per_trade, campaign.risk_per_share
+                    )
+                    new_campaign_risk = campaign.risk_per_share * position_size
+
+            # AC4.11 + Story 14.3: Check portfolio limits (concurrent + heat)
+            if not self._check_portfolio_limits(account_size, new_campaign_risk):
+                self.logger.warning(
+                    "Portfolio limits exceeded, cannot create new campaign",
+                    active_campaigns=len(self.get_active_campaigns()),
+                    max_allowed=self.max_concurrent_campaigns,
+                    pattern_type=type(pattern).__name__,
+                    new_campaign_risk=str(new_campaign_risk) if new_campaign_risk else None,
+                )
+                # Remove the temporary campaign we created
+                return None
+
+            # Update campaign with position sizing
+            campaign.position_size = position_size
             self.campaigns.append(campaign)
 
-            # AC4.9: Initialize risk metadata
+            # Update metadata again to calculate dollar_risk with position_size
             self._update_campaign_metadata(campaign)
 
             self.logger.info(
@@ -252,8 +346,10 @@ class IntradayCampaignDetector:
                 timestamp=pattern.detection_timestamp,
                 pattern_type=type(pattern).__name__,
                 state=campaign.state.value,
+                position_size=str(campaign.position_size),
+                dollar_risk=str(campaign.dollar_risk),
             )
-            return
+            return campaign
 
         # AC4.10: Validate sequence before adding
         if not self._validate_sequence(campaign.patterns + [pattern]):
@@ -267,7 +363,7 @@ class IntradayCampaignDetector:
             # Still add pattern but don't update phase
             campaign.patterns.append(pattern)
             self._update_campaign_metadata(campaign)
-            return
+            return campaign
 
         # Add to existing campaign
         campaign.patterns.append(pattern)
@@ -306,6 +402,8 @@ class IntradayCampaignDetector:
                     pattern_count=len(campaign.patterns),
                     phase=campaign.current_phase.value if campaign.current_phase else None,
                 )
+
+        return campaign
 
     def _find_active_campaign(self, pattern: WyckoffPattern) -> Optional[Campaign]:
         """
@@ -674,20 +772,77 @@ class IntradayCampaignDetector:
             range_width = campaign.resistance_level - campaign.support_level
             campaign.jump_level = campaign.resistance_level + range_width
 
-    def _check_portfolio_limits(self) -> bool:
+        # Story 14.3: Calculate dollar_risk for portfolio heat tracking
+        if campaign.risk_per_share and campaign.position_size > Decimal("0"):
+            campaign.dollar_risk = campaign.risk_per_share * campaign.position_size
+        else:
+            campaign.dollar_risk = Decimal("0")
+
+    def _calculate_portfolio_heat(self, account_size: Decimal) -> Decimal:
+        """
+        Calculate total portfolio heat (dollar risk as % of account).
+
+        Story 14.3: Portfolio heat calculation for risk management.
+
+        Args:
+            account_size: Total account size in dollars
+
+        Returns:
+            Portfolio heat percentage (0-100)
+
+        Example:
+            >>> detector._calculate_portfolio_heat(Decimal("100000"))
+            Decimal("6.0")  # 6% portfolio heat
+        """
+        if account_size <= Decimal("0"):
+            self.logger.warning(
+                "Invalid account_size for heat calculation",
+                account_size=str(account_size),
+            )
+            return Decimal("0")
+
+        active_campaigns = self.get_active_campaigns()
+
+        total_risk_dollars = Decimal("0")
+        for campaign in active_campaigns:
+            if campaign.position_size > Decimal("0") and campaign.risk_per_share:
+                campaign_risk = campaign.risk_per_share * campaign.position_size
+                total_risk_dollars += campaign_risk
+
+        heat_pct = (total_risk_dollars / account_size) * Decimal("100")
+
+        self.logger.debug(
+            "Portfolio heat calculated",
+            total_risk=str(total_risk_dollars),
+            account_size=str(account_size),
+            heat_pct=str(heat_pct),
+            active_campaigns=len(active_campaigns),
+        )
+
+        return heat_pct
+
+    def _check_portfolio_limits(
+        self, account_size: Optional[Decimal] = None, new_campaign_risk: Optional[Decimal] = None
+    ) -> bool:
         """
         Check if portfolio limits allow new campaign creation.
 
         Task 8: Portfolio risk limits enforcement.
         AC4.11: Enforce max concurrent campaigns and portfolio heat limits.
+        Story 14.3: Added portfolio heat enforcement.
+
+        Args:
+            account_size: Total account size for heat calculation (optional)
+            new_campaign_risk: Expected dollar risk for new campaign (optional)
 
         Returns:
             True if limits allow new campaign, False otherwise
 
         Limits Checked:
             1. Max concurrent campaigns (hard limit)
-            2. Warning at 80% of max concurrent campaigns
-            3. Portfolio heat calculation (future enhancement)
+            2. Portfolio heat limit (if account_size provided)
+            3. Warning at 80% of max concurrent campaigns
+            4. Warning at 80% of max portfolio heat
         """
         active_campaigns = self.get_active_campaigns()
 
@@ -708,6 +863,41 @@ class IntradayCampaignDetector:
                 max=self.max_concurrent_campaigns,
                 utilization_pct=(len(active_campaigns) / self.max_concurrent_campaigns * 100),
             )
+
+        # Story 14.3: Check portfolio heat if account_size provided
+        if account_size and account_size > Decimal("0"):
+            # Calculate current heat
+            current_heat = self._calculate_portfolio_heat(account_size)
+
+            # Calculate prospective heat with new campaign
+            if new_campaign_risk:
+                prospective_heat = current_heat + (
+                    new_campaign_risk / account_size * Decimal("100")
+                )
+            else:
+                prospective_heat = current_heat
+
+            # Check heat limit
+            max_heat = Decimal(str(self.max_portfolio_heat_pct))
+            if prospective_heat > max_heat:
+                self.logger.warning(
+                    "Portfolio heat limit exceeded",
+                    current_heat=str(current_heat),
+                    prospective_heat=str(prospective_heat),
+                    max_allowed=self.max_portfolio_heat_pct,
+                    new_campaign_risk=str(new_campaign_risk) if new_campaign_risk else None,
+                )
+                return False
+
+            # Early warning at 80% of limit
+            warning_threshold = max_heat * Decimal("0.8")
+            if prospective_heat > warning_threshold:
+                self.logger.info(
+                    "Portfolio heat approaching limit",
+                    heat_pct=str(prospective_heat),
+                    threshold=str(warning_threshold),
+                    max_allowed=self.max_portfolio_heat_pct,
+                )
 
         return True
 
