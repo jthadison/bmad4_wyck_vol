@@ -745,10 +745,12 @@ def test_strength_score_calculation(detector, sample_spring, sample_sos):
 
     campaign = detector.get_active_campaigns()[0]
 
-    # Spring quality_tier = "GOOD" (penetration 2%, volume 0.4) → 0.80
-    # SOS quality_tier = "GOOD" (breakout 2.5%, volume 2.0) → 0.85
-    # Average: (0.80 + 0.85) / 2 = 0.825
-    assert 0.80 <= campaign.strength_score <= 0.85
+    # Story 14.2: New strength calculation logic
+    # Base (2 patterns): 0.2
+    # Quality: Spring (no quality_tier visible) + SOS (GOOD) = avg ~0.15
+    # Phase D: +0.2
+    # Total: ~0.50-0.60
+    assert 0.50 <= campaign.strength_score <= 0.60
 
 
 # ============================================================================

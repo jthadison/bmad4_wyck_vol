@@ -1,29 +1,30 @@
 """
-Intraday Wyckoff Campaign Detector (Pattern Integration - Story 13.4)
+Intraday Wyckoff Campaign Detector (Pattern Integration - Story 13.4, 14.2, 14.3)
 
 Purpose:
 --------
-Groups detected Wyckoff patterns (Spring, SOS, LPS) into micro-campaigns for
+Groups detected Wyckoff patterns (Spring, AR, SOS, LPS) into micro-campaigns for
 campaign-based trading strategies. Tracks campaign phase progression, extracts
 risk metadata, and enforces portfolio risk limits.
 
 Campaign Lifecycle:
 -------------------
 FORMING (1 pattern detected)
-    ↓ (2nd pattern within 48h window)
+    ↓ (2nd pattern within 48h window OR high-quality AR)
 ACTIVE (2+ patterns, valid sequence)
     ↓ (reaches Phase E OR exceeds 72h)
 COMPLETED / FAILED
 
-Key Features (Story 13.4):
+Key Features:
 --------------------------
-1. Pattern Integration: Spring, SOS, LPS patterns grouped into campaigns
+1. Pattern Integration: Spring, AR, SOS, LPS patterns grouped into campaigns (Story 13.4, 14.2)
 2. Time-Window Grouping: 48h pattern window, 48h max gap, 72h expiration
 3. Sequence Validation: Spring → AR → SOS → LPS (Wyckoff progression)
 4. Risk Metadata: Support/resistance levels, strength score, risk/share
-5. Portfolio Limits: Max concurrent campaigns, portfolio heat tracking
+5. Portfolio Limits: Max concurrent campaigns, portfolio heat tracking (Story 14.3)
+6. AR Activation: High-quality AR (>0.7) can activate FORMING campaigns (Story 14.2)
 
-Author: Developer Agent (Story 13.4 Implementation)
+Author: Developer Agent (Story 13.4, 14.2, 14.3 Implementation)
 """
 
 from dataclasses import dataclass, field
@@ -35,12 +36,17 @@ from uuid import uuid4
 
 import structlog
 
+from src.models.automatic_rally import AutomaticRally
 from src.models.lps import LPS
 from src.models.sos_breakout import SOSBreakout
 from src.models.spring import Spring
 from src.models.wyckoff_phase import WyckoffPhase
 
 logger = structlog.get_logger(__name__)
+
+# AR Pattern Quality Thresholds (Story 14.2)
+AR_ACTIVATION_QUALITY_THRESHOLD = 0.7  # Minimum quality for AR to activate FORMING campaigns
+AR_HIGH_QUALITY_BONUS_THRESHOLD = 0.75  # Minimum quality for AR progression bonus
 
 
 class CampaignState(Enum):
@@ -61,7 +67,7 @@ class CampaignState(Enum):
 
 
 # Type alias for pattern union
-WyckoffPattern: TypeAlias = Union[Spring, SOSBreakout, LPS]
+WyckoffPattern: TypeAlias = Union[Spring, AutomaticRally, SOSBreakout, LPS]
 
 
 @dataclass
@@ -276,6 +282,34 @@ class IntradayCampaignDetector:
             expiration_hours=expiration_hours,
         )
 
+    def _handle_ar_activation(self, campaign: Campaign, pattern: AutomaticRally) -> bool:
+        """
+        Handle AR pattern activation logic (Story 14.2).
+
+        High-quality AR patterns (quality_score > 0.7) can activate FORMING campaigns
+        immediately without waiting for a second pattern.
+
+        Args:
+            campaign: Campaign to potentially activate
+            pattern: AR pattern to evaluate
+
+        Returns:
+            bool: True if campaign was activated, False otherwise
+        """
+        if pattern.quality_score > AR_ACTIVATION_QUALITY_THRESHOLD:
+            campaign.state = CampaignState.ACTIVE
+            new_phase = self._determine_phase(campaign.patterns)
+            self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
+            self.logger.info(
+                "Campaign activated by high-quality AR",
+                campaign_id=campaign.campaign_id,
+                ar_quality_score=pattern.quality_score,
+                pattern_count=len(campaign.patterns),
+                phase=campaign.current_phase.value if campaign.current_phase else None,
+            )
+            return True
+        return False
+
     def add_pattern(
         self,
         pattern: WyckoffPattern,
@@ -363,6 +397,12 @@ class IntradayCampaignDetector:
                 position_size=str(campaign.position_size),
                 dollar_risk=str(campaign.dollar_risk),
             )
+
+            # Story 14.2: AR can activate FORMING campaign if high quality
+            if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
+                if self._handle_ar_activation(campaign, pattern):
+                    return campaign  # Activated by AR, skip normal activation logic
+
             return campaign
 
         # AC4.10: Validate sequence before adding
@@ -384,6 +424,11 @@ class IntradayCampaignDetector:
 
         # AC4.9: Update risk metadata
         self._update_campaign_metadata(campaign)
+
+        # Story 14.2: AR can activate FORMING campaign if high quality
+        if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
+            if self._handle_ar_activation(campaign, pattern):
+                return campaign  # Activated by AR, skip normal activation logic
 
         # Task 3: Check if we have enough patterns to mark ACTIVE
         if len(campaign.patterns) >= self.min_patterns_for_active:
@@ -505,6 +550,7 @@ class IntradayCampaignDetector:
 
         Task 7: Sequence-based phase assignment.
         AC4.10: Analyzes LATEST pattern in valid sequence, not just existence.
+        Story 14.2: AR pattern phase logic added.
 
         Args:
             patterns: List of patterns in chronological order
@@ -515,6 +561,8 @@ class IntradayCampaignDetector:
         Phase Assignment Logic:
             - SOS or LPS → Phase D (markup preparation)
             - Spring → Phase C (testing phase)
+            - AR after Spring → Phase C confirmation (accumulation progressing)
+            - AR without Spring → Phase B (early accumulation)
             - Default → Phase B (accumulation)
         """
         if not patterns:
@@ -526,6 +574,14 @@ class IntradayCampaignDetector:
         # Phase D: SOS or LPS indicates markup preparation
         if isinstance(latest_pattern, SOSBreakout | LPS):
             return WyckoffPhase.D
+
+        # AR pattern phase logic (Story 14.2)
+        if isinstance(latest_pattern, AutomaticRally):
+            # AR after Spring = Phase C confirmation
+            if any(isinstance(p, Spring) for p in patterns[:-1]):
+                return WyckoffPhase.C
+            # AR without Spring = early Phase B
+            return WyckoffPhase.B
 
         # Phase C: Spring indicates testing phase
         if isinstance(latest_pattern, Spring):
@@ -636,7 +692,8 @@ class IntradayCampaignDetector:
             True if sequence is valid, False otherwise
 
         Valid Transitions:
-            - Spring → [Spring, SOSBreakout]
+            - Spring → [Spring, AR, SOSBreakout]
+            - AR → [SOSBreakout, LPS]
             - SOSBreakout → [SOSBreakout, LPS]
             - LPS → [LPS]
 
@@ -650,7 +707,8 @@ class IntradayCampaignDetector:
         # Define valid transitions
         # Key: current pattern type, Value: list of allowed next patterns
         VALID_TRANSITIONS: dict[type, list[type]] = {
-            Spring: [Spring, SOSBreakout],  # Can have multiple Springs, then SOS
+            Spring: [Spring, AutomaticRally, SOSBreakout],  # Spring → AR optional, then SOS
+            AutomaticRally: [SOSBreakout, LPS],  # AR → SOS/LPS (confirms accumulation)
             SOSBreakout: [SOSBreakout, LPS],  # Can have multiple SOS, then LPS
             LPS: [LPS],  # LPS can repeat
         }
@@ -676,6 +734,102 @@ class IntradayCampaignDetector:
 
         return True
 
+    def _calculate_strength_score(self, campaign: Campaign) -> float:
+        """
+        Calculate campaign strength score (0.0-1.0).
+
+        Story 14.2: Enhanced to reward Spring→AR→SOS progression.
+
+        Args:
+            campaign: Campaign to calculate strength for
+
+        Returns:
+            Strength score (0.0-1.0)
+
+        Scoring Logic:
+            - Base: Pattern count (0.1-0.3)
+            - Pattern quality: Average quality scores (0.4 weight)
+            - Phase progression: Phase D/E bonus (0.1-0.2)
+            - AR bonus: Spring→AR→SOS progression (+0.1)
+            - High-quality AR: Quality >0.75 (+0.05 additional)
+        """
+        score = 0.0
+        patterns = campaign.patterns
+
+        if not patterns:
+            return 0.0
+
+        # Base score from pattern count
+        if len(patterns) >= 3:
+            score += 0.3  # Multi-pattern campaign
+        elif len(patterns) == 2:
+            score += 0.2
+        else:
+            score += 0.1
+
+        # Pattern quality tier (map quality tiers to numeric scores)
+        quality_scores = []
+        for p in patterns:
+            if isinstance(p, Spring):
+                tier = p.quality_tier
+                if tier == "IDEAL":
+                    quality_scores.append(0.95)
+                elif tier == "GOOD":
+                    quality_scores.append(0.80)
+                elif tier == "ACCEPTABLE":
+                    quality_scores.append(0.65)
+            elif isinstance(p, AutomaticRally):
+                # AR quality based on quality_score (Story 14.1)
+                quality_scores.append(p.quality_score)
+            elif isinstance(p, SOSBreakout):
+                tier = p.quality_tier
+                if tier == "EXCELLENT":
+                    quality_scores.append(0.95)
+                elif tier == "GOOD":
+                    quality_scores.append(0.85)
+                elif tier == "ACCEPTABLE":
+                    quality_scores.append(0.70)
+            elif isinstance(p, LPS):
+                tier = p.get_overall_quality()
+                if tier == "EXCELLENT":
+                    quality_scores.append(0.95)
+                elif tier == "GOOD":
+                    quality_scores.append(0.85)
+                elif tier == "ACCEPTABLE":
+                    quality_scores.append(0.70)
+                elif tier == "POOR":
+                    quality_scores.append(0.50)
+
+        if quality_scores:
+            avg_quality = sum(quality_scores) / len(quality_scores)
+            score += avg_quality * 0.4  # 40% weight on pattern quality
+
+        # AR progression bonus (Story 14.2)
+        has_spring = any(isinstance(p, Spring) for p in patterns)
+        has_ar = any(isinstance(p, AutomaticRally) for p in patterns)
+        has_sos = any(isinstance(p, SOSBreakout) for p in patterns)
+
+        if has_spring and has_ar and has_sos:
+            # Complete Spring→AR→SOS progression
+            score += 0.1
+
+            # Additional bonus for high-quality AR
+            ar_patterns = [p for p in patterns if isinstance(p, AutomaticRally)]
+            if ar_patterns:
+                # Check if any AR has high quality
+                for ar in ar_patterns:
+                    if ar.quality_score > AR_HIGH_QUALITY_BONUS_THRESHOLD:
+                        score += 0.05  # High-quality AR bonus
+                        break  # Only add once
+
+        # Phase progression bonus
+        if campaign.current_phase in [WyckoffPhase.D, WyckoffPhase.E]:
+            score += 0.2
+        elif campaign.current_phase == WyckoffPhase.C:
+            score += 0.1
+
+        return min(score, 1.0)
+
     def _update_campaign_metadata(self, campaign: Campaign) -> None:
         """
         Update campaign risk metadata based on patterns.
@@ -688,8 +842,8 @@ class IntradayCampaignDetector:
 
         Metadata Extracted:
             - support_level: Lowest Spring low
-            - resistance_level: Highest test/AR high (Note: AR not in scope, use SOS)
-            - strength_score: Average pattern quality scores
+            - resistance_level: Highest test/AR high (Story 14.2: AR included)
+            - strength_score: Campaign strength using dedicated method
             - risk_per_share: Latest price - support_level
             - range_width_pct: (resistance - support) / support * 100
         """
@@ -705,11 +859,14 @@ class IntradayCampaignDetector:
         if spring_lows:
             campaign.support_level = min(spring_lows)
 
-        # Extract resistance level (highest SOS breakout or LPS resistance)
-        # Note: AR patterns not in Story 13.4 scope, use SOS breakout_price as proxy
+        # Extract resistance level (highest AR/SOS/LPS resistance)
+        # Story 14.2: AR patterns now included
         resistance_highs = []
         for p in campaign.patterns:
-            if isinstance(p, SOSBreakout) and hasattr(p, "breakout_price"):
+            if isinstance(p, AutomaticRally) and hasattr(p, "ar_high"):
+                # AR high represents resistance level
+                resistance_highs.append(p.ar_high)
+            elif isinstance(p, SOSBreakout) and hasattr(p, "breakout_price"):
                 resistance_highs.append(p.breakout_price)
             elif isinstance(p, LPS) and hasattr(p, "ice_level"):
                 # Ice is the resistance that was broken
@@ -718,44 +875,8 @@ class IntradayCampaignDetector:
         if resistance_highs:
             campaign.resistance_level = max(resistance_highs)
 
-        # Calculate strength score (average of pattern quality scores)
-        # Use quality_tier property to derive numeric score
-        quality_scores = []
-        for p in campaign.patterns:
-            if isinstance(p, Spring):
-                # Map quality_tier to numeric score
-                tier = p.quality_tier
-                if tier == "IDEAL":
-                    quality_scores.append(0.95)
-                elif tier == "GOOD":
-                    quality_scores.append(0.80)
-                elif tier == "ACCEPTABLE":
-                    quality_scores.append(0.65)
-            elif isinstance(p, SOSBreakout):
-                tier = p.quality_tier
-                if tier == "EXCELLENT":
-                    quality_scores.append(0.95)
-                elif tier == "GOOD":
-                    quality_scores.append(0.85)
-                elif tier == "ACCEPTABLE":
-                    quality_scores.append(0.70)
-            elif isinstance(p, LPS):
-                # LPS has get_overall_quality() method
-                tier = p.get_overall_quality()
-                if tier == "EXCELLENT":
-                    quality_scores.append(0.95)
-                elif tier == "GOOD":
-                    quality_scores.append(0.85)
-                elif tier == "ACCEPTABLE":
-                    quality_scores.append(0.70)
-                elif tier == "POOR":
-                    quality_scores.append(0.50)
-
-        if quality_scores:
-            campaign.strength_score = sum(quality_scores) / len(quality_scores)
-        else:
-            # Default to moderate strength if patterns don't have quality scores
-            campaign.strength_score = 0.5
+        # Calculate strength score using dedicated method (Story 14.2)
+        campaign.strength_score = self._calculate_strength_score(campaign)
 
         # Calculate risk per share (current price - support)
         if campaign.support_level and campaign.patterns:
@@ -764,10 +885,12 @@ class IntradayCampaignDetector:
 
             if isinstance(latest_pattern, Spring):
                 latest_price = latest_pattern.recovery_price
+            elif isinstance(latest_pattern, AutomaticRally):
+                latest_price = latest_pattern.ar_high  # Story 14.2
             elif isinstance(latest_pattern, SOSBreakout):
                 latest_price = latest_pattern.breakout_price
             elif isinstance(latest_pattern, LPS):
-                latest_price = latest_pattern.bar.close
+                latest_price = latest_pattern.bar.close  # LPS uses OHLCVBar
 
             if latest_price:
                 campaign.risk_per_share = latest_price - campaign.support_level
