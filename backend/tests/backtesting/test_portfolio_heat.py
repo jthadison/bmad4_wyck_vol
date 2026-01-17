@@ -6,12 +6,15 @@ Tests cover all acceptance criteria for Story 14.3:
 - Portfolio heat calculation
 - Heat limit enforcement
 - Multi-campaign risk management
+- Input validation (2.0% risk limit, negative values, extreme values)
 
 Test Categories:
-1. Position Sizing Tests
-2. Heat Calculation Tests
-3. Heat Limit Enforcement Tests
-4. Edge Cases and Error Handling
+1. Position Sizing Tests (4 tests)
+2. Heat Calculation Tests (3 tests)
+3. Heat Limit Enforcement Tests (3 tests)
+4. Edge Cases and Validation (10 tests)
+
+Total: 20 comprehensive test cases
 """
 
 from datetime import UTC, datetime, timedelta
@@ -41,7 +44,7 @@ def detector():
         min_patterns_for_active=2,
         expiration_hours=72,
         max_concurrent_campaigns=3,
-        max_portfolio_heat_pct=10.0,
+        max_portfolio_heat_pct=Decimal("10.0"),
     )
 
 
@@ -125,9 +128,10 @@ class TestPositionSizing:
         position_size = calculate_position_size(
             account_size=Decimal("100000"),
             risk_pct_per_trade=Decimal("2.0"),
-            risk_per_share=Decimal("4.99"),  # Would give 401.6 shares
+            risk_per_share=Decimal("4.99"),  # Would give 400.8016... shares
         )
-        # Should round to whole shares (banker's rounding: 401.6 → 402, but 401.5 → 402)
+        # Should round to whole shares using Decimal.quantize() which uses ROUND_HALF_EVEN by default
+        # 400.8016... → 401 (rounds to nearest integer)
         assert position_size == Decimal("401")
 
 
@@ -235,11 +239,38 @@ class TestHeatLimitEnforcement:
         self, detector, sample_spring, sample_bar, base_timestamp
     ):
         """Test that campaign is rejected when heat would exceed limit."""
-        detector.max_portfolio_heat_pct = 10.0
+        detector.max_portfolio_heat_pct = Decimal("10.0")
+        detector.max_concurrent_campaigns = 10  # Set high to test heat limit, not concurrent limit
+        detector.expiration_hours = 300  # Increase to prevent campaign expiration during test
         account_size = Decimal("100000")
 
-        # Create campaign with high heat (8%)
-        spring1 = Spring(
+        # Create 5 campaigns with 2% risk each = 10% total heat
+        # Use 50-hour spacing to create separate campaigns (> 48h window to avoid grouping)
+        campaigns = []
+        for i in range(5):
+            spring = Spring(
+                bar=sample_bar,
+                bar_index=0,
+                penetration_pct=Decimal("0.02"),
+                volume_ratio=Decimal("0.4"),
+                recovery_bars=1,
+                creek_reference=Decimal("100.00"),
+                spring_low=Decimal("98.00"),
+                recovery_price=Decimal("103.00"),
+                detection_timestamp=base_timestamp + timedelta(hours=50 * i),
+                trading_range_id=uuid4(),
+            )
+
+            campaign = detector.add_pattern(
+                spring, account_size=account_size, risk_pct_per_trade=Decimal("2.0")
+            )
+            campaigns.append(campaign)
+
+        # First 5 campaigns should succeed (2% each = 10% total)
+        assert all(c is not None for c in campaigns[:5])
+
+        # 6th campaign should be rejected (would make 12% > 10% limit)
+        spring_extra = Spring(
             bar=sample_bar,
             bar_index=0,
             penetration_pct=Decimal("0.02"),
@@ -248,39 +279,20 @@ class TestHeatLimitEnforcement:
             creek_reference=Decimal("100.00"),
             spring_low=Decimal("98.00"),
             recovery_price=Decimal("103.00"),
-            detection_timestamp=base_timestamp,
+            detection_timestamp=base_timestamp + timedelta(hours=250),  # 250 hours from base
             trading_range_id=uuid4(),
         )
 
-        campaign1 = detector.add_pattern(
-            spring1, account_size=account_size, risk_pct_per_trade=Decimal("8.0")
-        )
-        assert campaign1 is not None
-
-        # Try to add campaign that would exceed 10% limit
-        spring2 = Spring(
-            bar=sample_bar,
-            bar_index=0,
-            penetration_pct=Decimal("0.02"),
-            volume_ratio=Decimal("0.4"),
-            recovery_bars=1,
-            creek_reference=Decimal("100.00"),
-            spring_low=Decimal("98.00"),
-            recovery_price=Decimal("103.00"),
-            detection_timestamp=base_timestamp + timedelta(hours=60),
-            trading_range_id=uuid4(),
-        )
-
-        campaign2 = detector.add_pattern(
-            spring2, account_size=account_size, risk_pct_per_trade=Decimal("3.0")
+        campaign_extra = detector.add_pattern(
+            spring_extra, account_size=account_size, risk_pct_per_trade=Decimal("2.0")
         )
 
         # Should be rejected
-        assert campaign2 is None
+        assert campaign_extra is None
 
-        # Heat should still be at first campaign level
+        # Heat should be at 10%
         heat = detector._calculate_portfolio_heat(account_size)
-        assert heat < Decimal("10")
+        assert heat <= Decimal("10")
 
     def test_campaign_metadata_dollar_risk_calculation(self, detector, sample_spring):
         """Test that dollar_risk is calculated correctly in metadata."""
@@ -323,3 +335,128 @@ class TestEdgeCases:
         # Heat should be 0 since no position size
         heat = detector._calculate_portfolio_heat(account_size)
         assert heat == Decimal("0")
+
+    def test_risk_pct_exceeds_hard_limit(self):
+        """Test that risk_pct_per_trade exceeding 2.0% raises ValueError."""
+        with pytest.raises(ValueError, match="exceeds 2.0% hard limit"):
+            calculate_position_size(
+                account_size=Decimal("100000"),
+                risk_pct_per_trade=Decimal("3.0"),  # Exceeds 2.0% limit
+                risk_per_share=Decimal("5.00"),
+            )
+
+    def test_negative_risk_pct_returns_zero(self):
+        """Test that negative risk_pct_per_trade returns 0."""
+        position_size = calculate_position_size(
+            account_size=Decimal("100000"),
+            risk_pct_per_trade=Decimal("-1.0"),  # Negative
+            risk_per_share=Decimal("5.00"),
+        )
+        assert position_size == Decimal("0")
+
+    def test_negative_account_size_returns_zero(self):
+        """Test that negative account_size returns 0."""
+        position_size = calculate_position_size(
+            account_size=Decimal("-100000"),  # Negative
+            risk_pct_per_trade=Decimal("2.0"),
+            risk_per_share=Decimal("5.00"),
+        )
+        assert position_size == Decimal("0")
+
+    def test_negative_risk_per_share_returns_zero(self):
+        """Test that negative risk_per_share returns 0."""
+        position_size = calculate_position_size(
+            account_size=Decimal("100000"),
+            risk_pct_per_trade=Decimal("2.0"),
+            risk_per_share=Decimal("-5.00"),  # Negative
+        )
+        assert position_size == Decimal("0")
+
+    def test_extremely_large_account_size(self):
+        """Test position sizing with extremely large account size."""
+        position_size = calculate_position_size(
+            account_size=Decimal("1000000000"),  # $1 billion
+            risk_pct_per_trade=Decimal("2.0"),
+            risk_per_share=Decimal("5.00"),
+        )
+        # $1B × 2% / $5 = 4,000,000 shares
+        assert position_size == Decimal("4000000")
+
+    def test_extremely_small_risk_per_share(self):
+        """Test position sizing with very small risk_per_share."""
+        position_size = calculate_position_size(
+            account_size=Decimal("100000"),
+            risk_pct_per_trade=Decimal("2.0"),
+            risk_per_share=Decimal("0.01"),  # 1 cent risk
+        )
+        # $100,000 × 2% / $0.01 = 200,000 shares
+        assert position_size == Decimal("200000")
+
+    def test_concurrent_and_heat_limits_interaction(
+        self, detector, sample_spring, sample_bar, base_timestamp
+    ):
+        """Test that concurrent campaign limit is checked before heat limit."""
+        detector.max_concurrent_campaigns = 2  # Limit to 2 campaigns
+        detector.max_portfolio_heat_pct = Decimal("20.0")  # High heat limit
+        detector.expiration_hours = 200  # Increase to prevent campaign expiration during test
+        account_size = Decimal("100000")
+
+        # Campaign 1
+        spring1 = Spring(
+            bar=sample_bar,
+            bar_index=0,
+            penetration_pct=Decimal("0.02"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=Decimal("100.00"),
+            spring_low=Decimal("98.00"),
+            recovery_price=Decimal("103.00"),
+            detection_timestamp=base_timestamp,
+            trading_range_id=uuid4(),
+        )
+
+        campaign1 = detector.add_pattern(
+            spring1, account_size=account_size, risk_pct_per_trade=Decimal("1.0")
+        )
+        assert campaign1 is not None
+
+        # Campaign 2 (50 hours later to create separate campaign)
+        spring2 = Spring(
+            bar=sample_bar,
+            bar_index=0,
+            penetration_pct=Decimal("0.02"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=Decimal("100.00"),
+            spring_low=Decimal("98.00"),
+            recovery_price=Decimal("103.00"),
+            detection_timestamp=base_timestamp + timedelta(hours=50),
+            trading_range_id=uuid4(),
+        )
+
+        campaign2 = detector.add_pattern(
+            spring2, account_size=account_size, risk_pct_per_trade=Decimal("1.0")
+        )
+        assert campaign2 is not None
+
+        # Campaign 3 - Should be rejected due to concurrent limit (not heat)
+        spring3 = Spring(
+            bar=sample_bar,
+            bar_index=0,
+            penetration_pct=Decimal("0.02"),
+            volume_ratio=Decimal("0.4"),
+            recovery_bars=1,
+            creek_reference=Decimal("100.00"),
+            spring_low=Decimal("98.00"),
+            recovery_price=Decimal("103.00"),
+            detection_timestamp=base_timestamp + timedelta(hours=100),
+            trading_range_id=uuid4(),
+        )
+
+        campaign3 = detector.add_pattern(
+            spring3, account_size=account_size, risk_pct_per_trade=Decimal("1.0")
+        )
+
+        # Should be rejected due to concurrent campaign limit
+        assert campaign3 is None
+        assert len(detector.get_active_campaigns()) == 2

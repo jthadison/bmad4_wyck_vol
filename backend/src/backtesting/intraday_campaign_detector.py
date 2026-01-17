@@ -168,11 +168,14 @@ def calculate_position_size(
 
     Args:
         account_size: Total account size in dollars
-        risk_pct_per_trade: Risk percentage per trade (e.g., 2.0 for 2%)
+        risk_pct_per_trade: Risk percentage per trade (e.g., 2.0 for 2%, max 2.0%)
         risk_per_share: Dollar risk per share (entry_price - stop_loss)
 
     Returns:
         Position size in shares/contracts (rounded to whole shares)
+
+    Raises:
+        ValueError: If risk_pct_per_trade exceeds 2.0% hard limit
 
     Example:
         >>> calculate_position_size(
@@ -182,6 +185,17 @@ def calculate_position_size(
         ... )
         Decimal("400")  # $100,000 × 2% / $5.00 = 400 shares
     """
+    # Validate risk percentage (2.0% hard limit)
+    if risk_pct_per_trade > Decimal("2.0"):
+        raise ValueError(f"risk_pct_per_trade {risk_pct_per_trade}% exceeds 2.0% hard limit")
+
+    if risk_pct_per_trade < Decimal("0"):
+        logger.warning(
+            "Negative risk_pct_per_trade for position sizing",
+            risk_pct_per_trade=str(risk_pct_per_trade),
+        )
+        return Decimal("0")
+
     if risk_per_share <= Decimal("0"):
         logger.warning(
             "Invalid risk_per_share for position sizing",
@@ -220,7 +234,7 @@ class IntradayCampaignDetector:
         min_patterns_for_active: Min patterns to transition to ACTIVE (default: 2)
         expiration_hours: Hours before campaign fails (default: 72)
         max_concurrent_campaigns: Max ACTIVE campaigns allowed (default: 3)
-        max_portfolio_heat_pct: Max portfolio heat percentage (default: 40.0)
+        max_portfolio_heat_pct: Max portfolio heat percentage (default: 10.0)
 
     Example:
         detector = IntradayCampaignDetector(
@@ -243,7 +257,7 @@ class IntradayCampaignDetector:
         min_patterns_for_active: int = 2,
         expiration_hours: int = 72,
         max_concurrent_campaigns: int = 3,
-        max_portfolio_heat_pct: float = 10.0,
+        max_portfolio_heat_pct: Decimal = Decimal("10.0"),
     ):
         """Initialize intraday campaign detector."""
         self.campaign_window_hours = campaign_window_hours
@@ -330,7 +344,7 @@ class IntradayCampaignDetector:
                     pattern_type=type(pattern).__name__,
                     new_campaign_risk=str(new_campaign_risk) if new_campaign_risk else None,
                 )
-                # Remove the temporary campaign we created
+                # Campaign rejected - not added to campaigns list
                 return None
 
             # Update campaign with position sizing
@@ -878,25 +892,24 @@ class IntradayCampaignDetector:
                 prospective_heat = current_heat
 
             # Check heat limit
-            max_heat = Decimal(str(self.max_portfolio_heat_pct))
-            if prospective_heat > max_heat:
+            if prospective_heat > self.max_portfolio_heat_pct:
                 self.logger.warning(
                     "Portfolio heat limit exceeded",
                     current_heat=str(current_heat),
                     prospective_heat=str(prospective_heat),
-                    max_allowed=self.max_portfolio_heat_pct,
+                    max_allowed=str(self.max_portfolio_heat_pct),
                     new_campaign_risk=str(new_campaign_risk) if new_campaign_risk else None,
                 )
                 return False
 
             # Early warning at 80% of limit
-            warning_threshold = max_heat * Decimal("0.8")
+            warning_threshold = self.max_portfolio_heat_pct * Decimal("0.8")
             if prospective_heat > warning_threshold:
                 self.logger.info(
                     "Portfolio heat approaching limit",
                     heat_pct=str(prospective_heat),
                     threshold=str(warning_threshold),
-                    max_allowed=self.max_portfolio_heat_pct,
+                    max_allowed=str(self.max_portfolio_heat_pct),
                 )
 
         return True
@@ -928,7 +941,7 @@ def create_timeframe_optimized_detector(timeframe: str) -> IntradayCampaignDetec
             min_patterns_for_active=2,  # 2 patterns → ACTIVE
             expiration_hours=72,  # 72h expiration
             max_concurrent_campaigns=3,  # Max 3 concurrent campaigns
-            max_portfolio_heat_pct=10.0,  # 10% max portfolio heat (FR7.7/AC7.14)
+            max_portfolio_heat_pct=Decimal("10.0"),  # 10% max portfolio heat (FR7.7/AC7.14)
         )
 
     # Daily and longer: Use standard Wyckoff campaign windows
@@ -939,5 +952,5 @@ def create_timeframe_optimized_detector(timeframe: str) -> IntradayCampaignDetec
             min_patterns_for_active=2,  # 2 patterns → ACTIVE
             expiration_hours=360,  # 15 days expiration
             max_concurrent_campaigns=5,  # Max 5 concurrent campaigns
-            max_portfolio_heat_pct=10.0,  # 10% max portfolio heat (FR7.7/AC7.14)
+            max_portfolio_heat_pct=Decimal("10.0"),  # 10% max portfolio heat (FR7.7/AC7.14)
         )
