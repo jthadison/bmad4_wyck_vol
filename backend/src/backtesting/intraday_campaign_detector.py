@@ -248,7 +248,7 @@ class IntradayCampaignDetector:
             self._update_campaign_metadata(campaign)
 
             # Story 14.2: High-quality AR can activate new campaign immediately
-            if isinstance(pattern, AutomaticRally) and pattern.volume_profile == "HIGH":
+            if isinstance(pattern, AutomaticRally) and pattern.quality_score > 0.7:
                 campaign.state = CampaignState.ACTIVE
                 new_phase = self._determine_phase(campaign.patterns)
                 self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
@@ -256,7 +256,7 @@ class IntradayCampaignDetector:
                     "New campaign started and activated by high-quality AR",
                     campaign_id=campaign.campaign_id,
                     timestamp=pattern.detection_timestamp,
-                    ar_volume_profile=pattern.volume_profile,
+                    ar_quality_score=pattern.quality_score,
                     state=campaign.state.value,
                     phase=campaign.current_phase.value if campaign.current_phase else None,
                 )
@@ -292,15 +292,15 @@ class IntradayCampaignDetector:
 
         # Story 14.2: AR can activate FORMING campaign if high quality
         if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
-            # High-quality AR (HIGH volume) can activate campaign
-            if pattern.volume_profile == "HIGH":
+            # High-quality AR (quality_score > 0.7) can activate campaign
+            if pattern.quality_score > 0.7:
                 campaign.state = CampaignState.ACTIVE
                 new_phase = self._determine_phase(campaign.patterns)
                 self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
                 self.logger.info(
                     "Campaign activated by high-quality AR",
                     campaign_id=campaign.campaign_id,
-                    ar_volume_profile=pattern.volume_profile,
+                    ar_quality_score=pattern.quality_score,
                     pattern_count=len(campaign.patterns),
                     phase=campaign.current_phase.value if campaign.current_phase else None,
                 )
@@ -509,11 +509,8 @@ class IntradayCampaignDetector:
                 elif tier == "ACCEPTABLE":
                     quality_scores.append(0.65)
             elif isinstance(p, AutomaticRally):
-                # AR quality based on volume_profile
-                if p.volume_profile == "HIGH":
-                    quality_scores.append(0.85)  # High volume AR is strong
-                else:
-                    quality_scores.append(0.70)  # Normal volume AR
+                # AR quality based on quality_score (Story 14.1)
+                quality_scores.append(p.quality_score)
             elif isinstance(p, SOSBreakout):
                 tier = p.quality_tier
                 if tier == "EXCELLENT":
@@ -549,9 +546,9 @@ class IntradayCampaignDetector:
             # Additional bonus for high-quality AR
             ar_patterns = [p for p in patterns if isinstance(p, AutomaticRally)]
             if ar_patterns:
-                # Check if any AR has high volume profile (proxy for quality >0.75)
+                # Check if any AR has high quality (>0.75)
                 for ar in ar_patterns:
-                    if ar.volume_profile == "HIGH":
+                    if ar.quality_score > 0.75:
                         score += 0.05  # High-quality AR bonus
                         break  # Only add once
 

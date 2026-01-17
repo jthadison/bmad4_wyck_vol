@@ -89,7 +89,7 @@ def sample_spring(base_timestamp):
 
 @pytest.fixture
 def sample_ar_high_quality(base_timestamp):
-    """Sample high-quality AR pattern (HIGH volume)."""
+    """Sample high-quality AR pattern (quality_score > 0.75)."""
     return AutomaticRally(
         bar={
             "timestamp": base_timestamp + timedelta(hours=1),
@@ -105,14 +105,20 @@ def sample_ar_high_quality(base_timestamp):
         sc_reference={"low": 98.0},
         sc_low=Decimal("98.00"),
         ar_high=Decimal("101.50"),
-        volume_profile="HIGH",
+        volume_profile="NORMAL",  # Legacy field
         detection_timestamp=base_timestamp + timedelta(hours=1),
+        # Story 14.1 fields
+        quality_score=0.85,  # High quality (>0.75 for bonus, >0.7 for activation)
+        recovery_percent=Decimal("0.50"),  # 50% recovery
+        volume_trend="DECLINING",  # Ideal after Spring/SC
+        prior_pattern_bar=100,
+        prior_pattern_type="SPRING",
     )
 
 
 @pytest.fixture
 def sample_ar_low_quality(base_timestamp):
-    """Sample low-quality AR pattern (NORMAL volume)."""
+    """Sample low-quality AR pattern (quality_score < 0.7)."""
     return AutomaticRally(
         bar={
             "timestamp": base_timestamp + timedelta(hours=1),
@@ -128,8 +134,14 @@ def sample_ar_low_quality(base_timestamp):
         sc_reference={"low": 98.0},
         sc_low=Decimal("98.00"),
         ar_high=Decimal("101.00"),
-        volume_profile="NORMAL",
+        volume_profile="NORMAL",  # Legacy field
         detection_timestamp=base_timestamp + timedelta(hours=1),
+        # Story 14.1 fields
+        quality_score=0.60,  # Low quality (<0.7, won't activate; <0.75, no bonus)
+        recovery_percent=Decimal("0.40"),  # 40% recovery (minimum)
+        volume_trend="NEUTRAL",
+        prior_pattern_bar=100,
+        prior_pattern_type="SPRING",
     )
 
 
@@ -515,8 +527,14 @@ def test_multiple_ar_patterns(
         sc_reference={"low": 98.0},
         sc_low=Decimal("98.00"),
         ar_high=Decimal("102.00"),
-        volume_profile="HIGH",
+        volume_profile="NORMAL",  # Legacy field
         detection_timestamp=sample_ar_high_quality.detection_timestamp + timedelta(hours=2),
+        # Story 14.1 fields
+        quality_score=0.82,  # High quality (>0.75 for bonus)
+        recovery_percent=Decimal("0.55"),  # 55% recovery
+        volume_trend="DECLINING",
+        prior_pattern_bar=100,
+        prior_pattern_type="SPRING",
     )
 
     detector.add_pattern(sample_spring)
