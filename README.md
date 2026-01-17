@@ -342,6 +342,10 @@ bmad-wyckoff/
 - **Architecture:** [docs/architecture/](docs/architecture/)
 - **Product Requirements:** [docs/prd/](docs/prd/)
 - **User Stories:** [docs/stories/](docs/stories/)
+- **Guides:**
+  - [Volume Analysis Guide](docs/guides/volume-analysis-guide.md) - Comprehensive Wyckoff volume interpretation guide
+- **API Documentation:**
+  - [Campaign Detector API](docs/api/campaign-detector-api.md) - IntradayCampaignDetector API reference
 
 ## Technology Stack
 
