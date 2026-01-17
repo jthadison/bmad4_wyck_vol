@@ -454,9 +454,7 @@ class UnifiedBacktestEngine:
         # Record equity curve point
         self._record_equity_point(bar, portfolio_value)
 
-    def _handle_signal(
-        self, signal: TradeSignal, bar: OHLCVBar, portfolio_value: Decimal
-    ) -> None:
+    def _handle_signal(self, signal: TradeSignal, bar: OHLCVBar, portfolio_value: Decimal) -> None:
         """
         Handle a detected signal by opening or closing positions.
 
@@ -544,9 +542,7 @@ class UnifiedBacktestEngine:
             if self._positions.has_position(order.symbol):
                 self._positions.close_position(order)
             else:
-                logger.debug(
-                    f"SELL order skipped for {order.symbol}: no open position to close"
-                )
+                logger.debug(f"SELL order skipped for {order.symbol}: no open position to close")
 
     def _record_equity_point(self, bar: OHLCVBar, portfolio_value: Decimal) -> None:
         """

@@ -70,9 +70,7 @@ def mock_repository():
                 if position_id in self.positions:
                     position = self.positions[position_id]
                     position.current_price = current_price
-                    position.current_pnl = (
-                        current_price - position.entry_price
-                    ) * position.shares
+                    position.current_pnl = (current_price - position.entry_price) * position.shares
                     updated.append(position)
             return updated
 
@@ -177,9 +175,7 @@ async def test_update_position_state_not_found(exit_logic, sample_bar):
 
 
 @pytest.mark.asyncio
-async def test_process_exit_delegates_to_manager(
-    exit_logic, mock_repository, sample_position
-):
+async def test_process_exit_delegates_to_manager(exit_logic, mock_repository, sample_position):
     """Test process_exit delegates to state manager."""
     # Setup
     mock_repository.positions[sample_position.id] = sample_position

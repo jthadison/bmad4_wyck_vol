@@ -99,9 +99,7 @@ def mock_repository():
                 if position_id in self.positions:
                     position = self.positions[position_id]
                     position.current_price = current_price
-                    position.current_pnl = (
-                        current_price - position.entry_price
-                    ) * position.shares
+                    position.current_pnl = (current_price - position.entry_price) * position.shares
                     updated_positions.append(position)
 
             return updated_positions
@@ -199,17 +197,13 @@ async def test_update_position_state_success(
 
     # Verify
     assert updated_position.current_price == sample_bar.close
-    assert updated_position.current_pnl == (sample_bar.close - Decimal("150.00")) * Decimal(
-        "100"
-    )
+    assert updated_position.current_pnl == (sample_bar.close - Decimal("150.00")) * Decimal("100")
     assert len(mock_repository.update_position_calls) == 1
     assert mock_repository.update_position_calls[0]["current_price"] == sample_bar.close
 
 
 @pytest.mark.asyncio
-async def test_update_position_state_not_found(
-    state_manager, sample_campaign_id, sample_bar
-):
+async def test_update_position_state_not_found(state_manager, sample_campaign_id, sample_bar):
     """Test position state update with non-existent position."""
     non_existent_id = uuid4()
 
@@ -338,9 +332,7 @@ async def test_handle_exit_not_found(state_manager, sample_campaign_id, sample_e
 
 
 @pytest.mark.asyncio
-async def test_batch_update_positions_success(
-    state_manager, mock_repository, sample_campaign_id
-):
+async def test_batch_update_positions_success(state_manager, mock_repository, sample_campaign_id):
     """Test successful batch position updates."""
     # Setup: Create multiple positions
     position1_id = uuid4()

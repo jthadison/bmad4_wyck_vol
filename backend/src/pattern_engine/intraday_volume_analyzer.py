@@ -63,10 +63,10 @@ class IntradayVolumeAnalyzer:
 
     # Session volume baselines (relative to 24h average)
     SESSION_VOLUME_FACTORS = {
-        ForexSession.ASIAN: 0.4,     # Asian is ~40% of average
-        ForexSession.LONDON: 1.3,    # London is ~130% of average
-        ForexSession.NY: 1.2,        # NY is ~120% of average
-        ForexSession.OVERLAP: 1.6,   # Overlap is ~160% of average (peak)
+        ForexSession.ASIAN: 0.4,  # Asian is ~40% of average
+        ForexSession.LONDON: 1.3,  # London is ~130% of average
+        ForexSession.NY: 1.2,  # NY is ~120% of average
+        ForexSession.OVERLAP: 1.6,  # Overlap is ~160% of average (peak)
     }
 
     def __init__(self, asset_type: str = "forex"):
@@ -77,10 +77,7 @@ class IntradayVolumeAnalyzer:
             asset_type: "forex" (tick volume) or "index" (true volume)
         """
         self.asset_type = asset_type
-        self.logger = logger.bind(
-            component="intraday_volume_analyzer",
-            asset_type=asset_type
-        )
+        self.logger = logger.bind(component="intraday_volume_analyzer", asset_type=asset_type)
 
     def calculate_session_relative_volume(
         self,
@@ -130,7 +127,7 @@ class IntradayVolumeAnalyzer:
             bars=bars,
             end_index=index,
             session=session,
-            lookback_sessions=3  # Compare against last 3 sessions
+            lookback_sessions=3,  # Compare against last 3 sessions
         )
 
         if len(session_bars) < 5:
@@ -139,7 +136,7 @@ class IntradayVolumeAnalyzer:
                 "Insufficient session history, using standard volume calc",
                 index=index,
                 session=session,
-                bars_found=len(session_bars)
+                bars_found=len(session_bars),
             )
             return calculate_volume_ratio(bars, index)
 
@@ -207,7 +204,7 @@ class IntradayVolumeAnalyzer:
                 "Skipping climax check - session open period",
                 index=index,
                 session=session,
-                time=current_bar.timestamp.strftime("%H:%M")
+                time=current_bar.timestamp.strftime("%H:%M"),
             )
             return False
 
@@ -268,9 +265,7 @@ class IntradayVolumeAnalyzer:
         session = self._detect_session(current_bar.timestamp)
 
         # Calculate session-relative volume
-        volume_ratio = self.calculate_session_relative_volume(
-            bars, spring_index, session
-        )
+        volume_ratio = self.calculate_session_relative_volume(bars, spring_index, session)
 
         if volume_ratio is None:
             return False, 0.0
@@ -293,7 +288,7 @@ class IntradayVolumeAnalyzer:
                 session=session,
                 volume_ratio=round(volume_ratio, 3),
                 threshold=max_ratio,
-                reason="Volume too high for Spring pattern"
+                reason="Volume too high for Spring pattern",
             )
 
         return is_valid, volume_ratio
@@ -327,9 +322,7 @@ class IntradayVolumeAnalyzer:
         else:
             return ForexSession.ASIAN  # 22:00-24:00 transitions to next Asian
 
-    def _is_session_open(
-        self, timestamp: datetime, session: ForexSession
-    ) -> bool:
+    def _is_session_open(self, timestamp: datetime, session: ForexSession) -> bool:
         """
         Check if timestamp is within first 30 minutes of session open.
 
@@ -361,7 +354,7 @@ class IntradayVolumeAnalyzer:
         bar_time = time(hour, minute)
         open_window_end = time(
             (open_time.hour if open_time.minute < 30 else open_time.hour + 1),
-            (open_time.minute + 30) % 60
+            (open_time.minute + 30) % 60,
         )
 
         return open_time <= bar_time < open_window_end
