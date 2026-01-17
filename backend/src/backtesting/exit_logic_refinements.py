@@ -1,5 +1,5 @@
 """
-Exit Logic Refinements - Story 13.6.1, 13.6.3 & 13.6.5
+Exit Logic Refinements - Story 13.6.1, 13.6.3, 13.6.5 & 18.11.3
 
 Purpose:
 --------
@@ -12,8 +12,45 @@ Enhanced Wyckoff exit logic with:
 - Session-relative volume normalization (FR6.6.1 - Story 13.6.3)
 - Excessive phase duration detection (FR6.6.2 - Story 13.6.3)
 - Unified exit integration with priority ordering (Story 13.6.5)
+- Campaign state management facade (Story 18.11.3)
 
-Author: Story 13.6.1, 13.6.3 & 13.6.5 Implementation
+Migration Guide:
+----------------
+**PREFERRED USAGE**: Use the ExitLogicRefinements facade class for new code.
+
+The ExitLogicRefinements facade provides a clean, object-oriented interface
+that integrates exit strategies, consolidation detection, and campaign state
+management. The facade delegates to the underlying functions while providing
+better testability and maintainability.
+
+**Old Function-Based API** (still supported for backward compatibility):
+>>> should_exit, reason, metadata = wyckoff_exit_logic_unified(
+...     bar=bar, campaign=campaign, recent_bars=recent_bars, current_bar_index=100
+... )
+
+**New Facade API** (recommended):
+>>> exit_logic = ExitLogicRefinements(repository)
+>>> should_exit, reason, metadata = await exit_logic.evaluate_exit(
+...     campaign=campaign, bar=bar, recent_bars=recent_bars, current_bar_index=100
+... )
+>>> if should_exit:
+...     exit_signal = ExitSignal(reason=reason, price=bar.close)
+...     closed_position = await exit_logic.process_exit(
+...         campaign_id=campaign.id, position_id=position.id, exit_signal=exit_signal
+...     )
+
+Benefits of Facade:
+-------------------
+1. Centralized state management with atomic repository operations
+2. Pluggable exit strategies via ExitStrategyRegistry
+3. Integrated consolidation detection
+4. Better testability with dependency injection
+5. Clean separation of concerns (exit logic vs state mutations)
+
+The function-based API will continue to work but new features may only
+be added to the facade. Consider migrating to the facade for future-proofing.
+
+Author: Story 13.6.1, 13.6.3, 13.6.5 & 18.11.3 Implementation
 """
 
 from collections import defaultdict
@@ -21,15 +58,27 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Optional
+from uuid import UUID
 
 import structlog
 
+from src.backtesting.exit import (
+    ConsolidationConfig,
+    ConsolidationDetector,
+    ConsolidationZone,
+    ExitSignal,
+    ExitStrategyRegistry,
+)
+from src.backtesting.exit.campaign_state_manager import CampaignStateManager
 from src.backtesting.intraday_campaign_detector import Campaign
 from src.models.ohlcv import OHLCVBar
+from src.models.position import Position
 from src.models.wyckoff_phase import WyckoffPhase
 
 if TYPE_CHECKING:
+    from src.backtesting.exit import ExitStrategy
     from src.backtesting.portfolio_risk import PortfolioRiskState
+    from src.repositories.campaign_repository import CampaignRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -1930,3 +1979,281 @@ def wyckoff_exit_logic_unified(
 
     # No exit triggered
     return (False, None, None)
+
+
+# =============================================================================
+# FACADE CLASS - Story 18.11.3
+# =============================================================================
+
+
+class ExitLogicRefinements:
+    """
+    Unified exit logic facade integrating exit strategies, consolidation
+    detection, and campaign state management.
+
+    Story 18.11.3 - Part 3 of exit_logic_refinements.py refactoring (CF-008).
+
+    This facade provides a clean interface for backtesting engine integration,
+    delegating to specialized components while maintaining backward compatibility
+    with the existing function-based API.
+
+    Architecture:
+    -------------
+    - Delegates to CampaignStateManager for position state mutations
+    - Uses ExitStrategyRegistry for pluggable exit strategies
+    - Integrates ConsolidationDetector for pattern-based exits
+    - Calls wyckoff_exit_logic_unified for comprehensive exit evaluation
+
+    Components:
+    -----------
+    - _state_manager: Centralized campaign state management
+    - _strategy_registry: Access to exit strategy implementations
+    - _consolidation_detector: Consolidation zone detection
+
+    Example:
+    --------
+    >>> exit_logic = ExitLogicRefinements(repository)
+    >>> should_exit, reason, metadata = await exit_logic.evaluate_exit(
+    ...     campaign=campaign,
+    ...     bar=current_bar,
+    ...     recent_bars=bars[-50:],
+    ...     current_bar_index=100
+    ... )
+    >>> if should_exit:
+    ...     exit_signal = ExitSignal(reason=reason, price=bar.close)
+    ...     closed_position = await exit_logic.process_exit(
+    ...         campaign_id=campaign.id,
+    ...         position_id=position.id,
+    ...         exit_signal=exit_signal
+    ...     )
+    """
+
+    def __init__(self, repository: "CampaignRepository"):
+        """
+        Initialize exit logic facade with repository.
+
+        Parameters:
+        -----------
+        repository : CampaignRepository
+            Campaign repository for state persistence
+        """
+        self._state_manager = CampaignStateManager(repository)
+        # Store class reference - ExitStrategyRegistry uses class methods (singleton pattern)
+        self._strategy_registry = ExitStrategyRegistry
+        self._consolidation_detector = ConsolidationDetector()
+
+    async def evaluate_exit(
+        self,
+        campaign: Campaign,
+        bar: OHLCVBar,
+        recent_bars: list[OHLCVBar],
+        current_bar_index: int,
+        session_profile: Optional["SessionVolumeProfile"] = None,
+        portfolio: Optional[dict] = None,
+        current_prices: Optional[dict[str, Decimal]] = None,
+        time_limit_bars: int = 100,
+    ) -> tuple[bool, Optional[str], Optional[dict]]:
+        """
+        Evaluate all exit conditions using unified exit logic.
+
+        Delegates to wyckoff_exit_logic_unified for comprehensive exit
+        evaluation with all Wyckoff-specific refinements.
+
+        Parameters:
+        -----------
+        campaign : Campaign
+            Campaign to evaluate for exit
+        bar : OHLCVBar
+            Current price bar
+        recent_bars : list[OHLCVBar]
+            Recent bars for pattern analysis (50+ bars recommended)
+        current_bar_index : int
+            Current bar index in backtest
+        session_profile : dict, optional
+            Session-relative volume profile
+        portfolio : dict, optional
+            Portfolio context for correlation cascade
+        current_prices : dict[str, Decimal], optional
+            Current prices for portfolio positions
+        time_limit_bars : int
+            Maximum bars to hold position (default: 100)
+
+        Returns:
+        --------
+        tuple[bool, str | None, dict | None]
+            - should_exit: True if exit triggered
+            - reason: Exit reason code (e.g., "JUMP_LEVEL", "TRAILING_STOP")
+            - metadata: Exit metadata with price, levels, diagnostics
+
+        Example:
+        --------
+        >>> should_exit, reason, metadata = await exit_logic.evaluate_exit(
+        ...     campaign=campaign,
+        ...     bar=current_bar,
+        ...     recent_bars=bars[-50:],
+        ...     current_bar_index=100
+        ... )
+        >>> if should_exit:
+        ...     logger.info(f"Exit triggered: {reason}", **metadata)
+        """
+        return wyckoff_exit_logic_unified(
+            bar=bar,
+            campaign=campaign,
+            recent_bars=recent_bars,
+            current_bar_index=current_bar_index,
+            session_profile=session_profile,
+            portfolio=portfolio,
+            current_prices=current_prices,
+            time_limit_bars=time_limit_bars,
+        )
+
+    async def update_position_state(
+        self,
+        campaign_id: UUID,
+        position_id: UUID,
+        bar: OHLCVBar,
+    ) -> Position:
+        """
+        Update position state after bar processing.
+
+        Delegates to CampaignStateManager for centralized state management.
+
+        Parameters:
+        -----------
+        campaign_id : UUID
+            Campaign identifier
+        position_id : UUID
+            Position identifier
+        bar : OHLCVBar
+            Current price bar
+
+        Returns:
+        --------
+        Position
+            Updated position with current price and P&L
+
+        Example:
+        --------
+        >>> updated_position = await exit_logic.update_position_state(
+        ...     campaign_id=campaign.id,
+        ...     position_id=position.id,
+        ...     bar=current_bar
+        ... )
+        """
+        return await self._state_manager.update_position_state(
+            campaign_id=campaign_id,
+            position_id=position_id,
+            bar=bar,
+        )
+
+    async def process_exit(
+        self,
+        campaign_id: UUID,
+        position_id: UUID,
+        exit_signal: ExitSignal,
+    ) -> Position:
+        """
+        Process exit signal and close position.
+
+        Delegates to CampaignStateManager for position closure with
+        exit signal data (price, reason, timestamp).
+
+        Parameters:
+        -----------
+        campaign_id : UUID
+            Campaign identifier
+        position_id : UUID
+            Position identifier
+        exit_signal : ExitSignal
+            Exit signal with reason, price, and timestamp
+
+        Returns:
+        --------
+        Position
+            Closed position with realized P&L
+
+        Example:
+        --------
+        >>> exit_signal = ExitSignal(
+        ...     reason="JUMP_LEVEL",
+        ...     price=Decimal("152.00"),
+        ...     timestamp=bar.timestamp
+        ... )
+        >>> closed_position = await exit_logic.process_exit(
+        ...     campaign_id=campaign.id,
+        ...     position_id=position.id,
+        ...     exit_signal=exit_signal
+        ... )
+        """
+        return await self._state_manager.handle_exit(
+            campaign_id=campaign_id,
+            position_id=position_id,
+            exit_signal=exit_signal,
+        )
+
+    def detect_consolidation(
+        self,
+        bars: list[OHLCVBar],
+        start_index: int = 0,
+        config: Optional[ConsolidationConfig] = None,
+    ) -> Optional[ConsolidationZone]:
+        """
+        Detect consolidation zones in recent bars.
+
+        Delegates to ConsolidationDetector for pattern-based consolidation
+        zone detection.
+
+        Parameters:
+        -----------
+        bars : list[OHLCVBar]
+            Recent bars to analyze (20+ bars recommended)
+        start_index : int
+            Index to begin consolidation detection (default: 0)
+        config : ConsolidationConfig, optional
+            Configuration for consolidation detection thresholds
+
+        Returns:
+        --------
+        ConsolidationZone | None
+            Detected consolidation zone or None if no consolidation
+
+        Example:
+        --------
+        >>> zone = exit_logic.detect_consolidation(recent_bars, start_index=0)
+        >>> if zone:
+        ...     logger.info(f"Consolidation from {zone.start_index} to {zone.end_index}")
+        """
+        # Update detector config if provided
+        if config:
+            detector = ConsolidationDetector(config)
+            return detector.detect_consolidation(bars, start_index)
+        return self._consolidation_detector.detect_consolidation(bars, start_index)
+
+    def get_strategy(self, strategy_name: str) -> "ExitStrategy":
+        """
+        Get exit strategy instance by name.
+
+        Provides access to exit strategy registry for custom strategy usage.
+
+        Parameters:
+        -----------
+        strategy_name : str
+            Strategy name (e.g., "trailing_stop", "target_exit", "time_exit")
+
+        Returns:
+        --------
+        ExitStrategy
+            Exit strategy instance
+
+        Raises:
+        -------
+        ValueError
+            If strategy name not found
+
+        Example:
+        --------
+        >>> strategy = exit_logic.get_strategy("trailing_stop")
+        >>> context = ExitContext(trailing_stop=Decimal("148.50"))
+        >>> signal = strategy.should_exit(position, bar, context)
+        """
+        return self._strategy_registry.get_strategy(strategy_name)

@@ -179,4 +179,6 @@ class EngineConfig:
         if not Decimal("0") < self.risk_per_trade <= Decimal("1"):
             raise ValueError(f"risk_per_trade must be in (0, 1], got {self.risk_per_trade}")
         if not 1 <= self.max_open_positions <= 100:
-            raise ValueError(f"max_open_positions must be in [1, 100], got {self.max_open_positions}")
+            raise ValueError(
+                f"max_open_positions must be in [1, 100], got {self.max_open_positions}"
+            )

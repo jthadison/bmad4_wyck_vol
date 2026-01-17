@@ -198,6 +198,7 @@ class TestUnifiedBacktestEngineInit:
         # Verify cost model was called when signal triggered
         assert len(mock_cost_model.commission_calls) > 0
 
+
 class TestUnifiedBacktestEngineRun:
     """Tests for UnifiedBacktestEngine.run() method."""
 
@@ -734,9 +735,7 @@ class TestUnifiedBacktestEngineEdgeCases:
         detector = MockSignalDetector(signals={2: invalid_signal})
         position_manager = PositionManager(default_config.initial_capital)
 
-        engine = UnifiedBacktestEngine(
-            detector, mock_cost_model, position_manager, default_config
-        )
+        engine = UnifiedBacktestEngine(detector, mock_cost_model, position_manager, default_config)
 
         result = engine.run(sample_bars)
 
@@ -771,9 +770,7 @@ class TestUnifiedBacktestEngineEdgeCases:
         detector = LookAheadCheckingDetector()
         position_manager = PositionManager(default_config.initial_capital)
 
-        engine = UnifiedBacktestEngine(
-            detector, mock_cost_model, position_manager, default_config
-        )
+        engine = UnifiedBacktestEngine(detector, mock_cost_model, position_manager, default_config)
 
         # This will raise assertion error if look-ahead is detected
         result = engine.run(sample_bars)

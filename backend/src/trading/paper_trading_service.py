@@ -368,7 +368,7 @@ class PaperTradingService:
             "days_completed": days_completed,
             "days_remaining": max(0, 90 - days_completed),
             "progress_pct": progress_pct,
-            "checks": {k: v for k, v in checks.items()},
+            "checks": dict(checks.items()),
             "account_metrics": {
                 "total_trades": account.total_trades,
                 "win_rate": float(account.win_rate),

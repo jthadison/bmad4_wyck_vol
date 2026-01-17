@@ -176,7 +176,7 @@ async def enable_paper_trading(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to enable paper trading: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/disable", response_model=PaperTradingResponse)
@@ -241,7 +241,7 @@ async def disable_paper_trading(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to disable paper trading: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/account", response_model=Optional[PaperAccount])
@@ -306,7 +306,7 @@ async def list_positions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list positions: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/trades", response_model=TradesResponse)
@@ -341,7 +341,7 @@ async def list_trades(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list trades: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/report", response_model=ReportResponse)
@@ -402,7 +402,7 @@ async def get_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate report: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/reset", response_model=PaperTradingResponse)
@@ -470,7 +470,7 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reset account: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/live-eligibility", response_model=dict)
@@ -505,4 +505,4 @@ async def check_live_eligibility(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to check live eligibility: {str(e)}",
-        )
+        ) from e

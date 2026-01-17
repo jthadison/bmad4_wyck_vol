@@ -78,7 +78,7 @@ async def update_user_settings_full(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update settings: {str(e)}",
-        )
+        ) from e
 
 
 @router.patch("/settings", response_model=UserSettings)
@@ -118,7 +118,7 @@ async def update_user_settings_partial(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update settings: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/settings/export")
@@ -156,12 +156,12 @@ async def export_user_settings(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export settings: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/settings/import", response_model=UserSettings)
@@ -182,12 +182,12 @@ async def import_user_settings(
         updated = await service.import_settings(user_id, settings_export)
         return updated
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to import settings: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/change-password")
@@ -229,7 +229,7 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to change password: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/api-keys", response_model=list[APIKey])
@@ -273,7 +273,7 @@ async def get_api_keys(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve API keys: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/api-keys", response_model=CreateAPIKeyResponse, status_code=status.HTTP_201_CREATED)
@@ -315,7 +315,7 @@ async def create_api_key(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create API key: {str(e)}",
-        )
+        ) from e
 
 
 @router.delete("/api-keys/{key_id}")
@@ -353,4 +353,4 @@ async def revoke_api_key(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to revoke API key: {str(e)}",
-        )
+        ) from e

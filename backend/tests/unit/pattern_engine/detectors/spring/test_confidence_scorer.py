@@ -19,7 +19,6 @@ from src.pattern_engine.detectors.spring.confidence_scorer import (
     SpringConfidenceScorer,
 )
 
-
 # ================================================================
 # Shared Fixtures
 # ================================================================
