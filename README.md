@@ -342,6 +342,8 @@ bmad-wyckoff/
 - **Architecture:** [docs/architecture/](docs/architecture/)
 - **Product Requirements:** [docs/prd/](docs/prd/)
 - **User Stories:** [docs/stories/](docs/stories/)
+- **Trading Guides:**
+  - [Campaign Strategy Guide](docs/guides/campaign-strategy-guide.md) - Complete BMAD methodology handbook for campaign trading
 
 ## Technology Stack
 
