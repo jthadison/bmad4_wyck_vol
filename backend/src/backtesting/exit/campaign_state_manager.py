@@ -23,7 +23,6 @@ from uuid import UUID
 import structlog
 
 from src.backtesting.exit.base import ExitSignal
-from src.models.campaign_lifecycle import Campaign
 from src.models.ohlcv import OHLCVBar
 from src.models.position import Position
 from src.repositories.campaign_repository import CampaignRepository
