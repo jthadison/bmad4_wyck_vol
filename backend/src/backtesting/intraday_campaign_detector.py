@@ -98,6 +98,14 @@ class Campaign:
         phase_history: List of (timestamp, phase) tuples tracking all transitions
         phase_transition_count: Number of phase transitions in this campaign
 
+        # Volume Profile Tracking (Story 14.4)
+        volume_profile: Volume trend classification (INCREASING/DECLINING/NEUTRAL/UNKNOWN)
+        volume_trend_quality: Confidence in volume trend (0.0-1.0)
+        effort_vs_result: Effort/result relationship (HARMONY/DIVERGENCE/UNKNOWN)
+        climax_detected: Whether climactic volume event detected (SC/BC)
+        absorption_quality: Spring absorption quality score (0.0-1.0)
+        volume_history: List of recent volume ratios from patterns
+
     Example:
         Campaign(
             campaign_id="abc123",
@@ -160,6 +168,14 @@ class Campaign:
     # FR7.3 / AC7.5: Phase History Tracking (Story 13.7)
     phase_history: list[tuple[datetime, WyckoffPhase]] = field(default_factory=list)
     phase_transition_count: int = 0
+
+    # Story 14.4: Volume Profile Tracking
+    volume_profile: str = "UNKNOWN"  # "INCREASING", "DECLINING", "NEUTRAL", "UNKNOWN"
+    volume_trend_quality: float = 0.0  # 0.0-1.0 confidence
+    effort_vs_result: str = "UNKNOWN"  # "HARMONY", "DIVERGENCE", "UNKNOWN"
+    climax_detected: bool = False
+    absorption_quality: float = 0.0  # Spring absorption quality (0.0-1.0)
+    volume_history: list[Decimal] = field(default_factory=list)  # Track recent volumes
 
 
 def calculate_position_size(
@@ -356,6 +372,15 @@ class IntradayCampaignDetector:
             # AC4.9: Initialize risk metadata to calculate risk_per_share
             self._update_campaign_metadata(campaign)
 
+            # Story 14.4: Volume profile tracking
+            self._update_volume_profile(campaign)
+            self._analyze_effort_vs_result(pattern, campaign)
+            self._detect_climax(pattern, campaign)
+
+            # Special: Calculate absorption quality for Springs
+            if isinstance(pattern, Spring):
+                self._calculate_absorption_quality(pattern, campaign)
+
             # Story 14.3: Calculate position sizing and check heat limits
             position_size = Decimal("0")
             new_campaign_risk = None
@@ -417,6 +442,16 @@ class IntradayCampaignDetector:
             # Still add pattern but don't update phase
             campaign.patterns.append(pattern)
             self._update_campaign_metadata(campaign)
+
+            # Story 14.4: Volume profile tracking
+            self._update_volume_profile(campaign)
+            self._analyze_effort_vs_result(pattern, campaign)
+            self._detect_climax(pattern, campaign)
+
+            # Special: Calculate absorption quality for Springs
+            if isinstance(pattern, Spring):
+                self._calculate_absorption_quality(pattern, campaign)
+
             return campaign
 
         # Add to existing campaign
@@ -424,6 +459,15 @@ class IntradayCampaignDetector:
 
         # AC4.9: Update risk metadata
         self._update_campaign_metadata(campaign)
+
+        # Story 14.4: Volume profile tracking
+        self._update_volume_profile(campaign)
+        self._analyze_effort_vs_result(pattern, campaign)
+        self._detect_climax(pattern, campaign)
+
+        # Special: Calculate absorption quality for Springs
+        if isinstance(pattern, Spring):
+            self._calculate_absorption_quality(pattern, campaign)
 
         # Story 14.2: AR can activate FORMING campaign if high quality
         if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
@@ -1036,6 +1080,253 @@ class IntradayCampaignDetector:
                 )
 
         return True
+
+    # ==================================================================================
+    # Story 14.4: Volume Profile Tracking Methods
+    # ==================================================================================
+
+    def _update_volume_profile(self, campaign: Campaign) -> None:
+        """
+        Analyze volume progression and update campaign profile.
+
+        Tracks volume trends to identify professional activity:
+        - DECLINING volume on rallies = accumulation (bullish)
+        - INCREASING volume on rallies = distribution (bearish)
+        - NEUTRAL = mixed signals
+
+        Updates:
+            - campaign.volume_profile
+            - campaign.volume_trend_quality
+            - campaign.volume_history
+
+        Args:
+            campaign: Campaign to update
+        """
+        patterns = campaign.patterns
+
+        if len(patterns) < 2:
+            campaign.volume_profile = "UNKNOWN"
+            campaign.volume_trend_quality = 0.0
+            return
+
+        # Extract volume ratios from patterns
+        volumes = []
+        for pattern in patterns:
+            if hasattr(pattern, "volume_ratio"):
+                volumes.append(float(pattern.volume_ratio))
+
+        if len(volumes) < 3:
+            campaign.volume_profile = "UNKNOWN"
+            campaign.volume_trend_quality = 0.0
+            return
+
+        # Update volume history
+        campaign.volume_history = [Decimal(str(v)) for v in volumes]
+
+        # Analyze trend (last 3-5 volumes)
+        recent_volumes = volumes[-min(5, len(volumes)) :]
+
+        # Calculate trend using simple comparison
+        declining_count = 0
+        increasing_count = 0
+
+        for i in range(len(recent_volumes) - 1):
+            if recent_volumes[i + 1] < recent_volumes[i]:
+                declining_count += 1
+            elif recent_volumes[i + 1] > recent_volumes[i]:
+                increasing_count += 1
+
+        total_comparisons = len(recent_volumes) - 1
+
+        # Classify trend
+        if declining_count >= total_comparisons * 0.7:  # 70%+ declining
+            campaign.volume_profile = "DECLINING"
+            campaign.volume_trend_quality = declining_count / total_comparisons
+        elif increasing_count >= total_comparisons * 0.7:  # 70%+ increasing
+            campaign.volume_profile = "INCREASING"
+            campaign.volume_trend_quality = increasing_count / total_comparisons
+        else:
+            campaign.volume_profile = "NEUTRAL"
+            campaign.volume_trend_quality = 0.5
+
+        self.logger.debug(
+            "Volume profile updated",
+            campaign_id=campaign.campaign_id,
+            profile=campaign.volume_profile,
+            quality=campaign.volume_trend_quality,
+            volume_count=len(volumes),
+        )
+
+    def _analyze_effort_vs_result(self, pattern: WyckoffPattern, campaign: Campaign) -> None:
+        """
+        Analyze relationship between volume (effort) and price movement (result).
+
+        Wyckoff's Second Law: Effort vs. Result
+        - Harmony: High volume → large price move (normal)
+        - Divergence: High volume → small price move (absorption or distribution)
+
+        Key Divergences:
+        - Spring: High effort (volume) + small result (price) = absorption (bullish)
+        - Top: High effort + small result = distribution (bearish)
+
+        Updates:
+            - campaign.effort_vs_result
+
+        Args:
+            pattern: Pattern to analyze
+            campaign: Campaign to update
+        """
+        if not hasattr(pattern, "volume_ratio"):
+            return
+
+        # Calculate price movement (result)
+        # Access bar for price data
+        bar = pattern.bar if hasattr(pattern, "bar") else pattern
+        price_range = bar.high - bar.low
+        price_movement_pct = (bar.close - bar.low) / bar.low * 100 if bar.low > 0 else 0
+
+        # Volume (effort)
+        volume_ratio = float(pattern.volume_ratio)
+
+        # Expected: High volume should produce large price movement
+        # Divergence: High volume + small price movement
+
+        # High effort threshold (context-dependent)
+        # Springs have max volume_ratio of 0.7, so high effort for Spring is > 0.5
+        # SOS/LPS can have high volume, so high effort is > 1.5
+        if isinstance(pattern, Spring):
+            high_effort = volume_ratio > 0.5  # High for a Spring
+        else:
+            high_effort = volume_ratio > 1.5  # High for SOS/LPS
+
+        # Small result threshold (relative to pattern type)
+        small_result = price_movement_pct < 2.0  # < 2% move
+
+        if high_effort and small_result:
+            # Divergence detected
+            campaign.effort_vs_result = "DIVERGENCE"
+
+            # Context-specific interpretation
+            if isinstance(pattern, Spring):
+                # Divergence at Spring = absorption (bullish)
+                self.logger.info(
+                    "Bullish divergence detected - absorption at Spring",
+                    campaign_id=campaign.campaign_id,
+                    volume_ratio=volume_ratio,
+                    price_move_pct=price_movement_pct,
+                )
+            elif isinstance(pattern, SOSBreakout | LPS):
+                # Divergence at rally = potential distribution (bearish warning)
+                self.logger.warning(
+                    "Bearish divergence detected - potential distribution",
+                    campaign_id=campaign.campaign_id,
+                    pattern_type=type(pattern).__name__,
+                    volume_ratio=volume_ratio,
+                    price_move_pct=price_movement_pct,
+                )
+        else:
+            # Normal effort/result relationship
+            campaign.effort_vs_result = "HARMONY"
+
+    def _detect_climax(self, pattern: WyckoffPattern, campaign: Campaign) -> None:
+        """
+        Identify climactic volume events (SC or BC).
+
+        Climax = volume spike > 2.0x average + extreme price movement
+
+        Selling Climax (SC): Downward, ultra-high volume
+        Buying Climax (BC): Upward, ultra-high volume
+
+        Updates:
+            - campaign.climax_detected
+
+        Args:
+            pattern: Pattern to analyze
+            campaign: Campaign to update
+        """
+        if not hasattr(pattern, "volume_ratio"):
+            return
+
+        volume_ratio = float(pattern.volume_ratio)
+
+        # Climax threshold: 2.0x+ average volume
+        if volume_ratio > 2.0:
+            campaign.climax_detected = True
+
+            # Determine climax type based on price action
+            bar = pattern.bar if hasattr(pattern, "bar") else pattern
+            price_change = bar.close - bar.open if hasattr(bar, "open") else Decimal("0")
+
+            if price_change < 0:
+                climax_type = "SELLING_CLIMAX"
+            else:
+                climax_type = "BUYING_CLIMAX"
+
+            log_data = {
+                "campaign_id": campaign.campaign_id,
+                "climax_type": climax_type,
+                "volume_ratio": volume_ratio,
+            }
+            if hasattr(pattern, "bar_index"):
+                log_data["bar_index"] = pattern.bar_index
+            self.logger.warning("Climactic volume detected", **log_data)
+
+    def _calculate_absorption_quality(self, spring: Spring, campaign: Campaign) -> float:
+        """
+        Calculate Spring absorption quality (0.0-1.0).
+
+        High-quality absorption:
+        - Very low volume (< 0.5x average)
+        - Quick reversal (AR within 3 bars)
+        - Clean test of support
+
+        Args:
+            spring: Spring pattern to analyze
+            campaign: Campaign to update
+
+        Returns:
+            Quality score 0.0-1.0
+        """
+        score = 0.0
+
+        # Volume component (50% weight)
+        volume_ratio = float(spring.volume_ratio)
+        if volume_ratio < 0.5:
+            score += 0.5
+        elif volume_ratio < 0.7:
+            score += 0.3
+
+        # Reversal speed (30% weight) - check for AR
+        patterns_after_spring = [
+            p
+            for p in campaign.patterns
+            if hasattr(p, "bar_index") and p.bar_index > spring.bar_index
+        ]
+        ar_found = any(isinstance(p, AutomaticRally) for p in patterns_after_spring[:5])
+
+        if ar_found:
+            ar_pattern = next(p for p in patterns_after_spring if isinstance(p, AutomaticRally))
+            bars_to_ar = ar_pattern.bar_index - spring.bar_index
+
+            if bars_to_ar <= 3:
+                score += 0.3  # Quick AR
+            elif bars_to_ar <= 5:
+                score += 0.15
+
+        # Support test quality (20% weight)
+        if hasattr(spring, "quality_score"):
+            score += spring.quality_score * 0.2
+
+        campaign.absorption_quality = min(score, 1.0)
+
+        self.logger.debug(
+            "Absorption quality calculated",
+            campaign_id=campaign.campaign_id,
+            quality=campaign.absorption_quality,
+            volume_ratio=volume_ratio,
+        )
+
+        return campaign.absorption_quality
 
 
 def create_timeframe_optimized_detector(timeframe: str) -> IntradayCampaignDetector:

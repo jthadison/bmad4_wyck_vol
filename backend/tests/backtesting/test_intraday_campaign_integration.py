@@ -1152,3 +1152,458 @@ def test_multiple_concurrent_campaigns(detector, base_timestamp):
     assert len(campaigns) == 2
     assert campaigns[0].patterns[0] == spring1
     assert campaigns[1].patterns[0] == spring2
+
+
+# ============================================================================
+# Story 14.4: Volume Profile Tracking Tests
+# ============================================================================
+
+
+def test_volume_profile_declining_trend(detector, base_timestamp):
+    """Test declining volume trend detection (bullish accumulation)."""
+    # Create 5 SOS patterns with declining volume ratios (2.5 -> 1.5)
+    volumes = [Decimal("2.5"), Decimal("2.2"), Decimal("1.9"), Decimal("1.7"), Decimal("1.5")]
+    trading_range_id = uuid4()
+
+    for i, vol_ratio in enumerate(volumes):
+        bar = OHLCVBar(
+            timestamp=base_timestamp + timedelta(hours=i * 2),
+            open=Decimal("100.00"),
+            high=Decimal("103.00"),
+            low=Decimal("100.00"),
+            close=Decimal("102.50"),
+            volume=int(vol_ratio * 100000),
+            spread=Decimal("3.00"),
+            timeframe="15m",
+            symbol="EUR/USD",
+        )
+        sos = SOSBreakout(
+            bar=bar,
+            breakout_pct=Decimal("0.025"),
+            volume_ratio=vol_ratio,
+            ice_reference=Decimal("100.00"),
+            breakout_price=Decimal("102.50"),
+            detection_timestamp=base_timestamp + timedelta(hours=i * 2),
+            trading_range_id=trading_range_id,
+            spread_ratio=Decimal("1.2"),
+            close_position=Decimal("0.83"),
+            spread=Decimal("3.00"),
+        )
+        detector.add_pattern(sos)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should detect DECLINING trend (bullish)
+    assert campaign.volume_profile == "DECLINING"
+    assert campaign.volume_trend_quality > 0.8
+    assert len(campaign.volume_history) == 5
+
+
+def test_volume_profile_increasing_trend(detector, base_timestamp):
+    """Test increasing volume trend detection (bearish distribution warning)."""
+    # Create 5 SOS patterns with increasing volume ratios (1.5 -> 2.5)
+    volumes = [Decimal("1.5"), Decimal("1.7"), Decimal("1.9"), Decimal("2.2"), Decimal("2.5")]
+    trading_range_id = uuid4()
+
+    for i, vol_ratio in enumerate(volumes):
+        bar = OHLCVBar(
+            timestamp=base_timestamp + timedelta(hours=i * 2),
+            open=Decimal("100.00"),
+            high=Decimal("103.00"),
+            low=Decimal("100.00"),
+            close=Decimal("102.50"),
+            volume=int(vol_ratio * 100000),
+            spread=Decimal("3.00"),
+            timeframe="15m",
+            symbol="EUR/USD",
+        )
+        sos = SOSBreakout(
+            bar=bar,
+            breakout_pct=Decimal("0.025"),
+            volume_ratio=vol_ratio,
+            ice_reference=Decimal("100.00"),
+            breakout_price=Decimal("102.50"),
+            detection_timestamp=base_timestamp + timedelta(hours=i * 2),
+            trading_range_id=trading_range_id,
+            spread_ratio=Decimal("1.2"),
+            close_position=Decimal("0.83"),
+            spread=Decimal("3.00"),
+        )
+        detector.add_pattern(sos)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should detect INCREASING trend (bearish)
+    assert campaign.volume_profile == "INCREASING"
+    assert campaign.volume_trend_quality > 0.8
+    assert len(campaign.volume_history) == 5
+
+
+def test_volume_profile_neutral_trend(detector, base_timestamp):
+    """Test neutral volume trend (mixed signals)."""
+    # Create 5 SOS patterns with mixed volume ratios (no clear trend)
+    volumes = [Decimal("1.8"), Decimal("2.0"), Decimal("1.7"), Decimal("1.9"), Decimal("1.8")]
+    trading_range_id = uuid4()
+
+    for i, vol_ratio in enumerate(volumes):
+        bar = OHLCVBar(
+            timestamp=base_timestamp + timedelta(hours=i * 2),
+            open=Decimal("100.00"),
+            high=Decimal("103.00"),
+            low=Decimal("100.00"),
+            close=Decimal("102.50"),
+            volume=int(vol_ratio * 100000),
+            spread=Decimal("3.00"),
+            timeframe="15m",
+            symbol="EUR/USD",
+        )
+        sos = SOSBreakout(
+            bar=bar,
+            breakout_pct=Decimal("0.025"),
+            volume_ratio=vol_ratio,
+            ice_reference=Decimal("100.00"),
+            breakout_price=Decimal("102.50"),
+            detection_timestamp=base_timestamp + timedelta(hours=i * 2),
+            trading_range_id=trading_range_id,
+            spread_ratio=Decimal("1.2"),
+            close_position=Decimal("0.83"),
+            spread=Decimal("3.00"),
+        )
+        detector.add_pattern(sos)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should detect NEUTRAL trend
+    assert campaign.volume_profile == "NEUTRAL"
+    assert campaign.volume_trend_quality == 0.5
+
+
+def test_effort_vs_result_harmony(detector, base_timestamp):
+    """Test normal effort/result relationship (harmony)."""
+    # Low volume (0.6x) with moderate price move (normal for Spring) = harmony
+    bar = OHLCVBar(
+        timestamp=base_timestamp,
+        open=Decimal("100.00"),
+        high=Decimal("103.00"),
+        low=Decimal("98.00"),
+        close=Decimal("100.50"),  # 2.5% move from low (normal recovery)
+        volume=60000,
+        spread=Decimal("5.00"),
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    spring = Spring(
+        bar=bar,
+        bar_index=0,
+        penetration_pct=Decimal("0.02"),
+        volume_ratio=Decimal("0.6"),  # Low volume, as expected for Spring
+        recovery_bars=1,
+        creek_reference=Decimal("100.00"),
+        spring_low=Decimal("98.00"),
+        recovery_price=Decimal("100.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=uuid4(),
+    )
+
+    detector.add_pattern(spring)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should detect HARMONY (high volume + large price move)
+    assert campaign.effort_vs_result == "HARMONY"
+
+
+def test_effort_vs_result_divergence_bullish(detector, base_timestamp):
+    """Test bullish divergence at Spring (absorption)."""
+    # Relatively high volume for a Spring (0.65x, near limit) with small price move (0.5%) = divergence
+    bar = OHLCVBar(
+        timestamp=base_timestamp,
+        open=Decimal("100.00"),
+        high=Decimal("100.50"),
+        low=Decimal("99.00"),
+        close=Decimal("99.50"),  # 0.5% move from low (small result)
+        volume=65000,
+        spread=Decimal("1.50"),
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    spring = Spring(
+        bar=bar,
+        bar_index=0,
+        penetration_pct=Decimal("0.02"),
+        volume_ratio=Decimal("0.65"),  # High for Spring, still valid < 0.7
+        recovery_bars=1,
+        creek_reference=Decimal("100.00"),
+        spring_low=Decimal("99.00"),
+        recovery_price=Decimal("99.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=uuid4(),
+    )
+
+    detector.add_pattern(spring)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should detect DIVERGENCE at Spring (bullish absorption)
+    assert campaign.effort_vs_result == "DIVERGENCE"
+
+
+def test_effort_vs_result_divergence_bearish(detector, base_timestamp):
+    """Test bearish divergence at SOS (distribution warning)."""
+    # Create initial Spring to start campaign
+    trading_range_id = uuid4()
+    spring_bar = OHLCVBar(
+        timestamp=base_timestamp,
+        open=Decimal("100.00"),
+        high=Decimal("101.00"),
+        low=Decimal("98.00"),
+        close=Decimal("100.50"),
+        volume=40000,
+        spread=Decimal("3.00"),
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    spring = Spring(
+        bar=spring_bar,
+        bar_index=0,
+        penetration_pct=Decimal("0.02"),
+        volume_ratio=Decimal("0.4"),
+        recovery_bars=1,
+        creek_reference=Decimal("100.00"),
+        spring_low=Decimal("98.00"),
+        recovery_price=Decimal("100.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=trading_range_id,
+    )
+
+    # SOS with high volume (2.5x) but small price move (1%)
+    sos_bar = OHLCVBar(
+        timestamp=base_timestamp + timedelta(hours=2),
+        open=Decimal("100.00"),
+        high=Decimal("101.00"),
+        low=Decimal("100.00"),
+        close=Decimal("101.00"),  # 1% move
+        volume=250000,
+        spread=Decimal("1.00"),
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    sos = SOSBreakout(
+        bar=sos_bar,
+        breakout_pct=Decimal("0.01"),  # 1% breakout
+        volume_ratio=Decimal("2.5"),
+        ice_reference=Decimal("100.00"),
+        breakout_price=Decimal("101.00"),
+        detection_timestamp=base_timestamp + timedelta(hours=2),
+        trading_range_id=trading_range_id,
+        spread_ratio=Decimal("1.2"),
+        close_position=Decimal("1.0"),  # Closed at the top
+        spread=Decimal("1.00"),
+    )
+
+    detector.add_pattern(spring)
+    detector.add_pattern(sos)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should detect DIVERGENCE at SOS (bearish distribution warning)
+    assert campaign.effort_vs_result == "DIVERGENCE"
+
+
+def test_climax_detection_selling(detector, base_timestamp):
+    """Test Selling Climax detection using SOS (since climax needs volume > 2.0)."""
+    # Volume > 2.0x with downward price action - use SOS breakout pattern
+    bar = OHLCVBar(
+        timestamp=base_timestamp,
+        open=Decimal("100.00"),
+        high=Decimal("100.50"),
+        low=Decimal("92.00"),  # 8% decline
+        close=Decimal("92.50"),
+        volume=250000,
+        spread=Decimal("8.50"),
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    sos = SOSBreakout(
+        bar=bar,
+        breakout_pct=Decimal("0.01"),
+        volume_ratio=Decimal("2.5"),  # > 2.0 = climax
+        ice_reference=Decimal("100.00"),
+        breakout_price=Decimal("92.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=uuid4(),
+        spread_ratio=Decimal("1.2"),
+        close_position=Decimal("0.5"),
+        spread=Decimal("8.50"),
+    )
+
+    detector.add_pattern(sos)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should detect climax
+    assert campaign.climax_detected is True
+
+
+def test_climax_detection_buying(detector, base_timestamp):
+    """Test Buying Climax detection."""
+    # Volume > 2.0x with upward price action
+    bar = OHLCVBar(
+        timestamp=base_timestamp,
+        open=Decimal("100.00"),
+        high=Decimal("110.00"),  # 10% advance
+        low=Decimal("100.00"),
+        close=Decimal("109.50"),
+        volume=300000,
+        spread=Decimal("10.00"),
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    sos = SOSBreakout(
+        bar=bar,
+        breakout_pct=Decimal("0.10"),  # 10% breakout
+        volume_ratio=Decimal("3.0"),  # > 2.0 = climax
+        ice_reference=Decimal("100.00"),
+        breakout_price=Decimal("109.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=uuid4(),
+        spread_ratio=Decimal("1.5"),
+        close_position=Decimal("0.95"),
+        spread=Decimal("10.00"),
+    )
+
+    detector.add_pattern(sos)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should detect climax
+    assert campaign.climax_detected is True
+
+
+def test_absorption_quality_high(detector, base_timestamp):
+    """Test high-quality absorption (very low volume)."""
+    # Spring with very low volume (0.3x) gets highest quality
+    spring_bar = OHLCVBar(
+        timestamp=base_timestamp,
+        open=Decimal("100.00"),
+        high=Decimal("101.00"),
+        low=Decimal("98.00"),
+        close=Decimal("100.50"),
+        volume=30000,
+        spread=Decimal("3.00"),
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    spring = Spring(
+        bar=spring_bar,
+        bar_index=10,
+        penetration_pct=Decimal("0.02"),
+        volume_ratio=Decimal("0.3"),  # Very low volume = high quality (0.5 score)
+        recovery_bars=1,
+        creek_reference=Decimal("100.00"),
+        spring_low=Decimal("98.00"),
+        recovery_price=Decimal("100.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=uuid4(),
+    )
+
+    detector.add_pattern(spring)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should have absorption quality = 0.5 from very low volume component
+    assert campaign.absorption_quality == 0.5
+
+
+def test_absorption_quality_low(detector, base_timestamp):
+    """Test low-quality absorption (relatively higher volume for Spring, no quick AR)."""
+    # Spring with moderate volume (0.65x - high for Spring but valid < 0.7)
+    spring_bar = OHLCVBar(
+        timestamp=base_timestamp,
+        open=Decimal("100.00"),
+        high=Decimal("101.00"),
+        low=Decimal("98.00"),
+        close=Decimal("100.50"),
+        volume=65000,
+        spread=Decimal("3.00"),
+        timeframe="15m",
+        symbol="EUR/USD",
+    )
+    spring = Spring(
+        bar=spring_bar,
+        bar_index=10,
+        penetration_pct=Decimal("0.02"),
+        volume_ratio=Decimal("0.65"),  # High for Spring (near 0.7 limit)
+        recovery_bars=1,
+        creek_reference=Decimal("100.00"),
+        spring_low=Decimal("98.00"),
+        recovery_price=Decimal("100.50"),
+        detection_timestamp=base_timestamp,
+        trading_range_id=uuid4(),
+    )
+
+    detector.add_pattern(spring)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should have low absorption quality (< 0.5) - no AR + high volume for Spring
+    assert campaign.absorption_quality < 0.5
+
+
+def test_volume_profile_insufficient_data(detector, base_timestamp):
+    """Test volume profile with insufficient patterns (< 3)."""
+    # Create only 2 Spring patterns (Springs are valid with volume_ratio < 0.7)
+    trading_range_id = uuid4()
+    for i in range(2):
+        bar = OHLCVBar(
+            timestamp=base_timestamp + timedelta(hours=i * 2),
+            open=Decimal("100.00"),
+            high=Decimal("101.00"),
+            low=Decimal("98.00"),
+            close=Decimal("100.50"),
+            volume=50000,
+            spread=Decimal("3.00"),
+            timeframe="15m",
+            symbol="EUR/USD",
+        )
+        spring = Spring(
+            bar=bar,
+            bar_index=i,
+            penetration_pct=Decimal("0.02"),
+            volume_ratio=Decimal("0.5"),
+            recovery_bars=1,
+            creek_reference=Decimal("100.00"),
+            spring_low=Decimal("98.00"),
+            recovery_price=Decimal("100.50"),
+            detection_timestamp=base_timestamp + timedelta(hours=i * 2),
+            trading_range_id=trading_range_id,
+        )
+        detector.add_pattern(spring)
+
+    campaigns = detector.get_active_campaigns()
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+
+    # Should remain UNKNOWN with insufficient data
+    assert campaign.volume_profile == "UNKNOWN"
+    assert campaign.volume_trend_quality == 0.0
