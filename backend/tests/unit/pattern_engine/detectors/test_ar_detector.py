@@ -153,7 +153,7 @@ class TestDetectARAfterSpring:
         assert ar.quality_score > 0.7, f"Quality score {ar.quality_score} should be > 0.7"
         assert ar.recovery_percent >= Decimal("0.4"), "Should have 40%+ recovery"
         assert ar.prior_pattern_type == "SPRING"
-        assert ar.prior_spring_bar == 30
+        assert ar.prior_pattern_bar == 30
         assert ar.volume_trend in [
             "DECLINING",
             "NEUTRAL",
@@ -377,6 +377,215 @@ class TestDetectARAfterSpring:
         ar = detect_ar_after_spring([], spring_pattern, volume_avg)
 
         assert ar is None, "Should return None when bars list is empty"
+
+    def test_ar_detection_exactly_one_bar_after_spring(self, base_bars, spring_pattern):
+        """
+        Test Case 9: AR detection when only 1 bar exists after Spring.
+
+        Scenario:
+        - Spring at bar 30
+        - Only 1 bar after Spring in the list (bar 31)
+        - Bar 31 is a valid AR candidate
+
+        Expected:
+        - AR detected at bar 31
+        """
+        # Create bar 31 as a valid AR candidate (50% recovery, good volume)
+        ar_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 2, 1, tzinfo=UTC),
+            open=Decimal("99.0"),
+            high=Decimal("104.0"),
+            low=Decimal("98.0"),
+            close=Decimal("103.0"),  # 50% recovery
+            volume=900000,  # 0.9x (moderate)
+            spread=Decimal("6.0"),
+        )
+        base_bars.append(ar_bar)
+
+        volume_avg = Decimal("1000000")
+
+        # Detect AR
+        ar = detect_ar_after_spring(base_bars, spring_pattern, volume_avg)
+
+        # Assertions
+        assert ar is not None, "AR should be detected with only 1 bar after Spring"
+        assert ar.bar_index == 31, "AR should be at bar 31"
+        assert ar.bars_after_sc == 1, "Should be exactly 1 bar after Spring"
+
+    def test_concurrent_ar_candidates_returns_first(self, base_bars, spring_pattern):
+        """
+        Test Case 10: Multiple valid AR candidates in scan window.
+
+        Scenario:
+        - Spring at bar 30
+        - Bar 33 is valid AR (45% recovery)
+        - Bar 35 is also valid AR (55% recovery, higher quality)
+        - Detector should return first valid candidate (bar 33)
+
+        Expected:
+        - AR detected at bar 33 (first valid candidate)
+        """
+        # Add bars 31-32 (not valid ARs)
+        for i in range(2):
+            base_bars.append(
+                OHLCVBar(
+                    symbol="TEST",
+                    timeframe="1d",
+                    timestamp=datetime(2024, 2, 1 + i, tzinfo=UTC),
+                    open=Decimal("98.0"),
+                    high=Decimal("100.0"),
+                    low=Decimal("97.0"),
+                    close=Decimal("99.0"),  # Only 25% recovery (too weak)
+                    volume=900000,
+                    spread=Decimal("3.0"),
+                )
+            )
+
+        # Bar 33: First valid AR (45% recovery)
+        ar_bar_1 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 2, 3, tzinfo=UTC),
+            open=Decimal("99.0"),
+            high=Decimal("105.0"),
+            low=Decimal("98.0"),
+            close=Decimal("104.0"),  # 45% recovery
+            volume=950000,  # 0.95x
+            spread=Decimal("7.0"),
+        )
+        base_bars.append(ar_bar_1)
+
+        # Bar 34: Invalid (low close position)
+        base_bars.append(
+            OHLCVBar(
+                symbol="TEST",
+                timeframe="1d",
+                timestamp=datetime(2024, 2, 4, tzinfo=UTC),
+                open=Decimal("104.0"),
+                high=Decimal("106.0"),
+                low=Decimal("100.0"),
+                close=Decimal("101.0"),  # Lower half close
+                volume=900000,
+                spread=Decimal("6.0"),
+            )
+        )
+
+        # Bar 35: Second valid AR (55% recovery, higher quality)
+        ar_bar_2 = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 2, 5, tzinfo=UTC),
+            open=Decimal("101.0"),
+            high=Decimal("108.0"),
+            low=Decimal("100.0"),
+            close=Decimal("107.0"),  # 55% recovery
+            volume=1000000,  # 1.0x (ideal)
+            spread=Decimal("8.0"),
+        )
+        base_bars.append(ar_bar_2)
+
+        volume_avg = Decimal("1000000")
+
+        # Detect AR
+        ar = detect_ar_after_spring(base_bars, spring_pattern, volume_avg)
+
+        # Assertions
+        assert ar is not None, "AR should be detected"
+        assert ar.bar_index == 33, "Should return first valid AR (bar 33), not the higher quality one"
+        assert ar.bars_after_sc == 3, "Should be 3 bars after Spring"
+
+    def test_start_index_boundary_conditions(self, base_bars, spring_pattern):
+        """
+        Test Case 11: Boundary conditions for start_index parameter.
+
+        Scenario:
+        - Spring at bar 30
+        - Valid AR at bar 33
+        - Test with start_index = 31 (should find AR)
+        - Test with start_index = 34 (should not find AR)
+
+        Expected:
+        - start_index=31: AR detected at bar 33
+        - start_index=34: No AR detected (skipped valid candidate)
+        """
+        # Add bars 31-32 (not valid ARs)
+        for i in range(2):
+            base_bars.append(
+                OHLCVBar(
+                    symbol="TEST",
+                    timeframe="1d",
+                    timestamp=datetime(2024, 2, 1 + i, tzinfo=UTC),
+                    open=Decimal("98.0"),
+                    high=Decimal("100.0"),
+                    low=Decimal("97.0"),
+                    close=Decimal("99.0"),  # Too weak
+                    volume=900000,
+                    spread=Decimal("3.0"),
+                )
+            )
+
+        # Bar 33: Valid AR
+        ar_bar = OHLCVBar(
+            symbol="TEST",
+            timeframe="1d",
+            timestamp=datetime(2024, 2, 3, tzinfo=UTC),
+            open=Decimal("99.0"),
+            high=Decimal("105.0"),
+            low=Decimal("98.0"),
+            close=Decimal("104.0"),  # 45% recovery
+            volume=950000,
+            spread=Decimal("7.0"),
+        )
+        base_bars.append(ar_bar)
+
+        # Add bars 34-36 that are NOT valid AR candidates (low close position)
+        for i in range(3):
+            base_bars.append(
+                OHLCVBar(
+                    symbol="TEST",
+                    timeframe="1d",
+                    timestamp=datetime(2024, 2, 4 + i, tzinfo=UTC),
+                    open=Decimal("100.0"),
+                    high=Decimal("106.0"),
+                    low=Decimal("99.0"),
+                    close=Decimal("100.0"),  # Close in lower half (low close position)
+                    volume=900000,
+                    spread=Decimal("7.0"),
+                )
+            )
+
+        volume_avg = Decimal("1000000")
+
+        # Test 1: start_index=31 (should find AR at 33)
+        ar1 = detect_ar_after_spring(base_bars, spring_pattern, volume_avg, start_index=31)
+        assert ar1 is not None, "AR should be detected when start_index=31"
+        assert ar1.bar_index == 33, "AR should be at bar 33"
+
+        # Test 2: start_index=34 (should not find AR - skipped the valid candidate)
+        ar2 = detect_ar_after_spring(base_bars, spring_pattern, volume_avg, start_index=34)
+        assert ar2 is None, "No AR should be detected when start_index=34 (skipped candidate)"
+
+        # Test 3: start_index at exact AR bar (33) - should detect it
+        ar3 = detect_ar_after_spring(base_bars, spring_pattern, volume_avg, start_index=33)
+        assert ar3 is not None, "AR should be detected when start_index=33 (exact AR bar)"
+        assert ar3.bar_index == 33
+
+    def test_invalid_volume_avg_returns_none(self, base_bars, spring_pattern):
+        """
+        Test Case 12: Invalid volume_avg (zero or negative) returns None.
+
+        Expected:
+        - None returned with error logged
+        """
+        # Test with zero volume_avg
+        ar1 = detect_ar_after_spring(base_bars, spring_pattern, Decimal("0"))
+        assert ar1 is None, "Should return None when volume_avg is zero"
+
+        # Test with negative volume_avg
+        ar2 = detect_ar_after_spring(base_bars, spring_pattern, Decimal("-1000"))
+        assert ar2 is None, "Should return None when volume_avg is negative"
 
 
 class TestDetectARAfterSC:

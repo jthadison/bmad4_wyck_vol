@@ -77,9 +77,9 @@ class AutomaticRally(BaseModel):
         pattern="^(DECLINING|NEUTRAL|INCREASING|UNKNOWN)$",
         description="Volume trend from Spring/SC to AR",
     )
-    prior_spring_bar: int | None = Field(
+    prior_pattern_bar: int | None = Field(
         default=None,
-        description="Reference to Spring/SC bar index (if detected after Spring)",
+        description="Reference to Spring/SC bar index (bar that triggered this AR)",
     )
     prior_pattern_type: str = Field(
         default="SC",

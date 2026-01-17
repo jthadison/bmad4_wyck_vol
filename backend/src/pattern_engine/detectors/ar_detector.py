@@ -38,6 +38,84 @@ from src.models.spring import Spring
 logger = structlog.get_logger(__name__)
 
 
+def _validate_volume_ratio(
+    volume_ratio: Decimal, bar_index: int, context: str
+) -> bool:
+    """
+    Validate volume ratio is in acceptable range (0.7x-1.3x).
+
+    Args:
+        volume_ratio: Volume relative to average
+        bar_index: Current bar index for logging
+        context: Context string for logging (e.g., "ar_spring", "ar_sc")
+
+    Returns:
+        bool: True if valid, False if rejected
+    """
+    if not (Decimal("0.7") <= volume_ratio <= Decimal("1.3")):
+        logger.debug(
+            f"{context}_volume_reject",
+            bar_index=bar_index,
+            volume_ratio=float(volume_ratio),
+            required_range="0.7-1.3x",
+        )
+        return False
+    return True
+
+
+def _validate_close_position(
+    bar: OHLCVBar, bar_index: int, context: str
+) -> tuple[bool, Decimal]:
+    """
+    Validate bar closes in upper 50% of range.
+
+    Args:
+        bar: OHLCV bar to validate
+        bar_index: Current bar index for logging
+        context: Context string for logging
+
+    Returns:
+        tuple[bool, Decimal]: (is_valid, close_position)
+    """
+    bar_range = bar.high - bar.low
+    if bar_range > 0:
+        close_position = (bar.close - bar.low) / bar_range
+        if close_position < Decimal("0.5"):
+            logger.debug(
+                f"{context}_close_position_reject",
+                bar_index=bar_index,
+                close_position=float(close_position),
+                required=">= 0.5 (upper half)",
+            )
+            return False, close_position
+        return True, close_position
+    else:
+        return True, Decimal("0.5")  # Doji, neutral
+
+
+def _calculate_volume_trend(
+    current_volume_ratio: Decimal, prior_volume_ratio: Decimal
+) -> str:
+    """
+    Calculate volume trend from prior pattern to current bar.
+
+    Args:
+        current_volume_ratio: Current bar volume ratio
+        prior_volume_ratio: Prior pattern bar volume ratio
+
+    Returns:
+        str: "DECLINING", "NEUTRAL", or "INCREASING"
+    """
+    volume_diff = current_volume_ratio - prior_volume_ratio
+
+    if volume_diff < Decimal("-0.1"):
+        return "DECLINING"
+    elif volume_diff > Decimal("0.1"):
+        return "INCREASING"
+    else:
+        return "NEUTRAL"
+
+
 def detect_ar_after_spring(
     bars: list[OHLCVBar],
     spring: Spring,
@@ -80,6 +158,14 @@ def detect_ar_after_spring(
 
     if spring is None:
         logger.error("ar_spring_none", message="Spring is required for AR detection")
+        return None
+
+    if volume_avg <= 0:
+        logger.error(
+            "ar_spring_invalid_volume_avg",
+            volume_avg=float(volume_avg),
+            message="volume_avg must be positive",
+        )
         return None
 
     symbol = bars[0].symbol if bars else "UNKNOWN"
@@ -143,47 +229,25 @@ def detect_ar_after_spring(
             continue
 
         # Volume validation (AC 2): moderate 0.7x-1.3x, ideal 0.8x-1.2x
-        volume_ratio = bar.volume / volume_avg if volume_avg > 0 else Decimal("0")
-        if not (Decimal("0.7") <= volume_ratio <= Decimal("1.3")):
-            logger.debug(
-                "ar_spring_volume_reject",
-                bar_index=i,
-                volume_ratio=float(volume_ratio),
-                required_range="0.7-1.3x",
-            )
-            continue
-
-        # Reject AR if volume too high (>1.5x = potential distribution)
-        if volume_ratio > Decimal("1.5"):
-            logger.debug(
-                "ar_spring_volume_too_high",
-                bar_index=i,
-                volume_ratio=float(volume_ratio),
-                message="Volume >1.5x suggests distribution, not absorption",
-            )
+        volume_ratio = bar.volume / volume_avg
+        if not _validate_volume_ratio(volume_ratio, i, "ar_spring"):
             continue
 
         # Price recovery validation (AC 1): must recover 40%+ of decline
         recovery = bar.close - spring_low
-        recovery_percent = recovery / decline_range if decline_range > 0 else Decimal("0")
+        recovery_percent = (
+            (recovery / decline_range).quantize(Decimal("0.0001"))
+            if decline_range > 0
+            else Decimal("0")
+        )
 
         if recovery_percent < Decimal("0.4"):  # Minimum 40% recovery
             continue
 
         # Close position in bar range (AC 3): must close in upper 50%
-        bar_range = bar.high - bar.low
-        if bar_range > 0:
-            close_position = (bar.close - bar.low) / bar_range
-            if close_position < Decimal("0.5"):  # Must close in upper half
-                logger.debug(
-                    "ar_spring_close_position_reject",
-                    bar_index=i,
-                    close_position=float(close_position),
-                    required=">= 0.5 (upper half)",
-                )
-                continue
-        else:
-            close_position = Decimal("0.5")  # Doji, neutral
+        is_valid_close, close_position = _validate_close_position(bar, i, "ar_spring")
+        if not is_valid_close:
+            continue
 
         # Check doesn't exceed resistance (Ice) - AC 3
         if ice_level and bar.high > ice_level:
@@ -197,15 +261,8 @@ def detect_ar_after_spring(
 
         # Determine volume trend (declining from Spring = ideal)
         spring_bar = bars[spring_index]
-        spring_volume_ratio = spring_bar.volume / volume_avg if volume_avg > 0 else Decimal("0")
-        volume_diff = volume_ratio - spring_volume_ratio
-
-        if volume_diff < Decimal("-0.1"):  # Volume declining
-            volume_trend = "DECLINING"
-        elif volume_diff > Decimal("0.1"):  # Volume increasing
-            volume_trend = "INCREASING"
-        else:
-            volume_trend = "NEUTRAL"
+        spring_volume_ratio = spring_bar.volume / volume_avg
+        volume_trend = _calculate_volume_trend(volume_ratio, spring_volume_ratio)
 
         # Create AutomaticRally instance
         ar = AutomaticRally(
@@ -222,7 +279,7 @@ def detect_ar_after_spring(
             quality_score=0.0,  # Calculated next
             recovery_percent=recovery_percent,
             volume_trend=volume_trend,
-            prior_spring_bar=spring_index,
+            prior_pattern_bar=spring_index,
             prior_pattern_type="SPRING",
         )
 
@@ -307,6 +364,15 @@ def detect_ar_after_sc(
         logger.error("ar_sc_none", message="SC is required for AR detection")
         return None
 
+    # Validate volume_avg
+    if volume_avg <= 0:
+        logger.error(
+            "ar_sc_invalid_volume_avg",
+            volume_avg=float(volume_avg),
+            message="volume_avg must be positive",
+        )
+        return None
+
     symbol = bars[0].symbol if bars else "UNKNOWN"
     sc_timestamp = datetime.fromisoformat(sc.bar["timestamp"])
     sc_low = Decimal(sc.bar["low"])
@@ -376,47 +442,25 @@ def detect_ar_after_sc(
             continue
 
         # Volume validation (AC 2): moderate 0.7x-1.3x, ideal 0.8x-1.2x
-        volume_ratio = bar.volume / volume_avg if volume_avg > 0 else Decimal("0")
-        if not (Decimal("0.7") <= volume_ratio <= Decimal("1.3")):
-            logger.debug(
-                "ar_sc_volume_reject",
-                bar_index=i,
-                volume_ratio=float(volume_ratio),
-                required_range="0.7-1.3x",
-            )
-            continue
-
-        # Reject AR if volume too high (>1.5x = potential distribution)
-        if volume_ratio > Decimal("1.5"):
-            logger.debug(
-                "ar_sc_volume_too_high",
-                bar_index=i,
-                volume_ratio=float(volume_ratio),
-                message="Volume >1.5x suggests distribution, not absorption",
-            )
+        volume_ratio = bar.volume / volume_avg
+        if not _validate_volume_ratio(volume_ratio, i, "ar_sc"):
             continue
 
         # Price recovery validation (AC 1): must recover 40%+ of decline
         recovery = bar.close - sc_low
-        recovery_percent = recovery / decline_range if decline_range > 0 else Decimal("0")
+        recovery_percent = (
+            (recovery / decline_range).quantize(Decimal("0.0001"))
+            if decline_range > 0
+            else Decimal("0")
+        )
 
         if recovery_percent < Decimal("0.4"):  # Minimum 40% recovery
             continue
 
         # Close position in bar range (AC 3): must close in upper 50%
-        bar_range = bar.high - bar.low
-        if bar_range > 0:
-            close_position = (bar.close - bar.low) / bar_range
-            if close_position < Decimal("0.5"):  # Must close in upper half
-                logger.debug(
-                    "ar_sc_close_position_reject",
-                    bar_index=i,
-                    close_position=float(close_position),
-                    required=">= 0.5 (upper half)",
-                )
-                continue
-        else:
-            close_position = Decimal("0.5")  # Doji, neutral
+        valid_close, close_position = _validate_close_position(bar, i, "ar_sc")
+        if not valid_close:
+            continue
 
         # Check doesn't exceed resistance (Ice) if provided
         if ice_level and bar.high > ice_level:
@@ -430,15 +474,8 @@ def detect_ar_after_sc(
 
         # Determine volume trend (declining from SC = ideal)
         sc_bar_volume = Decimal(sc.bar["volume"])
-        sc_volume_ratio = sc_bar_volume / volume_avg if volume_avg > 0 else Decimal("0")
-        volume_diff = volume_ratio - sc_volume_ratio
-
-        if volume_diff < Decimal("-0.1"):  # Volume declining from climax
-            volume_trend = "DECLINING"
-        elif volume_diff > Decimal("0.1"):  # Volume increasing (concerning)
-            volume_trend = "INCREASING"
-        else:
-            volume_trend = "NEUTRAL"
+        sc_volume_ratio = sc_bar_volume / volume_avg
+        volume_trend = _calculate_volume_trend(volume_ratio, sc_volume_ratio)
 
         # Create AutomaticRally instance
         ar = AutomaticRally(
@@ -455,7 +492,7 @@ def detect_ar_after_sc(
             quality_score=0.0,  # Calculated next
             recovery_percent=recovery_percent,
             volume_trend=volume_trend,
-            prior_spring_bar=sc_index,
+            prior_pattern_bar=sc_index,
             prior_pattern_type="SC",
         )
 
