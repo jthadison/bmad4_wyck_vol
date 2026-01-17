@@ -316,7 +316,7 @@ async def send_test_notification(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to send test notification: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/push/subscribe", response_model=NotificationResponse)
@@ -356,12 +356,12 @@ async def subscribe_to_push(
         raise HTTPException(
             status_code=400,
             detail=f"Invalid subscription format: missing {str(e)}",
-        )
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to create push subscription: {str(e)}",
-        )
+        ) from e
 
 
 @router.delete("/push/unsubscribe", response_model=NotificationResponse)

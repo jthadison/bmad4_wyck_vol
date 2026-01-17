@@ -26,13 +26,12 @@ Author: Wyckoff Mentor - Intraday Optimization
 """
 
 from datetime import datetime, time
-from decimal import Decimal
 
 import numpy as np
 import structlog
 
-from src.models.ohlcv import OHLCVBar
 from src.models.forex import ForexSession
+from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.volume_analyzer import calculate_volume_ratio
 
 logger = structlog.get_logger(__name__)

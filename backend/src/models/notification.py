@@ -81,8 +81,8 @@ class QuietHours(BaseModel):
 
         try:
             pytz.timezone(v)
-        except pytz.UnknownTimeZoneError:
-            raise ValueError(f"Invalid timezone: {v}")
+        except pytz.UnknownTimeZoneError as e:
+            raise ValueError(f"Invalid timezone: {v}") from e
         return v
 
 

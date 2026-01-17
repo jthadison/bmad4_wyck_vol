@@ -11,11 +11,10 @@ Tests the analyzers extracted from volume_validator.py:
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-import yaml
 
 from src.models.effort_result import EffortResult
 from src.models.forex import ForexSession
