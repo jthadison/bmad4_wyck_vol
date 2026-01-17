@@ -308,8 +308,8 @@ def test_spring_sos_no_ar_backward_compatible(detector, sample_spring, sample_so
     assert campaign.current_phase == WyckoffPhase.D
 
     # Should have decent strength, no penalty for missing AR
-    # Base (0.2) + Quality (~0.15-0.35) + Phase D (0.2) = ~0.55-0.75
-    assert 0.50 <= campaign.strength_score <= 0.80
+    # Base (0.2) + Quality (~0.25) + Phase D (0.2) = ~0.65
+    assert campaign.strength_score == pytest.approx(0.65, abs=0.10)
 
 
 # ============================================================================
@@ -341,9 +341,9 @@ def test_low_quality_ar_no_activation(detector, sample_spring, sample_ar_low_qua
     detector.add_pattern(sample_sos)
 
     # Verify strength score has AR progression bonus but not high-quality bonus
-    # Base (0.3) + Quality (~0.30) + Phase D (0.2) + AR progression (0.1) = ~0.90
+    # Base (0.3) + Quality (~0.23) + Phase D (0.2) + AR progression (0.1) = ~0.83
     # No high-quality AR bonus (+0.05)
-    assert 0.80 <= campaign.strength_score <= 0.95
+    assert campaign.strength_score == pytest.approx(0.81, abs=0.05)
 
 
 # ============================================================================
