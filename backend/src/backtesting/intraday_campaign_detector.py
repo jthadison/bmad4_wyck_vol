@@ -39,7 +39,9 @@ from uuid import uuid4
 
 import structlog
 
+from src.backtesting.event_publisher import EventPublisher
 from src.models.automatic_rally import AutomaticRally
+from src.models.campaign_event import CampaignEvent, CampaignEventType
 from src.models.lps import LPS
 from src.models.sos_breakout import SOSBreakout
 from src.models.spring import Spring
@@ -553,6 +555,7 @@ class IntradayCampaignDetector:
         expiration_hours: int = 72,
         max_concurrent_campaigns: int = 3,
         max_portfolio_heat_pct: Decimal = Decimal("10.0"),
+        event_publisher: EventPublisher | None = None,
     ):
         """Initialize intraday campaign detector."""
         self.campaign_window_hours = campaign_window_hours
@@ -561,6 +564,9 @@ class IntradayCampaignDetector:
         self.expiration_hours = expiration_hours
         self.max_concurrent_campaigns = max_concurrent_campaigns
         self.max_portfolio_heat_pct = max_portfolio_heat_pct
+
+        # Story 15.6: Event publisher for campaign notifications
+        self.event_publisher = event_publisher
 
         # Story 15.3: Indexed data structures for O(1) lookups
         self._campaigns_by_id: dict[str, Campaign] = {}  # O(1) lookup by ID
@@ -753,8 +759,61 @@ class IntradayCampaignDetector:
                 pattern_count=len(campaign.patterns),
                 phase=campaign.current_phase.value if campaign.current_phase else None,
             )
+
+            # Story 15.6: Publish CAMPAIGN_ACTIVATED event
+            self._publish_event(
+                CampaignEventType.CAMPAIGN_ACTIVATED,
+                campaign,
+                pattern_type="AutomaticRally",
+                metadata={"ar_quality_score": pattern.quality_score},
+            )
+
             return True
         return False
+
+    def _publish_event(
+        self,
+        event_type: CampaignEventType,
+        campaign: "Campaign",
+        pattern_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Publish campaign event to event publisher (Story 15.6).
+
+        Non-blocking event publishing with campaign metadata. Events are only
+        published if an event_publisher is configured.
+
+        Args:
+            event_type: Type of event (CAMPAIGN_FORMED, PATTERN_DETECTED, etc.)
+            campaign: Campaign related to the event
+            pattern_type: Pattern type for PATTERN_DETECTED events
+            metadata: Additional event metadata (merged with campaign metadata)
+        """
+        if self.event_publisher is None:
+            return
+
+        # Build base metadata from campaign state
+        event_metadata: dict[str, Any] = {
+            "campaign_state": campaign.state.value,
+            "campaign_phase": campaign.current_phase.value if campaign.current_phase else "UNKNOWN",
+            "strength_score": campaign.strength_score,
+            "pattern_count": len(campaign.patterns),
+        }
+
+        # Merge additional metadata
+        if metadata:
+            event_metadata.update(metadata)
+
+        event = CampaignEvent(
+            event_type=event_type,
+            campaign_id=campaign.campaign_id,
+            timestamp=datetime.now(UTC),
+            pattern_type=pattern_type,
+            metadata=event_metadata,
+        )
+
+        self.event_publisher.publish(event)
 
     def add_pattern(
         self,
@@ -851,6 +910,13 @@ class IntradayCampaignDetector:
                 dollar_risk=str(campaign.dollar_risk),
             )
 
+            # Story 15.6: Publish CAMPAIGN_FORMED event
+            self._publish_event(
+                CampaignEventType.CAMPAIGN_FORMED,
+                campaign,
+                pattern_type=type(pattern).__name__,
+            )
+
             # Story 14.2: AR can activate FORMING campaign if high quality
             if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
                 if self._handle_ar_activation(campaign, pattern):
@@ -883,6 +949,13 @@ class IntradayCampaignDetector:
             # Story 14.4: Volume profile tracking (Issue #3: Use helper method)
             self._update_volume_analysis(pattern, campaign)
 
+            # Story 15.6: Publish PATTERN_DETECTED event (even for invalid sequence)
+            self._publish_event(
+                CampaignEventType.PATTERN_DETECTED,
+                campaign,
+                pattern_type=type(pattern).__name__,
+            )
+
             return campaign
 
         # Add to existing campaign
@@ -894,6 +967,13 @@ class IntradayCampaignDetector:
 
         # Story 14.4: Volume profile tracking (Issue #3: Use helper method)
         self._update_volume_analysis(pattern, campaign)
+
+        # Story 15.6: Publish PATTERN_DETECTED event
+        self._publish_event(
+            CampaignEventType.PATTERN_DETECTED,
+            campaign,
+            pattern_type=type(pattern).__name__,
+        )
 
         # Story 14.2: AR can activate FORMING campaign if high quality
         if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
@@ -923,6 +1003,13 @@ class IntradayCampaignDetector:
                     resistance_level=str(campaign.resistance_level)
                     if campaign.resistance_level
                     else None,
+                )
+
+                # Story 15.6: Publish CAMPAIGN_ACTIVATED event
+                self._publish_event(
+                    CampaignEventType.CAMPAIGN_ACTIVATED,
+                    campaign,
+                    pattern_type=type(pattern).__name__,
                 )
             else:
                 # Already ACTIVE, just update phase
@@ -1061,6 +1148,16 @@ class IntradayCampaignDetector:
                     failure_reason=campaign.failure_reason,
                 )
 
+                # Story 15.6: Publish CAMPAIGN_FAILED event
+                self._publish_event(
+                    CampaignEventType.CAMPAIGN_FAILED,
+                    campaign,
+                    metadata={
+                        "failure_reason": campaign.failure_reason,
+                        "hours_elapsed": hours_elapsed,
+                    },
+                )
+
     def _find_campaign_by_id(self, campaign_id: str) -> Optional[Campaign]:
         """
         Find campaign by ID (Story 15.1a, 15.3).
@@ -1139,6 +1236,19 @@ class IntradayCampaignDetector:
             points_gained=float(campaign.points_gained) if campaign.points_gained else None,
             duration_bars=campaign.duration_bars,
             exit_price=str(exit_price),
+        )
+
+        # Story 15.6: Publish CAMPAIGN_COMPLETED event
+        self._publish_event(
+            CampaignEventType.CAMPAIGN_COMPLETED,
+            campaign,
+            metadata={
+                "exit_price": float(exit_price),
+                "exit_reason": exit_reason.value,
+                "r_multiple": float(campaign.r_multiple) if campaign.r_multiple else None,
+                "points_gained": float(campaign.points_gained) if campaign.points_gained else None,
+                "duration_bars": campaign.duration_bars,
+            },
         )
 
         return campaign
