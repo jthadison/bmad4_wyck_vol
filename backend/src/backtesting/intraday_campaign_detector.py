@@ -28,7 +28,7 @@ Author: Developer Agent (Story 13.4, 14.2, 14.3 Implementation)
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, TypeAlias, Union
@@ -68,14 +68,37 @@ class CampaignState(Enum):
     State Transitions:
     - FORMING: 1 pattern detected, waiting for second pattern
     - ACTIVE: 2+ patterns, campaign is actionable
+    - DORMANT: Campaign inactive but not failed (no recent patterns)
     - COMPLETED: Campaign reached Phase E or successful exit
     - FAILED: Exceeded 72h expiration without completion
     """
 
     FORMING = "FORMING"
     ACTIVE = "ACTIVE"
+    DORMANT = "DORMANT"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+
+
+class ExitReason(str, Enum):
+    """
+    Campaign exit reasons (Story 15.1a).
+
+    Attributes:
+        TARGET_HIT: Reached profit target (Jump level)
+        STOP_OUT: Stop loss triggered
+        TIME_EXIT: Manual time-based exit
+        PHASE_E: Phase E completion exit
+        MANUAL_EXIT: User-initiated manual exit
+        UNKNOWN: Exit reason unknown/not specified
+    """
+
+    TARGET_HIT = "TARGET_HIT"
+    STOP_OUT = "STOP_OUT"
+    TIME_EXIT = "TIME_EXIT"
+    PHASE_E = "PHASE_E"
+    MANUAL_EXIT = "MANUAL_EXIT"
+    UNKNOWN = "UNKNOWN"
 
 
 class VolumeProfile(Enum):
@@ -170,7 +193,7 @@ class Campaign:
     """
 
     campaign_id: str = field(default_factory=lambda: str(uuid4()))
-    start_time: datetime = field(default_factory=datetime.utcnow)
+    start_time: datetime = field(default_factory=lambda: datetime.now(UTC))
     patterns: list[WyckoffPattern] = field(default_factory=list)
     state: CampaignState = CampaignState.FORMING
     current_phase: Optional[WyckoffPhase] = None
@@ -220,6 +243,68 @@ class Campaign:
     climax_detected: bool = False
     absorption_quality: float = 0.0  # Spring absorption quality (0.0-1.0)
     volume_history: list[Decimal] = field(default_factory=list)  # Track recent volumes
+
+    # Story 15.1a: Campaign Completion Tracking
+    exit_price: Optional[Decimal] = None  # Final exit price
+    exit_timestamp: Optional[datetime] = None  # Campaign exit timestamp
+    exit_reason: ExitReason = ExitReason.UNKNOWN  # Reason for exit
+    r_multiple: Optional[Decimal] = None  # Risk-reward multiple (points_gained / risk_per_share)
+    points_gained: Optional[Decimal] = None  # Exit price - entry price
+    duration_bars: int = 0  # Campaign duration in bars
+
+    def calculate_performance_metrics(self, exit_price: Decimal) -> None:
+        """
+        Calculate R-multiple, points gained, and duration (Story 15.1a).
+
+        Args:
+            exit_price: Campaign exit price
+
+        Updates:
+            - points_gained: exit_price - entry_price
+            - r_multiple: points_gained / risk_per_share (if risk_per_share > 0)
+            - duration_bars: last_pattern.bar_number - first_pattern.bar_number + 1
+
+        Example:
+            >>> campaign = Campaign(patterns=[spring, sos])
+            >>> campaign.calculate_performance_metrics(Decimal("55.00"))
+            >>> # If entry=50, risk_per_share=2:
+            >>> campaign.points_gained  # Decimal("5.00")
+            >>> campaign.r_multiple     # Decimal("2.5")
+        """
+        if not self.patterns:
+            logger.warning(
+                "Cannot calculate performance metrics without patterns",
+                campaign_id=self.campaign_id,
+            )
+            return
+
+        # Entry from first pattern bar close
+        entry_price = self.patterns[0].bar.close
+
+        # Points gained
+        self.points_gained = exit_price - entry_price
+
+        # R-multiple
+        if self.risk_per_share and self.risk_per_share > Decimal("0"):
+            self.r_multiple = self.points_gained / self.risk_per_share
+        else:
+            logger.warning(
+                "Cannot calculate R-multiple with zero or null risk_per_share",
+                campaign_id=self.campaign_id,
+                risk_per_share=str(self.risk_per_share) if self.risk_per_share else None,
+            )
+            self.r_multiple = None
+
+        # Duration in bars
+        if self.patterns:
+            # Use bar_index if available (not all pattern types have it)
+            if hasattr(self.patterns[0], "bar_index") and hasattr(self.patterns[-1], "bar_index"):
+                first_bar = self.patterns[0].bar_index
+                last_bar = self.patterns[-1].bar_index
+                self.duration_bars = last_bar - first_bar + 1
+            else:
+                # Fallback: use pattern count as approximation
+                self.duration_bars = len(self.patterns)
 
 
 def calculate_position_size(
@@ -614,6 +699,86 @@ class IntradayCampaignDetector:
                         failure_reason=campaign.failure_reason,
                     )
 
+    def _find_campaign_by_id(self, campaign_id: str) -> Optional[Campaign]:
+        """
+        Find campaign by ID (Story 15.1a).
+
+        Args:
+            campaign_id: Campaign identifier
+
+        Returns:
+            Campaign if found, None otherwise
+        """
+        for campaign in self.campaigns:
+            if campaign.campaign_id == campaign_id:
+                return campaign
+        return None
+
+    def mark_campaign_completed(
+        self,
+        campaign_id: str,
+        exit_price: Decimal,
+        exit_reason: ExitReason,
+        exit_timestamp: Optional[datetime] = None,
+    ) -> Optional[Campaign]:
+        """
+        Mark campaign as completed (Story 15.1a).
+
+        Args:
+            campaign_id: Campaign ID
+            exit_price: Exit price
+            exit_reason: Reason for exit
+            exit_timestamp: Exit time (defaults to now)
+
+        Returns:
+            Updated campaign or None
+
+        Raises:
+            ValueError: If campaign not in valid state (ACTIVE or DORMANT)
+
+        Example:
+            >>> detector = IntradayCampaignDetector()
+            >>> campaign = detector.mark_campaign_completed(
+            ...     campaign_id="abc123",
+            ...     exit_price=Decimal("55.00"),
+            ...     exit_reason=ExitReason.TARGET_HIT
+            ... )
+        """
+        # Find campaign
+        campaign = self._find_campaign_by_id(campaign_id)
+        if not campaign:
+            self.logger.warning("Campaign not found", campaign_id=campaign_id)
+            return None
+
+        # Validate state
+        if campaign.state not in [CampaignState.ACTIVE, CampaignState.DORMANT]:
+            raise ValueError(
+                f"Cannot complete campaign in {campaign.state.value} state. "
+                f"Must be ACTIVE or DORMANT."
+            )
+
+        # Update state
+        campaign.state = CampaignState.COMPLETED
+        campaign.exit_price = exit_price
+        campaign.exit_timestamp = exit_timestamp or datetime.now(UTC)
+        campaign.exit_reason = exit_reason
+
+        # Calculate metrics
+        campaign.calculate_performance_metrics(exit_price)
+
+        # Log
+        self.logger.info(
+            "Campaign completed",
+            campaign_id=campaign_id,
+            exit_reason=exit_reason.value,
+            r_multiple=float(campaign.r_multiple) if campaign.r_multiple else None,
+            points_gained=float(campaign.points_gained) if campaign.points_gained else None,
+            duration_bars=campaign.duration_bars,
+            exit_price=str(exit_price),
+        )
+
+        return campaign
+
     def _determine_phase(self, patterns: list[WyckoffPattern]) -> Optional[WyckoffPhase]:
         """
         Determine Wyckoff phase based on pattern sequence.
@@ -678,7 +843,7 @@ class IntradayCampaignDetector:
             campaign: Campaign to update
             new_phase: New Wyckoff phase
             bar_index: Current bar index in backtest
-            timestamp: Optional timestamp for phase history (defaults to utcnow)
+            timestamp: Optional timestamp for phase history (defaults to datetime.now(UTC))
 
         Example:
             >>> detector.update_phase_with_bar_index(campaign, WyckoffPhase.E, 150)
@@ -690,7 +855,7 @@ class IntradayCampaignDetector:
             return
 
         # FR7.3 / AC7.5: Track phase history
-        transition_time = timestamp or datetime.utcnow()
+        transition_time = timestamp or datetime.now(UTC)
         campaign.phase_history.append((transition_time, new_phase))
         campaign.phase_transition_count += 1
 

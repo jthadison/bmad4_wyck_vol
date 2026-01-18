@@ -49,7 +49,7 @@ def detector():
         min_patterns_for_active=2,
         expiration_hours=72,
         max_concurrent_campaigns=3,
-        max_portfolio_heat_pct=10.0,  # FR7.7/AC7.14
+        max_portfolio_heat_pct=Decimal("10.0"),  # FR7.7/AC7.14
     )
 
 
@@ -1662,3 +1662,248 @@ def test_volume_profile_exactly_three_patterns(
     assert campaign.volume_profile == VolumeProfile.DECLINING  # 100% declining (2/2 comparisons)
     assert campaign.volume_trend_quality > 0.0
     assert len(campaign.volume_history) == 3
+
+
+# ============================================================================
+# Story 15.1a: Campaign Completion State & Data Model Tests
+# ============================================================================
+
+
+class TestCampaignCompletion:
+    """Test campaign completion functionality (Story 15.1a)."""
+
+    def test_complete_active_campaign_winning(
+        self,
+        detector: IntradayCampaignDetector,
+        sample_spring: Spring,
+        sample_sos: SOSBreakout,
+    ) -> None:
+        """Test completing ACTIVE campaign with profit (winning trade)."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create active campaign
+        detector.add_pattern(sample_spring)
+        detector.add_pattern(sample_sos)
+
+        campaigns = detector.get_active_campaigns()
+        assert len(campaigns) == 1
+        campaign = campaigns[0]
+        assert campaign.state == CampaignState.ACTIVE
+
+        # Set risk_per_share for R-multiple calculation
+        campaign.risk_per_share = Decimal("2.00")
+        entry_price = sample_spring.bar.close
+
+        # Complete campaign with profit
+        exit_price = entry_price + Decimal("5.00")
+
+        result = detector.mark_campaign_completed(
+            campaign_id=campaign.campaign_id,
+            exit_price=exit_price,
+            exit_reason=ExitReason.TARGET_HIT,
+        )
+
+        # Verify campaign completed
+        assert result is not None
+        assert result.state == CampaignState.COMPLETED
+        assert result.exit_price == exit_price
+        assert result.exit_reason == ExitReason.TARGET_HIT
+        assert result.exit_timestamp is not None
+
+        # Verify metrics
+        assert result.points_gained == Decimal("5.00")
+        assert result.r_multiple == Decimal("2.5")
+        assert result.duration_bars > 0
+
+    def test_complete_active_campaign_losing(
+        self,
+        detector: IntradayCampaignDetector,
+        sample_spring: Spring,
+        sample_sos: SOSBreakout,
+    ) -> None:
+        """Test completing ACTIVE campaign with loss (stopped out)."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create active campaign
+        detector.add_pattern(sample_spring)
+        detector.add_pattern(sample_sos)
+
+        campaign = detector.get_active_campaigns()[0]
+        campaign.risk_per_share = Decimal("2.00")
+        entry_price = sample_spring.bar.close
+
+        # Complete campaign with loss
+        exit_price = entry_price - Decimal("2.00")
+
+        result = detector.mark_campaign_completed(
+            campaign_id=campaign.campaign_id,
+            exit_price=exit_price,
+            exit_reason=ExitReason.STOP_OUT,
+        )
+
+        # Verify metrics
+        assert result.points_gained == Decimal("-2.00")
+        assert result.r_multiple == Decimal("-1.0")
+        assert result.exit_reason == ExitReason.STOP_OUT
+
+    def test_complete_dormant_campaign(
+        self,
+        detector: IntradayCampaignDetector,
+        sample_spring: Spring,
+        sample_sos: SOSBreakout,
+    ) -> None:
+        """Test completing DORMANT campaign."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create active campaign
+        detector.add_pattern(sample_spring)
+        detector.add_pattern(sample_sos)
+
+        campaign = detector.get_active_campaigns()[0]
+
+        # Manually set to DORMANT state
+        campaign.state = CampaignState.DORMANT
+        campaign.risk_per_share = Decimal("1.50")
+
+        # Complete dormant campaign
+        result = detector.mark_campaign_completed(
+            campaign_id=campaign.campaign_id,
+            exit_price=sample_spring.bar.close + Decimal("3.00"),
+            exit_reason=ExitReason.MANUAL_EXIT,
+        )
+
+        # Verify completion
+        assert result is not None
+        assert result.state == CampaignState.COMPLETED
+        assert result.exit_reason == ExitReason.MANUAL_EXIT
+
+    def test_complete_campaign_zero_risk_per_share(
+        self,
+        detector: IntradayCampaignDetector,
+        sample_spring: Spring,
+        sample_sos: SOSBreakout,
+    ) -> None:
+        """Test completing campaign with zero risk_per_share."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create active campaign
+        detector.add_pattern(sample_spring)
+        detector.add_pattern(sample_sos)
+
+        campaign = detector.get_active_campaigns()[0]
+        campaign.risk_per_share = Decimal("0")
+
+        # Complete campaign
+        result = detector.mark_campaign_completed(
+            campaign_id=campaign.campaign_id,
+            exit_price=sample_spring.bar.close + Decimal("5.00"),
+            exit_reason=ExitReason.TARGET_HIT,
+        )
+
+        # Verify points_gained calculated but r_multiple is None
+        assert result.points_gained == Decimal("5.00")
+        assert result.r_multiple is None
+
+    def test_all_exit_reasons(
+        self,
+        detector: IntradayCampaignDetector,
+        sample_spring: Spring,
+        sample_sos: SOSBreakout,
+    ) -> None:
+        """Test all exit reasons are valid and logged correctly."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        exit_reasons = [
+            ExitReason.TARGET_HIT,
+            ExitReason.STOP_OUT,
+            ExitReason.TIME_EXIT,
+            ExitReason.PHASE_E,
+            ExitReason.MANUAL_EXIT,
+        ]
+
+        for exit_reason in exit_reasons:
+            # Create new campaign for each test
+            d = IntradayCampaignDetector()
+            d.add_pattern(sample_spring)
+            d.add_pattern(sample_sos)
+
+            campaign = d.get_active_campaigns()[0]
+            campaign.risk_per_share = Decimal("1.00")
+
+            # Complete with this exit reason
+            result = d.mark_campaign_completed(
+                campaign_id=campaign.campaign_id,
+                exit_price=sample_spring.bar.close + Decimal("2.00"),
+                exit_reason=exit_reason,
+            )
+
+            # Verify exit reason set correctly
+            assert result is not None
+            assert result.exit_reason == exit_reason
+            assert result.state == CampaignState.COMPLETED
+
+    def test_complete_failed_campaign_raises_error(
+        self,
+        detector: IntradayCampaignDetector,
+        sample_spring: Spring,
+    ) -> None:
+        """Test cannot complete FAILED campaign."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create campaign and set to FAILED
+        detector.add_pattern(sample_spring)
+        campaign = detector.campaigns[0]
+        campaign.state = CampaignState.FAILED
+
+        # Try to complete failed campaign
+        with pytest.raises(ValueError, match="Cannot complete campaign in FAILED state"):
+            detector.mark_campaign_completed(
+                campaign_id=campaign.campaign_id,
+                exit_price=Decimal("100.00"),
+                exit_reason=ExitReason.TARGET_HIT,
+            )
+
+    def test_complete_completed_campaign_raises_error(
+        self,
+        detector: IntradayCampaignDetector,
+        sample_spring: Spring,
+        sample_sos: SOSBreakout,
+    ) -> None:
+        """Test cannot re-complete COMPLETED campaign."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create and complete campaign
+        detector.add_pattern(sample_spring)
+        detector.add_pattern(sample_sos)
+        campaign = detector.get_active_campaigns()[0]
+        campaign.risk_per_share = Decimal("1.00")
+
+        detector.mark_campaign_completed(
+            campaign_id=campaign.campaign_id,
+            exit_price=Decimal("105.00"),
+            exit_reason=ExitReason.TARGET_HIT,
+        )
+
+        # Try to complete again
+        with pytest.raises(ValueError, match="Cannot complete campaign in COMPLETED state"):
+            detector.mark_campaign_completed(
+                campaign_id=campaign.campaign_id,
+                exit_price=Decimal("106.00"),
+                exit_reason=ExitReason.MANUAL_EXIT,
+            )
+
+    def test_complete_campaign_not_found(
+        self,
+        detector: IntradayCampaignDetector,
+    ) -> None:
+        """Test completing non-existent campaign."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        result = detector.mark_campaign_completed(
+            campaign_id="nonexistent-id",
+            exit_price=Decimal("100.00"),
+            exit_reason=ExitReason.TARGET_HIT,
+        )
+
+        # Should return None
+        assert result is None
