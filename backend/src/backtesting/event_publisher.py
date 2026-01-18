@@ -30,7 +30,7 @@ import logging
 import queue
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Callable
 from typing import Any
 
@@ -120,6 +120,12 @@ class EventPublisher:
         max_events_per_minute: int | None = None,
     ) -> None:
         """Initialize event publisher with background dispatcher."""
+        # Validate max_queue_size bounds
+        if max_queue_size < 1:
+            raise ValueError("max_queue_size must be at least 1")
+        if max_queue_size > 100000:
+            raise ValueError("max_queue_size cannot exceed 100000")
+
         self._event_queue: queue.Queue[CampaignEvent] = queue.Queue(maxsize=max_queue_size)
         self._subscribers: dict[
             CampaignEventType, list[tuple[EventCallback, EventFilter | None]]
@@ -127,8 +133,8 @@ class EventPublisher:
         self._wildcard_subscribers: list[tuple[EventCallback, EventFilter | None]] = []
         self._max_events_per_minute = max_events_per_minute
 
-        # Rate limiting state
-        self._event_timestamps: list[float] = []
+        # Rate limiting state - use deque for O(1) append/popleft operations
+        self._event_timestamps: deque[float] = deque()
         self._rate_limit_lock = threading.Lock()
 
         # Background dispatcher
@@ -293,14 +299,15 @@ class EventPublisher:
         one_minute_ago = current_time - 60.0
 
         with self._rate_limit_lock:
-            # Remove old timestamps
-            self._event_timestamps = [t for t in self._event_timestamps if t > one_minute_ago]
+            # Remove old timestamps from front of deque (O(1) per removal)
+            while self._event_timestamps and self._event_timestamps[0] <= one_minute_ago:
+                self._event_timestamps.popleft()
 
             # Check limit
             if len(self._event_timestamps) >= self._max_events_per_minute:
                 return False
 
-            # Add current timestamp
+            # Add current timestamp (O(1) append)
             self._event_timestamps.append(current_time)
             return True
 
@@ -327,11 +334,8 @@ class EventPublisher:
                     logging.error("Event dispatcher error: %s - %s", type(e).__name__, str(e))
 
             logging.info("Event dispatcher stopped")
-        except Exception as e:
-            logging.error("FATAL: Dispatcher thread crashed: %s - %s", type(e).__name__, str(e))
-            import traceback
-
-            traceback.print_exc()
+        except Exception:
+            logging.exception("FATAL: Dispatcher thread crashed")
 
     def _deliver_event(self, event: CampaignEvent) -> None:
         """
