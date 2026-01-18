@@ -167,7 +167,10 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: rm -rf node_modules && npm install
+        run: |
+          npm cache clean --force
+          rm -rf node_modules
+          npm install
 
       - name: Run ESLint
         working-directory: frontend
@@ -188,7 +191,10 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: rm -rf node_modules && npm install
+        run: |
+          npm cache clean --force
+          rm -rf node_modules
+          npm install
 
       - name: Run Vitest
         working-directory: frontend

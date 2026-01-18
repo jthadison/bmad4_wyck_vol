@@ -97,14 +97,9 @@ def upgrade() -> None:
         unique=False,
     )
 
-    # Index for status-only queries (PENDING, ACTIVE, FILLED, etc.)
-    # Covers: SELECT * FROM signals WHERE status = ?
-    op.create_index(
-        "idx_signals_status",
-        "signals",
-        ["status"],
-        unique=False,
-    )
+    # Note: idx_signals_status already exists from 001_initial_schema_with_timescaledb.py
+    # as a composite index on (status, generated_at DESC), which covers status-only queries.
+    # Skipping duplicate index creation.
 
     # Composite index for pattern_id filtering (joins with patterns table)
     # Covers: SELECT * FROM signals WHERE pattern_id = ?
@@ -391,7 +386,7 @@ def downgrade() -> None:
     op.drop_index("idx_signals_generated_at_desc", table_name="signals")
     op.drop_index("idx_signals_campaign_id", table_name="signals")
     op.drop_index("idx_signals_pattern_id", table_name="signals")
-    op.drop_index("idx_signals_status", table_name="signals")
+    # Note: idx_signals_status not dropped here - it was created in 001_initial_schema_with_timescaledb.py
     op.drop_index("idx_signals_symbol_status", table_name="signals")
 
     # OHLCV Bars
