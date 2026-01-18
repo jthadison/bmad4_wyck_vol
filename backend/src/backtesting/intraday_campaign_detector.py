@@ -27,6 +27,7 @@ Key Features:
 Author: Developer Agent (Story 13.4, 14.2, 14.3 Implementation)
 """
 
+import warnings
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -425,9 +426,9 @@ class IntradayCampaignDetector:
         self._campaigns_by_state: dict[CampaignState, set[str]] = defaultdict(
             set
         )  # O(1) state queries
-        self._active_time_windows: list[
-            str
-        ] = []  # Recent active campaign IDs for hot-path optimization
+        # Use dict for O(1) add/remove while preserving insertion order (Python 3.7+)
+        # Keys are campaign IDs, values are True (used as ordered set)
+        self._active_time_windows: dict[str, bool] = {}  # O(1) operations
 
         self.logger = logger.bind(
             component="intraday_campaign_detector",
@@ -450,6 +451,11 @@ class IntradayCampaignDetector:
         Now campaigns are stored in _campaigns_by_id for O(1) lookups,
         and this property provides backward-compatible list access.
 
+        Warning:
+            Direct mutation of the returned list (e.g., campaigns.append())
+            will NOT update indexes. Use add_pattern() or _add_to_indexes()
+            for proper index maintenance.
+
         Returns:
             List of all campaigns (derived from _campaigns_by_id)
 
@@ -459,6 +465,12 @@ class IntradayCampaignDetector:
             >>> len(detector.campaigns)  # Still works
             1
         """
+        warnings.warn(
+            "Direct mutation of detector.campaigns is deprecated and will not update "
+            "indexes. Use add_pattern() or internal index methods instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return list(self._campaigns_by_id.values())
 
     def _add_to_indexes(self, campaign: Campaign) -> None:
@@ -484,10 +496,9 @@ class IntradayCampaignDetector:
         # State index
         self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
 
-        # Time window index (if active)
+        # Time window index (if active) - O(1) dict operations
         if campaign.state == CampaignState.ACTIVE:
-            if campaign.campaign_id not in self._active_time_windows:
-                self._active_time_windows.append(campaign.campaign_id)
+            self._active_time_windows[campaign.campaign_id] = True
 
     def _update_indexes(self, campaign: Campaign, old_state: CampaignState) -> None:
         """
@@ -507,12 +518,11 @@ class IntradayCampaignDetector:
         # Add to new state index
         self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
 
-        # Update active time windows
+        # Update active time windows - O(1) dict operations
         if campaign.state == CampaignState.ACTIVE:
-            if campaign.campaign_id not in self._active_time_windows:
-                self._active_time_windows.append(campaign.campaign_id)
-        elif campaign.campaign_id in self._active_time_windows:
-            self._active_time_windows.remove(campaign.campaign_id)
+            self._active_time_windows[campaign.campaign_id] = True
+        else:
+            self._active_time_windows.pop(campaign.campaign_id, None)
 
     def _remove_from_indexes(self, campaign_id: str) -> None:
         """
@@ -534,9 +544,8 @@ class IntradayCampaignDetector:
         # Remove from state index
         self._campaigns_by_state[campaign.state].discard(campaign_id)
 
-        # Remove from time windows
-        if campaign_id in self._active_time_windows:
-            self._active_time_windows.remove(campaign_id)
+        # Remove from time windows - O(1) dict operation
+        self._active_time_windows.pop(campaign_id, None)
 
         # Remove from ID index
         del self._campaigns_by_id[campaign_id]
@@ -559,7 +568,7 @@ class IntradayCampaignDetector:
         for campaign in self._campaigns_by_id.values():
             self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
             if campaign.state == CampaignState.ACTIVE:
-                self._active_time_windows.append(campaign.campaign_id)
+                self._active_time_windows[campaign.campaign_id] = True
 
         self.logger.debug(
             "Indexes rebuilt",
@@ -1001,8 +1010,8 @@ class IntradayCampaignDetector:
             >>> len(campaigns)
             2
         """
-        # Get all completed campaigns
-        completed = [c for c in self.campaigns if c.state == CampaignState.COMPLETED]
+        # Get all completed campaigns (use internal index to avoid deprecation warning)
+        completed = [c for c in self._campaigns_by_id.values() if c.state == CampaignState.COMPLETED]
         total_completed = len(completed)
 
         # Apply filters
@@ -1088,7 +1097,7 @@ class IntradayCampaignDetector:
         """
         return [
             c
-            for c in self.campaigns
+            for c in self._campaigns_by_id.values()
             if c.state == CampaignState.COMPLETED and c.r_multiple is not None and c.r_multiple > 0
         ]
 
@@ -1105,7 +1114,7 @@ class IntradayCampaignDetector:
         """
         return [
             c
-            for c in self.campaigns
+            for c in self._campaigns_by_id.values()
             if c.state == CampaignState.COMPLETED and c.r_multiple is not None and c.r_multiple <= 0
         ]
 
@@ -1131,9 +1140,10 @@ class IntradayCampaignDetector:
             >>> stats["performance"]["avg_r_multiple"]
             2.5
         """
-        completed = [c for c in self.campaigns if c.state == CampaignState.COMPLETED]
-        failed = [c for c in self.campaigns if c.state == CampaignState.FAILED]
-        total = len(self.campaigns)
+        all_campaigns = list(self._campaigns_by_id.values())
+        completed = [c for c in all_campaigns if c.state == CampaignState.COMPLETED]
+        failed = [c for c in all_campaigns if c.state == CampaignState.FAILED]
+        total = len(all_campaigns)
 
         # Handle edge case: no campaigns
         if total == 0:

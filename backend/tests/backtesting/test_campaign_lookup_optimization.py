@@ -8,9 +8,19 @@ Tests cover:
 4. O(1) lookup performance
 5. Index maintenance methods
 
+Performance Notes:
+    For more reliable CI performance testing, consider using pytest-benchmark:
+    ```
+    pip install pytest-benchmark
+    pytest --benchmark-only tests/backtesting/test_campaign_lookup_optimization.py
+    ```
+    pytest-benchmark provides statistical analysis, warmup, and calibration
+    for more accurate performance measurements across different environments.
+
 Author: Story 15.3 Implementation
 """
 
+import warnings
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -290,31 +300,48 @@ class TestIndexMaintenanceMethods:
 
 
 class TestBackwardCompatibility:
-    """Test that campaigns property provides backward compatibility."""
+    """Test that campaigns property provides backward compatibility.
+
+    Note: These tests intentionally access the deprecated campaigns property
+    and suppress the DeprecationWarning since they're testing the property itself.
+    """
 
     def test_campaigns_property_returns_list(self, detector):
         """Test campaigns property returns a list."""
-        assert isinstance(detector.campaigns, list)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            assert isinstance(detector.campaigns, list)
 
     def test_campaigns_property_returns_all_campaigns(self, detector, sample_bar, base_timestamp):
         """Test campaigns property returns all campaigns from ID index."""
         spring = create_spring(sample_bar, base_timestamp)
         campaign = detector.add_pattern(spring)
 
-        campaigns_list = detector.campaigns
-        assert campaign in campaigns_list
-        assert len(campaigns_list) == 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            campaigns_list = detector.campaigns
+            assert campaign in campaigns_list
+            assert len(campaigns_list) == 1
 
     def test_campaigns_property_reflects_updates(self, detector, sample_bar, base_timestamp):
         """Test campaigns property reflects changes."""
         spring1 = create_spring(sample_bar, base_timestamp, bar_index=10)
         detector.add_pattern(spring1)
-        assert len(detector.campaigns) == 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            assert len(detector.campaigns) == 1
 
         # Add another pattern to a new campaign
         spring2 = create_spring(sample_bar, base_timestamp + timedelta(hours=100), bar_index=20)
         detector.add_pattern(spring2)
-        assert len(detector.campaigns) == 2
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            assert len(detector.campaigns) == 2
+
+    def test_campaigns_property_emits_deprecation_warning(self, detector):
+        """Test that accessing campaigns property emits DeprecationWarning."""
+        with pytest.warns(DeprecationWarning, match="Direct mutation.*deprecated"):
+            _ = detector.campaigns
 
 
 # ============================================================================
@@ -614,3 +641,90 @@ class TestPerformanceBenchmarks:
         # Total in state indexes should equal total campaigns
         total = sum(len(ids) for ids in detector._campaigns_by_state.values())
         assert total == 100
+
+
+# ============================================================================
+# Test: pytest-benchmark Compatible Tests (Optional)
+# ============================================================================
+
+# Check if pytest-benchmark is available
+try:
+    import pytest_benchmark  # noqa: F401
+
+    BENCHMARK_AVAILABLE = True
+except ImportError:
+    BENCHMARK_AVAILABLE = False
+
+
+@pytest.mark.skipif(not BENCHMARK_AVAILABLE, reason="pytest-benchmark not installed")
+class TestPytestBenchmark:
+    """Optional pytest-benchmark tests for more reliable CI performance measurements.
+
+    These tests use pytest-benchmark for statistical analysis, warmup, and
+    calibration. Install with: pip install pytest-benchmark
+
+    Run with: pytest --benchmark-only tests/backtesting/test_campaign_lookup_optimization.py
+    """
+
+    @pytest.fixture
+    def detector_with_1000_campaigns(self):
+        """Pre-populated detector with 1000 campaigns for benchmarking."""
+        detector = IntradayCampaignDetector()
+        for i in range(1000):
+            campaign = Campaign(
+                campaign_id=f"bench-{i}",
+                state=CampaignState.FORMING if i % 4 == 0 else (
+                    CampaignState.ACTIVE if i % 4 == 1 else (
+                        CampaignState.COMPLETED if i % 4 == 2 else CampaignState.FAILED
+                    )
+                ),
+            )
+            detector._add_to_indexes(campaign)
+        return detector
+
+    def test_benchmark_lookup_by_id(self, detector_with_1000_campaigns, benchmark):
+        """Benchmark campaign lookup by ID with pytest-benchmark."""
+        detector = detector_with_1000_campaigns
+
+        def lookup():
+            return detector.get_campaign_by_id("bench-500")
+
+        result = benchmark(lookup)
+        assert result is not None
+
+    def test_benchmark_get_active_campaigns(self, detector_with_1000_campaigns, benchmark):
+        """Benchmark get_active_campaigns with pytest-benchmark."""
+        detector = detector_with_1000_campaigns
+
+        def query():
+            return detector.get_active_campaigns()
+
+        result = benchmark(query)
+        assert len(result) > 0
+
+    def test_benchmark_get_campaigns_by_state(self, detector_with_1000_campaigns, benchmark):
+        """Benchmark get_campaigns_by_state with pytest-benchmark."""
+        detector = detector_with_1000_campaigns
+
+        def query():
+            return detector.get_campaigns_by_state(CampaignState.COMPLETED)
+
+        result = benchmark(query)
+        assert len(result) > 0
+
+    def test_benchmark_add_to_indexes(self, benchmark):
+        """Benchmark _add_to_indexes operation with pytest-benchmark."""
+        detector = IntradayCampaignDetector()
+        counter = [0]  # Use list to allow mutation in closure
+
+        def add_campaign():
+            campaign = Campaign(
+                campaign_id=f"add-bench-{counter[0]}",
+                state=CampaignState.FORMING,
+            )
+            counter[0] += 1
+            detector._add_to_indexes(campaign)
+            return campaign
+
+        result = benchmark(add_campaign)
+        assert result is not None
