@@ -567,6 +567,9 @@ class IntradayCampaignDetector:
         # Returns list of ACTIVE campaigns with 2+ patterns
     """
 
+    # Story 15.7: Portfolio-level event campaign ID constant
+    PORTFOLIO_CAMPAIGN_ID = "PORTFOLIO"
+
     def __init__(
         self,
         campaign_window_hours: int = 48,
@@ -2258,6 +2261,8 @@ class IntradayCampaignDetector:
             # Check heat limit
             if prospective_heat > self.max_portfolio_heat_pct:
                 # Story 15.7: Fire exceeded alert
+                # TODO: Consider suppressing CRITICAL alert when EXCEEDED will fire
+                # (low priority - both alerts are semantically correct but may be redundant)
                 self._publish_heat_alert(
                     CampaignEventType.PORTFOLIO_HEAT_EXCEEDED, float(prospective_heat)
                 )
@@ -2374,7 +2379,7 @@ class IntradayCampaignDetector:
 
         event = CampaignEvent(
             event_type=event_type,
-            campaign_id="PORTFOLIO",  # Special ID for portfolio-level events
+            campaign_id=self.PORTFOLIO_CAMPAIGN_ID,
             timestamp=datetime.now(UTC),
             pattern_type=None,
             metadata={

@@ -313,7 +313,7 @@ def test_alert_event_contains_correct_metadata(
     event = mock_event_publisher.publish.call_args[0][0]
 
     # Verify event structure
-    assert event.campaign_id == "PORTFOLIO"
+    assert event.campaign_id == IntradayCampaignDetector.PORTFOLIO_CAMPAIGN_ID
     assert event.pattern_type is None
     assert isinstance(event.timestamp, datetime)
 
