@@ -779,6 +779,133 @@ class IntradayCampaignDetector:
 
         return campaign
 
+    def get_completed_campaigns(
+        self,
+        exit_reason: Optional[ExitReason] = None,
+        min_r_multiple: Optional[Decimal] = None,
+        max_r_multiple: Optional[Decimal] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> list[Campaign]:
+        """
+        Get completed campaigns with optional filters (Story 15.1b).
+
+        Args:
+            exit_reason: Filter by exit reason
+            min_r_multiple: Minimum R-multiple (inclusive)
+            max_r_multiple: Maximum R-multiple (inclusive)
+            start_date: Filter by exit date >= start_date
+            end_date: Filter by exit date <= end_date
+
+        Returns:
+            List of completed campaigns matching filters
+
+        Example:
+            >>> detector.get_completed_campaigns(
+            ...     exit_reason=ExitReason.TARGET_HIT,
+            ...     min_r_multiple=Decimal("2.0")
+            ... )
+            [<Campaign: R=2.5>, <Campaign: R=3.0>]
+        """
+        # Get all completed campaigns
+        completed = [c for c in self.campaigns if c.state == CampaignState.COMPLETED]
+
+        # Apply filters
+        if exit_reason:
+            completed = [c for c in completed if c.exit_reason == exit_reason]
+
+        if min_r_multiple is not None:
+            completed = [c for c in completed if c.r_multiple and c.r_multiple >= min_r_multiple]
+
+        if max_r_multiple is not None:
+            completed = [c for c in completed if c.r_multiple and c.r_multiple <= max_r_multiple]
+
+        if start_date:
+            completed = [
+                c for c in completed if c.exit_timestamp and c.exit_timestamp >= start_date
+            ]
+
+        if end_date:
+            completed = [c for c in completed if c.exit_timestamp and c.exit_timestamp <= end_date]
+
+        self.logger.debug(
+            "Completed campaigns query",
+            total_completed=len([c for c in self.campaigns if c.state == CampaignState.COMPLETED]),
+            filtered_results=len(completed),
+            filters={
+                "exit_reason": exit_reason.value if exit_reason else None,
+                "min_r": float(min_r_multiple) if min_r_multiple else None,
+                "max_r": float(max_r_multiple) if max_r_multiple else None,
+                "date_range": f"{start_date} to {end_date}" if start_date or end_date else None,
+            },
+        )
+
+        return completed
+
+    def get_campaign_by_id(self, campaign_id: str) -> Optional[Campaign]:
+        """
+        Get campaign by ID (any state) (Story 15.1b).
+
+        Args:
+            campaign_id: Unique campaign identifier
+
+        Returns:
+            Campaign or None if not found
+
+        Example:
+            >>> campaign = detector.get_campaign_by_id("abc123")
+        """
+        return self._find_campaign_by_id(campaign_id)
+
+    def get_campaigns_by_state(self, state: CampaignState) -> list[Campaign]:
+        """
+        Get all campaigns in given state (Story 15.1b).
+
+        Args:
+            state: Campaign state to filter
+
+        Returns:
+            List of campaigns in specified state
+
+        Example:
+            >>> active = detector.get_campaigns_by_state(CampaignState.ACTIVE)
+        """
+        return [c for c in self.campaigns if c.state == state]
+
+    def get_winning_campaigns(self) -> list[Campaign]:
+        """
+        Get all completed campaigns with positive R-multiple (Story 15.1b).
+
+        Returns:
+            List of winning campaigns (R > 0)
+
+        Example:
+            >>> winners = detector.get_winning_campaigns()
+            >>> # All campaigns with R-multiple > 0
+        """
+        return [
+            c
+            for c in self.campaigns
+            if c.state == CampaignState.COMPLETED and c.r_multiple and c.r_multiple > 0
+        ]
+
+    def get_losing_campaigns(self) -> list[Campaign]:
+        """
+        Get all completed campaigns with non-positive R-multiple (Story 15.1b).
+
+        Returns:
+            List of losing campaigns (R ≤ 0)
+
+        Example:
+            >>> losers = detector.get_losing_campaigns()
+            >>> # All campaigns with R-multiple ≤ 0
+        """
+        return [
+            c
+            for c in self.campaigns
+            if c.state == CampaignState.COMPLETED and c.r_multiple is not None and c.r_multiple <= 0
+        ]
+
     def _determine_phase(self, patterns: list[WyckoffPattern]) -> Optional[WyckoffPhase]:
         """
         Determine Wyckoff phase based on pattern sequence.
