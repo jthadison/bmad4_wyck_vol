@@ -2397,3 +2397,647 @@ class TestCampaignCompletionQueries:
         # Performance requirement: < 50ms for 100 campaigns (relaxed from 1000)
         # Note: Story says 1000 campaigns, but 100 is more realistic for unit tests
         assert query_time_ms < 50, f"Query took {query_time_ms:.2f}ms (expected < 50ms)"
+
+
+# ============================================================================
+# Story 15.2: Campaign Performance Statistics Tests
+# ============================================================================
+
+
+class TestCampaignStatistics:
+    """Test campaign performance statistics and analytics (Story 15.2)."""
+
+    def test_empty_statistics(self, detector):
+        """Test statistics with zero campaigns."""
+
+        stats = detector.get_campaign_statistics()
+
+        # Overview should be all zeros
+        assert stats["overview"]["total_campaigns"] == 0
+        assert stats["overview"]["completed"] == 0
+        assert stats["overview"]["failed"] == 0
+        assert stats["overview"]["active"] == 0
+        assert stats["overview"]["success_rate_pct"] == 0.0
+
+        # Performance should be all zeros
+        assert stats["performance"]["win_rate_pct"] == 0.0
+        assert stats["performance"]["avg_r_multiple"] == 0.0
+        assert stats["performance"]["median_r_multiple"] == 0.0
+        assert stats["performance"]["best_r_multiple"] == 0.0
+        assert stats["performance"]["worst_r_multiple"] == 0.0
+        assert stats["performance"]["total_r"] == 0.0
+        assert stats["performance"]["profitable_campaigns"] == 0
+        assert stats["performance"]["losing_campaigns"] == 0
+
+        # Exit reasons, patterns, phases should be empty
+        assert stats["exit_reasons"] == {}
+        assert stats["patterns"] == {}
+        assert stats["phases"] == {}
+
+        # Should have timestamp
+        assert "generated_at" in stats
+
+    def test_comprehensive_statistics(self, detector, sample_spring, sample_sos, base_timestamp):
+        """Test statistics with mixed campaign outcomes."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create 100 campaigns: 60 completed (40 wins, 20 losses), 30 failed, 10 active
+        for i in range(100):
+            spring_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100),
+                open=Decimal("50.00"),
+                high=Decimal("51.00"),
+                low=Decimal("49.00"),
+                close=Decimal("50.50"),
+                volume=80000,
+                spread=Decimal("2.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            spring = Spring(
+                bar=spring_bar,
+                bar_index=i * 10,
+                penetration_pct=Decimal("0.02"),
+                volume_ratio=Decimal("0.4"),
+                recovery_bars=1,
+                creek_reference=Decimal("50.00"),
+                spring_low=Decimal("48.00"),
+                recovery_price=Decimal("50.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100),
+                trading_range_id=uuid4(),
+            )
+
+            sos_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                open=Decimal("50.00"),
+                high=Decimal("53.00"),
+                low=Decimal("50.00"),
+                close=Decimal("52.50"),
+                volume=160000,
+                spread=Decimal("3.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            sos = SOSBreakout(
+                bar=sos_bar,
+                breakout_pct=Decimal("0.025"),
+                volume_ratio=Decimal("2.0"),
+                ice_reference=Decimal("50.00"),
+                breakout_price=Decimal("52.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                trading_range_id=uuid4(),
+                spread_ratio=Decimal("1.5"),
+                close_position=Decimal("0.83"),
+                spread=Decimal("3.00"),
+            )
+
+            detector.add_pattern(spring)
+            detector.add_pattern(sos)
+            campaign = detector.get_active_campaigns()[-1]
+            campaign.risk_per_share = Decimal("2.00")
+
+            # Complete 60 campaigns
+            if i < 60:
+                # 40 wins (i < 40)
+                if i < 40:
+                    exit_price = Decimal("55.00")  # +2.5R
+                    exit_reason = ExitReason.TARGET_HIT
+                # 20 losses (40 <= i < 60)
+                else:
+                    exit_price = Decimal("48.00")  # -1.0R
+                    exit_reason = ExitReason.STOP_OUT
+
+                detector.mark_campaign_completed(
+                    campaign_id=campaign.campaign_id,
+                    exit_price=exit_price,
+                    exit_reason=exit_reason,
+                )
+
+            # Fail 30 campaigns (60 <= i < 90)
+            elif i < 90:
+                campaign.state = CampaignState.FAILED
+                campaign.failure_reason = "Test failure"
+
+            # Leave 10 active (90 <= i < 100)
+
+        stats = detector.get_campaign_statistics()
+
+        # Overview - Note: Some campaigns may auto-fail due to validation rules
+        assert stats["overview"]["total_campaigns"] == 100
+        assert stats["overview"]["completed"] == 60
+        assert stats["overview"]["failed"] >= 30  # May have more due to auto-fail logic
+        assert stats["overview"]["active"] <= 10  # May have fewer if some auto-failed
+        assert stats["overview"]["success_rate_pct"] >= 60.0  # At least 60%
+
+        # Performance
+        assert stats["performance"]["win_rate_pct"] == pytest.approx(66.67, rel=0.01)
+        assert stats["performance"]["profitable_campaigns"] == 40
+        assert stats["performance"]["losing_campaigns"] == 20
+        assert stats["performance"]["avg_r_multiple"] > 0  # More wins than losses
+        assert stats["performance"]["best_r_multiple"] > 0
+        assert stats["performance"]["worst_r_multiple"] < 0
+
+    def test_pattern_sequence_statistics(self, detector, sample_spring, base_timestamp):
+        """Test pattern sequence analysis (Spring→SOS, Spring→AR→SOS, etc.)."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+        from src.models.automatic_rally import AutomaticRally
+
+        # Create 20 Spring→SOS campaigns (15 wins, avg 2.0R)
+        for i in range(20):
+            spring_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100),
+                open=Decimal("50.00"),
+                high=Decimal("51.00"),
+                low=Decimal("49.00"),
+                close=Decimal("50.50"),
+                volume=80000,
+                spread=Decimal("2.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            spring = Spring(
+                bar=spring_bar,
+                bar_index=i * 10,
+                penetration_pct=Decimal("0.02"),
+                volume_ratio=Decimal("0.4"),
+                recovery_bars=1,
+                creek_reference=Decimal("50.00"),
+                spring_low=Decimal("48.00"),
+                recovery_price=Decimal("50.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100),
+                trading_range_id=uuid4(),
+            )
+
+            sos_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                open=Decimal("50.00"),
+                high=Decimal("53.00"),
+                low=Decimal("50.00"),
+                close=Decimal("52.50"),
+                volume=160000,
+                spread=Decimal("3.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            sos = SOSBreakout(
+                bar=sos_bar,
+                breakout_pct=Decimal("0.025"),
+                volume_ratio=Decimal("2.0"),
+                ice_reference=Decimal("50.00"),
+                breakout_price=Decimal("52.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                trading_range_id=uuid4(),
+                spread_ratio=Decimal("1.5"),
+                close_position=Decimal("0.83"),
+                spread=Decimal("3.00"),
+            )
+
+            detector.add_pattern(spring)
+            detector.add_pattern(sos)
+            campaign = detector.get_active_campaigns()[-1]
+            campaign.risk_per_share = Decimal("2.00")
+
+            # 15 wins, 5 losses
+            if i < 15:
+                exit_price = Decimal("54.00")  # Win
+            else:
+                exit_price = Decimal("48.00")  # Loss
+
+            detector.mark_campaign_completed(
+                campaign_id=campaign.campaign_id,
+                exit_price=exit_price,
+                exit_reason=ExitReason.TARGET_HIT if i < 15 else ExitReason.STOP_OUT,
+            )
+
+        # Create 15 Spring→AR→SOS campaigns (12 wins, avg 2.5R)
+        for i in range(15):
+            spring_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=(i + 100) * 100),
+                open=Decimal("50.00"),
+                high=Decimal("51.00"),
+                low=Decimal("49.00"),
+                close=Decimal("50.50"),
+                volume=80000,
+                spread=Decimal("2.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            spring = Spring(
+                bar=spring_bar,
+                bar_index=(i + 100) * 10,
+                penetration_pct=Decimal("0.02"),
+                volume_ratio=Decimal("0.4"),
+                recovery_bars=1,
+                creek_reference=Decimal("50.00"),
+                spring_low=Decimal("48.00"),
+                recovery_price=Decimal("50.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=(i + 100) * 100),
+                trading_range_id=uuid4(),
+            )
+
+            ar_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=(i + 100) * 100 + 1),
+                open=Decimal("50.50"),
+                high=Decimal("52.00"),
+                low=Decimal("50.00"),
+                close=Decimal("51.50"),
+                volume=120000,
+                spread=Decimal("2.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            ar = AutomaticRally(
+                bar=ar_bar.model_dump(),
+                bar_index=(i + 100) * 10 + 1,
+                rally_pct=Decimal("0.03"),
+                bars_after_sc=1,
+                sc_reference=spring_bar.model_dump(),
+                sc_low=Decimal("48.00"),
+                ar_high=Decimal("52.00"),
+                volume_profile="HIGH",
+                quality_score=0.85,
+                detection_timestamp=base_timestamp + timedelta(hours=(i + 100) * 100 + 1),
+            )
+
+            sos_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=(i + 100) * 100 + 2),
+                open=Decimal("51.50"),
+                high=Decimal("54.00"),
+                low=Decimal("51.00"),
+                close=Decimal("53.50"),
+                volume=180000,
+                spread=Decimal("3.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            sos = SOSBreakout(
+                bar=sos_bar,
+                breakout_pct=Decimal("0.03"),
+                volume_ratio=Decimal("2.2"),
+                ice_reference=Decimal("52.00"),
+                breakout_price=Decimal("53.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=(i + 100) * 100 + 2),
+                trading_range_id=uuid4(),
+                spread_ratio=Decimal("1.5"),
+                close_position=Decimal("0.83"),
+                spread=Decimal("3.00"),
+            )
+
+            detector.add_pattern(spring)
+            detector.add_pattern(ar)
+            detector.add_pattern(sos)
+            campaign = detector.get_active_campaigns()[-1]
+            campaign.risk_per_share = Decimal("2.00")
+
+            # 12 wins, 3 losses
+            if i < 12:
+                exit_price = Decimal("55.50")  # Win
+            else:
+                exit_price = Decimal("48.00")  # Loss
+
+            detector.mark_campaign_completed(
+                campaign_id=campaign.campaign_id,
+                exit_price=exit_price,
+                exit_reason=ExitReason.TARGET_HIT if i < 12 else ExitReason.STOP_OUT,
+            )
+
+        stats = detector.get_campaign_statistics()
+
+        # Pattern sequence stats
+        pattern_stats = stats["patterns"]
+
+        # Spring→SOS
+        assert pattern_stats["Spring→SOS"]["count"] == 20
+        assert pattern_stats["Spring→SOS"]["win_rate_pct"] == 75.0  # 15/20
+
+        # Spring→AR→SOS
+        assert pattern_stats["Spring→AR→SOS"]["count"] == 15
+        assert pattern_stats["Spring→AR→SOS"]["win_rate_pct"] == 80.0  # 12/15
+
+        # AR sequences should have higher win rate
+        assert (
+            pattern_stats["Spring→AR→SOS"]["win_rate_pct"]
+            > pattern_stats["Spring→SOS"]["win_rate_pct"]
+        )
+
+    def test_exit_reason_statistics(self, detector, sample_spring, base_timestamp):
+        """Test exit reason breakdown statistics."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create campaigns with different exit reasons
+        exit_configs = [
+            (ExitReason.TARGET_HIT, Decimal("55.00"), 20),  # 20 wins
+            (ExitReason.STOP_OUT, Decimal("48.00"), 10),  # 10 losses
+            (ExitReason.PHASE_E, Decimal("54.00"), 5),  # 5 wins
+        ]
+
+        for exit_reason, exit_price, count in exit_configs:
+            for i in range(count):
+                spring_bar = OHLCVBar(
+                    timestamp=base_timestamp + timedelta(hours=i * 100),
+                    open=Decimal("50.00"),
+                    high=Decimal("51.00"),
+                    low=Decimal("49.00"),
+                    close=Decimal("50.50"),
+                    volume=80000,
+                    spread=Decimal("2.00"),
+                    timeframe="15m",
+                    symbol="EUR/USD",
+                )
+                spring = Spring(
+                    bar=spring_bar,
+                    bar_index=i * 10,
+                    penetration_pct=Decimal("0.02"),
+                    volume_ratio=Decimal("0.4"),
+                    recovery_bars=1,
+                    creek_reference=Decimal("50.00"),
+                    spring_low=Decimal("48.00"),
+                    recovery_price=Decimal("50.50"),
+                    detection_timestamp=base_timestamp + timedelta(hours=i * 100),
+                    trading_range_id=uuid4(),
+                )
+
+                sos_bar = OHLCVBar(
+                    timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                    open=Decimal("50.00"),
+                    high=Decimal("53.00"),
+                    low=Decimal("50.00"),
+                    close=Decimal("52.50"),
+                    volume=160000,
+                    spread=Decimal("3.00"),
+                    timeframe="15m",
+                    symbol="EUR/USD",
+                )
+                sos = SOSBreakout(
+                    bar=sos_bar,
+                    breakout_pct=Decimal("0.025"),
+                    volume_ratio=Decimal("2.0"),
+                    ice_reference=Decimal("50.00"),
+                    breakout_price=Decimal("52.50"),
+                    detection_timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                    trading_range_id=uuid4(),
+                    spread_ratio=Decimal("1.5"),
+                    close_position=Decimal("0.83"),
+                    spread=Decimal("3.00"),
+                )
+
+                detector.add_pattern(spring)
+                detector.add_pattern(sos)
+                campaign = detector.get_active_campaigns()[-1]
+                campaign.risk_per_share = Decimal("2.00")
+
+                detector.mark_campaign_completed(
+                    campaign_id=campaign.campaign_id,
+                    exit_price=exit_price,
+                    exit_reason=exit_reason,
+                )
+
+        stats = detector.get_campaign_statistics()
+        exit_stats = stats["exit_reasons"]
+
+        # TARGET_HIT: 20 campaigns, all wins
+        assert exit_stats["TARGET_HIT"]["count"] == 20
+        assert exit_stats["TARGET_HIT"]["win_rate_pct"] == 100.0
+        assert exit_stats["TARGET_HIT"]["avg_r_multiple"] > 0
+
+        # STOP_OUT: 10 campaigns, all losses
+        assert exit_stats["STOP_OUT"]["count"] == 10
+        assert exit_stats["STOP_OUT"]["win_rate_pct"] == 0.0
+        assert exit_stats["STOP_OUT"]["avg_r_multiple"] < 0
+
+        # PHASE_E: 5 campaigns, all wins
+        assert exit_stats["PHASE_E"]["count"] == 5
+        assert exit_stats["PHASE_E"]["win_rate_pct"] == 100.0
+        assert exit_stats["PHASE_E"]["avg_r_multiple"] > 0
+
+    def test_r_multiple_precision(self, detector, sample_spring, base_timestamp):
+        """Test R-multiple calculation accuracy."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create campaigns with known R-multiples
+        # Entry price = 50.50 (first pattern close), risk_per_share = 2.00
+        # R = (exit - entry) / risk = (exit - 50.50) / 2.00
+        exit_prices = [
+            Decimal("55.50"),  # (55.50-50.50)/2 = 2.5R
+            Decimal("56.50"),  # (56.50-50.50)/2 = 3.0R
+            Decimal("48.50"),  # (48.50-50.50)/2 = -1.0R
+            Decimal("53.50"),  # (53.50-50.50)/2 = 1.5R
+            Decimal("58.50"),  # (58.50-50.50)/2 = 4.0R
+        ]
+
+        for i, exit_price in enumerate(exit_prices):
+            spring_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100),
+                open=Decimal("50.00"),
+                high=Decimal("51.00"),
+                low=Decimal("49.00"),
+                close=Decimal("50.50"),
+                volume=80000,
+                spread=Decimal("2.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            spring = Spring(
+                bar=spring_bar,
+                bar_index=i * 10,
+                penetration_pct=Decimal("0.02"),
+                volume_ratio=Decimal("0.4"),
+                recovery_bars=1,
+                creek_reference=Decimal("50.00"),
+                spring_low=Decimal("48.00"),
+                recovery_price=Decimal("50.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100),
+                trading_range_id=uuid4(),
+            )
+
+            sos_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                open=Decimal("50.00"),
+                high=Decimal("53.00"),
+                low=Decimal("50.00"),
+                close=Decimal("52.50"),
+                volume=160000,
+                spread=Decimal("3.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            sos = SOSBreakout(
+                bar=sos_bar,
+                breakout_pct=Decimal("0.025"),
+                volume_ratio=Decimal("2.0"),
+                ice_reference=Decimal("50.00"),
+                breakout_price=Decimal("52.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                trading_range_id=uuid4(),
+                spread_ratio=Decimal("1.5"),
+                close_position=Decimal("0.83"),
+                spread=Decimal("3.00"),
+            )
+
+            detector.add_pattern(spring)
+            detector.add_pattern(sos)
+            campaign = detector.get_active_campaigns()[-1]
+            campaign.risk_per_share = Decimal("2.00")
+
+            detector.mark_campaign_completed(
+                campaign_id=campaign.campaign_id,
+                exit_price=exit_price,
+                exit_reason=ExitReason.TARGET_HIT,
+            )
+
+        stats = detector.get_campaign_statistics()
+
+        # Expected: avg = 2.0, median = 2.5, total = 10.0
+        assert stats["performance"]["avg_r_multiple"] == pytest.approx(2.0, abs=0.01)
+        assert stats["performance"]["median_r_multiple"] == pytest.approx(2.5, abs=0.01)
+        assert stats["performance"]["total_r"] == pytest.approx(10.0, abs=0.01)
+        assert stats["performance"]["best_r_multiple"] == pytest.approx(4.0, abs=0.01)
+        assert stats["performance"]["worst_r_multiple"] == pytest.approx(-1.0, abs=0.01)
+
+    def test_all_winning_campaigns(self, detector, sample_spring, base_timestamp):
+        """Test statistics with all winning campaigns."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create 50 winning campaigns
+        for i in range(50):
+            spring_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100),
+                open=Decimal("50.00"),
+                high=Decimal("51.00"),
+                low=Decimal("49.00"),
+                close=Decimal("50.50"),
+                volume=80000,
+                spread=Decimal("2.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            spring = Spring(
+                bar=spring_bar,
+                bar_index=i * 10,
+                penetration_pct=Decimal("0.02"),
+                volume_ratio=Decimal("0.4"),
+                recovery_bars=1,
+                creek_reference=Decimal("50.00"),
+                spring_low=Decimal("48.00"),
+                recovery_price=Decimal("50.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100),
+                trading_range_id=uuid4(),
+            )
+
+            sos_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                open=Decimal("50.00"),
+                high=Decimal("53.00"),
+                low=Decimal("50.00"),
+                close=Decimal("52.50"),
+                volume=160000,
+                spread=Decimal("3.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            sos = SOSBreakout(
+                bar=sos_bar,
+                breakout_pct=Decimal("0.025"),
+                volume_ratio=Decimal("2.0"),
+                ice_reference=Decimal("50.00"),
+                breakout_price=Decimal("52.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                trading_range_id=uuid4(),
+                spread_ratio=Decimal("1.5"),
+                close_position=Decimal("0.83"),
+                spread=Decimal("3.00"),
+            )
+
+            detector.add_pattern(spring)
+            detector.add_pattern(sos)
+            campaign = detector.get_active_campaigns()[-1]
+            campaign.risk_per_share = Decimal("2.00")
+
+            detector.mark_campaign_completed(
+                campaign_id=campaign.campaign_id,
+                exit_price=Decimal("55.00"),  # All wins
+                exit_reason=ExitReason.TARGET_HIT,
+            )
+
+        stats = detector.get_campaign_statistics()
+
+        # All campaigns should be profitable
+        assert stats["performance"]["win_rate_pct"] == 100.0
+        assert stats["performance"]["profitable_campaigns"] == 50
+        assert stats["performance"]["losing_campaigns"] == 0
+        assert stats["performance"]["avg_r_multiple"] > 0
+        assert stats["performance"]["worst_r_multiple"] > 0
+
+    def test_all_losing_campaigns(self, detector, sample_spring, base_timestamp):
+        """Test statistics with all losing campaigns."""
+        from src.backtesting.intraday_campaign_detector import ExitReason
+
+        # Create 50 losing campaigns
+        for i in range(50):
+            spring_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100),
+                open=Decimal("50.00"),
+                high=Decimal("51.00"),
+                low=Decimal("49.00"),
+                close=Decimal("50.50"),
+                volume=80000,
+                spread=Decimal("2.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            spring = Spring(
+                bar=spring_bar,
+                bar_index=i * 10,
+                penetration_pct=Decimal("0.02"),
+                volume_ratio=Decimal("0.4"),
+                recovery_bars=1,
+                creek_reference=Decimal("50.00"),
+                spring_low=Decimal("48.00"),
+                recovery_price=Decimal("50.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100),
+                trading_range_id=uuid4(),
+            )
+
+            sos_bar = OHLCVBar(
+                timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                open=Decimal("50.00"),
+                high=Decimal("53.00"),
+                low=Decimal("50.00"),
+                close=Decimal("52.50"),
+                volume=160000,
+                spread=Decimal("3.00"),
+                timeframe="15m",
+                symbol="EUR/USD",
+            )
+            sos = SOSBreakout(
+                bar=sos_bar,
+                breakout_pct=Decimal("0.025"),
+                volume_ratio=Decimal("2.0"),
+                ice_reference=Decimal("50.00"),
+                breakout_price=Decimal("52.50"),
+                detection_timestamp=base_timestamp + timedelta(hours=i * 100 + 2),
+                trading_range_id=uuid4(),
+                spread_ratio=Decimal("1.5"),
+                close_position=Decimal("0.83"),
+                spread=Decimal("3.00"),
+            )
+
+            detector.add_pattern(spring)
+            detector.add_pattern(sos)
+            campaign = detector.get_active_campaigns()[-1]
+            campaign.risk_per_share = Decimal("2.00")
+
+            detector.mark_campaign_completed(
+                campaign_id=campaign.campaign_id,
+                exit_price=Decimal("48.00"),  # All losses
+                exit_reason=ExitReason.STOP_OUT,
+            )
+
+        stats = detector.get_campaign_statistics()
+
+        # All campaigns should be losses
+        assert stats["performance"]["win_rate_pct"] == 0.0
+        assert stats["performance"]["profitable_campaigns"] == 0
+        assert stats["performance"]["losing_campaigns"] == 50
+        assert stats["performance"]["avg_r_multiple"] < 0
+        assert stats["performance"]["best_r_multiple"] < 0

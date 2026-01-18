@@ -27,11 +27,13 @@ Key Features:
 Author: Developer Agent (Story 13.4, 14.2, 14.3 Implementation)
 """
 
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, TypeAlias, Union
+from statistics import mean, median
+from typing import Any, Optional, TypeAlias, Union
 from uuid import uuid4
 
 import structlog
@@ -911,6 +913,283 @@ class IntradayCampaignDetector:
             for c in self.campaigns
             if c.state == CampaignState.COMPLETED and c.r_multiple is not None and c.r_multiple <= 0
         ]
+
+    def get_campaign_statistics(self) -> dict[str, Any]:
+        """
+        Calculate comprehensive campaign statistics (Story 15.2).
+
+        Returns:
+            Dictionary with nested statistics:
+            {
+                "overview": {...},
+                "performance": {...},
+                "exit_reasons": {...},
+                "patterns": {...},
+                "phases": {...},
+                "generated_at": "2026-01-17T..."
+            }
+
+        Example:
+            >>> stats = detector.get_campaign_statistics()
+            >>> stats["overview"]["win_rate_pct"]
+            66.7
+            >>> stats["performance"]["avg_r_multiple"]
+            2.5
+        """
+        completed = [c for c in self.campaigns if c.state == CampaignState.COMPLETED]
+        failed = [c for c in self.campaigns if c.state == CampaignState.FAILED]
+        total = len(self.campaigns)
+
+        # Handle edge case: no campaigns
+        if total == 0:
+            return self._empty_statistics()
+
+        # Overview metrics
+        overview = {
+            "total_campaigns": total,
+            "completed": len(completed),
+            "failed": len(failed),
+            "active": len(self.get_active_campaigns()),
+            "success_rate_pct": (len(completed) / total * 100) if total > 0 else 0.0,
+        }
+
+        # Performance metrics
+        r_multiples = [c.r_multiple for c in completed if c.r_multiple is not None]
+        winning_campaigns = [c for c in completed if c.r_multiple and c.r_multiple > 0]
+
+        performance = {
+            "win_rate_pct": (len(winning_campaigns) / len(completed) * 100) if completed else 0.0,
+            "avg_r_multiple": float(mean(r_multiples)) if r_multiples else 0.0,
+            "median_r_multiple": float(median(r_multiples)) if r_multiples else 0.0,
+            "best_r_multiple": float(max(r_multiples)) if r_multiples else 0.0,
+            "worst_r_multiple": float(min(r_multiples)) if r_multiples else 0.0,
+            "total_r": float(sum(r_multiples)) if r_multiples else 0.0,
+            "avg_duration_bars": mean([c.duration_bars for c in completed]) if completed else 0,
+            "profitable_campaigns": len(winning_campaigns),
+            "losing_campaigns": len([c for c in completed if c.r_multiple and c.r_multiple <= 0]),
+        }
+
+        # Exit reason breakdown
+        exit_reasons = self._calculate_exit_reason_stats(completed)
+
+        # Pattern sequence analysis
+        pattern_stats = self._calculate_pattern_sequence_stats(completed)
+
+        # Phase analysis
+        phase_stats = self._calculate_phase_stats(completed)
+
+        self.logger.info(
+            "Campaign statistics generated",
+            total_campaigns=total,
+            completed=len(completed),
+            win_rate=performance["win_rate_pct"],
+            avg_r=performance["avg_r_multiple"],
+        )
+
+        return {
+            "overview": overview,
+            "performance": performance,
+            "exit_reasons": exit_reasons,
+            "patterns": pattern_stats,
+            "phases": phase_stats,
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+
+    def _empty_statistics(self) -> dict[str, Any]:
+        """
+        Return empty statistics structure (Story 15.2).
+
+        Returns:
+            Empty statistics dictionary with zero values
+
+        Example:
+            >>> stats = detector._empty_statistics()
+            >>> stats["overview"]["total_campaigns"]
+            0
+        """
+        return {
+            "overview": {
+                "total_campaigns": 0,
+                "completed": 0,
+                "failed": 0,
+                "active": 0,
+                "success_rate_pct": 0.0,
+            },
+            "performance": {
+                "win_rate_pct": 0.0,
+                "avg_r_multiple": 0.0,
+                "median_r_multiple": 0.0,
+                "best_r_multiple": 0.0,
+                "worst_r_multiple": 0.0,
+                "total_r": 0.0,
+                "avg_duration_bars": 0,
+                "profitable_campaigns": 0,
+                "losing_campaigns": 0,
+            },
+            "exit_reasons": {},
+            "patterns": {},
+            "phases": {},
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+
+    def _calculate_exit_reason_stats(self, completed: list[Campaign]) -> dict[str, Any]:
+        """
+        Calculate statistics by exit reason (Story 15.2).
+
+        Args:
+            completed: List of completed campaigns
+
+        Returns:
+            Dictionary with stats per exit reason:
+            {
+                "TARGET_HIT": {"count": 20, "win_rate_pct": 100.0, "avg_r_multiple": 3.0},
+                "STOP_OUT": {"count": 10, "win_rate_pct": 0.0, "avg_r_multiple": -1.0}
+            }
+
+        Example:
+            >>> stats = detector._calculate_exit_reason_stats(completed_campaigns)
+            >>> stats["TARGET_HIT"]["win_rate_pct"]
+            100.0
+        """
+        stats_by_reason: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {"count": 0, "r_multiples": [], "winning": 0}
+        )
+
+        for campaign in completed:
+            reason = campaign.exit_reason.value
+            stats_by_reason[reason]["count"] += 1
+
+            if campaign.r_multiple is not None:
+                stats_by_reason[reason]["r_multiples"].append(float(campaign.r_multiple))
+                if campaign.r_multiple > 0:
+                    stats_by_reason[reason]["winning"] += 1
+
+        # Calculate aggregates
+        result = {}
+        for reason, data in stats_by_reason.items():
+            result[reason] = {
+                "count": data["count"],
+                "win_rate_pct": (data["winning"] / data["count"] * 100)
+                if data["count"] > 0
+                else 0.0,
+                "avg_r_multiple": mean(data["r_multiples"]) if data["r_multiples"] else 0.0,
+            }
+
+        return result
+
+    def _calculate_pattern_sequence_stats(self, completed: list[Campaign]) -> dict[str, Any]:
+        """
+        Analyze performance by pattern sequence (Story 15.2).
+
+        Sequences analyzed:
+        - Spring → SOS
+        - Spring → AR → SOS
+        - Spring → AR → SOS → LPS
+        - Other (patterns not matching above sequences)
+
+        Args:
+            completed: List of completed campaigns
+
+        Returns:
+            Dictionary with stats per sequence:
+            {
+                "Spring→SOS": {"count": 20, "win_rate_pct": 75.0, "avg_r_multiple": 2.0},
+                "Spring→AR→SOS": {"count": 15, "win_rate_pct": 80.0, "avg_r_multiple": 2.5}
+            }
+
+        Example:
+            >>> stats = detector._calculate_pattern_sequence_stats(completed_campaigns)
+            >>> stats["Spring→AR→SOS→LPS"]["avg_r_multiple"]
+            3.0
+        """
+        sequences: dict[str, dict[str, Any]] = {
+            "Spring→SOS": {"campaigns": [], "r_multiples": []},
+            "Spring→AR→SOS": {"campaigns": [], "r_multiples": []},
+            "Spring→AR→SOS→LPS": {"campaigns": [], "r_multiples": []},
+            "Other": {"campaigns": [], "r_multiples": []},
+        }
+
+        for campaign in completed:
+            pattern_types = [type(p).__name__ for p in campaign.patterns]
+
+            # Classify sequence
+            has_spring = "Spring" in pattern_types
+            has_ar = "AutomaticRally" in pattern_types or "ARPattern" in pattern_types
+            has_sos = "SOSBreakout" in pattern_types
+            has_lps = "LPS" in pattern_types or "LPSPattern" in pattern_types
+
+            if has_spring and has_ar and has_sos and has_lps:
+                seq_key = "Spring→AR→SOS→LPS"
+            elif has_spring and has_ar and has_sos:
+                seq_key = "Spring→AR→SOS"
+            elif has_spring and has_sos:
+                seq_key = "Spring→SOS"
+            else:
+                seq_key = "Other"
+
+            sequences[seq_key]["campaigns"].append(campaign)
+            if campaign.r_multiple is not None:
+                sequences[seq_key]["r_multiples"].append(float(campaign.r_multiple))
+
+        # Calculate stats
+        result = {}
+        for seq_name, data in sequences.items():
+            count = len(data["campaigns"])
+            if count == 0:
+                continue
+
+            winning = len([c for c in data["campaigns"] if c.r_multiple and c.r_multiple > 0])
+
+            result[seq_name] = {
+                "count": count,
+                "win_rate_pct": (winning / count * 100) if count > 0 else 0.0,
+                "avg_r_multiple": mean(data["r_multiples"]) if data["r_multiples"] else 0.0,
+                "best_r_multiple": max(data["r_multiples"]) if data["r_multiples"] else 0.0,
+            }
+
+        return result
+
+    def _calculate_phase_stats(self, completed: list[Campaign]) -> dict[str, Any]:
+        """
+        Calculate statistics by entry/exit phase (Story 15.2).
+
+        Args:
+            completed: List of completed campaigns
+
+        Returns:
+            Dictionary with phase distribution:
+            {
+                "entry_phase_distribution": {"C": 30, "D": 20},
+                "exit_phase_distribution": {"D": 25, "E": 25}
+            }
+
+        Example:
+            >>> stats = detector._calculate_phase_stats(completed_campaigns)
+            >>> stats["entry_phase_distribution"]["C"]
+            30
+        """
+        # Entry phase distribution
+        entry_phases = [
+            c.patterns[0].phase.value
+            if c.patterns and hasattr(c.patterns[0], "phase")
+            else "UNKNOWN"
+            for c in completed
+        ]
+        entry_phase_counts = Counter(entry_phases)
+
+        # Exit phase distribution
+        exit_phases = [
+            c.patterns[-1].phase.value
+            if c.patterns and hasattr(c.patterns[-1], "phase")
+            else "UNKNOWN"
+            for c in completed
+        ]
+        exit_phase_counts = Counter(exit_phases)
+
+        return {
+            "entry_phase_distribution": dict(entry_phase_counts),
+            "exit_phase_distribution": dict(exit_phase_counts),
+        }
 
     def _determine_phase(self, patterns: list[WyckoffPattern]) -> Optional[WyckoffPhase]:
         """
