@@ -139,14 +139,14 @@ jobs:
       - name: Setup test database
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
         run: |
           poetry run alembic upgrade head
 
       - name: Run pytest with coverage
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
           ENVIRONMENT: test
         run: |
           poetry run pytest tests/ \
@@ -281,14 +281,14 @@ jobs:
       - name: Setup test database
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
         run: |
           poetry run alembic upgrade head
 
       - name: Run accuracy tests
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
           ENVIRONMENT: test
         run: |
           poetry run pytest tests/integration/test_detector_accuracy.py -v --tb=short
@@ -352,14 +352,14 @@ jobs:
       - name: Setup test database
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
         run: |
           poetry run alembic upgrade head
 
       - name: Run extended backtests
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
           ENVIRONMENT: test
           EXTENDED_BACKTEST_SYMBOLS: '["AAPL", "MSFT", "GOOGL", "TSLA"]'
           EXTENDED_BACKTEST_START_DATE: '2022-01-01'

@@ -57,7 +57,7 @@ jobs:
       - name: Run database migrations
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+asyncpg://testuser:testpass@localhost:5432/testdb
+          DATABASE_URL: postgresql+psycopg://testuser:testpass@localhost:5432/testdb
         run: |
           poetry run alembic upgrade head
 

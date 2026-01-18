@@ -142,14 +142,14 @@ jobs:
       - name: Setup test database
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
         run: |
           poetry run alembic upgrade head
 
       - name: Run pytest with coverage
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
           ENVIRONMENT: test
         run: |
           poetry run pytest tests/ \
@@ -338,7 +338,7 @@ jobs:
           poetry run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 &
           sleep 5
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
           TESTING: true
 
       - name: Setup Node.js 20
@@ -450,7 +450,7 @@ jobs:
       - name: Setup test database
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
         run: |
           poetry run alembic upgrade head
 
@@ -458,7 +458,7 @@ jobs:
         id: accuracy
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wyckoff_test
           ENVIRONMENT: test
         run: |
           poetry run pytest tests/integration/test_detector_accuracy.py -v --tb=short || true
