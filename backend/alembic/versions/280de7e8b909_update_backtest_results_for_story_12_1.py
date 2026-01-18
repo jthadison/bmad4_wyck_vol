@@ -49,13 +49,8 @@ def upgrade() -> None:
     op.drop_column("backtest_results", "average_r_multiple")
     op.drop_column("backtest_results", "max_drawdown")
 
-    # Drop old config column if exists (will be replaced with JSONB)
-    with op.batch_alter_table("backtest_results", schema=None) as batch_op:
-        # Check if column exists before dropping
-        try:
-            batch_op.drop_column("config_snapshot")
-        except Exception:
-            pass  # Column might not exist
+    # Note: config_snapshot column was never created in the original schema
+    # (checked 001_initial_schema_with_timescaledb.py), so no need to drop it
 
     # Add new JSONB columns for Story 12.1
     op.add_column(
