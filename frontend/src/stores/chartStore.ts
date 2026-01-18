@@ -253,7 +253,7 @@ export const useChartStore = defineStore('chart', {
           data: response.data,
           timestamp: Date.now(),
         })
-      } catch (err: any) {
+      } catch (err: unknown) {
         this.error =
           err.response?.data?.detail ??
           err.message ??

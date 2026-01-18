@@ -21,7 +21,7 @@ describe('API Client', () => {
 })
 
 // Helper function for testing (extracted from api.ts logic)
-function convertDecimalsToBig(obj: any): any {
+function convertDecimalsToBig(obj: unknown): unknown {
   if (obj === null || obj === undefined) {
     return obj
   }
@@ -31,9 +31,9 @@ function convertDecimalsToBig(obj: any): any {
   }
 
   if (typeof obj === 'object') {
-    const converted: any = {}
-    for (const key in obj) {
-      const value = obj[key]
+    const converted: Record<string, unknown> = {}
+    for (const key in obj as Record<string, unknown>) {
+      const value = (obj as Record<string, unknown>)[key]
       if (
         typeof value === 'string' &&
         /^-?\d+\.\d+$/.test(value) &&

@@ -4,6 +4,7 @@
  * Tests for article feedback collection, localStorage persistence, and duplicate prevention.
  */
 
+import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -44,7 +45,7 @@ vi.mock('primevue/message', () => ({
 }))
 
 describe('ArticleFeedback', () => {
-  let pinia: any
+  let pinia: ReturnType<typeof createPinia>
 
   const articleId = 'test-article-123'
   const articleSlug = 'test-article'

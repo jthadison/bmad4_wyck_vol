@@ -21,11 +21,11 @@ vi.mock('@/services/feedbackApi', () => ({
 }))
 
 describe('RejectionDetailDialog', () => {
-  let wrapper: VueWrapper<any>
+  let wrapper: VueWrapper<unknown>
   let mockSignal: Signal
 
   // Helper function to mount component with default config
-  const mountComponent = (props: any) => {
+  const mountComponent = (props: unknown) => {
     return mount(RejectionDetailDialog, {
       props,
       global: {

@@ -26,6 +26,8 @@ import type {
   EnablePaperTradingRequest,
   PositionsResponse,
   TradesResponse,
+  PositionOpenedEvent,
+  PositionUpdatedEvent,
 } from '@/types/paper-trading'
 
 const API_BASE = '/api/v1/paper-trading'
@@ -299,13 +301,13 @@ export const usePaperTradingStore = defineStore('paperTrading', () => {
   }
 
   // WebSocket message handlers
-  function handlePositionOpened(data: any): void {
+  function handlePositionOpened(data: PositionOpenedEvent): void {
     console.log('Paper position opened:', data)
     // Refresh positions
     fetchPositions()
   }
 
-  function handlePositionUpdated(data: any): void {
+  function handlePositionUpdated(data: PositionUpdatedEvent): void {
     // Update existing position in real-time
     const positionIndex = openPositions.value.findIndex(
       (p) => p.id === data.position_id

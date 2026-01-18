@@ -88,10 +88,15 @@ export function useImpactAnalysis(options: UseImpactAnalysisOptions = {}) {
             }
 
             error.value = null
-          } catch (err: any) {
+          } catch (err: unknown) {
             error.value =
-              err.response?.data?.detail?.message ||
-              err.message ||
+              (
+                err as {
+                  response?: { data?: { detail?: { message?: string } } }
+                  message?: string
+                }
+              ).response?.data?.detail?.message ||
+              (err as { message?: string }).message ||
               'Failed to analyze impact'
             impact.value = null
           } finally {

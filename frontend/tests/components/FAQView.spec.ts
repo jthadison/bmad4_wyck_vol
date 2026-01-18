@@ -4,6 +4,7 @@
  * Tests for FAQ accordion, search filtering, and feedback integration.
  */
 
+import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -57,7 +58,7 @@ vi.mock('@/components/help/ArticleFeedback.vue', () => ({
 }))
 
 describe('FAQView', () => {
-  let pinia: any
+  let pinia: ReturnType<typeof createPinia>
 
   const mockFAQs: HelpArticle[] = [
     {
@@ -155,7 +156,7 @@ describe('FAQView', () => {
 
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     expect(vm.filteredFAQs).toHaveLength(3)
   })
 
@@ -257,7 +258,7 @@ describe('FAQView', () => {
     await input.setValue('Wyckoff')
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const highlighted = vm.highlightSearchTerm('What is the Wyckoff Method?')
 
     // highlightSearchTerm function should return HTML with <mark> tag
@@ -272,7 +273,7 @@ describe('FAQView', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const text = 'What is the Wyckoff Method?'
     const highlighted = vm.highlightSearchTerm(text)
 
@@ -372,7 +373,7 @@ describe('FAQView', () => {
     // The component template includes ArticleFeedback at line 213-216
     // Since our mock AccordionTab doesn't render default slot content properly,
     // we verify the component structure exists by checking filteredFAQs
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     expect(vm.filteredFAQs.length).toBe(3)
   })
 

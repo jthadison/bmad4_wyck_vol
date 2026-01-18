@@ -31,7 +31,7 @@ export interface Notification {
   priority: NotificationPriority
   title: string
   message: string
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   user_id: string
   read: boolean
   created_at: string

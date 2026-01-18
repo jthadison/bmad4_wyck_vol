@@ -21,7 +21,7 @@ const TestComponent = defineComponent({
 })
 
 describe('useKeyboardShortcuts', () => {
-  let wrapper: any
+  let wrapper: ReturnType<typeof mount>
   let eventListeners: Map<string, EventListener[]>
 
   beforeEach(() => {
@@ -31,7 +31,7 @@ describe('useKeyboardShortcuts', () => {
     // Mock addEventListener
     const originalAddEventListener = window.addEventListener
     vi.spyOn(window, 'addEventListener').mockImplementation(
-      (event: string, listener: any) => {
+      (event: string, listener: EventListenerOrEventListenerObject) => {
         if (!eventListeners.has(event)) {
           eventListeners.set(event, [])
         }
@@ -43,7 +43,7 @@ describe('useKeyboardShortcuts', () => {
     // Mock removeEventListener
     const originalRemoveEventListener = window.removeEventListener
     vi.spyOn(window, 'removeEventListener').mockImplementation(
-      (event: string, listener: any) => {
+      (event: string, listener: EventListenerOrEventListenerObject) => {
         const listeners = eventListeners.get(event)
         if (listeners) {
           const index = listeners.indexOf(listener)
@@ -86,7 +86,7 @@ describe('useKeyboardShortcuts', () => {
 
   it('should show shortcuts overlay when "?" key is pressed', () => {
     wrapper = mount(TestComponent)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.showShortcutsOverlay).toBe(false)
 
@@ -142,7 +142,7 @@ describe('useKeyboardShortcuts', () => {
 
   it('should ignore shortcuts when typing in input fields', () => {
     wrapper = mount(TestComponent)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Create input element
     const input = document.createElement('input')
@@ -168,7 +168,7 @@ describe('useKeyboardShortcuts', () => {
 
   it('should ignore shortcuts when typing in textarea', () => {
     wrapper = mount(TestComponent)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Create textarea element
     const textarea = document.createElement('textarea')
@@ -194,7 +194,7 @@ describe('useKeyboardShortcuts', () => {
 
   it('should ignore shortcuts when typing in contenteditable elements', () => {
     wrapper = mount(TestComponent)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Create contenteditable element
     const div = document.createElement('div')
@@ -218,7 +218,7 @@ describe('useKeyboardShortcuts', () => {
 
   it('should handle Escape key', () => {
     wrapper = mount(TestComponent)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // First open shortcuts overlay
     vm.showShortcutsOverlay = true
@@ -263,7 +263,7 @@ describe('useKeyboardShortcuts', () => {
 
   it('should not trigger shortcuts with Shift modifier (except specific cases)', () => {
     wrapper = mount(TestComponent)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Press "?" with Shift should not trigger (Shift+? is typically "/")
     const event = new KeyboardEvent('keydown', {
@@ -279,7 +279,7 @@ describe('useKeyboardShortcuts', () => {
 
   it('should return reactive showShortcutsOverlay ref', () => {
     wrapper = mount(TestComponent)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Should be reactive
     expect(vm.showShortcutsOverlay).toBe(false)
@@ -295,8 +295,8 @@ describe('useKeyboardShortcuts', () => {
     const wrapper1 = mount(TestComponent)
     const wrapper2 = mount(TestComponent)
 
-    const vm1 = wrapper1.vm as any
-    const vm2 = wrapper2.vm as any
+    const vm1 = wrapper1.vm as unknown
+    const vm2 = wrapper2.vm as unknown
 
     // Press "?" key
     const event = new KeyboardEvent('keydown', { key: '?' })

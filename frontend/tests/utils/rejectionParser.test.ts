@@ -66,7 +66,7 @@ describe('parseRejectionReason', () => {
   })
 
   it('should handle null rejection reason', () => {
-    const result = parseRejectionReason(null as any)
+    const result = parseRejectionReason(null as unknown)
 
     expect(result.primary.reason).toBe('Unknown rejection')
   })

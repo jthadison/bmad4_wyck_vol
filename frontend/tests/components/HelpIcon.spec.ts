@@ -4,6 +4,7 @@
  * Tests for HelpIcon dialog, feedback, and article display.
  */
 
+import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -31,8 +32,8 @@ vi.mock('primevue/textarea', () => ({
 }))
 
 describe('HelpIcon', () => {
-  let pinia: any
-  let router: any
+  let pinia: ReturnType<typeof createPinia>
+  let router: unknown
 
   const mockArticle: HelpArticle = {
     id: 'article-123',
@@ -173,7 +174,7 @@ describe('HelpIcon', () => {
     wrapper.vm.$data.dialogVisible = true
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     await vm.submitFeedback(true)
 
     expect(helpStore.submitFeedback).toHaveBeenCalledWith(
@@ -223,7 +224,7 @@ describe('HelpIcon', () => {
     wrapper.vm.$data.feedbackComment = 'Needs improvement'
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     await vm.submitFeedback(false)
 
     expect(helpStore.submitFeedback).toHaveBeenCalledWith(
@@ -250,7 +251,7 @@ describe('HelpIcon', () => {
     wrapper.vm.$data.dialogVisible = true
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     await vm.submitFeedback(true)
     await wrapper.vm.$nextTick()
 
@@ -271,7 +272,7 @@ describe('HelpIcon', () => {
     wrapper.vm.$data.showCommentInput = true
     wrapper.vm.$data.feedbackComment = 'Test comment'
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.onDialogHide()
 
     expect(wrapper.vm.$data.feedbackSubmitted).toBe(false)

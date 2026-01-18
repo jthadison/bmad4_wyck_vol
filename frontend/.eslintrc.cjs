@@ -23,9 +23,9 @@ module.exports = {
     NodeJS: 'readonly', // Node.js types used in Vue components (setTimeout, setInterval types)
   },
   rules: {
-    // TypeScript rules - downgrade to warnings for gradual adoption (see issue #191)
+    // TypeScript rules
     '@typescript-eslint/no-unused-vars': 'warn',
-    '@typescript-eslint/no-explicit-any': 'warn', // 310 violations - tracked in issue #191
+    '@typescript-eslint/no-explicit-any': 'error', // Restored to error - all violations fixed (issue #191)
     // Vue rules
     'vue/multi-word-component-names': 'off',
   },

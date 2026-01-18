@@ -58,13 +58,13 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.shortcutsData).toBeDefined()
     expect(vm.shortcutsData.length).toBeGreaterThan(0)
 
     // Check that shortcuts are grouped
-    const contexts = vm.shortcutsData.map((group: any) => group.context)
+    const contexts = vm.shortcutsData.map((group: unknown) => group.context)
     expect(contexts).toContain('Global')
   })
 
@@ -75,16 +75,16 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const globalGroup = vm.shortcutsData.find(
-      (g: any) => g.context === 'Global'
+      (g: unknown) => g.context === 'Global'
     )
 
     expect(globalGroup).toBeDefined()
     expect(globalGroup.shortcuts.length).toBeGreaterThan(0)
 
     // Check for specific global shortcuts
-    const shortcutKeys = globalGroup.shortcuts.map((s: any) => s.keys)
+    const shortcutKeys = globalGroup.shortcuts.map((s: unknown) => s.keys)
     expect(shortcutKeys).toContain('?')
     expect(shortcutKeys).toContain('/')
     expect(shortcutKeys).toContain('Esc')
@@ -97,8 +97,10 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
-    const chartGroup = vm.shortcutsData.find((g: any) => g.context === 'Chart')
+    const vm = wrapper.vm as unknown
+    const chartGroup = vm.shortcutsData.find(
+      (g: unknown) => g.context === 'Chart'
+    )
 
     expect(chartGroup).toBeDefined()
     expect(chartGroup.shortcuts.length).toBeGreaterThan(0)
@@ -111,9 +113,9 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const signalsGroup = vm.shortcutsData.find(
-      (g: any) => g.context === 'Signals'
+      (g: unknown) => g.context === 'Signals'
     )
 
     expect(signalsGroup).toBeDefined()
@@ -127,9 +129,9 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const settingsGroup = vm.shortcutsData.find(
-      (g: any) => g.context === 'Settings'
+      (g: unknown) => g.context === 'Settings'
     )
 
     expect(settingsGroup).toBeDefined()
@@ -143,7 +145,7 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.getContextSeverity('Global')).toBe('info')
     expect(vm.getContextSeverity('Chart')).toBe('success')
@@ -184,12 +186,12 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const globalGroup = vm.shortcutsData.find(
-      (g: any) => g.context === 'Global'
+      (g: unknown) => g.context === 'Global'
     )
 
-    globalGroup.shortcuts.forEach((shortcut: any) => {
+    globalGroup.shortcuts.forEach((shortcut: unknown) => {
       expect(shortcut.description).toBeTruthy()
       expect(shortcut.description.length).toBeGreaterThan(0)
     })
@@ -202,13 +204,13 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const globalGroup = vm.shortcutsData.find(
-      (g: any) => g.context === 'Global'
+      (g: unknown) => g.context === 'Global'
     )
 
     const showShortcutsShortcut = globalGroup.shortcuts.find(
-      (s: any) =>
+      (s: unknown) =>
         s.keys === '?' || s.description.toLowerCase().includes('shortcuts')
     )
 
@@ -222,13 +224,13 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const globalGroup = vm.shortcutsData.find(
-      (g: any) => g.context === 'Global'
+      (g: unknown) => g.context === 'Global'
     )
 
     const searchShortcut = globalGroup.shortcuts.find(
-      (s: any) =>
+      (s: unknown) =>
         s.keys === '/' || s.description.toLowerCase().includes('search')
     )
 
@@ -242,13 +244,13 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const globalGroup = vm.shortcutsData.find(
-      (g: any) => g.context === 'Global'
+      (g: unknown) => g.context === 'Global'
     )
 
     const escShortcut = globalGroup.shortcuts.find(
-      (s: any) =>
+      (s: unknown) =>
         s.keys === 'Esc' || s.description.toLowerCase().includes('close')
     )
 
@@ -280,7 +282,7 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Should have at least 4 groups (Global, Chart, Signals, Settings)
     expect(vm.shortcutsData.length).toBeGreaterThanOrEqual(4)
@@ -293,13 +295,15 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Check that multi-key shortcuts are properly formatted
     const allShortcuts = vm.shortcutsData.flatMap(
-      (group: any) => group.shortcuts
+      (group: unknown) => group.shortcuts
     )
-    const multiKeyShortcut = allShortcuts.find((s: any) => s.keys.includes('+'))
+    const multiKeyShortcut = allShortcuts.find((s: unknown) =>
+      s.keys.includes('+')
+    )
 
     if (multiKeyShortcut) {
       expect(multiKeyShortcut.keys).toContain('+')

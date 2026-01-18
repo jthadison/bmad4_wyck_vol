@@ -99,7 +99,7 @@ test.describe('Tutorials Page (Story 11.8b)', () => {
 
   test('tutorials page makes successful API request', async ({ page }) => {
     // Track API requests
-    const apiRequests: any[] = []
+    const apiRequests: unknown[] = []
     page.on('response', (response) => {
       const url = response.url()
       if (url.includes('/api/v1/help/tutorials')) {
