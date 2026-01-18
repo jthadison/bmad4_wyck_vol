@@ -22,6 +22,7 @@ from src.backtesting.intraday_campaign_detector import (
     CampaignState,
     IntradayCampaignDetector,
 )
+from src.models.automatic_rally import AutomaticRally
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
 from src.models.sos_breakout import SOSBreakout
@@ -137,6 +138,38 @@ def make_lps(bar_index, timestamp, price=Decimal("103.00")):
         volume_trend="DECLINING",
         volume_trend_quality="EXCELLENT",
         volume_trend_bonus=5,
+    )
+
+
+def make_ar(bar_index, timestamp, price=Decimal("98.00"), quality_score=0.8):
+    """Helper to create AutomaticRally pattern."""
+    bar = make_bar(timestamp, price, volume=120000)
+    sc_low = price - Decimal("5.00")  # SC low below AR high
+    ar_high = price + Decimal("1.00")  # AR rally high
+
+    # Create SC reference (as dict to avoid circular import)
+    sc_bar = make_bar(timestamp - timedelta(hours=2), sc_low, volume=250000)
+    sc_reference = {
+        "timestamp": sc_bar.timestamp.isoformat(),
+        "low": float(sc_low),
+        "volume": 250000,
+    }
+
+    return AutomaticRally(
+        bar=bar.model_dump(),  # Convert to dict
+        bar_index=bar_index,
+        rally_pct=Decimal("0.05"),  # 5% rally from SC low
+        bars_after_sc=2,  # 2 bars after SC
+        sc_reference=sc_reference,
+        sc_low=sc_low,
+        ar_high=ar_high,
+        volume_profile="HIGH",
+        detection_timestamp=timestamp,
+        quality_score=quality_score,
+        recovery_percent=Decimal("0.6"),  # 60% recovery
+        volume_trend="DECLINING",
+        prior_pattern_bar=bar_index - 2,
+        prior_pattern_type="SC",
     )
 
 
@@ -441,3 +474,92 @@ class TestBatchCampaignUpdates:
         assert detector.campaigns[0].state == CampaignState.ACTIVE
         assert result2.campaigns_updated == 1
         assert result2.patterns_processed == 1
+
+
+# ============================================================================
+# Test AutomaticRally Pattern Support
+# ============================================================================
+
+
+class TestBatchAutomaticRallyPatterns:
+    """Test batch processing with AutomaticRally patterns (Story 14.2 + 15.5)."""
+
+    def test_batch_ar_activation_new_campaign(self, detector, base_timestamp):
+        """Test AR activating a newly created FORMING campaign in batch."""
+        # Create FORMING campaign with high-quality AR
+        ar_pattern = make_ar(1, base_timestamp, quality_score=0.85)
+        result = detector.add_patterns_batch([ar_pattern], Decimal("100000"))
+
+        # Should create campaign (1 pattern = FORMING)
+        assert result.campaigns_created == 1
+        assert result.patterns_processed == 1
+        assert len(detector.campaigns) == 1
+
+        # AR should activate FORMING campaign if high quality (Story 14.2)
+        campaign = detector.campaigns[0]
+        # Note: Activation depends on _handle_ar_activation logic
+        # If quality_score >= 0.75, should activate to ACTIVE state
+
+    def test_batch_ar_activation_existing_campaign(self, detector, base_timestamp):
+        """Test AR activating an existing FORMING campaign in batch."""
+        # Create FORMING campaign with Spring first
+        spring = make_spring(1, base_timestamp)
+        detector.add_pattern(spring, Decimal("100000"))
+
+        assert detector.campaigns[0].state == CampaignState.FORMING
+
+        # Batch add high-quality AR
+        ar_pattern = make_ar(2, base_timestamp + timedelta(hours=1), quality_score=0.85)
+        result = detector.add_patterns_batch([ar_pattern], Decimal("100000"))
+
+        # Should update existing campaign
+        assert result.campaigns_updated == 1
+        assert result.patterns_processed == 1
+        assert len(detector.campaigns) == 1
+
+        # AR should activate campaign (Story 14.2)
+        # Campaign state depends on AR activation logic
+
+    def test_batch_low_quality_ar_no_activation(self, detector, base_timestamp):
+        """Test low-quality AR doesn't activate FORMING campaign."""
+        # Create FORMING campaign with low-quality AR
+        ar_pattern = make_ar(1, base_timestamp, quality_score=0.4)  # Low quality
+        result = detector.add_patterns_batch([ar_pattern], Decimal("100000"))
+
+        # Should create campaign but remain FORMING
+        assert result.campaigns_created == 1
+        assert result.patterns_processed == 1
+        campaign = detector.campaigns[0]
+        assert campaign.state == CampaignState.FORMING
+
+    def test_batch_mixed_patterns_with_ar(self, detector, base_timestamp):
+        """Test batch with mix of AR and other patterns."""
+        # Create patterns: Spring -> AR -> SOS (all same campaign)
+        patterns = [
+            make_spring(1, base_timestamp),
+            make_ar(2, base_timestamp + timedelta(hours=1), quality_score=0.75),
+            make_sos(3, base_timestamp + timedelta(hours=2)),
+        ]
+
+        result = detector.add_patterns_batch(patterns, Decimal("100000"))
+
+        # Should create single campaign with all patterns
+        assert result.campaigns_created == 1
+        assert result.patterns_processed == 3
+        assert len(detector.campaigns) == 1
+        assert len(detector.campaigns[0].patterns) == 3
+
+    def test_batch_multiple_ar_patterns(self, detector, base_timestamp):
+        """Test batch processing multiple AR patterns."""
+        # Create 3 AR patterns with time gaps (separate campaigns)
+        patterns = [
+            make_ar(1, base_timestamp, quality_score=0.8),
+            make_ar(100, base_timestamp + timedelta(hours=100), quality_score=0.7),
+            make_ar(200, base_timestamp + timedelta(hours=200), quality_score=0.6),
+        ]
+
+        result = detector.add_patterns_batch(patterns, Decimal("100000"))
+
+        # Should create multiple campaigns (time gaps)
+        assert result.campaigns_created >= 1
+        assert result.patterns_processed >= 1

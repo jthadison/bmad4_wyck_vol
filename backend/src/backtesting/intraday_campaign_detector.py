@@ -1769,11 +1769,35 @@ class IntradayCampaignDetector:
         # Update ID index (should already be there, but ensure)
         self._campaigns_by_id[campaign.campaign_id] = campaign
 
+    def _rebuild_indexes(self) -> None:
+        """
+        Rebuild all indexes from campaigns list (Story 15.5).
+
+        Useful when campaigns are loaded from database or deserialized,
+        ensuring indexes are properly populated.
+
+        Clears existing indexes and rebuilds from self.campaigns.
+        """
+        # Clear all indexes
+        self._campaigns_by_id.clear()
+        for state in CampaignState:
+            self._campaigns_by_state[state].clear()
+
+        # Rebuild from campaigns list
+        for campaign in self.campaigns:
+            self._add_to_indexes(campaign)
+
     def _find_matching_campaign(self, pattern: WyckoffPattern) -> Optional[Campaign]:
         """
         Find campaign that this pattern belongs to (Story 15.5).
 
-        Wrapper around _find_active_campaign for batch operations.
+        Wrapper around _find_active_campaign for batch operations. This abstraction
+        layer exists to:
+        - Maintain separation between sequential and batch operation APIs
+        - Enable future batch-optimized campaign matching (e.g., pre-computed lookups)
+        - Provide consistent interface for add_patterns_batch() method
+
+        For now, delegates directly to _find_active_campaign().
 
         Args:
             pattern: Pattern to match
@@ -1783,12 +1807,11 @@ class IntradayCampaignDetector:
         """
         return self._find_active_campaign(pattern)
 
-    def _validate_sequence_cached(self, campaign: Campaign) -> bool:
+    def _validate_campaign_sequence(self, campaign: Campaign) -> bool:
         """
-        Validate pattern sequence with optional caching (Story 15.4 / 15.5).
+        Validate campaign pattern sequence (Story 15.5).
 
-        For now, delegates to _validate_sequence. In future, can add
-        caching layer for repeated validations.
+        Delegates to _validate_sequence for pattern validation logic.
 
         Args:
             campaign: Campaign to validate
@@ -1851,8 +1874,7 @@ class IntradayCampaignDetector:
             return result
 
         # Expire stale campaigns once at the start (optimization)
-        if patterns:
-            self.expire_stale_campaigns(patterns[-1].detection_timestamp)
+        self.expire_stale_campaigns(patterns[-1].detection_timestamp)
 
         # Track campaigns updated in this batch (for deduplication)
         updated_campaigns: set[str] = set()
@@ -1888,6 +1910,13 @@ class IntradayCampaignDetector:
 
                 # Update metadata
                 self._update_campaign_metadata(campaign)
+
+                # Story 14.2: AR can activate FORMING campaign if high quality
+                if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
+                    if self._handle_ar_activation(campaign, pattern):
+                        # Activated by AR, track and continue to next pattern
+                        updated_campaigns.add(campaign.campaign_id)
+                        continue
 
                 # Check if state should change
                 if len(campaign.patterns) >= self.min_patterns_for_active:
@@ -1946,7 +1975,7 @@ class IntradayCampaignDetector:
                 self._update_campaign_metadata(campaign)
 
                 # Validate sequence
-                if not self._validate_sequence_cached(campaign):
+                if not self._validate_campaign_sequence(campaign):
                     result.rejected_patterns.append((pattern, "Invalid pattern"))
                     result.patterns_rejected += 1
                     continue
@@ -1954,6 +1983,10 @@ class IntradayCampaignDetector:
                 # Add to campaigns and indexes
                 self.campaigns.append(campaign)
                 self._add_to_indexes(campaign)
+
+                # Story 14.2: AR can activate FORMING campaign if high quality
+                if isinstance(pattern, AutomaticRally) and campaign.state == CampaignState.FORMING:
+                    self._handle_ar_activation(campaign, pattern)
 
                 result.patterns_processed += 1
                 result.campaigns_created += 1
