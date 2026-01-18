@@ -801,24 +801,30 @@ class IntradayCampaignDetector:
             List of completed campaigns matching filters
 
         Example:
-            >>> detector.get_completed_campaigns(
+            >>> campaigns = detector.get_completed_campaigns(
             ...     exit_reason=ExitReason.TARGET_HIT,
             ...     min_r_multiple=Decimal("2.0")
             ... )
-            [<Campaign: R=2.5>, <Campaign: R=3.0>]
+            >>> len(campaigns)
+            2
         """
         # Get all completed campaigns
         completed = [c for c in self.campaigns if c.state == CampaignState.COMPLETED]
+        total_completed = len(completed)
 
         # Apply filters
         if exit_reason:
             completed = [c for c in completed if c.exit_reason == exit_reason]
 
         if min_r_multiple is not None:
-            completed = [c for c in completed if c.r_multiple and c.r_multiple >= min_r_multiple]
+            completed = [
+                c for c in completed if c.r_multiple is not None and c.r_multiple >= min_r_multiple
+            ]
 
         if max_r_multiple is not None:
-            completed = [c for c in completed if c.r_multiple and c.r_multiple <= max_r_multiple]
+            completed = [
+                c for c in completed if c.r_multiple is not None and c.r_multiple <= max_r_multiple
+            ]
 
         if start_date:
             completed = [
@@ -830,7 +836,7 @@ class IntradayCampaignDetector:
 
         self.logger.debug(
             "Completed campaigns query",
-            total_completed=len([c for c in self.campaigns if c.state == CampaignState.COMPLETED]),
+            total_completed=total_completed,
             filtered_results=len(completed),
             filters={
                 "exit_reason": exit_reason.value if exit_reason else None,
@@ -886,7 +892,7 @@ class IntradayCampaignDetector:
         return [
             c
             for c in self.campaigns
-            if c.state == CampaignState.COMPLETED and c.r_multiple and c.r_multiple > 0
+            if c.state == CampaignState.COMPLETED and c.r_multiple is not None and c.r_multiple > 0
         ]
 
     def get_losing_campaigns(self) -> list[Campaign]:
