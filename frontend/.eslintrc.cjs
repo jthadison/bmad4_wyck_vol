@@ -1,3 +1,4 @@
+// Technical debt tracking: https://github.com/jthadison/bmad4_wyck_vol/issues/191
 module.exports = {
   root: true,
   env: {
@@ -18,10 +19,24 @@ module.exports = {
     sourceType: 'module',
   },
   plugins: ['vue', '@typescript-eslint'],
+  globals: {
+    NodeJS: 'readonly', // Node.js types used in Vue components (setTimeout, setInterval types)
+  },
   rules: {
-    // Add any custom rules here
+    // TypeScript rules - downgrade to warnings for gradual adoption (see issue #191)
     '@typescript-eslint/no-unused-vars': 'warn',
+    '@typescript-eslint/no-explicit-any': 'warn', // 310 violations - tracked in issue #191
+    // Vue rules
     'vue/multi-word-component-names': 'off',
   },
+  overrides: [
+    {
+      // Service worker files need serviceworker globals (clients, self, etc.)
+      files: ['public/sw.js', '**/sw.js'],
+      env: {
+        serviceworker: true,
+      },
+    },
+  ],
   ignorePatterns: ['dist', 'node_modules', '*.config.js', '*.config.ts'],
 };
