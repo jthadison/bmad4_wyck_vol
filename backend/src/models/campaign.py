@@ -1475,3 +1475,57 @@ class SequencePerformance(BaseModel):
             "best_campaign_id": str(self.best_campaign_id) if self.best_campaign_id else None,
             "worst_campaign_id": str(self.worst_campaign_id) if self.worst_campaign_id else None,
         }
+
+
+class SequencePerformanceResponse(BaseModel):
+    """
+    Response model for pattern sequence performance analysis API (Story 16.5a).
+
+    Returns a list of sequence performance metrics with filtering metadata.
+
+    Fields:
+    -------
+    - sequences: List of sequence performance metrics
+    - total_sequences: Total number of unique sequences analyzed
+    - filters_applied: Filters that were applied (symbol, timeframe)
+    - total_campaigns: Total number of campaigns analyzed
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from uuid import uuid4
+    >>> response = SequencePerformanceResponse(
+    ...     sequences=[
+    ...         SequencePerformance(
+    ...             sequence="Spring→SOS",
+    ...             campaign_count=25,
+    ...             win_rate=Decimal("72.00"),
+    ...             avg_r_multiple=Decimal("3.5"),
+    ...             median_r_multiple=Decimal("2.8"),
+    ...             total_r_multiple=Decimal("87.5"),
+    ...             exit_reasons={"TARGET_HIT": 18, "STOPPED": 7},
+    ...             best_campaign_id=uuid4(),
+    ...             worst_campaign_id=uuid4()
+    ...         )
+    ...     ],
+    ...     total_sequences=5,
+    ...     filters_applied={"symbol": "AAPL", "timeframe": None},
+    ...     total_campaigns=100
+    ... )
+    """
+
+    sequences: list[SequencePerformance] = Field(
+        ..., description="List of sequence performance metrics sorted by total R-multiple"
+    )
+
+    total_sequences: int = Field(
+        ..., ge=0, description="Total number of unique sequences analyzed"
+    )
+
+    filters_applied: dict[str, str | None] = Field(
+        default_factory=dict, description="Filters applied (symbol, timeframe)"
+    )
+
+    total_campaigns: int = Field(..., ge=0, description="Total number of campaigns analyzed")
+
+    model_config = ConfigDict(json_encoders={Decimal: str})

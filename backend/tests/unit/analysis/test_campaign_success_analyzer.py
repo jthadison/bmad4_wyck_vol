@@ -153,7 +153,7 @@ async def test_sequence_analysis_with_100_campaigns(
     sample_campaigns_100: list[CampaignMetricsModel],
 ):
     """Test sequence analysis with 100+ campaigns (AC #1)."""
-    sequences = await analyzer.get_pattern_sequence_analysis()
+    sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis()
 
     # Verify we got results
     assert len(sequences) > 0, "Should return sequence performance data"
@@ -176,7 +176,7 @@ async def test_sequence_grouping_logic(
     sample_campaigns_100: list[CampaignMetricsModel],
 ):
     """Test sequence grouping logic (AC #1)."""
-    sequences = await analyzer.get_pattern_sequence_analysis()
+    sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis()
 
     # Find Spring→SOS sequence
     spring_sos = next((s for s in sequences if s.sequence == "SPRING→SOS"), None)
@@ -200,7 +200,7 @@ async def test_metrics_calculation(
     sample_campaigns_100: list[CampaignMetricsModel],
 ):
     """Test metrics calculation for sequences (AC #2)."""
-    sequences = await analyzer.get_pattern_sequence_analysis()
+    sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis()
 
     for seq in sequences:
         # Verify win rate is calculated
@@ -224,7 +224,7 @@ async def test_win_rate_calculation(
     sample_campaigns_100: list[CampaignMetricsModel],
 ):
     """Test win rate calculation accuracy."""
-    sequences = await analyzer.get_pattern_sequence_analysis()
+    sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis()
 
     # Spring→LPS should have ~85% win rate
     spring_lps = next((s for s in sequences if s.sequence == "SPRING→LPS"), None)
@@ -244,7 +244,7 @@ async def test_sorted_by_total_r_multiple(
     sample_campaigns_100: list[CampaignMetricsModel],
 ):
     """Test results sorted by total R-multiple DESC (AC #3)."""
-    sequences = await analyzer.get_pattern_sequence_analysis()
+    sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis()
 
     # Verify sorting
     for i in range(len(sequences) - 1):
@@ -260,11 +260,11 @@ async def test_symbol_filter(
 ):
     """Test symbol filtering."""
     # Test with AAPL (should return results)
-    sequences_aapl = await analyzer.get_pattern_sequence_analysis(symbol="AAPL")
+    sequences_aapl, _ = await analyzer.get_pattern_sequence_analysis(symbol="AAPL")
     assert len(sequences_aapl) > 0, "Should return AAPL sequences"
 
     # Test with non-existent symbol (should return empty)
-    sequences_none = await analyzer.get_pattern_sequence_analysis(symbol="TSLA")
+    sequences_none, _ = await analyzer.get_pattern_sequence_analysis(symbol="TSLA")
     assert len(sequences_none) == 0, "Should return empty for TSLA"
 
 
@@ -275,11 +275,11 @@ async def test_limit_parameter(
 ):
     """Test limit parameter."""
     # Get all sequences
-    all_sequences = await analyzer.get_pattern_sequence_analysis(limit=100)
+    all_sequences, _ = await analyzer.get_pattern_sequence_analysis(limit=100)
     total_count = len(all_sequences)
 
     # Get limited sequences
-    limited_sequences = await analyzer.get_pattern_sequence_analysis(limit=3)
+    limited_sequences, _ = await analyzer.get_pattern_sequence_analysis(limit=3)
     assert len(limited_sequences) == min(3, total_count), "Should respect limit parameter"
 
 
@@ -387,7 +387,7 @@ async def test_performance_requirement(
 
     # Measure performance
     start_time = time.time()
-    sequences = await analyzer.get_pattern_sequence_analysis()
+    sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis()
     elapsed_time = time.time() - start_time
 
     # Verify performance requirement (allowing tolerance for test environment variability and test setup overhead)
@@ -400,7 +400,7 @@ async def test_performance_requirement(
 @pytest.mark.asyncio
 async def test_edge_case_no_campaigns(analyzer: CampaignSuccessAnalyzer):
     """Test edge case: no completed campaigns."""
-    sequences = await analyzer.get_pattern_sequence_analysis()
+    sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis()
     assert sequences == [], "Should return empty list when no campaigns exist"
 
 
@@ -488,7 +488,7 @@ async def test_edge_case_single_campaign(
     await db_session.commit()
 
     # Analyze
-    sequences = await analyzer.get_pattern_sequence_analysis()
+    sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis()
 
     assert len(sequences) == 1, "Should return exactly 1 sequence"
     assert sequences[0].sequence == "SPRING→SOS"

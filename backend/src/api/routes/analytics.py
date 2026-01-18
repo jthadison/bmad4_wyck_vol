@@ -306,7 +306,7 @@ async def export_pattern_performance_pdf(
 
 @router.get(
     "/pattern-sequences",
-    response_model=list,
+    response_model=dict,
     summary="Get pattern sequence performance analysis",
     description="""
     Analyze completed campaigns by pattern sequences to identify which sequences
@@ -329,7 +329,7 @@ async def export_pattern_performance_pdf(
     - limit: Maximum number of sequences to return (default: 100)
 
     Returns:
-    - List of sequence performance metrics sorted by total R-multiple (highest profit first)
+    - SequencePerformanceResponse with list of metrics and metadata
 
     Performance:
     - Optimized SQL queries for efficiency
@@ -365,10 +365,19 @@ async def get_pattern_sequence_analysis(
     """Get pattern sequence performance analysis (Story 16.5a)."""
     try:
         from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
+        from src.models.campaign import SequencePerformanceResponse
 
         analyzer = CampaignSuccessAnalyzer(session)
-        sequences = await analyzer.get_pattern_sequence_analysis(
+        sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis(
             symbol=symbol, timeframe=timeframe, limit=limit
+        )
+
+        # Build response with metadata
+        response = SequencePerformanceResponse(
+            sequences=sequences,
+            total_sequences=len(sequences),
+            filters_applied={"symbol": symbol, "timeframe": timeframe},
+            total_campaigns=total_campaigns,
         )
 
         logger.info(
@@ -377,11 +386,12 @@ async def get_pattern_sequence_analysis(
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "sequence_count": len(sequences),
+                "total_campaigns": total_campaigns,
                 "limit": limit,
             },
         )
 
-        return [seq.serialize_model() for seq in sequences]
+        return response
 
     except Exception as e:
         logger.error(

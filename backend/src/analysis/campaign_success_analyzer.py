@@ -64,7 +64,7 @@ class CampaignSuccessAnalyzer:
         symbol: str | None = None,
         timeframe: str | None = None,
         limit: int = 100,
-    ) -> list[SequencePerformance]:
+    ) -> tuple[list[SequencePerformance], int]:
         """
         Analyze completed campaigns by pattern sequence (Story 16.5a AC #1-3).
 
@@ -95,13 +95,13 @@ class CampaignSuccessAnalyzer:
 
         Returns:
         --------
-        list[SequencePerformance]
-            List of sequence performance metrics, sorted by total R-multiple
+        tuple[list[SequencePerformance], int]
+            Tuple of (sequence performance metrics, total campaigns analyzed)
 
         Example:
         --------
         >>> analyzer = CampaignSuccessAnalyzer(session)
-        >>> sequences = await analyzer.get_pattern_sequence_analysis(symbol="AAPL")
+        >>> sequences, total = await analyzer.get_pattern_sequence_analysis(symbol="AAPL")
         >>> for seq in sequences:
         ...     print(f"{seq.sequence}: {seq.win_rate}% win rate, {seq.avg_r_multiple}R avg")
         """
@@ -114,19 +114,23 @@ class CampaignSuccessAnalyzer:
 
         # Fetch completed campaigns with metrics
         campaigns = await self._get_completed_campaigns(symbol, timeframe)
+        total_campaigns = len(campaigns)
 
         if not campaigns:
             logger.warning("no_completed_campaigns_found", symbol=symbol, timeframe=timeframe)
-            return []
+            return [], 0
 
-        logger.info("campaigns_fetched", count=len(campaigns))
+        logger.info("campaigns_fetched", count=total_campaigns)
+
+        # Fetch all campaigns with positions in a single query (fix N+1 problem)
+        campaign_ids = [c.campaign_id for c in campaigns]
+        sequence_map = await self._build_sequence_map(campaign_ids)
 
         # Group campaigns by pattern sequence
         sequence_groups: dict[str, list[CampaignMetrics]] = defaultdict(list)
 
         for campaign in campaigns:
-            # Build sequence string from campaign positions
-            sequence = await self._build_sequence_string(campaign.campaign_id)
+            sequence = sequence_map.get(campaign.campaign_id)
             if sequence:
                 sequence_groups[sequence].append(campaign)
 
@@ -148,10 +152,10 @@ class CampaignSuccessAnalyzer:
         logger.info(
             "sequence_analysis_completed",
             sequence_count=len(sequence_performances),
-            total_campaigns=len(campaigns),
+            total_campaigns=total_campaigns,
         )
 
-        return sequence_performances
+        return sequence_performances, total_campaigns
 
     async def _get_completed_campaigns(
         self,
@@ -173,15 +177,20 @@ class CampaignSuccessAnalyzer:
         list[CampaignMetrics]
             List of completed campaign metrics
         """
-        # Build query
-        stmt = select(CampaignMetricsModel)
+        # Build query with join to CampaignModel for timeframe filtering
+        if timeframe:
+            # Join with CampaignModel to access timeframe field
+            stmt = (
+                select(CampaignMetricsModel)
+                .join(CampaignModel, CampaignMetricsModel.campaign_id == CampaignModel.id)
+                .where(CampaignModel.timeframe == timeframe)
+            )
+        else:
+            stmt = select(CampaignMetricsModel)
 
-        # Apply filters
+        # Apply symbol filter
         if symbol:
             stmt = stmt.where(CampaignMetricsModel.symbol == symbol)
-
-        # Note: timeframe is not in CampaignMetricsModel, would need to join
-        # with CampaignModel if timeframe filtering is required
 
         # Order by completed_at DESC
         stmt = stmt.order_by(CampaignMetricsModel.completed_at.desc())
@@ -224,9 +233,77 @@ class CampaignSuccessAnalyzer:
 
         return campaigns
 
+    async def _build_sequence_map(self, campaign_ids: list[UUID]) -> dict[UUID, str]:
+        """
+        Build pattern sequence strings for multiple campaigns in a single query.
+
+        Fetches all campaigns with positions eagerly loaded to avoid N+1 queries.
+        Constructs sequence strings like "Spring→SOS" or "Spring→SOS→LPS" based
+        on the pattern types of positions in chronological order.
+
+        Parameters:
+        -----------
+        campaign_ids : list[UUID]
+            List of campaign identifiers
+
+        Returns:
+        --------
+        dict[UUID, str]
+            Mapping of campaign_id to sequence string
+
+        Example:
+        --------
+        >>> sequence_map = await analyzer._build_sequence_map([id1, id2, id3])
+        >>> print(sequence_map[id1])  # "Spring→SOS"
+        """
+        if not campaign_ids:
+            return {}
+
+        # Fetch all campaigns with positions in a single query
+        stmt = (
+            select(CampaignModel)
+            .where(CampaignModel.id.in_(campaign_ids))
+            .options(selectinload(CampaignModel.positions))
+        )
+
+        result = await self.session.execute(stmt)
+        campaigns = result.scalars().all()
+
+        # Build sequence map
+        sequence_map: dict[UUID, str] = {}
+
+        for campaign in campaigns:
+            if not campaign.positions:
+                continue
+
+            # Sort positions by entry_date (handle timezone-naive dates)
+            def get_entry_date(pos):
+                """Get entry date with timezone awareness handling."""
+                from datetime import UTC
+
+                entry_date = pos.entry_date
+                # If timezone-naive, assume UTC
+                if entry_date and entry_date.tzinfo is None:
+                    return entry_date.replace(tzinfo=UTC)
+                return entry_date
+
+            sorted_positions = sorted(campaign.positions, key=get_entry_date)
+
+            # Extract pattern types
+            patterns = [pos.pattern_type for pos in sorted_positions]
+
+            # Build sequence string with arrow separator
+            sequence = "→".join(patterns)
+
+            sequence_map[campaign.id] = sequence
+
+        return sequence_map
+
     async def _build_sequence_string(self, campaign_id: UUID) -> str | None:
         """
         Build pattern sequence string from campaign positions.
+
+        DEPRECATED: Use _build_sequence_map() for batch operations to avoid N+1 queries.
 
         Constructs a string like "Spring→SOS" or "Spring→AR→SOS→LPS" based
         on the pattern types of positions in chronological order.
@@ -350,8 +427,9 @@ class CampaignSuccessAnalyzer:
         total_r = sum(r_multiples, Decimal("0")).quantize(Decimal("0.0001"))
 
         # Exit reason distribution
-        # Note: Exit reason not in CampaignMetrics, would need to be added
-        # For now, use placeholder
+        # TODO (Story 16.5a+): Populate exit_reasons when CampaignMetrics includes exit_reason field
+        # Currently returns empty dict as exit_reason is not yet tracked in CampaignMetrics model
+        # Future implementation will track: TARGET_HIT, STOPPED, TRAILING_STOP, MANUAL_EXIT, etc.
         exit_reasons: dict[str, int] = {}
 
         # Find best and worst campaigns
