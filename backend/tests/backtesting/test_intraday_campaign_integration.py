@@ -2515,8 +2515,11 @@ class TestCampaignStatistics:
 
             # Fail 30 campaigns (60 <= i < 90)
             elif i < 90:
+                old_state = campaign.state  # Story 15.3: Track for index update
                 campaign.state = CampaignState.FAILED
                 campaign.failure_reason = "Test failure"
+                # Story 15.3: Update indexes when directly setting state
+                detector._update_indexes(campaign, old_state)
 
             # Leave 10 active (90 <= i < 100)
 
