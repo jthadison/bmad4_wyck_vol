@@ -129,14 +129,8 @@ def upgrade() -> None:
         postgresql_ops={"generated_at": "DESC"},
     )
 
-    # Composite index for symbol + generated_at (time-series queries)
-    # Covers: SELECT * FROM signals WHERE symbol = ? AND generated_at > ?
-    op.create_index(
-        "idx_signals_symbol_generated_at",
-        "signals",
-        ["symbol", "generated_at"],
-        unique=False,
-    )
+    # Note: idx_signals_symbol_generated_at already exists from 016_analytics_indexes.py
+    # Skipping duplicate index creation.
 
     # ========================================================================
     # Patterns (patterns) - Pattern detection queries
@@ -382,7 +376,7 @@ def downgrade() -> None:
     op.drop_index("idx_patterns_symbol_pattern_type", table_name="patterns")
 
     # Signals
-    op.drop_index("idx_signals_symbol_generated_at", table_name="signals")
+    # Note: idx_signals_symbol_generated_at not dropped here - it was created in 016_analytics_indexes.py
     op.drop_index("idx_signals_generated_at_desc", table_name="signals")
     op.drop_index("idx_signals_campaign_id", table_name="signals")
     op.drop_index("idx_signals_pattern_id", table_name="signals")
