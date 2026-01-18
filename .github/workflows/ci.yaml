@@ -171,7 +171,9 @@ jobs:
 
       - name: Run ESLint
         working-directory: frontend
-        run: npm run lint
+        # --max-warnings prevents warning count from growing (see issue #191)
+        # Current baseline: 340 warnings. Decrease as types are fixed.
+        run: npx eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --max-warnings 340
 
   test-frontend:
     name: Test Frontend (Vitest)
@@ -196,6 +198,9 @@ jobs:
     name: Detector Accuracy Testing (Story 12.3)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
