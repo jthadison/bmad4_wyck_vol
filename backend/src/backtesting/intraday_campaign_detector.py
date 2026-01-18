@@ -254,6 +254,12 @@ class Campaign:
     points_gained: Optional[Decimal] = None  # Exit price - entry price
     duration_bars: int = 0  # Campaign duration in bars
 
+    # Story 15.4: Pattern Validation Caching
+    _validation_cache: dict[str, dict[str, Any]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _cache_ttl_seconds: int = 300  # 5 minutes default TTL
+
     def calculate_performance_metrics(self, exit_price: Decimal) -> None:
         """
         Calculate R-multiple, points gained, and duration (Story 15.1a).
@@ -307,6 +313,109 @@ class Campaign:
             else:
                 # Fallback: use pattern count as approximation
                 self.duration_bars = len(self.patterns)
+
+    def _get_pattern_sequence_hash(self) -> str:
+        """
+        Generate hash of pattern sequence for cache key (Story 15.4).
+
+        Uses pattern types and bar numbers for uniqueness.
+
+        Returns:
+            MD5 hash of pattern sequence signature
+
+        Example:
+            >>> campaign = Campaign(patterns=[spring, sos])
+            >>> hash_key = campaign._get_pattern_sequence_hash()
+            >>> # Returns: "a1b2c3d4..." (MD5 hash)
+        """
+        import hashlib
+
+        pattern_parts = []
+        for p in self.patterns:
+            # Handle both OHLCVBar objects and dict representations (AR pattern)
+            if isinstance(p.bar, dict):
+                timestamp_str = p.bar["timestamp"]
+            else:
+                timestamp_str = p.bar.timestamp.isoformat()
+            pattern_parts.append(f"{type(p).__name__}:{timestamp_str}")
+
+        pattern_signature = "|".join(pattern_parts)
+
+        return hashlib.md5(pattern_signature.encode()).hexdigest()
+
+    def get_cached_validation(self) -> Optional[bool]:
+        """
+        Get cached validation result if available and not expired (Story 15.4).
+
+        Checks cache and TTL before returning result. Returns None on cache
+        miss or expiration.
+
+        Returns:
+            Cached validation result (bool) or None if cache miss/expired
+
+        Example:
+            >>> campaign = Campaign(patterns=[spring, sos])
+            >>> result = campaign.get_cached_validation()
+            >>> # Returns: True/False (cached) or None (cache miss)
+        """
+        cache_key = self._get_pattern_sequence_hash()
+
+        if cache_key not in self._validation_cache:
+            return None  # Cache miss
+
+        cache_entry = self._validation_cache[cache_key]
+        cached_at = cache_entry["timestamp"]
+
+        # Check TTL
+        from datetime import timedelta
+
+        if datetime.now(UTC) - cached_at > timedelta(seconds=self._cache_ttl_seconds):
+            # Expired
+            del self._validation_cache[cache_key]
+            return None
+
+        return cache_entry["result"]
+
+    def set_cached_validation(self, result: bool) -> None:
+        """
+        Cache validation result with LRU eviction (Story 15.4).
+
+        Stores validation result with timestamp. Evicts oldest entry
+        if cache exceeds 100 entries (LRU policy).
+
+        Args:
+            result: Validation result to cache
+
+        Example:
+            >>> campaign = Campaign(patterns=[spring, sos])
+            >>> campaign.set_cached_validation(True)
+            >>> # Validation result cached
+        """
+        cache_key = self._get_pattern_sequence_hash()
+
+        self._validation_cache[cache_key] = {"result": result, "timestamp": datetime.now(UTC)}
+
+        # LRU eviction if cache too large
+        if len(self._validation_cache) > 100:
+            # Remove oldest entry
+            oldest_key = min(
+                self._validation_cache.keys(),
+                key=lambda k: self._validation_cache[k]["timestamp"],
+            )
+            del self._validation_cache[oldest_key]
+
+    def invalidate_validation_cache(self) -> None:
+        """
+        Clear validation cache (Story 15.4).
+
+        Call when patterns change to ensure fresh validation on next check.
+
+        Example:
+            >>> campaign = Campaign(patterns=[spring])
+            >>> campaign.invalidate_validation_cache()
+            >>> # Cache cleared, next validation will recompute
+        """
+        self._validation_cache.clear()
 
 
 def calculate_position_size(
@@ -428,6 +537,10 @@ class IntradayCampaignDetector:
             min_patterns=min_patterns_for_active,
             expiration_hours=expiration_hours,
         )
+
+        # Story 15.4: Cache metrics tracking
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
 
     def _handle_ar_activation(self, campaign: Campaign, pattern: AutomaticRally) -> bool:
         """
@@ -555,8 +668,16 @@ class IntradayCampaignDetector:
 
             return campaign
 
+        # Story 15.4: Invalidate cache before modifying patterns
+        campaign.invalidate_validation_cache()
+
         # AC4.10: Validate sequence before adding
-        if not self._validate_sequence(campaign.patterns + [pattern]):
+        # Create temporary campaign with new pattern for validation
+        temp_campaign = Campaign(
+            campaign_id=campaign.campaign_id,
+            patterns=campaign.patterns + [pattern],
+        )
+        if not self._validate_sequence_cached(temp_campaign):
             self.logger.warning(
                 "Invalid pattern sequence, maintaining previous phase",
                 campaign_id=campaign.campaign_id,
@@ -566,6 +687,7 @@ class IntradayCampaignDetector:
             )
             # Still add pattern but don't update phase
             campaign.patterns.append(pattern)
+            campaign.invalidate_validation_cache()  # Story 15.4: Invalidate after pattern added
             self._update_campaign_metadata(campaign)
 
             # Story 14.4: Volume profile tracking (Issue #3: Use helper method)
@@ -575,6 +697,7 @@ class IntradayCampaignDetector:
 
         # Add to existing campaign
         campaign.patterns.append(pattern)
+        campaign.invalidate_validation_cache()  # Story 15.4: Invalidate after pattern added
 
         # AC4.9: Update risk metadata
         self._update_campaign_metadata(campaign)
@@ -995,6 +1118,38 @@ class IntradayCampaignDetector:
             "generated_at": datetime.now(UTC).isoformat(),
         }
 
+    def get_cache_statistics(self) -> dict[str, Any]:
+        """
+        Get cache performance statistics (Story 15.4).
+
+        Provides visibility into validation cache effectiveness,
+        including hit rate and total checks.
+
+        Returns:
+            Dictionary with cache performance metrics:
+            {
+                "cache_hits": 150,
+                "cache_misses": 50,
+                "total_checks": 200,
+                "hit_rate_pct": 75.0
+            }
+
+        Example:
+            >>> detector = IntradayCampaignDetector()
+            >>> # ... add patterns, validate campaigns ...
+            >>> stats = detector.get_cache_statistics()
+            >>> stats["hit_rate_pct"]
+            75.0
+        """
+        total = self._cache_hits + self._cache_misses
+
+        return {
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "total_checks": total,
+            "hit_rate_pct": (self._cache_hits / total * 100) if total > 0 else 0.0,
+        }
+
     def _empty_statistics(self) -> dict[str, Any]:
         """
         Return empty statistics structure (Story 15.2).
@@ -1324,6 +1479,56 @@ class IntradayCampaignDetector:
 
         # Update phase
         campaign.current_phase = new_phase
+
+    def _validate_sequence_cached(self, campaign: Campaign) -> bool:
+        """
+        Validate pattern sequence with caching (Story 15.4).
+
+        Checks cache first, runs validation on miss, caches result.
+        Provides significant performance improvement for repeated validations.
+
+        Args:
+            campaign: Campaign to validate
+
+        Returns:
+            True if sequence is valid, False otherwise
+
+        Example:
+            >>> detector = IntradayCampaignDetector()
+            >>> campaign = Campaign(patterns=[spring, sos])
+            >>> result = detector._validate_sequence_cached(campaign)
+            >>> # First call: cache miss, runs validation
+            >>> result2 = detector._validate_sequence_cached(campaign)
+            >>> # Second call: cache hit, returns cached result
+        """
+        # Check cache
+        cached_result = campaign.get_cached_validation()
+
+        if cached_result is not None:
+            # Cache hit
+            self._cache_hits += 1
+            self.logger.debug(
+                "Validation cache hit",
+                campaign_id=campaign.campaign_id,
+                result=cached_result,
+            )
+            return cached_result
+
+        # Cache miss - run validation
+        self._cache_misses += 1
+
+        result = self._validate_sequence(campaign.patterns)
+
+        # Cache result
+        campaign.set_cached_validation(result)
+
+        self.logger.debug(
+            "Validation cache miss",
+            campaign_id=campaign.campaign_id,
+            result=result,
+        )
+
+        return result
 
     def _validate_sequence(self, patterns: list[WyckoffPattern]) -> bool:
         """
