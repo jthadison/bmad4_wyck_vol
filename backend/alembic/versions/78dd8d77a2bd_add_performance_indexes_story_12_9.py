@@ -248,16 +248,15 @@ def upgrade() -> None:
     # Backtest Results (backtest_results) - Pagination and filtering
     # ========================================================================
 
-    # Index for status filtering (partial index for PENDING only)
-    # Covers: SELECT * FROM backtest_results WHERE status = 'PENDING'
-    # Partial indexes are smaller and faster for frequent status queries
-    op.execute(
-        """
-        CREATE INDEX idx_backtest_results_status_pending
-        ON backtest_results (status)
-        WHERE status = 'PENDING'
-        """
-    )
+    # Note: backtest_results table doesn't have a 'status' column yet.
+    # The partial index for status filtering is commented out until the column is added.
+    # op.execute(
+    #     """
+    #     CREATE INDEX idx_backtest_results_status_pending
+    #     ON backtest_results (status)
+    #     WHERE status = 'PENDING'
+    #     """
+    # )
 
     # Descending created_at index for pagination
     # Covers: SELECT * FROM backtest_results ORDER BY created_at DESC LIMIT ? OFFSET ?
@@ -358,7 +357,8 @@ def downgrade() -> None:
 
     # Backtest Results
     op.drop_index("idx_backtest_results_created_at_desc", table_name="backtest_results")
-    op.execute("DROP INDEX IF EXISTS idx_backtest_results_status_pending")
+    # Note: idx_backtest_results_status_pending not created (status column doesn't exist)
+    # op.execute("DROP INDEX IF EXISTS idx_backtest_results_status_pending")
 
     # Trading Ranges
     op.drop_index("idx_trading_ranges_phase", table_name="trading_ranges")
