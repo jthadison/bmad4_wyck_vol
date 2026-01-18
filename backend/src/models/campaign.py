@@ -68,6 +68,33 @@ if TYPE_CHECKING:
     from src.models.position import Position
 
 
+class AssetCategory(str, Enum):
+    """
+    Asset class categories for correlation tracking (Story 16.1a).
+
+    Used to categorize trading instruments by asset class for:
+    - Correlation group assignment
+    - Sector mapping (equities)
+    - Risk management diversification
+
+    Values:
+    -------
+    - FOREX: Foreign exchange pairs (e.g., EURUSD, GBPUSD)
+    - EQUITY: Individual stocks (e.g., AAPL, MSFT)
+    - CRYPTO: Cryptocurrencies (e.g., BTCUSD, ETHUSD)
+    - COMMODITY: Commodities (e.g., GOLD, OIL)
+    - INDEX: Market indices (e.g., SPX, NAS100)
+    - UNKNOWN: Unclassified assets (default)
+    """
+
+    FOREX = "FOREX"
+    EQUITY = "EQUITY"
+    CRYPTO = "CRYPTO"
+    COMMODITY = "COMMODITY"
+    INDEX = "INDEX"
+    UNKNOWN = "UNKNOWN"
+
+
 class CampaignEntry(BaseModel):
     """
     Individual position entry within a campaign.
