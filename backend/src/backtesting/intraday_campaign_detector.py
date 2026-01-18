@@ -822,6 +822,9 @@ class IntradayCampaignDetector:
         Returns:
             True if pattern matches campaign criteria
         """
+        # State check is intentionally kept for defensive programming even though
+        # callers like _find_active_campaign may pre-filter by state. This ensures
+        # the method is safe to call directly from other contexts.
         if campaign.state not in [CampaignState.FORMING, CampaignState.ACTIVE]:
             return False
 
@@ -1011,7 +1014,9 @@ class IntradayCampaignDetector:
             2
         """
         # Get all completed campaigns (use internal index to avoid deprecation warning)
-        completed = [c for c in self._campaigns_by_id.values() if c.state == CampaignState.COMPLETED]
+        completed = [
+            c for c in self._campaigns_by_id.values() if c.state == CampaignState.COMPLETED
+        ]
         total_completed = len(completed)
 
         # Apply filters

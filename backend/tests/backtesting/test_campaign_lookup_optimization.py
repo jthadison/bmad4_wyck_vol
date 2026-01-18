@@ -38,6 +38,28 @@ from src.models.sos_breakout import SOSBreakout
 from src.models.spring import Spring
 
 # ============================================================================
+# Test Constants (Story 15.3)
+# ============================================================================
+
+# Performance benchmark parameters
+BENCHMARK_CAMPAIGN_COUNT = 1000  # Total campaigns for performance tests
+BENCHMARK_ACTIVE_COUNT = 100  # Active campaigns in benchmark
+BENCHMARK_FORMING_COUNT = 300  # Forming campaigns in benchmark
+BENCHMARK_COMPLETED_COUNT = 300  # Completed campaigns in benchmark
+BENCHMARK_FAILED_COUNT = 300  # Failed campaigns in benchmark
+BENCHMARK_QUERY_ITERATIONS = 100  # Number of iterations for query benchmarks
+
+# Performance thresholds (milliseconds) from Story 15.3 requirements
+LOOKUP_BY_ID_THRESHOLD_MS = 5  # < 5ms per lookup
+ACTIVE_QUERY_THRESHOLD_MS = 10  # < 10ms per query
+STATE_QUERY_THRESHOLD_MS = 10  # < 10ms per state query
+
+# Index consistency test parameters
+CONSISTENCY_CAMPAIGN_COUNT = 100  # Campaigns for consistency tests
+CONSISTENCY_TRANSITION_TO_ACTIVE = 50  # Campaigns to transition to ACTIVE
+CONSISTENCY_TRANSITION_TO_COMPLETED = 25  # Campaigns to transition to COMPLETED
+
+# ============================================================================
 # Test Fixtures
 # ============================================================================
 
@@ -178,12 +200,12 @@ class TestIndexConsistency:
 
         assert campaign.campaign_id in detector._active_time_windows
 
-    def test_100_campaigns_all_indexed(self, detector):
-        """Test that 100 campaigns are all properly indexed (using direct index add)."""
+    def test_many_campaigns_all_indexed(self, detector):
+        """Test that many campaigns are all properly indexed (using direct index add)."""
         # Use direct _add_to_indexes to bypass campaign grouping logic
         # This tests the index operations themselves
         campaigns = []
-        for i in range(100):
+        for i in range(CONSISTENCY_CAMPAIGN_COUNT):
             campaign = Campaign(
                 campaign_id=f"test-bulk-{i}",
                 state=CampaignState.FORMING,
@@ -484,15 +506,15 @@ class TestPerformanceBenchmarks:
     """
 
     def test_lookup_by_id_performance(self, detector, sample_bar, base_timestamp):
-        """Test that lookup by ID is fast (< 5ms) with 1000 campaigns.
+        """Test that lookup by ID is fast (< 5ms) with many campaigns.
 
         Story 15.3 requirement: Lookup by ID < 5ms vs ~20-50ms before.
         """
         import time
 
-        # Create 1000 campaigns
+        # Create campaigns for benchmark
         campaigns = []
-        for i in range(1000):
+        for i in range(BENCHMARK_CAMPAIGN_COUNT):
             campaign = Campaign(
                 campaign_id=f"perf-test-{i}",
                 state=CampaignState.FORMING,
@@ -500,47 +522,49 @@ class TestPerformanceBenchmarks:
             detector._add_to_indexes(campaign)
             campaigns.append(campaign)
 
-        # Benchmark 1000 lookups
+        # Benchmark lookups
         start = time.perf_counter()
         for campaign in campaigns:
             result = detector.get_campaign_by_id(campaign.campaign_id)
             assert result is not None
         elapsed = time.perf_counter() - start
 
-        # Average time per lookup should be < 5ms
-        avg_lookup_ms = (elapsed / 1000) * 1000
-        assert avg_lookup_ms < 5, f"Average lookup time {avg_lookup_ms:.2f}ms exceeds 5ms target"
+        # Average time per lookup should be < threshold
+        avg_lookup_ms = (elapsed / BENCHMARK_CAMPAIGN_COUNT) * 1000
+        assert (
+            avg_lookup_ms < LOOKUP_BY_ID_THRESHOLD_MS
+        ), f"Average lookup time {avg_lookup_ms:.2f}ms exceeds {LOOKUP_BY_ID_THRESHOLD_MS}ms target"
 
     def test_active_campaign_query_performance(self, detector):
-        """Test that active campaign query is fast (< 10ms) with 1000 campaigns.
+        """Test that active campaign query is fast with many campaigns.
 
         Story 15.3 requirement: Active campaign query < 10ms vs ~50-100ms before.
         """
         import time
 
-        # Create 1000 campaigns (100 active, 900 other states)
-        for i in range(100):
+        # Create campaigns with varied states
+        for i in range(BENCHMARK_ACTIVE_COUNT):
             campaign = Campaign(
                 campaign_id=f"active-{i}",
                 state=CampaignState.ACTIVE,
             )
             detector._add_to_indexes(campaign)
 
-        for i in range(300):
+        for i in range(BENCHMARK_FORMING_COUNT):
             campaign = Campaign(
                 campaign_id=f"forming-{i}",
                 state=CampaignState.FORMING,
             )
             detector._add_to_indexes(campaign)
 
-        for i in range(300):
+        for i in range(BENCHMARK_COMPLETED_COUNT):
             campaign = Campaign(
                 campaign_id=f"completed-{i}",
                 state=CampaignState.COMPLETED,
             )
             detector._add_to_indexes(campaign)
 
-        for i in range(300):
+        for i in range(BENCHMARK_FAILED_COUNT):
             campaign = Campaign(
                 campaign_id=f"failed-{i}",
                 state=CampaignState.FAILED,
@@ -549,44 +573,48 @@ class TestPerformanceBenchmarks:
 
         # Benchmark active campaigns query
         start = time.perf_counter()
-        for _ in range(100):  # Run 100 times to get stable measurement
+        for _ in range(BENCHMARK_QUERY_ITERATIONS):
             active = detector.get_active_campaigns()
         elapsed = time.perf_counter() - start
 
-        # Average time per query should be < 10ms
-        avg_query_ms = (elapsed / 100) * 1000
-        assert avg_query_ms < 10, f"Average query time {avg_query_ms:.2f}ms exceeds 10ms target"
+        # Average time per query should be < threshold
+        avg_query_ms = (elapsed / BENCHMARK_QUERY_ITERATIONS) * 1000
+        assert (
+            avg_query_ms < ACTIVE_QUERY_THRESHOLD_MS
+        ), f"Average query time {avg_query_ms:.2f}ms exceeds {ACTIVE_QUERY_THRESHOLD_MS}ms target"
 
         # Verify correct count (should include FORMING + ACTIVE)
-        assert len(active) == 400  # 100 ACTIVE + 300 FORMING
+        expected_active = BENCHMARK_ACTIVE_COUNT + BENCHMARK_FORMING_COUNT
+        assert len(active) == expected_active
 
     def test_get_campaigns_by_state_performance(self, detector):
         """Test that state query is fast with many campaigns."""
         import time
 
-        # Create 1000 campaigns with various states
-        for i in range(250):
+        # Create campaigns with equal distribution across states (1000 total)
+        per_state = BENCHMARK_CAMPAIGN_COUNT // 4
+        for i in range(per_state):
             detector._add_to_indexes(
                 Campaign(
                     campaign_id=f"forming-{i}",
                     state=CampaignState.FORMING,
                 )
             )
-        for i in range(250):
+        for i in range(per_state):
             detector._add_to_indexes(
                 Campaign(
                     campaign_id=f"active-{i}",
                     state=CampaignState.ACTIVE,
                 )
             )
-        for i in range(250):
+        for i in range(per_state):
             detector._add_to_indexes(
                 Campaign(
                     campaign_id=f"completed-{i}",
                     state=CampaignState.COMPLETED,
                 )
             )
-        for i in range(250):
+        for i in range(per_state):
             detector._add_to_indexes(
                 Campaign(
                     campaign_id=f"failed-{i}",
@@ -596,21 +624,21 @@ class TestPerformanceBenchmarks:
 
         # Benchmark state queries
         start = time.perf_counter()
-        for _ in range(100):
+        for _ in range(BENCHMARK_QUERY_ITERATIONS):
             detector.get_campaigns_by_state(CampaignState.COMPLETED)
         elapsed = time.perf_counter() - start
 
-        avg_query_ms = (elapsed / 100) * 1000
+        avg_query_ms = (elapsed / BENCHMARK_QUERY_ITERATIONS) * 1000
         assert (
-            avg_query_ms < 10
-        ), f"Average state query time {avg_query_ms:.2f}ms exceeds 10ms target"
+            avg_query_ms < STATE_QUERY_THRESHOLD_MS
+        ), f"Average state query time {avg_query_ms:.2f}ms exceeds {STATE_QUERY_THRESHOLD_MS}ms target"
 
     def test_index_consistency_after_many_operations(self, detector):
         """Test index consistency after many add/update operations."""
         campaigns = []
 
-        # Add 100 campaigns
-        for i in range(100):
+        # Add campaigns
+        for i in range(CONSISTENCY_CAMPAIGN_COUNT):
             campaign = Campaign(
                 campaign_id=f"test-{i}",
                 state=CampaignState.FORMING,
@@ -618,29 +646,32 @@ class TestPerformanceBenchmarks:
             detector._add_to_indexes(campaign)
             campaigns.append(campaign)
 
-        # Transition 50 to ACTIVE
-        for i in range(50):
+        # Transition some to ACTIVE
+        for i in range(CONSISTENCY_TRANSITION_TO_ACTIVE):
             old_state = campaigns[i].state
             campaigns[i].state = CampaignState.ACTIVE
             detector._update_indexes(campaigns[i], old_state)
 
-        # Transition 25 to COMPLETED
-        for i in range(25):
+        # Transition some to COMPLETED
+        for i in range(CONSISTENCY_TRANSITION_TO_COMPLETED):
             old_state = campaigns[i].state
             campaigns[i].state = CampaignState.COMPLETED
             detector._update_indexes(campaigns[i], old_state)
 
         # Verify index consistency
-        assert len(detector._campaigns_by_id) == 100
+        assert len(detector._campaigns_by_id) == CONSISTENCY_CAMPAIGN_COUNT
+        expected_forming = CONSISTENCY_CAMPAIGN_COUNT - CONSISTENCY_TRANSITION_TO_ACTIVE
+        assert len(detector._campaigns_by_state[CampaignState.FORMING]) == expected_forming
+        expected_active = CONSISTENCY_TRANSITION_TO_ACTIVE - CONSISTENCY_TRANSITION_TO_COMPLETED
+        assert len(detector._campaigns_by_state[CampaignState.ACTIVE]) == expected_active
         assert (
-            len(detector._campaigns_by_state[CampaignState.FORMING]) == 50
-        )  # 100 - 50 transitioned
-        assert len(detector._campaigns_by_state[CampaignState.ACTIVE]) == 25  # 50 - 25 transitioned
-        assert len(detector._campaigns_by_state[CampaignState.COMPLETED]) == 25
+            len(detector._campaigns_by_state[CampaignState.COMPLETED])
+            == CONSISTENCY_TRANSITION_TO_COMPLETED
+        )
 
         # Total in state indexes should equal total campaigns
         total = sum(len(ids) for ids in detector._campaigns_by_state.values())
-        assert total == 100
+        assert total == CONSISTENCY_CAMPAIGN_COUNT
 
 
 # ============================================================================
@@ -667,24 +698,26 @@ class TestPytestBenchmark:
     """
 
     @pytest.fixture
-    def detector_with_1000_campaigns(self):
-        """Pre-populated detector with 1000 campaigns for benchmarking."""
+    def detector_with_many_campaigns(self):
+        """Pre-populated detector with many campaigns for benchmarking."""
         detector = IntradayCampaignDetector()
-        for i in range(1000):
+        for i in range(BENCHMARK_CAMPAIGN_COUNT):
             campaign = Campaign(
                 campaign_id=f"bench-{i}",
-                state=CampaignState.FORMING if i % 4 == 0 else (
-                    CampaignState.ACTIVE if i % 4 == 1 else (
-                        CampaignState.COMPLETED if i % 4 == 2 else CampaignState.FAILED
-                    )
+                state=CampaignState.FORMING
+                if i % 4 == 0
+                else (
+                    CampaignState.ACTIVE
+                    if i % 4 == 1
+                    else (CampaignState.COMPLETED if i % 4 == 2 else CampaignState.FAILED)
                 ),
             )
             detector._add_to_indexes(campaign)
         return detector
 
-    def test_benchmark_lookup_by_id(self, detector_with_1000_campaigns, benchmark):
+    def test_benchmark_lookup_by_id(self, detector_with_many_campaigns, benchmark):
         """Benchmark campaign lookup by ID with pytest-benchmark."""
-        detector = detector_with_1000_campaigns
+        detector = detector_with_many_campaigns
 
         def lookup():
             return detector.get_campaign_by_id("bench-500")
@@ -692,9 +725,9 @@ class TestPytestBenchmark:
         result = benchmark(lookup)
         assert result is not None
 
-    def test_benchmark_get_active_campaigns(self, detector_with_1000_campaigns, benchmark):
+    def test_benchmark_get_active_campaigns(self, detector_with_many_campaigns, benchmark):
         """Benchmark get_active_campaigns with pytest-benchmark."""
-        detector = detector_with_1000_campaigns
+        detector = detector_with_many_campaigns
 
         def query():
             return detector.get_active_campaigns()
@@ -702,9 +735,9 @@ class TestPytestBenchmark:
         result = benchmark(query)
         assert len(result) > 0
 
-    def test_benchmark_get_campaigns_by_state(self, detector_with_1000_campaigns, benchmark):
+    def test_benchmark_get_campaigns_by_state(self, detector_with_many_campaigns, benchmark):
         """Benchmark get_campaigns_by_state with pytest-benchmark."""
-        detector = detector_with_1000_campaigns
+        detector = detector_with_many_campaigns
 
         def query():
             return detector.get_campaigns_by_state(CampaignState.COMPLETED)

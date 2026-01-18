@@ -51,7 +51,7 @@ Currently, `IntradayCampaignDetector` stores campaigns in a simple list and uses
 5. **Data Structure Updates**
    - [x] `_campaigns_by_id`: Dict[str, Campaign] (O(1) access)
    - [x] `_campaigns_by_state`: Dict[CampaignState, Set[str]] (O(1) state queries)
-   - [x] `_active_time_windows`: List of recent active campaign IDs (fast recent access)
+   - [x] `_active_time_windows`: Dict[str, bool] for O(1) add/remove (preserves insertion order)
    - [x] Maintain `self.campaigns` list for backward compatibility (derived from dict)
 
 6. **Index Operations**
@@ -94,7 +94,8 @@ class IntradayCampaignDetector:
         # NEW: Indexed data structures
         self._campaigns_by_id: Dict[str, Campaign] = {}  # O(1) lookup
         self._campaigns_by_state: Dict[CampaignState, Set[str]] = defaultdict(set)
-        self._active_time_windows: List[str] = []  # Recent active campaign IDs
+        # Dict for O(1) add/remove while preserving insertion order (Python 3.7+)
+        self._active_time_windows: Dict[str, bool] = {}  # O(1) operations
 
         # DEPRECATED (but kept for compatibility): Direct list access
         # Now derived from _campaigns_by_id
@@ -119,10 +120,9 @@ class IntradayCampaignDetector:
         # State index
         self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
 
-        # Time window index (if active)
+        # Time window index (if active) - O(1) dict operations
         if campaign.state == CampaignState.ACTIVE:
-            if campaign.campaign_id not in self._active_time_windows:
-                self._active_time_windows.append(campaign.campaign_id)
+            self._active_time_windows[campaign.campaign_id] = True
 
 
     def _update_indexes(self, campaign: Campaign, old_state: CampaignState) -> None:
@@ -139,11 +139,11 @@ class IntradayCampaignDetector:
         # Add to new state index
         self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
 
-        # Update active time windows
-        if campaign.state == CampaignState.ACTIVE and campaign.campaign_id not in self._active_time_windows:
-            self._active_time_windows.append(campaign.campaign_id)
-        elif campaign.state != CampaignState.ACTIVE and campaign.campaign_id in self._active_time_windows:
-            self._active_time_windows.remove(campaign.campaign_id)
+        # Update active time windows - O(1) dict operations
+        if campaign.state == CampaignState.ACTIVE:
+            self._active_time_windows[campaign.campaign_id] = True
+        else:
+            self._active_time_windows.pop(campaign.campaign_id, None)
 
 
     def _remove_from_indexes(self, campaign_id: str) -> None:
@@ -161,9 +161,8 @@ class IntradayCampaignDetector:
         # Remove from state index
         self._campaigns_by_state[campaign.state].discard(campaign_id)
 
-        # Remove from time windows
-        if campaign_id in self._active_time_windows:
-            self._active_time_windows.remove(campaign_id)
+        # Remove from time windows - O(1) dict operation
+        self._active_time_windows.pop(campaign_id, None)
 
         # Remove from ID index
         del self._campaigns_by_id[campaign_id]
@@ -264,7 +263,9 @@ def _find_matching_campaign(self, pattern: Pattern) -> Optional[Campaign]:
     active campaigns from time window (O(k) where k << n).
     """
     # Search recent active campaigns first (hot path)
-    for campaign_id in reversed(self._active_time_windows[-20:]):  # Last 20 active
+    # Dict maintains insertion order, get last 20 keys
+    recent_ids = list(self._active_time_windows.keys())[-20:]
+    for campaign_id in reversed(recent_ids):
         campaign = self._campaigns_by_id.get(campaign_id)
         if campaign and self._pattern_matches_campaign(pattern, campaign):
             return campaign
