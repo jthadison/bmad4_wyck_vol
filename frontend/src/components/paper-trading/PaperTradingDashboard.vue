@@ -13,9 +13,9 @@
           Last updated: {{ formatLastUpdated(lastUpdated) }}
         </span>
         <button
-          @click="handleRefresh"
           :disabled="loading"
           class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
+          @click="handleRefresh"
         >
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }"></i>
           Refresh
@@ -42,8 +42,8 @@
       <i class="pi pi-exclamation-triangle text-4xl text-red-400 mb-4"></i>
       <p class="text-red-300 mb-4">{{ error }}</p>
       <button
-        @click="handleRefresh"
         class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+        @click="handleRefresh"
       >
         Try Again
       </button>
@@ -163,7 +163,7 @@
           :rows="10"
           :loading="loading"
           class="p-datatable-sm"
-          responsiveLayout="scroll"
+          responsive-layout="scroll"
         >
           <template #empty>
             <div class="text-center py-8 text-gray-400">
@@ -269,7 +269,7 @@
           :rows="10"
           :loading="loading"
           class="p-datatable-sm"
-          responsiveLayout="scroll"
+          responsive-layout="scroll"
         >
           <template #empty>
             <div class="text-center py-8 text-gray-400">

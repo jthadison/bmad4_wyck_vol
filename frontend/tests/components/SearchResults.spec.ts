@@ -4,6 +4,7 @@
  * Tests for search results display, keyboard navigation, and routing.
  */
 
+import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -39,8 +40,8 @@ vi.mock('primevue/message', () => ({
 }))
 
 describe('SearchResults', () => {
-  let pinia: any
-  let router: any
+  let pinia: ReturnType<typeof createPinia>
+  let router: unknown
 
   const mockSearchResults: SearchResult[] = [
     {
@@ -125,7 +126,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     expect(vm.searchQuery).toBe('spring')
   })
 
@@ -165,7 +166,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.getCategorySeverity('GLOSSARY')).toBe('info')
     expect(vm.getCategorySeverity('FAQ')).toBe('success')
@@ -255,7 +256,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.selectedIndex).toBe(0)
 
@@ -278,7 +279,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     vm.selectedIndex = 1
 
@@ -298,7 +299,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.selectedIndex = 0
 
     // Try to go up from 0
@@ -317,7 +318,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.selectedIndex = 2 // Last item
 
     // Try to go down from last item
@@ -333,7 +334,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const pushSpy = vi.spyOn(router, 'push')
 
     vm.navigateToResult('spring', 'GLOSSARY')
@@ -348,7 +349,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const pushSpy = vi.spyOn(router, 'push')
 
     vm.navigateToResult('identifying-springs', 'TUTORIAL')
@@ -363,7 +364,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const pushSpy = vi.spyOn(router, 'push')
 
     vm.navigateToResult('what-is-a-spring', 'FAQ')
@@ -381,7 +382,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const pushSpy = vi.spyOn(router, 'push')
 
     vm.selectedIndex = 0
@@ -402,7 +403,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const preventDefaultMock = vi.fn()
 
     vm.handleKeyDown({ key: 'ArrowDown', preventDefault: preventDefaultMock })
@@ -467,7 +468,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const pushSpy = vi.spyOn(router, 'push')
 
     // Click on first result (index 0)
@@ -486,7 +487,7 @@ describe('SearchResults', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     vm.selectedIndex = 1
 

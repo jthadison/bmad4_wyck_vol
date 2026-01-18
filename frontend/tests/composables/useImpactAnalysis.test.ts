@@ -65,16 +65,16 @@ describe('useImpactAnalysis', () => {
   })
 
   it('sets loading state during analysis', async () => {
-    let resolveApi: any
+    let resolveApi: (value: unknown) => void
     vi.mocked(api.analyzeConfigImpact).mockImplementation(
       () =>
         new Promise((resolve) => {
-          resolveApi = () => resolve({ data: mockImpact } as any)
+          resolveApi = () => resolve({ data: mockImpact } as unknown)
         })
     )
     const { loading, analyze } = useImpactAnalysis({ debounceMs: 0 })
 
-    const promise = analyze(mockConfig as any)
+    const promise = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
 
     // Now loading should be true
@@ -90,10 +90,10 @@ describe('useImpactAnalysis', () => {
   it('calls API and sets impact result', async () => {
     vi.mocked(api.analyzeConfigImpact).mockResolvedValue({
       data: mockImpact,
-    } as any)
+    } as unknown)
     const { impact, analyze } = useImpactAnalysis({ debounceMs: 0 })
 
-    const promise = analyze(mockConfig as any)
+    const promise = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise
 
@@ -107,7 +107,7 @@ describe('useImpactAnalysis', () => {
     )
     const { error, impact, analyze } = useImpactAnalysis({ debounceMs: 0 })
 
-    const promise = analyze(mockConfig as any)
+    const promise = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise
 
@@ -118,12 +118,12 @@ describe('useImpactAnalysis', () => {
   it('debounces API calls', async () => {
     vi.mocked(api.analyzeConfigImpact).mockResolvedValue({
       data: mockImpact,
-    } as any)
+    } as unknown)
     const { analyze } = useImpactAnalysis({ debounceMs: 1000 })
 
-    analyze(mockConfig as any)
-    analyze(mockConfig as any)
-    analyze(mockConfig as any)
+    analyze(mockConfig as unknown)
+    analyze(mockConfig as unknown)
+    analyze(mockConfig as unknown)
 
     expect(api.analyzeConfigImpact).not.toHaveBeenCalled()
 
@@ -136,14 +136,14 @@ describe('useImpactAnalysis', () => {
   it('caches identical configurations', async () => {
     vi.mocked(api.analyzeConfigImpact).mockResolvedValue({
       data: mockImpact,
-    } as any)
+    } as unknown)
     const { analyze } = useImpactAnalysis({ debounceMs: 0, enableCache: true })
 
-    const promise1 = analyze(mockConfig as any)
+    const promise1 = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise1
 
-    const promise2 = analyze(mockConfig as any)
+    const promise2 = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise2
 
@@ -153,14 +153,14 @@ describe('useImpactAnalysis', () => {
   it('does not cache when disabled', async () => {
     vi.mocked(api.analyzeConfigImpact).mockResolvedValue({
       data: mockImpact,
-    } as any)
+    } as unknown)
     const { analyze } = useImpactAnalysis({ debounceMs: 0, enableCache: false })
 
-    const promise1 = analyze(mockConfig as any)
+    const promise1 = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise1
 
-    const promise2 = analyze(mockConfig as any)
+    const promise2 = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise2
 
@@ -170,12 +170,12 @@ describe('useImpactAnalysis', () => {
   it('clears impact on clearImpact()', async () => {
     vi.mocked(api.analyzeConfigImpact).mockResolvedValue({
       data: mockImpact,
-    } as any)
+    } as unknown)
     const { impact, analyze, clearImpact } = useImpactAnalysis({
       debounceMs: 0,
     })
 
-    const promise = analyze(mockConfig as any)
+    const promise = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise
 
@@ -188,19 +188,19 @@ describe('useImpactAnalysis', () => {
   it('clears cache on clearCache()', async () => {
     vi.mocked(api.analyzeConfigImpact).mockResolvedValue({
       data: mockImpact,
-    } as any)
+    } as unknown)
     const { analyze, clearCache } = useImpactAnalysis({
       debounceMs: 0,
       enableCache: true,
     })
 
-    const promise1 = analyze(mockConfig as any)
+    const promise1 = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise1
 
     clearCache()
 
-    const promise2 = analyze(mockConfig as any)
+    const promise2 = analyze(mockConfig as unknown)
     await vi.runAllTimersAsync()
     await promise2
 

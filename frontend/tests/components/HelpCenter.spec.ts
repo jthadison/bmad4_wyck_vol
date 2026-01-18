@@ -4,6 +4,7 @@
  * Tests for HelpCenter component navigation, search, and responsiveness.
  */
 
+import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -58,8 +59,8 @@ vi.mock('primevue/tag', () => ({
 }))
 
 describe('HelpCenter', () => {
-  let router: any
-  let pinia: any
+  let router: unknown
+  let pinia: ReturnType<typeof createPinia>
 
   beforeEach(() => {
     pinia = createPinia()
@@ -195,7 +196,7 @@ describe('HelpCenter', () => {
 
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     await vm.navigateToArticle('spring-pattern')
     await router.isReady()
 

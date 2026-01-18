@@ -68,13 +68,13 @@ describe('Configuration Wizard E2E Workflow', () => {
     vi.clearAllMocks()
     vi.mocked(api.getConfiguration).mockResolvedValue({
       data: mockConfig,
-    } as any)
+    } as unknown)
     vi.mocked(api.analyzeConfigImpact).mockResolvedValue({
       data: mockImpact,
-    } as any)
+    } as unknown)
     vi.mocked(api.updateConfiguration).mockResolvedValue({
       data: { ...mockConfig, version: 2 },
-    } as any)
+    } as unknown)
   })
 
   it('completes full workflow: load → modify → analyze → confirm → save', async () => {
@@ -98,8 +98,8 @@ describe('Configuration Wizard E2E Workflow', () => {
     const parameterInputs = wrapper.findAllComponents(ParameterInput)
     expect(parameterInputs.length).toBeGreaterThan(0)
 
-    const springVolumeInput = parameterInputs.find(
-      (c) => c.props('label')?.includes('Spring Volume Min')
+    const springVolumeInput = parameterInputs.find((c) =>
+      c.props('label')?.includes('Spring Volume Min')
     )
     expect(springVolumeInput).toBeTruthy()
 
@@ -124,8 +124,9 @@ describe('Configuration Wizard E2E Workflow', () => {
     expect(applyButton).toBeTruthy()
 
     // Manually set hasChanges to true for testing
-    ;(wrapper.vm as any).proposedConfig.volume_thresholds.spring_volume_min =
-      0.65
+    ;(
+      wrapper.vm as unknown
+    ).proposedConfig.volume_thresholds.spring_volume_min = 0.65
     await wrapper.vm.$nextTick()
 
     await applyButton!.trigger('click')
@@ -151,7 +152,7 @@ describe('Configuration Wizard E2E Workflow', () => {
     )
 
     // Step 9: Configuration should be updated
-    expect((wrapper.vm as any).currentConfig.version).toBe(2)
+    expect((wrapper.vm as unknown).currentConfig.version).toBe(2)
   })
 
   it('handles cancel workflow: load → modify → cancel', async () => {
@@ -170,12 +171,13 @@ describe('Configuration Wizard E2E Workflow', () => {
     await flushPromises()
 
     // Modify parameter
-    ;(wrapper.vm as any).proposedConfig.risk_limits.max_risk_per_trade = '2.50'
+    ;(wrapper.vm as unknown).proposedConfig.risk_limits.max_risk_per_trade =
+      '2.50'
     await wrapper.vm.$nextTick()
 
     // Original value should still be in currentConfig
     expect(
-      (wrapper.vm as any).currentConfig.risk_limits.max_risk_per_trade
+      (wrapper.vm as unknown).currentConfig.risk_limits.max_risk_per_trade
     ).toBe('2.00')
 
     // Click cancel
@@ -186,7 +188,7 @@ describe('Configuration Wizard E2E Workflow', () => {
 
     // Proposed config should revert to original
     expect(
-      (wrapper.vm as any).proposedConfig.risk_limits.max_risk_per_trade
+      (wrapper.vm as unknown).proposedConfig.risk_limits.max_risk_per_trade
     ).toBe('2.00')
   })
 
@@ -207,7 +209,8 @@ describe('Configuration Wizard E2E Workflow', () => {
     expect(api.getConfiguration).toHaveBeenCalledTimes(1)
 
     // Modify parameter
-    ;(wrapper.vm as any).proposedConfig.risk_limits.max_risk_per_trade = '2.50'
+    ;(wrapper.vm as unknown).proposedConfig.risk_limits.max_risk_per_trade =
+      '2.50'
     await wrapper.vm.$nextTick()
 
     // Simulate 409 conflict response
@@ -216,14 +219,14 @@ describe('Configuration Wizard E2E Workflow', () => {
     })
 
     // Attempt save
-    await (wrapper.vm as any).confirmSave()
+    await (wrapper.vm as unknown).confirmSave()
     await flushPromises()
 
     // Configuration should reload
     expect(api.getConfiguration).toHaveBeenCalledTimes(2)
 
     // Current config should be refreshed
-    expect((wrapper.vm as any).currentConfig.version).toBe(1)
+    expect((wrapper.vm as unknown).currentConfig.version).toBe(1)
   })
 
   it('displays impact analysis when parameter changes', async () => {
@@ -269,13 +272,16 @@ describe('Configuration Wizard E2E Workflow', () => {
     await flushPromises()
 
     // Modify all risk limits
-    ;(wrapper.vm as any).proposedConfig.risk_limits.max_risk_per_trade = '2.50'
-    ;(wrapper.vm as any).proposedConfig.risk_limits.max_campaign_risk = '6.00'
-    ;(wrapper.vm as any).proposedConfig.risk_limits.max_portfolio_heat = '12.00'
+    ;(wrapper.vm as unknown).proposedConfig.risk_limits.max_risk_per_trade =
+      '2.50'
+    ;(wrapper.vm as unknown).proposedConfig.risk_limits.max_campaign_risk =
+      '6.00'
+    ;(wrapper.vm as unknown).proposedConfig.risk_limits.max_portfolio_heat =
+      '12.00'
     await wrapper.vm.$nextTick()
 
     // Attempt save
-    await (wrapper.vm as any).confirmSave()
+    await (wrapper.vm as unknown).confirmSave()
     await flushPromises()
 
     // Verify all risk limits are sent correctly
@@ -307,14 +313,15 @@ describe('Configuration Wizard E2E Workflow', () => {
     await flushPromises()
 
     // Modify multiple volume thresholds
-    ;(wrapper.vm as any).proposedConfig.volume_thresholds.spring_volume_min =
-      0.65
-    ;(wrapper.vm as any).proposedConfig.volume_thresholds.sos_volume_min =
+    ;(
+      wrapper.vm as unknown
+    ).proposedConfig.volume_thresholds.spring_volume_min = 0.65
+    ;(wrapper.vm as unknown).proposedConfig.volume_thresholds.sos_volume_min =
       '1.80'
     await wrapper.vm.$nextTick()
 
     // Save
-    await (wrapper.vm as any).confirmSave()
+    await (wrapper.vm as unknown).confirmSave()
     await flushPromises()
 
     // Verify both changes persisted
@@ -347,8 +354,9 @@ describe('Configuration Wizard E2E Workflow', () => {
     await flushPromises()
 
     // Modify to invalid value (spring volume > 1.0)
-    ;(wrapper.vm as any).proposedConfig.volume_thresholds.spring_volume_min =
-      1.2
+    ;(
+      wrapper.vm as unknown
+    ).proposedConfig.volume_thresholds.spring_volume_min = 1.2
     await wrapper.vm.$nextTick()
 
     // Mock validation error
@@ -364,7 +372,7 @@ describe('Configuration Wizard E2E Workflow', () => {
     })
 
     // Attempt save
-    await (wrapper.vm as any).confirmSave()
+    await (wrapper.vm as unknown).confirmSave()
     await flushPromises()
 
     // Error toast should be displayed (can't easily verify toast content in unit test)
@@ -388,14 +396,15 @@ describe('Configuration Wizard E2E Workflow', () => {
 
     // Modify confidence thresholds
     ;(
-      wrapper.vm as any
+      wrapper.vm as unknown
     ).proposedConfig.pattern_confidence.min_spring_confidence = 75
-    ;(wrapper.vm as any).proposedConfig.pattern_confidence.min_sos_confidence =
-      80
+    ;(
+      wrapper.vm as unknown
+    ).proposedConfig.pattern_confidence.min_sos_confidence = 80
     await wrapper.vm.$nextTick()
 
     // Save
-    await (wrapper.vm as any).confirmSave()
+    await (wrapper.vm as unknown).confirmSave()
     await flushPromises()
 
     // Verify confidence changes

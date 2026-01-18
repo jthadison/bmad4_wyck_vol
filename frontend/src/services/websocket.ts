@@ -1,37 +1,8 @@
-// WebSocket message types
-export interface ConnectedMessage {
-  type: 'connected'
-  connection_id: string
-  sequence_number: number
-}
+import type { WebSocketMessage } from '@/types/websocket'
 
-export interface PatternDetectedMessage {
-  type: 'pattern_detected'
-  pattern_id: string
-  symbol: string
-  pattern_type: string
-  sequence_number: number
-}
-
-export interface SignalGeneratedMessage {
-  type: 'signal_generated'
-  signal: any // Will be replaced with actual Signal type from codegen
-  sequence_number: number
-}
-
-export interface BatchUpdateMessage {
-  type: 'batch_update'
-  updates: any[]
-  sequence_number: number
-}
-
-export type WebSocketMessage =
-  | ConnectedMessage
-  | PatternDetectedMessage
-  | SignalGeneratedMessage
-  | BatchUpdateMessage
-
-type EventHandler = (message: any) => void
+type EventHandler = (
+  message: WebSocketMessage | Record<string, unknown>
+) => void
 
 /**
  * WebSocket client for real-time updates
@@ -271,7 +242,7 @@ export class WebSocketClient {
   /**
    * Send message to server
    */
-  send(message: any): void {
+  send(message: Record<string, unknown>): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message))
     } else {
@@ -305,7 +276,10 @@ export class WebSocketClient {
   /**
    * Emit event to all registered handlers
    */
-  private emit(eventType: string, message: any): void {
+  private emit(
+    eventType: string,
+    message: WebSocketMessage | Record<string, unknown>
+  ): void {
     const handlers = this.eventHandlers.get(eventType)
     if (handlers) {
       handlers.forEach((handler) => handler(message))

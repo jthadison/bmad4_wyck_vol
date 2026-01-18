@@ -125,7 +125,7 @@ describe('useBacktestData', () => {
       const { loading, fetchBacktestResult } = useBacktestData()
 
       // Create a promise we can control
-      let resolvePromise: (value: any) => void
+      let resolvePromise: (value: unknown) => void
       const controlledPromise = new Promise((resolve) => {
         resolvePromise = resolve
       })

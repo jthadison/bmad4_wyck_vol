@@ -327,10 +327,7 @@
 import { ref, onMounted } from 'vue'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePushNotifications } from '@/composables/usePushNotifications'
-import type {
-  NotificationPreferences,
-  NotificationChannel,
-} from '@/types/notification'
+import type { NotificationPreferences } from '@/types/notification'
 import InputSwitch from 'primevue/inputswitch'
 import InputText from 'primevue/inputtext'
 import InputMask from 'primevue/inputmask'
@@ -407,7 +404,7 @@ async function loadPreferences() {
     if (notificationStore.preferences) {
       localPreferences.value = { ...notificationStore.preferences }
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     errorMessage.value = 'Failed to load preferences'
     console.error('Error loading preferences:', err)
   } finally {
@@ -428,7 +425,7 @@ async function savePreferences() {
     setTimeout(() => {
       successMessage.value = ''
     }, 3000)
-  } catch (err: any) {
+  } catch (err: unknown) {
     errorMessage.value = err.message || 'Failed to save preferences'
   } finally {
     isSaving.value = false
@@ -447,7 +444,7 @@ async function sendTest(channel: 'email' | 'sms' | 'push') {
     setTimeout(() => {
       successMessage.value = ''
     }, 3000)
-  } catch (err: any) {
+  } catch (err: unknown) {
     errorMessage.value =
       err.response?.data?.detail ||
       err.message ||
@@ -491,7 +488,7 @@ async function handleChannelToggle(channel: string, enabled: boolean) {
       setTimeout(() => {
         successMessage.value = ''
       }, 3000)
-    } catch (err: any) {
+    } catch (err: unknown) {
       errorMessage.value =
         err.message || 'Failed to subscribe to push notifications'
       localPreferences.value.push_enabled = false

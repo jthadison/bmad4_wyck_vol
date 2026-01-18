@@ -54,7 +54,12 @@ export const useNotificationStore = defineStore('notification', () => {
     error.value = null
 
     try {
-      const params: any = { limit, offset }
+      const params: {
+        limit: number
+        offset: number
+        unread_only?: boolean
+        notification_type?: NotificationType
+      } = { limit, offset }
       if (unreadOnly) params.unread_only = true
       if (notificationType) params.notification_type = notificationType
 
@@ -70,8 +75,9 @@ export const useNotificationStore = defineStore('notification', () => {
       }
 
       totalCount.value = response.data.pagination.total_count
-    } catch (err: any) {
-      error.value = err.message || 'Failed to fetch notifications'
+    } catch (err: unknown) {
+      error.value =
+        err instanceof Error ? err.message : 'Failed to fetch notifications'
       console.error('Error fetching notifications:', err)
     } finally {
       isLoading.value = false
@@ -89,7 +95,7 @@ export const useNotificationStore = defineStore('notification', () => {
       if (notification) {
         notification.read = true
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error marking notification as read:', err)
       throw err
     }
@@ -116,8 +122,9 @@ export const useNotificationStore = defineStore('notification', () => {
         '/api/v1/notifications/preferences'
       )
       preferences.value = response.data
-    } catch (err: any) {
-      error.value = err.message || 'Failed to fetch preferences'
+    } catch (err: unknown) {
+      error.value =
+        err instanceof Error ? err.message : 'Failed to fetch preferences'
       console.error('Error fetching preferences:', err)
     } finally {
       isLoading.value = false
@@ -133,8 +140,9 @@ export const useNotificationStore = defineStore('notification', () => {
     try {
       await apiClient.post('/api/v1/notifications/preferences', newPreferences)
       preferences.value = newPreferences
-    } catch (err: any) {
-      error.value = err.message || 'Failed to update preferences'
+    } catch (err: unknown) {
+      error.value =
+        err instanceof Error ? err.message : 'Failed to update preferences'
       console.error('Error updating preferences:', err)
       throw err
     } finally {
@@ -147,7 +155,7 @@ export const useNotificationStore = defineStore('notification', () => {
   ): Promise<void> {
     try {
       await apiClient.post(`/api/v1/notifications/test/${channel}`)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(`Error sending test ${channel}:`, err)
       throw err
     }

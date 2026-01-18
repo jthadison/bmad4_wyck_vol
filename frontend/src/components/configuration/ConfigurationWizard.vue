@@ -49,7 +49,7 @@ async function loadConfiguration() {
     const response = await getConfiguration()
     currentConfig.value = response.data
     Object.assign(proposedConfig, response.data)
-  } catch (error: any) {
+  } catch (error: unknown) {
     toast.add({
       severity: 'error',
       summary: 'Error',
@@ -97,7 +97,7 @@ async function confirmSave() {
       detail: 'Configuration updated successfully',
       life: 3000,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error.response?.status === 409) {
       toast.add({
         severity: 'error',

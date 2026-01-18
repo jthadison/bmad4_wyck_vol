@@ -4,6 +4,7 @@
  * Tests for GlossaryView filtering, expansion, and navigation.
  */
 
+import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -45,7 +46,7 @@ vi.mock('primevue/message', () => ({
 }))
 
 describe('GlossaryView', () => {
-  let pinia: any
+  let pinia: ReturnType<typeof createPinia>
 
   const mockTerms: GlossaryTerm[] = [
     {
@@ -139,7 +140,7 @@ describe('GlossaryView', () => {
     wrapper.vm.$data.selectedPhase = 'C'
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     expect(vm.filteredTerms).toHaveLength(2)
     expect(
       vm.filteredTerms.every((t: GlossaryTerm) => t.wyckoff_phase === 'C')
@@ -159,7 +160,7 @@ describe('GlossaryView', () => {
     wrapper.vm.$data.searchFilter = 'spring'
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     expect(vm.filteredTerms).toHaveLength(1)
     expect(vm.filteredTerms[0].term).toBe('Spring')
   })
@@ -174,7 +175,7 @@ describe('GlossaryView', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const sortedTerms = vm.filteredTerms
 
     expect(sortedTerms[0].term).toBe('Creek')
@@ -192,7 +193,7 @@ describe('GlossaryView', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Initially not expanded
     expect(vm.expandedTermId).toBeNull()
@@ -215,7 +216,7 @@ describe('GlossaryView', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.getPhaseSeverity('A')).toBe('danger')
     expect(vm.getPhaseSeverity('B')).toBe('warning')
@@ -234,7 +235,7 @@ describe('GlossaryView', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.hasTermsStartingWith('S')).toBe(true)
     expect(vm.hasTermsStartingWith('U')).toBe(true)

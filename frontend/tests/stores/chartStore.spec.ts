@@ -50,7 +50,7 @@ describe('useChartStore', () => {
         symbol: 'AAPL',
         timeframe: '1D',
         bars: [],
-        patterns: [{ id: '1', pattern_type: 'SPRING' } as any],
+        patterns: [{ id: '1', pattern_type: 'SPRING' } as unknown],
         level_lines: [],
         phase_annotations: [],
         trading_ranges: [],
@@ -77,7 +77,14 @@ describe('useChartStore', () => {
           symbol: 'AAPL',
           timeframe: '1D',
           bars: [
-            { time: 1710345600, open: 150, high: 152, low: 149, close: 151, volume: 1000000 },
+            {
+              time: 1710345600,
+              open: 150,
+              high: 152,
+              low: 149,
+              close: 151,
+              volume: 1000000,
+            },
           ],
           patterns: [],
           level_lines: [],
@@ -197,7 +204,10 @@ describe('useChartStore', () => {
         await store.changeSymbol('MSFT')
 
         expect(store.selectedSymbol).toBe('MSFT')
-        expect(axios.get).toHaveBeenCalledWith('/api/v1/charts/data', expect.any(Object))
+        expect(axios.get).toHaveBeenCalledWith(
+          '/api/v1/charts/data',
+          expect.any(Object)
+        )
       })
 
       it('should not fetch if symbol is the same', async () => {
@@ -213,8 +223,14 @@ describe('useChartStore', () => {
       it('should clear all cache', () => {
         const store = useChartStore()
 
-        store.cache.set('AAPL:1D', { data: {} as any, timestamp: Date.now() })
-        store.cache.set('MSFT:1W', { data: {} as any, timestamp: Date.now() })
+        store.cache.set('AAPL:1D', {
+          data: {} as unknown,
+          timestamp: Date.now(),
+        })
+        store.cache.set('MSFT:1W', {
+          data: {} as unknown,
+          timestamp: Date.now(),
+        })
 
         store.clearCache()
 
@@ -224,8 +240,14 @@ describe('useChartStore', () => {
       it('should clear specific cache entry', () => {
         const store = useChartStore()
 
-        store.cache.set('AAPL:1D', { data: {} as any, timestamp: Date.now() })
-        store.cache.set('MSFT:1W', { data: {} as any, timestamp: Date.now() })
+        store.cache.set('AAPL:1D', {
+          data: {} as unknown,
+          timestamp: Date.now(),
+        })
+        store.cache.set('MSFT:1W', {
+          data: {} as unknown,
+          timestamp: Date.now(),
+        })
 
         store.clearCache('AAPL', '1D')
 

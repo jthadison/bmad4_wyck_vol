@@ -66,7 +66,7 @@ export function usePushNotifications() {
       await navigator.serviceWorker.ready
 
       return registration
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Push] Service worker registration failed:', err)
       state.value.error = 'Failed to register service worker'
       throw err
@@ -93,7 +93,7 @@ export function usePushNotifications() {
       }
 
       return permission
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Push] Permission request failed:', err)
       state.value.error = 'Failed to request permission'
       throw err
@@ -145,10 +145,11 @@ export function usePushNotifications() {
 
       state.value.isSubscribed = true
       console.log('[Push] Subscribed successfully')
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Push] Subscription failed:', err)
       state.value.error =
-        err.message || 'Failed to subscribe to push notifications'
+        (err instanceof Error ? err.message : null) ||
+        'Failed to subscribe to push notifications'
       throw err
     } finally {
       state.value.isLoading = false
@@ -182,10 +183,11 @@ export function usePushNotifications() {
 
       state.value.isSubscribed = false
       console.log('[Push] Unsubscribed successfully')
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Push] Unsubscribe failed:', err)
       state.value.error =
-        err.message || 'Failed to unsubscribe from push notifications'
+        (err instanceof Error ? err.message : null) ||
+        'Failed to unsubscribe from push notifications'
       throw err
     } finally {
       state.value.isLoading = false
@@ -212,7 +214,7 @@ export function usePushNotifications() {
       state.value.permission = Notification.permission
 
       return state.value.isSubscribed
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Push] Failed to check subscription:', err)
       return false
     }

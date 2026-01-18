@@ -77,7 +77,7 @@ describe('WebSocket → Pinia Store Integration', () => {
     websocketService.disconnect()
 
     // Clear subscribers
-    ;(websocketService as any).subscribers.clear()
+    ;(websocketService as unknown).subscribers.clear()
   })
 
   afterEach(() => {
@@ -122,7 +122,7 @@ describe('WebSocket → Pinia Store Integration', () => {
       }
 
       // Emit event via WebSocket service
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', {
@@ -183,7 +183,7 @@ describe('WebSocket → Pinia Store Integration', () => {
         } as Signal,
       }
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', {
@@ -239,7 +239,7 @@ describe('WebSocket → Pinia Store Integration', () => {
         } as Partial<Signal>,
       }
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', {
@@ -295,7 +295,7 @@ describe('WebSocket → Pinia Store Integration', () => {
         } as Partial<Signal>,
       }
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', {
@@ -324,7 +324,7 @@ describe('WebSocket → Pinia Store Integration', () => {
       await websocketService.connect()
       await new Promise((resolve) => setTimeout(resolve, 10))
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
 
       // Event 1: New signal
       const newSignal: WebSocketMessage = {

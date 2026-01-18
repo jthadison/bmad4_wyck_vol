@@ -4,6 +4,7 @@
  * Tests for article display, TOC generation, responsive behavior, and user actions.
  */
 
+import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -55,8 +56,8 @@ vi.mock('primevue/usetoast', () => ({
 }))
 
 describe('ArticleView', () => {
-  let pinia: any
-  let router: any
+  let pinia: ReturnType<typeof createPinia>
+  let router: unknown
 
   const mockArticle: HelpArticle = {
     id: '1',
@@ -420,7 +421,7 @@ describe('ArticleView', () => {
     )
     expect(headers.length).toBeGreaterThan(0)
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // The component automatically calls generateTableOfContents in onMounted
     // Should have 3 TOC items: Introduction (h2), Key Principles (h3), Conclusion (h2)
@@ -449,7 +450,7 @@ describe('ArticleView', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.isMobile = false
     vm.tableOfContents = [
       { id: 'heading-0', text: 'Introduction', level: 2 },
@@ -482,7 +483,7 @@ describe('ArticleView', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.isMobile = true
     vm.tableOfContents = [
       { id: 'heading-0', text: 'Introduction', level: 2 },
@@ -517,7 +518,7 @@ describe('ArticleView', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.tableOfContents = []
 
     await wrapper.vm.$nextTick()
@@ -546,7 +547,7 @@ describe('ArticleView', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.isMobile = false
     vm.tableOfContents = [
       { id: 'heading-0', text: 'Introduction', level: 2 },
@@ -585,7 +586,7 @@ describe('ArticleView', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.isMobile = false
     vm.tableOfContents = [{ id: 'heading-0', text: 'Introduction', level: 2 }]
 
@@ -624,7 +625,7 @@ describe('ArticleView', () => {
 
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     await vm.copyArticleUrl()
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -655,7 +656,7 @@ describe('ArticleView', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     await vm.copyArticleUrl()
 
@@ -679,7 +680,7 @@ describe('ArticleView', () => {
 
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.printArticle()
 
     expect(window.print).toHaveBeenCalled()
@@ -699,7 +700,7 @@ describe('ArticleView', () => {
       },
     })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Start desktop
     Object.defineProperty(window, 'innerWidth', { writable: true, value: 1200 })
@@ -826,7 +827,7 @@ describe('ArticleView', () => {
     articleBody.appendChild(h2)
     document.body.appendChild(articleBody)
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.generateTableOfContents()
 
     await wrapper.vm.$nextTick()

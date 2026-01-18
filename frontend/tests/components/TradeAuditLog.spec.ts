@@ -137,7 +137,7 @@ describe('TradeAuditLog', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     const { getAuditLog } = await import('@/services/api')
-    ;(getAuditLog as any).mockResolvedValue(mockAuditLogResponse)
+    ;(getAuditLog as unknown).mockResolvedValue(mockAuditLogResponse)
   })
 
   it('renders component correctly', async () => {
@@ -200,7 +200,7 @@ describe('TradeAuditLog', () => {
     await new Promise((resolve) => setTimeout(resolve, 600))
 
     // Set some filters
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.filters.searchText = 'test'
     vm.filters.selectedPatterns = ['SPRING']
 
@@ -233,7 +233,7 @@ describe('TradeAuditLog', () => {
       setAttribute: vi.fn(),
       style: {},
     }
-    vi.spyOn(document, 'createElement').mockReturnValue(mockLink as any)
+    vi.spyOn(document, 'createElement').mockReturnValue(mockLink as unknown)
 
     const wrapper = mount(TradeAuditLog, mountOptions)
 
@@ -241,7 +241,7 @@ describe('TradeAuditLog', () => {
     await new Promise((resolve) => setTimeout(resolve, 100))
 
     // Call exportToCSV directly
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.exportToCSV()
 
     await nextTick()
@@ -266,7 +266,7 @@ describe('TradeAuditLog', () => {
       setAttribute: vi.fn(),
       style: {},
     }
-    vi.spyOn(document, 'createElement').mockReturnValue(mockLink as any)
+    vi.spyOn(document, 'createElement').mockReturnValue(mockLink as unknown)
 
     const wrapper = mount(TradeAuditLog, mountOptions)
 
@@ -274,7 +274,7 @@ describe('TradeAuditLog', () => {
     await new Promise((resolve) => setTimeout(resolve, 100))
 
     // Call exportToJSON directly
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     vm.exportToJSON()
 
     await nextTick()
@@ -286,7 +286,7 @@ describe('TradeAuditLog', () => {
 
   it('handles API errors gracefully', async () => {
     const { getAuditLog } = await import('@/services/api')
-    ;(getAuditLog as any).mockRejectedValue(new Error('API Error'))
+    ;(getAuditLog as unknown).mockRejectedValue(new Error('API Error'))
 
     const wrapper = mount(TradeAuditLog, mountOptions)
 
@@ -306,26 +306,26 @@ describe('TradeAuditLog', () => {
 
     await nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Change filter
     vm.filters.searchText = 'test'
 
     // Should not fetch immediately
-    const callCountBefore = (getAuditLog as any).mock.calls.length
+    const callCountBefore = (getAuditLog as unknown).mock.calls.length
 
     // Fast forward 400ms (less than 500ms debounce)
     vi.advanceTimersByTime(400)
     await nextTick()
 
-    expect((getAuditLog as any).mock.calls.length).toBe(callCountBefore)
+    expect((getAuditLog as unknown).mock.calls.length).toBe(callCountBefore)
 
     // Fast forward another 200ms (total 600ms, exceeds 500ms debounce)
     vi.advanceTimersByTime(200)
     await nextTick()
 
     // Now it should have fetched
-    expect((getAuditLog as any).mock.calls.length).toBeGreaterThan(
+    expect((getAuditLog as unknown).mock.calls.length).toBeGreaterThan(
       callCountBefore
     )
 
@@ -338,7 +338,7 @@ describe('TradeAuditLog', () => {
     await nextTick()
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const relativeTime = vm.formatTimestamp('2024-03-15T14:30:00Z')
 
     // Should return relative format like "X hours ago" or "X days ago"
@@ -350,7 +350,7 @@ describe('TradeAuditLog', () => {
 
     await nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const formatted = vm.formatPrice('150.123456')
 
     expect(formatted).toBe('150.12')
@@ -361,7 +361,7 @@ describe('TradeAuditLog', () => {
 
     await nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
     const formatted = vm.formatPrice(null)
 
     expect(formatted).toBe('N/A')
@@ -372,7 +372,7 @@ describe('TradeAuditLog', () => {
 
     await nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.getStatusColor('FILLED')).toBe('success')
     expect(vm.getStatusColor('TARGET_HIT')).toBe('success')
@@ -388,7 +388,7 @@ describe('TradeAuditLog', () => {
 
     await nextTick()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     expect(vm.getConfidenceColor(85)).toBe('text-green-500')
     expect(vm.getConfidenceColor(75)).toBe('text-yellow-500')
@@ -401,7 +401,7 @@ describe('TradeAuditLog', () => {
     await nextTick()
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Initially no row expanded
     expect(vm.expandedRowId).toBeNull()
@@ -425,7 +425,7 @@ describe('TradeAuditLog', () => {
     await nextTick()
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown
 
     // Expand first row
     vm.expandedRowId = '1'

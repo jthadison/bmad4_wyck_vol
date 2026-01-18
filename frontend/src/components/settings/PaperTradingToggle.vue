@@ -44,14 +44,14 @@
         <Button
           label="Cancel"
           icon="pi pi-times"
-          @click="showDisableConfirm = false"
           text
+          @click="showDisableConfirm = false"
         />
         <Button
           label="Disable"
           icon="pi pi-power-off"
-          @click="confirmDisable"
           severity="danger"
+          @click="confirmDisable"
         />
       </template>
     </Dialog>

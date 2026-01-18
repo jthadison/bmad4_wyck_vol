@@ -114,7 +114,7 @@ describe('EquityCurveChart', () => {
       })
 
       // Access the component's chartData computed property
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
 
       expect(chartData.labels).toHaveLength(6)
       expect(chartData.datasets[0].data).toHaveLength(6)
@@ -128,7 +128,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
 
       // Check that labels are formatted dates (not raw timestamps)
       expect(chartData.labels[0]).toMatch(/Jan|Feb|Mar|Apr|May|Jun/)
@@ -143,10 +143,10 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
       const dataPoints = chartData.datasets[0].data
 
-      dataPoints.forEach((point: any) => {
+      dataPoints.forEach((point: unknown) => {
         expect(typeof point).toBe('number')
       })
 
@@ -164,7 +164,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
       const lineColor = chartData.datasets[0].borderColor
       const fillColor = chartData.datasets[0].backgroundColor
 
@@ -180,7 +180,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
       const lineColor = chartData.datasets[0].borderColor
       const fillColor = chartData.datasets[0].backgroundColor
 
@@ -203,7 +203,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
       const lineColor = chartData.datasets[0].borderColor
 
       expect(lineColor).toBe('rgb(34, 197, 94)') // Green (>= 0)
@@ -219,7 +219,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
       const dataset = chartData.datasets[0]
 
       expect(dataset.label).toBe('Portfolio Value')
@@ -237,7 +237,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
 
       expect(chartOptions.responsive).toBe(true)
       expect(chartOptions.maintainAspectRatio).toBe(false)
@@ -251,7 +251,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
 
       expect(chartOptions.plugins.legend.display).toBe(false)
     })
@@ -264,7 +264,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
 
       expect(chartOptions.plugins.tooltip).toBeDefined()
       expect(chartOptions.plugins.tooltip.callbacks).toBeDefined()
@@ -281,7 +281,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
       const yAxisCallback = chartOptions.scales.y.ticks.callback
 
       expect(typeof yAxisCallback).toBe('function')
@@ -299,7 +299,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
 
       expect(chartOptions.scales.x.grid.display).toBe(false)
       expect(chartOptions.scales.y.grid.color).toBeDefined()
@@ -313,7 +313,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
 
       expect(chartOptions.scales.x.ticks.maxTicksLimit).toBe(10)
     })
@@ -328,7 +328,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
       const labelCallback = chartOptions.plugins.tooltip.callbacks.label
 
       const context = {
@@ -350,7 +350,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
       const labelCallback = chartOptions.plugins.tooltip.callbacks.label
 
       const context = {
@@ -372,7 +372,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartOptions = (wrapper.vm as any).chartOptions
+      const chartOptions = (wrapper.vm as unknown).chartOptions
       const labelCallback = chartOptions.plugins.tooltip.callbacks.label
 
       const context = {
@@ -395,7 +395,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
 
       expect(chartData.labels).toHaveLength(0)
       expect(chartData.datasets[0].data).toHaveLength(0)
@@ -413,7 +413,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
 
       expect(chartData.labels).toHaveLength(1)
       expect(chartData.datasets[0].data).toHaveLength(1)
@@ -433,7 +433,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
       const lineColor = chartData.datasets[0].borderColor
 
       expect(lineColor).toBe('rgb(34, 197, 94)') // Still green
@@ -453,7 +453,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
 
       expect(chartData.datasets[0].data[0]).toBe(1000000)
       expect(chartData.datasets[0].data[2]).toBe(2000000)
@@ -472,7 +472,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const chartData = (wrapper.vm as any).chartData
+      const chartData = (wrapper.vm as unknown).chartData
 
       expect(chartData.datasets[0].data[0]).toBeCloseTo(100000.5678)
       expect(chartData.datasets[0].data[1]).toBeCloseTo(105432.1234)
@@ -488,7 +488,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const totalReturn = (wrapper.vm as any).totalReturn
+      const totalReturn = (wrapper.vm as unknown).totalReturn
       const returnValue = totalReturn.toNumber()
 
       expect(returnValue).toBe(25000) // 125000 - 100000
@@ -502,7 +502,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const isProfitable = (wrapper.vm as any).isProfitable
+      const isProfitable = (wrapper.vm as unknown).isProfitable
 
       expect(isProfitable).toBe(true)
     })
@@ -515,7 +515,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const isProfitable = (wrapper.vm as any).isProfitable
+      const isProfitable = (wrapper.vm as unknown).isProfitable
 
       expect(isProfitable).toBe(false)
     })
@@ -528,7 +528,7 @@ describe('EquityCurveChart', () => {
         },
       })
 
-      const totalReturn = (wrapper.vm as any).totalReturn
+      const totalReturn = (wrapper.vm as unknown).totalReturn
       const returnValue = totalReturn.toNumber()
 
       expect(returnValue).toBe(0)

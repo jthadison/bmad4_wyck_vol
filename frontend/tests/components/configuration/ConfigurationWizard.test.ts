@@ -79,7 +79,7 @@ describe('ConfigurationWizard', () => {
     it('loads configuration on mount', async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
 
       const wrapper = createWrapper()
       await flushPromises()
@@ -91,7 +91,7 @@ describe('ConfigurationWizard', () => {
       vi.mocked(api.getConfiguration).mockImplementation(
         () =>
           new Promise((resolve) =>
-            setTimeout(() => resolve({ data: mockConfig } as any), 100)
+            setTimeout(() => resolve({ data: mockConfig } as unknown), 100)
           )
       )
 
@@ -107,7 +107,7 @@ describe('ConfigurationWizard', () => {
     it('shows wizard content after loading', async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
 
       const wrapper = createWrapper()
       await flushPromises()
@@ -133,7 +133,7 @@ describe('ConfigurationWizard', () => {
     beforeEach(async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
     })
 
     it('renders header with title and description', async () => {
@@ -176,7 +176,7 @@ describe('ConfigurationWizard', () => {
     beforeEach(async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
     })
 
     it('displays "No changes" indicator initially', async () => {
@@ -212,7 +212,7 @@ describe('ConfigurationWizard', () => {
     beforeEach(async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
     })
 
     it('shows confirmation dialog when save button clicked', async () => {
@@ -220,7 +220,7 @@ describe('ConfigurationWizard', () => {
       await flushPromises()
 
       // Manually modify proposedConfig to trigger hasChanges
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
       await wrapper.vm.$nextTick()
 
@@ -230,24 +230,24 @@ describe('ConfigurationWizard', () => {
       )
       await applyButton?.trigger('click')
 
-      expect((wrapper.vm as any).showConfirmDialog).toBe(true)
+      expect((wrapper.vm as unknown).showConfirmDialog).toBe(true)
     })
 
     it('calls updateConfiguration with correct parameters on confirm', async () => {
       vi.mocked(api.updateConfiguration).mockResolvedValue({
         data: { ...mockConfig, version: 2 },
-      } as any)
+      } as unknown)
 
       const wrapper = createWrapper()
       await flushPromises()
 
       // Manually modify proposedConfig
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
       await wrapper.vm.$nextTick()
 
       // Trigger confirmSave directly
-      await (wrapper.vm as any).confirmSave()
+      await (wrapper.vm as unknown).confirmSave()
       await flushPromises()
 
       expect(api.updateConfiguration).toHaveBeenCalledWith(
@@ -263,13 +263,13 @@ describe('ConfigurationWizard', () => {
     it('displays success toast after successful save', async () => {
       vi.mocked(api.updateConfiguration).mockResolvedValue({
         data: { ...mockConfig, version: 2 },
-      } as any)
+      } as unknown)
 
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
-      await (wrapper.vm as any).confirmSave()
+      await (wrapper.vm as unknown).confirmSave()
       await flushPromises()
 
       // Toast should be added with success severity
@@ -280,16 +280,16 @@ describe('ConfigurationWizard', () => {
       const updatedConfig = { ...mockConfig, version: 2 }
       vi.mocked(api.updateConfiguration).mockResolvedValue({
         data: updatedConfig,
-      } as any)
+      } as unknown)
 
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
-      await (wrapper.vm as any).confirmSave()
+      await (wrapper.vm as unknown).confirmSave()
       await flushPromises()
 
-      expect((wrapper.vm as any).currentConfig.version).toBe(2)
+      expect((wrapper.vm as unknown).currentConfig.version).toBe(2)
     })
   })
 
@@ -297,7 +297,7 @@ describe('ConfigurationWizard', () => {
     beforeEach(async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
     })
 
     it('displays conflict error toast on 409 response', async () => {
@@ -307,9 +307,9 @@ describe('ConfigurationWizard', () => {
 
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
-      await (wrapper.vm as any).confirmSave()
+      await (wrapper.vm as unknown).confirmSave()
       await flushPromises()
 
       // Conflict toast should be added
@@ -325,9 +325,9 @@ describe('ConfigurationWizard', () => {
       await flushPromises()
 
       expect(api.getConfiguration).toHaveBeenCalledTimes(1)
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
-      await (wrapper.vm as any).confirmSave()
+      await (wrapper.vm as unknown).confirmSave()
       await flushPromises()
 
       expect(api.getConfiguration).toHaveBeenCalledTimes(2)
@@ -338,7 +338,7 @@ describe('ConfigurationWizard', () => {
     beforeEach(async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
     })
 
     it('displays error toast on save failure', async () => {
@@ -348,9 +348,9 @@ describe('ConfigurationWizard', () => {
 
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
-      await (wrapper.vm as any).confirmSave()
+      await (wrapper.vm as unknown).confirmSave()
       await flushPromises()
 
       // Error toast should be added
@@ -371,9 +371,9 @@ describe('ConfigurationWizard', () => {
 
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
-      await (wrapper.vm as any).confirmSave()
+      await (wrapper.vm as unknown).confirmSave()
       await flushPromises()
 
       // Validation error toast should be added with custom message
@@ -387,12 +387,12 @@ describe('ConfigurationWizard', () => {
 
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
-      await (wrapper.vm as any).confirmSave()
+      await (wrapper.vm as unknown).confirmSave()
       await flushPromises()
 
-      expect((wrapper.vm as any).savingConfig).toBe(false)
+      expect((wrapper.vm as unknown).savingConfig).toBe(false)
     })
   })
 
@@ -400,7 +400,7 @@ describe('ConfigurationWizard', () => {
     beforeEach(async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
     })
 
     it('reverts proposedConfig to currentConfig on cancel', async () => {
@@ -408,39 +408,39 @@ describe('ConfigurationWizard', () => {
       await flushPromises()
 
       // Modify proposedConfig
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
       await wrapper.vm.$nextTick()
 
       // Trigger cancel
-      await (wrapper.vm as any).handleCancel()
+      await (wrapper.vm as unknown).handleCancel()
       await wrapper.vm.$nextTick()
 
       expect(
-        (wrapper.vm as any).proposedConfig.risk_limits.max_risk_per_trade
+        (wrapper.vm as unknown).proposedConfig.risk_limits.max_risk_per_trade
       ).toBe('2.00')
     })
 
     it('displays info toast after cancel', async () => {
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
-      await (wrapper.vm as any).handleCancel()
+      await (wrapper.vm as unknown).handleCancel()
       await wrapper.vm.$nextTick()
 
       // Info toast should be added
-      expect((wrapper.vm as any).currentConfig).toBeTruthy()
+      expect((wrapper.vm as unknown).currentConfig).toBeTruthy()
     })
 
     it('does nothing when cancel clicked with no currentConfig', async () => {
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).currentConfig = null
-      await (wrapper.vm as any).handleCancel()
+      ;(wrapper.vm as unknown).currentConfig = null
+      await (wrapper.vm as unknown).handleCancel()
 
       // Should not throw error
-      expect((wrapper.vm as any).currentConfig).toBeNull()
+      expect((wrapper.vm as unknown).currentConfig).toBeNull()
     })
   })
 
@@ -448,28 +448,28 @@ describe('ConfigurationWizard', () => {
     beforeEach(async () => {
       vi.mocked(api.getConfiguration).mockResolvedValue({
         data: mockConfig,
-      } as any)
+      } as unknown)
     })
 
     it('disables save button while saving', async () => {
       vi.mocked(api.updateConfiguration).mockImplementation(
         () =>
           new Promise((resolve) =>
-            setTimeout(() => resolve({ data: mockConfig } as any), 100)
+            setTimeout(() => resolve({ data: mockConfig } as unknown), 100)
           )
       )
 
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
       await wrapper.vm.$nextTick()
 
       // Start save
-      ;(wrapper.vm as any).confirmSave()
+      ;(wrapper.vm as unknown).confirmSave()
       await wrapper.vm.$nextTick()
 
-      expect((wrapper.vm as any).savingConfig).toBe(true)
+      expect((wrapper.vm as unknown).savingConfig).toBe(true)
 
       const buttons = wrapper.findAllComponents({ name: 'Button' })
       const applyButton = buttons.find(
@@ -482,18 +482,18 @@ describe('ConfigurationWizard', () => {
       vi.mocked(api.updateConfiguration).mockImplementation(
         () =>
           new Promise((resolve) =>
-            setTimeout(() => resolve({ data: mockConfig } as any), 100)
+            setTimeout(() => resolve({ data: mockConfig } as unknown), 100)
           )
       )
 
       const wrapper = createWrapper()
       await flushPromises()
-      ;(wrapper.vm as any).proposedConfig.risk_limits!.max_risk_per_trade =
+      ;(wrapper.vm as unknown).proposedConfig.risk_limits!.max_risk_per_trade =
         '2.50'
       await wrapper.vm.$nextTick()
 
       // Start save
-      ;(wrapper.vm as any).confirmSave()
+      ;(wrapper.vm as unknown).confirmSave()
       await wrapper.vm.$nextTick()
 
       const buttons = wrapper.findAllComponents({ name: 'Button' })

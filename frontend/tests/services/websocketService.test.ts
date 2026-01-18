@@ -58,7 +58,7 @@ describe('WebSocketService', () => {
     websocketService.disconnect()
 
     // Clear any existing subscriptions
-    ;(websocketService as any).subscribers.clear()
+    ;(websocketService as unknown).subscribers.clear()
   })
 
   afterEach(() => {
@@ -131,7 +131,7 @@ describe('WebSocketService', () => {
       }
 
       // Trigger message handler
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', {
@@ -143,7 +143,7 @@ describe('WebSocketService', () => {
       // Wait for async processing
       await new Promise((resolve) => setTimeout(resolve, 10))
 
-      expect((websocketService as any).connectionId).toBe('test-conn-123')
+      expect((websocketService as unknown).connectionId).toBe('test-conn-123')
     })
   })
 
@@ -276,10 +276,10 @@ describe('WebSocketService', () => {
       }
 
       // Manually trigger message (simulating buffering scenario)
-      ;(websocketService as any).messageBuffer.push(message)
+      ;(websocketService as unknown).messageBuffer.push(message)
 
       // Verify buffer is not empty
-      expect((websocketService as any).messageBuffer.length).toBe(1)
+      expect((websocketService as unknown).messageBuffer.length).toBe(1)
     })
 
     it('should replay buffered messages on reconnection', async () => {
@@ -297,10 +297,10 @@ describe('WebSocketService', () => {
         timestamp: new Date().toISOString(),
         data: { test: 'data' },
       }
-      ;(websocketService as any).messageBuffer.push(message)
+      ;(websocketService as unknown).messageBuffer.push(message)
 
       // Manually emit the message to simulate buffer replay
-      ;(websocketService as any).emit(message.type, message)
+      ;(websocketService as unknown).emit(message.type, message)
 
       // Wait for async processing
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -320,16 +320,16 @@ describe('WebSocketService', () => {
         timestamp: new Date().toISOString(),
         data: {},
       }
-      ;(websocketService as any).messageBuffer.push(message)
+      ;(websocketService as unknown).messageBuffer.push(message)
 
       // Verify buffer has message
-      expect((websocketService as any).messageBuffer.length).toBe(1)
+      expect((websocketService as unknown).messageBuffer.length).toBe(1)
 
       // Clear buffer manually (simulating successful replay)
-      ;(websocketService as any).messageBuffer = []
+      ;(websocketService as unknown).messageBuffer = []
 
       // Buffer should be empty
-      expect((websocketService as any).messageBuffer.length).toBe(0)
+      expect((websocketService as unknown).messageBuffer.length).toBe(0)
     })
   })
 
@@ -342,7 +342,7 @@ describe('WebSocketService', () => {
       await websocketService.connect()
 
       // Simulate messages with increasing sequence numbers
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         for (let i = 0; i <= 5; i++) {
           const message: WebSocketMessage = {
@@ -359,14 +359,14 @@ describe('WebSocketService', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 10))
 
-      expect((websocketService as any).lastSequenceNumber).toBe(5)
+      expect((websocketService as unknown).lastSequenceNumber).toBe(5)
     })
 
     it('should track sequence numbers correctly', async () => {
       await websocketService.connect()
       await new Promise((resolve) => setTimeout(resolve, 10))
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         // Send messages with different sequence numbers
         for (let i = 1; i <= 3; i++) {
@@ -385,7 +385,7 @@ describe('WebSocketService', () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
 
       // Should track last sequence number
-      expect((websocketService as any).lastSequenceNumber).toBe(3)
+      expect((websocketService as unknown).lastSequenceNumber).toBe(3)
     })
   })
 
@@ -399,7 +399,7 @@ describe('WebSocketService', () => {
       websocketService.subscribe('signal:new', handler)
 
       // Verify subscription exists
-      const subscribers = (websocketService as any).subscribers
+      const subscribers = (websocketService as unknown).subscribers
       expect(subscribers.has('signal:new')).toBe(true)
       expect(subscribers.get('signal:new')).toContain(handler)
     })
@@ -409,7 +409,7 @@ describe('WebSocketService', () => {
       websocketService.subscribe('signal:new', handler)
       websocketService.unsubscribe('signal:new', handler)
 
-      const subscribers = (websocketService as any).subscribers
+      const subscribers = (websocketService as unknown).subscribers
       expect(subscribers.get('signal:new')).not.toContain(handler)
     })
 
@@ -426,7 +426,7 @@ describe('WebSocketService', () => {
         data: { symbol: 'AAPL' },
       }
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', { data: JSON.stringify(message) })
@@ -454,7 +454,7 @@ describe('WebSocketService', () => {
         data: {},
       }
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', { data: JSON.stringify(message) })
@@ -477,7 +477,7 @@ describe('WebSocketService', () => {
       await websocketService.connect()
       await new Promise((resolve) => setTimeout(resolve, 10))
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         // Send invalid JSON
         ws.onmessage(new MessageEvent('message', { data: 'invalid json' }))
@@ -507,7 +507,7 @@ describe('WebSocketService', () => {
         data: {},
       }
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', { data: JSON.stringify(message) })
@@ -533,7 +533,7 @@ describe('WebSocketService', () => {
         data: {},
       }
 
-      const ws = (websocketService as any).ws as MockWebSocket
+      const ws = (websocketService as unknown).ws as MockWebSocket
       if (ws && ws.onmessage) {
         ws.onmessage(
           new MessageEvent('message', { data: JSON.stringify(message) })

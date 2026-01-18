@@ -9,8 +9,8 @@ class MockWebSocket {
   readyState = MockWebSocket.OPEN
   onopen: (() => void) | null = null
   onclose: (() => void) | null = null
-  onmessage: ((event: any) => void) | null = null
-  onerror: ((error: any) => void) | null = null
+  onmessage: ((event: { data: string }) => void) | null = null
+  onerror: ((error: Event) => void) | null = null
 
   close() {
     this.readyState = MockWebSocket.CLOSED
@@ -23,7 +23,7 @@ class MockWebSocket {
     // Mock send
   }
 
-  simulateMessage(data: any) {
+  simulateMessage(data: Record<string, unknown>) {
     if (this.onmessage) {
       this.onmessage({ data: JSON.stringify(data) })
     }
@@ -36,7 +36,7 @@ class MockWebSocket {
   }
 }
 
-global.WebSocket = MockWebSocket as any
+global.WebSocket = MockWebSocket as unknown as typeof WebSocket
 
 describe('WebSocket Client', () => {
   let client: WebSocketClient
@@ -53,7 +53,7 @@ describe('WebSocket Client', () => {
     client.on('connected', handler)
 
     client.connect()
-    mockWs = (client as any).ws
+    mockWs = (client as unknown).ws
 
     mockWs.simulateMessage({
       type: 'connected',
@@ -66,7 +66,7 @@ describe('WebSocket Client', () => {
 
   it('tracks sequence numbers', () => {
     client.connect()
-    mockWs = (client as any).ws
+    mockWs = (client as unknown).ws
 
     mockWs.simulateMessage({
       type: 'signal_generated',
@@ -79,7 +79,7 @@ describe('WebSocket Client', () => {
 
   it('handles reconnection with exponential backoff', () => {
     client.connect()
-    mockWs = (client as any).ws
+    mockWs = (client as unknown).ws
 
     // Simulate disconnect
     mockWs.close()
@@ -97,7 +97,7 @@ describe('WebSocket Client', () => {
     client.on('signal_generated', handler)
 
     client.connect()
-    mockWs = (client as any).ws
+    mockWs = (client as unknown).ws
 
     // Simulate initial connection
     mockWs.simulateMessage({
@@ -107,7 +107,7 @@ describe('WebSocket Client', () => {
     })
 
     // Trigger disconnect to enter reconnecting state
-    ;(client as any).isReconnecting = true
+    ;(client as unknown).isReconnecting = true
 
     // Send message while reconnecting - should be buffered
     mockWs.simulateMessage({
@@ -120,17 +120,17 @@ describe('WebSocket Client', () => {
     expect(handler).not.toHaveBeenCalled()
 
     // Check that message is in buffer
-    const buffer = (client as any).messageBuffer
+    const buffer = (client as unknown).messageBuffer
     expect(buffer.length).toBe(1)
     expect(buffer[0].type).toBe('signal_generated')
   })
 
   it('clears buffer on disconnect', () => {
     client.connect()
-    mockWs = (client as any).ws
+    mockWs = (client as unknown).ws
 
     // Add messages to buffer
-    ;(client as any).messageBuffer = [
+    ;(client as unknown).messageBuffer = [
       { type: 'signal_generated', signal: {}, sequence_number: 1 },
       { type: 'signal_generated', signal: {}, sequence_number: 2 },
     ]
@@ -138,6 +138,6 @@ describe('WebSocket Client', () => {
     // Disconnect should clear buffer
     client.disconnect()
 
-    expect((client as any).messageBuffer.length).toBe(0)
+    expect((client as unknown).messageBuffer.length).toBe(0)
   })
 })

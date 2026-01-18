@@ -192,7 +192,7 @@ export interface EnablePaperTradingRequest {
 export interface PaperTradingResponse {
   success: boolean
   message: string
-  data?: any
+  data?: Record<string, unknown>
 }
 
 /**
@@ -202,6 +202,23 @@ export interface PositionsResponse {
   positions: PaperPosition[]
   total: number
   current_heat: string
+}
+
+/**
+ * WebSocket event data for position opened
+ */
+export interface PositionOpenedEvent {
+  position_id: string
+  signal_id: string
+  [key: string]: unknown
+}
+
+/**
+ * WebSocket event data for position updated
+ */
+export interface PositionUpdatedEvent {
+  position_id: string
+  [key: string]: unknown
 }
 
 /**
