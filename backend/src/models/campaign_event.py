@@ -33,6 +33,10 @@ class CampaignEventType(str, Enum):
         PATTERN_DETECTED: New pattern added to existing campaign
         CAMPAIGN_COMPLETED: Campaign completed with exit
         CAMPAIGN_FAILED: Campaign failed (expired or invalidated)
+        PORTFOLIO_HEAT_WARNING: Portfolio heat at 80% of limit (Story 15.7)
+        PORTFOLIO_HEAT_CRITICAL: Portfolio heat at 95% of limit (Story 15.7)
+        PORTFOLIO_HEAT_EXCEEDED: Portfolio heat above limit (Story 15.7)
+        PORTFOLIO_HEAT_NORMAL: Portfolio heat dropped below warning (Story 15.7)
     """
 
     CAMPAIGN_FORMED = "CAMPAIGN_FORMED"
@@ -40,6 +44,12 @@ class CampaignEventType(str, Enum):
     PATTERN_DETECTED = "PATTERN_DETECTED"
     CAMPAIGN_COMPLETED = "CAMPAIGN_COMPLETED"
     CAMPAIGN_FAILED = "CAMPAIGN_FAILED"
+
+    # Portfolio heat alerts (Story 15.7)
+    PORTFOLIO_HEAT_WARNING = "PORTFOLIO_HEAT_WARNING"
+    PORTFOLIO_HEAT_CRITICAL = "PORTFOLIO_HEAT_CRITICAL"
+    PORTFOLIO_HEAT_EXCEEDED = "PORTFOLIO_HEAT_EXCEEDED"
+    PORTFOLIO_HEAT_NORMAL = "PORTFOLIO_HEAT_NORMAL"
 
 
 @dataclass

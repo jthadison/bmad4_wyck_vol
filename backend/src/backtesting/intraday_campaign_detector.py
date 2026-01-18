@@ -141,6 +141,26 @@ class EffortVsResult(Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class HeatAlertState(str, Enum):
+    """
+    Portfolio heat alert state tracking (Story 15.7).
+
+    Tracks current heat warning level to prevent duplicate alerts
+    and enable state transition tracking.
+
+    Attributes:
+        NORMAL: Heat below warning threshold (< 75% of max)
+        WARNING: Heat at warning threshold (80% of max)
+        CRITICAL: Heat at critical threshold (95% of max)
+        EXCEEDED: Heat above maximum limit (100%+ of max)
+    """
+
+    NORMAL = "NORMAL"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"
+    EXCEEDED = "EXCEEDED"
+
+
 # Type alias for pattern union
 WyckoffPattern: TypeAlias = Union[Spring, AutomaticRally, SOSBreakout, LPS]
 
@@ -580,6 +600,16 @@ class IntradayCampaignDetector:
         # Story 15.4: Cache metrics tracking
         self._cache_hits: int = 0
         self._cache_misses: int = 0
+
+        # Story 15.7: Heat alert state tracking
+        self._heat_alert_state: HeatAlertState = HeatAlertState.NORMAL
+        self._last_alert_time: dict[HeatAlertState, datetime] = {}
+        self._alert_rate_limit_seconds: int = 300  # 5 minutes
+
+        # Story 15.7: Heat alert thresholds (% of max_portfolio_heat_pct)
+        self._heat_warning_threshold_pct: float = 80.0
+        self._heat_critical_threshold_pct: float = 95.0
+        self._heat_normal_threshold_pct: float = 75.0
 
         self.logger = logger.bind(
             component="intraday_campaign_detector",
@@ -2222,8 +2252,16 @@ class IntradayCampaignDetector:
             else:
                 prospective_heat = current_heat
 
+            # Story 15.7: Check and fire heat alerts
+            self._check_heat_alerts(float(prospective_heat))
+
             # Check heat limit
             if prospective_heat > self.max_portfolio_heat_pct:
+                # Story 15.7: Fire exceeded alert
+                self._publish_heat_alert(
+                    CampaignEventType.PORTFOLIO_HEAT_EXCEEDED, float(prospective_heat)
+                )
+
                 self.logger.warning(
                     "Portfolio heat limit exceeded",
                     current_heat=str(current_heat),
@@ -2233,17 +2271,132 @@ class IntradayCampaignDetector:
                 )
                 return False
 
-            # Early warning at 80% of limit
-            warning_threshold = self.max_portfolio_heat_pct * Decimal("0.8")
-            if prospective_heat > warning_threshold:
-                self.logger.info(
-                    "Portfolio heat approaching limit",
-                    heat_pct=str(prospective_heat),
-                    threshold=str(warning_threshold),
-                    max_allowed=str(self.max_portfolio_heat_pct),
-                )
-
         return True
+
+    def _check_heat_alerts(self, heat_pct: float) -> None:
+        """
+        Check heat thresholds and fire alerts (Story 15.7).
+
+        Evaluates current/prospective heat against thresholds and
+        fires appropriate alert events on state changes.
+
+        Args:
+            heat_pct: Current or prospective heat percentage
+        """
+        max_heat = float(self.max_portfolio_heat_pct)
+
+        # Calculate thresholds
+        warning_threshold = max_heat * (self._heat_warning_threshold_pct / 100)
+        critical_threshold = max_heat * (self._heat_critical_threshold_pct / 100)
+        normal_threshold = max_heat * (self._heat_normal_threshold_pct / 100)
+
+        # Determine new state
+        new_state = HeatAlertState.NORMAL
+
+        if heat_pct >= critical_threshold:
+            new_state = HeatAlertState.CRITICAL
+        elif heat_pct >= warning_threshold:
+            new_state = HeatAlertState.WARNING
+        elif heat_pct >= normal_threshold:
+            # In transition zone (75-80%) - keep current state
+            new_state = self._heat_alert_state
+        else:
+            new_state = HeatAlertState.NORMAL
+
+        # Fire alert if state changed
+        if new_state != self._heat_alert_state:
+            self._transition_heat_alert_state(new_state, heat_pct)
+
+    def _transition_heat_alert_state(self, new_state: HeatAlertState, heat_pct: float) -> None:
+        """
+        Transition heat alert state and fire event (Story 15.7).
+
+        Updates internal state and publishes appropriate event
+        if rate limiting allows.
+
+        Args:
+            new_state: New heat alert state
+            heat_pct: Current heat percentage
+        """
+        old_state = self._heat_alert_state
+
+        # Check rate limiting
+        if not self._should_fire_alert(new_state):
+            return
+
+        # Update state
+        self._heat_alert_state = new_state
+        self._last_alert_time[new_state] = datetime.now(UTC)
+
+        # Fire appropriate event
+        if new_state == HeatAlertState.WARNING:
+            self._publish_heat_alert(CampaignEventType.PORTFOLIO_HEAT_WARNING, heat_pct)
+        elif new_state == HeatAlertState.CRITICAL:
+            self._publish_heat_alert(CampaignEventType.PORTFOLIO_HEAT_CRITICAL, heat_pct)
+        elif new_state == HeatAlertState.NORMAL and old_state != HeatAlertState.NORMAL:
+            self._publish_heat_alert(CampaignEventType.PORTFOLIO_HEAT_NORMAL, heat_pct)
+
+    def _should_fire_alert(self, state: HeatAlertState) -> bool:
+        """
+        Check if alert should fire (rate limiting, Story 15.7).
+
+        Prevents duplicate alerts within 5-minute window for same state.
+
+        Args:
+            state: Alert state to check
+
+        Returns:
+            True if alert should fire, False if rate limited
+        """
+        if state not in self._last_alert_time:
+            return True
+
+        time_since_last = datetime.now(UTC) - self._last_alert_time[state]
+
+        return time_since_last.total_seconds() >= self._alert_rate_limit_seconds
+
+    def _publish_heat_alert(self, event_type: CampaignEventType, heat_pct: float) -> None:
+        """
+        Publish portfolio heat alert event (Story 15.7).
+
+        Constructs event with heat metrics and publishes via EventPublisher.
+
+        Args:
+            event_type: Heat alert event type
+            heat_pct: Current heat percentage
+        """
+        active_campaigns = self.get_active_campaigns()
+
+        total_risk = sum(
+            float(c.risk_per_share * c.position_size if c.risk_per_share else 0)
+            for c in active_campaigns
+        )
+
+        event = CampaignEvent(
+            event_type=event_type,
+            campaign_id="PORTFOLIO",  # Special ID for portfolio-level events
+            timestamp=datetime.now(UTC),
+            pattern_type=None,
+            metadata={
+                "heat_pct": heat_pct,
+                "max_heat_pct": float(self.max_portfolio_heat_pct),
+                "remaining_capacity_pct": float(self.max_portfolio_heat_pct) - heat_pct,
+                "active_campaigns": len(active_campaigns),
+                "total_risk_dollars": total_risk,
+            },
+        )
+
+        # Publish event if publisher configured
+        if self.event_publisher:
+            self.event_publisher.publish(event)
+
+        self.logger.info(
+            "Portfolio heat alert",
+            event_type=event_type.value,
+            heat_pct=heat_pct,
+            max_heat=float(self.max_portfolio_heat_pct),
+            active_campaigns=len(active_campaigns),
+        )
 
     # ==================================================================================
     # Story 15.5: Batch Operation Helpers
