@@ -223,7 +223,7 @@ jobs:
         working-directory: frontend
         run: |
           npm cache clean --force
-          rm -rf node_modules
+          rm -rf node_modules package-lock.json
           npm install
 
       - name: Run ESLint
@@ -251,7 +251,7 @@ jobs:
         working-directory: frontend
         run: |
           npm cache clean --force
-          rm -rf node_modules
+          rm -rf node_modules package-lock.json
           npm install
 
       - name: Run TypeScript compiler check
@@ -275,7 +275,7 @@ jobs:
         working-directory: frontend
         run: |
           npm cache clean --force
-          rm -rf node_modules
+          rm -rf node_modules package-lock.json
           npm install
 
       - name: Run Vitest unit tests
@@ -353,7 +353,7 @@ jobs:
         working-directory: frontend
         run: |
           npm cache clean --force
-          rm -rf node_modules
+          rm -rf node_modules package-lock.json
           npm install
 
       - name: Install Playwright browsers

@@ -272,14 +272,14 @@ def upgrade() -> None:
     # Campaigns (campaigns) - User campaigns and status filtering
     # ========================================================================
 
-    # Composite index for user_id + status
-    # Covers: SELECT * FROM campaigns WHERE user_id = ? AND status = ?
-    op.create_index(
-        "idx_campaigns_user_id_status",
-        "campaigns",
-        ["user_id", "status"],
-        unique=False,
-    )
+    # Note: campaigns table doesn't have a 'user_id' column yet.
+    # The composite index for user_id + status is commented out until the column is added.
+    # op.create_index(
+    #     "idx_campaigns_user_id_status",
+    #     "campaigns",
+    #     ["user_id", "status"],
+    #     unique=False,
+    # )
 
     # Descending created_at index for "latest campaigns" queries
     # Covers: SELECT * FROM campaigns WHERE user_id = ? ORDER BY created_at DESC
@@ -353,7 +353,8 @@ def downgrade() -> None:
 
     # Campaigns
     op.drop_index("idx_campaigns_created_at_desc", table_name="campaigns")
-    op.drop_index("idx_campaigns_user_id_status", table_name="campaigns")
+    # Note: idx_campaigns_user_id_status not created (user_id column doesn't exist)
+    # op.drop_index("idx_campaigns_user_id_status", table_name="campaigns")
 
     # Backtest Results
     op.drop_index("idx_backtest_results_created_at_desc", table_name="backtest_results")
