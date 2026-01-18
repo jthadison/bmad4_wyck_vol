@@ -49,7 +49,7 @@ def detector():
         min_patterns_for_active=2,
         expiration_hours=72,
         max_concurrent_campaigns=3,
-        max_portfolio_heat_pct=10.0,  # FR7.7/AC7.14
+        max_portfolio_heat_pct=Decimal("10.0"),  # FR7.7/AC7.14
     )
 
 

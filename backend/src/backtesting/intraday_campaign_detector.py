@@ -193,7 +193,7 @@ class Campaign:
     """
 
     campaign_id: str = field(default_factory=lambda: str(uuid4()))
-    start_time: datetime = field(default_factory=datetime.utcnow)
+    start_time: datetime = field(default_factory=lambda: datetime.now(UTC))
     patterns: list[WyckoffPattern] = field(default_factory=list)
     state: CampaignState = CampaignState.FORMING
     current_phase: Optional[WyckoffPhase] = None
@@ -296,7 +296,7 @@ class Campaign:
             self.r_multiple = None
 
         # Duration in bars
-        if self.patterns and len(self.patterns) > 0:
+        if self.patterns:
             # Use bar_index if available (not all pattern types have it)
             if hasattr(self.patterns[0], "bar_index") and hasattr(self.patterns[-1], "bar_index"):
                 first_bar = self.patterns[0].bar_index
@@ -843,7 +843,7 @@ class IntradayCampaignDetector:
             campaign: Campaign to update
             new_phase: New Wyckoff phase
             bar_index: Current bar index in backtest
-            timestamp: Optional timestamp for phase history (defaults to utcnow)
+            timestamp: Optional timestamp for phase history (defaults to datetime.now(UTC))
 
         Example:
             >>> detector.update_phase_with_bar_index(campaign, WyckoffPhase.E, 150)
@@ -855,7 +855,7 @@ class IntradayCampaignDetector:
             return
 
         # FR7.3 / AC7.5: Track phase history
-        transition_time = timestamp or datetime.utcnow()
+        transition_time = timestamp or datetime.now(UTC)
         campaign.phase_history.append((transition_time, new_phase))
         campaign.phase_transition_count += 1
 
