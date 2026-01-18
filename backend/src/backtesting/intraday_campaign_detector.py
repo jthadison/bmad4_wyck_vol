@@ -29,7 +29,7 @@ Author: Developer Agent (Story 13.4, 14.2, 14.3 Implementation)
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from statistics import mean, median
@@ -48,6 +48,9 @@ logger = structlog.get_logger(__name__)
 
 # AR Pattern Quality Thresholds (Story 14.2)
 AR_ACTIVATION_QUALITY_THRESHOLD = 0.7  # Minimum quality for AR to activate FORMING campaigns
+
+# Cache Configuration (Story 15.4)
+VALIDATION_CACHE_MAX_ENTRIES = 100  # Maximum cache entries before LRU eviction
 AR_HIGH_QUALITY_BONUS_THRESHOLD = 0.75  # Minimum quality for AR progression bonus
 
 # Volume Analysis Thresholds (Story 14.4 - Issue #5: Extract magic numbers)
@@ -318,18 +321,17 @@ class Campaign:
         """
         Generate hash of pattern sequence for cache key (Story 15.4).
 
-        Uses pattern types and bar numbers for uniqueness.
+        Uses pattern types and timestamps for uniqueness. Uses Python's built-in
+        hash() for performance (non-cryptographic use case).
 
         Returns:
-            MD5 hash of pattern sequence signature
+            String representation of pattern sequence hash
 
         Example:
             >>> campaign = Campaign(patterns=[spring, sos])
             >>> hash_key = campaign._get_pattern_sequence_hash()
-            >>> # Returns: "a1b2c3d4..." (MD5 hash)
+            >>> # Returns: "12345678..." (hash as string)
         """
-        import hashlib
-
         pattern_parts = []
         for p in self.patterns:
             # Handle both OHLCVBar objects and dict representations (AR pattern)
@@ -341,7 +343,7 @@ class Campaign:
 
         pattern_signature = "|".join(pattern_parts)
 
-        return hashlib.md5(pattern_signature.encode()).hexdigest()
+        return str(hash(pattern_signature))
 
     def get_cached_validation(self) -> Optional[bool]:
         """
@@ -367,8 +369,6 @@ class Campaign:
         cached_at = cache_entry["timestamp"]
 
         # Check TTL
-        from datetime import timedelta
-
         if datetime.now(UTC) - cached_at > timedelta(seconds=self._cache_ttl_seconds):
             # Expired
             del self._validation_cache[cache_key]
@@ -381,7 +381,7 @@ class Campaign:
         Cache validation result with LRU eviction (Story 15.4).
 
         Stores validation result with timestamp. Evicts oldest entry
-        if cache exceeds 100 entries (LRU policy).
+        if cache exceeds VALIDATION_CACHE_MAX_ENTRIES (LRU policy).
 
         Args:
             result: Validation result to cache
@@ -396,7 +396,7 @@ class Campaign:
         self._validation_cache[cache_key] = {"result": result, "timestamp": datetime.now(UTC)}
 
         # LRU eviction if cache too large
-        if len(self._validation_cache) > 100:
+        if len(self._validation_cache) > VALIDATION_CACHE_MAX_ENTRIES:
             # Remove oldest entry
             oldest_key = min(
                 self._validation_cache.keys(),

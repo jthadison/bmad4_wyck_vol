@@ -22,6 +22,7 @@ from uuid import uuid4
 import pytest
 
 from src.backtesting.intraday_campaign_detector import (
+    VALIDATION_CACHE_MAX_ENTRIES,
     Campaign,
     IntradayCampaignDetector,
 )
@@ -146,17 +147,18 @@ def test_pattern_sequence_hash_uniqueness(sample_spring, sample_sos):
 
 def test_pattern_sequence_hash_format(sample_spring):
     """
-    AC1.2: Hash format is MD5 hexadecimal (32 characters).
+    AC1.2: Hash format is valid string representation.
 
     Validates:
-    - Hash is 32 characters
-    - Hash contains only hex digits
+    - Hash is non-empty string
+    - Hash can be used as dict key (hashable)
     """
     campaign = Campaign(patterns=[sample_spring])
     hash_key = campaign._get_pattern_sequence_hash()
 
-    assert len(hash_key) == 32, "MD5 hash should be 32 characters"
-    assert all(c in "0123456789abcdef" for c in hash_key), "Hash should be hex digits only"
+    assert isinstance(hash_key, str), "Hash should be a string"
+    assert len(hash_key) > 0, "Hash should be non-empty"
+    assert hash_key.lstrip("-").isdigit(), "Hash should be numeric string (from hash())"
 
 
 # ============================================================================
@@ -268,17 +270,17 @@ def test_cache_not_expired_before_ttl(sample_spring):
 
 def test_lru_eviction_when_cache_full(sample_spring, sample_sos):
     """
-    AC4.1: LRU eviction removes oldest entry when cache exceeds 100 entries.
+    AC4.1: LRU eviction removes oldest entry when cache exceeds max entries.
 
     Validates:
-    - Cache evicts oldest entry when > 100
+    - Cache evicts oldest entry when > VALIDATION_CACHE_MAX_ENTRIES
     - Most recent entries are retained
     """
     campaign = Campaign(patterns=[sample_spring])
 
-    # Fill cache with 101 entries (modify campaign patterns to create unique hashes)
+    # Fill cache with VALIDATION_CACHE_MAX_ENTRIES + 1 entries
     base_time = datetime.now(UTC)
-    for i in range(101):
+    for i in range(VALIDATION_CACHE_MAX_ENTRIES + 1):
         # Create unique bar with different timestamp
         unique_bar = OHLCVBar(
             timestamp=base_time + timedelta(seconds=i),
@@ -307,10 +309,11 @@ def test_lru_eviction_when_cache_full(sample_spring, sample_sos):
         campaign.patterns = [pattern]
         campaign.set_cached_validation(True)
 
-    # Cache should have exactly 100 entries (oldest evicted)
-    assert (
-        len(campaign._validation_cache) == 100
-    ), f"Cache should not exceed 100 entries, got {len(campaign._validation_cache)}"
+    # Cache should have exactly VALIDATION_CACHE_MAX_ENTRIES entries (oldest evicted)
+    assert len(campaign._validation_cache) == VALIDATION_CACHE_MAX_ENTRIES, (
+        f"Cache should not exceed {VALIDATION_CACHE_MAX_ENTRIES} entries, "
+        f"got {len(campaign._validation_cache)}"
+    )
 
 
 # ============================================================================
@@ -564,7 +567,8 @@ def test_cache_with_empty_pattern_list():
     hash_key = campaign._get_pattern_sequence_hash()
 
     assert hash_key is not None, "Hash should be generated for empty patterns"
-    assert len(hash_key) == 32, "Hash should still be valid MD5"
+    assert isinstance(hash_key, str), "Hash should be a string"
+    assert len(hash_key) > 0, "Hash should be non-empty"
 
 
 def test_cache_invalidation_on_empty_cache():
