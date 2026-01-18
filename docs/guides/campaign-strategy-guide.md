@@ -29,7 +29,7 @@ A **campaign** is a multi-pattern sequence representing an institutional accumul
 **Key Characteristics:**
 - **Multi-confirmation**: Requires 2+ patterns for validation
 - **Phase progression**: Tracks Phases C → D → E
-- **State management**: Monitors campaign health (FORMING, ACTIVE, DORMANT, FAILED, COMPLETED)
+- **State management**: Monitors campaign health (FORMING, ACTIVE, FAILED, COMPLETED)
 - **Risk integration**: Provides precise entry, stop, and target levels
 
 ### Why Campaign-Based Trading?
@@ -62,6 +62,8 @@ This systematic approach removes emotion and provides clear decision points thro
 
 ## 2. Campaign Lifecycle & States
 
+**Technical Note**: This guide documents campaign states as implemented in `backend/src/backtesting/intraday_campaign_detector.py` (CampaignState enum, lines 64-78). For daily/weekly campaigns, see `backend/src/pattern_engine/campaign_manager.py` which uses a different state model (BUILDING_CAUSE, TESTING, BREAKOUT, MARKUP, DISTRIBUTION, EXITED).
+
 ### State Diagram
 
 ```
@@ -70,18 +72,17 @@ This systematic approach removes emotion and provides clear decision points thro
 └────┬────┘
      │
      ▼
-┌─────────┐      ┌─────────┐
-│ ACTIVE  │ ───► │ DORMANT │ (Cooling off)
-└────┬────┘      └────┬────┘
-     │                │
-     │                ▼
-     │           ┌────────┐
-     │           │ FAILED │ (Expired/Invalid)
-     │           └────────┘
-     ▼
-┌───────────┐
-│ COMPLETED │ (Target hit)
-└───────────┘
+┌─────────┐
+│ ACTIVE  │ (2+ patterns confirmed)
+└────┬────┘
+     │
+     ├────► ┌────────┐
+     │      │ FAILED │ (Expired/Invalid)
+     │      └────────┘
+     │
+     └────► ┌───────────┐
+            │ COMPLETED │ (Target hit)
+            └───────────┘
 ```
 
 ### State Descriptions
@@ -143,40 +144,6 @@ Bar 10: Spring detected
 Bar 15: AR pattern confirms
 State: FORMING → ACTIVE
 Trader action: Enter long position per position sizing rules
-```
-
----
-
-#### DORMANT (Cooling Off)
-
-**Trigger**:
-- No new patterns for 24 hours (intraday)
-- OR 5+ bars without new patterns (daily+)
-
-**Meaning**: Campaign paused but not invalidated, institutional activity slowed
-
-**Characteristics**:
-- No recent pattern activity
-- Phase progression stalled
-- Support/resistance levels still valid
-- Can reactivate with new patterns
-
-**Trading Action**:
-- **Hold positions** if profitable or near entry
-- Reduce monitoring frequency
-- Trail stops to protect profits
-- Watch for reactivation or failure triggers
-
-**Duration**: 1-7 days (can extend longer on weekly timeframes)
-
-**Reactivation**: New pattern detected → returns to ACTIVE state
-
-**Example**:
-```
-Bar 30: Last pattern (SOS) detected
-Bar 35-40: No new patterns, low volume
-State: ACTIVE → DORMANT
-Trader action: Tighten stop to breakeven, reduce position monitoring
 ```
 
 ---
@@ -283,7 +250,15 @@ position_size = risk_dollars / risk_per_share  # $2,000 / $2.00 = 1,000 shares
 # Validation
 max_position_value = account_size * 0.10  # 10% max position size
 position_value = position_size * entry_price  # 1,000 * $50 = $50,000
-assert position_value <= max_position_value  # $50K <= $10K ✓
+
+# Check if position size exceeds max
+if position_value > max_position_value:
+    # Reduce to max allowed position size
+    position_size = int(max_position_value / entry_price)  # $10,000 / $50 = 200 shares
+    actual_risk = position_size * risk_per_share  # 200 * $2.00 = $400 (0.4% risk)
+    print(f"Position reduced to {position_size} shares (risk: {actual_risk/account_size:.1%})")
+
+# Final position: 200 shares, $400 risk (0.4%), $10,000 position value
 ```
 
 **Entry Timing**:
@@ -335,7 +310,7 @@ Entry: Market order on close or limit at $50.25
 
 4. **Phase Duration**
    - Phase C duration: 5-15 bars typical (daily timeframe)
-   - If > 20 bars: Campaign may be failing (dormant risk)
+   - If > 20 bars: Campaign may be failing or extended consolidation
    - If < 3 bars: Too fast, lower confidence
 
 5. **Price Action Relative to Levels**
@@ -940,6 +915,10 @@ Phase progression: C → D (skipped patterns)
 
 **Definition**: Trend of volume throughout campaign lifecycle
 
+**Interpretation Note**: Volume profiles measure the trend of volume *during rallies/advances* in accumulation campaigns. DECLINING volume on rallies indicates professional absorption (bullish), while INCREASING volume on rallies suggests distribution (bearish). This is consistent with Wyckoff's principle that professional accumulation occurs quietly with diminishing volume.
+
+**Reference**: See `backend/src/backtesting/intraday_campaign_detector.py` lines 1144-1146 for implementation details.
+
 **Profiles**:
 
 #### DECLINING Volume (Bullish ✅)
@@ -1306,7 +1285,7 @@ Outcome: Small loss, preserved capital for better opportunity
 
 ---
 
-### Example 3: Dormant Campaign Reactivation
+### Example 3: Extended Consolidation with Delayed SOS
 
 **Symbol**: DEF Energy
 **Timeframe**: Daily
@@ -1330,28 +1309,26 @@ Campaign → ACTIVE
 Strength: 0.76
 ```
 
-**Bar 20-35: Dormant Phase (15 bars)**
+**Bar 20-35: Extended Consolidation (15 bars)**
 ```
-Price: Consolidates $63-$66 (narrow range)
-Volume: Very low (0.5-0.8x avg)
-No new patterns detected
-
-Bar 30: Campaign State → DORMANT (no patterns for 10 bars)
+Price: Tight consolidation $63-$66 (narrow range)
+Volume: Very low (0.5-0.8x avg - absorption)
+No new patterns detected, but support holding
 
 Trader Action:
 - Hold position (still profitable)
 - Trail stop to $61.50 (below Spring, protect capital)
-- Reduce monitoring to weekly
-- Accept campaign may fail or reactivate
+- Patience required - accumulation takes time
+- Watch for eventual breakout or failure
 ```
 
-**Bar 36: Reactivation - SOS Pattern**
+**Bar 36: Delayed SOS Pattern**
 ```
 Price: Explosive breakout to $72.00 (above Ice $68)
 Volume: 5.8M (4.2x avg - huge!)
 Pattern Quality: 0.94 (exceptional)
 
-Campaign State: DORMANT → ACTIVE (reactivation)
+Campaign State: ACTIVE (continued)
 Strength Score: 0.84 (Spring + AR + SOS)
 
 Trader Action: Add 50% position
@@ -1379,13 +1356,14 @@ Campaign State: COMPLETED
 #### Key Insights
 
 ```
-✅ Patience during DORMANT phase (15 bars)
+✅ Patience during extended consolidation (15 bars)
 ✅ Maintained protective stop (didn't abandon risk management)
-✅ Reactivation signal (SOS) was high quality (0.94)
-✅ Added to position on reactivation (captured extended move)
+✅ Delayed SOS signal was high quality (0.94)
+✅ Added to position on breakout (captured extended move)
 
-Lesson: DORMANT campaigns can reactivate with explosive moves.
-Don't abandon quality setups prematurely, but protect capital with stops.
+Lesson: Extended consolidations can lead to powerful breakouts.
+Be patient with quality setups, but always protect capital with stops.
+Tight consolidation after AR often leads to explosive SOS.
 ```
 
 ---
@@ -1409,23 +1387,24 @@ A: Common causes:
 
 ---
 
-**Q: Campaign went DORMANT. Should I exit?**
+**Q: Campaign is consolidating for many bars with no new patterns. Should I exit?**
 
-A: Not necessarily. Evaluate:
+A: Extended consolidation after AR is normal in accumulation. Evaluate:
 
 **Exit if**:
 - ❌ Position underwater (below entry)
-- ❌ Dormant > 10 bars (daily timeframe)
+- ❌ Consolidation > 15-20 bars (daily timeframe) with no progress
 - ❌ Volume profile shifted to INCREASING
 - ❌ Support (Creek) broken
+- ❌ Time stop triggered per your trading plan
 
 **Hold if**:
-- ✅ Position profitable
-- ✅ Dormant < 7 bars
-- ✅ Support levels intact
+- ✅ Position profitable or near breakeven
+- ✅ Support levels intact (price above Creek)
 - ✅ Volume profile still DECLINING/NEUTRAL
+- ✅ Tight consolidation (low volatility)
 
-**Best Practice**: Trail stop to breakeven or recent swing low, reducing risk to zero while allowing for reactivation.
+**Best Practice**: Trail stop to breakeven or recent swing low, reducing risk to zero while allowing for eventual breakout. Patience is often rewarded with explosive SOS patterns.
 
 ---
 
@@ -1489,7 +1468,7 @@ A: Use time-based or volatility-based exits:
 - Or use fixed R-multiple (3R, 5R)
 
 **Red Flag Exit**:
-- If campaign → DORMANT for > 7 bars, consider exiting
+- If consolidation extends > 15-20 bars with no progress, consider exiting
 - If volume profile → INCREASING, exit immediately
 
 ---
@@ -1676,7 +1655,6 @@ A: Possible reasons:
 ```
 FORMING → Watch, prepare entry plan
 ACTIVE → Execute trades per BMAD rules
-DORMANT → Hold with tight stops, reduce monitoring
 FAILED → Exit immediately
 COMPLETED → Calculate performance, move to next
 ```
@@ -1784,7 +1762,7 @@ Before entering any campaign:
 - [ ] Open campaigns: ____ (target 3-5)
 - [ ] Correlated risk (largest sector): ____% (target < 6%)
 - [ ] Trailing stops updated: YES / NO
-- [ ] Campaigns at risk (DORMANT/weak): ____
+- [ ] Campaigns at risk (low quality/stalled): ____
 
 ---
 
