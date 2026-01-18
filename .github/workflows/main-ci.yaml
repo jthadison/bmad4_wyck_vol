@@ -171,7 +171,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: rm -rf node_modules && npm install
 
       - name: Run ESLint
         working-directory: frontend
@@ -197,7 +197,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: rm -rf node_modules && npm install
 
       - name: Run TypeScript compiler check
         working-directory: frontend
@@ -219,7 +219,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: rm -rf node_modules && npm install
 
       - name: Run Vitest unit tests
         working-directory: frontend
