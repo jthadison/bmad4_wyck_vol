@@ -171,7 +171,9 @@ jobs:
 
       - name: Run ESLint
         working-directory: frontend
-        run: npm run lint
+        # --max-warnings prevents warning count from growing (see issue #191)
+        # Current baseline: 340 warnings. Decrease as types are fixed.
+        run: npx eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --max-warnings 340
 
   test-frontend:
     name: Test Frontend (Vitest)
