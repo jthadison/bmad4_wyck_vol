@@ -38,9 +38,7 @@ from src.models.spring import Spring
 logger = structlog.get_logger(__name__)
 
 
-def _validate_volume_ratio(
-    volume_ratio: Decimal, bar_index: int, context: str
-) -> bool:
+def _validate_volume_ratio(volume_ratio: Decimal, bar_index: int, context: str) -> bool:
     """
     Validate volume ratio is in acceptable range (0.7x-1.3x).
 
@@ -63,9 +61,7 @@ def _validate_volume_ratio(
     return True
 
 
-def _validate_close_position(
-    bar: OHLCVBar, bar_index: int, context: str
-) -> tuple[bool, Decimal]:
+def _validate_close_position(bar: OHLCVBar, bar_index: int, context: str) -> tuple[bool, Decimal]:
     """
     Validate bar closes in upper 50% of range.
 
@@ -93,9 +89,7 @@ def _validate_close_position(
         return True, Decimal("0.5")  # Doji, neutral
 
 
-def _calculate_volume_trend(
-    current_volume_ratio: Decimal, prior_volume_ratio: Decimal
-) -> str:
+def _calculate_volume_trend(current_volume_ratio: Decimal, prior_volume_ratio: Decimal) -> str:
     """
     Calculate volume trend from prior pattern to current bar.
 

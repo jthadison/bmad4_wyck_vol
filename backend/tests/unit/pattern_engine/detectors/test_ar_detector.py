@@ -493,7 +493,9 @@ class TestDetectARAfterSpring:
 
         # Assertions
         assert ar is not None, "AR should be detected"
-        assert ar.bar_index == 33, "Should return first valid AR (bar 33), not the higher quality one"
+        assert (
+            ar.bar_index == 33
+        ), "Should return first valid AR (bar 33), not the higher quality one"
         assert ar.bars_after_sc == 3, "Should be 3 bars after Spring"
 
     def test_start_index_boundary_conditions(self, base_bars, spring_pattern):
