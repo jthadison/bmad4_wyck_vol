@@ -17,6 +17,7 @@ Test Categories:
 7. Portfolio Limits Enforcement (AC4.11)
 """
 
+import warnings
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -409,9 +410,11 @@ def test_campaign_expires_after_72_hours(detector, sample_spring, base_timestamp
     active = detector.get_active_campaigns()
     assert len(active) == 0  # Expired campaigns not active
 
-    all_campaigns = detector.campaigns
-    assert all_campaigns[0].state == CampaignState.FAILED
-    assert "Expired after" in all_campaigns[0].failure_reason
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        all_campaigns = detector.campaigns
+        assert all_campaigns[0].state == CampaignState.FAILED
+        assert "Expired after" in all_campaigns[0].failure_reason
 
 
 def test_campaign_not_expired_before_72_hours(detector, sample_spring, base_timestamp):
@@ -458,9 +461,11 @@ def test_expiration_called_on_add_pattern(detector, sample_spring, base_timestam
     detector.add_pattern(spring2)
 
     # First campaign should be expired
-    assert detector.campaigns[0].state == CampaignState.FAILED
-    # Second pattern creates new campaign
-    assert detector.campaigns[1].state == CampaignState.FORMING
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert detector.campaigns[0].state == CampaignState.FAILED
+        # Second pattern creates new campaign
+        assert detector.campaigns[1].state == CampaignState.FORMING
 
 
 # ============================================================================
@@ -1059,7 +1064,9 @@ def test_portfolio_limits_allow_patterns_in_existing_campaigns(
     detector.add_pattern(sos)
 
     # First campaign should have 2 patterns
-    assert len(detector.campaigns[0].patterns) == 2
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert len(detector.campaigns[0].patterns) == 2
 
 
 # ============================================================================
@@ -1852,7 +1859,9 @@ class TestCampaignCompletion:
 
         # Create campaign and set to FAILED
         detector.add_pattern(sample_spring)
-        campaign = detector.campaigns[0]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            campaign = detector.campaigns[0]
         campaign.state = CampaignState.FAILED
 
         # Try to complete failed campaign
@@ -2195,10 +2204,12 @@ class TestCampaignCompletionQueries:
     ) -> None:
         """Test get_campaign_by_id() retrieves specific campaign."""
         # Get first campaign
-        all_campaigns = detector_with_completed_campaigns.campaigns
-        assert len(all_campaigns) > 0
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            all_campaigns = detector_with_completed_campaigns.campaigns
+            assert len(all_campaigns) > 0
 
-        first_campaign = all_campaigns[0]
+            first_campaign = all_campaigns[0]
         campaign_id = first_campaign.campaign_id
 
         # Retrieve by ID
@@ -2515,8 +2526,11 @@ class TestCampaignStatistics:
 
             # Fail 30 campaigns (60 <= i < 90)
             elif i < 90:
+                old_state = campaign.state  # Story 15.3: Track for index update
                 campaign.state = CampaignState.FAILED
                 campaign.failure_reason = "Test failure"
+                # Story 15.3: Update indexes when directly setting state
+                detector._update_indexes(campaign, old_state)
 
             # Leave 10 active (90 <= i < 100)
 

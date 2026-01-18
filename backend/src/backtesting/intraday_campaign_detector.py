@@ -27,6 +27,7 @@ Key Features:
 Author: Developer Agent (Story 13.4, 14.2, 14.3 Implementation)
 """
 
+import warnings
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -560,13 +561,19 @@ class IntradayCampaignDetector:
         self.expiration_hours = expiration_hours
         self.max_concurrent_campaigns = max_concurrent_campaigns
         self.max_portfolio_heat_pct = max_portfolio_heat_pct
-        self.campaigns: list[Campaign] = []
 
-        # Story 15.3 / 15.5: Indexed lookups for batch operations
-        self._campaigns_by_id: dict[str, Campaign] = {}
-        self._campaigns_by_state: dict[CampaignState, list[Campaign]] = {
-            state: [] for state in CampaignState
-        }
+        # Story 15.3: Indexed data structures for O(1) lookups
+        self._campaigns_by_id: dict[str, Campaign] = {}  # O(1) lookup by ID
+        self._campaigns_by_state: dict[CampaignState, set[str]] = defaultdict(
+            set
+        )  # O(1) state queries
+        # Use dict for O(1) add/remove while preserving insertion order (Python 3.7+)
+        # Keys are campaign IDs, values are True (used as ordered set)
+        self._active_time_windows: dict[str, bool] = {}  # O(1) operations
+
+        # Story 15.4: Cache metrics tracking
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
 
         self.logger = logger.bind(
             component="intraday_campaign_detector",
@@ -576,13 +583,151 @@ class IntradayCampaignDetector:
             expiration_hours=expiration_hours,
         )
 
-        # Story 15.4: Cache metrics tracking
-        self._cache_hits: int = 0
-        self._cache_misses: int = 0
+    # ==================================================================================
+    # Story 15.3: Backward Compatibility Property & Index Maintenance
+    # ==================================================================================
+
+    @property
+    def campaigns(self) -> list[Campaign]:
+        """
+        Backward compatibility: return list of campaigns (Story 15.3).
+
+        Previously this was a direct attribute (self.campaigns = []).
+        Now campaigns are stored in _campaigns_by_id for O(1) lookups,
+        and this property provides backward-compatible list access.
+
+        Warning:
+            Direct mutation of the returned list (e.g., campaigns.append())
+            will NOT update indexes. Use add_pattern() or _add_to_indexes()
+            for proper index maintenance.
+
+        Returns:
+            List of all campaigns (derived from _campaigns_by_id)
+
+        Example:
+            >>> detector = IntradayCampaignDetector()
+            >>> detector.add_pattern(spring)
+            >>> len(detector.campaigns)  # Still works
+            1
+        """
+        warnings.warn(
+            "Direct mutation of detector.campaigns is deprecated and will not update "
+            "indexes. Use add_pattern() or internal index methods instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return list(self._campaigns_by_id.values())
+
+    def _add_to_indexes(self, campaign: Campaign) -> None:
+        """
+        Add campaign to all indexes (Story 15.3).
+
+        Updates:
+            - _campaigns_by_id: O(1) lookup by ID
+            - _campaigns_by_state: O(1) state queries
+            - _active_time_windows: Hot-path optimization for recent active campaigns
+
+        Args:
+            campaign: Campaign to add to indexes
+
+        Example:
+            >>> campaign = Campaign(campaign_id="abc123", state=CampaignState.FORMING)
+            >>> detector._add_to_indexes(campaign)
+            >>> detector._campaigns_by_id["abc123"]  # O(1) lookup
+        """
+        # ID index
+        self._campaigns_by_id[campaign.campaign_id] = campaign
+
+        # State index
+        self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
+
+        # Time window index (if active) - O(1) dict operations
+        if campaign.state == CampaignState.ACTIVE:
+            self._active_time_windows[campaign.campaign_id] = True
+
+    def _update_indexes(self, campaign: Campaign, old_state: CampaignState) -> None:
+        """
+        Update indexes when campaign state changes (Story 15.3).
+
+        Args:
+            campaign: Campaign that changed state
+            old_state: Previous campaign state
+
+        Example:
+            >>> campaign.state = CampaignState.ACTIVE  # Was FORMING
+            >>> detector._update_indexes(campaign, CampaignState.FORMING)
+        """
+        # Remove from old state index
+        self._campaigns_by_state[old_state].discard(campaign.campaign_id)
+
+        # Add to new state index
+        self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
+
+        # Update active time windows - O(1) dict operations
+        if campaign.state == CampaignState.ACTIVE:
+            self._active_time_windows[campaign.campaign_id] = True
+        else:
+            self._active_time_windows.pop(campaign.campaign_id, None)
+
+    def _remove_from_indexes(self, campaign_id: str) -> None:
+        """
+        Remove campaign from all indexes (Story 15.3).
+
+        Args:
+            campaign_id: ID of campaign to remove
+
+        Example:
+            >>> detector._remove_from_indexes("abc123")
+            >>> "abc123" in detector._campaigns_by_id
+            False
+        """
+        if campaign_id not in self._campaigns_by_id:
+            return
+
+        campaign = self._campaigns_by_id[campaign_id]
+
+        # Remove from state index
+        self._campaigns_by_state[campaign.state].discard(campaign_id)
+
+        # Remove from time windows - O(1) dict operation
+        self._active_time_windows.pop(campaign_id, None)
+
+        # Remove from ID index
+        del self._campaigns_by_id[campaign_id]
+
+    def _rebuild_indexes(self) -> None:
+        """
+        Rebuild all indexes from _campaigns_by_id (Story 15.3).
+
+        Used for recovery or after bulk operations. Clears and rebuilds
+        all secondary indexes from the primary ID index.
+
+        Example:
+            >>> detector._rebuild_indexes()  # Recovers from inconsistent state
+        """
+        # Clear secondary indexes
+        self._campaigns_by_state.clear()
+        self._active_time_windows.clear()
+
+        # Rebuild from ID index
+        for campaign in self._campaigns_by_id.values():
+            self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
+            if campaign.state == CampaignState.ACTIVE:
+                self._active_time_windows[campaign.campaign_id] = True
+
+        self.logger.debug(
+            "Indexes rebuilt",
+            total_campaigns=len(self._campaigns_by_id),
+            active_campaigns=len(self._active_time_windows),
+        )
+
+    # ==================================================================================
+    # End Story 15.3 Index Maintenance
+    # ==================================================================================
 
     def _handle_ar_activation(self, campaign: Campaign, pattern: AutomaticRally) -> bool:
         """
-        Handle AR pattern activation logic (Story 14.2).
+        Handle AR pattern activation logic (Story 14.2, 15.3).
 
         High-quality AR patterns (quality_score > 0.7) can activate FORMING campaigns
         immediately without waiting for a second pattern.
@@ -595,7 +740,10 @@ class IntradayCampaignDetector:
             bool: True if campaign was activated, False otherwise
         """
         if pattern.quality_score > AR_ACTIVATION_QUALITY_THRESHOLD:
+            old_state = campaign.state  # Story 15.3: Track for index update
             campaign.state = CampaignState.ACTIVE
+            # Story 15.3: Update indexes on state change
+            self._update_indexes(campaign, old_state)
             new_phase = self._determine_phase(campaign.patterns)
             self._update_phase_with_history(campaign, new_phase, pattern.detection_timestamp)
             self.logger.info(
@@ -684,7 +832,8 @@ class IntradayCampaignDetector:
 
             # Update campaign with position sizing
             campaign.position_size = position_size
-            self.campaigns.append(campaign)
+            # Story 15.3: Use indexed data structure instead of list append
+            self._add_to_indexes(campaign)
 
             # Story 15.3 / 15.5: Add to indexes
             self._add_to_indexes(campaign)
@@ -754,10 +903,9 @@ class IntradayCampaignDetector:
         # Task 3: Check if we have enough patterns to mark ACTIVE
         if len(campaign.patterns) >= self.min_patterns_for_active:
             if campaign.state == CampaignState.FORMING:
-                old_state = campaign.state
+                old_state = campaign.state  # Story 15.3: Track for index update
                 campaign.state = CampaignState.ACTIVE
-
-                # Story 15.3 / 15.5: Update indexes when state changes
+                # Story 15.3: Update indexes on state change
                 self._update_indexes(campaign, old_state)
 
                 # AC4.10: Use sequence-based phase determination
@@ -792,9 +940,10 @@ class IntradayCampaignDetector:
 
     def _find_active_campaign(self, pattern: WyckoffPattern) -> Optional[Campaign]:
         """
-        Find campaign that this pattern belongs to.
+        Find campaign that this pattern belongs to (Story 15.3).
 
         Task 2: Campaign grouping logic (48h window, gap validation).
+        Story 15.3: Optimized to use state index for filtering while preserving insertion order.
 
         Args:
             pattern: Pattern to match against existing campaigns
@@ -807,43 +956,73 @@ class IntradayCampaignDetector:
             2. Pattern within campaign_window_hours from start
             3. Pattern within max_pattern_gap_hours from last pattern
         """
-        for campaign in self.campaigns:
-            if campaign.state not in [CampaignState.FORMING, CampaignState.ACTIVE]:
+        # Story 15.3: Use state index for O(1) state check while preserving insertion order
+        # Iterate over campaigns in insertion order (Python 3.7+ dict maintains order)
+        # but use state index for fast state filtering
+        valid_states = {CampaignState.FORMING, CampaignState.ACTIVE}
+        for campaign in self._campaigns_by_id.values():
+            if campaign.state not in valid_states:
                 continue
-
-            hours_since_start = (
-                pattern.detection_timestamp - campaign.start_time
-            ).total_seconds() / 3600
-
-            if hours_since_start <= self.campaign_window_hours:
-                # Check gap from last pattern
-                hours_since_last = (
-                    pattern.detection_timestamp - campaign.patterns[-1].detection_timestamp
-                ).total_seconds() / 3600
-
-                if hours_since_last <= self.max_pattern_gap_hours:
-                    return campaign
+            if self._pattern_matches_campaign(pattern, campaign):
+                return campaign
 
         return None
 
-    def get_active_campaigns(self) -> list[Campaign]:
+    def _pattern_matches_campaign(self, pattern: WyckoffPattern, campaign: Campaign) -> bool:
         """
-        Return campaigns in FORMING or ACTIVE state.
+        Check if pattern matches campaign criteria (Story 15.3).
 
-        Task 4: Get active campaigns retrieval method.
+        Helper method extracted from _find_active_campaign for reuse.
+
+        Args:
+            pattern: Pattern to check
+            campaign: Campaign to match against
 
         Returns:
-            List of campaigns in FORMING or ACTIVE state
+            True if pattern matches campaign criteria
         """
-        return [
-            c for c in self.campaigns if c.state in [CampaignState.FORMING, CampaignState.ACTIVE]
-        ]
+        # State check is intentionally kept for defensive programming even though
+        # callers like _find_active_campaign may pre-filter by state. This ensures
+        # the method is safe to call directly from other contexts.
+        if campaign.state not in [CampaignState.FORMING, CampaignState.ACTIVE]:
+            return False
+
+        hours_since_start = (
+            pattern.detection_timestamp - campaign.start_time
+        ).total_seconds() / 3600
+
+        if hours_since_start <= self.campaign_window_hours:
+            # Check gap from last pattern
+            hours_since_last = (
+                pattern.detection_timestamp - campaign.patterns[-1].detection_timestamp
+            ).total_seconds() / 3600
+
+            if hours_since_last <= self.max_pattern_gap_hours:
+                return True
+
+        return False
+
+    def get_active_campaigns(self) -> list[Campaign]:
+        """
+        Return campaigns in FORMING or ACTIVE state (Story 15.3).
+
+        Task 4: Get active campaigns retrieval method.
+        Story 15.3: Uses state index for fast filtering while preserving insertion order.
+
+        Returns:
+            List of campaigns in FORMING or ACTIVE state (in insertion order)
+        """
+        # Story 15.3: Use state index for O(1) state check while preserving insertion order
+        # Iterate over campaigns in insertion order and filter by state
+        valid_states = {CampaignState.FORMING, CampaignState.ACTIVE}
+        return [c for c in self._campaigns_by_id.values() if c.state in valid_states]
 
     def expire_stale_campaigns(self, current_time: datetime) -> None:
         """
-        Mark campaigns as FAILED if expired.
+        Mark campaigns as FAILED if expired (Story 15.3).
 
         Task 5: Campaign expiration (72h → FAILED).
+        Story 15.3: Uses state index for O(k) lookup instead of O(n) full scan.
 
         Args:
             current_time: Current timestamp for expiration check
@@ -853,26 +1032,40 @@ class IntradayCampaignDetector:
             - Exceeding expiration_hours from start_time
             - Transitioned to FAILED with reason
         """
-        for campaign in self.campaigns:
-            if campaign.state in [CampaignState.FORMING, CampaignState.ACTIVE]:
-                hours_elapsed = (current_time - campaign.start_time).total_seconds() / 3600
+        # Story 15.3: Use state index to get only FORMING/ACTIVE campaigns
+        active_ids = list(
+            self._campaigns_by_state[CampaignState.FORMING]
+            | self._campaigns_by_state[CampaignState.ACTIVE]
+        )
 
-                if hours_elapsed > self.expiration_hours:
-                    campaign.state = CampaignState.FAILED
-                    campaign.failure_reason = f"Expired after {hours_elapsed:.1f} hours"
+        for campaign_id in active_ids:
+            campaign = self._campaigns_by_id.get(campaign_id)
+            if not campaign:
+                continue
 
-                    self.logger.info(
-                        "Campaign expired",
-                        campaign_id=campaign.campaign_id,
-                        campaign_start=campaign.start_time,
-                        pattern_count=len(campaign.patterns),
-                        hours_elapsed=hours_elapsed,
-                        failure_reason=campaign.failure_reason,
-                    )
+            hours_elapsed = (current_time - campaign.start_time).total_seconds() / 3600
+
+            if hours_elapsed > self.expiration_hours:
+                old_state = campaign.state  # Story 15.3: Track for index update
+                campaign.state = CampaignState.FAILED
+                campaign.failure_reason = f"Expired after {hours_elapsed:.1f} hours"
+                # Story 15.3: Update indexes on state change
+                self._update_indexes(campaign, old_state)
+
+                self.logger.info(
+                    "Campaign expired",
+                    campaign_id=campaign.campaign_id,
+                    campaign_start=campaign.start_time,
+                    pattern_count=len(campaign.patterns),
+                    hours_elapsed=hours_elapsed,
+                    failure_reason=campaign.failure_reason,
+                )
 
     def _find_campaign_by_id(self, campaign_id: str) -> Optional[Campaign]:
         """
-        Find campaign by ID (Story 15.1a).
+        Find campaign by ID (Story 15.1a, 15.3).
+
+        Story 15.3: Now uses O(1) hash map lookup instead of O(n) linear search.
 
         Args:
             campaign_id: Campaign identifier
@@ -880,10 +1073,7 @@ class IntradayCampaignDetector:
         Returns:
             Campaign if found, None otherwise
         """
-        for campaign in self.campaigns:
-            if campaign.campaign_id == campaign_id:
-                return campaign
-        return None
+        return self._campaigns_by_id.get(campaign_id)
 
     def mark_campaign_completed(
         self,
@@ -929,7 +1119,10 @@ class IntradayCampaignDetector:
             )
 
         # Update state
+        old_state = campaign.state  # Story 15.3: Track for index update
         campaign.state = CampaignState.COMPLETED
+        # Story 15.3: Update indexes on state change
+        self._update_indexes(campaign, old_state)
         campaign.exit_price = exit_price
         campaign.exit_timestamp = exit_timestamp or datetime.now(UTC)
         campaign.exit_reason = exit_reason
@@ -979,8 +1172,10 @@ class IntradayCampaignDetector:
             >>> len(campaigns)
             2
         """
-        # Get all completed campaigns
-        completed = [c for c in self.campaigns if c.state == CampaignState.COMPLETED]
+        # Get all completed campaigns (use internal index to avoid deprecation warning)
+        completed = [
+            c for c in self._campaigns_by_id.values() if c.state == CampaignState.COMPLETED
+        ]
         total_completed = len(completed)
 
         # Apply filters
@@ -1036,7 +1231,9 @@ class IntradayCampaignDetector:
 
     def get_campaigns_by_state(self, state: CampaignState) -> list[Campaign]:
         """
-        Get all campaigns in given state (Story 15.1b).
+        Get all campaigns in given state (Story 15.1b, 15.3).
+
+        Story 15.3: Now uses O(k) state index lookup instead of O(n) full scan.
 
         Args:
             state: Campaign state to filter
@@ -1047,7 +1244,9 @@ class IntradayCampaignDetector:
         Example:
             >>> active = detector.get_campaigns_by_state(CampaignState.ACTIVE)
         """
-        return [c for c in self.campaigns if c.state == state]
+        # Story 15.3: Use state index for O(k) lookup
+        campaign_ids = self._campaigns_by_state[state]
+        return [self._campaigns_by_id[cid] for cid in campaign_ids if cid in self._campaigns_by_id]
 
     def get_winning_campaigns(self) -> list[Campaign]:
         """
@@ -1062,7 +1261,7 @@ class IntradayCampaignDetector:
         """
         return [
             c
-            for c in self.campaigns
+            for c in self._campaigns_by_id.values()
             if c.state == CampaignState.COMPLETED and c.r_multiple is not None and c.r_multiple > 0
         ]
 
@@ -1079,7 +1278,7 @@ class IntradayCampaignDetector:
         """
         return [
             c
-            for c in self.campaigns
+            for c in self._campaigns_by_id.values()
             if c.state == CampaignState.COMPLETED and c.r_multiple is not None and c.r_multiple <= 0
         ]
 
@@ -1105,9 +1304,10 @@ class IntradayCampaignDetector:
             >>> stats["performance"]["avg_r_multiple"]
             2.5
         """
-        completed = [c for c in self.campaigns if c.state == CampaignState.COMPLETED]
-        failed = [c for c in self.campaigns if c.state == CampaignState.FAILED]
-        total = len(self.campaigns)
+        all_campaigns = list(self._campaigns_by_id.values())
+        completed = [c for c in all_campaigns if c.state == CampaignState.COMPLETED]
+        failed = [c for c in all_campaigns if c.state == CampaignState.FAILED]
+        total = len(all_campaigns)
 
         # Handle edge case: no campaigns
         if total == 0:
@@ -1936,61 +2136,8 @@ class IntradayCampaignDetector:
         return True
 
     # ==================================================================================
-    # Story 15.3 / 15.5: Index Management for Batch Operations
+    # Story 15.5: Batch Operation Helpers
     # ==================================================================================
-
-    def _add_to_indexes(self, campaign: Campaign) -> None:
-        """
-        Add campaign to all indexes (Story 15.3 / 15.5).
-
-        Updates:
-            - _campaigns_by_id
-            - _campaigns_by_state
-
-        Args:
-            campaign: Campaign to add to indexes
-        """
-        self._campaigns_by_id[campaign.campaign_id] = campaign
-        self._campaigns_by_state[campaign.state].append(campaign)
-
-    def _update_indexes(self, campaign: Campaign, old_state: CampaignState) -> None:
-        """
-        Update indexes when campaign state changes (Story 15.3 / 15.5).
-
-        Removes campaign from old state index and adds to new state index.
-
-        Args:
-            campaign: Campaign with updated state
-            old_state: Previous campaign state
-        """
-        # Remove from old state index
-        if campaign in self._campaigns_by_state[old_state]:
-            self._campaigns_by_state[old_state].remove(campaign)
-
-        # Add to new state index
-        if campaign not in self._campaigns_by_state[campaign.state]:
-            self._campaigns_by_state[campaign.state].append(campaign)
-
-        # Update ID index (should already be there, but ensure)
-        self._campaigns_by_id[campaign.campaign_id] = campaign
-
-    def _rebuild_indexes(self) -> None:
-        """
-        Rebuild all indexes from campaigns list (Story 15.5).
-
-        Useful when campaigns are loaded from database or deserialized,
-        ensuring indexes are properly populated.
-
-        Clears existing indexes and rebuilds from self.campaigns.
-        """
-        # Clear all indexes
-        self._campaigns_by_id.clear()
-        for state in CampaignState:
-            self._campaigns_by_state[state].clear()
-
-        # Rebuild from campaigns list
-        for campaign in self.campaigns:
-            self._add_to_indexes(campaign)
 
     def _find_matching_campaign(self, pattern: WyckoffPattern) -> Optional[Campaign]:
         """
