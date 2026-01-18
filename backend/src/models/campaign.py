@@ -1518,9 +1518,7 @@ class SequencePerformanceResponse(BaseModel):
         ..., description="List of sequence performance metrics sorted by total R-multiple"
     )
 
-    total_sequences: int = Field(
-        ..., ge=0, description="Total number of unique sequences analyzed"
-    )
+    total_sequences: int = Field(..., ge=0, description="Total number of unique sequences analyzed")
 
     filters_applied: dict[str, str | None] = Field(
         default_factory=dict, description="Filters applied (symbol, timeframe)"

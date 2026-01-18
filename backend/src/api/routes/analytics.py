@@ -306,7 +306,7 @@ async def export_pattern_performance_pdf(
 
 @router.get(
     "/pattern-sequences",
-    response_model=dict,
+    response_model="SequencePerformanceResponse",
     summary="Get pattern sequence performance analysis",
     description="""
     Analyze completed campaigns by pattern sequences to identify which sequences

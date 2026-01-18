@@ -25,6 +25,7 @@ Author: Story 16.5a
 """
 
 from collections import defaultdict
+from datetime import UTC
 from decimal import Decimal
 from uuid import UUID
 
@@ -279,8 +280,6 @@ class CampaignSuccessAnalyzer:
             # Sort positions by entry_date (handle timezone-naive dates)
             def get_entry_date(pos):
                 """Get entry date with timezone awareness handling."""
-                from datetime import UTC
-
                 entry_date = pos.entry_date
                 # If timezone-naive, assume UTC
                 if entry_date and entry_date.tzinfo is None:
@@ -339,8 +338,6 @@ class CampaignSuccessAnalyzer:
         # Sort positions by entry_date (handle timezone-naive dates)
         def get_entry_date(pos):
             """Get entry date with timezone awareness handling."""
-            from datetime import UTC
-
             entry_date = pos.entry_date
             # If timezone-naive, assume UTC
             if entry_date and entry_date.tzinfo is None:
