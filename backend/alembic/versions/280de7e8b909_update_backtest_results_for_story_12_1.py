@@ -9,7 +9,7 @@ comprehensive backtesting engine with equity curves, trades, and metrics.
 
 Changes:
 - Drop old pattern detection metric columns
-- Add JSONB columns for config, equity_curve, trades, metrics
+- Add JSONB columns for equity_curve, trades, metrics (config already exists)
 - Add execution_time_seconds for performance tracking
 - Add indexes for query optimization (idx_backtest_symbol, idx_backtest_created_at)
 - Update start_date/end_date to DateTime (was Date)
@@ -49,14 +49,10 @@ def upgrade() -> None:
     op.drop_column("backtest_results", "average_r_multiple")
     op.drop_column("backtest_results", "max_drawdown")
 
-    # Note: config_snapshot column was never created in the original schema
-    # (checked 001_initial_schema_with_timescaledb.py), so no need to drop it
+    # Note: config column already exists from 001_initial_schema_with_timescaledb.py
+    # so we don't need to add it again
 
     # Add new JSONB columns for Story 12.1
-    op.add_column(
-        "backtest_results",
-        sa.Column("config", postgresql.JSONB, nullable=False, server_default="{}"),
-    )
     op.add_column(
         "backtest_results",
         sa.Column("equity_curve", postgresql.JSONB, nullable=False, server_default="[]"),
@@ -129,12 +125,11 @@ def downgrade() -> None:
         existing_nullable=False,
     )
 
-    # Drop Story 12.1 columns
+    # Drop Story 12.1 columns (config column existed before this migration, so don't drop it)
     op.drop_column("backtest_results", "execution_time_seconds")
     op.drop_column("backtest_results", "metrics")
     op.drop_column("backtest_results", "trades")
     op.drop_column("backtest_results", "equity_curve")
-    op.drop_column("backtest_results", "config")
 
     # Restore old pattern detection columns
     op.add_column(
