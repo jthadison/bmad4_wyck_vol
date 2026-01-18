@@ -363,8 +363,9 @@ if campaign.state == CampaignState.ACTIVE:
 ### Backtesting Integration
 
 ```python
-from campaign.intraday_campaign_detector import IntradayCampaignDetector
-from models.patterns import Spring, SOSBreakout
+from src.backtesting.intraday_campaign_detector import IntradayCampaignDetector
+from src.models.spring import Spring
+from src.models.sos_breakout import SOSBreakout
 from decimal import Decimal
 
 # Initialize detector

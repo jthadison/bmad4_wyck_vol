@@ -186,6 +186,49 @@ Verdict: EXCELLENT - Strong institutional demand
 
 ---
 
+### UTAD (Upthrust After Distribution) Pattern
+
+**Volume Requirement**: > 1.5x average (HIGH) - Similar to SOS but bearish context
+
+**Why High Volume?**
+- Indicates professional selling into retail buying
+- Tests for remaining demand above resistance
+- High volume shows supply overwhelming demand at top
+
+**Volume Interpretation**:
+
+| Volume Ratio | Quality | Interpretation |
+|-------------|---------|----------------|
+| > 2.5x avg | EXCELLENT | Strong distribution signal, high probability reversal |
+| 2.0-2.5x avg | EXCELLENT | Clear professional selling |
+| 1.5-2.0x avg | GOOD | Valid UTAD, distribution likely |
+| 1.2-1.5x avg | MARGINAL | Weak signal, watch for confirmation |
+| < 1.2x avg | INVALID | Insufficient volume, may not be UTAD |
+
+**UTAD Volume Example**:
+```
+UTAD thrust above $105.00 resistance
+Volume: 2,600,000 shares
+Average Volume: 1,200,000 shares
+Volume Ratio: 2.17x (2,600k / 1,200k)
+Price Action: Thrusts above resistance, fails to hold, closes back in range
+Verdict: EXCELLENT - Strong distribution signal, professional selling
+```
+
+**Key Difference from SOS**:
+- **SOS (Bullish)**: High volume breakout that HOLDS above resistance → Demand overwhelming supply
+- **UTAD (Bearish)**: High volume thrust that FAILS to hold → Supply overwhelming demand
+
+**Warning Signs**:
+- Price makes new high but closes back in range
+- High volume without price follow-through
+- Widening spread (large range bar) with close near low
+- Effort (volume) without result (sustained price gain)
+
+**Trading Implication**: **BEARISH** - Distribution detected, avoid longs or consider shorts
+
+---
+
 ## 4. Volume Profile Interpretation
 
 Volume profile analysis tracks volume trends across a campaign to identify professional behavior.
@@ -658,12 +701,13 @@ if campaign.climax_detected:
 
 ### Volume Requirements by Pattern
 
-| Pattern | Volume Requirement | Threshold |
-|---------|-------------------|-----------|
-| Spring | LOW | < 0.7x average |
-| AR | MODERATE | 0.8-1.2x average |
-| SOS | HIGH | > 1.5x average |
-| LPS | LOW-MODERATE | < 1.0x average |
+| Pattern | Volume Requirement | Threshold | Context |
+|---------|-------------------|-----------|---------|
+| Spring | LOW | < 0.7x average | Accumulation (bullish) |
+| AR | MODERATE | 0.8-1.2x average | Accumulation (bullish) |
+| SOS | HIGH | > 1.5x average | Breakout (bullish) |
+| LPS | LOW-MODERATE | < 1.0x average | Retest (bullish) |
+| UTAD | HIGH | > 1.5x average | Distribution (bearish) |
 
 ### Volume Profile Signals
 
