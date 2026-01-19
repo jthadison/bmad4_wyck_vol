@@ -15,7 +15,7 @@
  * Author: Story 16.3a
  */
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, type Ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import Dropdown from 'primevue/dropdown'
 import ProgressSpinner from 'primevue/progressspinner'
@@ -23,7 +23,7 @@ import Message from 'primevue/message'
 import CampaignEmptyState from './CampaignEmptyState.vue'
 import { useCampaignStore } from '@/stores/campaignStore'
 import { useWebSocket } from '@/composables/useWebSocket'
-import type { Campaign } from '@/types/campaign-manager'
+import type { Campaign, CampaignStatus } from '@/types/campaign-manager'
 
 /**
  * Sort options for campaigns
@@ -61,6 +61,8 @@ const ws = useWebSocket()
  * Local state
  */
 const selectedSort = ref<SortOption>('health')
+const debounceTimer: Ref<ReturnType<typeof setTimeout> | null> = ref(null)
+const DEBOUNCE_DELAY = 300 // ms
 
 /**
  * Health priority for sorting (red = critical, yellow = warning, green = healthy)
@@ -123,12 +125,20 @@ const sortedCampaigns = computed(() => {
 })
 
 /**
+ * Health status mapping for all campaign statuses
+ */
+const healthStatusMap: Record<CampaignStatus, string> = {
+  ACTIVE: 'green',
+  MARKUP: 'green', // In markup phase = healthy progression
+  COMPLETED: 'green', // Completed successfully
+  INVALIDATED: 'red',
+}
+
+/**
  * Helper to derive health from campaign status
  */
 function getHealthFromCampaign(campaign: Campaign): string {
-  if (campaign.status === 'INVALIDATED') return 'red'
-  if (campaign.status === 'ACTIVE') return 'green'
-  return 'yellow'
+  return healthStatusMap[campaign.status] ?? 'yellow'
 }
 
 /**
@@ -160,11 +170,23 @@ function handleCampaignClick(campaign: Campaign): void {
 }
 
 /**
- * WebSocket event handler for campaign updates
+ * WebSocket event handler for campaign updates (debounced)
+ * Prevents excessive API calls when multiple WebSocket events fire rapidly
  */
 function handleCampaignUpdate(): void {
-  // Refresh active campaigns when a campaign is updated
-  campaignStore.fetchActiveCampaigns()
+  // Clear existing timer if any
+  if (debounceTimer.value) {
+    clearTimeout(debounceTimer.value)
+  }
+
+  // Debounce the fetch to prevent API spam
+  debounceTimer.value = setTimeout(async () => {
+    try {
+      await campaignStore.fetchActiveCampaigns()
+    } catch (error) {
+      console.warn('Failed to refresh campaigns from WebSocket update:', error)
+    }
+  }, DEBOUNCE_DELAY)
 }
 
 /**
@@ -180,12 +202,17 @@ onMounted(() => {
 })
 
 /**
- * Cleanup WebSocket subscriptions on unmount
+ * Cleanup WebSocket subscriptions and timers on unmount
  */
 onUnmounted(() => {
   ws.unsubscribe('campaign:updated', handleCampaignUpdate)
   ws.unsubscribe('campaign:created', handleCampaignUpdate)
   ws.unsubscribe('campaign:invalidated', handleCampaignUpdate)
+
+  // Clear any pending debounce timer
+  if (debounceTimer.value) {
+    clearTimeout(debounceTimer.value)
+  }
 })
 
 /**
@@ -381,6 +408,9 @@ function refreshCampaigns(): void {
   border-radius: 4px;
   font-size: 0.75rem;
   font-weight: 500;
+  /* Default fallback for unknown statuses */
+  background: var(--gray-100);
+  color: var(--gray-700);
 }
 
 .status-active {

@@ -368,15 +368,21 @@ describe('ActiveCampaignsPanel', () => {
   })
 
   describe('sorting', () => {
-    it('should sort campaigns by health status', async () => {
+    it('should sort campaigns by health status (red first)', async () => {
       const wrapper = mountComponent()
       const store = useCampaignStore()
 
       // Create campaigns with different statuses that map to health
+      // INVALIDATED = red, ACTIVE/MARKUP/COMPLETED = green
       const campaignsForSorting: Campaign[] = [
-        { ...mockCampaigns[0], id: 'camp-a', status: 'ACTIVE' }, // green
-        { ...mockCampaigns[1], id: 'camp-b', status: 'INVALIDATED' }, // red
-        { ...mockCampaigns[2], id: 'camp-c', status: 'MARKUP' }, // yellow
+        { ...mockCampaigns[0], id: 'camp-a', symbol: 'AAPL', status: 'ACTIVE' }, // green
+        {
+          ...mockCampaigns[1],
+          id: 'camp-b',
+          symbol: 'TSLA',
+          status: 'INVALIDATED',
+        }, // red
+        { ...mockCampaigns[2], id: 'camp-c', symbol: 'MSFT', status: 'MARKUP' }, // green
       ]
 
       store.$patch({
@@ -387,8 +393,125 @@ describe('ActiveCampaignsPanel', () => {
       await flushPromises()
 
       // Default sort is by health, red first
-      const campaignItems = wrapper.findAll('.campaign-item')
-      expect(campaignItems.length).toBe(3)
+      const symbols = wrapper.findAll('.symbol').map((el) => el.text())
+      expect(symbols[0]).toBe('TSLA') // red (INVALIDATED) first
+      // AAPL and MSFT are both green, order depends on original array order
+      expect(symbols).toContain('AAPL')
+      expect(symbols).toContain('MSFT')
+    })
+
+    it('should sort campaigns by P&L (highest first)', async () => {
+      const wrapper = mountComponent()
+      const store = useCampaignStore()
+
+      const campaignsForSorting: Campaign[] = [
+        {
+          ...mockCampaigns[0],
+          id: 'camp-a',
+          symbol: 'AAPL',
+          total_pnl: '100.00',
+        },
+        {
+          ...mockCampaigns[1],
+          id: 'camp-b',
+          symbol: 'TSLA',
+          total_pnl: '500.00',
+        },
+        {
+          ...mockCampaigns[2],
+          id: 'camp-c',
+          symbol: 'MSFT',
+          total_pnl: '-50.00',
+        },
+      ]
+
+      store.$patch({
+        loadingActiveCampaigns: false,
+        activeCampaigns: campaignsForSorting,
+      })
+
+      await flushPromises()
+
+      // Change sort to P&L via component's internal state
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(wrapper.vm as any).selectedSort = 'pnl'
+      await flushPromises()
+
+      const symbols = wrapper.findAll('.symbol').map((el) => el.text())
+      expect(symbols[0]).toBe('TSLA') // highest P&L
+      expect(symbols[1]).toBe('AAPL')
+      expect(symbols[2]).toBe('MSFT') // lowest P&L
+    })
+
+    it('should sort campaigns by start time (most recent first)', async () => {
+      const wrapper = mountComponent()
+      const store = useCampaignStore()
+
+      const campaignsForSorting: Campaign[] = [
+        {
+          ...mockCampaigns[0],
+          id: 'camp-a',
+          symbol: 'AAPL',
+          start_date: '2023-01-01T00:00:00Z',
+        },
+        {
+          ...mockCampaigns[1],
+          id: 'camp-b',
+          symbol: 'TSLA',
+          start_date: '2023-06-15T00:00:00Z',
+        },
+        {
+          ...mockCampaigns[2],
+          id: 'camp-c',
+          symbol: 'MSFT',
+          start_date: '2023-03-10T00:00:00Z',
+        },
+      ]
+
+      store.$patch({
+        loadingActiveCampaigns: false,
+        activeCampaigns: campaignsForSorting,
+      })
+
+      await flushPromises()
+
+      // Change sort to time via component's internal state
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(wrapper.vm as any).selectedSort = 'time'
+      await flushPromises()
+
+      const symbols = wrapper.findAll('.symbol').map((el) => el.text())
+      expect(symbols[0]).toBe('TSLA') // most recent
+      expect(symbols[1]).toBe('MSFT')
+      expect(symbols[2]).toBe('AAPL') // oldest
+    })
+
+    it('should sort campaigns by phase', async () => {
+      const wrapper = mountComponent()
+      const store = useCampaignStore()
+
+      const campaignsForSorting: Campaign[] = [
+        { ...mockCampaigns[0], id: 'camp-a', symbol: 'AAPL', phase: 'C' },
+        { ...mockCampaigns[1], id: 'camp-b', symbol: 'TSLA', phase: 'E' },
+        { ...mockCampaigns[2], id: 'camp-c', symbol: 'MSFT', phase: 'A' },
+      ]
+
+      store.$patch({
+        loadingActiveCampaigns: false,
+        activeCampaigns: campaignsForSorting,
+      })
+
+      await flushPromises()
+
+      // Change sort to phase via component's internal state
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(wrapper.vm as any).selectedSort = 'phase'
+      await flushPromises()
+
+      const symbols = wrapper.findAll('.symbol').map((el) => el.text())
+      expect(symbols[0]).toBe('TSLA') // Phase E (earliest)
+      expect(symbols[1]).toBe('AAPL') // Phase C
+      expect(symbols[2]).toBe('MSFT') // Phase A (latest)
     })
   })
 
