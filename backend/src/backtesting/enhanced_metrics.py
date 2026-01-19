@@ -255,8 +255,8 @@ class EnhancedMetricsCalculator:
             if point.portfolio_value > peak_value:
                 # New high - end any active drawdown
                 if in_drawdown:
-                    # Calculate drawdown percentage
-                    dd_pct = (((peak_value - trough_value) / peak_value) * Decimal("100")).quantize(
+                    # Calculate drawdown percentage (negative value)
+                    dd_pct = (((trough_value - peak_value) / peak_value) * Decimal("100")).quantize(
                         Decimal("0.0001")
                     )
                     duration = (trough_date - peak_date).days
@@ -269,6 +269,7 @@ class EnhancedMetricsCalculator:
                             recovery_date=point.timestamp,
                             peak_value=peak_value,
                             trough_value=trough_value,
+                            recovery_value=point.portfolio_value,
                             drawdown_pct=dd_pct,
                             duration_days=duration,
                             recovery_duration_days=recovery_duration,
@@ -290,7 +291,7 @@ class EnhancedMetricsCalculator:
 
         # Handle uncovered drawdown at end
         if in_drawdown and trough_value < peak_value:
-            dd_pct = (((peak_value - trough_value) / peak_value) * Decimal("100")).quantize(
+            dd_pct = (((trough_value - peak_value) / peak_value) * Decimal("100")).quantize(
                 Decimal("0.0001")
             )
             duration = (trough_date - peak_date).days
@@ -302,13 +303,15 @@ class EnhancedMetricsCalculator:
                     recovery_date=None,  # Not yet recovered
                     peak_value=peak_value,
                     trough_value=trough_value,
+                    recovery_value=None,
                     drawdown_pct=dd_pct,
                     duration_days=duration,
                     recovery_duration_days=None,
                 )
             )
 
-        return sorted(drawdowns, key=lambda x: x.drawdown_pct, reverse=True)
+        # Sort by drawdown_pct ascending (most negative first = most severe)
+        return sorted(drawdowns, key=lambda x: x.drawdown_pct)
 
     def calculate_risk_metrics(
         self,
@@ -335,10 +338,15 @@ class EnhancedMetricsCalculator:
         portfolio_heats = []
         position_sizes = []
         capital_deployed = []
+        days_with_positions = set()
 
         for timestamp, positions in position_snapshots:
             # Concurrent positions
             concurrent_counts.append(len(positions))
+
+            # Track days with positions
+            if positions:
+                days_with_positions.add(timestamp.date())
 
             # Portfolio heat (total risk as % of capital)
             # Simplified: assume 2% risk per position (would need stop loss data for exact)
@@ -387,6 +395,22 @@ class EnhancedMetricsCalculator:
             else Decimal("0")
         )
 
+        # Calculate exposure time metrics
+        total_exposure_days = len(days_with_positions)
+        if len(position_snapshots) > 1:
+            # Calculate backtest duration from first to last snapshot
+            first_date = position_snapshots[0][0].date()
+            last_date = position_snapshots[-1][0].date()
+            total_days = (last_date - first_date).days + 1
+            exposure_pct = (
+                (Decimal(str(total_exposure_days)) / Decimal(str(total_days))) * Decimal("100")
+                if total_days > 0
+                else Decimal("0")
+            )
+        else:
+            # Single snapshot - 100% exposure if has positions, 0% otherwise
+            exposure_pct = Decimal("100") if total_exposure_days > 0 else Decimal("0")
+
         return RiskMetrics(
             max_concurrent_positions=max_concurrent,
             avg_concurrent_positions=avg_concurrent,
@@ -396,6 +420,8 @@ class EnhancedMetricsCalculator:
             avg_position_size_pct=avg_pos_size,
             max_capital_deployed_pct=max_deployed,
             avg_capital_deployed_pct=avg_deployed,
+            total_exposure_days=total_exposure_days,
+            exposure_time_pct=exposure_pct,
         )
 
     def calculate_campaign_performance(

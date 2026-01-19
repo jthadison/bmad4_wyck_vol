@@ -137,6 +137,10 @@ def load_labeled_patterns_as_models(version: str = "v1") -> list[dict[str, Any]]
                     # Leave as string if not valid JSON
                     pass
 
+        # Convert correctness boolean to string (for Pydantic)
+        if "correctness" in record and isinstance(record["correctness"], bool):
+            record["correctness"] = "CORRECT" if record["correctness"] else "INCORRECT"
+
         # Convert datetime to ISO format string (for Pydantic)
         if "date" in record and isinstance(record["date"], pd.Timestamp):
             record["date"] = record["date"].isoformat()
