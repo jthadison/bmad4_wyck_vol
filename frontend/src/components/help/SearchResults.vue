@@ -243,15 +243,19 @@ onUnmounted(() => {
       </div>
 
       <!-- Results List -->
-      <DataView :value="helpStore.searchResults" class="results-list">
+      <DataView
+        :value="helpStore.searchResults"
+        data-key="article_id"
+        class="results-list"
+      >
         <template #list="slotProps">
           <div
             v-for="(result, index) in slotProps.items"
             :key="result.id"
             class="result-item"
             :class="{ selected: index === selectedIndex }"
-            @click="handleResultClick(index)"
-            @mouseenter="selectedIndex = index"
+            @click="handleResultClick(Number(index))"
+            @mouseenter="selectedIndex = Number(index)"
           >
             <div class="result-header">
               <h3 class="result-title">{{ result.title }}</h3>

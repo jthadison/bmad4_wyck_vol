@@ -25,6 +25,15 @@
  */
 
 import type { Signal } from './index'
+import type {
+  PaperPositionOpenedMessage,
+  PaperPositionUpdatedMessage,
+  PaperTradeClosedMessage,
+} from './paper-trading'
+import type {
+  BacktestProgressUpdate,
+  BacktestCompletedMessage,
+} from './backtest'
 
 /**
  * Base WebSocket message structure.
@@ -129,6 +138,7 @@ export interface BatchUpdateMessage extends WebSocketMessageBase {
 
 /**
  * Union type of all WebSocket messages.
+ * Includes core messages, paper trading messages (Story 12.8), and backtest messages (Story 11.2).
  */
 export type WebSocketMessage =
   | ConnectedMessage
@@ -139,6 +149,11 @@ export type WebSocketMessage =
   | PortfolioUpdatedMessage
   | CampaignUpdatedMessage
   | BatchUpdateMessage
+  | PaperPositionOpenedMessage
+  | PaperPositionUpdatedMessage
+  | PaperTradeClosedMessage
+  | BacktestProgressUpdate
+  | BacktestCompletedMessage
 
 /**
  * WebSocket connection status.
@@ -176,7 +191,95 @@ export const WebSocketEventTypes = {
   PORTFOLIO_UPDATED: 'portfolio:updated',
   CAMPAIGN_UPDATED: 'campaign:updated',
   BATCH_UPDATE: 'batch_update',
+  PAPER_POSITION_OPENED: 'paper_position_opened',
+  PAPER_POSITION_UPDATED: 'paper_position_updated',
+  PAPER_TRADE_CLOSED: 'paper_trade_closed',
+  BACKTEST_PROGRESS: 'backtest_progress',
+  BACKTEST_COMPLETED: 'backtest_completed',
 } as const
 
 export type WebSocketEventType =
   (typeof WebSocketEventTypes)[keyof typeof WebSocketEventTypes]
+
+/**
+ * Type guards for narrowing WebSocket messages.
+ * Use these to safely narrow the WebSocketMessage union type.
+ */
+
+export function isConnectedMessage(
+  msg: WebSocketMessage
+): msg is ConnectedMessage {
+  return msg.type === 'connected'
+}
+
+export function isPatternDetectedMessage(
+  msg: WebSocketMessage
+): msg is PatternDetectedMessage {
+  return msg.type === 'pattern_detected'
+}
+
+export function isSignalNewMessage(
+  msg: WebSocketMessage
+): msg is SignalNewMessage {
+  return msg.type === 'signal:new'
+}
+
+export function isSignalExecutedMessage(
+  msg: WebSocketMessage
+): msg is SignalExecutedMessage {
+  return msg.type === 'signal:executed'
+}
+
+export function isSignalRejectedMessage(
+  msg: WebSocketMessage
+): msg is SignalRejectedMessage {
+  return msg.type === 'signal:rejected'
+}
+
+export function isPortfolioUpdatedMessage(
+  msg: WebSocketMessage
+): msg is PortfolioUpdatedMessage {
+  return msg.type === 'portfolio:updated'
+}
+
+export function isCampaignUpdatedMessage(
+  msg: WebSocketMessage
+): msg is CampaignUpdatedMessage {
+  return msg.type === 'campaign:updated'
+}
+
+export function isBatchUpdateMessage(
+  msg: WebSocketMessage
+): msg is BatchUpdateMessage {
+  return msg.type === 'batch_update'
+}
+
+export function isPaperPositionOpenedMessage(
+  msg: WebSocketMessage
+): msg is PaperPositionOpenedMessage {
+  return msg.type === 'paper_position_opened'
+}
+
+export function isPaperPositionUpdatedMessage(
+  msg: WebSocketMessage
+): msg is PaperPositionUpdatedMessage {
+  return msg.type === 'paper_position_updated'
+}
+
+export function isPaperTradeClosedMessage(
+  msg: WebSocketMessage
+): msg is PaperTradeClosedMessage {
+  return msg.type === 'paper_trade_closed'
+}
+
+export function isBacktestProgressUpdate(
+  msg: WebSocketMessage
+): msg is BacktestProgressUpdate {
+  return msg.type === 'backtest_progress'
+}
+
+export function isBacktestCompletedMessage(
+  msg: WebSocketMessage
+): msg is BacktestCompletedMessage {
+  return msg.type === 'backtest_completed'
+}

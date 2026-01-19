@@ -33,6 +33,7 @@ import {
   ColorType,
 } from 'lightweight-charts'
 import type { HeatHistoryPoint } from '@/types'
+import { toChartTime } from '@/types/chart'
 
 /**
  * HeatSparkline Component (Story 10.6)
@@ -217,7 +218,7 @@ function updateChartData() {
 
   // Transform data for lightweight-charts
   const chartData = props.heatHistory.map((point) => ({
-    time: new Date(point.timestamp).getTime() / 1000, // Convert to Unix timestamp
+    time: toChartTime(new Date(point.timestamp).getTime()),
     value: point.heat_percentage.toNumber(),
   }))
 

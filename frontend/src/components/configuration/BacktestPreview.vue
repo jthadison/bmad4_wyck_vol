@@ -117,6 +117,10 @@ import { useBacktestStore } from '@/stores/backtestStore'
 import { useWebSocket } from '@/composables/useWebSocket'
 import type { BacktestPreviewRequest } from '@/types/backtest'
 import type { WebSocketMessage } from '@/types/websocket'
+import {
+  isBacktestProgressUpdate,
+  isBacktestCompletedMessage,
+} from '@/types/websocket'
 import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
 import DataTable from 'primevue/datatable'
@@ -321,21 +325,25 @@ function handleRetry() {
 // Message handlers
 const handleBacktestProgress = (message: WebSocketMessage) => {
   console.log('[BacktestPreview] handleBacktestProgress called:', message)
-  backtestStore.handleProgressUpdate(message)
+  if (isBacktestProgressUpdate(message)) {
+    backtestStore.handleProgressUpdate(message)
+  }
 }
 
 const handleBacktestCompleted = (message: WebSocketMessage) => {
   console.log('[BacktestPreview] handleBacktestCompleted called:', message)
-  backtestStore.handleCompletion(message)
+  if (isBacktestCompletedMessage(message)) {
+    backtestStore.handleCompletion(message)
 
-  toast.add({
-    severity: 'success',
-    summary: 'Backtest Complete',
-    detail:
-      (message as { comparison?: { recommendation_text?: string } }).comparison
-        ?.recommendation_text || 'Backtest completed successfully',
-    life: 5000,
-  })
+    toast.add({
+      severity: 'success',
+      summary: 'Backtest Complete',
+      detail:
+        message.comparison?.recommendation_text ||
+        'Backtest completed successfully',
+      life: 5000,
+    })
+  }
 }
 
 // WebSocket Integration (Task 7)

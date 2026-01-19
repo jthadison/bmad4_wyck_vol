@@ -5,6 +5,20 @@
  * These types mirror the backend Pydantic models but use TypeScript conventions.
  */
 
+import type { Time, UTCTimestamp } from 'lightweight-charts'
+
+/**
+ * Convert Unix timestamp (milliseconds or seconds) to Lightweight Charts Time type
+ * @param timestamp Unix timestamp in milliseconds or seconds
+ * @returns UTCTimestamp in seconds
+ */
+export function toChartTime(timestamp: number): Time {
+  // If timestamp is in milliseconds (> 10 billion), convert to seconds
+  const timestampSeconds =
+    timestamp > 10000000000 ? timestamp / 1000 : timestamp
+  return timestampSeconds as UTCTimestamp
+}
+
 /**
  * Single OHLCV bar for chart display
  * Time format: Unix timestamp in seconds (Lightweight Charts requirement)

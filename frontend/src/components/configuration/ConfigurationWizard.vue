@@ -42,6 +42,102 @@ const canSave = computed(() => {
   return hasChanges.value && !savingConfig.value && !loadingConfig.value
 })
 
+// Computed properties for number-to-string conversion (API uses strings for Decimal types)
+const springVolumeMin = computed({
+  get: () =>
+    parseFloat(proposedConfig.volume_thresholds?.spring_volume_min || '0'),
+  set: (val: number) => {
+    if (proposedConfig.volume_thresholds) {
+      proposedConfig.volume_thresholds.spring_volume_min = val.toString()
+    }
+  },
+})
+
+const springVolumeMax = computed({
+  get: () =>
+    parseFloat(proposedConfig.volume_thresholds?.spring_volume_max || '0'),
+  set: (val: number) => {
+    if (proposedConfig.volume_thresholds) {
+      proposedConfig.volume_thresholds.spring_volume_max = val.toString()
+    }
+  },
+})
+
+const sosVolumeMin = computed({
+  get: () =>
+    parseFloat(proposedConfig.volume_thresholds?.sos_volume_min || '0'),
+  set: (val: number) => {
+    if (proposedConfig.volume_thresholds) {
+      proposedConfig.volume_thresholds.sos_volume_min = val.toString()
+    }
+  },
+})
+
+const lpsVolumeMin = computed({
+  get: () =>
+    parseFloat(proposedConfig.volume_thresholds?.lps_volume_min || '0'),
+  set: (val: number) => {
+    if (proposedConfig.volume_thresholds) {
+      proposedConfig.volume_thresholds.lps_volume_min = val.toString()
+    }
+  },
+})
+
+const utadVolumeMax = computed({
+  get: () =>
+    parseFloat(proposedConfig.volume_thresholds?.utad_volume_max || '0'),
+  set: (val: number) => {
+    if (proposedConfig.volume_thresholds) {
+      proposedConfig.volume_thresholds.utad_volume_max = val.toString()
+    }
+  },
+})
+
+const maxRiskPerTrade = computed({
+  get: () => parseFloat(proposedConfig.risk_limits?.max_risk_per_trade || '0'),
+  set: (val: number) => {
+    if (proposedConfig.risk_limits) {
+      proposedConfig.risk_limits.max_risk_per_trade = val.toString()
+    }
+  },
+})
+
+const maxCampaignRisk = computed({
+  get: () => parseFloat(proposedConfig.risk_limits?.max_campaign_risk || '0'),
+  set: (val: number) => {
+    if (proposedConfig.risk_limits) {
+      proposedConfig.risk_limits.max_campaign_risk = val.toString()
+    }
+  },
+})
+
+const maxPortfolioHeat = computed({
+  get: () => parseFloat(proposedConfig.risk_limits?.max_portfolio_heat || '0'),
+  set: (val: number) => {
+    if (proposedConfig.risk_limits) {
+      proposedConfig.risk_limits.max_portfolio_heat = val.toString()
+    }
+  },
+})
+
+const minCauseFactor = computed({
+  get: () => parseFloat(proposedConfig.cause_factors?.min_cause_factor || '0'),
+  set: (val: number) => {
+    if (proposedConfig.cause_factors) {
+      proposedConfig.cause_factors.min_cause_factor = val.toString()
+    }
+  },
+})
+
+const maxCauseFactor = computed({
+  get: () => parseFloat(proposedConfig.cause_factors?.max_cause_factor || '0'),
+  set: (val: number) => {
+    if (proposedConfig.cause_factors) {
+      proposedConfig.cause_factors.max_cause_factor = val.toString()
+    }
+  },
+})
+
 // Load current configuration
 async function loadConfiguration() {
   loadingConfig.value = true
@@ -176,7 +272,7 @@ onMounted(() => {
             </p>
 
             <ParameterInput
-              v-model="proposedConfig.volume_thresholds!.spring_volume_min"
+              v-model="springVolumeMin"
               label="Spring Volume Min"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.spring_volume_min)
@@ -189,7 +285,7 @@ onMounted(() => {
             />
 
             <ParameterInput
-              v-model="proposedConfig.volume_thresholds!.spring_volume_max"
+              v-model="springVolumeMax"
               label="Spring Volume Max"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.spring_volume_max)
@@ -202,7 +298,7 @@ onMounted(() => {
             />
 
             <ParameterInput
-              v-model="proposedConfig.volume_thresholds!.sos_volume_min"
+              v-model="sosVolumeMin"
               label="SOS Volume Min"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.sos_volume_min)
@@ -215,7 +311,7 @@ onMounted(() => {
             />
 
             <ParameterInput
-              v-model="proposedConfig.volume_thresholds!.lps_volume_min"
+              v-model="lpsVolumeMin"
               label="LPS Volume Min"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.lps_volume_min)
@@ -228,7 +324,7 @@ onMounted(() => {
             />
 
             <ParameterInput
-              v-model="proposedConfig.volume_thresholds!.utad_volume_max"
+              v-model="utadVolumeMax"
               label="UTAD Volume Max"
               :current-value="
                 parseFloat(currentConfig.volume_thresholds.utad_volume_max)
@@ -251,7 +347,7 @@ onMounted(() => {
             </p>
 
             <ParameterInput
-              v-model="proposedConfig.risk_limits!.max_risk_per_trade"
+              v-model="maxRiskPerTrade"
               label="Max Risk Per Trade"
               :current-value="
                 parseFloat(currentConfig.risk_limits.max_risk_per_trade)
@@ -264,7 +360,7 @@ onMounted(() => {
             />
 
             <ParameterInput
-              v-model="proposedConfig.risk_limits!.max_campaign_risk"
+              v-model="maxCampaignRisk"
               label="Max Campaign Risk"
               :current-value="
                 parseFloat(currentConfig.risk_limits.max_campaign_risk)
@@ -277,7 +373,7 @@ onMounted(() => {
             />
 
             <ParameterInput
-              v-model="proposedConfig.risk_limits!.max_portfolio_heat"
+              v-model="maxPortfolioHeat"
               label="Max Portfolio Heat"
               :current-value="
                 parseFloat(currentConfig.risk_limits.max_portfolio_heat)
@@ -301,7 +397,7 @@ onMounted(() => {
             </p>
 
             <ParameterInput
-              v-model="proposedConfig.cause_factors!.min_cause_factor"
+              v-model="minCauseFactor"
               label="Min Cause Factor"
               :current-value="
                 parseFloat(currentConfig.cause_factors.min_cause_factor)
@@ -313,7 +409,7 @@ onMounted(() => {
             />
 
             <ParameterInput
-              v-model="proposedConfig.cause_factors!.max_cause_factor"
+              v-model="maxCauseFactor"
               label="Max Cause Factor"
               :current-value="
                 parseFloat(currentConfig.cause_factors.max_cause_factor)

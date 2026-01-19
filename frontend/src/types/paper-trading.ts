@@ -7,6 +7,8 @@
  * Author: Story 12.8
  */
 
+import type { WebSocketMessageBase } from './websocket'
+
 /**
  * Paper trading configuration
  */
@@ -234,17 +236,18 @@ export interface TradesResponse {
 /**
  * WebSocket message types
  */
-export interface PaperPositionOpenedMessage {
+export interface PaperPositionOpenedMessage extends WebSocketMessageBase {
   type: 'paper_position_opened'
   data: {
     position_id: string
+    signal_id: string
     symbol: string
     entry_price: string
     quantity: string
   }
 }
 
-export interface PaperPositionUpdatedMessage {
+export interface PaperPositionUpdatedMessage extends WebSocketMessageBase {
   type: 'paper_position_updated'
   data: {
     position_id: string
@@ -253,7 +256,7 @@ export interface PaperPositionUpdatedMessage {
   }
 }
 
-export interface PaperTradeClosedMessage {
+export interface PaperTradeClosedMessage extends WebSocketMessageBase {
   type: 'paper_trade_closed'
   data: PaperTrade
 }

@@ -22,6 +22,7 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts'
 import type { EquityCurvePoint } from '@/types/backtest'
+import { toChartTime } from '@/types/chart'
 
 // Props
 interface Props {
@@ -111,13 +112,13 @@ function updateChartData() {
 
   // Transform equity curve data to Lightweight Charts format
   const currentData = props.currentCurve.map((point) => ({
-    time: new Date(point.timestamp).getTime() / 1000, // Convert to Unix timestamp
-    value: parseFloat(point.equity_value),
+    time: toChartTime(new Date(point.timestamp).getTime()),
+    value: parseFloat(point.portfolio_value),
   }))
 
   const proposedData = props.proposedCurve.map((point) => ({
-    time: new Date(point.timestamp).getTime() / 1000,
-    value: parseFloat(point.equity_value),
+    time: toChartTime(new Date(point.timestamp).getTime()),
+    value: parseFloat(point.portfolio_value),
   }))
 
   // Set data to series

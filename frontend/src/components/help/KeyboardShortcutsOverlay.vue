@@ -187,19 +187,20 @@ const formatKeys = (keys: string): string[] => {
             class="shortcut-row"
           >
             <div class="shortcut-keys">
-              <kbd
+              <template
                 v-for="(key, keyIndex) in formatKeys(shortcut.keys)"
                 :key="keyIndex"
-                class="key"
               >
-                {{ key }}
-              </kbd>
-              <span
-                v-if="keyIndex < formatKeys(shortcut.keys).length - 1"
-                class="key-separator"
-              >
-                +
-              </span>
+                <kbd class="key">
+                  {{ key }}
+                </kbd>
+                <span
+                  v-if="keyIndex < formatKeys(shortcut.keys).length - 1"
+                  class="key-separator"
+                >
+                  +
+                </span>
+              </template>
             </div>
             <div class="shortcut-description">
               {{ shortcut.description }}

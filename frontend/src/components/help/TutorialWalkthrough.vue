@@ -330,11 +330,9 @@ watch(currentStepIndex, () => {
             v-if="currentStepData.action_required"
             severity="info"
             :closable="false"
+            icon="pi pi-hand-point-right"
             class="action-message"
           >
-            <template #icon>
-              <i class="pi pi-hand-point-right"></i>
-            </template>
             <strong>Action Required:</strong>
             {{ currentStepData.action_required }}
           </Message>

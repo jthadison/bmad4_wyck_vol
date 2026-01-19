@@ -80,6 +80,12 @@ import { websocketService } from '@/services/websocketService'
 import { notificationService } from '@/services/notificationService'
 import { toBig } from '@/types/decimal-utils'
 import type { WebSocketMessage } from '@/types/websocket'
+import {
+  isPaperPositionOpenedMessage,
+  isPaperPositionUpdatedMessage,
+  isPaperTradeClosedMessage,
+} from '@/types/websocket'
+import { NotificationType, NotificationPriority } from '@/types/notification'
 
 const toast = useToast()
 
@@ -168,8 +174,8 @@ onMounted(() => {
       if ('notification' in message && message.notification) {
         const notification = message.notification as {
           id: string
-          notification_type: string
-          priority: string
+          notification_type: NotificationType
+          priority: NotificationPriority
           title: string
           message: string
           user_id: string
@@ -184,8 +190,8 @@ onMounted(() => {
             const notificationStore = useNotificationStore()
             notificationStore.handleToastNotification({
               id: notification.id,
-              notification_type: notification.notification_type as string,
-              priority: notification.priority as string,
+              notification_type: notification.notification_type,
+              priority: notification.priority,
               title: notification.title,
               message: notification.message,
               metadata: {},
@@ -203,7 +209,7 @@ onMounted(() => {
   websocketService.subscribe(
     'paper_position_opened',
     (message: WebSocketMessage) => {
-      if ('data' in message && message.data) {
+      if (isPaperPositionOpenedMessage(message)) {
         import('@/stores/paperTradingStore').then(
           ({ usePaperTradingStore }) => {
             const paperTradingStore = usePaperTradingStore()
@@ -217,7 +223,7 @@ onMounted(() => {
   websocketService.subscribe(
     'paper_position_updated',
     (message: WebSocketMessage) => {
-      if ('data' in message && message.data) {
+      if (isPaperPositionUpdatedMessage(message)) {
         import('@/stores/paperTradingStore').then(
           ({ usePaperTradingStore }) => {
             const paperTradingStore = usePaperTradingStore()
@@ -231,7 +237,7 @@ onMounted(() => {
   websocketService.subscribe(
     'paper_trade_closed',
     (message: WebSocketMessage) => {
-      if ('data' in message && message.data) {
+      if (isPaperTradeClosedMessage(message)) {
         import('@/stores/paperTradingStore').then(
           ({ usePaperTradingStore }) => {
             const paperTradingStore = usePaperTradingStore()

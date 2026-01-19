@@ -67,8 +67,12 @@ const filteredAndSortedCampaigns = computed(() => {
 
   // Apply sorting
   filtered.sort((a, b) => {
-    let aVal: unknown = a[sortColumn.value as keyof CampaignPerformance]
-    let bVal: unknown = b[sortColumn.value as keyof CampaignPerformance]
+    let aVal: number | string = a[
+      sortColumn.value as keyof CampaignPerformance
+    ] as number | string
+    let bVal: number | string = b[
+      sortColumn.value as keyof CampaignPerformance
+    ] as number | string
 
     // Handle numeric string comparisons (Decimal values)
     if (sortColumn.value === 'total_campaign_pnl') {
