@@ -64,12 +64,12 @@ class WebSocketProvider(ABC):
     """
 
     @abstractmethod
-    async def connect(self, url: str, **kwargs) -> None:
+    async def connect(self, url: str | None = None, **kwargs) -> None:
         """
         Establish WebSocket connection.
 
         Args:
-            url: WebSocket endpoint URL
+            url: WebSocket endpoint URL (optional, provider may have default)
             **kwargs: Provider-specific connection options
         """
         pass

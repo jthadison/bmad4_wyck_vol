@@ -7,6 +7,7 @@ Main entry point for real-time market data streaming.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -27,6 +28,15 @@ logger = structlog.get_logger(__name__)
 
 # Type alias for OHLCVBar callback
 OHLCVBarCallback = Callable[[OHLCVBar], Awaitable[None] | None]
+
+# Symbol validation pattern: 1-10 alphanumeric characters, may include dots and hyphens
+SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,9}$", re.IGNORECASE)
+
+# Default configuration constants with documentation
+DEFAULT_BUFFER_SIZE = 50  # Max bars to buffer per symbol (circular buffer)
+DEFAULT_RECONNECT_DELAY = 5.0  # Seconds between reconnection attempts
+DEFAULT_MAX_RECONNECT_ATTEMPTS = 10  # Max reconnection attempts before giving up
+DEFAULT_HEARTBEAT_INTERVAL = 30.0  # Seconds between heartbeat pings
 
 
 class RealtimeMarketClient:
@@ -52,10 +62,10 @@ class RealtimeMarketClient:
     def __init__(
         self,
         provider: WebSocketProvider,
-        buffer_size: int = 50,
-        reconnect_delay: float = 5.0,
-        max_reconnect_attempts: int = 10,
-        heartbeat_interval: float = 30.0,
+        buffer_size: int = DEFAULT_BUFFER_SIZE,
+        reconnect_delay: float = DEFAULT_RECONNECT_DELAY,
+        max_reconnect_attempts: int = DEFAULT_MAX_RECONNECT_ATTEMPTS,
+        heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL,
     ):
         """
         Initialize real-time market client.
@@ -86,6 +96,7 @@ class RealtimeMarketClient:
         # Background tasks
         self._heartbeat_task: asyncio.Task | None = None
         self._reconnect_task: asyncio.Task | None = None
+        self._reconnect_lock = asyncio.Lock()
 
         # Wire up provider callbacks
         self._provider.on_bar(self._handle_bar)
@@ -179,9 +190,18 @@ class RealtimeMarketClient:
 
         Raises:
             RuntimeError: If client not started
+            ValueError: If symbol format is invalid
         """
         if not self._running:
             raise RuntimeError("Client not started")
+
+        # Validate symbol formats
+        for symbol in symbols:
+            if not self._validate_symbol(symbol):
+                raise ValueError(
+                    f"Invalid symbol format: '{symbol}'. "
+                    "Symbols must be 1-10 alphanumeric characters (may include . and -)."
+                )
 
         self._current_timeframe = timeframe
         await self._provider.subscribe(symbols, timeframe)
@@ -223,6 +243,22 @@ class RealtimeMarketClient:
             callback: Function called when bar received
         """
         self._bar_callbacks.append(callback)
+
+    def remove_bar_callback(self, callback: OHLCVBarCallback) -> bool:
+        """
+        Unregister a bar callback to prevent memory leaks.
+
+        Args:
+            callback: The callback function to remove
+
+        Returns:
+            True if callback was found and removed, False otherwise
+        """
+        try:
+            self._bar_callbacks.remove(callback)
+            return True
+        except ValueError:
+            return False
 
     def get_bars(self, symbol: str) -> list[OHLCVBar]:
         """
@@ -334,6 +370,20 @@ class RealtimeMarketClient:
 
         return True
 
+    def _validate_symbol(self, symbol: str) -> bool:
+        """
+        Validate symbol format.
+
+        Args:
+            symbol: Symbol string to validate
+
+        Returns:
+            True if valid format, False otherwise
+        """
+        if not symbol or not isinstance(symbol, str):
+            return False
+        return bool(SYMBOL_PATTERN.match(symbol))
+
     async def _notify_callbacks(self, bar: OHLCVBar) -> None:
         """Notify all registered callbacks."""
         for callback in self._bar_callbacks:
@@ -353,7 +403,12 @@ class RealtimeMarketClient:
         logger.info("connection_state_changed", state=state.value)
 
         if state == ConnectionState.DISCONNECTED and self._running:
-            # Trigger reconnection
+            # Trigger reconnection with atomic check using lock
+            asyncio.create_task(self._trigger_reconnect())
+
+    async def _trigger_reconnect(self) -> None:
+        """Atomically check and trigger reconnection to prevent race conditions."""
+        async with self._reconnect_lock:
             if not self._reconnect_task or self._reconnect_task.done():
                 self._reconnect_task = asyncio.create_task(self._reconnect())
 

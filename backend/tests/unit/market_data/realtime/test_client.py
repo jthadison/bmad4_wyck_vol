@@ -461,3 +461,90 @@ class TestRealtimeMarketClient:
         # Should not raise
         await client.stop()
         assert not client.is_running
+
+    def test_validate_bar_negative_volume(self):
+        """Test bar validation fails for negative volume."""
+        provider = MockProvider()
+        client = RealtimeMarketClient(provider)
+
+        # Create a bar with negative volume (bypass Pydantic validation)
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1m",
+            timestamp=datetime.now(UTC),
+            open=Decimal("150"),
+            high=Decimal("155"),
+            low=Decimal("148"),
+            close=Decimal("153"),
+            volume=100000,
+            spread=Decimal("7"),
+        )
+        # Manually set negative volume to test validation
+        object.__setattr__(bar, "volume", -100)
+
+        assert client._validate_bar(bar) is False
+
+    def test_validate_symbol_valid(self):
+        """Test valid symbol formats are accepted."""
+        provider = MockProvider()
+        client = RealtimeMarketClient(provider)
+
+        assert client._validate_symbol("AAPL") is True
+        assert client._validate_symbol("BRK.B") is True
+        assert client._validate_symbol("SPY") is True
+        assert client._validate_symbol("ES-2024") is True
+        assert client._validate_symbol("A") is True
+
+    def test_validate_symbol_invalid(self):
+        """Test invalid symbol formats are rejected."""
+        provider = MockProvider()
+        client = RealtimeMarketClient(provider)
+
+        assert client._validate_symbol("") is False
+        assert client._validate_symbol("   ") is False
+        assert client._validate_symbol("TOOLONGSYMBOL") is False
+        assert client._validate_symbol("@INVALID") is False
+        assert client._validate_symbol("$SPY") is False
+        assert client._validate_symbol(None) is False
+
+    @pytest.mark.asyncio
+    async def test_subscribe_invalid_symbol(self):
+        """Test subscribe rejects invalid symbols."""
+        provider = MockProvider()
+        client = RealtimeMarketClient(provider)
+
+        await client.start()
+
+        with pytest.raises(ValueError, match="Invalid symbol format"):
+            await client.subscribe(["$INVALID"])
+
+        await client.stop()
+
+    def test_remove_bar_callback(self):
+        """Test callback removal functionality."""
+        provider = MockProvider()
+        client = RealtimeMarketClient(provider)
+        calls = []
+
+        def callback(bar):
+            calls.append(bar)
+
+        client.on_bar_received(callback)
+        assert len(client._bar_callbacks) == 1
+
+        # Remove callback
+        result = client.remove_bar_callback(callback)
+        assert result is True
+        assert len(client._bar_callbacks) == 0
+
+    def test_remove_nonexistent_callback(self):
+        """Test removing a callback that doesn't exist."""
+        provider = MockProvider()
+        client = RealtimeMarketClient(provider)
+
+        def callback(bar):
+            pass
+
+        # Callback not registered
+        result = client.remove_bar_callback(callback)
+        assert result is False

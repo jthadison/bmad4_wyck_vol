@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import ssl
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+import certifi
 import structlog
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -35,8 +38,10 @@ class TradingViewProvider(WebSocketProvider):
     Handles authentication, subscriptions, and message parsing.
     """
 
-    # TradingView WebSocket endpoints (examples - actual endpoints vary)
-    DEFAULT_WS_URL = "wss://data.tradingview.com/socket.io/websocket"
+    # TradingView WebSocket endpoints - configurable via environment variable
+    DEFAULT_WS_URL = os.getenv(
+        "TRADINGVIEW_WS_URL", "wss://data.tradingview.com/socket.io/websocket"
+    )
 
     def __init__(self, session_id: str | None = None):
         """
@@ -75,8 +80,14 @@ class TradingViewProvider(WebSocketProvider):
         ws_url = url or self.DEFAULT_WS_URL
 
         try:
+            # Create SSL context with certificate verification for secure connections
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            ssl_context.check_hostname = True
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+
             self._ws = await websockets.connect(
                 ws_url,
+                ssl=ssl_context,
                 ping_interval=20,
                 ping_timeout=10,
                 close_timeout=5,
@@ -281,7 +292,7 @@ class TradingViewProvider(WebSocketProvider):
                 timeframe=self._timeframe,
             )
         except (KeyError, ValueError, TypeError) as e:
-            logger.debug("bar_parse_failed", error=str(e))
+            logger.warning("bar_parse_failed", error=str(e))
             return None
 
     def _build_subscribe_message(self, symbol: str, timeframe: str) -> str:
