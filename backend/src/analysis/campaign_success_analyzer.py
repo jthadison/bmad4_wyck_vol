@@ -34,10 +34,34 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.models.campaign import CampaignMetrics, SequencePerformance
+from src.models.campaign import (
+    CampaignDurationMetrics,
+    CampaignDurationReport,
+    CampaignMetrics,
+    QualityCorrelationReport,
+    QualityTierPerformance,
+    SequencePerformance,
+)
 from src.repositories.models import CampaignMetricsModel, CampaignModel
 
 logger = structlog.get_logger(__name__)
+
+# Statistical validity thresholds for correlation analysis
+SAMPLE_SIZE_CRITICAL = 10  # Below this: critical warning
+SAMPLE_SIZE_RECOMMENDED = 30  # Below this: low sample size warning
+TIER_MIN_CAMPAIGNS = 5  # Minimum campaigns per tier for statistical significance
+
+# Quality score tier thresholds
+QUALITY_TIER_EXCEPTIONAL = 90
+QUALITY_TIER_STRONG = 80
+QUALITY_TIER_ACCEPTABLE = 70
+
+# Quality score component weights
+QUALITY_WEIGHT_WIN_RATE = 0.4  # 40 points max
+QUALITY_WEIGHT_R_MULTIPLE = 10  # Scale factor: 3R = 30 points
+QUALITY_WEIGHT_TARGET = 0.3  # 30 points max
+QUALITY_MAX_R_SCORE = 30  # Max points from R-multiple
+QUALITY_MAX_SCORE = 100  # Maximum quality score
 
 
 class CampaignSuccessAnalyzer:
@@ -444,3 +468,511 @@ class CampaignSuccessAnalyzer:
             best_campaign_id=best_campaign.campaign_id if best_campaign else None,
             worst_campaign_id=worst_campaign.campaign_id if worst_campaign else None,
         )
+
+    async def get_quality_correlation_report(
+        self,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+    ) -> QualityCorrelationReport:
+        """
+        Analyze correlation between quality scores and R-multiples (Story 16.5b AC #1).
+
+        Groups campaigns by quality tier and calculates performance metrics to identify
+        optimal quality thresholds for signal filtering.
+
+        Quality Tiers:
+        --------------
+        - EXCEPTIONAL: strength_score >= 90
+        - STRONG: 80 <= strength_score < 90
+        - ACCEPTABLE: 70 <= strength_score < 80
+        - WEAK: strength_score < 70
+
+        Note: Currently uses derived quality score from campaign performance metrics.
+        Future enhancement (Story 16.5b+) will use actual strength_score from
+        initial entry pattern (Spring/SOS strength_score from ice_level/creek_level).
+
+        Parameters:
+        -----------
+        symbol : str | None
+            Optional symbol filter
+        timeframe : str | None
+            Optional timeframe filter
+
+        Returns:
+        --------
+        QualityCorrelationReport
+            Correlation analysis with performance by quality tier
+
+        Example:
+        --------
+        >>> analyzer = CampaignSuccessAnalyzer(session)
+        >>> report = await analyzer.get_quality_correlation_report(symbol="AAPL")
+        >>> print(f"Correlation: {report.correlation_coefficient}")
+        """
+        logger.info(
+            "starting_quality_correlation_analysis",
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
+        # Fetch completed campaigns
+        campaigns = await self._get_completed_campaigns(symbol, timeframe)
+
+        if not campaigns:
+            logger.warning("no_completed_campaigns_found", symbol=symbol, timeframe=timeframe)
+            # Return empty report
+            return QualityCorrelationReport(
+                correlation_coefficient=Decimal("0.0000"),
+                performance_by_tier=[],
+                optimal_threshold=70,  # Default minimum threshold
+                sample_size=0,
+            )
+
+        # Calculate quality scores for each campaign
+        # NOTE: This is a derived score. Future implementation will use actual
+        # strength_score from initial entry pattern (Spring/SOS ice_level/creek_level)
+        campaign_data = []
+        for campaign in campaigns:
+            # Derive quality score from campaign metrics (placeholder approach)
+            # Quality components: win_rate (40%), avg_r (30%), target_achievement (30%)
+            quality_score = self._calculate_derived_quality_score(campaign)
+            campaign_data.append(
+                {
+                    "campaign": campaign,
+                    "quality_score": quality_score,
+                    "r_multiple": campaign.total_r_achieved,
+                }
+            )
+
+        # Calculate correlation coefficient
+        correlation = self._calculate_correlation(
+            [d["quality_score"] for d in campaign_data],
+            [d["r_multiple"] for d in campaign_data],
+        )
+
+        # Group campaigns by quality tier
+        tier_groups: dict[str, list[CampaignMetrics]] = {
+            "EXCEPTIONAL": [],
+            "STRONG": [],
+            "ACCEPTABLE": [],
+            "WEAK": [],
+        }
+
+        for data in campaign_data:
+            score = data["quality_score"]
+            tier = self._get_quality_tier(score)
+            tier_groups[tier].append(data["campaign"])
+
+        # Calculate performance metrics for each tier
+        performance_by_tier = []
+        for tier in ["EXCEPTIONAL", "STRONG", "ACCEPTABLE", "WEAK"]:
+            campaigns_in_tier = tier_groups[tier]
+            if campaigns_in_tier:
+                perf = self._calculate_tier_performance(tier, campaigns_in_tier)
+                performance_by_tier.append(perf)
+
+        # Determine optimal threshold
+        optimal_threshold = self._find_optimal_threshold(performance_by_tier)
+
+        # Generate statistical validity warnings
+        warnings = self._generate_correlation_warnings(len(campaigns), performance_by_tier)
+
+        logger.info(
+            "quality_correlation_analysis_completed",
+            sample_size=len(campaigns),
+            correlation=str(correlation),
+            optimal_threshold=optimal_threshold,
+            warnings_count=len(warnings),
+        )
+
+        return QualityCorrelationReport(
+            correlation_coefficient=correlation,
+            performance_by_tier=performance_by_tier,
+            optimal_threshold=optimal_threshold,
+            sample_size=len(campaigns),
+            warnings=warnings,
+        )
+
+    async def get_campaign_duration_analysis(
+        self,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+    ) -> CampaignDurationReport:
+        """
+        Analyze campaign duration by pattern sequence (Story 16.5b AC #2).
+
+        Groups campaigns by pattern sequence and calculates duration metrics
+        to understand typical timeframes for each sequence type.
+
+        Parameters:
+        -----------
+        symbol : str | None
+            Optional symbol filter
+        timeframe : str | None
+            Optional timeframe filter
+
+        Returns:
+        --------
+        CampaignDurationReport
+            Duration analysis with metrics by pattern sequence
+
+        Example:
+        --------
+        >>> analyzer = CampaignSuccessAnalyzer(session)
+        >>> report = await analyzer.get_campaign_duration_analysis(timeframe="1D")
+        >>> for seq in report.duration_by_sequence:
+        ...     print(f"{seq.sequence}: {seq.avg_duration_days} days avg")
+        """
+        logger.info(
+            "starting_duration_analysis",
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
+        # Fetch completed campaigns
+        campaigns = await self._get_completed_campaigns(symbol, timeframe)
+
+        if not campaigns:
+            logger.warning("no_completed_campaigns_found", symbol=symbol, timeframe=timeframe)
+            # Return empty report
+            return CampaignDurationReport(
+                duration_by_sequence=[],
+                overall_avg_duration=Decimal("0.00"),
+                overall_median_duration=Decimal("0.00"),
+                total_campaigns=0,
+            )
+
+        # Fetch campaign sequences
+        campaign_ids = [c.campaign_id for c in campaigns]
+        sequence_map = await self._build_sequence_map(campaign_ids)
+
+        # Group campaigns by sequence
+        sequence_groups: dict[str, list[CampaignMetrics]] = defaultdict(list)
+        for campaign in campaigns:
+            sequence = sequence_map.get(campaign.campaign_id)
+            if sequence:
+                sequence_groups[sequence].append(campaign)
+
+        # Calculate duration metrics for each sequence
+        duration_by_sequence = []
+        all_durations = []
+
+        for sequence, campaigns_in_sequence in sequence_groups.items():
+            durations = [c.duration_days for c in campaigns_in_sequence if c.duration_days]
+
+            if durations:
+                all_durations.extend(durations)
+
+                avg_duration = (
+                    sum(Decimal(str(d)) for d in durations) / Decimal(str(len(durations)))
+                ).quantize(Decimal("0.01"))
+
+                sorted_durations = sorted(durations)
+                mid = len(durations) // 2
+                if len(durations) % 2 == 0:
+                    median_duration = (
+                        (
+                            Decimal(str(sorted_durations[mid - 1]))
+                            + Decimal(str(sorted_durations[mid]))
+                        )
+                        / Decimal("2")
+                    ).quantize(Decimal("0.01"))
+                else:
+                    median_duration = Decimal(str(sorted_durations[mid])).quantize(Decimal("0.01"))
+
+                duration_metrics = CampaignDurationMetrics(
+                    sequence=sequence,
+                    avg_duration_days=avg_duration,
+                    median_duration_days=median_duration,
+                    min_duration_days=min(durations),
+                    max_duration_days=max(durations),
+                    campaign_count=len(campaigns_in_sequence),
+                )
+                duration_by_sequence.append(duration_metrics)
+
+        # Sort by average duration
+        duration_by_sequence.sort(key=lambda x: x.avg_duration_days)
+
+        # Calculate overall metrics
+        if all_durations:
+            overall_avg = (
+                sum(Decimal(str(d)) for d in all_durations) / Decimal(str(len(all_durations)))
+            ).quantize(Decimal("0.01"))
+
+            sorted_all = sorted(all_durations)
+            mid = len(all_durations) // 2
+            if len(all_durations) % 2 == 0:
+                overall_median = (
+                    (Decimal(str(sorted_all[mid - 1])) + Decimal(str(sorted_all[mid])))
+                    / Decimal("2")
+                ).quantize(Decimal("0.01"))
+            else:
+                overall_median = Decimal(str(sorted_all[mid])).quantize(Decimal("0.01"))
+        else:
+            overall_avg = Decimal("0.00")
+            overall_median = Decimal("0.00")
+
+        logger.info(
+            "duration_analysis_completed",
+            total_campaigns=len(campaigns),
+            sequence_count=len(duration_by_sequence),
+            overall_avg=str(overall_avg),
+        )
+
+        return CampaignDurationReport(
+            duration_by_sequence=duration_by_sequence,
+            overall_avg_duration=overall_avg,
+            overall_median_duration=overall_median,
+            total_campaigns=len(campaigns),
+        )
+
+    def _calculate_derived_quality_score(self, campaign: CampaignMetrics) -> int:
+        """
+        Calculate derived quality score from campaign performance metrics.
+
+        NOTE: This is a placeholder implementation. Future implementation will
+        use actual strength_score from initial entry pattern (Spring/SOS).
+
+        Components:
+        -----------
+        - Win rate: 40 points (max)
+        - Average R: 30 points (max)
+        - Target achievement: 30 points (max)
+
+        Parameters:
+        -----------
+        campaign : CampaignMetrics
+            Campaign metrics
+
+        Returns:
+        --------
+        int
+            Quality score 0-100
+        """
+        # Win rate component (0-40 points)
+        win_rate = campaign.win_rate if campaign.win_rate is not None else Decimal("0")
+        win_rate_score = int(float(win_rate) * QUALITY_WEIGHT_WIN_RATE)
+
+        # R-multiple component (0-30 points)
+        # Scale: 0R = 0pts, 3R = 30pts (linear)
+        actual_r = campaign.actual_r_achieved if campaign.actual_r_achieved is not None else Decimal("0")
+        r_score = min(QUALITY_MAX_R_SCORE, int(float(actual_r) * QUALITY_WEIGHT_R_MULTIPLE))
+
+        # Target achievement component (0-30 points)
+        target_pct = campaign.target_achievement_pct if campaign.target_achievement_pct is not None else Decimal("0")
+        target_score = int(float(target_pct) * QUALITY_WEIGHT_TARGET)
+
+        total_score = min(QUALITY_MAX_SCORE, win_rate_score + r_score + target_score)
+        return total_score
+
+    def _calculate_correlation(self, x_values: list[int], y_values: list[Decimal]) -> Decimal:
+        """
+        Calculate Pearson correlation coefficient.
+
+        Parameters:
+        -----------
+        x_values : list[int]
+            Quality scores
+        y_values : list[Decimal]
+            R-multiples
+
+        Returns:
+        --------
+        Decimal
+            Correlation coefficient (-1 to +1)
+        """
+        n = len(x_values)
+        if n < 2:
+            return Decimal("0.0000")
+
+        # Convert to floats for calculation
+        x = [float(v) for v in x_values]
+        y = [float(v) for v in y_values]
+
+        # Calculate means
+        mean_x = sum(x) / n
+        mean_y = sum(y) / n
+
+        # Calculate correlation
+        numerator = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y, strict=False))
+        denominator_x = sum((xi - mean_x) ** 2 for xi in x)
+        denominator_y = sum((yi - mean_y) ** 2 for yi in y)
+
+        if denominator_x == 0 or denominator_y == 0:
+            return Decimal("0.0000")
+
+        correlation = numerator / (denominator_x**0.5 * denominator_y**0.5)
+        return Decimal(str(correlation)).quantize(Decimal("0.0001"))
+
+    def _get_quality_tier(self, quality_score: int) -> str:
+        """
+        Determine quality tier from quality score.
+
+        Parameters:
+        -----------
+        quality_score : int
+            Quality score 0-100
+
+        Returns:
+        --------
+        str
+            Quality tier (EXCEPTIONAL, STRONG, ACCEPTABLE, WEAK)
+        """
+        if quality_score >= QUALITY_TIER_EXCEPTIONAL:
+            return "EXCEPTIONAL"
+        elif quality_score >= QUALITY_TIER_STRONG:
+            return "STRONG"
+        elif quality_score >= QUALITY_TIER_ACCEPTABLE:
+            return "ACCEPTABLE"
+        else:
+            return "WEAK"
+
+    def _calculate_tier_performance(
+        self, tier: str, campaigns: list[CampaignMetrics]
+    ) -> QualityTierPerformance:
+        """
+        Calculate performance metrics for a quality tier.
+
+        Parameters:
+        -----------
+        tier : str
+            Quality tier name
+        campaigns : list[CampaignMetrics]
+            Campaigns in this tier
+
+        Returns:
+        --------
+        QualityTierPerformance
+            Performance metrics for the tier
+        """
+        campaign_count = len(campaigns)
+        r_multiples = [c.total_r_achieved for c in campaigns]
+
+        # Win rate
+        winning = sum(1 for r in r_multiples if r > Decimal("0"))
+        win_rate = (
+            Decimal(str(winning / campaign_count * 100)).quantize(Decimal("0.01"))
+            if campaign_count > 0
+            else Decimal("0.00")
+        )
+
+        # Average R
+        avg_r = (
+            (sum(r_multiples, Decimal("0")) / Decimal(str(campaign_count))).quantize(
+                Decimal("0.0001")
+            )
+            if campaign_count > 0
+            else Decimal("0.0000")
+        )
+
+        # Median R
+        sorted_r = sorted(r_multiples)
+        mid = campaign_count // 2
+        if campaign_count % 2 == 0 and campaign_count > 0:
+            median_r = ((sorted_r[mid - 1] + sorted_r[mid]) / Decimal("2")).quantize(
+                Decimal("0.0001")
+            )
+        elif campaign_count > 0:
+            median_r = sorted_r[mid].quantize(Decimal("0.0001"))
+        else:
+            median_r = Decimal("0.0000")
+
+        # Total R
+        total_r = sum(r_multiples, Decimal("0")).quantize(Decimal("0.0001"))
+
+        return QualityTierPerformance(
+            tier=tier,
+            campaign_count=campaign_count,
+            win_rate=win_rate,
+            avg_r_multiple=avg_r,
+            median_r_multiple=median_r,
+            total_r_multiple=total_r,
+        )
+
+    def _find_optimal_threshold(self, performance_by_tier: list[QualityTierPerformance]) -> int:
+        """
+        Find optimal quality threshold based on tier performance.
+
+        Uses a simple heuristic: recommend the lowest tier that achieves
+        both >60% win rate and >2.0R average R-multiple.
+
+        Parameters:
+        -----------
+        performance_by_tier : list[QualityTierPerformance]
+            Performance metrics by tier
+
+        Returns:
+        --------
+        int
+            Recommended minimum quality threshold (70, 80, or 90)
+        """
+        # Define tier thresholds
+        tier_thresholds = {
+            "EXCEPTIONAL": QUALITY_TIER_EXCEPTIONAL,
+            "STRONG": QUALITY_TIER_STRONG,
+            "ACCEPTABLE": QUALITY_TIER_ACCEPTABLE,
+            "WEAK": QUALITY_TIER_ACCEPTABLE,  # Default minimum
+        }
+
+        # Find lowest tier meeting performance criteria
+        for tier_perf in reversed(performance_by_tier):  # Start from lowest tier
+            if tier_perf.win_rate >= Decimal("60.00") and tier_perf.avg_r_multiple >= Decimal(
+                "2.0000"
+            ):
+                return tier_thresholds.get(tier_perf.tier, QUALITY_TIER_ACCEPTABLE)
+
+        # Default to ACCEPTABLE threshold if no tier meets criteria
+        return QUALITY_TIER_ACCEPTABLE
+
+    def _generate_correlation_warnings(
+        self,
+        sample_size: int,
+        performance_by_tier: list[QualityTierPerformance],
+    ) -> list[str]:
+        """
+        Generate statistical validity warnings for correlation analysis.
+
+        Checks for conditions that may affect reliability of correlation analysis:
+        - Low overall sample size (< 30 campaigns)
+        - Very low sample size (< 10 campaigns)
+        - Tiers with insufficient data (< 5 campaigns)
+
+        Parameters:
+        -----------
+        sample_size : int
+            Total number of campaigns analyzed
+        performance_by_tier : list[QualityTierPerformance]
+            Performance metrics by tier
+
+        Returns:
+        --------
+        list[str]
+            List of warning messages (empty if no warnings)
+        """
+        warnings = []
+
+        # Check overall sample size
+        if sample_size < SAMPLE_SIZE_CRITICAL:
+            warnings.append(
+                f"Very low sample size ({sample_size} campaigns). "
+                f"Correlation analysis requires at least {SAMPLE_SIZE_RECOMMENDED} campaigns for statistical reliability."
+            )
+        elif sample_size < SAMPLE_SIZE_RECOMMENDED:
+            warnings.append(
+                f"Low sample size ({sample_size} campaigns). "
+                f"Consider collecting more data for reliable correlation analysis (recommended: {SAMPLE_SIZE_RECOMMENDED}+ campaigns)."
+            )
+
+        # Check tier sample sizes
+        low_tier_counts = []
+        for tier_perf in performance_by_tier:
+            if tier_perf.campaign_count < TIER_MIN_CAMPAIGNS:
+                low_tier_counts.append(f"{tier_perf.tier} ({tier_perf.campaign_count})")
+
+        if low_tier_counts:
+            warnings.append(
+                f"Some quality tiers have insufficient data: {', '.join(low_tier_counts)}. "
+                f"Tier-level metrics may not be statistically significant (recommended: {TIER_MIN_CAMPAIGNS}+ campaigns per tier)."
+            )
+
+        return warnings
