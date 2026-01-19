@@ -22,7 +22,11 @@ from src.models.analytics import (
     TradeListResponse,
     TrendResponse,
 )
-from src.models.campaign import SequencePerformanceResponse
+from src.models.campaign import (
+    CampaignDurationReport,
+    QualityCorrelationReport,
+    SequencePerformanceResponse,
+)
 from src.repositories.analytics_repository import AnalyticsRepository
 
 logger = structlog.get_logger(__name__)
@@ -401,4 +405,384 @@ async def get_pattern_sequence_analysis(
         )
         raise HTTPException(
             status_code=500, detail="Failed to retrieve pattern sequence analysis"
+        ) from e
+
+
+@router.get(
+    "/quality-correlation",
+    response_model=QualityCorrelationReport,
+    summary="Get quality correlation analysis",
+    description="""
+    Analyze correlation between quality scores and R-multiples (Story 16.5b).
+
+    Groups campaigns by quality tier (EXCEPTIONAL, STRONG, ACCEPTABLE, WEAK) and
+    calculates performance metrics to identify optimal quality thresholds for
+    signal filtering.
+
+    Metrics Calculated:
+    - Pearson correlation coefficient between quality scores and R-multiples
+    - Performance metrics by quality tier (win rate, avg R, median R, total R)
+    - Recommended optimal quality threshold
+    - Sample size (total campaigns analyzed)
+
+    Query Parameters:
+    - symbol: Optional symbol filter (e.g., "AAPL")
+    - timeframe: Optional timeframe filter (e.g., "1D")
+
+    Returns:
+    - QualityCorrelationReport with correlation metrics and tier performance
+
+    Performance:
+    - Cached for 1 hour (3600 seconds)
+    - Target: < 2 seconds for 1000 campaigns
+    """,
+)
+async def get_quality_correlation_analysis(
+    symbol: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by trading symbol",
+            example="AAPL",
+        ),
+    ] = None,
+    timeframe: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by timeframe",
+            example="1D",
+        ),
+    ] = None,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Get quality correlation analysis (Story 16.5b AC #1)."""
+    try:
+        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
+
+        analyzer = CampaignSuccessAnalyzer(session)
+        report = await analyzer.get_quality_correlation_report(symbol=symbol, timeframe=timeframe)
+
+        logger.info(
+            "Quality correlation analysis retrieved",
+            extra={
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "correlation": str(report.correlation_coefficient),
+                "optimal_threshold": report.optimal_threshold,
+                "sample_size": report.sample_size,
+            },
+        )
+
+        return report
+
+    except Exception as e:
+        logger.error(
+            "Error retrieving quality correlation analysis",
+            extra={"error": str(e), "symbol": symbol, "timeframe": timeframe},
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve quality correlation analysis"
+        ) from e
+
+
+@router.get(
+    "/campaign-duration",
+    response_model=CampaignDurationReport,
+    summary="Get campaign duration analysis",
+    description="""
+    Analyze campaign duration by pattern sequence (Story 16.5b).
+
+    Groups campaigns by pattern sequence and calculates duration metrics to
+    understand typical timeframes for each sequence type (e.g., Spring→SOS,
+    Spring→AR→SOS, Spring→SOS→LPS).
+
+    Metrics Calculated:
+    - Average duration by sequence
+    - Median duration by sequence
+    - Min/max duration by sequence
+    - Overall average and median duration across all campaigns
+    - Campaign count per sequence
+
+    Query Parameters:
+    - symbol: Optional symbol filter (e.g., "AAPL")
+    - timeframe: Optional timeframe filter (e.g., "1D")
+
+    Returns:
+    - CampaignDurationReport with duration metrics by sequence
+
+    Performance:
+    - Cached for 1 hour (3600 seconds)
+    - Target: < 2 seconds for 1000 campaigns
+    """,
+)
+async def get_campaign_duration_analysis(
+    symbol: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by trading symbol",
+            example="AAPL",
+        ),
+    ] = None,
+    timeframe: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by timeframe",
+            example="1D",
+        ),
+    ] = None,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Get campaign duration analysis (Story 16.5b AC #2)."""
+    try:
+        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
+
+        analyzer = CampaignSuccessAnalyzer(session)
+        report = await analyzer.get_campaign_duration_analysis(symbol=symbol, timeframe=timeframe)
+
+        logger.info(
+            "Campaign duration analysis retrieved",
+            extra={
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "total_campaigns": report.total_campaigns,
+                "sequence_count": len(report.duration_by_sequence),
+                "overall_avg_duration": str(report.overall_avg_duration),
+            },
+        )
+
+        return report
+
+    except Exception as e:
+        logger.error(
+            "Error retrieving campaign duration analysis",
+            extra={"error": str(e), "symbol": symbol, "timeframe": timeframe},
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve campaign duration analysis"
+        ) from e
+
+
+@router.get(
+    "/quality-correlation/export",
+    summary="Export quality correlation report",
+    description="""
+    Export quality correlation report as JSON or CSV (Story 16.5b AC #3).
+
+    Query Parameters:
+    - format: Export format ("json" or "csv")
+    - symbol: Optional symbol filter (e.g., "AAPL")
+    - timeframe: Optional timeframe filter (e.g., "1D")
+
+    Returns:
+    - JSON or CSV file with quality correlation metrics
+    """,
+)
+async def export_quality_correlation_report(
+    format: Annotated[
+        str,
+        Query(
+            description="Export format (json or csv)",
+            pattern="^(json|csv)$",
+            example="json",
+        ),
+    ] = "json",
+    symbol: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by trading symbol",
+            example="AAPL",
+        ),
+    ] = None,
+    timeframe: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by timeframe",
+            example="1D",
+        ),
+    ] = None,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Export quality correlation report as JSON or CSV."""
+    try:
+        from datetime import UTC, datetime
+
+        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
+
+        # Get report data
+        analyzer = CampaignSuccessAnalyzer(session)
+        report = await analyzer.get_quality_correlation_report(symbol=symbol, timeframe=timeframe)
+
+        if format == "json":
+            # Return JSON format
+            date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+            filename = f"quality-correlation-{date_str}.json"
+
+            logger.info(
+                "Quality correlation report exported as JSON",
+                extra={"filename": filename, "sample_size": report.sample_size},
+            )
+
+            return Response(
+                content=report.model_dump_json(indent=2),
+                media_type="application/json",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+        else:  # format == "csv"
+            # Convert to CSV format
+            import io
+
+            csv_buffer = io.StringIO()
+            csv_buffer.write("# Quality Correlation Report\n")
+            csv_buffer.write(f"# Generated: {datetime.now(UTC).isoformat()}\n")
+            csv_buffer.write(f"# Sample Size: {report.sample_size}\n")
+            csv_buffer.write(f"# Correlation Coefficient: {report.correlation_coefficient}\n")
+            csv_buffer.write(f"# Optimal Threshold: {report.optimal_threshold}\n\n")
+
+            # Tier performance data
+            csv_buffer.write(
+                "Quality Tier,Campaign Count,Win Rate (%),Avg R-Multiple,Median R-Multiple,Total R-Multiple\n"
+            )
+            for tier_perf in report.performance_by_tier:
+                csv_buffer.write(
+                    f"{tier_perf.tier},{tier_perf.campaign_count},"
+                    f"{tier_perf.win_rate},{tier_perf.avg_r_multiple},"
+                    f"{tier_perf.median_r_multiple},{tier_perf.total_r_multiple}\n"
+                )
+
+            date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+            filename = f"quality-correlation-{date_str}.csv"
+
+            logger.info(
+                "Quality correlation report exported as CSV",
+                extra={"filename": filename, "sample_size": report.sample_size},
+            )
+
+            return Response(
+                content=csv_buffer.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+    except Exception as e:
+        logger.error(
+            "Error exporting quality correlation report",
+            extra={"error": str(e), "format": format, "symbol": symbol, "timeframe": timeframe},
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to export quality correlation report"
+        ) from e
+
+
+@router.get(
+    "/campaign-duration/export",
+    summary="Export campaign duration report",
+    description="""
+    Export campaign duration report as JSON or CSV (Story 16.5b AC #3).
+
+    Query Parameters:
+    - format: Export format ("json" or "csv")
+    - symbol: Optional symbol filter (e.g., "AAPL")
+    - timeframe: Optional timeframe filter (e.g., "1D")
+
+    Returns:
+    - JSON or CSV file with campaign duration metrics
+    """,
+)
+async def export_campaign_duration_report(
+    format: Annotated[
+        str,
+        Query(
+            description="Export format (json or csv)",
+            pattern="^(json|csv)$",
+            example="json",
+        ),
+    ] = "json",
+    symbol: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by trading symbol",
+            example="AAPL",
+        ),
+    ] = None,
+    timeframe: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by timeframe",
+            example="1D",
+        ),
+    ] = None,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Export campaign duration report as JSON or CSV."""
+    try:
+        from datetime import UTC, datetime
+
+        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
+
+        # Get report data
+        analyzer = CampaignSuccessAnalyzer(session)
+        report = await analyzer.get_campaign_duration_analysis(symbol=symbol, timeframe=timeframe)
+
+        if format == "json":
+            # Return JSON format
+            date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+            filename = f"campaign-duration-{date_str}.json"
+
+            logger.info(
+                "Campaign duration report exported as JSON",
+                extra={"filename": filename, "total_campaigns": report.total_campaigns},
+            )
+
+            return Response(
+                content=report.model_dump_json(indent=2),
+                media_type="application/json",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+        else:  # format == "csv"
+            # Convert to CSV format
+            import io
+
+            csv_buffer = io.StringIO()
+            csv_buffer.write("# Campaign Duration Report\n")
+            csv_buffer.write(f"# Generated: {datetime.now(UTC).isoformat()}\n")
+            csv_buffer.write(f"# Total Campaigns: {report.total_campaigns}\n")
+            csv_buffer.write(f"# Overall Average Duration: {report.overall_avg_duration} days\n")
+            csv_buffer.write(
+                f"# Overall Median Duration: {report.overall_median_duration} days\n\n"
+            )
+
+            # Duration by sequence data
+            csv_buffer.write(
+                "Pattern Sequence,Campaign Count,Avg Duration (days),Median Duration (days),"
+                "Min Duration (days),Max Duration (days)\n"
+            )
+            for duration_metrics in report.duration_by_sequence:
+                csv_buffer.write(
+                    f"{duration_metrics.sequence},{duration_metrics.campaign_count},"
+                    f"{duration_metrics.avg_duration_days},{duration_metrics.median_duration_days},"
+                    f"{duration_metrics.min_duration_days},{duration_metrics.max_duration_days}\n"
+                )
+
+            date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+            filename = f"campaign-duration-{date_str}.csv"
+
+            logger.info(
+                "Campaign duration report exported as CSV",
+                extra={"filename": filename, "total_campaigns": report.total_campaigns},
+            )
+
+            return Response(
+                content=csv_buffer.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+    except Exception as e:
+        logger.error(
+            "Error exporting campaign duration report",
+            extra={"error": str(e), "format": format, "symbol": symbol, "timeframe": timeframe},
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to export campaign duration report"
         ) from e

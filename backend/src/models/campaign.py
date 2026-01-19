@@ -1554,3 +1554,276 @@ class SequencePerformanceResponse(BaseModel):
     total_campaigns: int = Field(..., ge=0, description="Total number of campaigns analyzed")
 
     model_config = ConfigDict(json_encoders={Decimal: str})
+
+
+class QualityTierPerformance(BaseModel):
+    """
+    Performance metrics for a specific quality tier (Story 16.5b).
+
+    Analyzes campaign performance grouped by quality tier (based on strength scores
+    of initial entry patterns) to identify optimal quality thresholds for filtering.
+
+    Quality Tiers:
+    --------------
+    - EXCEPTIONAL: strength_score >= 90 (highest quality)
+    - STRONG: 80 <= strength_score < 90
+    - ACCEPTABLE: 70 <= strength_score < 80
+    - WEAK: strength_score < 70
+
+    Fields:
+    -------
+    - tier: Quality tier name (EXCEPTIONAL, STRONG, ACCEPTABLE, WEAK)
+    - campaign_count: Number of campaigns in this tier
+    - win_rate: Percentage of winning campaigns (R > 0)
+    - avg_r_multiple: Average R-multiple across campaigns
+    - median_r_multiple: Median R-multiple
+    - total_r_multiple: Cumulative R-multiple
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> tier_perf = QualityTierPerformance(
+    ...     tier="EXCEPTIONAL",
+    ...     campaign_count=15,
+    ...     win_rate=Decimal("86.67"),
+    ...     avg_r_multiple=Decimal("4.2"),
+    ...     median_r_multiple=Decimal("3.5"),
+    ...     total_r_multiple=Decimal("63.0")
+    ... )
+    """
+
+    tier: str = Field(..., description="Quality tier (EXCEPTIONAL, STRONG, ACCEPTABLE, WEAK)")
+
+    campaign_count: int = Field(..., ge=0, description="Number of campaigns in this tier")
+
+    win_rate: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=5,
+        ge=Decimal("0"),
+        le=Decimal("100.00"),
+        description="Percentage of winning campaigns (R > 0)",
+    )
+
+    avg_r_multiple: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=8,
+        description="Average R-multiple across campaigns",
+    )
+
+    median_r_multiple: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=8,
+        description="Median R-multiple",
+    )
+
+    total_r_multiple: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=12,
+        description="Cumulative R-multiple",
+    )
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "tier": self.tier,
+            "campaign_count": self.campaign_count,
+            "win_rate": str(self.win_rate),
+            "avg_r_multiple": str(self.avg_r_multiple),
+            "median_r_multiple": str(self.median_r_multiple),
+            "total_r_multiple": str(self.total_r_multiple),
+        }
+
+
+class QualityCorrelationReport(BaseModel):
+    """
+    Quality correlation analysis report (Story 16.5b AC #1-2).
+
+    Analyzes correlation between strength scores and R-multiples to identify
+    optimal quality thresholds for signal filtering.
+
+    Metrics:
+    --------
+    - correlation_coefficient: Pearson correlation between strength_score and R-multiple
+    - performance_by_tier: Performance metrics grouped by quality tier
+    - optimal_threshold: Recommended minimum strength_score threshold
+    - sample_size: Total number of campaigns analyzed
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> report = QualityCorrelationReport(
+    ...     correlation_coefficient=Decimal("0.62"),
+    ...     performance_by_tier=[...],
+    ...     optimal_threshold=80,
+    ...     sample_size=100
+    ... )
+    """
+
+    correlation_coefficient: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=5,
+        ge=Decimal("-1"),
+        le=Decimal("1"),
+        description="Pearson correlation coefficient (-1 to +1)",
+    )
+
+    performance_by_tier: list[QualityTierPerformance] = Field(
+        ..., description="Performance metrics by quality tier"
+    )
+
+    optimal_threshold: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Recommended minimum strength_score threshold",
+    )
+
+    sample_size: int = Field(..., ge=0, description="Total number of campaigns analyzed")
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "correlation_coefficient": str(self.correlation_coefficient),
+            "performance_by_tier": [tier.serialize_model() for tier in self.performance_by_tier],
+            "optimal_threshold": self.optimal_threshold,
+            "sample_size": self.sample_size,
+        }
+
+
+class CampaignDurationMetrics(BaseModel):
+    """
+    Campaign duration metrics by pattern sequence (Story 16.5b AC #2).
+
+    Analyzes campaign duration patterns to understand typical timeframes
+    for different pattern sequences.
+
+    Fields:
+    -------
+    - sequence: Pattern sequence string (e.g., "Spring→SOS")
+    - avg_duration_days: Average campaign duration in days
+    - median_duration_days: Median campaign duration
+    - min_duration_days: Shortest campaign duration
+    - max_duration_days: Longest campaign duration
+    - campaign_count: Number of campaigns with this sequence
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> duration = CampaignDurationMetrics(
+    ...     sequence="Spring→SOS",
+    ...     avg_duration_days=Decimal("15.5"),
+    ...     median_duration_days=Decimal("14.0"),
+    ...     min_duration_days=5,
+    ...     max_duration_days=32,
+    ...     campaign_count=25
+    ... )
+    """
+
+    sequence: str = Field(..., description="Pattern sequence string (e.g., 'Spring→SOS')")
+
+    avg_duration_days: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=8,
+        ge=Decimal("0"),
+        description="Average campaign duration in days",
+    )
+
+    median_duration_days: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=8,
+        ge=Decimal("0"),
+        description="Median campaign duration in days",
+    )
+
+    min_duration_days: int = Field(..., ge=0, description="Shortest campaign duration")
+
+    max_duration_days: int = Field(..., ge=0, description="Longest campaign duration")
+
+    campaign_count: int = Field(..., ge=0, description="Number of campaigns with this sequence")
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "sequence": self.sequence,
+            "avg_duration_days": str(self.avg_duration_days),
+            "median_duration_days": str(self.median_duration_days),
+            "min_duration_days": self.min_duration_days,
+            "max_duration_days": self.max_duration_days,
+            "campaign_count": self.campaign_count,
+        }
+
+
+class CampaignDurationReport(BaseModel):
+    """
+    Campaign duration analysis report (Story 16.5b AC #2).
+
+    Provides comprehensive duration analysis across all campaign sequences
+    to identify typical timeframes and outliers.
+
+    Fields:
+    -------
+    - duration_by_sequence: Duration metrics grouped by pattern sequence
+    - overall_avg_duration: Average duration across all campaigns
+    - overall_median_duration: Median duration across all campaigns
+    - total_campaigns: Total number of campaigns analyzed
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> report = CampaignDurationReport(
+    ...     duration_by_sequence=[...],
+    ...     overall_avg_duration=Decimal("16.3"),
+    ...     overall_median_duration=Decimal("15.0"),
+    ...     total_campaigns=100
+    ... )
+    """
+
+    duration_by_sequence: list[CampaignDurationMetrics] = Field(
+        ..., description="Duration metrics by pattern sequence"
+    )
+
+    overall_avg_duration: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=8,
+        ge=Decimal("0"),
+        description="Average duration across all campaigns",
+    )
+
+    overall_median_duration: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=8,
+        ge=Decimal("0"),
+        description="Median duration across all campaigns",
+    )
+
+    total_campaigns: int = Field(..., ge=0, description="Total number of campaigns analyzed")
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal as strings."""
+        return {
+            "duration_by_sequence": [seq.serialize_model() for seq in self.duration_by_sequence],
+            "overall_avg_duration": str(self.overall_avg_duration),
+            "overall_median_duration": str(self.overall_median_duration),
+            "total_campaigns": self.total_campaigns,
+        }

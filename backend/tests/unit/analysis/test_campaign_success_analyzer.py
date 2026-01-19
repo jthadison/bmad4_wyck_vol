@@ -494,3 +494,187 @@ async def test_edge_case_single_campaign(
     assert sequences[0].sequence == "SPRING→SOS"
     assert sequences[0].campaign_count == 1
     assert sequences[0].win_rate == Decimal("100.00")
+
+
+# ========================================
+# Story 16.5b: Quality Correlation Tests
+# ========================================
+
+
+@pytest.mark.asyncio
+async def test_quality_correlation_report_basic(
+    analyzer: CampaignSuccessAnalyzer,
+    sample_campaigns_100: list[CampaignMetricsModel],
+):
+    """
+    Test quality correlation report generation (Story 16.5b AC #1).
+
+    Validates:
+    - Correlation coefficient calculation
+    - Quality tier grouping (EXCEPTIONAL, STRONG, ACCEPTABLE, WEAK)
+    - Performance metrics by tier
+    - Optimal threshold determination
+    """
+    report = await analyzer.get_quality_correlation_report()
+
+    # Validate report structure
+    assert report.sample_size == 100, "Should analyze 100 campaigns"
+    assert len(report.performance_by_tier) > 0, "Should have at least one quality tier"
+    assert -1 <= report.correlation_coefficient <= 1, "Correlation must be between -1 and +1"
+    assert 70 <= report.optimal_threshold <= 90, "Optimal threshold should be 70, 80, or 90"
+
+    # Validate tier performance metrics
+    for tier_perf in report.performance_by_tier:
+        assert tier_perf.tier in [
+            "EXCEPTIONAL",
+            "STRONG",
+            "ACCEPTABLE",
+            "WEAK",
+        ], f"Invalid tier: {tier_perf.tier}"
+        assert tier_perf.campaign_count > 0, "Tier should have campaigns"
+        assert 0 <= tier_perf.win_rate <= 100, "Win rate should be 0-100%"
+        assert tier_perf.campaign_count <= 100, "Tier count cannot exceed total"
+
+
+@pytest.mark.asyncio
+async def test_quality_correlation_with_symbol_filter(
+    analyzer: CampaignSuccessAnalyzer,
+    sample_campaigns_100: list[CampaignMetricsModel],
+):
+    """Test quality correlation report with symbol filter (Story 16.5b)."""
+    report = await analyzer.get_quality_correlation_report(symbol="AAPL")
+
+    assert report.sample_size == 100, "All test campaigns are AAPL"
+    assert len(report.performance_by_tier) > 0
+
+
+@pytest.mark.asyncio
+async def test_quality_correlation_empty_campaigns(
+    analyzer: CampaignSuccessAnalyzer,
+):
+    """Test quality correlation report with no campaigns (Story 16.5b)."""
+    report = await analyzer.get_quality_correlation_report()
+
+    assert report.sample_size == 0
+    assert len(report.performance_by_tier) == 0
+    assert report.correlation_coefficient == Decimal("0.0000")
+    assert report.optimal_threshold == 70  # Default
+
+
+# ========================================
+# Story 16.5b: Duration Analysis Tests
+# ========================================
+
+
+@pytest.mark.asyncio
+async def test_campaign_duration_analysis_basic(
+    analyzer: CampaignSuccessAnalyzer,
+    sample_campaigns_100: list[CampaignMetricsModel],
+):
+    """
+    Test campaign duration analysis by sequence (Story 16.5b AC #2).
+
+    Validates:
+    - Duration metrics by pattern sequence
+    - Average and median calculations
+    - Min/max duration tracking
+    - Overall duration metrics
+    """
+    report = await analyzer.get_campaign_duration_analysis()
+
+    # Validate report structure
+    assert report.total_campaigns == 100, "Should analyze 100 campaigns"
+    assert len(report.duration_by_sequence) > 0, "Should have at least one sequence"
+    assert report.overall_avg_duration > Decimal("0"), "Should have positive average duration"
+    assert report.overall_median_duration > Decimal("0"), "Should have positive median duration"
+
+    # Validate duration metrics for each sequence
+    for duration_metrics in report.duration_by_sequence:
+        assert len(duration_metrics.sequence) > 0, "Sequence should not be empty"
+        assert duration_metrics.campaign_count > 0, "Sequence should have campaigns"
+        assert duration_metrics.avg_duration_days >= Decimal("0")
+        assert duration_metrics.median_duration_days >= Decimal("0")
+        assert duration_metrics.min_duration_days >= 0
+        assert duration_metrics.max_duration_days >= duration_metrics.min_duration_days
+        assert duration_metrics.campaign_count <= 100
+
+
+@pytest.mark.asyncio
+async def test_campaign_duration_with_timeframe_filter(
+    analyzer: CampaignSuccessAnalyzer,
+    sample_campaigns_100: list[CampaignMetricsModel],
+):
+    """Test duration analysis with timeframe filter (Story 16.5b)."""
+    report = await analyzer.get_campaign_duration_analysis(timeframe="1D")
+
+    assert report.total_campaigns == 100, "All test campaigns are 1D timeframe"
+    assert len(report.duration_by_sequence) > 0
+
+
+@pytest.mark.asyncio
+async def test_campaign_duration_empty_campaigns(
+    analyzer: CampaignSuccessAnalyzer,
+):
+    """Test duration analysis with no campaigns (Story 16.5b)."""
+    report = await analyzer.get_campaign_duration_analysis()
+
+    assert report.total_campaigns == 0
+    assert len(report.duration_by_sequence) == 0
+    assert report.overall_avg_duration == Decimal("0.00")
+    assert report.overall_median_duration == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_campaign_duration_sequence_sorting(
+    analyzer: CampaignSuccessAnalyzer,
+    sample_campaigns_100: list[CampaignMetricsModel],
+):
+    """Test that duration results are sorted by average duration (Story 16.5b)."""
+    report = await analyzer.get_campaign_duration_analysis()
+
+    # Verify sequences are sorted by average duration (ascending)
+    if len(report.duration_by_sequence) > 1:
+        for i in range(len(report.duration_by_sequence) - 1):
+            assert (
+                report.duration_by_sequence[i].avg_duration_days
+                <= report.duration_by_sequence[i + 1].avg_duration_days
+            ), "Sequences should be sorted by average duration"
+
+
+# ========================================
+# Story 16.5b: Helper Method Tests
+# ========================================
+
+
+def test_get_quality_tier():
+    """Test quality tier classification (Story 16.5b)."""
+    analyzer = CampaignSuccessAnalyzer(None)  # type: ignore
+
+    assert analyzer._get_quality_tier(95) == "EXCEPTIONAL"
+    assert analyzer._get_quality_tier(90) == "EXCEPTIONAL"
+    assert analyzer._get_quality_tier(85) == "STRONG"
+    assert analyzer._get_quality_tier(80) == "STRONG"
+    assert analyzer._get_quality_tier(75) == "ACCEPTABLE"
+    assert analyzer._get_quality_tier(70) == "ACCEPTABLE"
+    assert analyzer._get_quality_tier(65) == "WEAK"
+    assert analyzer._get_quality_tier(50) == "WEAK"
+
+
+def test_calculate_correlation():
+    """Test Pearson correlation calculation (Story 16.5b)."""
+    analyzer = CampaignSuccessAnalyzer(None)  # type: ignore
+
+    # Perfect positive correlation
+    x = [1, 2, 3, 4, 5]
+    y = [Decimal("2"), Decimal("4"), Decimal("6"), Decimal("8"), Decimal("10")]
+    corr = analyzer._calculate_correlation(x, y)
+    assert corr == Decimal("1.0000")
+
+    # Perfect negative correlation
+    y_neg = [Decimal("10"), Decimal("8"), Decimal("6"), Decimal("4"), Decimal("2")]
+    corr_neg = analyzer._calculate_correlation(x, y_neg)
+    assert corr_neg == Decimal("-1.0000")
+
+    # No correlation (empty/single element)
+    assert analyzer._calculate_correlation([], []) == Decimal("0.0000")
+    assert analyzer._calculate_correlation([1], [Decimal("1")]) == Decimal("0.0000")
