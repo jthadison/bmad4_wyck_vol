@@ -14,6 +14,14 @@ from uuid import uuid4
 
 import pytest
 
+# Check if weasyprint is available
+try:
+    import weasyprint  # noqa: F401
+
+    WEASYPRINT_AVAILABLE = True
+except (ImportError, OSError):
+    WEASYPRINT_AVAILABLE = False
+
 from src.backtesting.backtest_report_generator import BacktestReportGenerator
 from src.models.backtest import (
     BacktestConfig,
@@ -32,21 +40,36 @@ def make_backtest_trade(
     entry_date = entry_date or datetime(2024, 1, 1, tzinfo=UTC)
     exit_date = exit_date or (entry_date + timedelta(days=3))
 
+    # Extract values from kwargs or use defaults
+    entry_price = kwargs.pop("entry_price", Decimal("150.00"))
+    exit_price = kwargs.pop("exit_price", Decimal("152.00"))
+    commission = kwargs.pop("commission", Decimal("5.00"))
+    slippage = kwargs.pop("slippage", Decimal("2.00"))
+    r_multiple = kwargs.pop("r_multiple", Decimal("2.0"))
+
+    # Convert None to Decimal("0") for optional fields
+    if commission is None:
+        commission = Decimal("0")
+    if slippage is None:
+        slippage = Decimal("0")
+    if r_multiple is None:
+        r_multiple = Decimal("0")
+
     return BacktestTrade(
         trade_id=uuid4(),
         position_id=uuid4(),
         symbol=symbol,
         pattern_type=pattern,
         entry_timestamp=entry_date,
-        entry_price=Decimal("150.00"),
+        entry_price=entry_price,
         exit_timestamp=exit_date,
-        exit_price=Decimal("152.00"),
+        exit_price=exit_price,
         quantity=100,
         side="LONG",
         realized_pnl=pnl,
-        commission=Decimal("5.00"),
-        slippage=Decimal("2.00"),
-        r_multiple=Decimal("2.0"),
+        commission=commission,
+        slippage=slippage,
+        r_multiple=r_multiple,
         gross_pnl=pnl + Decimal("7.00"),  # Add back costs
         gross_r_multiple=Decimal("2.1"),
         **kwargs,
@@ -67,9 +90,14 @@ def make_equity_point(timestamp, equity_value, portfolio_value=None):
     )
 
 
-def make_backtest_config(initial_capital=Decimal("100000.00")):
+def make_backtest_config(initial_capital=Decimal("100000.00"), symbol="AAPL"):
     """Helper to create BacktestConfig."""
+    from datetime import date
+
     return BacktestConfig(
+        symbol=symbol,
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 12, 31),
         initial_capital=initial_capital,
         commission_rate=Decimal("0.001"),
         slippage_rate=Decimal("0.0005"),
@@ -89,7 +117,7 @@ def make_backtest_metrics(
         total_return_pct=total_return_pct,
         cagr=Decimal("18.25"),
         sharpe_ratio=Decimal("1.85"),
-        max_drawdown=Decimal("8.50"),
+        max_drawdown=Decimal("0.0850"),
         win_rate=win_rate,
         total_trades=total_trades,
         winning_trades=int(total_trades * float(win_rate)),
@@ -122,7 +150,7 @@ def make_backtest_result(
         start_date=date(2024, 1, 1),
         end_date=date(2024, 12, 31),
         config=config,
-        metrics=metrics,
+        summary=metrics,
         trades=trades,
         equity_curve=equity_curve,
         cost_summary=cost_summary,
@@ -172,12 +200,17 @@ class TestHTMLReportGeneration:
         ]
 
         cost_summary = BacktestCostSummary(
+            total_trades=3,
             total_commission_paid=Decimal("15.00"),
             total_slippage_cost=Decimal("6.00"),
             total_transaction_costs=Decimal("21.00"),
             cost_as_pct_of_total_pnl=Decimal("0.0467"),
             avg_commission_per_trade=Decimal("5.00"),
             avg_slippage_per_trade=Decimal("2.00"),
+            avg_transaction_cost_per_trade=Decimal("7.00"),
+            gross_avg_r_multiple=Decimal("2.10"),
+            net_avg_r_multiple=Decimal("2.00"),
+            r_multiple_degradation=Decimal("0.10"),
         )
 
         result = make_backtest_result(
@@ -207,7 +240,20 @@ class TestHTMLReportGeneration:
             "initial_capital": 100000.0,
             "backtest_run_id": str(uuid4()),
             "generated_at": "2024-12-29 00:00:00 UTC",
-            "metrics": {},
+            "metrics": {
+                "total_return_pct": 15.5,
+                "cagr": 18.25,
+                "sharpe_ratio": 1.85,
+                "max_drawdown_pct": 0.085,
+                "win_rate": 0.65,
+                "total_trades": 10,
+                "winning_trades": 6,
+                "losing_trades": 4,
+                "avg_r_multiple": 1.75,
+                "profit_factor": 2.25,
+                "total_pnl": 15500.0,
+                "final_equity": 115500.0,
+            },
             "equity_curve_data": {"labels": [], "data": []},
             "monthly_returns": [],
             "drawdown_periods": [],
@@ -225,7 +271,8 @@ class TestHTMLReportGeneration:
 class TestPDFReportGeneration:
     """Test PDF report generation."""
 
-    @patch("src.backtesting.backtest_report_generator.HTML")
+    @pytest.mark.skipif(not WEASYPRINT_AVAILABLE, reason="WeasyPrint not installed")
+    @patch("weasyprint.HTML")
     def test_generate_pdf_success(self, mock_html_class, generator):
         """Test successful PDF generation."""
         # Mock WeasyPrint
@@ -241,18 +288,15 @@ class TestPDFReportGeneration:
         mock_html_class.assert_called_once()
         mock_html_instance.write_pdf.assert_called_once()
 
+    @pytest.mark.skipif(not WEASYPRINT_AVAILABLE, reason="WeasyPrint not installed")
     def test_generate_pdf_weasyprint_not_installed(self, generator):
         """Test PDF generation fails gracefully if WeasyPrint not installed."""
-        with patch("src.backtesting.backtest_report_generator.HTML") as mock_html:
-            mock_html.side_effect = ImportError("No module named 'weasyprint'")
-
+        # Patch the import to raise ImportError
+        with patch("builtins.__import__", side_effect=ImportError("No module named 'weasyprint'")):
             result = make_backtest_result()
 
-            # Should not be able to import HTML, which triggers our import check
-            # The actual import happens inside the method, so we need to test differently
-            with patch.dict("sys.modules", {"weasyprint": None}):
-                with pytest.raises(ImportError, match="WeasyPrint is required"):
-                    generator.generate_pdf_report(result)
+            with pytest.raises(ImportError, match="WeasyPrint is required"):
+                generator.generate_pdf_report(result)
 
 
 class TestCSVTradeListGeneration:
@@ -414,12 +458,17 @@ class TestTemplateContextPreparation:
     def test_prepare_context_with_cost_summary(self, generator):
         """Test cost breakdown when cost_summary provided."""
         cost_summary = BacktestCostSummary(
+            total_trades=3,
             total_commission_paid=Decimal("15.00"),
             total_slippage_cost=Decimal("6.00"),
             total_transaction_costs=Decimal("21.00"),
             cost_as_pct_of_total_pnl=Decimal("0.0467"),
             avg_commission_per_trade=Decimal("5.00"),
             avg_slippage_per_trade=Decimal("2.00"),
+            avg_transaction_cost_per_trade=Decimal("7.00"),
+            gross_avg_r_multiple=Decimal("2.10"),
+            net_avg_r_multiple=Decimal("2.00"),
+            r_multiple_degradation=Decimal("0.10"),
         )
         result = make_backtest_result(cost_summary=cost_summary)
 

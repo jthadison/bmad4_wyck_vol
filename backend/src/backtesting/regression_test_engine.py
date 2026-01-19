@@ -305,13 +305,13 @@ class RegressionTestEngine:
 
         # Map of metric names to actual values
         metrics_map = {
-            "win_rate": (baseline.summary.win_rate, current_metrics.win_rate),
+            "win_rate": (baseline.metrics.win_rate, current_metrics.win_rate),
             "avg_r_multiple": (
-                baseline.summary.average_r_multiple,
+                baseline.metrics.average_r_multiple,
                 current_metrics.average_r_multiple,
             ),
-            "profit_factor": (baseline.summary.profit_factor, current_metrics.profit_factor),
-            "sharpe_ratio": (baseline.summary.sharpe_ratio, current_metrics.sharpe_ratio),
+            "profit_factor": (baseline.metrics.profit_factor, current_metrics.profit_factor),
+            "sharpe_ratio": (baseline.metrics.sharpe_ratio, current_metrics.sharpe_ratio),
         }
 
         for metric_name, (baseline_value, current_value) in metrics_map.items():

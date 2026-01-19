@@ -321,8 +321,8 @@ class TestDrawdownPeriods:
         assert dd.recovery_date == datetime(2024, 1, 10, tzinfo=UTC)
         assert dd.peak_value == Decimal("100000")
         assert dd.trough_value == Decimal("95000")
-        # Drawdown: (100000 - 95000) / 100000 * 100 = 5%
-        assert dd.drawdown_pct == Decimal("5.0000")
+        # Drawdown: (95000 - 100000) / 100000 * 100 = -5% (negative)
+        assert dd.drawdown_pct == Decimal("-5.0000")
         assert dd.duration_days == 4  # Jan 1 to Jan 5
         assert dd.recovery_duration_days == 5  # Jan 5 to Jan 10
 
@@ -339,10 +339,10 @@ class TestDrawdownPeriods:
         result = calculator.calculate_drawdown_periods(equity_curve)
 
         assert len(result) == 2
-        # Sorted by drawdown_pct descending
-        # DD1: 10%, DD2: 6.67%
-        assert result[0].drawdown_pct == Decimal("10.0000")
-        assert result[1].drawdown_pct < Decimal("6.7000")
+        # Sorted by drawdown_pct ascending (most negative first)
+        # DD1: -10%, DD2: -6.67%
+        assert result[0].drawdown_pct == Decimal("-10.0000")
+        assert result[1].drawdown_pct > Decimal("-6.7000")  # Less severe (closer to 0)
 
     def test_uncovered_drawdown(self, calculator):
         """Test drawdown that hasn't recovered yet."""
@@ -358,7 +358,7 @@ class TestDrawdownPeriods:
         dd = result[0]
         assert dd.recovery_date is None
         assert dd.recovery_duration_days is None
-        assert dd.drawdown_pct == Decimal("10.0000")
+        assert dd.drawdown_pct == Decimal("-10.0000")
 
 
 class TestRiskMetrics:

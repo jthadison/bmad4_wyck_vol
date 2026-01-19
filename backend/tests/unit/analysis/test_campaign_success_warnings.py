@@ -11,12 +11,8 @@ Tests the warning generation for statistical validity concerns including:
 from decimal import Decimal
 from uuid import UUID
 
-import pytest
-
 from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
 from src.models.campaign import CampaignMetrics, QualityTierPerformance
-from src.repositories.models import CampaignMetricsModel
-
 
 # ========================================
 # Story 16.5b: Statistical Warnings Tests

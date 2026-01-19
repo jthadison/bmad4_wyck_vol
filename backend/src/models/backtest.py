@@ -1610,6 +1610,7 @@ class DrawdownPeriod(BaseModel):
         recovery_date: Date portfolio recovered to peak (None if not recovered)
         peak_value: Portfolio value at peak
         trough_value: Portfolio value at trough
+        recovery_value: Portfolio value at recovery (None if not recovered)
         drawdown_pct: Drawdown percentage from peak
         duration_days: Days from peak to trough
         recovery_duration_days: Days from trough to recovery (None if not recovered)
@@ -1631,8 +1632,11 @@ class DrawdownPeriod(BaseModel):
     trough_value: Decimal = Field(
         ..., ge=Decimal("0"), decimal_places=2, description="Trough portfolio value"
     )
+    recovery_value: Optional[Decimal] = Field(
+        default=None, ge=Decimal("0"), decimal_places=2, description="Recovery portfolio value"
+    )
     drawdown_pct: Decimal = Field(
-        ..., ge=Decimal("0"), decimal_places=4, description="Drawdown % from peak"
+        ..., le=Decimal("0"), decimal_places=4, description="Drawdown % from peak (negative)"
     )
     duration_days: int = Field(..., ge=0, description="Days from peak to trough")
     recovery_duration_days: Optional[int] = Field(
@@ -1676,11 +1680,14 @@ class RiskMetrics(BaseModel):
         avg_position_size_pct: Average position size as % of portfolio
         max_capital_deployed_pct: Maximum % of capital deployed in positions
         avg_capital_deployed_pct: Average % of capital deployed
+        total_exposure_days: Total number of days with open positions
+        exposure_time_pct: Percentage of backtest period with positions open
 
     Example:
         Max 3 positions open, avg 1.8 positions
         Max 6% portfolio heat, avg 3.2% heat
         Max position 5% of capital, avg 2.8%
+        15 days with exposure out of 20 days total = 75% exposure time
     """
 
     max_concurrent_positions: int = Field(..., ge=0, description="Max open positions at once")
@@ -1725,6 +1732,14 @@ class RiskMetrics(BaseModel):
         decimal_places=4,
         description="Avg % capital deployed",
     )
+    total_exposure_days: int = Field(..., ge=0, description="Total days with open positions")
+    exposure_time_pct: Decimal = Field(
+        ...,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        decimal_places=2,
+        description="% of backtest period with positions",
+    )
 
     @field_validator(
         "avg_concurrent_positions",
@@ -1734,6 +1749,7 @@ class RiskMetrics(BaseModel):
         "avg_position_size_pct",
         "max_capital_deployed_pct",
         "avg_capital_deployed_pct",
+        "exposure_time_pct",
         mode="before",
     )
     @classmethod

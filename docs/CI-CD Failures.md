@@ -756,8 +756,58 @@ See **Phase 3: Final TypeScript Error Resolution (PR #206)** section above for d
 
 ---
 
-### Backend Test Failures
-Some existing tests are failing due to logic/assertion issues (not migration or configuration problems). These tests now execute properly but have pre-existing failures.
+### Backend Test Failures (RESOLVED - PR #210) ✅
+
+**Status:** All AccuracyMetrics test failures resolved
+
+**Issue:** 13 tests failing in `backend/tests/unit/backtesting/test_accuracy_tester.py` (65% failure rate)
+
+**Root Causes:**
+1. Missing `pattern_type` field in AccuracyMetrics instantiations (Story 12.3 added this required field)
+2. Type conversion issues: pandas Timestamp → Python date, boolean → string
+3. LabeledPattern model field mismatches (model was simplified, removed campaign_phase, campaign_type, etc.)
+4. Incorrect correctness field comparison (string "INCORRECT" evaluated as truthy boolean)
+
+**Resolution (PR #210):**
+
+**Commit 1 (eabd4cc):** Fixed 10 AccuracyMetrics test fixtures
+- Added missing `pattern_type="SPRING"` to all test fixtures
+- Result: 13/20 tests passing (65%)
+
+**Commit 2 (b5f47b6):** Fixed remaining 5 test failures in `test_detector_accuracy()`
+- Added `pattern_type` to AccuracyMetrics instantiation in accuracy_tester.py:358
+- Fixed boolean → string conversion for correctness field (line 253)
+- Fixed type conversions in `_row_to_labeled_pattern()` method (timestamp→date, boolean→string)
+- Removed references to non-existent fields (false_positive_reason, campaign_phase, campaign_type)
+- Updated validation methods to work with simplified LabeledPattern model
+- Result: 20/20 tests passing (100%) ✅
+
+**Tests Fixed:**
+1. `test_accuracy_metrics_creation` ✅
+2. `test_accuracy_metrics_decimal_conversion` ✅
+3. `test_accuracy_metrics_utc_timestamp` ✅
+4. `test_nfr_validation_pattern_detector_pass` ✅
+5. `test_nfr_validation_pattern_detector_fail` ✅
+6. `test_nfr_validation_range_detector` ✅
+7. `test_regression_detection_performance_degradation` ✅
+8. `test_regression_detection_stable_metrics` ✅
+9. `test_regression_detection_recent_improvement` ✅
+10. `test_detector_accuracy` ✅ (plus 4 sub-tests)
+
+**Files Modified:**
+- `backend/tests/unit/backtesting/test_accuracy_tester.py` (added pattern_type to 10 fixtures)
+- `backend/src/backtesting/accuracy_tester.py` (fixed type conversions and field references)
+
+**Verification:**
+```bash
+cd backend
+poetry run pytest tests/unit/backtesting/test_accuracy_tester.py -v
+# Result: 20 passed in 0.59s (100% pass rate)
+```
+
+**Branch:** `fix/outstanding-issues`
+**PR:** #210 (Open)
+**Status:** Ready for review and merge ✅
 
 ---
 
