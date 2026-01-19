@@ -121,12 +121,17 @@ def sample_trades():
 def sample_cost_summary():
     """Create sample transaction cost summary."""
     return BacktestCostSummary(
+        total_trades=8,  # 8 trades total
         total_commission_paid=Decimal("80.00"),  # 8 trades * $10
         total_slippage_cost=Decimal("40.00"),  # 8 trades * $5
         total_transaction_costs=Decimal("120.00"),  # commission + slippage
         cost_as_pct_of_total_pnl=Decimal("0.055"),  # 5.5% as decimal
         avg_commission_per_trade=Decimal("10.00"),
         avg_slippage_per_trade=Decimal("5.00"),
+        avg_transaction_cost_per_trade=Decimal("15.00"),  # $10 + $5
+        gross_avg_r_multiple=Decimal("1.50"),  # Before costs
+        net_avg_r_multiple=Decimal("1.25"),  # After costs
+        r_multiple_degradation=Decimal("0.25"),  # gross - net
     )
 
 
@@ -154,7 +159,7 @@ def sample_backtest_result(
         total_pnl=total_pnl,
         total_return_pct=(total_pnl / Decimal("100000")),
         final_equity=final_equity,
-        max_drawdown=Decimal("-0.085"),  # 8.5% drawdown (negative)
+        max_drawdown=Decimal("0.085"),  # 8.5% drawdown (positive magnitude)
         sharpe_ratio=Decimal("1.85"),
         cagr=Decimal("0.125"),  # 12.5% as decimal
         avg_r_multiple=Decimal("1.25"),
@@ -170,7 +175,7 @@ def sample_backtest_result(
         config=sample_backtest_config,
         equity_curve=sample_equity_curve,
         trades=sample_trades,
-        metrics=metrics,
+        summary=metrics,
         cost_summary=sample_cost_summary,
         look_ahead_bias_check=True,
         execution_time_seconds=45.2,
@@ -294,7 +299,7 @@ def test_html_report_no_trades():
         config=config,
         equity_curve=[],
         trades=[],
-        metrics=metrics,
+        summary=metrics,
         cost_summary=None,
         look_ahead_bias_check=False,
         execution_time_seconds=10.0,
@@ -348,7 +353,7 @@ def test_html_report_no_cost_summary():
         config=config,
         equity_curve=[],
         trades=[],
-        metrics=metrics,
+        summary=metrics,
         cost_summary=None,  # No cost summary
         look_ahead_bias_check=True,
         execution_time_seconds=10.0,
