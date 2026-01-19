@@ -41,6 +41,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.models.campaign import AssetCategory
+
 
 class EntryDetails(BaseModel):
     """
@@ -309,6 +311,22 @@ class Campaign(BaseModel):
     start_date: datetime = Field(..., description="Campaign start date (UTC)")
     completed_at: datetime | None = Field(None, description="Campaign completion timestamp (UTC)")
     invalidation_reason: str | None = Field(None, description="Invalidation reason if applicable")
+
+    # Correlation tracking (Story 16.1a)
+    asset_category: AssetCategory = Field(
+        default=AssetCategory.UNKNOWN,
+        description="Asset class category (FOREX, EQUITY, CRYPTO, COMMODITY, INDEX, UNKNOWN)",
+    )
+    sector: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Equity sector (TECH, FINANCE, ENERGY, etc.) - only for EQUITY category",
+    )
+    correlation_group: str = Field(
+        default="DEFAULT",
+        max_length=50,
+        description="Correlation group for risk aggregation (e.g., USD_MAJOR, BTC_CORRELATED)",
+    )
 
     # Optimistic locking
     version: int = Field(default=1, ge=1, description="Optimistic locking version")
