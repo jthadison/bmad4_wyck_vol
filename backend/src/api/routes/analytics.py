@@ -22,6 +22,7 @@ from src.models.analytics import (
     TradeListResponse,
     TrendResponse,
 )
+from src.models.campaign import SequencePerformanceResponse
 from src.repositories.analytics_repository import AnalyticsRepository
 
 logger = structlog.get_logger(__name__)
@@ -302,3 +303,102 @@ async def export_pattern_performance_pdf(
     except Exception as e:
         logger.error("Error generating PDF report", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail="Failed to generate PDF report") from e
+
+
+@router.get(
+    "/pattern-sequences",
+    response_model=SequencePerformanceResponse,
+    summary="Get pattern sequence performance analysis",
+    description="""
+    Analyze completed campaigns by pattern sequences to identify which sequences
+    have the highest win rates and profitability (Story 16.5a).
+
+    Groups campaigns by their entry pattern sequences (e.g., Spring→SOS, Spring→AR→SOS,
+    Spring→SOS→LPS) and calculates comprehensive performance metrics for each sequence.
+
+    Metrics Calculated:
+    - Win rate (% campaigns with R > 0)
+    - Average R-multiple
+    - Median R-multiple
+    - Total R-multiple (cumulative profit)
+    - Exit reason distribution
+    - Best/worst campaign for each sequence
+
+    Query Parameters:
+    - symbol: Optional symbol filter (e.g., "AAPL")
+    - timeframe: Optional timeframe filter (e.g., "1D")
+    - limit: Maximum number of sequences to return (default: 100)
+
+    Returns:
+    - SequencePerformanceResponse with list of metrics and metadata
+
+    Performance:
+    - Optimized SQL queries for efficiency
+    - Target: < 3 seconds for 1000 campaigns
+    """,
+)
+async def get_pattern_sequence_analysis(
+    symbol: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by trading symbol",
+            example="AAPL",
+        ),
+    ] = None,
+    timeframe: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by timeframe",
+            example="1D",
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(
+            description="Maximum number of sequences to return",
+            ge=1,
+            le=1000,
+            example=100,
+        ),
+    ] = 100,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Get pattern sequence performance analysis (Story 16.5a)."""
+    try:
+        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
+        from src.models.campaign import SequencePerformanceResponse
+
+        analyzer = CampaignSuccessAnalyzer(session)
+        sequences, total_campaigns = await analyzer.get_pattern_sequence_analysis(
+            symbol=symbol, timeframe=timeframe, limit=limit
+        )
+
+        # Build response with metadata
+        response = SequencePerformanceResponse(
+            sequences=sequences,
+            total_sequences=len(sequences),
+            filters_applied={"symbol": symbol, "timeframe": timeframe},
+            total_campaigns=total_campaigns,
+        )
+
+        logger.info(
+            "Pattern sequence analysis retrieved",
+            extra={
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "sequence_count": len(sequences),
+                "total_campaigns": total_campaigns,
+                "limit": limit,
+            },
+        )
+
+        return response
+
+    except Exception as e:
+        logger.error(
+            "Error retrieving pattern sequence analysis",
+            extra={"error": str(e), "symbol": symbol, "timeframe": timeframe},
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve pattern sequence analysis"
+        ) from e

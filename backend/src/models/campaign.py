@@ -1405,3 +1405,152 @@ class MetricsFilter(BaseModel):
     offset: int = Field(default=0, ge=0, description="Skip first N results")
 
     model_config = ConfigDict(json_encoders={Decimal: str})
+
+
+class SequencePerformance(BaseModel):
+    """
+    Pattern sequence performance metrics (Story 16.5a).
+
+    Analyzes performance of specific pattern sequences (e.g., Spring→SOS,
+    Spring→AR→SOS, Spring→SOS→LPS) to identify which sequences have the
+    highest win rates and profitability.
+
+    Fields:
+    -------
+    - sequence: Pattern sequence string (e.g., "Spring→SOS")
+    - campaign_count: Number of campaigns with this sequence
+    - win_rate: Percentage of winning campaigns (R > 0)
+    - avg_r_multiple: Average R-multiple across all campaigns
+    - median_r_multiple: Median R-multiple
+    - total_r_multiple: Cumulative R-multiple (total profit in R)
+    - exit_reasons: Distribution of exit reasons
+    - best_campaign_id: Campaign ID with highest R-multiple
+    - worst_campaign_id: Campaign ID with lowest R-multiple
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from uuid import uuid4
+    >>> sequence_perf = SequencePerformance(
+    ...     sequence="Spring→SOS",
+    ...     campaign_count=25,
+    ...     win_rate=Decimal("72.00"),
+    ...     avg_r_multiple=Decimal("3.5"),
+    ...     median_r_multiple=Decimal("2.8"),
+    ...     total_r_multiple=Decimal("87.5"),
+    ...     exit_reasons={"TARGET_HIT": 18, "STOPPED": 7},
+    ...     best_campaign_id=uuid4(),
+    ...     worst_campaign_id=uuid4()
+    ... )
+    """
+
+    sequence: str = Field(..., description="Pattern sequence string (e.g., 'Spring→SOS')")
+
+    campaign_count: int = Field(..., ge=0, description="Number of campaigns with this sequence")
+
+    win_rate: Decimal = Field(
+        ...,
+        decimal_places=2,
+        max_digits=5,
+        ge=Decimal("0"),
+        le=Decimal("100.00"),
+        description="Percentage of winning campaigns (R > 0)",
+    )
+
+    avg_r_multiple: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=8,
+        description="Average R-multiple across all campaigns",
+    )
+
+    median_r_multiple: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=8,
+        description="Median R-multiple",
+    )
+
+    total_r_multiple: Decimal = Field(
+        ...,
+        decimal_places=4,
+        max_digits=12,
+        description="Cumulative R-multiple (total profit in R)",
+    )
+
+    exit_reasons: dict[str, int] = Field(
+        default_factory=dict, description="Distribution of exit reasons"
+    )
+
+    best_campaign_id: UUID | None = Field(None, description="Campaign ID with highest R-multiple")
+
+    worst_campaign_id: UUID | None = Field(None, description="Campaign ID with lowest R-multiple")
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, Any]:
+        """Serialize model with Decimal and UUID as strings."""
+        return {
+            "sequence": self.sequence,
+            "campaign_count": self.campaign_count,
+            "win_rate": str(self.win_rate),
+            "avg_r_multiple": str(self.avg_r_multiple),
+            "median_r_multiple": str(self.median_r_multiple),
+            "total_r_multiple": str(self.total_r_multiple),
+            "exit_reasons": self.exit_reasons,
+            "best_campaign_id": str(self.best_campaign_id) if self.best_campaign_id else None,
+            "worst_campaign_id": str(self.worst_campaign_id) if self.worst_campaign_id else None,
+        }
+
+
+class SequencePerformanceResponse(BaseModel):
+    """
+    Response model for pattern sequence performance analysis API (Story 16.5a).
+
+    Returns a list of sequence performance metrics with filtering metadata.
+
+    Fields:
+    -------
+    - sequences: List of sequence performance metrics
+    - total_sequences: Total number of unique sequences analyzed
+    - filters_applied: Filters that were applied (symbol, timeframe)
+    - total_campaigns: Total number of campaigns analyzed
+
+    Example:
+    --------
+    >>> from decimal import Decimal
+    >>> from uuid import uuid4
+    >>> response = SequencePerformanceResponse(
+    ...     sequences=[
+    ...         SequencePerformance(
+    ...             sequence="Spring→SOS",
+    ...             campaign_count=25,
+    ...             win_rate=Decimal("72.00"),
+    ...             avg_r_multiple=Decimal("3.5"),
+    ...             median_r_multiple=Decimal("2.8"),
+    ...             total_r_multiple=Decimal("87.5"),
+    ...             exit_reasons={"TARGET_HIT": 18, "STOPPED": 7},
+    ...             best_campaign_id=uuid4(),
+    ...             worst_campaign_id=uuid4()
+    ...         )
+    ...     ],
+    ...     total_sequences=5,
+    ...     filters_applied={"symbol": "AAPL", "timeframe": None},
+    ...     total_campaigns=100
+    ... )
+    """
+
+    sequences: list[SequencePerformance] = Field(
+        ..., description="List of sequence performance metrics sorted by total R-multiple"
+    )
+
+    total_sequences: int = Field(..., ge=0, description="Total number of unique sequences analyzed")
+
+    filters_applied: dict[str, str | None] = Field(
+        default_factory=dict, description="Filters applied (symbol, timeframe)"
+    )
+
+    total_campaigns: int = Field(..., ge=0, description="Total number of campaigns analyzed")
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
