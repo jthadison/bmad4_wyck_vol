@@ -29,8 +29,9 @@ logger = structlog.get_logger(__name__)
 # Type alias for OHLCVBar callback
 OHLCVBarCallback = Callable[[OHLCVBar], Awaitable[None] | None]
 
-# Symbol validation pattern: 1-10 alphanumeric characters, may include dots and hyphens
-SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,9}$", re.IGNORECASE)
+# Symbol validation pattern: 1-20 alphanumeric characters, may include dots, hyphens, equals, slashes
+# Supports: AAPL, BRK.B, ES=F, BTC-USD, ETH/USDT, NQ=F
+SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-=/]{0,19}$", re.IGNORECASE)
 
 # Default configuration constants with documentation
 DEFAULT_BUFFER_SIZE = 50  # Max bars to buffer per symbol (circular buffer)
@@ -200,7 +201,7 @@ class RealtimeMarketClient:
             if not self._validate_symbol(symbol):
                 raise ValueError(
                     f"Invalid symbol format: '{symbol}'. "
-                    "Symbols must be 1-10 alphanumeric characters (may include . and -)."
+                    "Symbols must be 1-20 alphanumeric characters (may include . - = /)."
                 )
 
         self._current_timeframe = timeframe

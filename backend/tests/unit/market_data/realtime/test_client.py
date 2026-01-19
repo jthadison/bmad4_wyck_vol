@@ -494,6 +494,9 @@ class TestRealtimeMarketClient:
         assert client._validate_symbol("SPY") is True
         assert client._validate_symbol("ES-2024") is True
         assert client._validate_symbol("A") is True
+        assert client._validate_symbol("ES=F") is True
+        assert client._validate_symbol("BTC/USD") is True
+        assert client._validate_symbol("ETH-USDT") is True
 
     def test_validate_symbol_invalid(self):
         """Test invalid symbol formats are rejected."""
@@ -502,7 +505,7 @@ class TestRealtimeMarketClient:
 
         assert client._validate_symbol("") is False
         assert client._validate_symbol("   ") is False
-        assert client._validate_symbol("TOOLONGSYMBOL") is False
+        assert client._validate_symbol("WAYTOOLONGSYMBOLNAMES") is False  # 21 chars, exceeds limit
         assert client._validate_symbol("@INVALID") is False
         assert client._validate_symbol("$SPY") is False
         assert client._validate_symbol(None) is False
