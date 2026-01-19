@@ -85,6 +85,7 @@ import {
   isPaperPositionUpdatedMessage,
   isPaperTradeClosedMessage,
 } from '@/types/websocket'
+import { NotificationType, NotificationPriority } from '@/types/notification'
 
 const toast = useToast()
 
@@ -173,8 +174,8 @@ onMounted(() => {
       if ('notification' in message && message.notification) {
         const notification = message.notification as {
           id: string
-          notification_type: string
-          priority: string
+          notification_type: NotificationType
+          priority: NotificationPriority
           title: string
           message: string
           user_id: string

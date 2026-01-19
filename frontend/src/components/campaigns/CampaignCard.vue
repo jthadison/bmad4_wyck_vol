@@ -235,7 +235,6 @@ import Button from 'primevue/button'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import type { CampaignResponse } from '@/types/campaign-tracker'
-import Big from 'big.js'
 
 /**
  * Component props

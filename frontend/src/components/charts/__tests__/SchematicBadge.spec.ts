@@ -12,7 +12,7 @@
  * - Edge cases and data validation
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import SchematicBadge from '@/components/charts/SchematicBadge.vue'
 import type { WyckoffSchematic } from '@/types/chart'

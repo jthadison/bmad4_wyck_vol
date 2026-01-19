@@ -74,6 +74,7 @@
       v-else
       :value="filteredTerms"
       :layout="'list'"
+      data-key="id"
       class="glossary-dataview"
     >
       <template #list="slotProps">
@@ -114,11 +115,12 @@
             <!-- Expanded Content -->
             <div v-if="expandedTermId === term.id" class="expanded-content">
               <!-- Full Description -->
-              <!-- eslint-disable-next-line vue/no-v-html -->
+              <!-- eslint-disable vue/no-v-html -->
               <div
                 class="full-description"
                 v-html="term.full_description_html"
               ></div>
+              <!-- eslint-enable vue/no-v-html -->
 
               <!-- Related Terms -->
               <div v-if="term.related_terms.length > 0" class="related-terms">

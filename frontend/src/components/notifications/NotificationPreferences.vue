@@ -328,6 +328,7 @@ import { ref, onMounted } from 'vue'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePushNotifications } from '@/composables/usePushNotifications'
 import type { NotificationPreferences } from '@/types/notification'
+import { NotificationChannel } from '@/types/notification'
 import InputSwitch from 'primevue/inputswitch'
 import InputText from 'primevue/inputtext'
 import InputMask from 'primevue/inputmask'
@@ -366,9 +367,14 @@ const localPreferences = ref<NotificationPreferences>({
     timezone: 'America/New_York',
   },
   channel_preferences: {
-    info_channels: ['toast'],
-    warning_channels: ['toast', 'email'],
-    critical_channels: ['toast', 'email', 'sms', 'push'],
+    info_channels: [NotificationChannel.TOAST],
+    warning_channels: [NotificationChannel.TOAST, NotificationChannel.EMAIL],
+    critical_channels: [
+      NotificationChannel.TOAST,
+      NotificationChannel.EMAIL,
+      NotificationChannel.SMS,
+      NotificationChannel.PUSH,
+    ],
   },
   updated_at: new Date().toISOString(),
 })
@@ -512,9 +518,14 @@ function resetToDefaults() {
       timezone: 'America/New_York',
     },
     channel_preferences: {
-      info_channels: ['toast'],
-      warning_channels: ['toast', 'email'],
-      critical_channels: ['toast', 'email', 'sms', 'push'],
+      info_channels: [NotificationChannel.TOAST],
+      warning_channels: [NotificationChannel.TOAST, NotificationChannel.EMAIL],
+      critical_channels: [
+        NotificationChannel.TOAST,
+        NotificationChannel.EMAIL,
+        NotificationChannel.SMS,
+        NotificationChannel.PUSH,
+      ],
     },
     updated_at: new Date().toISOString(),
   }

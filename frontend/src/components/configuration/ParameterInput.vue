@@ -20,6 +20,7 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), {
   step: 0.1,
+  helpText: '',
   unit: '',
 })
 
@@ -27,8 +28,8 @@ const emit = defineEmits<Emits>()
 
 const isChanged = computed(() => props.modelValue !== props.currentValue)
 
-const updateValue = (value: number | null) => {
-  if (value !== null) {
+const updateValue = (value: number | number[] | null) => {
+  if (value !== null && typeof value === 'number') {
     emit('update:modelValue', value)
   }
 }

@@ -13,7 +13,7 @@
  * - Edge cases and data validation
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import CauseBuildingPanel from '@/components/charts/CauseBuildingPanel.vue'
 import type { CauseBuildingData } from '@/types/chart'

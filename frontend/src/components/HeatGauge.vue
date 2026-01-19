@@ -15,7 +15,7 @@
       :range-color="rangeColor"
       :text-color="textColor"
       :readonly="true"
-      value-template="{value}%"
+      :value-template="(val: number) => `${val}%`"
     />
 
     <!-- Label below gauge -->
@@ -133,7 +133,7 @@ function formatCapacity(): string {
   }
 
   const available = props.totalHeatLimit.minus(props.totalHeat)
-  const formattedAvailable = formatDecimal(available, 1)
+  const formattedAvailable = formatDecimal(available.toString(), 1)
 
   return `${formattedAvailable}% available`
 }
