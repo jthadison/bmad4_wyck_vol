@@ -87,6 +87,7 @@ def sample_accuracy_metrics():
         detector_version="1.0",
         test_timestamp=datetime.now(UTC),
         dataset_version="v1",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=75,
         false_positives=10,
@@ -264,6 +265,7 @@ def test_accuracy_metrics_decimal_conversion():
     """Test Decimal conversion for metrics."""
     metrics = AccuracyMetrics(
         detector_name="Test",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=80,
         false_positives=10,
@@ -289,6 +291,7 @@ def test_accuracy_metrics_utc_timestamp():
 
     metrics = AccuracyMetrics(
         detector_name="Test",
+        pattern_type="SPRING",  # Required field
         test_timestamp=naive_dt,
         total_samples=100,
         true_positives=80,
@@ -419,6 +422,7 @@ def test_nfr_validation_pattern_detector_pass():
     """Test NFR validation for pattern detector (≥75%)."""
     metrics = AccuracyMetrics(
         detector_name="SpringDetector",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=76,
         false_positives=9,
@@ -440,6 +444,7 @@ def test_nfr_validation_pattern_detector_fail():
     """Test NFR validation for pattern detector (below 75%)."""
     metrics = AccuracyMetrics(
         detector_name="SpringDetector",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=70,
         false_positives=30,
@@ -461,6 +466,7 @@ def test_nfr_validation_range_detector():
     """Test NFR validation for range detector (≥90%)."""
     metrics = AccuracyMetrics(
         detector_name="RangeDetector",
+        pattern_type="SPRING",  # Required field (using SPRING as placeholder for range tests)
         total_samples=100,
         true_positives=91,
         false_positives=9,
@@ -534,6 +540,7 @@ def test_detect_regression_with_5_percent_drop():
     """Test regression detection with exactly 5% drop."""
     baseline = AccuracyMetrics(
         detector_name="Test",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=80,
         false_positives=10,
@@ -549,6 +556,7 @@ def test_detect_regression_with_5_percent_drop():
 
     current = AccuracyMetrics(
         detector_name="Test",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=75,
         false_positives=15,
@@ -571,6 +579,7 @@ def test_detect_regression_with_6_percent_drop():
     """Test regression detection with 6% drop."""
     baseline = AccuracyMetrics(
         detector_name="Test",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=80,
         false_positives=10,
@@ -586,6 +595,7 @@ def test_detect_regression_with_6_percent_drop():
 
     current = AccuracyMetrics(
         detector_name="Test",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=70,
         false_positives=20,
@@ -606,6 +616,7 @@ def test_no_regression_with_2_percent_drop():
     """Test no regression with 2.5% drop (within tolerance)."""
     baseline = AccuracyMetrics(
         detector_name="Test",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=80,
         false_positives=10,
@@ -621,6 +632,7 @@ def test_no_regression_with_2_percent_drop():
 
     current = AccuracyMetrics(
         detector_name="Test",
+        pattern_type="SPRING",  # Required field
         total_samples=100,
         true_positives=78,
         false_positives=12,
