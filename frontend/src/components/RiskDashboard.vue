@@ -92,8 +92,8 @@
             />
             <div class="mt-4 space-y-2">
               <div class="text-sm text-gray-400">
-                {{ formatDecimal(totalHeat || 0, 1) }}% of
-                {{ formatDecimal(totalHeatLimit || 0, 1) }}% limit
+                {{ formatDecimal(totalHeat?.toString() || '0', 1) }}% of
+                {{ formatDecimal(totalHeatLimit?.toString() || '0', 1) }}% limit
               </div>
               <div class="flex items-center justify-center gap-2">
                 <HeatSparkline
@@ -128,7 +128,7 @@
               <div>
                 <div class="text-sm text-gray-400 mb-1">Remaining Heat</div>
                 <div class="text-3xl font-bold text-green-400">
-                  {{ formatDecimal(availableCapacity || 0, 1) }}%
+                  {{ formatDecimal(availableCapacity?.toString() || '0', 1) }}%
                 </div>
               </div>
               <i class="pi pi-battery-half text-4xl text-green-400"></i>
@@ -210,7 +210,7 @@
               </div>
               <div class="flex items-center gap-3">
                 <span class="text-sm font-semibold text-gray-100">
-                  {{ formatDecimal(sector.risk_allocated, 1) }}%
+                  {{ formatDecimal(sector.risk_allocated.toString(), 1) }}%
                 </span>
                 <span
                   class="text-xs font-medium"

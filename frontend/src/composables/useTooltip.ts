@@ -5,7 +5,12 @@
  * Integrates with PrimeVue Tooltip directive.
  */
 
-import { onMounted, onUnmounted, type Directive } from 'vue'
+import {
+  onMounted,
+  onUnmounted,
+  type ObjectDirective,
+  type DirectiveBinding,
+} from 'vue'
 import Tooltip from 'primevue/tooltip'
 import { getTooltipConfig, getTooltipText } from '@/config/tooltips'
 
@@ -42,13 +47,16 @@ export function registerTooltip(
     typeof content === 'string' ? getTooltipConfig(content) : content
 
   // Apply tooltip directive
-  const tooltipDirective = Tooltip as Directive
+  const tooltipDirective = Tooltip as ObjectDirective
   const binding = {
     value: tooltipConfig,
     modifiers: {
       ...options,
     },
-  }
+    instance: null,
+    oldValue: undefined,
+    dir: tooltipDirective,
+  } as DirectiveBinding
 
   if (tooltipDirective.mounted) {
     tooltipDirective.mounted(element, binding, {} as never, {} as never)
@@ -67,7 +75,7 @@ export function unregisterTooltip(elementId: string) {
     return
   }
 
-  const tooltipDirective = Tooltip as Directive
+  const tooltipDirective = Tooltip as ObjectDirective
 
   if (tooltipDirective.unmounted) {
     tooltipDirective.unmounted(element, {} as never, {} as never, {} as never)

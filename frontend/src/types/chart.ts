@@ -97,6 +97,8 @@ export interface PreliminaryEvent {
   description: string
   color: string
   shape: 'circle' | 'square' | 'triangle'
+  position: 'aboveBar' | 'belowBar' | 'inBar'
+  icon?: string
 }
 
 /**

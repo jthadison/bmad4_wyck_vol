@@ -90,6 +90,7 @@ import {
   type IChartApi,
   type ISeriesApi,
   ColorType,
+  type LineWidth,
 } from 'lightweight-charts'
 import { useChartStore } from '@/stores/chartStore'
 import ChartToolbar from './ChartToolbar.vue'
@@ -288,7 +289,7 @@ function updateLevelLines() {
     candlestickSeries.value!.createPriceLine({
       price: levelLine.price,
       color: levelLine.color,
-      lineWidth: levelLine.line_width,
+      lineWidth: levelLine.line_width as LineWidth,
       lineStyle: lineStyle,
       axisLabelVisible: true,
       title: levelLine.label,

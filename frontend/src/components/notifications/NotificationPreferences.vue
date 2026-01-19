@@ -432,7 +432,8 @@ async function savePreferences() {
       successMessage.value = ''
     }, 3000)
   } catch (err: unknown) {
-    errorMessage.value = err.message || 'Failed to save preferences'
+    const error = err as { message?: string }
+    errorMessage.value = error.message || 'Failed to save preferences'
   } finally {
     isSaving.value = false
   }
@@ -451,9 +452,13 @@ async function sendTest(channel: 'email' | 'sms' | 'push') {
       successMessage.value = ''
     }, 3000)
   } catch (err: unknown) {
+    const error = err as {
+      response?: { data?: { detail?: string } }
+      message?: string
+    }
     errorMessage.value =
-      err.response?.data?.detail ||
-      err.message ||
+      error.response?.data?.detail ||
+      error.message ||
       `Failed to send test ${channel}`
   } finally {
     testLoading.value[channel] = false
@@ -495,8 +500,9 @@ async function handleChannelToggle(channel: string, enabled: boolean) {
         successMessage.value = ''
       }, 3000)
     } catch (err: unknown) {
+      const error = err as { message?: string }
       errorMessage.value =
-        err.message || 'Failed to subscribe to push notifications'
+        error.message || 'Failed to subscribe to push notifications'
       localPreferences.value.push_enabled = false
     }
   }

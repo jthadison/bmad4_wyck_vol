@@ -124,7 +124,9 @@ export function usePushNotifications() {
       // Subscribe to push manager
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        applicationServerKey: urlBase64ToUint8Array(
+          vapidPublicKey
+        ) as BufferSource,
       })
 
       console.log('[Push] Subscription created:', subscription)
@@ -177,9 +179,11 @@ export function usePushNotifications() {
       await subscription.unsubscribe()
 
       // Remove subscription from backend
-      await apiClient.delete('/api/v1/notifications/push/unsubscribe', {
-        params: { endpoint: subscription.endpoint },
-      })
+      await apiClient.delete(
+        `/api/v1/notifications/push/unsubscribe?endpoint=${encodeURIComponent(
+          subscription.endpoint
+        )}`
+      )
 
       state.value.isSubscribed = false
       console.log('[Push] Unsubscribed successfully')

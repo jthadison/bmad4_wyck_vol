@@ -43,7 +43,7 @@ const props = withDefaults(defineProps<Props>(), {
 function processGlossaryLinks(markdown: string): string {
   const pattern = /\[\[([^\]]+)\]\]/g
 
-  return markdown.replace(pattern, (match, term) => {
+  return markdown.replace(pattern, (_match, term) => {
     const slug = term.toLowerCase().replace(/\s+/g, '-')
     return `<a href="/help/glossary#term-${slug}" class="glossary-link">${term}</a>`
   })

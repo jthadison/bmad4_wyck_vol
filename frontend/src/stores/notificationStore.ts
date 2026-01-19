@@ -68,13 +68,14 @@ export const useNotificationStore = defineStore('notification', () => {
         { params }
       )
 
+      const responseData = response.data as unknown as NotificationListResponse
       if (offset === 0) {
-        notifications.value = response.data.data
+        notifications.value = responseData.data
       } else {
-        notifications.value.push(...response.data.data)
+        notifications.value.push(...responseData.data)
       }
 
-      totalCount.value = response.data.pagination.total_count
+      totalCount.value = responseData.pagination.total_count
     } catch (err: unknown) {
       error.value =
         err instanceof Error ? err.message : 'Failed to fetch notifications'
@@ -121,7 +122,7 @@ export const useNotificationStore = defineStore('notification', () => {
       const response = await apiClient.get<NotificationPreferences>(
         '/api/v1/notifications/preferences'
       )
-      preferences.value = response.data
+      preferences.value = response as unknown as NotificationPreferences
     } catch (err: unknown) {
       error.value =
         err instanceof Error ? err.message : 'Failed to fetch preferences'

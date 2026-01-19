@@ -314,8 +314,10 @@ export const usePaperTradingStore = defineStore('paperTrading', () => {
     )
 
     if (positionIndex !== -1) {
-      openPositions.value[positionIndex].current_price = data.current_price
-      openPositions.value[positionIndex].unrealized_pnl = data.unrealized_pnl
+      openPositions.value[positionIndex].current_price =
+        data.current_price as string
+      openPositions.value[positionIndex].unrealized_pnl =
+        data.unrealized_pnl as string
       openPositions.value[positionIndex].updated_at = new Date().toISOString()
     }
   }

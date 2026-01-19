@@ -95,8 +95,8 @@ const toast = useToast()
  * Local filter state (Story 11.4 Subtask 12.3)
  */
 const localFilters = ref<CampaignFilters>({
-  status: null,
-  symbol: null,
+  status: undefined,
+  symbol: undefined,
 })
 
 /**

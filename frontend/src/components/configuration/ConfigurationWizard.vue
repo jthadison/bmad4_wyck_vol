@@ -194,7 +194,10 @@ async function confirmSave() {
       life: 3000,
     })
   } catch (error: unknown) {
-    if (error.response?.status === 409) {
+    const err = error as {
+      response?: { status?: number; data?: { detail?: { message?: string } } }
+    }
+    if (err.response?.status === 409) {
       toast.add({
         severity: 'error',
         summary: 'Conflict',
@@ -207,8 +210,7 @@ async function confirmSave() {
         severity: 'error',
         summary: 'Error',
         detail:
-          error.response?.data?.detail?.message ||
-          'Failed to save configuration',
+          err.response?.data?.detail?.message || 'Failed to save configuration',
         life: 5000,
       })
     }

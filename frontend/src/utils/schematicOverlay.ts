@@ -16,8 +16,9 @@
  * @requires @/types/chart
  */
 
-import type { IChartApi, ISeriesApi, LineData } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi, LineData, Time } from 'lightweight-charts'
 import type { WyckoffSchematic, ChartBar } from '@/types/chart'
+import { toChartTime } from '@/types/chart'
 
 /**
  * Template point in normalized coordinates
@@ -327,15 +328,15 @@ export function renderSchematicOverlay(
 
   // Convert template points to chart coordinates
   const scaledPoints = scaleTemplateToChart(
-    schematic.template_data as TemplatePoint[],
+    schematic.template_data as unknown as TemplatePoint[],
     bars,
     creekLevel,
     iceLevel
   )
 
   // Convert to LineData format for Lightweight Charts
-  const lineData: LineData[] = scaledPoints.map((point) => ({
-    time: point.time,
+  const lineData: LineData<Time>[] = scaledPoints.map((point) => ({
+    time: toChartTime(point.time),
     value: point.price,
   }))
 
@@ -380,26 +381,26 @@ export function renderSchematicOverlay(
  * @see hasSignificantDeviation for deviation threshold logic
  * @see calculateDeviation for deviation calculation
  */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 export function highlightDeviations(
-  templateSeries: ISeriesApi<'Line'>,
-  scaledPoints: ScaledPoint[],
-  bars: ChartBar[],
-  priceRange: number
+  _templateSeries: ISeriesApi<'Line'>,
+  _scaledPoints: ScaledPoint[],
+  _bars: ChartBar[],
+  _priceRange: number
 ): void {
+  /* eslint-enable @typescript-eslint/no-unused-vars */
   // Lightweight Charts doesn't support markers on line series directly
   // We need to use the main candlestick series for markers
   // This function would need to be called from the chart component
   // with access to the candlestick series
-
   // For now, we can calculate which points have deviations
   // and return them for the component to render
-  const deviationPoints = scaledPoints.filter((point) =>
-    hasSignificantDeviation(point, bars, priceRange)
-  )
-
   // Store deviation points for rendering (would need to be passed back)
   // This is a placeholder - actual implementation would require
   // passing the candlestick series and creating markers
+  // const _deviationPoints = scaledPoints.filter((point) =>
+  //   hasSignificantDeviation(point, bars, priceRange)
+  // )
 }
 
 /**
