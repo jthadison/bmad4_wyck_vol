@@ -721,8 +721,8 @@ class MetricsCalculator:
             "100"
         )
         exposure_pct = min(exposure_pct, Decimal("100")).quantize(
-            Decimal("0.0001")
-        )  # Cap at 100% and round
+            Decimal("0.01")
+        )  # Cap at 100% and round to 2 decimal places
 
         return RiskMetrics(
             max_concurrent_positions=max_concurrent,

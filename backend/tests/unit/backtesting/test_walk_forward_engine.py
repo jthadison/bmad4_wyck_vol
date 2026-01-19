@@ -323,7 +323,7 @@ class TestWalkForwardTest:
                     start_date=date(2020, 1, 1),
                     end_date=date(2020, 6, 30),
                 ),
-                metrics=BacktestMetrics(
+                summary=BacktestMetrics(
                     win_rate=Decimal(str(win_rate)),
                     average_r_multiple=Decimal("2.0"),
                     profit_factor=Decimal("1.8"),

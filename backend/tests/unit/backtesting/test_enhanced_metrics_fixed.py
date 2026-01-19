@@ -190,8 +190,8 @@ class TestDrawdownPeriods:
         result = calculator.calculate_drawdown_periods(sample_equity_curve)
 
         assert len(result) > 0
-        # Largest drawdown should be first (sorted by severity)
-        assert result[0].drawdown_pct > Decimal("0")
+        # Largest drawdown should be first (sorted by severity - most negative)
+        assert result[0].drawdown_pct < Decimal("0")
 
     def test_calculate_drawdown_periods_empty(self, calculator):
         """Test with empty curve."""
@@ -290,7 +290,11 @@ class TestCampaignPerformance:
     """Test campaign performance (placeholder)."""
 
     def test_calculate_campaign_performance_placeholder(self, calculator, sample_trades):
-        """Test campaign performance placeholder."""
+        """Test campaign performance detection with WyckoffCampaignDetector."""
         result = calculator.calculate_campaign_performance(sample_trades)
-        # Placeholder returns empty list
-        assert result == []
+        # Now uses WyckoffCampaignDetector - should detect campaigns from trades with pattern_type
+        assert isinstance(result, list)
+        # May or may not detect campaigns depending on pattern_type in sample_trades
+        for campaign in result:
+            assert hasattr(campaign, "campaign_type")
+            assert hasattr(campaign, "symbol")

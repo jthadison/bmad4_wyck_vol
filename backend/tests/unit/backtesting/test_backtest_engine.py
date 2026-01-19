@@ -86,7 +86,7 @@ class TestEventDrivenExecution:
         # Should have equity curve but no trades
         assert len(result.equity_curve) == len(sample_bars)
         assert len(result.trades) == 0
-        assert result.metrics.total_trades == 0
+        assert result.summary.total_trades == 0
 
         # Cash should remain unchanged
         final_cash = result.equity_curve[-1].cash
@@ -146,9 +146,9 @@ class TestSimpleBuyAndHold:
         assert trade.entry_price < trade.exit_price
 
         # Win rate should be 100%
-        assert result.metrics.win_rate == Decimal("1.0")
-        assert result.metrics.winning_trades == 1
-        assert result.metrics.losing_trades == 0
+        assert result.summary.win_rate == Decimal("1.0")
+        assert result.summary.winning_trades == 1
+        assert result.summary.losing_trades == 0
 
     def test_buy_and_hold_equity_curve(self, config, sample_bars):
         """Test equity curve tracks portfolio value correctly."""
@@ -344,7 +344,7 @@ class TestMultipleTrades:
 
         # Should have multiple trades
         assert len(result.trades) >= 2
-        assert result.metrics.total_trades >= 2
+        assert result.summary.total_trades >= 2
 
 
 class TestOrderFillTiming:
@@ -422,10 +422,10 @@ class TestMetricsCalculation:
         engine = BacktestEngine(config)
         result = engine.run(sample_bars, no_trade_strategy)
 
-        assert result.metrics.total_trades == 0
-        assert result.metrics.win_rate == Decimal("0")
-        assert result.metrics.winning_trades == 0
-        assert result.metrics.losing_trades == 0
+        assert result.summary.total_trades == 0
+        assert result.summary.win_rate == Decimal("0")
+        assert result.summary.winning_trades == 0
+        assert result.summary.losing_trades == 0
 
     def test_metrics_with_winning_trade(self, config, sample_bars):
         """Test metrics with profitable trade."""
@@ -440,12 +440,12 @@ class TestMetricsCalculation:
         engine = BacktestEngine(config)
         result = engine.run(sample_bars, buy_and_hold)
 
-        assert result.metrics.total_trades == 1
-        assert result.metrics.winning_trades == 1
-        assert result.metrics.losing_trades == 0
-        assert result.metrics.win_rate == Decimal("1.0")
-        assert result.metrics.profit_factor == Decimal("0")  # No losses
-        assert result.metrics.total_return_pct > Decimal("0")
+        assert result.summary.total_trades == 1
+        assert result.summary.winning_trades == 1
+        assert result.summary.losing_trades == 0
+        assert result.summary.win_rate == Decimal("1.0")
+        assert result.summary.profit_factor == Decimal("0")  # No losses
+        assert result.summary.total_return_pct > Decimal("0")
 
 
 class TestResultGeneration:
@@ -467,7 +467,7 @@ class TestResultGeneration:
         assert result.config == config
         assert isinstance(result.equity_curve, list)
         assert isinstance(result.trades, list)
-        assert result.metrics is not None
+        assert result.summary is not None
         assert result.look_ahead_bias_check is True
         assert result.execution_time_seconds >= 0
 
@@ -498,8 +498,8 @@ class TestDrawdownCalculation:
         result = engine.run(sample_bars, no_trade_strategy)
 
         # No trading = no drawdown
-        assert result.metrics.max_drawdown == Decimal("0")
-        assert result.metrics.max_drawdown_duration_days == 0
+        assert result.summary.max_drawdown == Decimal("0")
+        assert result.summary.max_drawdown_duration_days == 0
 
     def test_drawdown_tracks_peak_decline(self, config):
         """Test drawdown calculation tracks peak-to-trough decline."""
@@ -529,5 +529,5 @@ class TestDrawdownCalculation:
         result = engine.run(bars, buy_and_hold)
 
         # Should have significant drawdown
-        assert result.metrics.max_drawdown > Decimal("0")
-        assert result.metrics.max_drawdown_duration_days > 0
+        assert result.summary.max_drawdown > Decimal("0")
+        assert result.summary.max_drawdown_duration_days > 0
