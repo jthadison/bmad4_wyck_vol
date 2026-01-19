@@ -755,11 +755,17 @@ class CampaignSuccessAnalyzer:
 
         # R-multiple component (0-30 points)
         # Scale: 0R = 0pts, 3R = 30pts (linear)
-        actual_r = campaign.actual_r_achieved if campaign.actual_r_achieved is not None else Decimal("0")
+        actual_r = (
+            campaign.actual_r_achieved if campaign.actual_r_achieved is not None else Decimal("0")
+        )
         r_score = min(QUALITY_MAX_R_SCORE, int(float(actual_r) * QUALITY_WEIGHT_R_MULTIPLE))
 
         # Target achievement component (0-30 points)
-        target_pct = campaign.target_achievement_pct if campaign.target_achievement_pct is not None else Decimal("0")
+        target_pct = (
+            campaign.target_achievement_pct
+            if campaign.target_achievement_pct is not None
+            else Decimal("0")
+        )
         target_score = int(float(target_pct) * QUALITY_WEIGHT_TARGET)
 
         total_score = min(QUALITY_MAX_SCORE, win_rate_score + r_score + target_score)

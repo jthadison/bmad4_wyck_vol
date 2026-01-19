@@ -1122,9 +1122,9 @@ def _check_phase_invalidation(
                 invalidation_type="failed_event",
                 reverted_to_phase=WyckoffPhase.C,
                 risk_level="high",
-                position_action="exit",
+                position_action="exit_all",
                 new_stop_level=None,
-                rationale="SOS breakout failed, pattern still testing (Phase C)",
+                risk_reason="SOS breakout failed, pattern still testing (Phase C)",
             )
 
     # AC 12: Weak Spring - Phase C → B reversion
@@ -1165,7 +1165,7 @@ def _check_phase_invalidation(
                 risk_level="elevated",
                 position_action="reduce",
                 new_stop_level=float(creek_price),
-                rationale="Spring test failed, continue building cause (Phase B)",
+                risk_reason="Spring test failed, continue building cause (Phase B)",
             )
 
     # AC 14: Stronger Climax - Phase A reset (new evidence, not reversion)
@@ -1205,9 +1205,9 @@ def _check_phase_invalidation(
                 invalidation_type="new_evidence",
                 reverted_to_phase=WyckoffPhase.A,  # Stay in Phase A, but reset start
                 risk_level="elevated",
-                position_action="adjust_stops",
+                position_action="hold",
                 new_stop_level=float(Decimal(str(current_bar.low)) * Decimal("0.98")),
-                rationale="New stronger climax resets Phase A accumulation start",
+                risk_reason="New stronger climax resets Phase A accumulation start",
             )
 
     return None

@@ -19,7 +19,6 @@ Test Coverage:
 Author: Story 12.2 Task 10
 """
 
-from decimal import Decimal
 
 import pandas as pd
 import pytest
