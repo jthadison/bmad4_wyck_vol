@@ -250,7 +250,7 @@ class DetectorAccuracyTester:
             detected = labeled_pattern.confidence >= int(threshold * 100)
 
             # Classification logic
-            if labeled_pattern.correctness:  # Ground truth = valid pattern
+            if labeled_pattern.correctness == "CORRECT":  # Ground truth = valid pattern
                 if detected:
                     true_positives += 1
                     total_detections += 1
@@ -294,18 +294,18 @@ class DetectorAccuracyTester:
                         FalsePositiveCase(
                             labeled_pattern=labeled_pattern,
                             detected_confidence=labeled_pattern.confidence,
-                            reason=labeled_pattern.false_positive_reason or "Unknown",
+                            reason=f"Incorrectly detected pattern (confidence {labeled_pattern.confidence})",
                         )
                     )
 
                     # Track phase breakdown for FP
-                    phase = labeled_pattern.campaign_phase
+                    phase = labeled_pattern.phase or "UNKNOWN"
                     if phase not in phase_breakdown:
                         phase_breakdown[phase] = {"TP": 0, "FP": 0}
                     phase_breakdown[phase]["FP"] += 1
 
-                    # Track campaign breakdown for FP
-                    campaign_type = labeled_pattern.campaign_type
+                    # Track campaign breakdown for FP (simplified since campaign_type not in model)
+                    campaign_type = "UNKNOWN"
                     if campaign_type not in campaign_breakdown:
                         campaign_breakdown[campaign_type] = {"TP": 0, "FP": 0}
                     campaign_breakdown[campaign_type]["FP"] += 1
@@ -358,6 +358,7 @@ class DetectorAccuracyTester:
         metrics = AccuracyMetrics(
             detector_name=detector_name,
             detector_version=detector_version,
+            pattern_type=pattern_type,  # Required field
             test_timestamp=datetime.now(UTC),
             dataset_version=dataset_version,
             total_samples=len(pattern_data),
