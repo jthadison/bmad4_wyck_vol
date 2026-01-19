@@ -40,7 +40,11 @@ from uuid import uuid4
 import structlog
 
 from src.backtesting.event_publisher import EventPublisher
+
+# Story 16.1b: Correlation imports
+from src.campaign_management.correlation_mapper import CorrelationMapper
 from src.models.automatic_rally import AutomaticRally
+from src.models.campaign import AssetCategory
 from src.models.campaign_event import CampaignEvent, CampaignEventType
 from src.models.lps import LPS
 from src.models.sos_breakout import SOSBreakout
@@ -303,6 +307,11 @@ class Campaign:
     climax_detected: bool = False
     absorption_quality: float = 0.0  # Spring absorption quality (0.0-1.0)
     volume_history: list[Decimal] = field(default_factory=list)  # Track recent volumes
+
+    # Story 16.1b: Correlation Tracking for Risk Management
+    asset_category: Optional[AssetCategory] = None  # Asset class (FOREX, EQUITY, etc.)
+    sector: Optional[str] = None  # Sector for equities (TECH, FINANCE, etc.)
+    correlation_group: Optional[str] = None  # Correlation group identifier
 
     # Story 15.1a: Campaign Completion Tracking
     exit_price: Optional[Decimal] = None  # Final exit price
@@ -579,6 +588,10 @@ class IntradayCampaignDetector:
         max_concurrent_campaigns: int = 3,
         max_portfolio_heat_pct: Decimal = Decimal("10.0"),
         event_publisher: EventPublisher | None = None,
+        # Story 16.1b: Correlation limit parameters (high defaults for backward compat)
+        max_campaigns_per_correlation_group: int = 10,  # AC1: configurable, default high
+        max_campaigns_per_sector: int = 10,  # AC2: configurable, default high
+        max_category_concentration_pct: float = 100.0,  # AC3: configurable, default disabled
     ):
         """Initialize intraday campaign detector."""
         self.campaign_window_hours = campaign_window_hours
@@ -590,6 +603,11 @@ class IntradayCampaignDetector:
 
         # Story 15.6: Event publisher for campaign notifications
         self.event_publisher = event_publisher
+
+        # Story 16.1b: Correlation limit tracking
+        self.max_campaigns_per_correlation_group = max_campaigns_per_correlation_group
+        self.max_campaigns_per_sector = max_campaigns_per_sector
+        self.max_category_concentration_pct = max_category_concentration_pct
 
         # Story 15.3: Indexed data structures for O(1) lookups
         self._campaigns_by_id: dict[str, Campaign] = {}  # O(1) lookup by ID
@@ -853,17 +871,23 @@ class IntradayCampaignDetector:
         pattern: WyckoffPattern,
         account_size: Optional[Decimal] = None,
         risk_pct_per_trade: Decimal = Decimal("2.0"),
+        # Story 16.1b: Correlation tracking parameters
+        asset_symbol: Optional[str] = None,
+        asset_category: Optional[AssetCategory] = None,
     ) -> Optional[Campaign]:
         """
         Add detected pattern and update campaigns.
 
         Tasks 1-3: Pattern integration, grouping, state machine.
         Story 14.3: Added position sizing and portfolio heat checking.
+        Story 16.1b: Added correlation limit checking.
 
         Args:
             pattern: Detected Spring, SOS, or LPS pattern
             account_size: Total account size for position sizing (optional)
             risk_pct_per_trade: Risk percentage per trade (default 2.0%)
+            asset_symbol: Trading symbol override (default: from pattern.bar.symbol)
+            asset_category: Asset category override (default: auto-detected)
 
         Returns:
             Campaign that pattern was added to, or None if rejected
@@ -871,6 +895,7 @@ class IntradayCampaignDetector:
         Workflow:
             1. Expire stale campaigns (Task 5)
             2. Find existing campaign or check limits (Task 8)
+            2b. Check correlation limits (Story 16.1b)
             3. Calculate position size and heat (Story 14.3)
             4. Validate sequence if adding to existing (Task 7)
             5. Update risk metadata (Task 6)
@@ -879,16 +904,52 @@ class IntradayCampaignDetector:
         # Task 5: Expire stale campaigns first
         self.expire_stale_campaigns(pattern.detection_timestamp)
 
+        # Story 16.1b: Get symbol and correlation info
+        # Get symbol from pattern if not provided
+        symbol = asset_symbol
+        if not symbol:
+            # Try to get symbol from pattern's bar
+            bar = pattern.bar
+            if isinstance(bar, dict):
+                symbol = bar.get("symbol", "UNKNOWN")
+            elif hasattr(bar, "symbol"):
+                symbol = bar.symbol
+            else:
+                symbol = "UNKNOWN"
+
+        # Get correlation info using CorrelationMapper
+        (
+            detected_category,
+            sector,
+            correlation_group,
+        ) = CorrelationMapper.get_campaign_correlation_info(symbol, asset_category)
+
         # Task 2: Find or create campaign
         campaign = self._find_active_campaign(pattern)
 
         if not campaign:
+            # Story 16.1b: Check correlation limits before creating new campaign
+            if not self._check_correlation_limits(symbol, detected_category, sector):
+                self.logger.warning(
+                    "Correlation limits exceeded, cannot create new campaign",
+                    symbol=symbol,
+                    asset_category=detected_category.value if detected_category else None,
+                    sector=sector,
+                    correlation_group=correlation_group,
+                    pattern_type=type(pattern).__name__,
+                )
+                return None
+
             # Story 14.3: Create campaign first to calculate risk_per_share
             # Start new campaign (temporary, no position sizing yet)
             campaign = Campaign(
                 start_time=pattern.detection_timestamp,
                 patterns=[pattern],
                 state=CampaignState.FORMING,
+                # Story 16.1b: Set correlation tracking fields
+                asset_category=detected_category,
+                sector=sector,
+                correlation_group=correlation_group,
             )
 
             # AC4.9: Initialize risk metadata to calculate risk_per_share
@@ -1136,6 +1197,85 @@ class IntradayCampaignDetector:
         # Iterate over campaigns in insertion order and filter by state
         valid_states = {CampaignState.FORMING, CampaignState.ACTIVE}
         return [c for c in self._campaigns_by_id.values() if c.state in valid_states]
+
+    def get_correlation_summary(self) -> dict[str, Any]:
+        """
+        Get correlation distribution summary for active campaigns (Story 16.1b).
+
+        Returns summary of campaign distribution by correlation group, sector,
+        and asset category to help with diversification monitoring.
+
+        Returns:
+            Dictionary containing:
+                - total_active_campaigns: Number of FORMING/ACTIVE campaigns
+                - correlation_groups: Count by correlation group
+                - sectors: Count by sector (equities only)
+                - asset_categories: Count by asset category
+                - category_concentration_pct: Percentage by category
+                - at_risk_groups: Groups approaching limits (1 slot remaining)
+                - at_risk_sectors: Sectors approaching limits (1 slot remaining)
+
+        Example:
+            >>> detector = IntradayCampaignDetector()
+            >>> summary = detector.get_correlation_summary()
+            >>> print(summary["total_active_campaigns"])
+            5
+            >>> print(summary["correlation_groups"])
+            {"USD_MAJOR": 2, "EQUITY_TECH": 1, "INDEX_US": 2}
+        """
+        active_campaigns = self.get_active_campaigns()
+
+        # Initialize counters
+        correlation_groups: dict[str, int] = {}
+        sectors: dict[str, int] = {}
+        categories: dict[str, int] = {}
+
+        for campaign in active_campaigns:
+            # Group by correlation group
+            group = campaign.correlation_group
+            if group:
+                correlation_groups[group] = correlation_groups.get(group, 0) + 1
+
+            # Group by sector (equities only)
+            if campaign.sector:
+                sectors[campaign.sector] = sectors.get(campaign.sector, 0) + 1
+
+            # Group by category
+            if campaign.asset_category:
+                cat = campaign.asset_category.value
+                categories[cat] = categories.get(cat, 0) + 1
+
+        # Calculate category concentration percentages
+        total = len(active_campaigns)
+        category_pct: dict[str, float] = {}
+        if total > 0:
+            category_pct = {
+                cat: round((count / total) * 100, 1) for cat, count in categories.items()
+            }
+
+        # Identify at-risk groups (approaching limit)
+        at_risk_groups = [
+            group
+            for group, count in correlation_groups.items()
+            if count >= self.max_campaigns_per_correlation_group - 1
+        ]
+
+        # Identify at-risk sectors (approaching limit)
+        at_risk_sectors = [
+            sector
+            for sector, count in sectors.items()
+            if count >= self.max_campaigns_per_sector - 1
+        ]
+
+        return {
+            "total_active_campaigns": total,
+            "correlation_groups": correlation_groups,
+            "sectors": sectors,
+            "asset_categories": categories,
+            "category_concentration_pct": category_pct,
+            "at_risk_groups": at_risk_groups,
+            "at_risk_sectors": at_risk_sectors,
+        }
 
     def expire_stale_campaigns(self, current_time: datetime) -> None:
         """
@@ -2273,6 +2413,99 @@ class IntradayCampaignDetector:
                     prospective_heat=str(prospective_heat),
                     max_allowed=str(self.max_portfolio_heat_pct),
                     new_campaign_risk=str(new_campaign_risk) if new_campaign_risk else None,
+                )
+                return False
+
+        return True
+
+    def _check_correlation_limits(
+        self,
+        asset_symbol: str,
+        asset_category: AssetCategory,
+        sector: Optional[str] = None,
+    ) -> bool:
+        """
+        Check if new campaign would violate correlation limits (Story 16.1b).
+
+        Enforces diversification rules to prevent over-concentration in
+        correlated assets and sectors.
+
+        Args:
+            asset_symbol: Trading symbol (e.g., "EURUSD", "AAPL")
+            asset_category: Asset category (FOREX, EQUITY, CRYPTO, etc.)
+            sector: Sector for equities (TECH, FINANCE, etc.)
+
+        Returns:
+            True if limits allow new campaign, False if limits exceeded
+
+        Limits Checked:
+            1. Max 2 campaigns per correlation group (configurable)
+            2. Max 3 campaigns per sector - equities only (configurable)
+            3. Max 50% of portfolio in single asset category (configurable)
+        """
+        active_campaigns = self.get_active_campaigns()
+
+        # Get correlation group for the new asset
+        correlation_group = CorrelationMapper.get_correlation_group(asset_symbol, asset_category)
+
+        # Check 1: Correlation group limit
+        group_count = sum(1 for c in active_campaigns if c.correlation_group == correlation_group)
+        if group_count >= self.max_campaigns_per_correlation_group:
+            self.logger.warning(
+                "Correlation group limit exceeded",
+                correlation_group=correlation_group,
+                current_count=group_count,
+                max_allowed=self.max_campaigns_per_correlation_group,
+            )
+            return False
+
+        # Log warning when approaching limit (1 slot remaining)
+        if group_count >= self.max_campaigns_per_correlation_group - 1:
+            self.logger.warning(
+                "Approaching correlation group limit",
+                correlation_group=correlation_group,
+                current_count=group_count,
+                max_allowed=self.max_campaigns_per_correlation_group,
+            )
+
+        # Check 2: Sector limit (equities only)
+        if sector and asset_category == AssetCategory.EQUITY:
+            sector_count = sum(1 for c in active_campaigns if c.sector == sector)
+            if sector_count >= self.max_campaigns_per_sector:
+                self.logger.warning(
+                    "Sector limit exceeded",
+                    sector=sector,
+                    current_count=sector_count,
+                    max_allowed=self.max_campaigns_per_sector,
+                )
+                return False
+
+            # Log warning when approaching limit (1 slot remaining)
+            if sector_count >= self.max_campaigns_per_sector - 1:
+                self.logger.warning(
+                    "Approaching sector limit",
+                    sector=sector,
+                    current_count=sector_count,
+                    max_allowed=self.max_campaigns_per_sector,
+                )
+
+        # Check 3: Category concentration limit
+        total_active = len(active_campaigns)
+        if total_active > 0:
+            category_count = sum(1 for c in active_campaigns if c.asset_category == asset_category)
+            # Calculate concentration including the new campaign
+            new_category_count = category_count + 1
+            new_total = total_active + 1
+            concentration_pct = (new_category_count / new_total) * 100
+
+            if concentration_pct > self.max_category_concentration_pct:
+                self.logger.warning(
+                    "Category concentration limit exceeded",
+                    asset_category=asset_category.value if asset_category else None,
+                    current_count=category_count,
+                    total_campaigns=total_active,
+                    concentration_pct=f"{concentration_pct:.1f}%",
+                    max_allowed=f"{self.max_category_concentration_pct}%",
                 )
                 return False
 
