@@ -159,6 +159,9 @@ class RealtimeCampaignService:
         # Bar buffers per symbol
         self.buffers: dict[str, BarBuffer] = {}
 
+        # Symbol locks for concurrent processing safety
+        self._symbol_locks: dict[str, asyncio.Lock] = {}
+
         # Pattern detectors
         self.spring_detector = SpringDetector()
         self.sos_detector = SOSDetector()
@@ -213,10 +216,25 @@ class RealtimeCampaignService:
 
         self._running = False
         self.buffers.clear()
+        self._symbol_locks.clear()
         self.active_campaigns.clear()
         self.campaign_metadata.clear()
 
         self.logger.info("RealtimeCampaignService stopped")
+
+    def _get_symbol_lock(self, symbol: str) -> asyncio.Lock:
+        """
+        Get or create lock for symbol to prevent race conditions.
+
+        Args:
+            symbol: Trading symbol
+
+        Returns:
+            asyncio.Lock for the symbol
+        """
+        if symbol not in self._symbol_locks:
+            self._symbol_locks[symbol] = asyncio.Lock()
+        return self._symbol_locks[symbol]
 
     def _get_or_create_buffer(self, symbol: str) -> BarBuffer:
         """
@@ -283,63 +301,65 @@ class RealtimeCampaignService:
         start_time = datetime.now(UTC)
         patterns_detected = []
 
-        try:
-            # Add bar to buffer
-            buffer = self._get_or_create_buffer(bar.symbol)
-            buffer.add_bar(bar)
+        # Acquire symbol lock to prevent race conditions on same-symbol concurrent processing
+        async with self._get_symbol_lock(bar.symbol):
+            try:
+                # Add bar to buffer
+                buffer = self._get_or_create_buffer(bar.symbol)
+                buffer.add_bar(bar)
 
-            # Check if we have enough bars for detection
-            if not buffer.has_minimum_bars(self.min_detection_bars):
-                self.logger.debug(
-                    "Insufficient bars for detection",
+                # Check if we have enough bars for detection
+                if not buffer.has_minimum_bars(self.min_detection_bars):
+                    self.logger.debug(
+                        "Insufficient bars for detection",
+                        symbol=bar.symbol,
+                        current_bars=len(buffer.bars),
+                        required_bars=self.min_detection_bars,
+                    )
+                    return
+
+                # Run pattern detection
+                bars_list = buffer.get_bars()
+                patterns_detected = await self._detect_patterns(bar.symbol, bars_list)
+
+                # Process detected patterns
+                if patterns_detected:
+                    await self._process_detected_patterns(bar.symbol, patterns_detected, bars_list)
+
+            except RuntimeError as e:
+                # Max symbols limit reached - this is a service-level error
+                self.logger.error(
+                    "Bar processing failed: service limit reached",
                     symbol=bar.symbol,
-                    current_bars=len(buffer.bars),
-                    required_bars=self.min_detection_bars,
+                    error=str(e),
+                    error_type="RuntimeError",
                 )
-                return
+                raise  # Re-raise to notify caller of limit condition
 
-            # Run pattern detection
-            bars_list = buffer.get_bars()
-            patterns_detected = await self._detect_patterns(bar.symbol, bars_list)
+            except Exception as e:
+                # Unexpected error during processing
+                self.logger.error(
+                    "Bar processing failed with unexpected error",
+                    symbol=bar.symbol,
+                    timestamp=bar.timestamp.isoformat(),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    exc_info=True,  # Include full stack trace
+                )
+                # Don't re-raise - allow service to continue processing other bars
 
-            # Process detected patterns
-            if patterns_detected:
-                await self._process_detected_patterns(bar.symbol, patterns_detected, bars_list)
+            finally:
+                # Always calculate and log processing metrics
+                end_time = datetime.now(UTC)
+                latency_ms = (end_time - start_time).total_seconds() * 1000
 
-        except RuntimeError as e:
-            # Max symbols limit reached - this is a service-level error
-            self.logger.error(
-                "Bar processing failed: service limit reached",
-                symbol=bar.symbol,
-                error=str(e),
-                error_type="RuntimeError",
-            )
-            raise  # Re-raise to notify caller of limit condition
-
-        except Exception as e:
-            # Unexpected error during processing
-            self.logger.error(
-                "Bar processing failed with unexpected error",
-                symbol=bar.symbol,
-                timestamp=bar.timestamp.isoformat(),
-                error=str(e),
-                error_type=type(e).__name__,
-                exc_info=True,  # Include full stack trace
-            )
-            # Don't re-raise - allow service to continue processing other bars
-
-        finally:
-            # Always calculate and log processing metrics
-            end_time = datetime.now(UTC)
-            latency_ms = (end_time - start_time).total_seconds() * 1000
-
-            self.logger.debug(
-                "Bar processed",
-                symbol=bar.symbol,
-                timestamp=bar.timestamp.isoformat(),
-                patterns_detected=len(patterns_detected),
-                latency_ms=f"{latency_ms:.2f}",
-            )
+                self.logger.debug(
+                    "Bar processed",
+                    symbol=bar.symbol,
+                    timestamp=bar.timestamp.isoformat(),
+                    patterns_detected=len(patterns_detected),
+                    latency_ms=f"{latency_ms:.2f}",
+                )
 
     async def _detect_patterns(self, symbol: str, bars: list[OHLCVBar]) -> list[dict]:
         """
@@ -404,6 +424,8 @@ class RealtimeCampaignService:
                 }
 
                 # Emit CampaignCreatedEvent using proper Pydantic model
+                # TODO (Story 16.2a): Replace placeholder trading_range_id with actual TradingRange.id
+                # from campaign detector when pattern detection is active
                 event = CampaignCreatedEvent(
                     campaign_id=campaign_id,
                     symbol=symbol,
@@ -426,6 +448,8 @@ class RealtimeCampaignService:
                 metadata["pattern_count"] += 1
 
                 # Emit CampaignUpdatedEvent for pattern addition
+                # TODO (Story 16.2a): Replace placeholder risk/pnl with actual campaign metrics
+                # from risk manager and position tracker
                 event = CampaignUpdatedEvent(
                     campaign_id=campaign_id,
                     status="ACCUMULATION" if pattern_type == "SPRING" else "MARKUP",
@@ -439,12 +463,13 @@ class RealtimeCampaignService:
 
                 # Check if campaign should be activated (Spring followed by SOS)
                 if pattern_type == "SOS":
+                    # TODO (Story 16.2a): Replace placeholder risk/pnl with actual campaign metrics
                     activation_event = CampaignUpdatedEvent(
                         campaign_id=campaign_id,
                         status="ACTIVE",
                         phase="PHASE_D",
-                        total_risk=Decimal("0.02"),
-                        total_pnl=Decimal("0.00"),
+                        total_risk=Decimal("0.02"),  # Placeholder
+                        total_pnl=Decimal("0.00"),  # Placeholder
                         change_description="Campaign activated: SOS breakout detected",
                     )
 
