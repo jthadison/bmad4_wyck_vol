@@ -413,29 +413,25 @@ class EnhancedMetricsCalculator:
         statistics cannot: complete campaign lifecycle analysis from PS→JUMP
         (Accumulation) or PSY→DECLINE (Distribution).
 
-        For intraday timeframes (≤1h), automatically uses IntradayCampaignDetector
-        with session-aware grouping and compressed campaign windows.
+        Uses WyckoffCampaignDetector to identify campaigns from completed trades.
 
         Args:
             trades: Completed trades with pattern metadata
-            timeframe: Chart timeframe (e.g., "1d", "1h", "15m") for detector selection
+            timeframe: Chart timeframe (e.g., "1d", "1h", "15m") - currently unused
 
         Returns:
             List of CampaignPerformance objects
 
         Example:
             calculator = EnhancedMetricsCalculator()
-            # For daily charts
-            campaigns = calculator.calculate_campaign_performance(trades, "1d")
-            # For intraday charts
-            campaigns = calculator.calculate_campaign_performance(trades, "1h")
+            campaigns = calculator.calculate_campaign_performance(trades)
             for campaign in campaigns:
                 print(f"{campaign.symbol}: {campaign.status} - {campaign.total_pnl}")
         """
-        from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
+        from src.backtesting.campaign_detector import WyckoffCampaignDetector
 
-        # Use factory to get appropriate detector based on timeframe
-        detector = create_timeframe_optimized_detector(timeframe)
+        # Use WyckoffCampaignDetector for batch campaign detection from trades
+        detector = WyckoffCampaignDetector()
         campaigns = detector.detect_campaigns(trades)
 
         return campaigns

@@ -99,10 +99,12 @@ class MetricsCalculator:
                 total_return_pct=Decimal("0"),
                 final_equity=initial_capital,
                 max_drawdown=Decimal("0"),
-                sharpe_ratio=None,
-                cagr=None,
-                avg_r_multiple=self._calculate_avg_r_multiple(trades) if trades else None,
-                profit_factor=self._calculate_profit_factor(trades) if trades else None,
+                sharpe_ratio=Decimal("0"),
+                cagr=Decimal("0"),
+                average_r_multiple=self._calculate_avg_r_multiple(trades)
+                if trades
+                else Decimal("0"),
+                profit_factor=self._calculate_profit_factor(trades) if trades else Decimal("0"),
             )
 
         # Calculate return metrics
@@ -128,10 +130,10 @@ class MetricsCalculator:
                 total_return_pct=total_return_pct,
                 final_equity=final_value,
                 max_drawdown=max_drawdown,
-                sharpe_ratio=sharpe_ratio,
-                cagr=cagr,
-                avg_r_multiple=None,
-                profit_factor=None,
+                sharpe_ratio=sharpe_ratio if sharpe_ratio is not None else Decimal("0"),
+                cagr=cagr if cagr is not None else Decimal("0"),
+                average_r_multiple=Decimal("0"),
+                profit_factor=Decimal("0"),
             )
 
         # Trade counts
@@ -163,9 +165,9 @@ class MetricsCalculator:
             total_return_pct=total_return_pct,
             final_equity=final_equity,
             max_drawdown=max_drawdown,
-            sharpe_ratio=sharpe_ratio,
-            cagr=cagr,
-            avg_r_multiple=avg_r_multiple,
+            sharpe_ratio=sharpe_ratio if sharpe_ratio is not None else Decimal("0"),
+            cagr=cagr if cagr is not None else Decimal("0"),
+            average_r_multiple=avg_r_multiple,
             profit_factor=profit_factor,
         )
 
@@ -538,7 +540,7 @@ class MetricsCalculator:
             if current_value >= peak_value:
                 # End of drawdown period (if we were in one)
                 if in_drawdown and trough_value < peak_value:
-                    drawdown_pct = ((peak_value - trough_value) / peak_value) * Decimal("100")
+                    drawdown_pct = ((trough_value - peak_value) / peak_value) * Decimal("100")
                     duration_days = (trough_date - peak_date).days
                     recovery_duration_days = (current_date - trough_date).days
 
@@ -570,7 +572,7 @@ class MetricsCalculator:
 
         # Handle ongoing drawdown at end of period
         if in_drawdown and trough_value < peak_value:
-            drawdown_pct = ((peak_value - trough_value) / peak_value) * Decimal("100")
+            drawdown_pct = ((trough_value - peak_value) / peak_value) * Decimal("100")
             duration_days = (trough_date - peak_date).days
 
             drawdown_period = DrawdownPeriod(
@@ -587,7 +589,8 @@ class MetricsCalculator:
             drawdown_periods.append(drawdown_period)
 
         # Sort by drawdown magnitude (largest first) and return top N
-        drawdown_periods.sort(key=lambda d: d.drawdown_pct, reverse=True)
+        # Since drawdown_pct is negative, sort ascending to get most negative first
+        drawdown_periods.sort(key=lambda d: d.drawdown_pct)
         return drawdown_periods[:top_n]
 
     def calculate_risk_metrics(
@@ -741,12 +744,12 @@ class MetricsCalculator:
 
         Tracks Wyckoff campaign lifecycles and aggregates trades within campaigns.
 
-        Uses WyckoffCampaignDetector (or IntradayCampaignDetector for ≤1h timeframes)
-        to identify campaigns, validate pattern sequences, and track phase progression.
+        Uses WyckoffCampaignDetector to identify campaigns from completed trades,
+        validate pattern sequences, and track phase progression.
 
         Args:
             trades: List of completed trades
-            timeframe: Chart timeframe (e.g., "1d", "1h", "15m") for detector selection
+            timeframe: Chart timeframe (e.g., "1d", "1h", "15m") - currently unused
 
         Returns:
             List of CampaignPerformance objects
@@ -756,13 +759,13 @@ class MetricsCalculator:
             Campaign 2: DISTRIBUTION -> MARKDOWN (2 trades, -5% return, FAILED)
         """
 
-        from src.backtesting.intraday_campaign_detector import create_timeframe_optimized_detector
+        from src.backtesting.campaign_detector import WyckoffCampaignDetector
 
         if not trades:
             return []
 
-        # Use factory to get appropriate detector based on timeframe
-        detector = create_timeframe_optimized_detector(timeframe)
+        # Use WyckoffCampaignDetector for batch campaign detection from trades
+        detector = WyckoffCampaignDetector()
         campaigns = detector.detect_campaigns(trades)
 
         return campaigns
