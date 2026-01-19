@@ -330,33 +330,36 @@ interface ErrorMessage {
   message?: string
 }
 
-function handleSystemStatus(message: SystemStatusMessage) {
+function handleSystemStatus(message: unknown) {
   // Handle dedicated system_status event if backend sends it
-  if (message.data) {
+  const statusMessage = message as SystemStatusMessage
+  if (statusMessage.data) {
     statusStore.updateStatistics({
-      barsAnalyzed: message.data.bars_analyzed,
-      patternsDetected: message.data.patterns_detected,
-      signalsExecuted: message.data.signals_executed,
+      barsAnalyzed: statusMessage.data.bars_analyzed,
+      patternsDetected: statusMessage.data.patterns_detected,
+      signalsExecuted: statusMessage.data.signals_executed,
     })
 
     // Update overnight summary if provided
-    if (message.data.overnight_summary) {
-      statusStore.updateOvernightSummary(message.data.overnight_summary)
+    if (statusMessage.data.overnight_summary) {
+      statusStore.updateOvernightSummary(statusMessage.data.overnight_summary)
     }
 
     // Update system health status
-    if (message.data.status) {
-      statusStore.updateSystemStatus(message.data.status)
+    if (statusMessage.data.status) {
+      statusStore.updateSystemStatus(statusMessage.data.status)
     }
   }
 }
 
-function handleError(message: ErrorMessage) {
+function handleError(message: unknown) {
   // Add error to issue log
+  const errorMessage = message as ErrorMessage
   statusStore.addIssue({
-    timestamp: new Date(message.timestamp || Date.now()),
+    timestamp: new Date(errorMessage.timestamp || Date.now()),
     severity: 'error',
-    message: message.error || message.message || 'Unknown error occurred',
+    message:
+      errorMessage.error || errorMessage.message || 'Unknown error occurred',
   })
 }
 

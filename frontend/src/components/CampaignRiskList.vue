@@ -108,7 +108,7 @@
               v-for="(count, phase) in data.phase_distribution"
               :key="phase"
               class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium"
-              :class="getPhaseColorClass(phase)"
+              :class="getPhaseColorClass(String(phase))"
               :title="`${count} position${
                 count !== 1 ? 's' : ''
               } in Phase ${phase}`"

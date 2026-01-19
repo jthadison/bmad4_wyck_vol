@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { ConnectionStatus } from '@/types/websocket'
 
 /**
  * System status states
@@ -33,9 +34,7 @@ export interface OvernightSummary {
  */
 export const useSystemStatusStore = defineStore('systemStatus', () => {
   // Connection state
-  const connectionStatus = ref<'connecting' | 'connected' | 'disconnected'>(
-    'disconnected'
-  )
+  const connectionStatus = ref<ConnectionStatus>('disconnected')
   const systemStatus = ref<SystemStatus>('disconnected')
 
   // Real-time statistics
@@ -108,13 +107,11 @@ export const useSystemStatusStore = defineStore('systemStatus', () => {
   })
 
   // Actions
-  function updateConnectionStatus(
-    status: 'connecting' | 'connected' | 'disconnected'
-  ) {
+  function updateConnectionStatus(status: ConnectionStatus) {
     connectionStatus.value = status
 
     // Update system status based on connection
-    if (status === 'disconnected') {
+    if (status === 'disconnected' || status === 'error') {
       systemStatus.value = 'disconnected'
     } else if (
       status === 'connected' &&

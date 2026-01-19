@@ -184,7 +184,7 @@ export const useCampaignTrackerStore = defineStore('campaignTracker', {
     subscribeToUpdates(): void {
       // Subscribe to campaign_updated messages from WebSocket
       websocketService.subscribe('campaign_updated', (message) => {
-        const campaignMessage = message as CampaignUpdatedMessage
+        const campaignMessage = message as unknown as CampaignUpdatedMessage
         this.handleCampaignUpdate(campaignMessage)
       })
 

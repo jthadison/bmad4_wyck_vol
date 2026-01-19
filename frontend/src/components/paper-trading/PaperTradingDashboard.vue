@@ -386,8 +386,8 @@ const isDataLoaded = computed(() => account.value !== null)
 const totalPnl = computed(() => {
   if (!account.value) return 0
   return (
-    (account.value.total_realized_pnl || 0) +
-    (account.value.total_unrealized_pnl || 0)
+    parseFloat(account.value.total_realized_pnl || '0') +
+    parseFloat(account.value.total_unrealized_pnl || '0')
   )
 })
 
@@ -400,7 +400,7 @@ const totalPnlSign = computed(() => {
 })
 
 const heatColor = computed(() => {
-  const heat = account.value?.current_heat || 0
+  const heat = parseFloat(account.value?.current_heat || '0')
   if (heat >= 10) return 'text-red-400'
   if (heat >= 8) return 'text-orange-400'
   if (heat >= 5) return 'text-yellow-400'
@@ -462,8 +462,8 @@ const getExitReasonClass = (reason: string): string => {
 
 const handleRefresh = async () => {
   await store.fetchAccount()
-  await store.fetchOpenPositions()
-  await store.fetchRecentTrades()
+  await store.fetchPositions()
+  await store.fetchTrades()
   lastUpdated.value = new Date()
 }
 

@@ -207,7 +207,7 @@ export const useChartStore = defineStore('chart', {
     /**
      * Fetch chart data from API
      */
-    async fetchChartData(params?: ChartDataRequest) {
+    async fetchChartData(params?: Partial<ChartDataRequest>) {
       // Use params or store state
       const symbol = params?.symbol ?? this.selectedSymbol
       const timeframe = params?.timeframe ?? this.selectedTimeframe
@@ -254,9 +254,13 @@ export const useChartStore = defineStore('chart', {
           timestamp: Date.now(),
         })
       } catch (err: unknown) {
+        const error = err as {
+          response?: { data?: { detail?: string } }
+          message?: string
+        }
         this.error =
-          err.response?.data?.detail ??
-          err.message ??
+          error.response?.data?.detail ??
+          error.message ??
           'Failed to fetch chart data'
         console.error('Chart data fetch error:', err)
       } finally {

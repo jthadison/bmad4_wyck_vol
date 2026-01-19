@@ -512,7 +512,7 @@ async function applyFilters() {
     aggregatedMetrics.value = campaignStore.aggregatedMetrics
 
     // Also fetch all campaigns matching filters for detailed table
-    allCampaigns.value = campaignStore.getCampaignsSortedByReturn()
+    allCampaigns.value = campaignStore.getCampaignsSortedByReturn
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Unknown error'
   } finally {
