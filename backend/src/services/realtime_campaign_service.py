@@ -26,13 +26,17 @@ Author: Story 16.2b Implementation
 import asyncio
 from collections import deque
 from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import UUID, uuid4
 
 import structlog
 
 from src.backtesting.campaign_detector import WyckoffCampaignDetector
-from src.campaign_management.events import get_event_bus
-from src.models.campaign_event import CampaignEvent as DataclassCampaignEvent
-from src.models.campaign_event import CampaignEventType
+from src.campaign_management.events import (
+    CampaignCreatedEvent,
+    CampaignUpdatedEvent,
+    get_event_bus,
+)
 from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.detectors.sos_detector_orchestrator import SOSDetector
 from src.pattern_engine.detectors.spring_detector import SpringDetector
@@ -127,16 +131,30 @@ class RealtimeCampaignService:
         self,
         buffer_capacity: int = 50,
         min_detection_bars: int = 20,
+        max_symbols: int = 100,
     ):
         """
         Initialize real-time campaign service.
 
         Args:
-            buffer_capacity: Maximum bars to retain per symbol (default 50)
-            min_detection_bars: Minimum bars required for detection (default 20)
+            buffer_capacity: Maximum bars to retain per symbol (default 50, max 200)
+            min_detection_bars: Minimum bars required for detection (default 20, min 10)
+            max_symbols: Maximum number of symbols to track concurrently (default 100)
+
+        Raises:
+            ValueError: If parameters are out of valid ranges
         """
+        # Validate parameters
+        if buffer_capacity < 20 or buffer_capacity > 200:
+            raise ValueError("buffer_capacity must be between 20 and 200")
+        if min_detection_bars < 10 or min_detection_bars > buffer_capacity:
+            raise ValueError("min_detection_bars must be between 10 and buffer_capacity")
+        if max_symbols < 1 or max_symbols > 1000:
+            raise ValueError("max_symbols must be between 1 and 1000")
+
         self.buffer_capacity = buffer_capacity
         self.min_detection_bars = min_detection_bars
+        self.max_symbols = max_symbols
 
         # Bar buffers per symbol
         self.buffers: dict[str, BarBuffer] = {}
@@ -151,8 +169,11 @@ class RealtimeCampaignService:
         # Event bus for notifications
         self.event_bus = get_event_bus()
 
-        # Active campaigns tracking (symbol -> campaign_id)
-        self.active_campaigns: dict[str, str] = {}
+        # Active campaigns tracking (symbol -> campaign_id UUID)
+        self.active_campaigns: dict[str, UUID] = {}
+
+        # Campaign metadata (campaign_id -> symbol, pattern_count)
+        self.campaign_metadata: dict[UUID, dict] = {}
 
         # Running state
         self._running = False
@@ -178,6 +199,7 @@ class RealtimeCampaignService:
             "RealtimeCampaignService started",
             buffer_capacity=self.buffer_capacity,
             min_detection_bars=self.min_detection_bars,
+            max_symbols=self.max_symbols,
         )
 
     async def stop(self) -> None:
@@ -192,6 +214,7 @@ class RealtimeCampaignService:
         self._running = False
         self.buffers.clear()
         self.active_campaigns.clear()
+        self.campaign_metadata.clear()
 
         self.logger.info("RealtimeCampaignService stopped")
 
@@ -204,10 +227,31 @@ class RealtimeCampaignService:
 
         Returns:
             BarBuffer for the symbol
+
+        Raises:
+            RuntimeError: If max_symbols limit reached
         """
         if symbol not in self.buffers:
+            # Check symbol limit before creating new buffer
+            if len(self.buffers) >= self.max_symbols:
+                self.logger.error(
+                    "Max symbols limit reached",
+                    current_symbols=len(self.buffers),
+                    max_symbols=self.max_symbols,
+                    rejected_symbol=symbol,
+                )
+                raise RuntimeError(
+                    f"Maximum symbol limit ({self.max_symbols}) reached. "
+                    f"Cannot track symbol: {symbol}"
+                )
+
             self.buffers[symbol] = BarBuffer(symbol, self.buffer_capacity)
-            self.logger.info("Buffer created for symbol", symbol=symbol)
+            self.logger.info(
+                "Buffer created for symbol",
+                symbol=symbol,
+                total_symbols=len(self.buffers),
+                max_symbols=self.max_symbols,
+            )
         return self.buffers[symbol]
 
     async def process_bar(self, bar: OHLCVBar) -> None:
@@ -223,105 +267,107 @@ class RealtimeCampaignService:
         Performance:
             - Target latency: < 2 seconds from bar close
             - Concurrent processing supported for multiple symbols
+
+        Raises:
+            RuntimeError: If max_symbols limit reached or service not running
         """
-        start_time = datetime.now(UTC)
-
-        # Add bar to buffer
-        buffer = self._get_or_create_buffer(bar.symbol)
-        buffer.add_bar(bar)
-
-        # Check if we have enough bars for detection
-        if not buffer.has_minimum_bars(self.min_detection_bars):
-            self.logger.debug(
-                "Insufficient bars for detection",
+        # Check service state before processing
+        if not self._running:
+            self.logger.warning(
+                "Bar processing skipped: service not running",
                 symbol=bar.symbol,
-                current_bars=len(buffer.bars),
-                required_bars=self.min_detection_bars,
+                timestamp=bar.timestamp.isoformat(),
             )
             return
 
-        # Run pattern detection
-        bars_list = buffer.get_bars()
-        patterns_detected = await self._detect_patterns(bar.symbol, bars_list)
+        start_time = datetime.now(UTC)
+        patterns_detected = []
 
-        # Process detected patterns
-        if patterns_detected:
-            await self._process_detected_patterns(bar.symbol, patterns_detected, bars_list)
+        try:
+            # Add bar to buffer
+            buffer = self._get_or_create_buffer(bar.symbol)
+            buffer.add_bar(bar)
 
-        # Calculate processing latency
-        end_time = datetime.now(UTC)
-        latency_ms = (end_time - start_time).total_seconds() * 1000
+            # Check if we have enough bars for detection
+            if not buffer.has_minimum_bars(self.min_detection_bars):
+                self.logger.debug(
+                    "Insufficient bars for detection",
+                    symbol=bar.symbol,
+                    current_bars=len(buffer.bars),
+                    required_bars=self.min_detection_bars,
+                )
+                return
 
-        self.logger.debug(
-            "Bar processed",
-            symbol=bar.symbol,
-            timestamp=bar.timestamp.isoformat(),
-            patterns_detected=len(patterns_detected),
-            latency_ms=f"{latency_ms:.2f}",
-        )
+            # Run pattern detection
+            bars_list = buffer.get_bars()
+            patterns_detected = await self._detect_patterns(bar.symbol, bars_list)
+
+            # Process detected patterns
+            if patterns_detected:
+                await self._process_detected_patterns(bar.symbol, patterns_detected, bars_list)
+
+        except RuntimeError as e:
+            # Max symbols limit reached - this is a service-level error
+            self.logger.error(
+                "Bar processing failed: service limit reached",
+                symbol=bar.symbol,
+                error=str(e),
+                error_type="RuntimeError",
+            )
+            raise  # Re-raise to notify caller of limit condition
+
+        except Exception as e:
+            # Unexpected error during processing
+            self.logger.error(
+                "Bar processing failed with unexpected error",
+                symbol=bar.symbol,
+                timestamp=bar.timestamp.isoformat(),
+                error=str(e),
+                error_type=type(e).__name__,
+                exc_info=True,  # Include full stack trace
+            )
+            # Don't re-raise - allow service to continue processing other bars
+
+        finally:
+            # Always calculate and log processing metrics
+            end_time = datetime.now(UTC)
+            latency_ms = (end_time - start_time).total_seconds() * 1000
+
+            self.logger.debug(
+                "Bar processed",
+                symbol=bar.symbol,
+                timestamp=bar.timestamp.isoformat(),
+                patterns_detected=len(patterns_detected),
+                latency_ms=f"{latency_ms:.2f}",
+            )
 
     async def _detect_patterns(self, symbol: str, bars: list[OHLCVBar]) -> list[dict]:
         """
         Detect Spring and SOS patterns in bar list (Story 16.2b FR2).
+
+        PLACEHOLDER: Full pattern detection requires context from Story 16.2a.
+        Pattern detectors need TradingRange, WyckoffPhase, and volume analysis
+        which will be provided by the WebSocket client integration.
+
+        TODO (Story 16.2a Integration):
+        - SpringDetector.detect(range: TradingRange, bars: list[OHLCVBar], phase: WyckoffPhase)
+        - SOSDetector.detect(symbol: str, range: TradingRange, bars: list[OHLCVBar],
+                           volume_analysis: dict, phase: WyckoffPhase, lps_detector: LPSDetector)
 
         Args:
             symbol: Trading symbol
             bars: List of OHLCV bars
 
         Returns:
-            List of detected patterns with metadata
+            List of detected patterns with metadata (empty until Story 16.2a integration)
         """
-        detected_patterns = []
-
-        # Detect Spring patterns
-        try:
-            spring_result = self.spring_detector.detect(bars)
-            if spring_result:
-                detected_patterns.append(
-                    {
-                        "pattern_type": "SPRING",
-                        "result": spring_result,
-                        "timestamp": bars[-1].timestamp,
-                    }
-                )
-                self.logger.info(
-                    "Spring pattern detected",
-                    symbol=symbol,
-                    timestamp=bars[-1].timestamp.isoformat(),
-                )
-        except Exception as e:
-            self.logger.error(
-                "Spring detection failed",
-                symbol=symbol,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-        # Detect SOS patterns
-        try:
-            sos_result = self.sos_detector.detect(bars)
-            if sos_result:
-                detected_patterns.append(
-                    {
-                        "pattern_type": "SOS",
-                        "result": sos_result,
-                        "timestamp": bars[-1].timestamp,
-                    }
-                )
-                self.logger.info(
-                    "SOS pattern detected",
-                    symbol=symbol,
-                    timestamp=bars[-1].timestamp.isoformat(),
-                )
-        except Exception as e:
-            self.logger.error(
-                "SOS detection failed",
-                symbol=symbol,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-        return detected_patterns
+        # Pattern detection deferred until Story 16.2a provides required context
+        self.logger.debug(
+            "Pattern detection deferred pending Story 16.2a integration",
+            symbol=symbol,
+            bars_available=len(bars),
+        )
+        return []
 
     async def _process_detected_patterns(
         self, symbol: str, patterns: list[dict], bars: list[OHLCVBar]
@@ -345,95 +391,70 @@ class RealtimeCampaignService:
             campaign_id = self.active_campaigns.get(symbol)
 
             if campaign_id is None:
-                # New campaign formed
-                campaign_id = f"{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
+                # New campaign formed - create UUID and metadata
+                campaign_id = uuid4()
                 self.active_campaigns[symbol] = campaign_id
 
-                # Emit CAMPAIGN_FORMED event
-                await self._emit_event(
-                    event_type=CampaignEventType.CAMPAIGN_FORMED,
+                # Initialize campaign metadata
+                self.campaign_metadata[campaign_id] = {
+                    "symbol": symbol,
+                    "pattern_count": 1,
+                    "initial_pattern": pattern_type,
+                    "created_at": timestamp,
+                }
+
+                # Emit CampaignCreatedEvent using proper Pydantic model
+                event = CampaignCreatedEvent(
                     campaign_id=campaign_id,
-                    pattern_type=pattern_type,
-                    metadata={
-                        "symbol": symbol,
-                        "timestamp": timestamp.isoformat(),
-                        "initial_pattern": pattern_type,
-                    },
+                    symbol=symbol,
+                    trading_range_id=uuid4(),  # Placeholder - will be set by campaign detector
+                    initial_pattern_type=pattern_type,
+                    campaign_id_str=f"{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}",
                 )
+
+                await self.event_bus.publish(event)
 
                 self.logger.info(
                     "New campaign formed",
                     symbol=symbol,
-                    campaign_id=campaign_id,
+                    campaign_id=str(campaign_id),
                     pattern_type=pattern_type,
                 )
             else:
                 # Pattern added to existing campaign
-                await self._emit_event(
-                    event_type=CampaignEventType.PATTERN_DETECTED,
+                metadata = self.campaign_metadata[campaign_id]
+                metadata["pattern_count"] += 1
+
+                # Emit CampaignUpdatedEvent for pattern addition
+                event = CampaignUpdatedEvent(
                     campaign_id=campaign_id,
-                    pattern_type=pattern_type,
-                    metadata={
-                        "symbol": symbol,
-                        "timestamp": timestamp.isoformat(),
-                    },
+                    status="ACCUMULATION" if pattern_type == "SPRING" else "MARKUP",
+                    phase="PHASE_C" if pattern_type == "SPRING" else "PHASE_D",
+                    total_risk=Decimal("0.02"),  # Placeholder
+                    total_pnl=Decimal("0.00"),  # Placeholder
+                    change_description=f"{pattern_type} pattern detected",
                 )
 
-                # Check if campaign should be activated
-                # (e.g., Spring followed by SOS = ACTIVE campaign)
+                await self.event_bus.publish(event)
+
+                # Check if campaign should be activated (Spring followed by SOS)
                 if pattern_type == "SOS":
-                    await self._emit_event(
-                        event_type=CampaignEventType.CAMPAIGN_ACTIVATED,
+                    activation_event = CampaignUpdatedEvent(
                         campaign_id=campaign_id,
-                        pattern_type=None,
-                        metadata={
-                            "symbol": symbol,
-                            "timestamp": timestamp.isoformat(),
-                            "activation_reason": "SOS breakout detected",
-                        },
+                        status="ACTIVE",
+                        phase="PHASE_D",
+                        total_risk=Decimal("0.02"),
+                        total_pnl=Decimal("0.00"),
+                        change_description="Campaign activated: SOS breakout detected",
                     )
+
+                    await self.event_bus.publish(activation_event)
 
                     self.logger.info(
                         "Campaign activated",
                         symbol=symbol,
-                        campaign_id=campaign_id,
+                        campaign_id=str(campaign_id),
                     )
-
-    async def _emit_event(
-        self,
-        event_type: CampaignEventType,
-        campaign_id: str,
-        pattern_type: str | None,
-        metadata: dict,
-    ) -> None:
-        """
-        Emit campaign event to subscribers (Story 16.2b FR3).
-
-        Args:
-            event_type: Type of campaign event
-            campaign_id: Unique campaign identifier
-            pattern_type: Pattern type (for PATTERN_DETECTED events)
-            metadata: Additional event context
-        """
-        event = DataclassCampaignEvent(
-            event_type=event_type,
-            campaign_id=campaign_id,
-            timestamp=datetime.now(UTC),
-            pattern_type=pattern_type,
-            metadata=metadata,
-        )
-
-        # Note: For now, we use a simple notification approach
-        # When the event bus is fully integrated, we'll publish proper events
-        # await self.event_bus.publish(event)
-
-        self.logger.info(
-            "Campaign event emitted",
-            event_type=event_type.value,
-            campaign_id=campaign_id,
-            pattern_type=pattern_type,
-            metadata=metadata,
-        )
 
     async def process_bar_batch(self, bars: list[OHLCVBar]) -> None:
         """
@@ -445,11 +466,39 @@ class RealtimeCampaignService:
         Performance:
             - Target: > 100 bars/second throughput
             - Uses asyncio.gather for concurrent processing
+
+        Note:
+            Exceptions are captured per-bar and logged. The batch continues
+            processing even if individual bars fail. If service is not running,
+            all bars are skipped.
         """
+        # Check service state before processing batch
+        if not self._running:
+            self.logger.warning(
+                "Bar batch processing skipped: service not running",
+                batch_size=len(bars),
+            )
+            return
+
         tasks = [self.process_bar(bar) for bar in bars]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Count successes and failures
+        error_count = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                error_count += 1
+                self.logger.error(
+                    "Bar failed in batch processing",
+                    symbol=bars[i].symbol,
+                    timestamp=bars[i].timestamp.isoformat(),
+                    error=str(result),
+                    error_type=type(result).__name__,
+                )
 
         self.logger.debug(
             "Bar batch processed",
             batch_size=len(bars),
+            successful=len(bars) - error_count,
+            failed=error_count,
         )
