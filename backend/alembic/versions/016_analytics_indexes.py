@@ -75,14 +75,9 @@ def upgrade() -> None:
     )
 
     # Index 3: Pattern type and phase for phase-filtered queries
-    # Note: This index may already exist from 001_initial_schema as idx_patterns_type_phase
-    # Check if it exists before creating to avoid duplicate index error
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_patterns_type_phase
-        ON patterns(pattern_type, detection_phase);
-        """
-    )
+    # NOTE: This index already exists from 001_initial_schema as idx_patterns_type_phase
+    # on patterns(pattern_type, phase). Skipping creation to avoid duplicate/conflict.
+    # The existing index serves the same purpose for phase-filtered queries.
 
     # Index 4: Exit date for trend analysis queries
     op.create_index(

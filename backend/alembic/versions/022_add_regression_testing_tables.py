@@ -1,7 +1,7 @@
 """add_regression_testing_tables
 
-Revision ID: 022_add_regression_testing_tables
-Revises: 021_add_walk_forward_tables
+Revision ID: 022_add_regression_tables
+Revises: 022_add_story_12_6_metrics
 Create Date: 2025-12-22 00:00:00.000000
 
 Story 12.7 Task 6: Create regression_test_results and regression_baselines tables
@@ -23,8 +23,8 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "022_add_regression_testing_tables"
-down_revision: Union[str, Sequence[str], None] = "021_add_walk_forward_tables"
+revision: str = "022_add_regression_tables"
+down_revision: Union[str, Sequence[str], None] = "022_add_story_12_6_metrics"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

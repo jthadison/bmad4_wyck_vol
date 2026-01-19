@@ -97,14 +97,9 @@ def upgrade() -> None:
         unique=False,
     )
 
-    # Index for status-only queries (PENDING, ACTIVE, FILLED, etc.)
-    # Covers: SELECT * FROM signals WHERE status = ?
-    op.create_index(
-        "idx_signals_status",
-        "signals",
-        ["status"],
-        unique=False,
-    )
+    # Note: idx_signals_status already exists from 001_initial_schema_with_timescaledb.py
+    # as a composite index on (status, generated_at DESC), which covers status-only queries.
+    # Skipping duplicate index creation.
 
     # Composite index for pattern_id filtering (joins with patterns table)
     # Covers: SELECT * FROM signals WHERE pattern_id = ?
@@ -134,14 +129,8 @@ def upgrade() -> None:
         postgresql_ops={"generated_at": "DESC"},
     )
 
-    # Composite index for symbol + generated_at (time-series queries)
-    # Covers: SELECT * FROM signals WHERE symbol = ? AND generated_at > ?
-    op.create_index(
-        "idx_signals_symbol_generated_at",
-        "signals",
-        ["symbol", "generated_at"],
-        unique=False,
-    )
+    # Note: idx_signals_symbol_generated_at already exists from 016_analytics_indexes.py
+    # Skipping duplicate index creation.
 
     # ========================================================================
     # Patterns (patterns) - Pattern detection queries
@@ -259,16 +248,15 @@ def upgrade() -> None:
     # Backtest Results (backtest_results) - Pagination and filtering
     # ========================================================================
 
-    # Index for status filtering (partial index for PENDING only)
-    # Covers: SELECT * FROM backtest_results WHERE status = 'PENDING'
-    # Partial indexes are smaller and faster for frequent status queries
-    op.execute(
-        """
-        CREATE INDEX idx_backtest_results_status_pending
-        ON backtest_results (status)
-        WHERE status = 'PENDING'
-        """
-    )
+    # Note: backtest_results table doesn't have a 'status' column yet.
+    # The partial index for status filtering is commented out until the column is added.
+    # op.execute(
+    #     """
+    #     CREATE INDEX idx_backtest_results_status_pending
+    #     ON backtest_results (status)
+    #     WHERE status = 'PENDING'
+    #     """
+    # )
 
     # Descending created_at index for pagination
     # Covers: SELECT * FROM backtest_results ORDER BY created_at DESC LIMIT ? OFFSET ?
@@ -284,14 +272,14 @@ def upgrade() -> None:
     # Campaigns (campaigns) - User campaigns and status filtering
     # ========================================================================
 
-    # Composite index for user_id + status
-    # Covers: SELECT * FROM campaigns WHERE user_id = ? AND status = ?
-    op.create_index(
-        "idx_campaigns_user_id_status",
-        "campaigns",
-        ["user_id", "status"],
-        unique=False,
-    )
+    # Note: campaigns table doesn't have a 'user_id' column yet.
+    # The composite index for user_id + status is commented out until the column is added.
+    # op.create_index(
+    #     "idx_campaigns_user_id_status",
+    #     "campaigns",
+    #     ["user_id", "status"],
+    #     unique=False,
+    # )
 
     # Descending created_at index for "latest campaigns" queries
     # Covers: SELECT * FROM campaigns WHERE user_id = ? ORDER BY created_at DESC
@@ -365,11 +353,13 @@ def downgrade() -> None:
 
     # Campaigns
     op.drop_index("idx_campaigns_created_at_desc", table_name="campaigns")
-    op.drop_index("idx_campaigns_user_id_status", table_name="campaigns")
+    # Note: idx_campaigns_user_id_status not created (user_id column doesn't exist)
+    # op.drop_index("idx_campaigns_user_id_status", table_name="campaigns")
 
     # Backtest Results
     op.drop_index("idx_backtest_results_created_at_desc", table_name="backtest_results")
-    op.execute("DROP INDEX IF EXISTS idx_backtest_results_status_pending")
+    # Note: idx_backtest_results_status_pending not created (status column doesn't exist)
+    # op.execute("DROP INDEX IF EXISTS idx_backtest_results_status_pending")
 
     # Trading Ranges
     op.drop_index("idx_trading_ranges_phase", table_name="trading_ranges")
@@ -387,11 +377,11 @@ def downgrade() -> None:
     op.drop_index("idx_patterns_symbol_pattern_type", table_name="patterns")
 
     # Signals
-    op.drop_index("idx_signals_symbol_generated_at", table_name="signals")
+    # Note: idx_signals_symbol_generated_at not dropped here - it was created in 016_analytics_indexes.py
     op.drop_index("idx_signals_generated_at_desc", table_name="signals")
     op.drop_index("idx_signals_campaign_id", table_name="signals")
     op.drop_index("idx_signals_pattern_id", table_name="signals")
-    op.drop_index("idx_signals_status", table_name="signals")
+    # Note: idx_signals_status not dropped here - it was created in 001_initial_schema_with_timescaledb.py
     op.drop_index("idx_signals_symbol_status", table_name="signals")
 
     # OHLCV Bars

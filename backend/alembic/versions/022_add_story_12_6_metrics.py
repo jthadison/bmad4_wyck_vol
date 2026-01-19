@@ -13,7 +13,7 @@ Changes:
 - Add risk_metrics JSONB column for portfolio risk statistics
 - Add campaign_performance JSONB column for Wyckoff campaign tracking
 - Add cost_summary JSONB column for transaction cost summary (Story 12.5)
-- Add look_ahead_bias_check boolean column for validation flag
+- Note: look_ahead_bias_check already exists from initial schema
 
 These fields enable comprehensive backtest reporting including:
 - Pattern-by-pattern performance breakdown
@@ -114,17 +114,8 @@ def upgrade() -> None:
         ),
     )
 
-    # Story 12.6: Look-ahead bias validation
-    op.add_column(
-        "backtest_results",
-        sa.Column(
-            "look_ahead_bias_check",
-            sa.Boolean(),
-            nullable=False,
-            server_default="false",
-            comment="Look-ahead bias validation result (Story 12.6)",
-        ),
-    )
+    # Note: look_ahead_bias_check column already exists from 001_initial_schema_with_timescaledb.py
+    # so we don't need to add it again
 
     # Add GIN indexes for JSONB query performance
     # These enable efficient querying of pattern types, campaigns, etc.
@@ -151,8 +142,7 @@ def downgrade() -> None:
     op.drop_index("idx_backtest_campaign_performance_gin", table_name="backtest_results")
     op.drop_index("idx_backtest_pattern_performance_gin", table_name="backtest_results")
 
-    # Drop Story 12.6 columns
-    op.drop_column("backtest_results", "look_ahead_bias_check")
+    # Drop Story 12.6 columns (look_ahead_bias_check existed before this migration)
     op.drop_column("backtest_results", "cost_summary")
     op.drop_column("backtest_results", "campaign_performance")
     op.drop_column("backtest_results", "risk_metrics")
