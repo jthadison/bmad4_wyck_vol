@@ -57,9 +57,7 @@ const sharpeClass = computed(() => {
 })
 
 const maxDrawdownPct = computed(() =>
-  new Big(props.summary.max_drawdown_pct || props.summary.max_drawdown || 0)
-    .abs()
-    .toFixed(2)
+  new Big(props.summary.max_drawdown_pct || 0).abs().toFixed(2)
 )
 
 const winRatePct = computed(() =>
@@ -70,14 +68,10 @@ const winRateProgress = computed(() =>
 )
 
 const avgRMultiple = computed(() =>
-  new Big(
-    props.summary.avg_r_multiple || props.summary.average_r_multiple || 0
-  ).toFixed(2)
+  new Big(props.summary.avg_r_multiple || 0).toFixed(2)
 )
 const avgRClass = computed(() =>
-  new Big(
-    props.summary.avg_r_multiple || props.summary.average_r_multiple || 0
-  ).gte(1)
+  new Big(props.summary.avg_r_multiple || 0).gte(1)
     ? 'text-green-600'
     : 'text-red-600'
 )

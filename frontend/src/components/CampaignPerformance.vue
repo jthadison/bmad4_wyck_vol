@@ -351,6 +351,7 @@ import Divider from 'primevue/divider'
 // Lightweight Charts
 import { createChart, ColorType, LineStyle } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi } from 'lightweight-charts'
+import { toChartTime } from '@/types/chart'
 
 /**
  * Component props
@@ -479,7 +480,7 @@ function renderChart() {
 
   // Convert P&L curve data to chart format
   const chartData = pnlCurve.value.data_points.map((point) => ({
-    time: new Date(point.timestamp).getTime() / 1000, // Unix timestamp in seconds
+    time: toChartTime(new Date(point.timestamp).getTime()),
     value: parseFloat(point.cumulative_return_pct),
   }))
 

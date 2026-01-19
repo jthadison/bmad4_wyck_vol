@@ -99,6 +99,7 @@ import {
   renderSchematicOverlay,
   removeSchematicOverlay,
 } from '@/utils/schematicOverlay'
+import { toChartTime } from '@/types/chart'
 import { format } from 'date-fns'
 import Skeleton from 'primevue/skeleton'
 import Message from 'primevue/message'
@@ -227,11 +228,18 @@ function updateChartData() {
   // Set OHLCV data
   const bars = chartStore.bars
   if (bars.length > 0) {
-    candlestickSeries.value.setData(bars)
+    const candlestickData = bars.map((bar) => ({
+      time: toChartTime(bar.time),
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+    }))
+    candlestickSeries.value.setData(candlestickData)
 
     // Set volume data (with colors based on price direction)
     const volumeData = bars.map((bar) => ({
-      time: bar.time,
+      time: toChartTime(bar.time),
       value: bar.volume,
       color: bar.close >= bar.open ? '#26a69a80' : '#ef535080', // Semi-transparent
     }))
@@ -433,11 +441,13 @@ function handleKeydown(event: KeyboardEvent) {
     const timeScale = chart.value.timeScale()
     const visibleRange = timeScale.getVisibleRange()
     if (visibleRange) {
-      const center = (visibleRange.from + visibleRange.to) / 2
-      const newRange = (visibleRange.to - visibleRange.from) * 0.8 // Zoom in by 20%
+      const from = visibleRange.from as number
+      const to = visibleRange.to as number
+      const center = (from + to) / 2
+      const newRange = (to - from) * 0.8 // Zoom in by 20%
       timeScale.setVisibleRange({
-        from: center - newRange / 2,
-        to: center + newRange / 2,
+        from: toChartTime(center - newRange / 2),
+        to: toChartTime(center + newRange / 2),
       })
     }
   }
@@ -448,11 +458,13 @@ function handleKeydown(event: KeyboardEvent) {
     const timeScale = chart.value.timeScale()
     const visibleRange = timeScale.getVisibleRange()
     if (visibleRange) {
-      const center = (visibleRange.from + visibleRange.to) / 2
-      const newRange = (visibleRange.to - visibleRange.from) * 1.25 // Zoom out by 25%
+      const from = visibleRange.from as number
+      const to = visibleRange.to as number
+      const center = (from + to) / 2
+      const newRange = (to - from) * 1.25 // Zoom out by 25%
       timeScale.setVisibleRange({
-        from: center - newRange / 2,
-        to: center + newRange / 2,
+        from: toChartTime(center - newRange / 2),
+        to: toChartTime(center + newRange / 2),
       })
     }
   }

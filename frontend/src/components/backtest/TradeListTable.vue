@@ -97,8 +97,8 @@ const sortedData = computed(() => {
 
   data.sort((a, b) => {
     const col = sortColumn.value
-    let aVal: unknown = a[col]
-    let bVal: unknown = b[col]
+    let aVal: number | string | null | undefined = a[col]
+    let bVal: number | string | null | undefined = b[col]
 
     // Handle null/undefined values
     if (aVal === null || aVal === undefined) {

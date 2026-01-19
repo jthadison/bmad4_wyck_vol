@@ -39,13 +39,13 @@ const sortedData = computed(() => {
 
   data.sort((a, b) => {
     const col = sortColumn.value!
-    let aVal: unknown = a[col]
-    let bVal: unknown = b[col]
+    let aVal: number | string = a[col] as number | string
+    let bVal: number | string = b[col] as number | string
 
     // Convert string decimals to Big for numeric comparison
     if (typeof aVal === 'string' && !isNaN(parseFloat(aVal))) {
       aVal = new Big(aVal).toNumber()
-      bVal = new Big(bVal).toNumber()
+      bVal = new Big(bVal as string).toNumber()
     }
 
     if (aVal < bVal) return sortDirection.value === 'asc' ? -1 : 1
