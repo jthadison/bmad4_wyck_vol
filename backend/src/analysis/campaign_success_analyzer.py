@@ -557,11 +557,15 @@ class CampaignSuccessAnalyzer:
         # Determine optimal threshold
         optimal_threshold = self._find_optimal_threshold(performance_by_tier)
 
+        # Generate statistical validity warnings
+        warnings = self._generate_correlation_warnings(len(campaigns), performance_by_tier)
+
         logger.info(
             "quality_correlation_analysis_completed",
             sample_size=len(campaigns),
             correlation=str(correlation),
             optimal_threshold=optimal_threshold,
+            warnings_count=len(warnings),
         )
 
         return QualityCorrelationReport(
@@ -569,6 +573,7 @@ class CampaignSuccessAnalyzer:
             performance_by_tier=performance_by_tier,
             optimal_threshold=optimal_threshold,
             sample_size=len(campaigns),
+            warnings=warnings,
         )
 
     async def get_campaign_duration_analysis(
@@ -898,3 +903,56 @@ class CampaignSuccessAnalyzer:
 
         # Default to ACCEPTABLE threshold if no tier meets criteria
         return 70
+
+    def _generate_correlation_warnings(
+        self,
+        sample_size: int,
+        performance_by_tier: list[QualityTierPerformance],
+    ) -> list[str]:
+        """
+        Generate statistical validity warnings for correlation analysis.
+
+        Checks for conditions that may affect reliability of correlation analysis:
+        - Low overall sample size (< 30 campaigns)
+        - Very low sample size (< 10 campaigns)
+        - Tiers with insufficient data (< 5 campaigns)
+
+        Parameters:
+        -----------
+        sample_size : int
+            Total number of campaigns analyzed
+        performance_by_tier : list[QualityTierPerformance]
+            Performance metrics by tier
+
+        Returns:
+        --------
+        list[str]
+            List of warning messages (empty if no warnings)
+        """
+        warnings = []
+
+        # Check overall sample size
+        if sample_size < 10:
+            warnings.append(
+                f"Very low sample size ({sample_size} campaigns). "
+                "Correlation analysis requires at least 30 campaigns for statistical reliability."
+            )
+        elif sample_size < 30:
+            warnings.append(
+                f"Low sample size ({sample_size} campaigns). "
+                "Consider collecting more data for reliable correlation analysis (recommended: 30+ campaigns)."
+            )
+
+        # Check tier sample sizes
+        low_tier_counts = []
+        for tier_perf in performance_by_tier:
+            if tier_perf.campaign_count < 5:
+                low_tier_counts.append(f"{tier_perf.tier} ({tier_perf.campaign_count})")
+
+        if low_tier_counts:
+            warnings.append(
+                f"Some quality tiers have insufficient data: {', '.join(low_tier_counts)}. "
+                "Tier-level metrics may not be statistically significant (recommended: 5+ campaigns per tier)."
+            )
+
+        return warnings

@@ -9,13 +9,18 @@ This module provides REST API endpoints for retrieving pattern performance
 analytics with caching headers for optimization.
 """
 
+import io
+import json
+from datetime import UTC, datetime
 from typing import Annotated, Literal, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
 from src.api.dependencies import get_db_session, get_redis_client
 from src.models.analytics import (
     PatternPerformanceResponse,
@@ -31,6 +36,38 @@ from src.repositories.analytics_repository import AnalyticsRepository
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+
+
+def _sanitize_csv_value(value: str) -> str:
+    """
+    Sanitize CSV value to prevent CSV injection attacks.
+
+    CSV injection occurs when a CSV field starts with special characters
+    like =, +, -, @ which can be interpreted as formulas by spreadsheet software.
+
+    Args:
+        value: Raw CSV value
+
+    Returns:
+        Sanitized CSV value with potential formula characters escaped
+    """
+    if not value:
+        return value
+
+    # Check if value starts with formula characters
+    if value[0] in ("=", "+", "-", "@", "\t", "\r"):
+        # Prefix with single quote to treat as text
+        return f"'{value}"
+
+    # Escape double quotes for CSV format
+    if '"' in value:
+        value = value.replace('"', '""')
+
+    # Quote value if it contains comma, newline, or quote
+    if any(char in value for char in (',', '\n', '\r', '"')):
+        return f'"{value}"'
+
+    return value
 
 
 @router.get(
@@ -453,13 +490,50 @@ async def get_quality_correlation_analysis(
         ),
     ] = None,
     session: AsyncSession = Depends(get_db_session),
+    redis: Redis = Depends(get_redis_client),
 ):
     """Get quality correlation analysis (Story 16.5b AC #1)."""
     try:
-        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
+        # Check cache first
+        cache_key = f"analytics:quality_correlation:{symbol or 'all'}:{timeframe or 'all'}"
+        cache_ttl = 3600  # 1 hour
 
+        if redis:
+            try:
+                cached_data = await redis.get(cache_key)
+                if cached_data:
+                    logger.info(
+                        "Quality correlation cache hit",
+                        extra={"cache_key": cache_key, "symbol": symbol, "timeframe": timeframe},
+                    )
+                    return QualityCorrelationReport(**json.loads(cached_data))
+            except Exception as cache_error:
+                logger.warning(
+                    "Cache retrieval failed",
+                    extra={"cache_key": cache_key, "error": str(cache_error)},
+                )
+
+        # Cache miss - query database
         analyzer = CampaignSuccessAnalyzer(session)
         report = await analyzer.get_quality_correlation_report(symbol=symbol, timeframe=timeframe)
+
+        # Store in cache
+        if redis:
+            try:
+                await redis.setex(
+                    cache_key,
+                    cache_ttl,
+                    json.dumps(report.model_dump(mode="json"), default=str),
+                )
+                logger.debug(
+                    "Quality correlation data cached",
+                    extra={"cache_key": cache_key, "ttl_seconds": cache_ttl},
+                )
+            except Exception as cache_error:
+                logger.warning(
+                    "Cache storage failed",
+                    extra={"cache_key": cache_key, "error": str(cache_error)},
+                )
 
         logger.info(
             "Quality correlation analysis retrieved",
@@ -530,13 +604,50 @@ async def get_campaign_duration_analysis(
         ),
     ] = None,
     session: AsyncSession = Depends(get_db_session),
+    redis: Redis = Depends(get_redis_client),
 ):
     """Get campaign duration analysis (Story 16.5b AC #2)."""
     try:
-        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
+        # Check cache first
+        cache_key = f"analytics:campaign_duration:{symbol or 'all'}:{timeframe or 'all'}"
+        cache_ttl = 3600  # 1 hour
 
+        if redis:
+            try:
+                cached_data = await redis.get(cache_key)
+                if cached_data:
+                    logger.info(
+                        "Campaign duration cache hit",
+                        extra={"cache_key": cache_key, "symbol": symbol, "timeframe": timeframe},
+                    )
+                    return CampaignDurationReport(**json.loads(cached_data))
+            except Exception as cache_error:
+                logger.warning(
+                    "Cache retrieval failed",
+                    extra={"cache_key": cache_key, "error": str(cache_error)},
+                )
+
+        # Cache miss - query database
         analyzer = CampaignSuccessAnalyzer(session)
         report = await analyzer.get_campaign_duration_analysis(symbol=symbol, timeframe=timeframe)
+
+        # Store in cache
+        if redis:
+            try:
+                await redis.setex(
+                    cache_key,
+                    cache_ttl,
+                    json.dumps(report.model_dump(mode="json"), default=str),
+                )
+                logger.debug(
+                    "Campaign duration data cached",
+                    extra={"cache_key": cache_key, "ttl_seconds": cache_ttl},
+                )
+            except Exception as cache_error:
+                logger.warning(
+                    "Cache storage failed",
+                    extra={"cache_key": cache_key, "error": str(cache_error)},
+                )
 
         logger.info(
             "Campaign duration analysis retrieved",
@@ -577,9 +688,10 @@ async def get_campaign_duration_analysis(
     """,
 )
 async def export_quality_correlation_report(
-    format: Annotated[
+    export_format: Annotated[
         str,
         Query(
+            alias="format",
             description="Export format (json or csv)",
             pattern="^(json|csv)$",
             example="json",
@@ -603,15 +715,11 @@ async def export_quality_correlation_report(
 ):
     """Export quality correlation report as JSON or CSV."""
     try:
-        from datetime import UTC, datetime
-
-        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
-
         # Get report data
         analyzer = CampaignSuccessAnalyzer(session)
         report = await analyzer.get_quality_correlation_report(symbol=symbol, timeframe=timeframe)
 
-        if format == "json":
+        if export_format == "json":
             # Return JSON format
             date_str = datetime.now(UTC).strftime("%Y-%m-%d")
             filename = f"quality-correlation-{date_str}.json"
@@ -627,10 +735,8 @@ async def export_quality_correlation_report(
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
-        else:  # format == "csv"
+        else:  # export_format == "csv"
             # Convert to CSV format
-            import io
-
             csv_buffer = io.StringIO()
             csv_buffer.write("# Quality Correlation Report\n")
             csv_buffer.write(f"# Generated: {datetime.now(UTC).isoformat()}\n")
@@ -643,8 +749,10 @@ async def export_quality_correlation_report(
                 "Quality Tier,Campaign Count,Win Rate (%),Avg R-Multiple,Median R-Multiple,Total R-Multiple\n"
             )
             for tier_perf in report.performance_by_tier:
+                # Sanitize tier name to prevent CSV injection
+                safe_tier = _sanitize_csv_value(tier_perf.tier)
                 csv_buffer.write(
-                    f"{tier_perf.tier},{tier_perf.campaign_count},"
+                    f"{safe_tier},{tier_perf.campaign_count},"
                     f"{tier_perf.win_rate},{tier_perf.avg_r_multiple},"
                     f"{tier_perf.median_r_multiple},{tier_perf.total_r_multiple}\n"
                 )
@@ -666,7 +774,7 @@ async def export_quality_correlation_report(
     except Exception as e:
         logger.error(
             "Error exporting quality correlation report",
-            extra={"error": str(e), "format": format, "symbol": symbol, "timeframe": timeframe},
+            extra={"error": str(e), "export_format": export_format, "symbol": symbol, "timeframe": timeframe},
         )
         raise HTTPException(
             status_code=500, detail="Failed to export quality correlation report"
@@ -689,9 +797,10 @@ async def export_quality_correlation_report(
     """,
 )
 async def export_campaign_duration_report(
-    format: Annotated[
+    export_format: Annotated[
         str,
         Query(
+            alias="format",
             description="Export format (json or csv)",
             pattern="^(json|csv)$",
             example="json",
@@ -715,15 +824,11 @@ async def export_campaign_duration_report(
 ):
     """Export campaign duration report as JSON or CSV."""
     try:
-        from datetime import UTC, datetime
-
-        from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
-
         # Get report data
         analyzer = CampaignSuccessAnalyzer(session)
         report = await analyzer.get_campaign_duration_analysis(symbol=symbol, timeframe=timeframe)
 
-        if format == "json":
+        if export_format == "json":
             # Return JSON format
             date_str = datetime.now(UTC).strftime("%Y-%m-%d")
             filename = f"campaign-duration-{date_str}.json"
@@ -739,10 +844,8 @@ async def export_campaign_duration_report(
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
-        else:  # format == "csv"
+        else:  # export_format == "csv"
             # Convert to CSV format
-            import io
-
             csv_buffer = io.StringIO()
             csv_buffer.write("# Campaign Duration Report\n")
             csv_buffer.write(f"# Generated: {datetime.now(UTC).isoformat()}\n")
@@ -758,8 +861,10 @@ async def export_campaign_duration_report(
                 "Min Duration (days),Max Duration (days)\n"
             )
             for duration_metrics in report.duration_by_sequence:
+                # Sanitize sequence name to prevent CSV injection
+                safe_sequence = _sanitize_csv_value(duration_metrics.sequence)
                 csv_buffer.write(
-                    f"{duration_metrics.sequence},{duration_metrics.campaign_count},"
+                    f"{safe_sequence},{duration_metrics.campaign_count},"
                     f"{duration_metrics.avg_duration_days},{duration_metrics.median_duration_days},"
                     f"{duration_metrics.min_duration_days},{duration_metrics.max_duration_days}\n"
                 )
@@ -781,7 +886,7 @@ async def export_campaign_duration_report(
     except Exception as e:
         logger.error(
             "Error exporting campaign duration report",
-            extra={"error": str(e), "format": format, "symbol": symbol, "timeframe": timeframe},
+            extra={"error": str(e), "export_format": export_format, "symbol": symbol, "timeframe": timeframe},
         )
         raise HTTPException(
             status_code=500, detail="Failed to export campaign duration report"

@@ -1688,6 +1688,11 @@ class QualityCorrelationReport(BaseModel):
 
     sample_size: int = Field(..., ge=0, description="Total number of campaigns analyzed")
 
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Statistical validity warnings (e.g., low sample size)",
+    )
+
     model_config = ConfigDict(json_encoders={Decimal: str})
 
     @model_serializer
@@ -1698,6 +1703,7 @@ class QualityCorrelationReport(BaseModel):
             "performance_by_tier": [tier.serialize_model() for tier in self.performance_by_tier],
             "optimal_threshold": self.optimal_threshold,
             "sample_size": self.sample_size,
+            "warnings": self.warnings,
         }
 
 
