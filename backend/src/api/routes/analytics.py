@@ -37,6 +37,29 @@ from src.repositories.analytics_repository import AnalyticsRepository
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
+# Cache configuration constants
+CACHE_TTL_SECONDS = 3600  # 1 hour
+CACHE_KEY_PREFIX_QUALITY = "analytics:quality_correlation"
+CACHE_KEY_PREFIX_DURATION = "analytics:campaign_duration"
+CACHE_DEFAULT_FILTER = "all"
+
+
+def _build_cache_key(prefix: str, symbol: Optional[str], timeframe: Optional[str]) -> str:
+    """
+    Build cache key with consistent formatting to prevent collisions.
+
+    Args:
+        prefix: Cache key prefix (e.g., "analytics:quality_correlation")
+        symbol: Optional symbol filter
+        timeframe: Optional timeframe filter
+
+    Returns:
+        Formatted cache key string
+    """
+    symbol_key = symbol.replace(":", "_") if symbol else CACHE_DEFAULT_FILTER
+    timeframe_key = timeframe.replace(":", "_") if timeframe else CACHE_DEFAULT_FILTER
+    return f"{prefix}:{symbol_key}:{timeframe_key}"
+
 
 def _sanitize_csv_value(value: str) -> str:
     """
@@ -64,7 +87,7 @@ def _sanitize_csv_value(value: str) -> str:
         value = value.replace('"', '""')
 
     # Quote value if it contains comma, newline, or quote
-    if any(char in value for char in (',', '\n', '\r', '"')):
+    if any(char in value for char in (",", "\n", "\r", '"')):
         return f'"{value}"'
 
     return value
@@ -495,8 +518,7 @@ async def get_quality_correlation_analysis(
     """Get quality correlation analysis (Story 16.5b AC #1)."""
     try:
         # Check cache first
-        cache_key = f"analytics:quality_correlation:{symbol or 'all'}:{timeframe or 'all'}"
-        cache_ttl = 3600  # 1 hour
+        cache_key = _build_cache_key(CACHE_KEY_PREFIX_QUALITY, symbol, timeframe)
 
         if redis:
             try:
@@ -522,12 +544,12 @@ async def get_quality_correlation_analysis(
             try:
                 await redis.setex(
                     cache_key,
-                    cache_ttl,
+                    CACHE_TTL_SECONDS,
                     json.dumps(report.model_dump(mode="json"), default=str),
                 )
                 logger.debug(
                     "Quality correlation data cached",
-                    extra={"cache_key": cache_key, "ttl_seconds": cache_ttl},
+                    extra={"cache_key": cache_key, "ttl_seconds": CACHE_TTL_SECONDS},
                 )
             except Exception as cache_error:
                 logger.warning(
@@ -609,8 +631,7 @@ async def get_campaign_duration_analysis(
     """Get campaign duration analysis (Story 16.5b AC #2)."""
     try:
         # Check cache first
-        cache_key = f"analytics:campaign_duration:{symbol or 'all'}:{timeframe or 'all'}"
-        cache_ttl = 3600  # 1 hour
+        cache_key = _build_cache_key(CACHE_KEY_PREFIX_DURATION, symbol, timeframe)
 
         if redis:
             try:
@@ -636,12 +657,12 @@ async def get_campaign_duration_analysis(
             try:
                 await redis.setex(
                     cache_key,
-                    cache_ttl,
+                    CACHE_TTL_SECONDS,
                     json.dumps(report.model_dump(mode="json"), default=str),
                 )
                 logger.debug(
                     "Campaign duration data cached",
-                    extra={"cache_key": cache_key, "ttl_seconds": cache_ttl},
+                    extra={"cache_key": cache_key, "ttl_seconds": CACHE_TTL_SECONDS},
                 )
             except Exception as cache_error:
                 logger.warning(
@@ -712,7 +733,7 @@ async def export_quality_correlation_report(
         ),
     ] = None,
     session: AsyncSession = Depends(get_db_session),
-):
+) -> Response:
     """Export quality correlation report as JSON or CSV."""
     try:
         # Get report data
@@ -774,7 +795,12 @@ async def export_quality_correlation_report(
     except Exception as e:
         logger.error(
             "Error exporting quality correlation report",
-            extra={"error": str(e), "export_format": export_format, "symbol": symbol, "timeframe": timeframe},
+            extra={
+                "error": str(e),
+                "export_format": export_format,
+                "symbol": symbol,
+                "timeframe": timeframe,
+            },
         )
         raise HTTPException(
             status_code=500, detail="Failed to export quality correlation report"
@@ -821,7 +847,7 @@ async def export_campaign_duration_report(
         ),
     ] = None,
     session: AsyncSession = Depends(get_db_session),
-):
+) -> Response:
     """Export campaign duration report as JSON or CSV."""
     try:
         # Get report data
@@ -886,7 +912,12 @@ async def export_campaign_duration_report(
     except Exception as e:
         logger.error(
             "Error exporting campaign duration report",
-            extra={"error": str(e), "export_format": export_format, "symbol": symbol, "timeframe": timeframe},
+            extra={
+                "error": str(e),
+                "export_format": export_format,
+                "symbol": symbol,
+                "timeframe": timeframe,
+            },
         )
         raise HTTPException(
             status_code=500, detail="Failed to export campaign duration report"

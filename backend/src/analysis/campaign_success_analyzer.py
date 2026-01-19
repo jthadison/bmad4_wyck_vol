@@ -46,6 +46,23 @@ from src.repositories.models import CampaignMetricsModel, CampaignModel
 
 logger = structlog.get_logger(__name__)
 
+# Statistical validity thresholds for correlation analysis
+SAMPLE_SIZE_CRITICAL = 10  # Below this: critical warning
+SAMPLE_SIZE_RECOMMENDED = 30  # Below this: low sample size warning
+TIER_MIN_CAMPAIGNS = 5  # Minimum campaigns per tier for statistical significance
+
+# Quality score tier thresholds
+QUALITY_TIER_EXCEPTIONAL = 90
+QUALITY_TIER_STRONG = 80
+QUALITY_TIER_ACCEPTABLE = 70
+
+# Quality score component weights
+QUALITY_WEIGHT_WIN_RATE = 0.4  # 40 points max
+QUALITY_WEIGHT_R_MULTIPLE = 10  # Scale factor: 3R = 30 points
+QUALITY_WEIGHT_TARGET = 0.3  # 30 points max
+QUALITY_MAX_R_SCORE = 30  # Max points from R-multiple
+QUALITY_MAX_SCORE = 100  # Maximum quality score
+
 
 class CampaignSuccessAnalyzer:
     """
@@ -733,16 +750,19 @@ class CampaignSuccessAnalyzer:
             Quality score 0-100
         """
         # Win rate component (0-40 points)
-        win_rate_score = int(float(campaign.win_rate) * 0.4)
+        win_rate = campaign.win_rate if campaign.win_rate is not None else Decimal("0")
+        win_rate_score = int(float(win_rate) * QUALITY_WEIGHT_WIN_RATE)
 
         # R-multiple component (0-30 points)
         # Scale: 0R = 0pts, 3R = 30pts (linear)
-        r_score = min(30, int(float(campaign.actual_r_achieved) * 10))
+        actual_r = campaign.actual_r_achieved if campaign.actual_r_achieved is not None else Decimal("0")
+        r_score = min(QUALITY_MAX_R_SCORE, int(float(actual_r) * QUALITY_WEIGHT_R_MULTIPLE))
 
         # Target achievement component (0-30 points)
-        target_score = int(float(campaign.target_achievement_pct) * 0.3)
+        target_pct = campaign.target_achievement_pct if campaign.target_achievement_pct is not None else Decimal("0")
+        target_score = int(float(target_pct) * QUALITY_WEIGHT_TARGET)
 
-        total_score = min(100, win_rate_score + r_score + target_score)
+        total_score = min(QUALITY_MAX_SCORE, win_rate_score + r_score + target_score)
         return total_score
 
     def _calculate_correlation(self, x_values: list[int], y_values: list[Decimal]) -> Decimal:
@@ -798,11 +818,11 @@ class CampaignSuccessAnalyzer:
         str
             Quality tier (EXCEPTIONAL, STRONG, ACCEPTABLE, WEAK)
         """
-        if quality_score >= 90:
+        if quality_score >= QUALITY_TIER_EXCEPTIONAL:
             return "EXCEPTIONAL"
-        elif quality_score >= 80:
+        elif quality_score >= QUALITY_TIER_STRONG:
             return "STRONG"
-        elif quality_score >= 70:
+        elif quality_score >= QUALITY_TIER_ACCEPTABLE:
             return "ACCEPTABLE"
         else:
             return "WEAK"
@@ -888,10 +908,10 @@ class CampaignSuccessAnalyzer:
         """
         # Define tier thresholds
         tier_thresholds = {
-            "EXCEPTIONAL": 90,
-            "STRONG": 80,
-            "ACCEPTABLE": 70,
-            "WEAK": 70,  # Default minimum
+            "EXCEPTIONAL": QUALITY_TIER_EXCEPTIONAL,
+            "STRONG": QUALITY_TIER_STRONG,
+            "ACCEPTABLE": QUALITY_TIER_ACCEPTABLE,
+            "WEAK": QUALITY_TIER_ACCEPTABLE,  # Default minimum
         }
 
         # Find lowest tier meeting performance criteria
@@ -899,10 +919,10 @@ class CampaignSuccessAnalyzer:
             if tier_perf.win_rate >= Decimal("60.00") and tier_perf.avg_r_multiple >= Decimal(
                 "2.0000"
             ):
-                return tier_thresholds.get(tier_perf.tier, 70)
+                return tier_thresholds.get(tier_perf.tier, QUALITY_TIER_ACCEPTABLE)
 
         # Default to ACCEPTABLE threshold if no tier meets criteria
-        return 70
+        return QUALITY_TIER_ACCEPTABLE
 
     def _generate_correlation_warnings(
         self,
@@ -932,27 +952,27 @@ class CampaignSuccessAnalyzer:
         warnings = []
 
         # Check overall sample size
-        if sample_size < 10:
+        if sample_size < SAMPLE_SIZE_CRITICAL:
             warnings.append(
                 f"Very low sample size ({sample_size} campaigns). "
-                "Correlation analysis requires at least 30 campaigns for statistical reliability."
+                f"Correlation analysis requires at least {SAMPLE_SIZE_RECOMMENDED} campaigns for statistical reliability."
             )
-        elif sample_size < 30:
+        elif sample_size < SAMPLE_SIZE_RECOMMENDED:
             warnings.append(
                 f"Low sample size ({sample_size} campaigns). "
-                "Consider collecting more data for reliable correlation analysis (recommended: 30+ campaigns)."
+                f"Consider collecting more data for reliable correlation analysis (recommended: {SAMPLE_SIZE_RECOMMENDED}+ campaigns)."
             )
 
         # Check tier sample sizes
         low_tier_counts = []
         for tier_perf in performance_by_tier:
-            if tier_perf.campaign_count < 5:
+            if tier_perf.campaign_count < TIER_MIN_CAMPAIGNS:
                 low_tier_counts.append(f"{tier_perf.tier} ({tier_perf.campaign_count})")
 
         if low_tier_counts:
             warnings.append(
                 f"Some quality tiers have insufficient data: {', '.join(low_tier_counts)}. "
-                "Tier-level metrics may not be statistically significant (recommended: 5+ campaigns per tier)."
+                f"Tier-level metrics may not be statistically significant (recommended: {TIER_MIN_CAMPAIGNS}+ campaigns per tier)."
             )
 
         return warnings
