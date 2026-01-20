@@ -285,5 +285,11 @@ class TradingViewAdapter(TradingPlatformAdapter):
             return order
 
         except (KeyError, ValueError, TypeError) as e:
-            logger.error("tradingview_webhook_parse_error", error=str(e), payload=payload)
+            # Log error without full payload to avoid exposing sensitive data
+            logger.error(
+                "tradingview_webhook_parse_error",
+                error=str(e),
+                symbol=payload.get("symbol", "unknown"),
+                action=payload.get("action", "unknown"),
+            )
             raise ValueError(f"Failed to parse TradingView webhook: {e}") from e

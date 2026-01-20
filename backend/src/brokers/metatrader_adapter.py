@@ -55,6 +55,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         password: Optional[str] = None,
         server: Optional[str] = None,
         timeout: int = 60000,
+        magic_number: int = 234000,
     ):
         """
         Initialize MetaTrader adapter.
@@ -64,19 +65,24 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             password: MT5 account password
             server: MT5 server name (e.g., "MetaQuotes-Demo")
             timeout: Connection timeout in milliseconds
+            magic_number: Expert Advisor magic number for order identification (default: 234000)
         """
         super().__init__(platform_name="MetaTrader5")
         self.account = account
         self.password = password
         self.server = server
         self.timeout = timeout
+        self.magic_number = magic_number
         self._mt5: Optional[Any] = None  # Will hold MetaTrader5 module reference
 
+        # Mask account number in logs for security
+        masked_account = f"***{str(account)[-4:]}" if account else None
         logger.info(
             "metatrader_adapter_initialized",
-            account=account,
+            account=masked_account,
             server=server,
             timeout=timeout,
+            magic_number=magic_number,
         )
 
     async def connect(self) -> bool:
@@ -176,7 +182,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 "sl": stop_loss,
                 "tp": take_profit,
                 "deviation": 20,  # Max price deviation in points
-                "magic": 234000,  # EA magic number
+                "magic": self.magic_number,  # EA magic number for order identification
                 "comment": f"BMAD_{order.id}",
                 "type_time": self._mt5.ORDER_TIME_GTC,
                 "type_filling": self._mt5.ORDER_FILLING_IOC,
@@ -412,6 +418,9 @@ class MetaTraderAdapter(TradingPlatformAdapter):
 
         Returns:
             MT5 order type constant
+
+        Raises:
+            ValueError: If order_type is not supported (e.g., STOP_LIMIT)
         """
         if order_type == OrderType.MARKET:
             return self._mt5.ORDER_TYPE_BUY if side == OrderSide.BUY else self._mt5.ORDER_TYPE_SELL

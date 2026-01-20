@@ -71,7 +71,12 @@ class Order(BaseModel):
     platform: str = Field(
         description="Target trading platform", examples=["TradingView", "MetaTrader", "Alpaca"]
     )
-    symbol: str = Field(description="Ticker symbol", min_length=1, max_length=20)
+    symbol: str = Field(
+        description="Ticker symbol",
+        min_length=1,
+        max_length=20,
+        pattern=r"^[A-Z0-9\.\/\-]+$",
+    )
     side: OrderSide = Field(description="Order side (BUY/SELL)")
     order_type: OrderType = Field(description="Order type")
     quantity: Decimal = Field(description="Order quantity", gt=Decimal("0"))
