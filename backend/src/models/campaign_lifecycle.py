@@ -44,6 +44,108 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from src.models.campaign import AssetCategory
 
 
+class TimeframeConfig(BaseModel):
+    """
+    Timeframe-specific configuration for adaptive campaign detection (Story 16.6a).
+
+    Provides threshold mappings that adapt to different timeframes, enabling
+    proper campaign detection across intraday (15m, 1h, 4h) and daily (1d, 1w) charts.
+
+    Threshold Adaptation Rationale:
+    -------------------------------
+    - Shorter timeframes require MORE bars for pattern confirmation (higher noise)
+    - Longer timeframes need FEWER bars (clearer trend structure)
+    - Dormant threshold prevents stale campaigns on fast timeframes
+
+    Fields:
+    -------
+    - timeframe: Timeframe identifier (15m, 1h, 4h, 1d, 1w)
+    - phase_b_min_bars: Minimum bars for Phase B validation
+    - phase_c_min_bars: Minimum bars for Phase C validation
+    - dormant_threshold_bars: Bars without activity before marking dormant
+    - volume_ratio_multiplier: Scaling factor for volume thresholds (default 1.0)
+    - campaign_expiration_bars: Maximum campaign duration before auto-expiration
+
+    Example:
+    --------
+    >>> config_15m = TimeframeConfig(
+    ...     timeframe="15m",
+    ...     phase_b_min_bars=10,
+    ...     phase_c_min_bars=5,
+    ...     dormant_threshold_bars=24,
+    ...     volume_ratio_multiplier=Decimal("1.0"),
+    ...     campaign_expiration_bars=96
+    ... )
+    """
+
+    timeframe: str = Field(
+        ..., max_length=5, description="Timeframe identifier (15m, 1h, 4h, 1d, 1w)"
+    )
+    phase_b_min_bars: int = Field(..., ge=1, description="Minimum bars for Phase B validation")
+    phase_c_min_bars: int = Field(..., ge=1, description="Minimum bars for Phase C validation")
+    dormant_threshold_bars: int = Field(
+        ..., ge=1, description="Bars without activity before marking dormant"
+    )
+    volume_ratio_multiplier: Decimal = Field(
+        default=Decimal("1.0"),
+        decimal_places=2,
+        max_digits=4,
+        ge=Decimal("0.5"),
+        le=Decimal("2.0"),
+        description="Scaling factor for volume thresholds",
+    )
+    campaign_expiration_bars: int = Field(
+        ..., ge=1, description="Maximum campaign duration before auto-expiration"
+    )
+
+    model_config = {"json_encoders": {Decimal: str}}
+
+
+# Timeframe configuration mappings (Story 16.6a)
+TIMEFRAME_CONFIGS: dict[str, TimeframeConfig] = {
+    "15m": TimeframeConfig(
+        timeframe="15m",
+        phase_b_min_bars=10,  # Intraday: more bars needed for confirmation
+        phase_c_min_bars=5,
+        dormant_threshold_bars=24,  # 6 hours of inactivity
+        volume_ratio_multiplier=Decimal("1.0"),
+        campaign_expiration_bars=96,  # 24 hours
+    ),
+    "1h": TimeframeConfig(
+        timeframe="1h",
+        phase_b_min_bars=8,
+        phase_c_min_bars=4,
+        dormant_threshold_bars=12,  # 12 hours of inactivity
+        volume_ratio_multiplier=Decimal("1.0"),
+        campaign_expiration_bars=72,  # 3 days
+    ),
+    "4h": TimeframeConfig(
+        timeframe="4h",
+        phase_b_min_bars=6,
+        phase_c_min_bars=3,
+        dormant_threshold_bars=6,  # 24 hours of inactivity
+        volume_ratio_multiplier=Decimal("1.0"),
+        campaign_expiration_bars=42,  # 7 days
+    ),
+    "1d": TimeframeConfig(
+        timeframe="1d",
+        phase_b_min_bars=5,  # Daily: fewer bars needed
+        phase_c_min_bars=3,
+        dormant_threshold_bars=5,  # 5 days of inactivity
+        volume_ratio_multiplier=Decimal("1.0"),
+        campaign_expiration_bars=30,  # 30 days
+    ),
+    "1w": TimeframeConfig(
+        timeframe="1w",
+        phase_b_min_bars=3,  # Weekly: even fewer bars needed
+        phase_c_min_bars=2,
+        dormant_threshold_bars=3,  # 3 weeks of inactivity
+        volume_ratio_multiplier=Decimal("1.0"),
+        campaign_expiration_bars=12,  # 12 weeks (~3 months)
+    ),
+}
+
+
 class EntryDetails(BaseModel):
     """
     Individual pattern entry details within a campaign (Story 9.7).
@@ -274,6 +376,9 @@ class Campaign(BaseModel):
     campaign_id: str = Field(..., max_length=50, description="Human-readable ID: {symbol}-{date}")
     symbol: str = Field(..., max_length=20, description="Ticker symbol")
     timeframe: str = Field(..., max_length=5, description="Bar interval (e.g., 1h, 1d)")
+    timeframe_config: TimeframeConfig | None = Field(
+        None, description="Timeframe-specific thresholds (auto-assigned from timeframe)"
+    )
     trading_range_id: UUID = Field(..., description="Foreign key to TradingRange")
 
     # Lifecycle management
@@ -367,6 +472,28 @@ class Campaign(BaseModel):
         if self.status == CampaignStatus.INVALIDATED:
             if self.invalidation_reason is None:
                 raise ValueError("invalidation_reason must be set when status is INVALIDATED")
+        return self
+
+    @model_validator(mode="after")
+    def auto_assign_timeframe_config(self) -> "Campaign":
+        """
+        Auto-assign timeframe_config based on timeframe field (Story 16.6a).
+
+        If timeframe_config is not explicitly set, automatically assigns the
+        appropriate configuration from TIMEFRAME_CONFIGS mapping.
+
+        Raises:
+        -------
+        ValueError
+            If timeframe is not in supported timeframes (15m, 1h, 4h, 1d, 1w)
+        """
+        if self.timeframe_config is None:
+            if self.timeframe not in TIMEFRAME_CONFIGS:
+                raise ValueError(
+                    f"Unsupported timeframe: {self.timeframe}. "
+                    f"Supported timeframes: {', '.join(TIMEFRAME_CONFIGS.keys())}"
+                )
+            self.timeframe_config = TIMEFRAME_CONFIGS[self.timeframe]
         return self
 
     def get_open_positions(self) -> list[CampaignPosition]:
