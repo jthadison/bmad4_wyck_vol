@@ -15,14 +15,14 @@
  * Author: Story 16.3b
  */
 
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import ProgressBar from 'primevue/progressbar'
 import Badge from 'primevue/badge'
 import Dialog from 'primevue/dialog'
 import ProgressSpinner from 'primevue/progressspinner'
 import Message from 'primevue/message'
-import { ref } from 'vue'
+import Big from 'big.js'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 
 /**
@@ -47,6 +47,7 @@ const {
  */
 const showDetailDialog = ref(false)
 const detailView = ref<'campaigns' | 'correlations'>('campaigns')
+const refreshError = ref<string | null>(null)
 
 /**
  * Computed: Risk level (low, medium, high, critical)
@@ -101,13 +102,12 @@ const hasWarnings = computed(() => {
 /**
  * Format heat value for display
  */
-function formatHeat(value: unknown): string {
+function formatHeat(value: Big | number | string | null | undefined): string {
   if (value === null || value === undefined) return '0.00'
-  const num =
-    typeof value === 'object' && 'toNumber' in (value as object)
-      ? (value as { toNumber: () => number }).toNumber()
-      : Number(value)
-  return num.toFixed(2)
+  if (value instanceof Big) {
+    return value.toFixed(2)
+  }
+  return Number(value).toFixed(2)
 }
 
 /**
@@ -129,9 +129,13 @@ function showDetails(view: 'campaigns' | 'correlations'): void {
  * Refresh risk data
  */
 async function refreshData(): Promise<void> {
+  refreshError.value = null
   try {
     await portfolioStore.fetchRiskDashboard()
   } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to refresh risk data'
+    refreshError.value = message
     console.error('Failed to refresh risk data:', err)
   }
 }
@@ -161,10 +165,25 @@ onMounted(() => {
           class="warning-badge"
         />
       </div>
-      <button class="refresh-btn" :disabled="loading" @click="refreshData">
+      <button
+        class="refresh-btn"
+        :disabled="loading"
+        aria-label="Refresh risk data"
+        @click="refreshData"
+      >
         <i class="pi pi-refresh" :class="{ 'pi-spin': loading }"></i>
       </button>
     </div>
+
+    <!-- Refresh Error -->
+    <Message
+      v-if="refreshError"
+      severity="warn"
+      :closable="true"
+      @close="refreshError = null"
+    >
+      {{ refreshError }}
+    </Message>
 
     <!-- Loading State -->
     <div v-if="loading && !totalHeat" class="loading-state">

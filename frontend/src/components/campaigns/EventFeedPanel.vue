@@ -21,6 +21,13 @@ import Dialog from 'primevue/dialog'
 import Badge from 'primevue/badge'
 import { useWebSocket } from '@/composables/useWebSocket'
 import type { WebSocketMessage } from '@/types/websocket'
+import {
+  isCampaignCreatedMessage,
+  isCampaignUpdatedMessage,
+  isCampaignInvalidatedMessage,
+  isSignalNewMessage,
+  isPatternDetectedMessage,
+} from '@/types/websocket'
 
 /**
  * Campaign event types for filtering
@@ -175,7 +182,7 @@ function formatEventMessage(
  */
 function addEvent(type: string, data: Record<string, unknown>): void {
   const event: CampaignEvent = {
-    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     type,
     timestamp: new Date(),
     data,
@@ -200,35 +207,38 @@ function addEvent(type: string, data: Record<string, unknown>): void {
 }
 
 /**
- * Handle WebSocket events
+ * Handle WebSocket events with proper type guards
  */
 function handleCampaignCreated(message: WebSocketMessage): void {
-  if ('data' in message && message.data) {
+  if (isCampaignCreatedMessage(message)) {
     addEvent('campaign:created', message.data as Record<string, unknown>)
   }
 }
 
 function handleCampaignUpdated(message: WebSocketMessage): void {
-  if ('data' in message && message.data) {
+  if (isCampaignUpdatedMessage(message)) {
     addEvent('campaign:updated', message.data as Record<string, unknown>)
   }
 }
 
 function handleCampaignInvalidated(message: WebSocketMessage): void {
-  if ('data' in message && message.data) {
+  if (isCampaignInvalidatedMessage(message)) {
     addEvent('campaign:invalidated', message.data as Record<string, unknown>)
   }
 }
 
 function handleSignalNew(message: WebSocketMessage): void {
-  if ('data' in message && message.data) {
-    addEvent('signal:new', message.data as Record<string, unknown>)
+  if (isSignalNewMessage(message)) {
+    addEvent('signal:new', message.data as unknown as Record<string, unknown>)
   }
 }
 
 function handlePatternDetected(message: WebSocketMessage): void {
-  if ('data' in message && message.data) {
-    addEvent('pattern_detected', message.data as Record<string, unknown>)
+  if (isPatternDetectedMessage(message)) {
+    addEvent(
+      'pattern_detected',
+      message.data as unknown as Record<string, unknown>
+    )
   }
 }
 
@@ -255,40 +265,43 @@ function toggleAutoScroll(): void {
 }
 
 /**
- * Lifecycle: Subscribe to WebSocket events
+ * Counter to force reactivity updates for relative times.
+ * Incrementing this triggers re-computation of time displays.
+ */
+const timeUpdateCounter = ref(0)
+let updateInterval: ReturnType<typeof setInterval> | null = null
+
+/**
+ * Lifecycle: Subscribe to WebSocket events and start time update interval
  */
 onMounted(() => {
+  // Subscribe to WebSocket events
   ws.subscribe('campaign:created', handleCampaignCreated)
   ws.subscribe('campaign:updated', handleCampaignUpdated)
   ws.subscribe('campaign:invalidated', handleCampaignInvalidated)
   ws.subscribe('signal:new', handleSignalNew)
   ws.subscribe('pattern_detected', handlePatternDetected)
+
+  // Update relative times every minute using a counter (more efficient than array copy)
+  updateInterval = setInterval(() => {
+    timeUpdateCounter.value++
+  }, 60000)
 })
 
 /**
- * Lifecycle: Cleanup subscriptions
+ * Lifecycle: Cleanup subscriptions and interval
  */
 onUnmounted(() => {
+  // Unsubscribe from WebSocket events
   ws.unsubscribe('campaign:created', handleCampaignCreated)
   ws.unsubscribe('campaign:updated', handleCampaignUpdated)
   ws.unsubscribe('campaign:invalidated', handleCampaignInvalidated)
   ws.unsubscribe('signal:new', handleSignalNew)
   ws.unsubscribe('pattern_detected', handlePatternDetected)
-})
 
-// Update relative times every minute
-const updateInterval = ref<ReturnType<typeof setInterval> | null>(null)
-
-onMounted(() => {
-  updateInterval.value = setInterval(() => {
-    // Force reactivity update for relative times
-    events.value = [...events.value]
-  }, 60000)
-})
-
-onUnmounted(() => {
-  if (updateInterval.value) {
-    clearInterval(updateInterval.value)
+  // Clear time update interval
+  if (updateInterval) {
+    clearInterval(updateInterval)
   }
 })
 </script>
@@ -313,11 +326,17 @@ onUnmounted(() => {
           class="control-btn"
           :class="{ active: autoScroll }"
           title="Auto-scroll to latest"
+          aria-label="Toggle auto-scroll to latest events"
           @click="toggleAutoScroll"
         >
           <i class="pi pi-arrow-down"></i>
         </button>
-        <button class="control-btn" title="Clear events" @click="clearEvents">
+        <button
+          class="control-btn"
+          title="Clear events"
+          aria-label="Clear all events"
+          @click="clearEvents"
+        >
           <i class="pi pi-trash"></i>
         </button>
       </div>
@@ -358,7 +377,7 @@ onUnmounted(() => {
         </div>
         <div class="event-content">
           <p class="event-message">{{ event.message }}</p>
-          <span class="event-time">{{
+          <span class="event-time" :data-update="timeUpdateCounter">{{
             formatRelativeTime(event.timestamp)
           }}</span>
         </div>
