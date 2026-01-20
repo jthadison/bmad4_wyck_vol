@@ -7,6 +7,7 @@ Handles webhook signature verification and order creation from alerts.
 Author: Story 16.4a
 """
 
+import json
 from typing import Optional
 
 import structlog
@@ -81,8 +82,8 @@ async def receive_webhook(
                     detail="Invalid webhook signature",
                 )
 
-        # Parse JSON payload
-        payload = await request.json()
+        # Parse JSON payload from already-read body (avoid double parsing)
+        payload = json.loads(body_str)
 
         # Parse webhook into Order
         order = tradingview_adapter.parse_webhook(payload)
@@ -146,14 +147,25 @@ async def test_webhook(payload: dict) -> dict:
     Test endpoint for webhook integration.
 
     Allows testing webhook parsing without signature verification.
-    Should be disabled in production.
+    Disabled in production for security.
 
     Args:
         payload: Test webhook payload
 
     Returns:
         Dict with parsed order details
+
+    Raises:
+        HTTPException: 403 if called in production environment
     """
+    # Security: Disable test endpoint in production
+    if settings.environment == "production":
+        logger.warning("test_endpoint_blocked_in_production")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Test endpoint disabled in production environment",
+        )
+
     try:
         order = tradingview_adapter.parse_webhook(payload)
 

@@ -19,6 +19,7 @@ from typing import Optional
 import structlog
 
 from src.brokers.base_adapter import TradingPlatformAdapter
+from src.config import settings
 from src.models.order import (
     ExecutionReport,
     OCOOrder,
@@ -176,13 +177,22 @@ class TradingViewAdapter(TradingPlatformAdapter):
             True if signature valid
 
         Raises:
-            ValueError: If webhook_secret not configured
+            ValueError: If webhook_secret not configured in production
         """
         if not self.webhook_secret:
+            # Security: Require webhook secret in production
+            if settings.environment == "production":
+                logger.error(
+                    "tradingview_webhook_secret_not_configured_in_production",
+                    message="Webhook secret required in production",
+                )
+                return False
+            # Allow skipping verification in non-production environments
             logger.warning(
-                "tradingview_webhook_secret_not_configured", message="Webhook verification skipped"
+                "tradingview_webhook_secret_not_configured",
+                message="Webhook verification skipped - development mode only",
             )
-            return True  # Skip verification if no secret configured
+            return True
 
         # Calculate expected signature
         expected_signature = hmac.new(
@@ -244,17 +254,19 @@ class TradingViewAdapter(TradingPlatformAdapter):
             take_profit = payload.get("take_profit")
             signal_id = payload.get("signal_id")
 
-            # Create Order
+            # Create Order (using Decimal for precision)
+            from decimal import Decimal
+
             order = Order(
                 platform="TradingView",
                 symbol=symbol,
                 side=OrderSide(action),
                 order_type=OrderType(order_type),
-                quantity=float(quantity),
-                limit_price=float(limit_price) if limit_price else None,
-                stop_price=float(stop_price) if stop_price else None,
-                stop_loss=float(stop_loss) if stop_loss else None,
-                take_profit=float(take_profit) if take_profit else None,
+                quantity=Decimal(str(quantity)),
+                limit_price=Decimal(str(limit_price)) if limit_price else None,
+                stop_price=Decimal(str(stop_price)) if stop_price else None,
+                stop_loss=Decimal(str(stop_loss)) if stop_loss else None,
+                take_profit=Decimal(str(take_profit)) if take_profit else None,
                 signal_id=signal_id,
                 status=OrderStatus.PENDING,
             )

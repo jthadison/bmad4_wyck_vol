@@ -14,7 +14,7 @@ Author: Story 16.4a
 
 from decimal import Decimal
 from typing import Any, Optional
-from uuid import UUID
+from uuid import uuid4
 
 import structlog
 
@@ -203,6 +203,8 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 )
 
             # Success - create execution report
+            # Note: MT5 commission retrieval requires querying deal history after execution
+            # result.comment is a text string, not numeric commission value
             execution_report = ExecutionReport(
                 order_id=order.id,
                 platform_order_id=str(result.order),
@@ -211,9 +213,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 filled_quantity=Decimal(str(result.volume)),
                 remaining_quantity=Decimal(str(lot - result.volume)),
                 average_fill_price=Decimal(str(result.price)),
-                commission=Decimal(str(result.comment))
-                if "commission" in result.comment.lower()
-                else None,
+                commission=None,  # TODO: Query deal history for actual commission
             )
 
             logger.info(
@@ -290,8 +290,11 @@ class MetaTraderAdapter(TradingPlatformAdapter):
 
             logger.info("metatrader_order_cancelled", order_id=order_id)
 
+            # Note: order_id parameter is the MT5 ticket number (platform_order_id)
+            # Generating new UUID since we don't have access to original Order.id
+            # Callers should use platform_order_id for order tracking
             return ExecutionReport(
-                order_id=UUID(order_id) if len(order_id) == 36 else UUID(int=int(order_id)),
+                order_id=uuid4(),
                 platform_order_id=order_id,
                 platform="MetaTrader5",
                 status=OrderStatus.CANCELLED,
@@ -327,8 +330,10 @@ class MetaTraderAdapter(TradingPlatformAdapter):
 
         order_info = orders[0]
 
+        # Note: Generating new UUID since we don't have access to original Order.id
+        # Callers should use platform_order_id (MT5 ticket) for order tracking
         return ExecutionReport(
-            order_id=UUID(int=int(order_id)),
+            order_id=uuid4(),
             platform_order_id=order_id,
             platform="MetaTrader5",
             status=OrderStatus.PENDING,  # Simplification
@@ -352,10 +357,12 @@ class MetaTraderAdapter(TradingPlatformAdapter):
 
         orders = self._mt5.orders_get(symbol=symbol) if symbol else self._mt5.orders_get()
 
+        # Note: Generating new UUIDs since we don't have access to original Order.id values
+        # Callers should use platform_order_id (MT5 ticket) for order tracking
         execution_reports = []
         for order in orders:
             report = ExecutionReport(
-                order_id=UUID(int=order.ticket),
+                order_id=uuid4(),
                 platform_order_id=str(order.ticket),
                 platform="MetaTrader5",
                 status=OrderStatus.PENDING,
