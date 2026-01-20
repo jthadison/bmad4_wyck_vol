@@ -113,6 +113,19 @@ export interface PortfolioUpdatedMessage extends WebSocketMessageBase {
 }
 
 /**
+ * Campaign created message (campaign:created event).
+ * Sent when a new campaign is created.
+ */
+export interface CampaignCreatedMessage extends WebSocketMessageBase {
+  type: 'campaign:created'
+  data: {
+    campaign_id: string
+    symbol: string
+    created_at: string // ISO 8601 UTC
+  }
+}
+
+/**
  * Campaign updated message (campaign:updated event).
  * Sent when campaign risk allocation changes.
  */
@@ -122,6 +135,19 @@ export interface CampaignUpdatedMessage extends WebSocketMessageBase {
     campaign_id: string
     risk_allocated: string // Decimal as string
     positions_count: number
+  }
+}
+
+/**
+ * Campaign invalidated message (campaign:invalidated event).
+ * Sent when a campaign is invalidated.
+ */
+export interface CampaignInvalidatedMessage extends WebSocketMessageBase {
+  type: 'campaign:invalidated'
+  data: {
+    campaign_id: string
+    symbol: string
+    reason: string
   }
 }
 
@@ -147,7 +173,9 @@ export type WebSocketMessage =
   | SignalExecutedMessage
   | SignalRejectedMessage
   | PortfolioUpdatedMessage
+  | CampaignCreatedMessage
   | CampaignUpdatedMessage
+  | CampaignInvalidatedMessage
   | BatchUpdateMessage
   | PaperPositionOpenedMessage
   | PaperPositionUpdatedMessage
@@ -242,10 +270,22 @@ export function isPortfolioUpdatedMessage(
   return msg.type === 'portfolio:updated'
 }
 
+export function isCampaignCreatedMessage(
+  msg: WebSocketMessage
+): msg is CampaignCreatedMessage {
+  return msg.type === 'campaign:created'
+}
+
 export function isCampaignUpdatedMessage(
   msg: WebSocketMessage
 ): msg is CampaignUpdatedMessage {
   return msg.type === 'campaign:updated'
+}
+
+export function isCampaignInvalidatedMessage(
+  msg: WebSocketMessage
+): msg is CampaignInvalidatedMessage {
+  return msg.type === 'campaign:invalidated'
 }
 
 export function isBatchUpdateMessage(
