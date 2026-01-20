@@ -23,10 +23,12 @@ from uuid import uuid4
 import pytest
 
 from src.models.campaign_lifecycle import (
+    TIMEFRAME_CONFIGS,
     VALID_CAMPAIGN_TRANSITIONS,
     Campaign,
     CampaignPosition,
     CampaignStatus,
+    TimeframeConfig,
 )
 
 
@@ -515,3 +517,238 @@ class TestCampaign:
 
         # INVALIDATED is terminal (no valid transitions)
         assert VALID_CAMPAIGN_TRANSITIONS[CampaignStatus.INVALIDATED] == []
+
+
+class TestTimeframeConfig:
+    """Tests for TimeframeConfig model (Story 16.6a)."""
+
+    def test_timeframe_config_creation_valid(self):
+        """Test creating valid TimeframeConfig."""
+        config = TimeframeConfig(
+            timeframe="15m",
+            phase_b_min_bars=10,
+            phase_c_min_bars=5,
+            dormant_threshold_bars=24,
+            volume_ratio_multiplier=Decimal("1.0"),
+            campaign_expiration_bars=96,
+        )
+
+        assert config.timeframe == "15m"
+        assert config.phase_b_min_bars == 10
+        assert config.phase_c_min_bars == 5
+        assert config.dormant_threshold_bars == 24
+        assert config.volume_ratio_multiplier == Decimal("1.0")
+        assert config.campaign_expiration_bars == 96
+
+    def test_timeframe_configs_mapping_contains_all_timeframes(self):
+        """Test TIMEFRAME_CONFIGS contains all 5 supported timeframes."""
+        assert "15m" in TIMEFRAME_CONFIGS
+        assert "1h" in TIMEFRAME_CONFIGS
+        assert "4h" in TIMEFRAME_CONFIGS
+        assert "1d" in TIMEFRAME_CONFIGS
+        assert "1w" in TIMEFRAME_CONFIGS
+        assert len(TIMEFRAME_CONFIGS) == 5
+
+    def test_timeframe_configs_15m_thresholds(self):
+        """Test 15m timeframe has correct thresholds."""
+        config = TIMEFRAME_CONFIGS["15m"]
+        assert config.timeframe == "15m"
+        assert config.phase_b_min_bars == 10
+        assert config.phase_c_min_bars == 5
+        assert config.dormant_threshold_bars == 24
+        assert config.campaign_expiration_bars == 96
+
+    def test_timeframe_configs_1h_thresholds(self):
+        """Test 1h timeframe has correct thresholds."""
+        config = TIMEFRAME_CONFIGS["1h"]
+        assert config.timeframe == "1h"
+        assert config.phase_b_min_bars == 8
+        assert config.phase_c_min_bars == 4
+        assert config.dormant_threshold_bars == 12
+        assert config.campaign_expiration_bars == 72
+
+    def test_timeframe_configs_4h_thresholds(self):
+        """Test 4h timeframe has correct thresholds."""
+        config = TIMEFRAME_CONFIGS["4h"]
+        assert config.timeframe == "4h"
+        assert config.phase_b_min_bars == 6
+        assert config.phase_c_min_bars == 3
+        assert config.dormant_threshold_bars == 6
+        assert config.campaign_expiration_bars == 42
+
+    def test_timeframe_configs_1d_thresholds(self):
+        """Test 1d timeframe has correct thresholds."""
+        config = TIMEFRAME_CONFIGS["1d"]
+        assert config.timeframe == "1d"
+        assert config.phase_b_min_bars == 5
+        assert config.phase_c_min_bars == 3
+        assert config.dormant_threshold_bars == 5
+        assert config.campaign_expiration_bars == 30
+
+    def test_timeframe_configs_1w_thresholds(self):
+        """Test 1w timeframe has correct thresholds."""
+        config = TIMEFRAME_CONFIGS["1w"]
+        assert config.timeframe == "1w"
+        assert config.phase_b_min_bars == 3
+        assert config.phase_c_min_bars == 2
+        assert config.dormant_threshold_bars == 3
+        assert config.campaign_expiration_bars == 12
+
+    def test_timeframe_config_threshold_scaling(self):
+        """Test threshold scaling: shorter timeframes need more bars."""
+        config_15m = TIMEFRAME_CONFIGS["15m"]
+        config_1h = TIMEFRAME_CONFIGS["1h"]
+        config_1d = TIMEFRAME_CONFIGS["1d"]
+        config_1w = TIMEFRAME_CONFIGS["1w"]
+
+        # Phase B min bars should decrease as timeframe increases
+        assert config_15m.phase_b_min_bars > config_1h.phase_b_min_bars
+        assert config_1h.phase_b_min_bars > config_1d.phase_b_min_bars
+        assert config_1d.phase_b_min_bars > config_1w.phase_b_min_bars
+
+        # Phase C min bars should decrease as timeframe increases
+        assert config_15m.phase_c_min_bars > config_1h.phase_c_min_bars
+        assert config_1h.phase_c_min_bars >= config_1d.phase_c_min_bars
+        assert config_1d.phase_c_min_bars > config_1w.phase_c_min_bars
+
+
+class TestCampaignTimeframeConfig:
+    """Tests for Campaign with timeframe_config field (Story 16.6a)."""
+
+    def test_campaign_auto_assigns_timeframe_config_15m(self):
+        """Test Campaign auto-assigns timeframe_config for 15m timeframe."""
+        campaign = Campaign(
+            campaign_id="AAPL-2024-10-15",
+            symbol="AAPL",
+            timeframe="15m",
+            trading_range_id=uuid4(),
+            status=CampaignStatus.ACTIVE,
+            phase="C",
+            total_risk=Decimal("200.00"),
+            total_allocation=Decimal("2.0"),
+            current_risk=Decimal("200.00"),
+            total_shares=Decimal("100"),
+            total_pnl=Decimal("0.00"),
+            start_date=datetime.now(UTC),
+        )
+
+        assert campaign.timeframe_config is not None
+        assert campaign.timeframe_config.timeframe == "15m"
+        assert campaign.timeframe_config.phase_b_min_bars == 10
+        assert campaign.timeframe_config.phase_c_min_bars == 5
+
+    def test_campaign_auto_assigns_timeframe_config_1h(self):
+        """Test Campaign auto-assigns timeframe_config for 1h timeframe."""
+        campaign = Campaign(
+            campaign_id="AAPL-2024-10-15",
+            symbol="AAPL",
+            timeframe="1h",
+            trading_range_id=uuid4(),
+            status=CampaignStatus.ACTIVE,
+            phase="C",
+            total_risk=Decimal("200.00"),
+            total_allocation=Decimal("2.0"),
+            current_risk=Decimal("200.00"),
+            total_shares=Decimal("100"),
+            total_pnl=Decimal("0.00"),
+            start_date=datetime.now(UTC),
+        )
+
+        assert campaign.timeframe_config is not None
+        assert campaign.timeframe_config.timeframe == "1h"
+        assert campaign.timeframe_config.phase_b_min_bars == 8
+        assert campaign.timeframe_config.phase_c_min_bars == 4
+
+    def test_campaign_auto_assigns_timeframe_config_1d(self):
+        """Test Campaign auto-assigns timeframe_config for 1d timeframe."""
+        campaign = Campaign(
+            campaign_id="AAPL-2024-10-15",
+            symbol="AAPL",
+            timeframe="1d",
+            trading_range_id=uuid4(),
+            status=CampaignStatus.ACTIVE,
+            phase="C",
+            total_risk=Decimal("200.00"),
+            total_allocation=Decimal("2.0"),
+            current_risk=Decimal("200.00"),
+            total_shares=Decimal("100"),
+            total_pnl=Decimal("0.00"),
+            start_date=datetime.now(UTC),
+        )
+
+        assert campaign.timeframe_config is not None
+        assert campaign.timeframe_config.timeframe == "1d"
+        assert campaign.timeframe_config.phase_b_min_bars == 5
+        assert campaign.timeframe_config.phase_c_min_bars == 3
+
+    def test_campaign_auto_assigns_timeframe_config_1w(self):
+        """Test Campaign auto-assigns timeframe_config for 1w timeframe."""
+        campaign = Campaign(
+            campaign_id="AAPL-2024-10-15",
+            symbol="AAPL",
+            timeframe="1w",
+            trading_range_id=uuid4(),
+            status=CampaignStatus.ACTIVE,
+            phase="C",
+            total_risk=Decimal("200.00"),
+            total_allocation=Decimal("2.0"),
+            current_risk=Decimal("200.00"),
+            total_shares=Decimal("100"),
+            total_pnl=Decimal("0.00"),
+            start_date=datetime.now(UTC),
+        )
+
+        assert campaign.timeframe_config is not None
+        assert campaign.timeframe_config.timeframe == "1w"
+        assert campaign.timeframe_config.phase_b_min_bars == 3
+        assert campaign.timeframe_config.phase_c_min_bars == 2
+
+    def test_campaign_rejects_unsupported_timeframe(self):
+        """Test Campaign raises ValueError for unsupported timeframes."""
+        with pytest.raises(ValueError, match="Unsupported timeframe.*2h"):
+            Campaign(
+                campaign_id="AAPL-2024-10-15",
+                symbol="AAPL",
+                timeframe="2h",  # Not supported!
+                trading_range_id=uuid4(),
+                status=CampaignStatus.ACTIVE,
+                phase="C",
+                total_risk=Decimal("200.00"),
+                total_allocation=Decimal("2.0"),
+                current_risk=Decimal("200.00"),
+                total_shares=Decimal("100"),
+                total_pnl=Decimal("0.00"),
+                start_date=datetime.now(UTC),
+            )
+
+    def test_campaign_accepts_explicit_timeframe_config(self):
+        """Test Campaign accepts explicitly provided timeframe_config."""
+        custom_config = TimeframeConfig(
+            timeframe="1d",
+            phase_b_min_bars=7,  # Custom value
+            phase_c_min_bars=4,  # Custom value
+            dormant_threshold_bars=10,
+            volume_ratio_multiplier=Decimal("1.2"),
+            campaign_expiration_bars=60,
+        )
+
+        campaign = Campaign(
+            campaign_id="AAPL-2024-10-15",
+            symbol="AAPL",
+            timeframe="1d",
+            timeframe_config=custom_config,  # Explicitly provided
+            trading_range_id=uuid4(),
+            status=CampaignStatus.ACTIVE,
+            phase="C",
+            total_risk=Decimal("200.00"),
+            total_allocation=Decimal("2.0"),
+            current_risk=Decimal("200.00"),
+            total_shares=Decimal("100"),
+            total_pnl=Decimal("0.00"),
+            start_date=datetime.now(UTC),
+        )
+
+        assert campaign.timeframe_config is not None
+        assert campaign.timeframe_config.phase_b_min_bars == 7  # Custom value preserved
+        assert campaign.timeframe_config.phase_c_min_bars == 4  # Custom value preserved
+        assert campaign.timeframe_config.volume_ratio_multiplier == Decimal("1.2")
