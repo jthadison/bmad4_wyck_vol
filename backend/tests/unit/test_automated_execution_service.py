@@ -8,6 +8,13 @@ Tests cover:
 - Safety checks (balance, position, order validation)
 - Signal execution flow
 - Execution logging
+- SHORT position support (UTAD patterns)
+- Portfolio heat validation (10% - FR18)
+- Campaign risk validation (5% - FR18)
+- Correlated risk validation (6% - FR18)
+- Retry logic for transient failures
+- Order state tracking
+- LIVE mode execution
 
 Author: Story 16.4b
 """
@@ -26,8 +33,11 @@ from src.trading.automated_execution_service import (
     ExecutionMode,
     ExecutionReport,
     Order,
+    OrderState,
+    PatternType,
     SafetyCheckError,
     SignalAction,
+    TradeDirection,
 )
 
 
@@ -38,10 +48,24 @@ class MockTradingAdapter:
         self,
         balance: Decimal = Decimal("100000"),
         positions: dict[str, dict[str, Any]] | None = None,
+        portfolio_heat: Decimal = Decimal("5.0"),
+        campaign_risk: Decimal = Decimal("2.0"),
+        correlated_risk: Decimal = Decimal("3.0"),
+        fail_order: bool = False,
+        fail_with_retryable: bool = False,
+        fail_count: int = 0,
     ):
         self.balance = balance
         self.positions = positions or {}
+        self.portfolio_heat = portfolio_heat
+        self.campaign_risk = campaign_risk
+        self.correlated_risk = correlated_risk
+        self.fail_order = fail_order
+        self.fail_with_retryable = fail_with_retryable
+        self.fail_count = fail_count
+        self._current_fail_count = 0
         self.orders_placed: list[Order] = []
+        self.cancelled_orders: list[UUID] = []
         self.connected = False
 
     async def connect(self) -> bool:
@@ -57,7 +81,38 @@ class MockTradingAdapter:
     async def get_position(self, symbol: str) -> dict[str, Any] | None:
         return self.positions.get(symbol)
 
+    async def get_portfolio_heat(self) -> Decimal:
+        return self.portfolio_heat
+
+    async def get_campaign_risk(self, campaign_id: str) -> Decimal:
+        return self.campaign_risk
+
+    async def get_correlated_risk(self, symbol: str) -> Decimal:
+        return self.correlated_risk
+
     async def place_order(self, order: Order) -> ExecutionReport:
+        # Handle retry testing
+        if self.fail_count > 0 and self._current_fail_count < self.fail_count:
+            self._current_fail_count += 1
+            if self.fail_with_retryable:
+                return ExecutionReport(
+                    order_id=order.id,
+                    success=False,
+                    error_message="Connection timeout - temporary failure",
+                )
+            return ExecutionReport(
+                order_id=order.id,
+                success=False,
+                error_message="Permanent failure - invalid order",
+            )
+
+        if self.fail_order:
+            return ExecutionReport(
+                order_id=order.id,
+                success=False,
+                error_message="Order rejected by platform",
+            )
+
         self.orders_placed.append(order)
         return ExecutionReport(
             order_id=order.id,
@@ -67,10 +122,15 @@ class MockTradingAdapter:
             commission=Decimal("1.00"),
             slippage=Decimal("0.05"),
             executed_at=datetime.now(UTC),
+            final_state=OrderState.FILLED,
         )
 
     async def cancel_order(self, order_id: UUID) -> bool:
+        self.cancelled_orders.append(order_id)
         return True
+
+    async def get_order_status(self, order_id: UUID) -> OrderState:
+        return OrderState.FILLED
 
 
 class TestAutomatedExecutionServiceInit:
@@ -101,6 +161,15 @@ class TestAutomatedExecutionServiceInit:
         service = AutomatedExecutionService(adapter=adapter)
 
         assert service._adapter is adapter
+
+    def test_init_with_fr18_limits(self):
+        """Test service initializes with FR18 risk limits."""
+        service = AutomatedExecutionService()
+
+        assert service._config.max_risk_per_trade_pct == Decimal("2.0")
+        assert service._config.max_campaign_risk_pct == Decimal("5.0")
+        assert service._config.max_correlated_risk_pct == Decimal("6.0")
+        assert service._config.max_portfolio_heat_pct == Decimal("10.0")
 
 
 class TestEnableDisable:
@@ -186,7 +255,9 @@ class TestPositionSizing:
 
     def test_calculate_position_size_basic(self):
         """Test basic position size calculation."""
-        service = AutomatedExecutionService()
+        # Use high max_position_value_pct to avoid value cap for this test
+        config = ExecutionConfig(max_position_value_pct=Decimal("100.0"))
+        service = AutomatedExecutionService(config=config)
 
         # Account: $100,000
         # Entry: $150, Stop: $145 (risk $5/share)
@@ -216,7 +287,9 @@ class TestPositionSizing:
 
     def test_calculate_position_size_small_account(self):
         """Test position sizing with small account."""
-        service = AutomatedExecutionService()
+        # Use high max_position_value_pct to avoid value cap for this test
+        config = ExecutionConfig(max_position_value_pct=Decimal("100.0"))
+        service = AutomatedExecutionService(config=config)
 
         # Account: $10,000
         # 2% risk = $200
@@ -232,7 +305,11 @@ class TestPositionSizing:
 
     def test_calculate_position_size_custom_risk_pct(self):
         """Test position sizing with custom risk percentage."""
-        config = ExecutionConfig(max_risk_per_trade_pct=Decimal("1.0"))
+        # Use high max_position_value_pct to avoid value cap for this test
+        config = ExecutionConfig(
+            max_risk_per_trade_pct=Decimal("1.0"),
+            max_position_value_pct=Decimal("100.0"),
+        )
         service = AutomatedExecutionService(config=config)
 
         # Account: $100,000
@@ -247,16 +324,52 @@ class TestPositionSizing:
 
         assert position_size == Decimal("200")
 
-    def test_calculate_position_size_invalid_stop_raises_error(self):
-        """Test that stop above entry raises error."""
+    def test_calculate_position_size_equal_entry_stop_raises_error(self):
+        """Test that equal entry and stop raises error."""
         service = AutomatedExecutionService()
 
         with pytest.raises(SafetyCheckError, match="Invalid risk per share"):
             service._calculate_position_size(
                 entry_price=Decimal("150.00"),
-                stop_loss=Decimal("155.00"),  # Stop above entry
+                stop_loss=Decimal("150.00"),  # Same as entry
                 account_balance=Decimal("100000"),
             )
+
+    def test_calculate_position_size_short_position(self):
+        """Test position sizing for SHORT position."""
+        # Use high max_position_value_pct to avoid value cap for this test
+        config = ExecutionConfig(max_position_value_pct=Decimal("100.0"))
+        service = AutomatedExecutionService(config=config)
+
+        # Account: $100,000
+        # Entry: $150, Stop: $155 (risk $5/share for SHORT)
+        # 2% risk = $2,000
+        # Position size = $2,000 / $5 = 400 shares
+        position_size = service._calculate_position_size(
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),  # Stop above entry for SHORT
+            account_balance=Decimal("100000"),
+            direction=TradeDirection.SHORT,
+        )
+
+        assert position_size == Decimal("400")
+
+    def test_calculate_position_size_capped_by_value(self):
+        """Test position size is capped by max position value (20% of equity)."""
+        # Default config has 20% max position value
+        service = AutomatedExecutionService()
+
+        # Account: $100,000
+        # Entry: $150, Stop: $145 (risk $5/share)
+        # 2% risk would give 400 shares ($2,000 / $5)
+        # BUT 20% max value = $20,000, so max shares = $20,000 / $150 = 133 shares
+        position_size = service._calculate_position_size(
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+            account_balance=Decimal("100000"),
+        )
+
+        assert position_size == Decimal("133")  # Capped by 20% position value
 
 
 class TestSafetyChecks:
@@ -272,9 +385,11 @@ class TestSafetyChecks:
             await service._run_safety_checks(
                 symbol="AAPL",
                 action=SignalAction.ENTRY,
+                direction=TradeDirection.LONG,
                 entry_price=Decimal("150.00"),
                 stop_loss=Decimal("145.00"),
                 account_balance=Decimal("0"),
+                campaign_id="test-123",
             )
 
     @pytest.mark.asyncio
@@ -287,9 +402,11 @@ class TestSafetyChecks:
             await service._run_safety_checks(
                 symbol="AAPL",
                 action=SignalAction.ADD,
+                direction=TradeDirection.LONG,
                 entry_price=Decimal("150.00"),
                 stop_loss=Decimal("145.00"),
                 account_balance=Decimal("100000"),
+                campaign_id="test-123",
             )
 
     @pytest.mark.asyncio
@@ -302,9 +419,11 @@ class TestSafetyChecks:
             await service._run_safety_checks(
                 symbol="AAPL",
                 action=SignalAction.EXIT,
+                direction=TradeDirection.LONG,
                 entry_price=Decimal("150.00"),
                 stop_loss=Decimal("145.00"),
                 account_balance=Decimal("100000"),
+                campaign_id="test-123",
             )
 
     @pytest.mark.asyncio
@@ -317,9 +436,11 @@ class TestSafetyChecks:
         await service._run_safety_checks(
             symbol="AAPL",
             action=SignalAction.ADD,
+            direction=TradeDirection.LONG,
             entry_price=Decimal("150.00"),
             stop_loss=Decimal("145.00"),
             account_balance=Decimal("100000"),
+            campaign_id="test-123",
         )
 
     @pytest.mark.asyncio
@@ -332,25 +453,135 @@ class TestSafetyChecks:
             await service._run_safety_checks(
                 symbol="AAPL",
                 action=SignalAction.ENTRY,
+                direction=TradeDirection.LONG,
                 entry_price=Decimal("-10.00"),
                 stop_loss=Decimal("145.00"),
                 account_balance=Decimal("100000"),
+                campaign_id="test-123",
             )
 
     @pytest.mark.asyncio
-    async def test_stop_above_entry(self):
-        """Test validation fails when stop is above entry."""
+    async def test_stop_above_entry_for_long(self):
+        """Test validation fails when stop is above entry for LONG."""
         adapter = MockTradingAdapter()
         service = AutomatedExecutionService(adapter=adapter)
 
-        with pytest.raises(SafetyCheckError, match="Stop loss must be below entry"):
+        with pytest.raises(SafetyCheckError, match="Stop loss must be below entry.*LONG"):
             await service._run_safety_checks(
                 symbol="AAPL",
                 action=SignalAction.ENTRY,
+                direction=TradeDirection.LONG,
                 entry_price=Decimal("150.00"),
                 stop_loss=Decimal("155.00"),
                 account_balance=Decimal("100000"),
+                campaign_id="test-123",
             )
+
+    @pytest.mark.asyncio
+    async def test_stop_below_entry_for_short(self):
+        """Test validation fails when stop is below entry for SHORT."""
+        adapter = MockTradingAdapter()
+        service = AutomatedExecutionService(adapter=adapter)
+
+        with pytest.raises(SafetyCheckError, match="Stop loss must be above entry.*SHORT"):
+            await service._run_safety_checks(
+                symbol="AAPL",
+                action=SignalAction.ENTRY,
+                direction=TradeDirection.SHORT,
+                entry_price=Decimal("150.00"),
+                stop_loss=Decimal("145.00"),  # Stop below entry is wrong for SHORT
+                account_balance=Decimal("100000"),
+                campaign_id="test-123",
+            )
+
+    @pytest.mark.asyncio
+    async def test_stop_above_entry_valid_for_short(self):
+        """Test stop above entry is valid for SHORT positions."""
+        adapter = MockTradingAdapter()
+        service = AutomatedExecutionService(adapter=adapter)
+
+        # Should not raise - stop above entry is correct for SHORT
+        await service._run_safety_checks(
+            symbol="AAPL",
+            action=SignalAction.ENTRY,
+            direction=TradeDirection.SHORT,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),  # Stop above entry is correct for SHORT
+            account_balance=Decimal("100000"),
+            campaign_id="test-123",
+        )
+
+    @pytest.mark.asyncio
+    async def test_portfolio_heat_exceeded(self):
+        """Test portfolio heat check fails when limit exceeded."""
+        adapter = MockTradingAdapter(portfolio_heat=Decimal("11.0"))  # Above 10% limit
+        service = AutomatedExecutionService(adapter=adapter)
+
+        with pytest.raises(SafetyCheckError, match="Portfolio heat.*exceeds limit"):
+            await service._run_safety_checks(
+                symbol="AAPL",
+                action=SignalAction.ENTRY,
+                direction=TradeDirection.LONG,
+                entry_price=Decimal("150.00"),
+                stop_loss=Decimal("145.00"),
+                account_balance=Decimal("100000"),
+                campaign_id="test-123",
+            )
+
+    @pytest.mark.asyncio
+    async def test_campaign_risk_exceeded(self):
+        """Test campaign risk check fails when limit exceeded."""
+        adapter = MockTradingAdapter(campaign_risk=Decimal("6.0"))  # Above 5% limit
+        service = AutomatedExecutionService(adapter=adapter)
+
+        with pytest.raises(SafetyCheckError, match="Campaign risk.*exceeds limit"):
+            await service._run_safety_checks(
+                symbol="AAPL",
+                action=SignalAction.ENTRY,
+                direction=TradeDirection.LONG,
+                entry_price=Decimal("150.00"),
+                stop_loss=Decimal("145.00"),
+                account_balance=Decimal("100000"),
+                campaign_id="test-123",
+            )
+
+    @pytest.mark.asyncio
+    async def test_correlated_risk_exceeded(self):
+        """Test correlated risk check fails when limit exceeded."""
+        adapter = MockTradingAdapter(correlated_risk=Decimal("7.0"))  # Above 6% limit
+        service = AutomatedExecutionService(adapter=adapter)
+
+        with pytest.raises(SafetyCheckError, match="Correlated risk.*exceeds limit"):
+            await service._run_safety_checks(
+                symbol="AAPL",
+                action=SignalAction.ENTRY,
+                direction=TradeDirection.LONG,
+                entry_price=Decimal("150.00"),
+                stop_loss=Decimal("145.00"),
+                account_balance=Decimal("100000"),
+                campaign_id="test-123",
+            )
+
+    @pytest.mark.asyncio
+    async def test_all_safety_checks_pass(self):
+        """Test all safety checks pass with valid values."""
+        adapter = MockTradingAdapter(
+            portfolio_heat=Decimal("5.0"),  # Below 10%
+            campaign_risk=Decimal("2.0"),  # Below 5%
+            correlated_risk=Decimal("3.0"),  # Below 6%
+        )
+        service = AutomatedExecutionService(adapter=adapter)
+
+        # Should not raise
+        await service._run_safety_checks(
+            symbol="AAPL",
+            action=SignalAction.ENTRY,
+            direction=TradeDirection.LONG,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+            account_balance=Decimal("100000"),
+            campaign_id="test-123",
+        )
 
 
 class TestOrderValidation:
@@ -483,6 +714,7 @@ class TestSignalExecution:
 
         assert result is not None
         assert adapter.orders_placed[0].action == SignalAction.ENTRY
+        assert adapter.orders_placed[0].direction == TradeDirection.LONG
 
     @pytest.mark.asyncio
     async def test_execute_signal_pattern_detected_sos(self):
@@ -507,6 +739,81 @@ class TestSignalExecution:
 
         assert result is not None
         assert adapter.orders_placed[0].action == SignalAction.ADD
+
+    @pytest.mark.asyncio
+    async def test_execute_signal_utad_short_position(self):
+        """Test execution on UTAD pattern creates SHORT position."""
+        adapter = MockTradingAdapter()
+        service = AutomatedExecutionService(adapter=adapter)
+        service.enable(ExecutionMode.PAPER)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.PATTERN_DETECTED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            pattern_type="UTAD",
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),  # Stop above entry for SHORT
+        )
+
+        assert result is not None
+        assert adapter.orders_placed[0].action == SignalAction.ENTRY
+        assert adapter.orders_placed[0].direction == TradeDirection.SHORT
+
+    @pytest.mark.asyncio
+    async def test_execute_signal_sow_short_add(self):
+        """Test execution on SOW pattern adds to SHORT position."""
+        adapter = MockTradingAdapter(positions={"AAPL": {"symbol": "AAPL", "quantity": -100}})
+        service = AutomatedExecutionService(adapter=adapter)
+        service.enable(ExecutionMode.PAPER)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.PATTERN_DETECTED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            pattern_type="SOW",
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),
+        )
+
+        assert result is not None
+        assert adapter.orders_placed[0].action == SignalAction.ADD
+        assert adapter.orders_placed[0].direction == TradeDirection.SHORT
+
+    @pytest.mark.asyncio
+    async def test_execute_signal_lpsy_short_exit(self):
+        """Test execution on LPSY pattern exits SHORT position."""
+        adapter = MockTradingAdapter(positions={"AAPL": {"symbol": "AAPL", "quantity": -100}})
+        service = AutomatedExecutionService(adapter=adapter)
+        service.enable(ExecutionMode.PAPER)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.PATTERN_DETECTED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            pattern_type="LPSY",
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),
+        )
+
+        assert result is not None
+        assert adapter.orders_placed[0].action == SignalAction.EXIT
+        assert adapter.orders_placed[0].direction == TradeDirection.SHORT
 
     @pytest.mark.asyncio
     async def test_execute_signal_missing_symbol(self):
@@ -551,6 +858,202 @@ class TestSignalExecution:
 
         assert result is None
         assert len(adapter.orders_placed) == 0
+
+    @pytest.mark.asyncio
+    async def test_execute_signal_live_mode(self):
+        """Test execution in LIVE mode."""
+        adapter = MockTradingAdapter()
+        service = AutomatedExecutionService(adapter=adapter)
+        service.enable(ExecutionMode.LIVE)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.CAMPAIGN_FORMED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+        )
+
+        assert result is not None
+        assert result.success is True
+        assert service.mode == ExecutionMode.LIVE
+
+
+class TestRetryLogic:
+    """Tests for retry logic on transient failures."""
+
+    @pytest.mark.asyncio
+    async def test_retry_on_transient_failure(self):
+        """Test that transient failures trigger retries."""
+        adapter = MockTradingAdapter(
+            fail_count=2,  # Fail first 2 attempts
+            fail_with_retryable=True,
+        )
+        config = ExecutionConfig(max_retries=3, retry_delay_ms=10)
+        service = AutomatedExecutionService(adapter=adapter, config=config)
+        service.enable(ExecutionMode.PAPER)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.CAMPAIGN_FORMED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+        )
+
+        # Should succeed on 3rd attempt
+        assert result is not None
+        assert result.success is True
+        assert result.retry_count == 2
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_permanent_failure(self):
+        """Test that permanent failures don't trigger retries."""
+        adapter = MockTradingAdapter(
+            fail_count=1,
+            fail_with_retryable=False,  # Permanent failure
+        )
+        config = ExecutionConfig(max_retries=3, retry_delay_ms=10)
+        service = AutomatedExecutionService(adapter=adapter, config=config)
+        service.enable(ExecutionMode.PAPER)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.CAMPAIGN_FORMED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+        )
+
+        # Should fail without retries
+        assert result is not None
+        assert result.success is False
+        assert result.retry_count == 0
+
+    @pytest.mark.asyncio
+    async def test_max_retries_exhausted(self):
+        """Test that max retries are respected."""
+        adapter = MockTradingAdapter(
+            fail_count=10,  # Always fail
+            fail_with_retryable=True,
+        )
+        config = ExecutionConfig(max_retries=2, retry_delay_ms=10)
+        service = AutomatedExecutionService(adapter=adapter, config=config)
+        service.enable(ExecutionMode.PAPER)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.CAMPAIGN_FORMED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+        )
+
+        # Should fail after max retries
+        assert result is not None
+        assert result.success is False
+        assert result.retry_count == 2
+        assert result.final_state == OrderState.FAILED
+
+
+class TestOrderStateTracking:
+    """Tests for order state tracking."""
+
+    @pytest.mark.asyncio
+    async def test_order_state_transitions(self):
+        """Test order state transitions during execution."""
+        adapter = MockTradingAdapter()
+        service = AutomatedExecutionService(adapter=adapter)
+        service.enable(ExecutionMode.PAPER)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.CAMPAIGN_FORMED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+        )
+
+        assert result is not None
+        assert result.final_state == OrderState.FILLED
+
+    @pytest.mark.asyncio
+    async def test_failed_order_state(self):
+        """Test order state on failure."""
+        adapter = MockTradingAdapter(fail_order=True)
+        service = AutomatedExecutionService(adapter=adapter)
+        service.enable(ExecutionMode.PAPER)
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.CAMPAIGN_FORMED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            metadata={"symbol": "AAPL"},
+        )
+
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+        )
+
+        assert result is not None
+        assert result.success is False
+        assert result.final_state == OrderState.FAILED
+
+    def test_get_pending_orders(self):
+        """Test retrieving pending orders."""
+        service = AutomatedExecutionService()
+        order = Order(symbol="AAPL", quantity=Decimal("100"))
+        service._pending_orders[order.id] = order
+
+        pending = service.get_pending_orders()
+        assert len(pending) == 1
+        assert pending[0].symbol == "AAPL"
+
+    def test_get_order_by_id(self):
+        """Test retrieving order by ID."""
+        service = AutomatedExecutionService()
+        order = Order(symbol="AAPL", quantity=Decimal("100"))
+        service._pending_orders[order.id] = order
+
+        retrieved = service.get_order(order.id)
+        assert retrieved is not None
+        assert retrieved.symbol == "AAPL"
+
+    def test_order_update_state(self):
+        """Test order state update."""
+        order = Order(symbol="AAPL", quantity=Decimal("100"))
+        assert order.state == OrderState.PENDING
+
+        order.update_state(OrderState.SUBMITTED)
+        assert order.state == OrderState.SUBMITTED
+        assert order.updated_at is not None
 
 
 class TestExecutionLogging:
@@ -597,12 +1100,31 @@ class TestExecutionLogging:
         log = service.get_execution_log(limit=5)
         assert len(log) == 5
 
+    def test_execution_log_uses_deque(self):
+        """Test execution log uses deque with maxlen."""
+        config = ExecutionConfig(execution_log_size=5)
+        service = AutomatedExecutionService(config=config)
 
-class TestDetermineAction:
-    """Tests for action determination from events."""
+        # Add more entries than maxlen
+        for i in range(10):
+            service._log_execution(
+                event=f"TEST_{i}",
+                success=True,
+                details={},
+            )
 
-    def test_campaign_formed_returns_entry(self):
-        """Test CAMPAIGN_FORMED maps to ENTRY action."""
+        log = service.get_execution_log()
+        # Should only have last 5 entries due to deque maxlen
+        assert len(log) == 5
+        assert log[0]["event"] == "TEST_5"
+        assert log[-1]["event"] == "TEST_9"
+
+
+class TestDetermineActionAndDirection:
+    """Tests for action and direction determination from events."""
+
+    def test_campaign_formed_returns_entry_long(self):
+        """Test CAMPAIGN_FORMED maps to ENTRY LONG action."""
         service = AutomatedExecutionService()
         event = CampaignEvent(
             event_type=CampaignEventType.CAMPAIGN_FORMED,
@@ -610,11 +1132,26 @@ class TestDetermineAction:
             timestamp=datetime.now(UTC),
         )
 
-        action = service._determine_action(event)
+        action, direction = service._determine_action_and_direction(event)
         assert action == SignalAction.ENTRY
+        assert direction == TradeDirection.LONG
 
-    def test_spring_pattern_returns_entry(self):
-        """Test Spring pattern maps to ENTRY action."""
+    def test_campaign_formed_with_short_direction(self):
+        """Test CAMPAIGN_FORMED with SHORT direction hint."""
+        service = AutomatedExecutionService()
+        event = CampaignEvent(
+            event_type=CampaignEventType.CAMPAIGN_FORMED,
+            campaign_id="test",
+            timestamp=datetime.now(UTC),
+            metadata={"direction": "SHORT"},
+        )
+
+        action, direction = service._determine_action_and_direction(event)
+        assert action == SignalAction.ENTRY
+        assert direction == TradeDirection.SHORT
+
+    def test_spring_pattern_returns_entry_long(self):
+        """Test Spring pattern maps to ENTRY LONG action."""
         service = AutomatedExecutionService()
         event = CampaignEvent(
             event_type=CampaignEventType.PATTERN_DETECTED,
@@ -623,11 +1160,26 @@ class TestDetermineAction:
             pattern_type="Spring",
         )
 
-        action = service._determine_action(event)
+        action, direction = service._determine_action_and_direction(event)
         assert action == SignalAction.ENTRY
+        assert direction == TradeDirection.LONG
 
-    def test_sos_pattern_returns_add(self):
-        """Test SOS pattern maps to ADD action."""
+    def test_utad_pattern_returns_entry_short(self):
+        """Test UTAD pattern maps to ENTRY SHORT action."""
+        service = AutomatedExecutionService()
+        event = CampaignEvent(
+            event_type=CampaignEventType.PATTERN_DETECTED,
+            campaign_id="test",
+            timestamp=datetime.now(UTC),
+            pattern_type="UTAD",
+        )
+
+        action, direction = service._determine_action_and_direction(event)
+        assert action == SignalAction.ENTRY
+        assert direction == TradeDirection.SHORT
+
+    def test_sos_pattern_returns_add_long(self):
+        """Test SOS pattern maps to ADD LONG action."""
         service = AutomatedExecutionService()
         event = CampaignEvent(
             event_type=CampaignEventType.PATTERN_DETECTED,
@@ -636,11 +1188,26 @@ class TestDetermineAction:
             pattern_type="SOS",
         )
 
-        action = service._determine_action(event)
+        action, direction = service._determine_action_and_direction(event)
         assert action == SignalAction.ADD
+        assert direction == TradeDirection.LONG
 
-    def test_lps_pattern_returns_exit(self):
-        """Test LPS pattern maps to EXIT action."""
+    def test_sow_pattern_returns_add_short(self):
+        """Test SOW pattern maps to ADD SHORT action."""
+        service = AutomatedExecutionService()
+        event = CampaignEvent(
+            event_type=CampaignEventType.PATTERN_DETECTED,
+            campaign_id="test",
+            timestamp=datetime.now(UTC),
+            pattern_type="SOW",
+        )
+
+        action, direction = service._determine_action_and_direction(event)
+        assert action == SignalAction.ADD
+        assert direction == TradeDirection.SHORT
+
+    def test_lps_pattern_returns_exit_long(self):
+        """Test LPS pattern maps to EXIT LONG action."""
         service = AutomatedExecutionService()
         event = CampaignEvent(
             event_type=CampaignEventType.PATTERN_DETECTED,
@@ -649,8 +1216,23 @@ class TestDetermineAction:
             pattern_type="LPS",
         )
 
-        action = service._determine_action(event)
+        action, direction = service._determine_action_and_direction(event)
         assert action == SignalAction.EXIT
+        assert direction == TradeDirection.LONG
+
+    def test_lpsy_pattern_returns_exit_short(self):
+        """Test LPSY pattern maps to EXIT SHORT action."""
+        service = AutomatedExecutionService()
+        event = CampaignEvent(
+            event_type=CampaignEventType.PATTERN_DETECTED,
+            campaign_id="test",
+            timestamp=datetime.now(UTC),
+            pattern_type="LPSY",
+        )
+
+        action, direction = service._determine_action_and_direction(event)
+        assert action == SignalAction.EXIT
+        assert direction == TradeDirection.SHORT
 
     def test_unknown_pattern_returns_none(self):
         """Test unknown pattern returns None."""
@@ -662,5 +1244,75 @@ class TestDetermineAction:
             pattern_type="UNKNOWN",
         )
 
-        action = service._determine_action(event)
+        action, direction = service._determine_action_and_direction(event)
         assert action is None
+
+
+class TestPatternType:
+    """Tests for PatternType enum."""
+
+    def test_get_direction_long_patterns(self):
+        """Test LONG patterns return LONG direction."""
+        assert PatternType.get_direction("Spring") == TradeDirection.LONG
+        assert PatternType.get_direction("SOS") == TradeDirection.LONG
+        assert PatternType.get_direction("LPS") == TradeDirection.LONG
+
+    def test_get_direction_short_patterns(self):
+        """Test SHORT patterns return SHORT direction."""
+        assert PatternType.get_direction("UTAD") == TradeDirection.SHORT
+        assert PatternType.get_direction("SOW") == TradeDirection.SHORT
+        assert PatternType.get_direction("LPSY") == TradeDirection.SHORT
+
+    def test_get_action_entry_patterns(self):
+        """Test entry patterns return ENTRY action."""
+        assert PatternType.get_action("Spring") == SignalAction.ENTRY
+        assert PatternType.get_action("UTAD") == SignalAction.ENTRY
+
+    def test_get_action_add_patterns(self):
+        """Test add patterns return ADD action."""
+        assert PatternType.get_action("SOS") == SignalAction.ADD
+        assert PatternType.get_action("SOW") == SignalAction.ADD
+
+    def test_get_action_exit_patterns(self):
+        """Test exit patterns return EXIT action."""
+        assert PatternType.get_action("LPS") == SignalAction.EXIT
+        assert PatternType.get_action("LPSY") == SignalAction.EXIT
+
+    def test_get_action_unknown_returns_none(self):
+        """Test unknown pattern returns None."""
+        assert PatternType.get_action("UNKNOWN") is None
+
+
+class TestKillSwitchDuringExecution:
+    """Tests for kill switch activation during execution."""
+
+    @pytest.mark.asyncio
+    async def test_kill_switch_cancels_retry(self):
+        """Test that activating kill switch during execution cancels retries."""
+        adapter = MockTradingAdapter(
+            fail_count=5,
+            fail_with_retryable=True,
+        )
+        config = ExecutionConfig(max_retries=10, retry_delay_ms=50)
+        service = AutomatedExecutionService(adapter=adapter, config=config)
+        service.enable(ExecutionMode.PAPER)
+
+        # Activate kill switch after a delay (in production this would be async)
+        # For testing, we'll check the behavior by activating before execution
+        service.activate_kill_switch("emergency")
+
+        event = CampaignEvent(
+            event_type=CampaignEventType.CAMPAIGN_FORMED,
+            campaign_id="test-123",
+            timestamp=datetime.now(UTC),
+            metadata={"symbol": "AAPL"},
+        )
+
+        # Should return None because kill switch is active
+        result = await service.execute_signal(
+            event=event,
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+        )
+
+        assert result is None

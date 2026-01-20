@@ -6,8 +6,11 @@ from src.trading.automated_execution_service import (
     ExecutionMode,
     ExecutionReport,
     Order,
+    OrderState,
+    PatternType,
     SafetyCheckError,
     SignalAction,
+    TradeDirection,
     TradingPlatformAdapter,
 )
 
@@ -17,7 +20,10 @@ __all__ = [
     "ExecutionMode",
     "ExecutionReport",
     "Order",
+    "OrderState",
+    "PatternType",
     "SafetyCheckError",
     "SignalAction",
+    "TradeDirection",
     "TradingPlatformAdapter",
 ]

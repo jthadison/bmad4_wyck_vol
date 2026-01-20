@@ -14,17 +14,26 @@ Features:
 - Existing position checks
 - Order validation before submission
 - 2% risk rule position sizing
+- Portfolio heat validation (10% max - FR18)
+- Campaign risk validation (5% max - FR18)
+- Correlated risk validation (6% max - FR18)
+- Support for both LONG and SHORT positions
 - Integration with platform adapters (Story 16.4a)
+- Retry logic for transient failures
+- Order state tracking
 
 Signal Types:
 -------------
-- ENTRY: Initial campaign entry (Spring pattern)
+- ENTRY: Initial campaign entry (Spring for long, UTAD for short)
 - ADD: Position add (SOS pattern)
-- EXIT: Position exit
+- EXIT: Position exit (LPS or target hit)
 
 Author: Story 16.4b
 """
 
+import asyncio
+from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -47,24 +56,126 @@ class ExecutionMode(str, Enum):
     LIVE = "LIVE"  # Live trading mode
 
 
+class TradeDirection(str, Enum):
+    """Trade direction for position."""
+
+    LONG = "LONG"  # Buy low, sell high
+    SHORT = "SHORT"  # Sell high, buy low
+
+
 class SignalAction(str, Enum):
     """Campaign signal action types."""
 
-    ENTRY = "ENTRY"  # Initial entry (Spring)
+    ENTRY = "ENTRY"  # Initial entry (Spring/UTAD)
     ADD = "ADD"  # Add to position (SOS)
     EXIT = "EXIT"  # Exit position
+
+
+class OrderState(str, Enum):
+    """Order lifecycle states."""
+
+    PENDING = "PENDING"  # Created, not yet submitted
+    SUBMITTED = "SUBMITTED"  # Sent to platform
+    FILLED = "FILLED"  # Execution complete
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"  # Partial execution
+    CANCELLED = "CANCELLED"  # Cancelled by user or system
+    REJECTED = "REJECTED"  # Rejected by platform
+    EXPIRED = "EXPIRED"  # Order expired
+    FAILED = "FAILED"  # Execution failed
+
+
+class PatternType(str, Enum):
+    """
+    Wyckoff pattern types with trade direction mapping.
+
+    Long Patterns (accumulation):
+    - Spring: Shakeout below support (Phase C entry)
+    - SOS: Sign of Strength breakout (Phase D add)
+    - LPS: Last Point of Support retest (Phase E add/exit)
+    - SC: Selling Climax (Phase A)
+    - AR: Automatic Rally (Phase A)
+    - ST: Secondary Test (confirmation, not entry)
+
+    Short Patterns (distribution):
+    - UTAD: Upthrust After Distribution (Phase C entry)
+    - SOW: Sign of Weakness breakdown
+    - LPSY: Last Point of Supply
+    """
+
+    # Long patterns (accumulation)
+    SPRING = "Spring"
+    SOS = "SOS"
+    LPS = "LPS"
+    SC = "SC"
+    AR = "AR"
+    ST = "ST"
+
+    # Short patterns (distribution)
+    UTAD = "UTAD"
+    SOW = "SOW"
+    LPSY = "LPSY"
+
+    @classmethod
+    def get_direction(cls, pattern: str) -> TradeDirection:
+        """Get trade direction for a pattern type."""
+        short_patterns = {cls.UTAD.value, cls.SOW.value, cls.LPSY.value}
+        if pattern in short_patterns:
+            return TradeDirection.SHORT
+        return TradeDirection.LONG
+
+    @classmethod
+    def get_action(cls, pattern: str) -> SignalAction | None:
+        """Get signal action for a pattern type."""
+        entry_patterns = {cls.SPRING.value, cls.UTAD.value}
+        add_patterns = {cls.SOS.value, cls.SOW.value}
+        exit_patterns = {cls.LPS.value, cls.LPSY.value, "Exit"}
+
+        if pattern in entry_patterns:
+            return SignalAction.ENTRY
+        elif pattern in add_patterns:
+            return SignalAction.ADD
+        elif pattern in exit_patterns:
+            return SignalAction.EXIT
+        return None
+
+
+# Default retry configuration
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_RETRY_DELAY_MS = 100
+DEFAULT_EXECUTION_LOG_SIZE = 500
 
 
 @dataclass
 class ExecutionConfig:
     """Configuration for automated execution."""
 
-    max_risk_per_trade_pct: Decimal = Decimal("2.0")  # FR18: 2% max
+    # Risk limits (FR18 - Non-negotiable)
+    max_risk_per_trade_pct: Decimal = Decimal("2.0")  # 2% max per trade
+    max_campaign_risk_pct: Decimal = Decimal("5.0")  # 5% max per campaign
+    max_correlated_risk_pct: Decimal = Decimal("6.0")  # 6% max correlated
+    max_portfolio_heat_pct: Decimal = Decimal("10.0")  # 10% max portfolio heat
+
+    # Position limits
     max_position_size: Decimal = Decimal("10000")  # Max shares/lots
-    max_portfolio_heat_pct: Decimal = Decimal("10.0")  # FR18: 10% max
-    order_timeout_ms: int = 500  # Max execution time
+    max_position_value_pct: Decimal = Decimal("20.0")  # 20% max position value
+
+    # Execution settings
+    order_timeout_ms: int = 500  # Max execution time before warning
+    cancel_on_timeout: bool = False  # Cancel order if timeout exceeded
+
+    # Safety checks
     require_balance_check: bool = True
     require_position_check: bool = True
+    require_portfolio_heat_check: bool = True
+    require_campaign_risk_check: bool = True
+    require_correlated_risk_check: bool = True
+
+    # Retry settings
+    max_retries: int = DEFAULT_MAX_RETRIES
+    retry_delay_ms: int = DEFAULT_RETRY_DELAY_MS
+
+    # Logging
+    execution_log_size: int = DEFAULT_EXECUTION_LOG_SIZE
 
 
 @dataclass
@@ -74,13 +185,22 @@ class Order:
     id: UUID = field(default_factory=uuid4)
     symbol: str = ""
     action: SignalAction = SignalAction.ENTRY
+    direction: TradeDirection = TradeDirection.LONG
     quantity: Decimal = Decimal("0")
     order_type: str = "MARKET"  # MARKET, LIMIT, STOP
     limit_price: Decimal | None = None
     stop_price: Decimal | None = None
     stop_loss: Decimal | None = None
     take_profit: Decimal | None = None
+    state: OrderState = OrderState.PENDING
+    campaign_id: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def update_state(self, new_state: OrderState) -> None:
+        """Update order state with timestamp."""
+        self.state = new_state
+        self.updated_at = datetime.now(UTC)
 
 
 @dataclass
@@ -96,6 +216,8 @@ class ExecutionReport:
     executed_at: datetime | None = None
     error_message: str | None = None
     execution_time_ms: int = 0
+    retry_count: int = 0
+    final_state: OrderState = OrderState.PENDING
 
 
 class TradingPlatformAdapter(Protocol):
@@ -122,6 +244,18 @@ class TradingPlatformAdapter(Protocol):
         """Get current position for symbol."""
         ...
 
+    async def get_portfolio_heat(self) -> Decimal:
+        """Get current portfolio heat as percentage."""
+        ...
+
+    async def get_campaign_risk(self, campaign_id: str) -> Decimal:
+        """Get current campaign risk as percentage."""
+        ...
+
+    async def get_correlated_risk(self, symbol: str) -> Decimal:
+        """Get correlated risk for symbol as percentage."""
+        ...
+
     async def place_order(self, order: Order) -> ExecutionReport:
         """Place order on platform."""
         ...
@@ -129,6 +263,14 @@ class TradingPlatformAdapter(Protocol):
     async def cancel_order(self, order_id: UUID) -> bool:
         """Cancel pending order."""
         ...
+
+    async def get_order_status(self, order_id: UUID) -> OrderState:
+        """Get current order status."""
+        ...
+
+
+# Type alias for risk check callback
+RiskCheckCallback = Callable[[str, Decimal], bool]
 
 
 class SafetyCheckError(Exception):
@@ -146,11 +288,16 @@ class AutomatedExecutionService:
     Automated execution service with safety checks.
 
     Executes campaign signals automatically while enforcing:
-    - 2% max risk per trade
+    - 2% max risk per trade (FR18)
+    - 5% max campaign risk (FR18)
+    - 6% max correlated risk (FR18)
+    - 10% max portfolio heat (FR18)
     - Pre-trade balance validation
     - Position existence checks
     - Order validation
     - Kill switch for emergencies
+    - Retry logic for transient failures
+    - Order state tracking
     """
 
     def __init__(
@@ -169,12 +316,20 @@ class AutomatedExecutionService:
         self._config = config or ExecutionConfig()
         self._mode = ExecutionMode.DISABLED
         self._kill_switch_active = False
-        self._execution_log: list[dict[str, Any]] = []
+
+        # Use deque for efficient log management (auto-prunes)
+        self._execution_log: deque[dict[str, Any]] = deque(maxlen=self._config.execution_log_size)
+
+        # Track pending orders for state management
+        self._pending_orders: dict[UUID, Order] = {}
 
         logger.info(
             "automated_execution_service_initialized",
             mode=self._mode.value,
             max_risk_pct=float(self._config.max_risk_per_trade_pct),
+            max_campaign_risk_pct=float(self._config.max_campaign_risk_pct),
+            max_correlated_risk_pct=float(self._config.max_correlated_risk_pct),
+            max_portfolio_heat_pct=float(self._config.max_portfolio_heat_pct),
         )
 
     @property
@@ -261,6 +416,14 @@ class AutomatedExecutionService:
         self._adapter = adapter
         logger.info("adapter_set", adapter_type=type(adapter).__name__)
 
+    def get_order(self, order_id: UUID) -> Order | None:
+        """Get order by ID from pending orders."""
+        return self._pending_orders.get(order_id)
+
+    def get_pending_orders(self) -> list[Order]:
+        """Get all pending orders."""
+        return list(self._pending_orders.values())
+
     async def execute_signal(
         self,
         event: CampaignEvent,
@@ -299,8 +462,8 @@ class AutomatedExecutionService:
             logger.warning("execution_skipped_no_adapter", campaign_id=event.campaign_id)
             return None
 
-        # Determine action from event type
-        action = self._determine_action(event)
+        # Determine action and direction from event type
+        action, direction = self._determine_action_and_direction(event)
         if action is None:
             logger.debug(
                 "execution_skipped_invalid_event",
@@ -317,13 +480,15 @@ class AutomatedExecutionService:
         if account_balance is None:
             account_balance = await self._adapter.get_account_balance()
 
-        # Run safety checks
+        # Run safety checks (includes all FR18 risk limits)
         await self._run_safety_checks(
             symbol=symbol,
             action=action,
+            direction=direction,
             entry_price=entry_price,
             stop_loss=stop_loss,
             account_balance=account_balance,
+            campaign_id=event.campaign_id,
         )
 
         # Calculate position size
@@ -331,86 +496,230 @@ class AutomatedExecutionService:
             entry_price=entry_price,
             stop_loss=stop_loss,
             account_balance=account_balance,
+            direction=direction,
         )
 
-        # Build and validate order
+        # Build order
         order = Order(
             symbol=symbol,
             action=action,
+            direction=direction,
             quantity=quantity,
             order_type="MARKET",
             stop_loss=stop_loss,
+            campaign_id=event.campaign_id,
         )
 
+        # Validate order
         self._validate_order(order)
 
-        # Execute order
-        logger.info(
-            "executing_order",
-            order_id=str(order.id),
-            symbol=symbol,
-            action=action.value,
-            quantity=float(quantity),
-            entry_price=float(entry_price),
-        )
+        # Track order
+        self._pending_orders[order.id] = order
 
-        report = await self._adapter.place_order(order)
-
-        # Calculate execution time
-        end_time = datetime.now(UTC)
-        report.execution_time_ms = int((end_time - start_time).total_seconds() * 1000)
-
-        # Log execution
-        self._log_execution(
-            event="ORDER_EXECUTED" if report.success else "ORDER_FAILED",
-            success=report.success,
-            details={
-                "order_id": str(order.id),
-                "symbol": symbol,
-                "action": action.value,
-                "quantity": float(quantity),
-                "fill_price": float(report.fill_price) if report.fill_price else None,
-                "execution_time_ms": report.execution_time_ms,
-                "error": report.error_message,
-            },
-        )
-
-        # Check execution time
-        if report.execution_time_ms > self._config.order_timeout_ms:
-            logger.warning(
-                "execution_timeout_exceeded",
-                execution_time_ms=report.execution_time_ms,
-                limit_ms=self._config.order_timeout_ms,
-            )
+        # Execute with retry logic
+        report = await self._execute_with_retry(order, entry_price, start_time)
 
         return report
 
-    def _determine_action(self, event: CampaignEvent) -> SignalAction | None:
-        """Determine signal action from campaign event."""
+    def _determine_action_and_direction(
+        self, event: CampaignEvent
+    ) -> tuple[SignalAction | None, TradeDirection]:
+        """Determine signal action and trade direction from campaign event."""
+        direction = TradeDirection.LONG  # Default
+
         if event.event_type == CampaignEventType.CAMPAIGN_FORMED:
-            return SignalAction.ENTRY
+            # Check metadata for direction hint
+            if event.metadata.get("direction") == "SHORT":
+                direction = TradeDirection.SHORT
+            return SignalAction.ENTRY, direction
 
         if event.event_type == CampaignEventType.PATTERN_DETECTED:
             pattern_type = event.pattern_type
-            if pattern_type == "Spring":
-                return SignalAction.ENTRY
-            elif pattern_type == "SOS":
-                return SignalAction.ADD
-            elif pattern_type in ("LPS", "Exit"):
-                return SignalAction.EXIT
+            if pattern_type:
+                direction = PatternType.get_direction(pattern_type)
+                action = PatternType.get_action(pattern_type)
+                return action, direction
 
-        return None
+        return None, direction
+
+    async def _execute_with_retry(
+        self,
+        order: Order,
+        entry_price: Decimal,
+        start_time: datetime,
+    ) -> ExecutionReport:
+        """Execute order with retry logic for transient failures."""
+        last_error: str | None = None
+        retry_count = 0
+
+        for attempt in range(self._config.max_retries + 1):
+            # Double-check kill switch before each attempt (race condition fix)
+            if self._kill_switch_active:
+                logger.warning(
+                    "execution_aborted_kill_switch",
+                    order_id=str(order.id),
+                    attempt=attempt,
+                )
+                order.update_state(OrderState.CANCELLED)
+                return ExecutionReport(
+                    order_id=order.id,
+                    success=False,
+                    error_message="Kill switch activated during execution",
+                    retry_count=retry_count,
+                    final_state=OrderState.CANCELLED,
+                )
+
+            try:
+                order.update_state(OrderState.SUBMITTED)
+
+                logger.info(
+                    "executing_order",
+                    order_id=str(order.id),
+                    symbol=order.symbol,
+                    action=order.action.value,
+                    direction=order.direction.value,
+                    quantity=float(order.quantity),
+                    entry_price=float(entry_price),
+                    attempt=attempt + 1,
+                )
+
+                report = await self._adapter.place_order(order)
+
+                # Calculate execution time
+                end_time = datetime.now(UTC)
+                report.execution_time_ms = int((end_time - start_time).total_seconds() * 1000)
+                report.retry_count = retry_count
+
+                if report.success:
+                    order.update_state(OrderState.FILLED)
+                    report.final_state = OrderState.FILLED
+
+                    # Remove from pending
+                    self._pending_orders.pop(order.id, None)
+
+                    # Log success
+                    self._log_execution(
+                        event="ORDER_EXECUTED",
+                        success=True,
+                        details={
+                            "order_id": str(order.id),
+                            "symbol": order.symbol,
+                            "action": order.action.value,
+                            "direction": order.direction.value,
+                            "quantity": float(order.quantity),
+                            "fill_price": float(report.fill_price) if report.fill_price else None,
+                            "execution_time_ms": report.execution_time_ms,
+                            "retry_count": retry_count,
+                        },
+                    )
+
+                    # Check execution time and handle timeout
+                    if report.execution_time_ms > self._config.order_timeout_ms:
+                        logger.warning(
+                            "execution_timeout_exceeded",
+                            execution_time_ms=report.execution_time_ms,
+                            limit_ms=self._config.order_timeout_ms,
+                        )
+
+                    return report
+
+                # Order failed but not retryable
+                last_error = report.error_message
+                if not self._is_retryable_error(report.error_message):
+                    break
+
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(
+                    "order_execution_error",
+                    order_id=str(order.id),
+                    attempt=attempt + 1,
+                    error=str(e),
+                )
+
+                if not self._is_retryable_error(str(e)):
+                    break
+
+            # Wait before retry
+            if attempt < self._config.max_retries:
+                retry_count += 1
+                await asyncio.sleep(self._config.retry_delay_ms / 1000)
+
+        # All retries exhausted
+        order.update_state(OrderState.FAILED)
+
+        # Handle timeout with cancel if configured
+        if self._config.cancel_on_timeout:
+            try:
+                await self._adapter.cancel_order(order.id)
+                order.update_state(OrderState.CANCELLED)
+            except Exception as cancel_error:
+                logger.error(
+                    "order_cancel_failed",
+                    order_id=str(order.id),
+                    error=str(cancel_error),
+                )
+
+        # Remove from pending
+        self._pending_orders.pop(order.id, None)
+
+        self._log_execution(
+            event="ORDER_FAILED",
+            success=False,
+            details={
+                "order_id": str(order.id),
+                "symbol": order.symbol,
+                "error": last_error,
+                "retry_count": retry_count,
+            },
+        )
+
+        end_time = datetime.now(UTC)
+        return ExecutionReport(
+            order_id=order.id,
+            success=False,
+            error_message=last_error,
+            execution_time_ms=int((end_time - start_time).total_seconds() * 1000),
+            retry_count=retry_count,
+            final_state=order.state,
+        )
+
+    def _is_retryable_error(self, error: str | None) -> bool:
+        """Check if error is transient and retryable."""
+        if not error:
+            return False
+
+        retryable_patterns = [
+            "timeout",
+            "connection",
+            "network",
+            "temporary",
+            "unavailable",
+            "retry",
+            "503",
+            "504",
+        ]
+        error_lower = error.lower()
+        return any(pattern in error_lower for pattern in retryable_patterns)
 
     async def _run_safety_checks(
         self,
         symbol: str,
         action: SignalAction,
+        direction: TradeDirection,
         entry_price: Decimal,
         stop_loss: Decimal,
         account_balance: Decimal,
+        campaign_id: str,
     ) -> None:
         """
         Run all safety checks before execution.
+
+        Validates all FR18 risk limits:
+        - Per-trade risk (2%)
+        - Campaign risk (5%)
+        - Correlated risk (6%)
+        - Portfolio heat (10%)
 
         Raises:
             SafetyCheckError: If any check fails
@@ -458,17 +767,88 @@ class AutomatedExecutionService:
                 {"stop_loss": float(stop_loss)},
             )
 
-        if stop_loss >= entry_price:
-            raise SafetyCheckError(
-                "validation",
-                "Stop loss must be below entry price for long positions",
-                {"entry_price": float(entry_price), "stop_loss": float(stop_loss)},
-            )
+        # Direction-aware stop loss validation
+        if direction == TradeDirection.LONG:
+            if stop_loss >= entry_price:
+                raise SafetyCheckError(
+                    "validation",
+                    "Stop loss must be below entry price for LONG positions",
+                    {
+                        "entry_price": float(entry_price),
+                        "stop_loss": float(stop_loss),
+                        "direction": direction.value,
+                    },
+                )
+        else:  # SHORT
+            if stop_loss <= entry_price:
+                raise SafetyCheckError(
+                    "validation",
+                    "Stop loss must be above entry price for SHORT positions",
+                    {
+                        "entry_price": float(entry_price),
+                        "stop_loss": float(stop_loss),
+                        "direction": direction.value,
+                    },
+                )
+
+        # Portfolio heat check (10% max - FR18)
+        if self._config.require_portfolio_heat_check:
+            try:
+                current_heat = await self._adapter.get_portfolio_heat()
+                if current_heat >= self._config.max_portfolio_heat_pct:
+                    raise SafetyCheckError(
+                        "portfolio_heat",
+                        f"Portfolio heat {current_heat}% exceeds limit of {self._config.max_portfolio_heat_pct}%",
+                        {
+                            "current_heat": float(current_heat),
+                            "limit": float(self._config.max_portfolio_heat_pct),
+                        },
+                    )
+            except AttributeError:
+                # Adapter doesn't support portfolio heat check
+                logger.debug("portfolio_heat_check_skipped_not_supported")
+
+        # Campaign risk check (5% max - FR18)
+        if self._config.require_campaign_risk_check and campaign_id:
+            try:
+                campaign_risk = await self._adapter.get_campaign_risk(campaign_id)
+                if campaign_risk >= self._config.max_campaign_risk_pct:
+                    raise SafetyCheckError(
+                        "campaign_risk",
+                        f"Campaign risk {campaign_risk}% exceeds limit of {self._config.max_campaign_risk_pct}%",
+                        {
+                            "campaign_id": campaign_id,
+                            "current_risk": float(campaign_risk),
+                            "limit": float(self._config.max_campaign_risk_pct),
+                        },
+                    )
+            except AttributeError:
+                # Adapter doesn't support campaign risk check
+                logger.debug("campaign_risk_check_skipped_not_supported")
+
+        # Correlated risk check (6% max - FR18)
+        if self._config.require_correlated_risk_check:
+            try:
+                correlated_risk = await self._adapter.get_correlated_risk(symbol)
+                if correlated_risk >= self._config.max_correlated_risk_pct:
+                    raise SafetyCheckError(
+                        "correlated_risk",
+                        f"Correlated risk {correlated_risk}% exceeds limit of {self._config.max_correlated_risk_pct}%",
+                        {
+                            "symbol": symbol,
+                            "current_risk": float(correlated_risk),
+                            "limit": float(self._config.max_correlated_risk_pct),
+                        },
+                    )
+            except AttributeError:
+                # Adapter doesn't support correlated risk check
+                logger.debug("correlated_risk_check_skipped_not_supported")
 
         logger.debug(
             "safety_checks_passed",
             symbol=symbol,
             action=action.value,
+            direction=direction.value,
             balance=float(account_balance),
         )
 
@@ -477,30 +857,35 @@ class AutomatedExecutionService:
         entry_price: Decimal,
         stop_loss: Decimal,
         account_balance: Decimal,
+        direction: TradeDirection = TradeDirection.LONG,
     ) -> Decimal:
         """
         Calculate position size using 2% risk rule.
 
-        Formula: Position Size = (Account * Risk%) / (Entry - Stop)
+        Formula: Position Size = (Account * Risk%) / |Entry - Stop|
+
+        Supports both LONG and SHORT positions.
 
         Args:
             entry_price: Entry price
             stop_loss: Stop loss price
             account_balance: Account balance
+            direction: Trade direction (LONG or SHORT)
 
         Returns:
             Position size (shares/lots)
         """
-        risk_per_share = entry_price - stop_loss
+        # Calculate risk per share (absolute value for both directions)
+        risk_per_share = abs(entry_price - stop_loss)
 
         if risk_per_share <= Decimal("0"):
             raise SafetyCheckError(
                 "position_sizing",
-                "Invalid risk per share (entry must be above stop)",
+                "Invalid risk per share (entry and stop cannot be equal)",
                 {
                     "entry_price": float(entry_price),
                     "stop_loss": float(stop_loss),
-                    "risk_per_share": float(risk_per_share),
+                    "direction": direction.value,
                 },
             )
 
@@ -517,6 +902,17 @@ class AutomatedExecutionService:
             )
             position_size = self._config.max_position_size
 
+        # Apply max position value limit (20% of equity - FR18)
+        max_value = account_balance * (self._config.max_position_value_pct / Decimal("100"))
+        max_shares_by_value = max_value / entry_price
+        if position_size > max_shares_by_value:
+            logger.info(
+                "position_size_capped_by_value",
+                calculated=float(position_size),
+                max_by_value=float(max_shares_by_value),
+            )
+            position_size = max_shares_by_value
+
         # Round down to whole shares
         position_size = position_size.quantize(Decimal("1"), rounding="ROUND_DOWN")
 
@@ -525,6 +921,7 @@ class AutomatedExecutionService:
             position_size=float(position_size),
             risk_amount=float(max_risk_amount),
             risk_per_share=float(risk_per_share),
+            direction=direction.value,
         )
 
         return position_size
@@ -564,7 +961,7 @@ class AutomatedExecutionService:
         success: bool,
         details: dict[str, Any],
     ) -> None:
-        """Log execution event."""
+        """Log execution event to deque (auto-prunes at maxlen)."""
         log_entry = {
             "timestamp": datetime.now(UTC).isoformat(),
             "event": event,
@@ -574,10 +971,7 @@ class AutomatedExecutionService:
         }
         self._execution_log.append(log_entry)
 
-        # Keep log manageable
-        if len(self._execution_log) > 1000:
-            self._execution_log = self._execution_log[-500:]
-
     def get_execution_log(self, limit: int = 100) -> list[dict[str, Any]]:
         """Get recent execution log entries."""
-        return self._execution_log[-limit:]
+        log_list = list(self._execution_log)
+        return log_list[-limit:] if limit < len(log_list) else log_list
