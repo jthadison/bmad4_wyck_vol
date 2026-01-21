@@ -808,7 +808,7 @@ onMounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .regression-dashboard {
   padding: 1.5rem;
   max-width: 1400px;
@@ -829,12 +829,12 @@ onMounted(() => {
 
 .actions-panel {
   margin-bottom: 1.5rem;
+}
 
-  .action-buttons {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
+.actions-panel .action-buttons {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .baseline-info-card,
@@ -848,10 +848,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
 
-  i {
-    font-size: 1.25rem;
-  }
+.baseline-header i,
+.test-header i {
+  font-size: 1.25rem;
 }
 
 .baseline-details,
@@ -865,20 +866,23 @@ onMounted(() => {
 .test-field {
   display: flex;
   gap: 0.5rem;
+}
 
-  .field-label {
-    font-weight: 600;
-    min-width: 150px;
-  }
+.baseline-field .field-label,
+.test-field .field-label {
+  font-weight: 600;
+  min-width: 150px;
+}
 
-  .field-value {
-    color: var(--text-color-secondary);
+.baseline-field .field-value,
+.test-field .field-value {
+  color: var(--text-color-secondary);
+}
 
-    &.mono {
-      font-family: monospace;
-      font-size: 0.9em;
-    }
-  }
+.baseline-field .field-value.mono,
+.test-field .field-value.mono {
+  font-family: monospace;
+  font-size: 0.9em;
 }
 
 .baseline-metrics {
@@ -886,85 +890,85 @@ onMounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
   margin-top: 1rem;
+}
 
-  .metric-item {
-    padding: 0.75rem;
-    background: var(--surface-100);
-    border-radius: 6px;
-    display: flex;
-    justify-content: space-between;
+.baseline-metrics .metric-item {
+  padding: 0.75rem;
+  background: var(--surface-100);
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+}
 
-    .metric-label {
-      font-weight: 600;
-    }
+.baseline-metrics .metric-item .metric-label {
+  font-weight: 600;
+}
 
-    .metric-value {
-      font-size: 1.1rem;
-      color: var(--primary-color);
-    }
-  }
+.baseline-metrics .metric-item .metric-value {
+  font-size: 1.1rem;
+  color: var(--primary-color);
 }
 
 .metrics-comparison {
   margin-top: 1.5rem;
+}
 
-  h4 {
-    margin-bottom: 1rem;
-    font-size: 1.1rem;
-    font-weight: 600;
-  }
+.metrics-comparison h4 {
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
+}
 
-  .metric-card {
-    padding: 1rem;
-    background: var(--surface-50);
-    border-radius: 8px;
-    border: 1px solid var(--surface-200);
+.metrics-grid .metric-card {
+  padding: 1rem;
+  background: var(--surface-50);
+  border-radius: 8px;
+  border: 1px solid var(--surface-200);
+}
 
-    .metric-name {
-      font-size: 0.85rem;
-      color: var(--text-color-secondary);
-      margin-bottom: 0.5rem;
-    }
+.metrics-grid .metric-card .metric-name {
+  font-size: 0.85rem;
+  color: var(--text-color-secondary);
+  margin-bottom: 0.5rem;
+}
 
-    .metric-value-large {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--text-color);
-    }
+.metrics-grid .metric-card .metric-value-large {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-color);
+}
 
-    .metric-change {
-      margin-top: 0.5rem;
-      font-size: 0.9rem;
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-    }
-  }
+.metrics-grid .metric-card .metric-change {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .degraded-alert {
   margin-top: 1rem;
+}
 
-  ul {
-    margin: 0.5rem 0 0 1.5rem;
-    padding: 0;
-  }
+.degraded-alert ul {
+  margin: 0.5rem 0 0 1.5rem;
+  padding: 0;
 }
 
 .per-symbol-section {
   margin-top: 1.5rem;
+}
 
-  h4 {
-    margin-bottom: 1rem;
-    font-size: 1.1rem;
-    font-weight: 600;
-  }
+.per-symbol-section h4 {
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .mono {
@@ -980,25 +984,25 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
 
-  .form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+.run-dialog-content .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
 
-    label {
-      font-weight: 600;
-    }
+.run-dialog-content .form-field label {
+  font-weight: 600;
+}
 
-    &.checkbox-field {
-      flex-direction: row;
-      align-items: center;
+.run-dialog-content .form-field.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+}
 
-      label {
-        margin-left: 0.5rem;
-        cursor: pointer;
-      }
-    }
-  }
+.run-dialog-content .form-field.checkbox-field label {
+  margin-left: 0.5rem;
+  cursor: pointer;
 }
 </style>

@@ -60,6 +60,26 @@ describe('ConfirmationDialog', () => {
       },
       global: {
         plugins: [PrimeVue],
+        stubs: {
+          Dialog: {
+            name: 'Dialog',
+            template:
+              '<div class="p-dialog"><slot></slot><slot name="footer"></slot></div>',
+            props: ['visible', 'modal', 'header', 'style', 'draggable'],
+          },
+          Button: {
+            name: 'Button',
+            template:
+              '<button class="p-button" @click="handleClick"><i v-if="icon" :class="icon"></i>{{ label }}</button>',
+            props: ['label', 'icon', 'severity', 'outlined'],
+            emits: ['click'],
+            methods: {
+              handleClick(e: Event) {
+                this.$emit('click', e)
+              },
+            },
+          },
+        },
       },
     })
   }

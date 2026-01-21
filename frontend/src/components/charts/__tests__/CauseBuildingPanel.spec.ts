@@ -45,9 +45,10 @@ describe('CauseBuildingPanel.vue', () => {
         plugins: [PrimeVue],
         stubs: {
           ProgressBar: {
+            inheritAttrs: false,
             template:
-              '<div class="p-progressbar"><div class="p-progressbar-value" :style="{ width: value + \'%\' }">{{ showValue ? value + \'%\' : \'\' }}</div></div>',
-            props: ['value', 'showValue', 'class', 'style'],
+              '<div class="p-progressbar" :class="$attrs.class"><div class="p-progressbar-value" :style="{ width: value + \'%\' }">{{ showValue ? value + \'%\' : \'\' }}</div></div>',
+            props: ['value', 'showValue'],
           },
           Badge: {
             template:
@@ -56,8 +57,14 @@ describe('CauseBuildingPanel.vue', () => {
           },
           Button: {
             template:
-              '<button class="p-button" @click="$emit(\'click\', $event)"><i v-if="icon" :class="icon"></i>{{ label }}</button>',
+              '<button class="p-button" @click="handleClick"><i v-if="icon" :class="icon"></i>{{ label }}</button>',
             props: ['label', 'icon', 'text', 'size'],
+            emits: ['click'],
+            methods: {
+              handleClick(e: Event) {
+                this.$emit('click', e)
+              },
+            },
           },
         },
       },
