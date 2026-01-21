@@ -47,6 +47,7 @@ from src.models.automatic_rally import AutomaticRally
 from src.models.campaign import AssetCategory
 from src.models.campaign_event import CampaignEvent, CampaignEventType
 from src.models.lps import LPS
+from src.models.market_context import MarketRegime
 from src.models.sos_breakout import SOSBreakout
 from src.models.spring import Spring
 from src.models.wyckoff_phase import WyckoffPhase
@@ -63,6 +64,23 @@ AR_HIGH_QUALITY_BONUS_THRESHOLD = 0.75  # Minimum quality for AR progression bon
 # Volume Analysis Thresholds (Story 14.4 - Issue #5: Extract magic numbers)
 VOLUME_TREND_THRESHOLD = 0.7  # Minimum ratio for trend classification (70%)
 VOLUME_MINIMUM_PATTERNS = 3  # Minimum patterns needed for volume profile analysis
+
+# Story 16.7b: Adaptive Validation Thresholds by Market Regime
+REGIME_QUALITY_THRESHOLDS = {
+    MarketRegime.SIDEWAYS: 0.7,  # RANGING: Standard threshold
+    MarketRegime.TRENDING_UP: 0.8,  # Trending: Higher bar
+    MarketRegime.TRENDING_DOWN: 0.8,  # Trending: Higher bar
+    MarketRegime.HIGH_VOLATILITY: 0.75,  # High vol: Slightly higher
+    MarketRegime.LOW_VOLATILITY: 0.7,  # Low vol: Standard
+}
+REGIME_VOLUME_MULTIPLIERS = {
+    MarketRegime.SIDEWAYS: 1.0,  # RANGING: Standard
+    MarketRegime.TRENDING_UP: 1.0,  # Trending: Standard
+    MarketRegime.TRENDING_DOWN: 1.0,  # Trending: Standard
+    MarketRegime.HIGH_VOLATILITY: 1.2,  # High vol: +20% volume required
+    MarketRegime.LOW_VOLATILITY: 0.9,  # Low vol: -10% volume required
+}
+REGIME_STATS_CACHE_TTL_SECONDS = 3600  # 1 hour cache for regime statistics
 CLIMAX_VOLUME_THRESHOLD = 2.0  # Volume ratio threshold for climactic events
 SPRING_HIGH_EFFORT_THRESHOLD = 0.5  # High volume threshold for Spring patterns
 SOS_HIGH_EFFORT_THRESHOLD = 1.5  # High volume threshold for SOS/LPS patterns
@@ -312,6 +330,11 @@ class Campaign:
     asset_category: Optional[AssetCategory] = None  # Asset class (FOREX, EQUITY, etc.)
     sector: Optional[str] = None  # Sector for equities (TECH, FINANCE, etc.)
     correlation_group: Optional[str] = None  # Correlation group identifier
+
+    # Story 16.7b: Market Regime Tracking for Adaptive Validation
+    market_regime: Optional[MarketRegime] = None  # Market regime at campaign creation
+    regime_quality_threshold: float = 0.7  # Adaptive quality threshold based on regime
+    regime_volume_multiplier: float = 1.0  # Adaptive volume multiplier based on regime
 
     # Story 15.1a: Campaign Completion Tracking
     exit_price: Optional[Decimal] = None  # Final exit price
@@ -641,6 +664,98 @@ class IntradayCampaignDetector:
         )
 
     # ==================================================================================
+    # Story 16.7b: Adaptive Validation Methods by Market Regime
+    # ==================================================================================
+
+    def _get_quality_threshold(self, regime: Optional[MarketRegime]) -> float:
+        """
+        Get adaptive quality threshold based on market regime (Story 16.7b).
+
+        Wyckoff methodology works best in range-bound markets. In trending or
+        volatile markets, we require higher quality patterns to filter noise.
+
+        Args:
+            regime: Current market regime, or None for default
+
+        Returns:
+            Quality threshold (0.0-1.0) for pattern validation
+
+        Thresholds by regime:
+            - SIDEWAYS (RANGING): 0.7 (standard)
+            - TRENDING_UP/DOWN: 0.8 (higher bar in trending markets)
+            - HIGH_VOLATILITY: 0.75 (slightly higher)
+            - LOW_VOLATILITY: 0.7 (standard)
+
+        Example:
+            >>> threshold = detector._get_quality_threshold(MarketRegime.TRENDING_UP)
+            >>> # Returns: 0.8 (higher bar in trending markets)
+        """
+        if regime is None:
+            return 0.7  # Default standard threshold
+
+        return REGIME_QUALITY_THRESHOLDS.get(regime, 0.7)
+
+    def _get_volume_multiplier(self, regime: Optional[MarketRegime]) -> float:
+        """
+        Get volume requirement multiplier based on market regime (Story 16.7b).
+
+        In high-volatility markets, we require more volume confirmation.
+        In low-volatility markets, we can relax volume requirements.
+
+        Args:
+            regime: Current market regime, or None for default
+
+        Returns:
+            Volume multiplier (applied to volume thresholds)
+
+        Multipliers by regime:
+            - SIDEWAYS (RANGING): 1.0 (standard)
+            - TRENDING_UP/DOWN: 1.0 (standard)
+            - HIGH_VOLATILITY: 1.2 (+20% volume required)
+            - LOW_VOLATILITY: 0.9 (-10% volume required)
+
+        Example:
+            >>> multiplier = detector._get_volume_multiplier(MarketRegime.HIGH_VOLATILITY)
+            >>> # Returns: 1.2 (+20% volume required)
+        """
+        if regime is None:
+            return 1.0  # Default standard multiplier
+
+        return REGIME_VOLUME_MULTIPLIERS.get(regime, 1.0)
+
+    def set_campaign_regime(
+        self,
+        campaign: Campaign,
+        regime: Optional[MarketRegime],
+    ) -> None:
+        """
+        Set market regime on campaign and apply adaptive thresholds (Story 16.7b).
+
+        Updates the campaign's regime tracking fields and calculates
+        adaptive thresholds for pattern validation.
+
+        Args:
+            campaign: Campaign to update
+            regime: Market regime to apply
+
+        Example:
+            >>> detector.set_campaign_regime(campaign, MarketRegime.TRENDING_UP)
+            >>> campaign.regime_quality_threshold  # 0.8
+            >>> campaign.regime_volume_multiplier  # 1.0
+        """
+        campaign.market_regime = regime
+        campaign.regime_quality_threshold = self._get_quality_threshold(regime)
+        campaign.regime_volume_multiplier = self._get_volume_multiplier(regime)
+
+        self.logger.debug(
+            "Campaign regime set",
+            campaign_id=campaign.campaign_id,
+            regime=regime.value if regime else None,
+            quality_threshold=campaign.regime_quality_threshold,
+            volume_multiplier=campaign.regime_volume_multiplier,
+        )
+
+    # ==================================================================================
     # Story 15.3: Backward Compatibility Property & Index Maintenance
     # ==================================================================================
 
@@ -874,6 +989,8 @@ class IntradayCampaignDetector:
         # Story 16.1b: Correlation tracking parameters
         asset_symbol: Optional[str] = None,
         asset_category: Optional[AssetCategory] = None,
+        # Story 16.7b: Market regime for adaptive validation
+        market_regime: Optional[MarketRegime] = None,
     ) -> Optional[Campaign]:
         """
         Add detected pattern and update campaigns.
@@ -881,6 +998,7 @@ class IntradayCampaignDetector:
         Tasks 1-3: Pattern integration, grouping, state machine.
         Story 14.3: Added position sizing and portfolio heat checking.
         Story 16.1b: Added correlation limit checking.
+        Story 16.7b: Added market regime for adaptive validation.
 
         Args:
             pattern: Detected Spring, SOS, or LPS pattern
@@ -888,6 +1006,7 @@ class IntradayCampaignDetector:
             risk_pct_per_trade: Risk percentage per trade (default 2.0%)
             asset_symbol: Trading symbol override (default: from pattern.bar.symbol)
             asset_category: Asset category override (default: auto-detected)
+            market_regime: Current market regime for adaptive thresholds (Story 16.7b)
 
         Returns:
             Campaign that pattern was added to, or None if rejected
@@ -896,6 +1015,7 @@ class IntradayCampaignDetector:
             1. Expire stale campaigns (Task 5)
             2. Find existing campaign or check limits (Task 8)
             2b. Check correlation limits (Story 16.1b)
+            2c. Apply regime-aware thresholds (Story 16.7b)
             3. Calculate position size and heat (Story 14.3)
             4. Validate sequence if adding to existing (Task 7)
             5. Update risk metadata (Task 6)
@@ -952,6 +1072,9 @@ class IntradayCampaignDetector:
                 correlation_group=correlation_group,
             )
 
+            # Story 16.7b: Apply regime-aware thresholds
+            self.set_campaign_regime(campaign, market_regime)
+
             # AC4.9: Initialize risk metadata to calculate risk_per_share
             self._update_campaign_metadata(campaign)
 
@@ -1002,6 +1125,10 @@ class IntradayCampaignDetector:
                 state=campaign.state.value,
                 position_size=str(campaign.position_size),
                 dollar_risk=str(campaign.dollar_risk),
+                # Story 16.7b: Log regime-aware thresholds
+                market_regime=campaign.market_regime.value if campaign.market_regime else None,
+                quality_threshold=campaign.regime_quality_threshold,
+                volume_multiplier=campaign.regime_volume_multiplier,
             )
 
             # Story 15.6: Publish CAMPAIGN_FORMED event
@@ -1009,6 +1136,14 @@ class IntradayCampaignDetector:
                 CampaignEventType.CAMPAIGN_FORMED,
                 campaign,
                 pattern_type=type(pattern).__name__,
+                # Story 16.7b: Include regime metadata in event
+                metadata={
+                    "market_regime": campaign.market_regime.value
+                    if campaign.market_regime
+                    else None,
+                    "quality_threshold": campaign.regime_quality_threshold,
+                    "volume_multiplier": campaign.regime_volume_multiplier,
+                },
             )
 
             # Story 14.2: AR can activate FORMING campaign if high quality

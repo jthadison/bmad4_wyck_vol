@@ -39,6 +39,7 @@ class MarketRegime(str, Enum):
     TRENDING_DOWN = "TRENDING_DOWN"  # Strong downtrend: ADX > 25, price < 20 SMA
     SIDEWAYS = "SIDEWAYS"  # Ranging/choppy: ADX < 25
     HIGH_VOLATILITY = "HIGH_VOLATILITY"  # Extreme volatility: ATR > threshold
+    LOW_VOLATILITY = "LOW_VOLATILITY"  # Low volatility: ATR < threshold (Story 16.7b)
 
 
 class ForexSession(str, Enum):

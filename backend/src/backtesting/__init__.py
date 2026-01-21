@@ -12,10 +12,12 @@ Modules:
 - metrics: Performance metrics calculation
 - event_publisher: Campaign event notification system (Story 15.6)
 - intraday_campaign_detector: Campaign detection and tracking
+- regime_performance_analyzer: Regime-based performance analysis (Story 16.7b)
 
 Author: Story 11.2
 """
 
 from src.backtesting.event_publisher import EventFilter, EventPublisher
+from src.backtesting.regime_performance_analyzer import RegimePerformanceAnalyzer
 
-__all__ = ["EventFilter", "EventPublisher"]
+__all__ = ["EventFilter", "EventPublisher", "RegimePerformanceAnalyzer"]
