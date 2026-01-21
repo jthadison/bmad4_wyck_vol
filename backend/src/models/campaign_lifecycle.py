@@ -41,7 +41,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from src.models.campaign import AssetCategory
+from src.models.campaign import AssetCategory, MarketRegime
 
 
 class TimeframeConfig(BaseModel):
@@ -431,6 +431,12 @@ class Campaign(BaseModel):
         default="DEFAULT",
         max_length=50,
         description="Correlation group for risk aggregation (e.g., USD_MAJOR, BTC_CORRELATED)",
+    )
+
+    # Market regime tracking (Story 16.7a)
+    market_regime: "MarketRegime" = Field(
+        default="RANGING",
+        description="Market regime at campaign formation (RANGING, TRENDING_UP, TRENDING_DOWN, HIGH_VOLATILITY, LOW_VOLATILITY)",
     )
 
     # Optimistic locking

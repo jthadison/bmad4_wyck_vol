@@ -95,6 +95,46 @@ class AssetCategory(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class MarketRegime(str, Enum):
+    """
+    Market regime classification for campaign formation context (Story 16.7a).
+
+    Classifies market conditions at the time of campaign formation using
+    technical indicators (ADX for trend strength, ATR for volatility).
+    Used to track campaign performance by market regime.
+
+    Values:
+    -------
+    - RANGING: Low ADX (< 25), ideal for Wyckoff accumulation/distribution
+    - TRENDING_UP: High ADX (>= 25) with upward price direction
+    - TRENDING_DOWN: High ADX (>= 25) with downward price direction
+    - HIGH_VOLATILITY: ATR > 1.5x average ATR (20-period)
+    - LOW_VOLATILITY: ATR < 0.5x average ATR (20-period)
+
+    Detection Logic:
+    ----------------
+    1. Calculate ADX (14-period) for trend strength
+    2. Calculate ATR (14-period) for volatility
+    3. Determine regime:
+       - ADX < 25 → RANGING
+       - ADX >= 25 + price up → TRENDING_UP
+       - ADX >= 25 + price down → TRENDING_DOWN
+       - ATR > 1.5x avg → HIGH_VOLATILITY
+       - ATR < 0.5x avg → LOW_VOLATILITY
+
+    Usage:
+    ------
+    >>> regime = MarketRegime.RANGING
+    >>> campaign = Campaign(market_regime=regime, ...)
+    """
+
+    RANGING = "RANGING"
+    TRENDING_UP = "TRENDING_UP"
+    TRENDING_DOWN = "TRENDING_DOWN"
+    HIGH_VOLATILITY = "HIGH_VOLATILITY"
+    LOW_VOLATILITY = "LOW_VOLATILITY"
+
+
 class CampaignEntry(BaseModel):
     """
     Individual position entry within a campaign.
