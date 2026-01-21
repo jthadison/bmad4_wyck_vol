@@ -53,6 +53,7 @@ from src.models.wyckoff_phase import WyckoffPhase
 
 # Story 16.6b: Cross-timeframe validation imports
 from src.pattern_engine.validators.cross_timeframe_validator import (
+    TIMEFRAME_ORDER,
     CrossTimeframeValidationResult,
     CrossTimeframeValidator,
     HTFCampaignSnapshot,
@@ -68,6 +69,10 @@ AR_ACTIVATION_QUALITY_THRESHOLD = 0.7  # Minimum quality for AR to activate FORM
 # Cache Configuration (Story 15.4)
 VALIDATION_CACHE_MAX_ENTRIES = 100  # Maximum cache entries before LRU eviction
 AR_HIGH_QUALITY_BONUS_THRESHOLD = 0.75  # Minimum quality for AR progression bonus
+
+# Story 16.6b: HTF Snapshot Configuration
+HTF_SNAPSHOT_TTL_HOURS = 24  # Maximum age of HTF snapshots before cleanup
+HTF_SNAPSHOT_MAX_PER_TIMEFRAME = 100  # Maximum snapshots per timeframe before cleanup
 
 # Volume Analysis Thresholds (Story 14.4 - Issue #5: Extract magic numbers)
 VOLUME_TREND_THRESHOLD = 0.7  # Minimum ratio for trend classification (70%)
@@ -874,10 +879,7 @@ class IntradayCampaignDetector:
 
         # Also derive snapshots from campaigns in higher timeframes
         # This allows the detector to use its own HTF campaigns for validation
-        from src.pattern_engine.validators.cross_timeframe_validator import (
-            TIMEFRAME_ORDER,
-        )
-
+        # Note: TIMEFRAME_ORDER is imported at module level from cross_timeframe_validator
         for timeframe in TIMEFRAME_ORDER:
             if timeframe in htf_snapshots:
                 continue  # Already have a snapshot for this timeframe
@@ -959,6 +961,9 @@ class IntradayCampaignDetector:
             campaign_type=htf_trend,
             confidence=confidence,
         )
+
+        # Cleanup stale snapshots before adding new one
+        self._cleanup_stale_htf_snapshots()
 
         self._htf_campaign_snapshots[timeframe][symbol] = snapshot
 
@@ -1046,6 +1051,54 @@ class IntradayCampaignDetector:
                 tf_snapshots.pop(symbol, None)
         else:
             self._htf_campaign_snapshots.clear()
+
+    def _cleanup_stale_htf_snapshots(self) -> int:
+        """
+        Remove stale HTF snapshots based on TTL and max entries (Story 16.6b).
+
+        Cleans up snapshots that are older than HTF_SNAPSHOT_TTL_HOURS or when
+        a timeframe exceeds HTF_SNAPSHOT_MAX_PER_TIMEFRAME entries.
+
+        Returns:
+            Number of snapshots removed
+        """
+        removed_count = 0
+        cutoff_time = datetime.now(UTC) - timedelta(hours=HTF_SNAPSHOT_TTL_HOURS)
+
+        # Iterate through all timeframes
+        for timeframe in list(self._htf_campaign_snapshots.keys()):
+            tf_snapshots = self._htf_campaign_snapshots[timeframe]
+
+            # Remove stale snapshots (older than TTL)
+            stale_symbols = [
+                symbol
+                for symbol, snapshot in tf_snapshots.items()
+                if snapshot.last_updated < cutoff_time
+            ]
+            for symbol in stale_symbols:
+                del tf_snapshots[symbol]
+                removed_count += 1
+
+            # If still over max entries, remove oldest
+            while len(tf_snapshots) > HTF_SNAPSHOT_MAX_PER_TIMEFRAME:
+                oldest_symbol = min(
+                    tf_snapshots.keys(),
+                    key=lambda s: tf_snapshots[s].last_updated,
+                )
+                del tf_snapshots[oldest_symbol]
+                removed_count += 1
+
+            # Remove empty timeframe dictionaries
+            if not tf_snapshots:
+                del self._htf_campaign_snapshots[timeframe]
+
+        if removed_count > 0:
+            self.logger.debug(
+                "HTF snapshot cleanup completed",
+                removed_count=removed_count,
+            )
+
+        return removed_count
 
     # ==================================================================================
     # End Story 16.6b Cross-Timeframe Validation Methods

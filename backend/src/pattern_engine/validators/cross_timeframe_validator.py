@@ -78,6 +78,12 @@ BULLISH_PATTERNS: set[str] = {"SPRING", "SOS", "LPS", "AR"}
 # Bearish patterns (confirmed by DISTRIBUTION)
 BEARISH_PATTERNS: set[str] = {"UTAD", "SOW", "LPSY"}
 
+# Confidence adjustment constants for HTF validation
+# Multiplied by HTF confidence score for aligned patterns
+HTF_ALIGNMENT_CONFIDENCE_BONUS = Decimal("0.15")
+# Fixed penalty for patterns conflicting with HTF trend
+HTF_CONFLICT_CONFIDENCE_PENALTY = Decimal("-0.25")
+
 
 class HTFTrend(str, Enum):
     """Higher timeframe trend classification."""
@@ -268,27 +274,27 @@ class CrossTimeframeValidator:
             # HTF is bullish - confirms bullish patterns
             if is_bullish_pattern:
                 is_aligned = True
-                confidence_adjustment = Decimal("0.15") * htf_confidence
+                confidence_adjustment = HTF_ALIGNMENT_CONFIDENCE_BONUS * htf_confidence
             elif is_bearish_pattern:
                 is_aligned = False
                 warning_message = (
                     f"Bearish {pattern_type} on {pattern_timeframe} conflicts with "
                     f"ACCUMULATION trend on {htf_timeframe}"
                 )
-                confidence_adjustment = Decimal("-0.25")
+                confidence_adjustment = HTF_CONFLICT_CONFIDENCE_PENALTY
 
         elif htf_trend == HTFTrend.DISTRIBUTION:
             # HTF is bearish - confirms bearish patterns
             if is_bearish_pattern:
                 is_aligned = True
-                confidence_adjustment = Decimal("0.15") * htf_confidence
+                confidence_adjustment = HTF_ALIGNMENT_CONFIDENCE_BONUS * htf_confidence
             elif is_bullish_pattern:
                 is_aligned = False
                 warning_message = (
                     f"Bullish {pattern_type} on {pattern_timeframe} conflicts with "
                     f"DISTRIBUTION trend on {htf_timeframe}"
                 )
-                confidence_adjustment = Decimal("-0.25")
+                confidence_adjustment = HTF_CONFLICT_CONFIDENCE_PENALTY
 
         elif htf_trend == HTFTrend.NEUTRAL:
             # HTF is ranging - allow but no bonus
@@ -387,11 +393,20 @@ def create_htf_snapshot_from_campaign(
         symbol: Trading symbol
         timeframe: Campaign timeframe
         phase: Current Wyckoff phase
-        campaign_type: Optional explicit campaign type
+        campaign_type: Optional explicit campaign type. IMPORTANT: This parameter
+            is REQUIRED to identify DISTRIBUTION campaigns. Wyckoff phases (A-E)
+            are identical for accumulation and distribution - only the market
+            context (top vs bottom formation) distinguishes them. Without explicit
+            campaign_type="DISTRIBUTION", campaigns default to ACCUMULATION trend.
         confidence: Confidence score (0.0 - 1.0)
 
     Returns:
         HTFCampaignSnapshot for cross-timeframe validation
+
+    Note:
+        Without campaign_type, this function defaults to ACCUMULATION trend
+        because phase alone cannot distinguish accumulation from distribution.
+        For bearish HTF confirmation, always provide campaign_type="DISTRIBUTION".
     """
     # Determine trend from phase and campaign type
     if campaign_type == "DISTRIBUTION":
@@ -399,13 +414,15 @@ def create_htf_snapshot_from_campaign(
     elif campaign_type == "ACCUMULATION":
         trend = HTFTrend.ACCUMULATION
     elif phase in ("D", "E"):
-        # Phases D and E indicate markup (bullish)
+        # Phases D and E without explicit type default to accumulation (markup)
+        # Note: Could also be markdown in distribution - caller should specify
         trend = HTFTrend.ACCUMULATION
     elif phase == "A":
         # Phase A is neutral (stopping action)
         trend = HTFTrend.NEUTRAL
     else:
-        # Phases B and C are building cause (still accumulation)
+        # Phases B and C default to accumulation (building cause)
+        # Note: Could also be distribution - caller should specify
         trend = HTFTrend.ACCUMULATION
 
     return HTFCampaignSnapshot(
