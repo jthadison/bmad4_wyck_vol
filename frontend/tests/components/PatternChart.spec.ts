@@ -158,6 +158,23 @@ describe('PatternChart.vue', () => {
       vi.clearAllMocks()
       const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
 
+      // Pre-populate store with data to allow fetchChartData to resolve quickly
+      store.chartData = {
+        symbol: 'AAPL',
+        timeframe: '1D',
+        ohlcv: [],
+        patterns: [],
+        phase_annotations: [],
+        support_levels: [],
+        resistance_levels: [],
+        start_date: '2025-01-01',
+        end_date: '2025-01-31',
+        trading_ranges: null,
+        preliminary_events: [],
+        wyckoff_schematic: null,
+        cause_building_data: null,
+      }
+
       wrapper = mount(PatternChart, {
         props: {
           symbol: 'AAPL',
@@ -165,7 +182,9 @@ describe('PatternChart.vue', () => {
         },
       })
 
+      // Wait for async onMounted to complete (fetchChartData + addEventListener)
       await wrapper.vm.$nextTick()
+      await new Promise((resolve) => setTimeout(resolve, 100))
 
       // Check that addEventListener was called with keydown
       const keydownCalls = addEventListenerSpy.mock.calls.filter(

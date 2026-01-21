@@ -4,10 +4,9 @@
  * Tests for HelpIcon dialog, feedback, and article display.
  */
 
-import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { setActivePinia, createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import HelpIcon from '@/components/help/HelpIcon.vue'
 import { useHelpStore } from '@/stores/helpStore'
@@ -15,20 +14,46 @@ import type { HelpArticle } from '@/stores/helpStore'
 
 // Mock PrimeVue components
 vi.mock('primevue/button', () => ({
-  default: { name: 'Button', template: '<button><slot /></button>' },
+  default: {
+    name: 'Button',
+    template:
+      '<button :class="$attrs.class" :disabled="disabled" @click="$emit(\'click\')">{{ label }}<slot /></button>',
+    props: ['label', 'icon', 'disabled'],
+    emits: ['click'],
+  },
 }))
 vi.mock('primevue/dialog', () => ({
   default: {
     name: 'Dialog',
-    template: '<div v-if="visible"><slot /><slot name="footer" /></div>',
-    props: ['visible'],
+    template:
+      '<div v-if="visible" class="dialog-wrapper"><slot /><slot name="footer" /></div>',
+    props: [
+      'visible',
+      'header',
+      'modal',
+      'closable',
+      'dismissableMask',
+      'draggable',
+      'style',
+    ],
+    emits: ['update:visible', 'hide'],
   },
 }))
 vi.mock('primevue/message', () => ({
-  default: { name: 'Message', template: '<div><slot /></div>' },
+  default: {
+    name: 'Message',
+    template: '<div class="message"><slot /></div>',
+    props: ['severity', 'closable'],
+  },
 }))
 vi.mock('primevue/textarea', () => ({
-  default: { name: 'Textarea', template: '<textarea></textarea>' },
+  default: {
+    name: 'Textarea',
+    template:
+      '<textarea class="comment-input" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)"></textarea>',
+    props: ['modelValue', 'placeholder', 'autoResize', 'rows'],
+    emits: ['update:modelValue'],
+  },
 }))
 
 describe('HelpIcon', () => {
@@ -102,6 +127,7 @@ describe('HelpIcon', () => {
   it('should display article content in dialog', async () => {
     const helpStore = useHelpStore()
     helpStore.currentArticle = mockArticle
+    vi.spyOn(helpStore, 'fetchArticle').mockResolvedValue()
 
     const wrapper = mount(HelpIcon, {
       props: {
@@ -112,8 +138,9 @@ describe('HelpIcon', () => {
       },
     })
 
-    // Open dialog
-    wrapper.vm.$data.dialogVisible = true
+    // Open dialog by clicking the button
+    const button = wrapper.find('.help-icon-btn')
+    await button.trigger('click')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.article-html').exists()).toBe(true)
@@ -121,7 +148,11 @@ describe('HelpIcon', () => {
 
   it('should display loading state', async () => {
     const helpStore = useHelpStore()
-    helpStore.isLoading = true
+    // Mock fetchArticle to not resolve immediately so isLoading stays true
+    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(() => {
+      helpStore.isLoading = true
+      return new Promise(() => {}) // Never resolves
+    })
 
     const wrapper = mount(HelpIcon, {
       props: {
@@ -132,7 +163,9 @@ describe('HelpIcon', () => {
       },
     })
 
-    wrapper.vm.$data.dialogVisible = true
+    // Open dialog by clicking the button
+    const button = wrapper.find('.help-icon-btn')
+    await button.trigger('click')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.dialog-loading').exists()).toBe(true)
@@ -140,7 +173,9 @@ describe('HelpIcon', () => {
 
   it('should display error state', async () => {
     const helpStore = useHelpStore()
-    helpStore.error = 'Failed to load article'
+    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
+      helpStore.error = 'Failed to load article'
+    })
 
     const wrapper = mount(HelpIcon, {
       props: {
@@ -151,7 +186,9 @@ describe('HelpIcon', () => {
       },
     })
 
-    wrapper.vm.$data.dialogVisible = true
+    // Open dialog by clicking the button
+    const button = wrapper.find('.help-icon-btn')
+    await button.trigger('click')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Failed to load article')
@@ -160,6 +197,7 @@ describe('HelpIcon', () => {
   it('should submit positive feedback', async () => {
     const helpStore = useHelpStore()
     helpStore.currentArticle = mockArticle
+    vi.spyOn(helpStore, 'fetchArticle').mockResolvedValue()
     vi.spyOn(helpStore, 'submitFeedback').mockResolvedValue(true)
 
     const wrapper = mount(HelpIcon, {
@@ -171,11 +209,17 @@ describe('HelpIcon', () => {
       },
     })
 
-    wrapper.vm.$data.dialogVisible = true
+    // Open dialog by clicking the button
+    const button = wrapper.find('.help-icon-btn')
+    await button.trigger('click')
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as unknown
-    await vm.submitFeedback(true)
+    // Find and click the Yes (thumbs up) button
+    const yesButton = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('Yes'))
+    expect(yesButton).toBeDefined()
+    await yesButton!.trigger('click')
 
     expect(helpStore.submitFeedback).toHaveBeenCalledWith(
       'article-123',
@@ -187,6 +231,7 @@ describe('HelpIcon', () => {
   it('should show comment input on negative feedback', async () => {
     const helpStore = useHelpStore()
     helpStore.currentArticle = mockArticle
+    vi.spyOn(helpStore, 'fetchArticle').mockResolvedValue()
 
     const wrapper = mount(HelpIcon, {
       props: {
@@ -197,10 +242,17 @@ describe('HelpIcon', () => {
       },
     })
 
-    wrapper.vm.$data.dialogVisible = true
+    // Open dialog by clicking the button
+    const button = wrapper.find('.help-icon-btn')
+    await button.trigger('click')
     await wrapper.vm.$nextTick()
 
-    wrapper.vm.$data.showCommentInput = true
+    // Find and click the No (thumbs down) button to show comment input
+    const noButton = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('No'))
+    expect(noButton).toBeDefined()
+    await noButton!.trigger('click')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.comment-input').exists()).toBe(true)
@@ -209,6 +261,7 @@ describe('HelpIcon', () => {
   it('should submit negative feedback with comment', async () => {
     const helpStore = useHelpStore()
     helpStore.currentArticle = mockArticle
+    vi.spyOn(helpStore, 'fetchArticle').mockResolvedValue()
     vi.spyOn(helpStore, 'submitFeedback').mockResolvedValue(true)
 
     const wrapper = mount(HelpIcon, {
@@ -220,12 +273,27 @@ describe('HelpIcon', () => {
       },
     })
 
-    wrapper.vm.$data.dialogVisible = true
-    wrapper.vm.$data.feedbackComment = 'Needs improvement'
+    // Open dialog by clicking the button
+    const button = wrapper.find('.help-icon-btn')
+    await button.trigger('click')
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as unknown
-    await vm.submitFeedback(false)
+    // Click No button to show comment input
+    const noButton = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('No'))
+    await noButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    // Fill in comment (mock textarea since it's stubbed)
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('Needs improvement')
+
+    // Click Submit button
+    const submitButton = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('Submit'))
+    await submitButton!.trigger('click')
 
     expect(helpStore.submitFeedback).toHaveBeenCalledWith(
       'article-123',
@@ -237,6 +305,7 @@ describe('HelpIcon', () => {
   it('should show thank you message after feedback', async () => {
     const helpStore = useHelpStore()
     helpStore.currentArticle = mockArticle
+    vi.spyOn(helpStore, 'fetchArticle').mockResolvedValue()
     vi.spyOn(helpStore, 'submitFeedback').mockResolvedValue(true)
 
     const wrapper = mount(HelpIcon, {
@@ -248,17 +317,27 @@ describe('HelpIcon', () => {
       },
     })
 
-    wrapper.vm.$data.dialogVisible = true
+    // Open dialog by clicking the button
+    const button = wrapper.find('.help-icon-btn')
+    await button.trigger('click')
     await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as unknown
-    await vm.submitFeedback(true)
+    // Find and click the Yes (thumbs up) button
+    const yesButton = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('Yes'))
+    await yesButton!.trigger('click')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Thanks for your feedback!')
   })
 
   it('should reset feedback state on dialog hide', async () => {
+    const helpStore = useHelpStore()
+    helpStore.currentArticle = mockArticle
+    vi.spyOn(helpStore, 'fetchArticle').mockResolvedValue()
+    vi.spyOn(helpStore, 'submitFeedback').mockResolvedValue(true)
+
     const wrapper = mount(HelpIcon, {
       props: {
         articleSlug: 'test-article',
@@ -268,15 +347,29 @@ describe('HelpIcon', () => {
       },
     })
 
-    wrapper.vm.$data.feedbackSubmitted = true
-    wrapper.vm.$data.showCommentInput = true
-    wrapper.vm.$data.feedbackComment = 'Test comment'
+    // Open dialog
+    const button = wrapper.find('.help-icon-btn')
+    await button.trigger('click')
+    await wrapper.vm.$nextTick()
 
-    const vm = wrapper.vm as unknown
-    vm.onDialogHide()
+    // Submit feedback to set feedbackSubmitted = true
+    const yesButton = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('Yes'))
+    await yesButton!.trigger('click')
+    await wrapper.vm.$nextTick()
 
-    expect(wrapper.vm.$data.feedbackSubmitted).toBe(false)
-    expect(wrapper.vm.$data.showCommentInput).toBe(false)
-    expect(wrapper.vm.$data.feedbackComment).toBe('')
+    // Verify thank you message is shown
+    expect(wrapper.text()).toContain('Thanks for your feedback!')
+
+    // Open dialog again (which should reset state)
+    await button.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    // Feedback buttons should be visible again (state was reset)
+    const yesButtonAfterReopen = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('Yes'))
+    expect(yesButtonAfterReopen).toBeDefined()
   })
 })

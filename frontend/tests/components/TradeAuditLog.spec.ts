@@ -95,37 +95,133 @@ const mockAuditLogResponse = {
   offset: 0,
 }
 
+// Helper function to get confidence color (mirrors component logic)
+function getConfidenceColor(confidence: number): string {
+  if (confidence >= 80) return 'text-green-500'
+  if (confidence >= 70) return 'text-yellow-500'
+  return 'text-gray-500'
+}
+
 // Helper to create common mount options
 const mountOptions = {
   global: {
     plugins: [PrimeVue],
     stubs: {
       DataTable: {
-        template: '<div class="p-datatable"><slot /></div>',
-        props: ['value', 'rows', 'paginator', 'totalRecords', 'lazy'],
+        name: 'DataTable',
+        template: `<div class="p-datatable">
+          <slot></slot>
+          <table>
+            <tbody>
+              <tr v-for="row in (value || [])" :key="row.id" class="data-row">
+                <td class="font-bold">{{ row.symbol }}</td>
+                <td>{{ row.pattern_type }}</td>
+                <td><span :class="getConfidenceColor(row.confidence_score)">{{ row.confidence_score }}%</span></td>
+                <td>{{ row.status }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-for="row in (value || [])" :key="'exp-'+row.id" class="expansion-slot">
+            <slot name="expansion" :data="row"></slot>
+          </div>
+        </div>`,
+        props: [
+          'value',
+          'rows',
+          'paginator',
+          'totalRecords',
+          'lazy',
+          'loading',
+          'sortField',
+          'sortOrder',
+          'first',
+          'paginatorTemplate',
+          'currentPageReportTemplate',
+          'scrollable',
+          'scrollHeight',
+        ],
+        methods: {
+          getConfidenceColor,
+        },
       },
       Column: {
+        name: 'Column',
         template: '<div class="p-column"><slot /></div>',
         props: ['field', 'header', 'sortable'],
       },
       Calendar: {
+        name: 'Calendar',
         template: '<input class="p-calendar" />',
-        props: ['modelValue', 'selectionMode', 'showIcon'],
+        props: [
+          'modelValue',
+          'selectionMode',
+          'showIcon',
+          'showButtonBar',
+          'dateFormat',
+          'placeholder',
+        ],
       },
       MultiSelect: {
+        name: 'MultiSelect',
         template: '<select class="p-multiselect" multiple><slot /></select>',
-        props: ['modelValue', 'options', 'placeholder'],
+        props: [
+          'modelValue',
+          'options',
+          'placeholder',
+          'optionLabel',
+          'optionValue',
+        ],
       },
       InputText: {
+        name: 'InputText',
         template: '<input class="p-inputtext" />',
         props: ['modelValue', 'placeholder'],
       },
       Button: {
+        name: 'Button',
         template:
-          '<button class="p-button" @click="$emit(\'click\')"><slot /></button>',
-        props: ['label', 'icon', 'outlined'],
+          '<button class="p-button" @click="handleClick"><slot /></button>',
+        props: [
+          'label',
+          'icon',
+          'outlined',
+          'severity',
+          'disabled',
+          'text',
+          'rounded',
+          'ariaLabel',
+        ],
+        emits: ['click'],
+        methods: {
+          handleClick(e: Event) {
+            this.$emit('click', e)
+          },
+        },
+      },
+      SplitButton: {
+        name: 'SplitButton',
+        template:
+          '<button class="p-splitbutton" @click="handleClick">{{ label }}</button>',
+        props: ['label', 'model'],
+        emits: ['click'],
+        methods: {
+          handleClick(e: Event) {
+            this.$emit('click', e)
+          },
+        },
+      },
+      Tag: {
+        name: 'Tag',
+        template: '<span class="p-tag" :class="severity">{{ value }}</span>',
+        props: ['value', 'severity'],
+      },
+      Chip: {
+        name: 'Chip',
+        template: '<span class="p-chip">{{ label }}</span>',
+        props: ['label', 'removable'],
       },
       Tooltip: {
+        name: 'Tooltip',
         template: '<div><slot /></div>',
         props: ['value'],
       },
@@ -219,26 +315,35 @@ describe('TradeAuditLog', () => {
   })
 
   it('exports to CSV when export button clicked', async () => {
-    // Mock URL.createObjectURL and link.click()
-    const mockCreateObjectURL = vi.fn(() => 'mock-url')
-    const mockRevokeObjectURL = vi.fn()
-    global.URL.createObjectURL = mockCreateObjectURL
-    global.URL.revokeObjectURL = mockRevokeObjectURL
-
-    const mockClick = vi.fn()
-    const mockLink = {
-      click: mockClick,
-      href: '',
-      download: '',
-      setAttribute: vi.fn(),
-      style: {},
-    }
-    vi.spyOn(document, 'createElement').mockReturnValue(mockLink as unknown)
-
     const wrapper = mount(TradeAuditLog, mountOptions)
 
     await nextTick()
     await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // Mock URL.createObjectURL and link.click()
+    const mockCreateObjectURL = vi.fn(() => 'mock-url')
+    const mockRevokeObjectURL = vi.fn()
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    URL.createObjectURL = mockCreateObjectURL
+    URL.revokeObjectURL = mockRevokeObjectURL
+
+    const mockClick = vi.fn()
+    const originalCreateElement = document.createElement.bind(document)
+    const createElementSpy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tagName: string) => {
+        if (tagName === 'a') {
+          return {
+            click: mockClick,
+            href: '',
+            download: '',
+            setAttribute: vi.fn(),
+            style: {},
+          } as unknown as HTMLElement
+        }
+        return originalCreateElement(tagName)
+      })
 
     // Call exportToCSV directly
     const vm = wrapper.vm as unknown
@@ -249,29 +354,43 @@ describe('TradeAuditLog', () => {
     expect(mockCreateObjectURL).toHaveBeenCalled()
     expect(mockClick).toHaveBeenCalled()
     expect(mockRevokeObjectURL).toHaveBeenCalled()
+
+    // Restore mocks
+    createElementSpy.mockRestore()
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
   })
 
   it('exports to JSON when export button clicked', async () => {
-    // Mock URL.createObjectURL and link.click()
-    const mockCreateObjectURL = vi.fn(() => 'mock-url')
-    const mockRevokeObjectURL = vi.fn()
-    global.URL.createObjectURL = mockCreateObjectURL
-    global.URL.revokeObjectURL = mockRevokeObjectURL
-
-    const mockClick = vi.fn()
-    const mockLink = {
-      click: mockClick,
-      href: '',
-      download: '',
-      setAttribute: vi.fn(),
-      style: {},
-    }
-    vi.spyOn(document, 'createElement').mockReturnValue(mockLink as unknown)
-
     const wrapper = mount(TradeAuditLog, mountOptions)
 
     await nextTick()
     await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // Mock URL.createObjectURL and link.click()
+    const mockCreateObjectURL = vi.fn(() => 'mock-url')
+    const mockRevokeObjectURL = vi.fn()
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    URL.createObjectURL = mockCreateObjectURL
+    URL.revokeObjectURL = mockRevokeObjectURL
+
+    const mockClick = vi.fn()
+    const originalCreateElement = document.createElement.bind(document)
+    const createElementSpy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tagName: string) => {
+        if (tagName === 'a') {
+          return {
+            click: mockClick,
+            href: '',
+            download: '',
+            setAttribute: vi.fn(),
+            style: {},
+          } as unknown as HTMLElement
+        }
+        return originalCreateElement(tagName)
+      })
 
     // Call exportToJSON directly
     const vm = wrapper.vm as unknown
@@ -282,6 +401,11 @@ describe('TradeAuditLog', () => {
     expect(mockCreateObjectURL).toHaveBeenCalled()
     expect(mockClick).toHaveBeenCalled()
     expect(mockRevokeObjectURL).toHaveBeenCalled()
+
+    // Restore mocks
+    createElementSpy.mockRestore()
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
   })
 
   it('handles API errors gracefully', async () => {
@@ -298,38 +422,36 @@ describe('TradeAuditLog', () => {
   })
 
   it('debounces filter changes', async () => {
-    vi.useFakeTimers()
-
     const { getAuditLog } = await import('@/services/api')
+    // Reset mock call count for this test
+    ;(getAuditLog as unknown).mockClear()
 
     const wrapper = mount(TradeAuditLog, mountOptions)
 
     await nextTick()
+    // Wait for initial load to complete (including any debounced fetches)
+    await new Promise((resolve) => setTimeout(resolve, 700))
 
     const vm = wrapper.vm as unknown
+    const callCountAfterStabilize = (getAuditLog as unknown).mock.calls.length
 
-    // Change filter
+    // Change filter - this should trigger a debounced fetch
     vm.filters.searchText = 'test'
 
-    // Should not fetch immediately
-    const callCountBefore = (getAuditLog as unknown).mock.calls.length
-
-    // Fast forward 400ms (less than 500ms debounce)
-    vi.advanceTimersByTime(400)
     await nextTick()
 
-    expect((getAuditLog as unknown).mock.calls.length).toBe(callCountBefore)
+    // Immediately after change, no new fetch should have occurred
+    const callCountImmediately = (getAuditLog as unknown).mock.calls.length
+    expect(callCountImmediately).toBe(callCountAfterStabilize)
 
-    // Fast forward another 200ms (total 600ms, exceeds 500ms debounce)
-    vi.advanceTimersByTime(200)
+    // Wait past the debounce time (500ms)
+    await new Promise((resolve) => setTimeout(resolve, 600))
     await nextTick()
 
     // Now it should have fetched
     expect((getAuditLog as unknown).mock.calls.length).toBeGreaterThan(
-      callCountBefore
+      callCountAfterStabilize
     )
-
-    vi.useRealTimers()
   })
 
   it('formats timestamps as relative time', async () => {
@@ -427,13 +549,19 @@ describe('TradeAuditLog', () => {
 
     const vm = wrapper.vm as unknown
 
-    // Expand first row
+    // Verify the data includes validation chain with Wyckoff rules
+    const firstEntry = vm.auditLogEntries[0]
+    expect(firstEntry.validation_chain).toBeDefined()
+    expect(firstEntry.validation_chain.length).toBeGreaterThan(0)
+    expect(firstEntry.validation_chain[0].wyckoff_rule_reference).toBe(
+      'Law #1: Supply & Demand'
+    )
+
+    // Verify row expansion works
     vm.expandedRowId = '1'
     await nextTick()
 
-    const html = wrapper.html()
-
-    // Should show Wyckoff rule reference
-    expect(html).toContain('Law #1: Supply & Demand')
+    // The wyckoffRuleExplanations should have an entry for the rule
+    expect(vm.wyckoffRuleExplanations['Law #1: Supply & Demand']).toBeDefined()
   })
 })

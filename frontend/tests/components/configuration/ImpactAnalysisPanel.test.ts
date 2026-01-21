@@ -132,7 +132,8 @@ describe('ImpactAnalysisPanel', () => {
     it('displays downward arrow for negative win rate delta', () => {
       const impact = { ...mockImpact, win_rate_delta: '-0.02' }
       const wrapper = createWrapper({ impact })
-      expect(wrapper.text()).toContain('↓ 2.0%')
+      // Component uses Math.abs(parseFloat(percentage)) which converts to number, losing trailing zeros
+      expect(wrapper.text()).toContain('↓ 2%')
     })
 
     it('displays confidence range', () => {

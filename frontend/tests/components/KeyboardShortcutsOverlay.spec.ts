@@ -37,7 +37,8 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    expect(wrapper.find('.shortcuts-overlay').exists()).toBe(true)
+    // Component uses .shortcuts-content class inside Dialog
+    expect(wrapper.find('.shortcuts-content').exists()).toBe(true)
   })
 
   it('should not render when not visible', () => {
@@ -175,8 +176,8 @@ describe('KeyboardShortcutsOverlay', () => {
       },
     })
 
-    // The template should use <kbd> elements for displaying keys
-    expect(wrapper.html()).toContain('shortcut-key')
+    // The template should use <kbd> elements for displaying keys (class="key")
+    expect(wrapper.html()).toContain('class="key"')
   })
 
   it('should display shortcut descriptions', () => {
