@@ -93,7 +93,7 @@ def create_ohlcv_bars(
             high=high,
             low=low,
             close=close_price,
-            volume=int(1000000),
+            volume=1000000,
             spread=spread,
         )
         bars.append(bar)
@@ -156,7 +156,9 @@ class TestMarketRegimeDetector:
         # First 30 bars with normal volatility (establishes baseline)
         bars = create_ohlcv_bars(count=30, trend="flat", volatility="normal")
         # Add 20 more bars with high volatility (creates spike)
-        bars.extend(create_ohlcv_bars(count=20, base_price=bars[-1].close, trend="flat", volatility="high"))
+        bars.extend(
+            create_ohlcv_bars(count=20, base_price=bars[-1].close, trend="flat", volatility="high")
+        )
 
         regime = detector.detect_regime(bars)
 
@@ -173,7 +175,9 @@ class TestMarketRegimeDetector:
         # First 30 bars with normal volatility (establishes baseline)
         bars = create_ohlcv_bars(count=30, trend="flat", volatility="normal")
         # Add 20 more bars with low volatility (creates compression)
-        bars.extend(create_ohlcv_bars(count=20, base_price=bars[-1].close, trend="flat", volatility="low"))
+        bars.extend(
+            create_ohlcv_bars(count=20, base_price=bars[-1].close, trend="flat", volatility="low")
+        )
 
         regime = detector.detect_regime(bars)
 
@@ -213,9 +217,7 @@ class TestMarketRegimeDetector:
 
         regime = detector.detect_regime(bars)
 
-        assert regime == MarketRegime.RANGING, (
-            "Insufficient data should default to RANGING"
-        )
+        assert regime == MarketRegime.RANGING, "Insufficient data should default to RANGING"
 
     def test_adx_with_insufficient_bars_returns_zero(self, detector: MarketRegimeDetector) -> None:
         """Test ADX calculation with insufficient bars returns zero."""
@@ -249,13 +251,9 @@ class TestMarketRegimeDetector:
 
         elapsed_ms = (end_time - start_time) * 1000
 
-        assert elapsed_ms < 10.0, (
-            f"Regime detection took {elapsed_ms:.2f}ms (should be < 10ms)"
-        )
+        assert elapsed_ms < 10.0, f"Regime detection took {elapsed_ms:.2f}ms (should be < 10ms)"
 
-    def test_adx_trend_strength_increases_with_trend(
-        self, detector: MarketRegimeDetector
-    ) -> None:
+    def test_adx_trend_strength_increases_with_trend(self, detector: MarketRegimeDetector) -> None:
         """
         Test that ADX increases with stronger trends.
 
@@ -267,9 +265,9 @@ class TestMarketRegimeDetector:
         flat_adx = detector._calculate_adx(flat_bars, period=14)
         trending_adx = detector._calculate_adx(trending_bars, period=14)
 
-        assert trending_adx >= flat_adx, (
-            f"Trending ADX {trending_adx} should be >= flat ADX {flat_adx}"
-        )
+        assert (
+            trending_adx >= flat_adx
+        ), f"Trending ADX {trending_adx} should be >= flat ADX {flat_adx}"
 
     def test_atr_increases_with_volatility(self, detector: MarketRegimeDetector) -> None:
         """
@@ -283,13 +281,11 @@ class TestMarketRegimeDetector:
         low_atr = detector._calculate_atr(low_vol_bars, period=14)
         high_atr = detector._calculate_atr(high_vol_bars, period=14)
 
-        assert high_atr > low_atr, (
-            f"High volatility ATR {high_atr} should be > low volatility ATR {low_atr}"
-        )
+        assert (
+            high_atr > low_atr
+        ), f"High volatility ATR {high_atr} should be > low volatility ATR {low_atr}"
 
-    def test_regime_detection_with_mixed_conditions(
-        self, detector: MarketRegimeDetector
-    ) -> None:
+    def test_regime_detection_with_mixed_conditions(self, detector: MarketRegimeDetector) -> None:
         """
         Test regime detection prioritizes volatility over trend.
 
@@ -300,12 +296,14 @@ class TestMarketRegimeDetector:
         """
         # Create uptrend with normal volatility first, then spike volatility
         bars = create_ohlcv_bars(count=30, trend="up", volatility="normal")
-        bars.extend(create_ohlcv_bars(count=20, base_price=bars[-1].close, trend="up", volatility="high"))
+        bars.extend(
+            create_ohlcv_bars(count=20, base_price=bars[-1].close, trend="up", volatility="high")
+        )
         regime = detector.detect_regime(bars)
 
-        assert regime == MarketRegime.HIGH_VOLATILITY, (
-            "Volatility extremes should take priority over trend"
-        )
+        assert (
+            regime == MarketRegime.HIGH_VOLATILITY
+        ), "Volatility extremes should take priority over trend"
 
     def test_regime_enum_values(self) -> None:
         """Test MarketRegime enum has all required values."""
@@ -319,9 +317,9 @@ class TestMarketRegimeDetector:
 
         actual_regimes = {regime.value for regime in MarketRegime}
 
-        assert actual_regimes == expected_regimes, (
-            f"Missing or extra regimes: {actual_regimes ^ expected_regimes}"
-        )
+        assert (
+            actual_regimes == expected_regimes
+        ), f"Missing or extra regimes: {actual_regimes ^ expected_regimes}"
 
     def test_detector_initialization_sets_default_params(
         self, detector: MarketRegimeDetector
@@ -350,7 +348,7 @@ class TestMarketRegimeDetector:
                 high=base_price,
                 low=base_price,
                 close=base_price,
-                volume=int(1000000),
+                volume=1000000,
                 spread=Decimal("0"),
             )
             bars.append(bar)
@@ -392,6 +390,4 @@ class TestMarketRegimeDetector:
 
         avg_atr = detector._calculate_avg_atr(bars, period=20)
 
-        assert avg_atr == Decimal("0"), (
-            "Insufficient data should return avg_atr = 0"
-        )
+        assert avg_atr == Decimal("0"), "Insufficient data should return avg_atr = 0"

@@ -182,7 +182,9 @@ class MarketRegimeDetector:
             down_move = prev_low - curr_low
 
             plus_dm = up_move if up_move > down_move and up_move > Decimal("0") else Decimal("0")
-            minus_dm = down_move if down_move > up_move and down_move > Decimal("0") else Decimal("0")
+            minus_dm = (
+                down_move if down_move > up_move and down_move > Decimal("0") else Decimal("0")
+            )
 
             # True Range = max(high-low, abs(high-prev_close), abs(low-prev_close))
             tr = max(
