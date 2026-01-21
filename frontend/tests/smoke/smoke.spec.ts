@@ -34,7 +34,7 @@ test.describe('Deployment Smoke Tests', () => {
   test('Homepage loads successfully', async ({ page }) => {
     const response = await page.goto(DEPLOYMENT_URL, {
       timeout: TIMEOUT,
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
     })
 
     // Check response status
@@ -73,7 +73,7 @@ test.describe('Deployment Smoke Tests', () => {
     // Navigate to page which should establish WebSocket
     await page.goto(DEPLOYMENT_URL, {
       timeout: TIMEOUT,
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
     })
 
     // Wait a bit for WebSocket to connect
@@ -86,7 +86,7 @@ test.describe('Deployment Smoke Tests', () => {
   test('Signal dashboard renders', async ({ page }) => {
     await page.goto(DEPLOYMENT_URL, {
       timeout: TIMEOUT,
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
     })
 
     // Wait for Vue app to mount
@@ -104,7 +104,7 @@ test.describe('Deployment Smoke Tests', () => {
   test('Chart component loads', async ({ page }) => {
     await page.goto(`${DEPLOYMENT_URL}/backtest`, {
       timeout: TIMEOUT,
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
     })
 
     // Wait for Vue app to mount

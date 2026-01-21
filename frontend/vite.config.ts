@@ -21,6 +21,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: true, // Bind to all interfaces (IPv4 + IPv6)
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
@@ -32,13 +33,7 @@ export default defineConfig({
       },
     },
   },
-  css: {
-    preprocessorOptions: {
-      scss: {
-        api: 'modern-compiler', // Use modern Sass API
-      },
-    },
-  },
+  // No CSS preprocessor needed - using Tailwind CSS
   build: {
     target: 'esnext',
     minify: 'esbuild',

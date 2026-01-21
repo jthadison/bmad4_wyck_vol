@@ -158,7 +158,7 @@ watch(
 )
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .equity-curve-chart {
   width: 100%;
 }
@@ -179,36 +179,34 @@ watch(
   padding: 0.5rem;
   background: var(--surface-ground);
   border-radius: 4px;
+}
 
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
+.chart-legend .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
 
-    .legend-color {
-      width: 24px;
-      height: 3px;
-      border-radius: 2px;
+.chart-legend .legend-item .legend-color {
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+}
 
-      &.current {
-        background-color: #2962ff;
-      }
+.chart-legend .legend-item .legend-color.current {
+  background-color: #2962ff;
+}
 
-      &.proposed {
-        &.improvement {
-          background-color: #28a745;
-        }
+.chart-legend .legend-item .legend-color.proposed.improvement {
+  background-color: #28a745;
+}
 
-        &.degraded {
-          background-color: #dc3545;
-        }
+.chart-legend .legend-item .legend-color.proposed.degraded {
+  background-color: #dc3545;
+}
 
-        &.neutral {
-          background-color: #6c757d;
-        }
-      }
-    }
-  }
+.chart-legend .legend-item .legend-color.proposed.neutral {
+  background-color: #6c757d;
 }
 </style>

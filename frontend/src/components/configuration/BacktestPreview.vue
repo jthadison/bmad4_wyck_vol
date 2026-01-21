@@ -374,7 +374,7 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .backtest-preview {
   padding: 1.5rem;
   background: var(--surface-card);
@@ -387,17 +387,17 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
+}
 
-  h2 {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
-  }
+.backtest-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
 
-  .button-group {
-    display: flex;
-    gap: 0.5rem;
-  }
+.backtest-header .button-group {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .progress-section {
@@ -405,34 +405,34 @@ onUnmounted(() => {
   padding: 1rem;
   background: var(--surface-ground);
   border-radius: 6px;
+}
 
-  .progress-text {
-    margin-top: 0.5rem;
-    margin-bottom: 0;
-    font-weight: 500;
-    color: var(--text-color);
-  }
+.progress-section .progress-text {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+  font-weight: 500;
+  color: var(--text-color);
+}
 
-  .eta-text {
-    margin-top: 0.25rem;
-    margin-bottom: 0;
-    font-size: 0.875rem;
-    color: var(--text-color-secondary);
-  }
+.progress-section .eta-text {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+  font-size: 0.875rem;
+  color: var(--text-color-secondary);
 }
 
 .error-content {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
 
-  strong {
-    font-size: 1rem;
-  }
+.error-content strong {
+  font-size: 1rem;
+}
 
-  p {
-    margin: 0;
-  }
+.error-content p {
+  margin: 0;
 }
 
 .results-section {
@@ -448,69 +448,68 @@ onUnmounted(() => {
   gap: 1rem;
   font-weight: 500;
   font-size: 1.125rem;
+}
 
-  i {
-    font-size: 1.5rem;
-  }
+.recommendation-banner i {
+  font-size: 1.5rem;
+}
 
-  &.recommendation-improvement {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+.recommendation-banner.recommendation-improvement {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
 
-    i {
-      color: #28a745;
-    }
-  }
+.recommendation-banner.recommendation-improvement i {
+  color: #28a745;
+}
 
-  &.recommendation-degraded {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
+.recommendation-banner.recommendation-degraded {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
 
-    i {
-      color: #dc3545;
-    }
-  }
+.recommendation-banner.recommendation-degraded i {
+  color: #dc3545;
+}
 
-  &.recommendation-neutral {
-    background: #d1ecf1;
-    color: #0c5460;
-    border: 1px solid #bee5eb;
+.recommendation-banner.recommendation-neutral {
+  background: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
 
-    i {
-      color: #17a2b8;
-    }
-  }
+.recommendation-banner.recommendation-neutral i {
+  color: #17a2b8;
 }
 
 .results-table-container,
 .equity-curve-container {
   margin-bottom: 2rem;
-
-  h3 {
-    margin-top: 0;
-    margin-bottom: 1rem;
-    font-size: 1.25rem;
-    font-weight: 600;
-  }
 }
 
-.comparison-table {
-  .change-indicator {
-    font-weight: 600;
+.results-table-container h3,
+.equity-curve-container h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
 
-    &.change-positive {
-      color: #28a745;
-    }
+.comparison-table .change-indicator {
+  font-weight: 600;
+}
 
-    &.change-negative {
-      color: #dc3545;
-    }
+.comparison-table .change-indicator.change-positive {
+  color: #28a745;
+}
 
-    &.change-neutral {
-      color: #6c757d;
-    }
-  }
+.comparison-table .change-indicator.change-negative {
+  color: #dc3545;
+}
+
+.comparison-table .change-indicator.change-neutral {
+  color: #6c757d;
 }
 </style>

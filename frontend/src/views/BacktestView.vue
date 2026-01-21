@@ -221,7 +221,7 @@ const proposedConfig = computed(() => ({
 }))
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .backtest-view {
   max-width: 1400px;
   margin: 0 auto;
@@ -230,14 +230,14 @@ const proposedConfig = computed(() => ({
 
 .header {
   margin-bottom: 2rem;
+}
 
-  h1 {
-    margin-bottom: 0.5rem;
-  }
+.header h1 {
+  margin-bottom: 0.5rem;
+}
 
-  p {
-    font-size: 1.125rem;
-  }
+.header p {
+  font-size: 1.125rem;
 }
 
 .config-section {
@@ -246,91 +246,89 @@ const proposedConfig = computed(() => ({
   padding: 2rem;
   margin-bottom: 2rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-
-  h2 {
-    color: var(--text-color);
-    margin-bottom: 1.5rem;
-  }
 }
 
-.config-form {
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
-  }
+.config-section h2 {
+  color: var(--text-color);
+  margin-bottom: 1.5rem;
+}
 
-  .form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+.config-form .form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
 
-    .form-label {
-      font-weight: 600;
-      color: var(--text-color);
-      font-size: 0.875rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
+.config-form .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
 
-    .form-input {
-      padding: 0.75rem;
-      border: 1px solid var(--surface-border);
-      border-radius: 6px;
-      background: var(--surface-ground);
-      color: var(--text-color);
-      font-size: 1rem;
-      transition: all 0.2s;
+.config-form .form-field .form-label {
+  font-weight: 600;
+  color: var(--text-color);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
-      &:focus {
-        outline: none;
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
-      }
+.config-form .form-field .form-input {
+  padding: 0.75rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  background: var(--surface-ground);
+  color: var(--text-color);
+  font-size: 1rem;
+  transition: all 0.2s;
+}
 
-      &::placeholder {
-        color: var(--text-color-secondary);
-      }
-    }
+.config-form .form-field .form-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
+}
 
-    .form-help {
-      font-size: 0.875rem;
-      color: var(--text-color-secondary);
-    }
-  }
+.config-form .form-field .form-input::placeholder {
+  color: var(--text-color-secondary);
+}
+
+.config-form .form-field .form-help {
+  font-size: 0.875rem;
+  color: var(--text-color-secondary);
 }
 
 .advanced-section {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--surface-border);
+}
 
-  .advanced-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: none;
-    border: none;
-    color: var(--primary-color);
-    font-weight: 600;
-    cursor: pointer;
-    padding: 0.5rem 0;
-    font-size: 1rem;
-    transition: opacity 0.2s;
+.advanced-section .advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  font-size: 1rem;
+  transition: opacity 0.2s;
+}
 
-    &:hover {
-      opacity: 0.8;
-    }
+.advanced-section .advanced-toggle:hover {
+  opacity: 0.8;
+}
 
-    i {
-      font-size: 0.875rem;
-    }
-  }
+.advanced-section .advanced-toggle i {
+  font-size: 0.875rem;
+}
 
-  .advanced-options {
-    margin-top: 1.5rem;
-  }
+.advanced-section .advanced-options {
+  margin-top: 1.5rem;
 }
 
 .preview-section {
@@ -342,33 +340,33 @@ const proposedConfig = computed(() => ({
   border-radius: 8px;
   padding: 1.5rem 2rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
 
-  h3 {
-    color: var(--text-color);
-  }
+.quick-links h3 {
+  color: var(--text-color);
+}
 
-  .view-results-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    background: var(--primary-color);
-    color: white;
-    text-decoration: none;
-    border-radius: 6px;
-    font-weight: 600;
-    transition: all 0.2s;
+.quick-links .view-results-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--primary-color);
+  color: white;
+  text-decoration: none;
+  border-radius: 6px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
 
-    &:hover {
-      background: var(--primary-color-dark, var(--primary-color));
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
+.quick-links .view-results-link:hover {
+  background: var(--primary-color-dark, var(--primary-color));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
 
-    i {
-      font-size: 1.125rem;
-    }
-  }
+.quick-links .view-results-link i {
+  font-size: 1.125rem;
 }
 
 @media (max-width: 768px) {
