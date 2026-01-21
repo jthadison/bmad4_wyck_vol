@@ -191,8 +191,12 @@ describe('RiskDashboard.vue', () => {
   describe('Error State', () => {
     it('should show error message when fetch fails', async () => {
       const store = usePortfolioStore()
-      store.error = 'Failed to fetch risk dashboard'
-      store.totalHeat = null
+      // Mock fetchRiskDashboard to reject and set error state
+      vi.spyOn(store, 'fetchRiskDashboard').mockImplementation(async () => {
+        store.error = 'Failed to fetch risk dashboard'
+        store.loading = false
+        throw new Error('API Error')
+      })
 
       wrapper = mount(RiskDashboard, {
         global: {
@@ -206,7 +210,9 @@ describe('RiskDashboard.vue', () => {
         },
       })
 
+      // Wait for async operations to complete
       await wrapper.vm.$nextTick()
+      await new Promise((resolve) => setTimeout(resolve, 50))
 
       expect(wrapper.find('.pi-exclamation-triangle').exists()).toBe(true)
       expect(wrapper.text()).toContain('Failed to load risk dashboard')
@@ -215,8 +221,12 @@ describe('RiskDashboard.vue', () => {
 
     it('should show retry button in error state', async () => {
       const store = usePortfolioStore()
-      store.error = 'Connection error'
-      store.totalHeat = null
+      // Mock fetchRiskDashboard to reject and set error state
+      vi.spyOn(store, 'fetchRiskDashboard').mockImplementation(async () => {
+        store.error = 'Connection error'
+        store.loading = false
+        throw new Error('Connection Error')
+      })
 
       wrapper = mount(RiskDashboard, {
         global: {
@@ -230,11 +240,15 @@ describe('RiskDashboard.vue', () => {
         },
       })
 
+      // Wait for async operations to complete
       await wrapper.vm.$nextTick()
+      await new Promise((resolve) => setTimeout(resolve, 50))
 
-      const retryButton = wrapper.find('button:has(.pi-refresh)')
-      expect(retryButton.exists()).toBe(true)
-      expect(retryButton.text()).toContain('Try Again')
+      // The button contains an icon and text "Try Again"
+      const buttons = wrapper.findAll('button')
+      const retryButton = buttons.find((b) => b.text().includes('Try Again'))
+      expect(retryButton).toBeDefined()
+      expect(retryButton!.text()).toContain('Try Again')
     })
 
     it('should call store fetch when retry button clicked', async () => {

@@ -4,7 +4,6 @@
  * Tests for GlossaryView filtering, expansion, and navigation.
  */
 
-import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -136,8 +135,8 @@ describe('GlossaryView', () => {
       },
     })
 
-    // Set phase filter to C
-    wrapper.vm.$data.selectedPhase = 'C'
+    // Set phase filter to C (access refs directly via vm for Composition API)
+    ;(wrapper.vm as unknown).selectedPhase = 'C'
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as unknown
@@ -157,7 +156,8 @@ describe('GlossaryView', () => {
       },
     })
 
-    wrapper.vm.$data.searchFilter = 'spring'
+    // Access refs directly via vm for Composition API
+    ;(wrapper.vm as unknown).searchFilter = 'spring'
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as unknown
@@ -246,6 +246,14 @@ describe('GlossaryView', () => {
   it('should display empty state when no terms', async () => {
     const helpStore = useHelpStore()
     helpStore.glossaryTerms = []
+    helpStore.isLoading = false
+    helpStore.error = null
+
+    // Mock fetchGlossary to not change loading state (it's called on mount)
+    vi.spyOn(helpStore, 'fetchGlossary').mockImplementation(async () => {
+      // Keep isLoading false and glossaryTerms empty
+      helpStore.isLoading = false
+    })
 
     const wrapper = mount(GlossaryView, {
       global: {
@@ -253,9 +261,14 @@ describe('GlossaryView', () => {
       },
     })
 
+    // Wait for mount and fetchGlossary to complete
     await wrapper.vm.$nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 50))
 
-    expect(wrapper.text()).toContain('No terms found')
+    // Component shows "No terms found matching your search criteria."
+    expect(wrapper.text()).toContain(
+      'No terms found matching your search criteria'
+    )
   })
 
   it('should display loading state', async () => {

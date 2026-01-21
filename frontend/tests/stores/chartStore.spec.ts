@@ -213,6 +213,12 @@ describe('useChartStore', () => {
       it('should not fetch if symbol is the same', async () => {
         const store = useChartStore()
 
+        // Explicitly set the symbol first to ensure we know the current state
+        store.selectedSymbol = 'AAPL'
+
+        // Clear any previous mock calls
+        vi.mocked(axios.get).mockClear()
+
         await store.changeSymbol('AAPL')
 
         expect(axios.get).not.toHaveBeenCalled()
