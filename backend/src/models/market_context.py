@@ -6,7 +6,7 @@ and invalidation history used by the StrategyValidator (Story 8.7).
 
 Models:
     - AssetClass: STOCK, FOREX, CRYPTO enumeration
-    - MarketRegime: TRENDING_UP, TRENDING_DOWN, SIDEWAYS, HIGH_VOLATILITY
+    - MarketRegime: TRENDING_UP, TRENDING_DOWN, SIDEWAYS, HIGH_VOLATILITY, LOW_VOLATILITY
     - ForexSession: ASIAN, LONDON, NY, OVERLAP
     - InvalidationEvent: Campaign stop-out tracking
     - NewsEvent: Base class for news events

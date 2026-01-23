@@ -17,12 +17,20 @@ from typing import Any, Optional
 import structlog
 
 from src.backtesting.intraday_campaign_detector import (
+    REGIME_QUALITY_THRESHOLDS,
     REGIME_STATS_CACHE_TTL_SECONDS,
     Campaign,
     CampaignState,
+    ExitReason,
     IntradayCampaignDetector,
 )
 from src.models.market_context import MarketRegime
+
+# Story 16.7b: Named constants for regime transition analysis
+WIN_RATE_DROP_WARNING_THRESHOLD = 0.10  # 10% drop triggers warning
+MIN_CAMPAIGNS_FOR_STATISTICS = 5  # Minimum campaigns for statistical significance
+UNDERPERFORMING_WIN_RATE_THRESHOLD = 0.5  # Below 50% triggers caution
+HIGH_VOLATILITY_POOR_PERFORMANCE_THRESHOLD = 0.4  # Below 40% in high vol is poor
 
 logger = structlog.get_logger(__name__)
 
@@ -43,6 +51,12 @@ class RegimePerformanceAnalyzer:
         - Regime transition warnings
         - Cached statistics (1 hour TTL)
 
+    Cache Invalidation:
+        Statistics are cached for 1 hour (REGIME_STATS_CACHE_TTL_SECONDS).
+        The cache does NOT automatically invalidate when campaigns change.
+        Consumers MUST call `invalidate_cache()` after modifying campaigns
+        to ensure fresh statistics are computed on the next request.
+
     Example:
         >>> analyzer = RegimePerformanceAnalyzer(detector)
         >>> stats = analyzer.get_regime_statistics()
@@ -50,6 +64,9 @@ class RegimePerformanceAnalyzer:
 
         >>> report = analyzer.get_regime_performance_report()
         >>> # Returns full report with optimal regime identified
+
+        >>> # After adding new campaigns, invalidate cache:
+        >>> analyzer.invalidate_cache()
     """
 
     def __init__(
@@ -149,8 +166,6 @@ class RegimePerformanceAnalyzer:
         if not campaigns:
             return 0.0
 
-        from src.backtesting.intraday_campaign_detector import ExitReason
-
         successes = sum(
             1
             for c in campaigns
@@ -228,9 +243,11 @@ class RegimePerformanceAnalyzer:
         """
         stats = self.get_regime_statistics()
 
-        # Filter regimes with sufficient data (min 5 campaigns)
+        # Filter regimes with sufficient data for statistical significance
         valid_regimes = {
-            regime: data for regime, data in stats.items() if data["total_campaigns"] >= 5
+            regime: data
+            for regime, data in stats.items()
+            if data["total_campaigns"] >= MIN_CAMPAIGNS_FOR_STATISTICS
         }
 
         if not valid_regimes:
@@ -282,8 +299,8 @@ class RegimePerformanceAnalyzer:
 
         warnings: list[str] = []
 
-        # Warn on significant win rate drop (>10%)
-        if new_win_rate < current_win_rate - 0.10:
+        # Warn on significant win rate drop
+        if new_win_rate < current_win_rate - WIN_RATE_DROP_WARNING_THRESHOLD:
             warnings.append(
                 f"Regime change from {current_regime.value} to {new_regime.value} "
                 f"may reduce win rate by {(current_win_rate - new_win_rate) * 100:.1f}%"
@@ -296,9 +313,10 @@ class RegimePerformanceAnalyzer:
                 "Consider reducing position sizes."
             )
         elif new_regime in [MarketRegime.TRENDING_UP, MarketRegime.TRENDING_DOWN]:
+            trending_threshold = REGIME_QUALITY_THRESHOLDS.get(new_regime, 0.8)
             warnings.append(
                 f"Strong {new_regime.value.lower()} detected. Quality threshold "
-                "increased to 0.8. Wyckoff patterns may be less reliable."
+                f"increased to {trending_threshold}. Wyckoff patterns may be less reliable."
             )
 
         if not warnings:
@@ -343,7 +361,10 @@ class RegimePerformanceAnalyzer:
 
         # Identify underperforming regimes
         for regime, data in stats.items():
-            if data["total_campaigns"] >= 5 and data["win_rate"] < 0.5:
+            if (
+                data["total_campaigns"] >= MIN_CAMPAIGNS_FOR_STATISTICS
+                and data["win_rate"] < UNDERPERFORMING_WIN_RATE_THRESHOLD
+            ):
                 recommendations.append(
                     f"Caution in {regime.value}: Win rate below 50% "
                     f"({data['win_rate']:.1%}). Consider avoiding entries."
@@ -352,7 +373,7 @@ class RegimePerformanceAnalyzer:
         # Check for high-volatility performance
         high_vol_stats = stats.get(MarketRegime.HIGH_VOLATILITY, {})
         if high_vol_stats.get("total_campaigns", 0) >= 3:
-            if high_vol_stats.get("win_rate", 0) < 0.4:
+            if high_vol_stats.get("win_rate", 0) < HIGH_VOLATILITY_POOR_PERFORMANCE_THRESHOLD:
                 recommendations.append(
                     "High volatility regime showing poor results. "
                     "Consider pausing trading during volatile periods."
