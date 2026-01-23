@@ -434,8 +434,8 @@ class Campaign(BaseModel):
     )
 
     # Market regime tracking (Story 16.7a)
-    market_regime: "MarketRegime" = Field(
-        default="RANGING",
+    market_regime: MarketRegime = Field(
+        default=MarketRegime.RANGING,
         description="Market regime at campaign formation (RANGING, TRENDING_UP, TRENDING_DOWN, HIGH_VOLATILITY, LOW_VOLATILITY)",
     )
 

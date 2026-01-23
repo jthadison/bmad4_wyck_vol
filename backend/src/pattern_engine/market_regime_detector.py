@@ -174,7 +174,6 @@ class MarketRegimeDetector:
             prev_low = bars[i - 1].low
             curr_high = bars[i].high
             curr_low = bars[i].low
-            curr_close = bars[i].close
             prev_close = bars[i - 1].close
 
             # Directional Movement
@@ -231,8 +230,10 @@ class MarketRegimeDetector:
         dx = (abs(plus_di - minus_di) / di_sum) * Decimal("100")
 
         # Step 5: Calculate ADX (smoothed DX)
-        # For simplicity, return DX as ADX approximation
-        # Full ADX calculation requires smoothing multiple DX values
+        # NOTE: This returns DX, not true ADX. Full ADX requires a second smoothing
+        # pass over multiple DX values (ADX = EMA(DX, period)). For regime detection,
+        # DX provides sufficient trend strength signal with acceptable volatility.
+        # TODO: Consider implementing full ADX smoothing for more stable regime detection
         return dx
 
     def _calculate_atr(self, bars: list["OHLCVBar"], period: int = 14) -> Decimal:
