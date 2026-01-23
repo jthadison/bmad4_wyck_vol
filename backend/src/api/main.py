@@ -34,6 +34,7 @@ from src.api.routes import (
     risk,
     signals,
     summary,
+    tradingview,
     user,
 )
 from src.api.websocket import websocket_endpoint
@@ -66,6 +67,7 @@ app.include_router(notifications.router)  # Notification routes (Story 11.6)
 app.include_router(summary.router)  # Summary routes (Story 10.3)
 app.include_router(help.router)  # Help system routes (Story 11.8a)
 app.include_router(paper_trading.router)  # Paper trading routes (Story 12.8)
+app.include_router(tradingview.router)  # TradingView webhook routes (Story 16.4a)
 
 
 # WebSocket endpoint for real-time updates

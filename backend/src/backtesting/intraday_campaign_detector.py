@@ -51,6 +51,16 @@ from src.models.sos_breakout import SOSBreakout
 from src.models.spring import Spring
 from src.models.wyckoff_phase import WyckoffPhase
 
+# Story 16.6b: Cross-timeframe validation imports
+from src.pattern_engine.validators.cross_timeframe_validator import (
+    TIMEFRAME_ORDER,
+    CrossTimeframeValidationResult,
+    CrossTimeframeValidator,
+    HTFCampaignSnapshot,
+    ValidationSeverity,
+    create_htf_snapshot_from_campaign,
+)
+
 logger = structlog.get_logger(__name__)
 
 # AR Pattern Quality Thresholds (Story 14.2)
@@ -59,6 +69,10 @@ AR_ACTIVATION_QUALITY_THRESHOLD = 0.7  # Minimum quality for AR to activate FORM
 # Cache Configuration (Story 15.4)
 VALIDATION_CACHE_MAX_ENTRIES = 100  # Maximum cache entries before LRU eviction
 AR_HIGH_QUALITY_BONUS_THRESHOLD = 0.75  # Minimum quality for AR progression bonus
+
+# Story 16.6b: HTF Snapshot Configuration
+HTF_SNAPSHOT_TTL_HOURS = 24  # Maximum age of HTF snapshots before cleanup
+HTF_SNAPSHOT_MAX_PER_TIMEFRAME = 100  # Maximum snapshots per timeframe before cleanup
 
 # Volume Analysis Thresholds (Story 14.4 - Issue #5: Extract magic numbers)
 VOLUME_TREND_THRESHOLD = 0.7  # Minimum ratio for trend classification (70%)
@@ -592,6 +606,9 @@ class IntradayCampaignDetector:
         max_campaigns_per_correlation_group: int = 10,  # AC1: configurable, default high
         max_campaigns_per_sector: int = 10,  # AC2: configurable, default high
         max_category_concentration_pct: float = 100.0,  # AC3: configurable, default disabled
+        # Story 16.6b: Cross-timeframe validation parameters
+        htf_strict_mode: bool = False,  # If True, reject patterns against HTF trend
+        enable_htf_validation: bool = True,  # Enable/disable HTF validation
     ):
         """Initialize intraday campaign detector."""
         self.campaign_window_hours = campaign_window_hours
@@ -609,6 +626,13 @@ class IntradayCampaignDetector:
         self.max_campaigns_per_sector = max_campaigns_per_sector
         self.max_category_concentration_pct = max_category_concentration_pct
 
+        # Story 16.6b: Cross-timeframe validation
+        self.htf_strict_mode = htf_strict_mode
+        self.enable_htf_validation = enable_htf_validation
+        self._htf_validator = CrossTimeframeValidator(strict_mode=htf_strict_mode)
+        # HTF campaign snapshots by timeframe and symbol: {timeframe: {symbol: HTFCampaignSnapshot}}
+        self._htf_campaign_snapshots: dict[str, dict[str, HTFCampaignSnapshot]] = defaultdict(dict)
+
         # Story 15.3: Indexed data structures for O(1) lookups
         self._campaigns_by_id: dict[str, Campaign] = {}  # O(1) lookup by ID
         self._campaigns_by_state: dict[CampaignState, set[str]] = defaultdict(
@@ -617,6 +641,9 @@ class IntradayCampaignDetector:
         # Use dict for O(1) add/remove while preserving insertion order (Python 3.7+)
         # Keys are campaign IDs, values are True (used as ordered set)
         self._active_time_windows: dict[str, bool] = {}  # O(1) operations
+
+        # Story 16.6b: Campaigns indexed by timeframe for quick lookups
+        self._campaigns_by_timeframe: dict[str, set[str]] = defaultdict(set)
 
         # Story 15.4: Cache metrics tracking
         self._cache_hits: int = 0
@@ -677,12 +704,13 @@ class IntradayCampaignDetector:
 
     def _add_to_indexes(self, campaign: Campaign) -> None:
         """
-        Add campaign to all indexes (Story 15.3).
+        Add campaign to all indexes (Story 15.3, 16.6b).
 
         Updates:
             - _campaigns_by_id: O(1) lookup by ID
             - _campaigns_by_state: O(1) state queries
             - _active_time_windows: Hot-path optimization for recent active campaigns
+            - _campaigns_by_timeframe: O(1) timeframe queries (Story 16.6b)
 
         Args:
             campaign: Campaign to add to indexes
@@ -701,6 +729,9 @@ class IntradayCampaignDetector:
         # Time window index (if active) - O(1) dict operations
         if campaign.state == CampaignState.ACTIVE:
             self._active_time_windows[campaign.campaign_id] = True
+
+        # Story 16.6b: Timeframe index
+        self._campaigns_by_timeframe[campaign.timeframe].add(campaign.campaign_id)
 
     def _update_indexes(self, campaign: Campaign, old_state: CampaignState) -> None:
         """
@@ -749,12 +780,15 @@ class IntradayCampaignDetector:
         # Remove from time windows - O(1) dict operation
         self._active_time_windows.pop(campaign_id, None)
 
+        # Story 16.6b: Remove from timeframe index
+        self._campaigns_by_timeframe[campaign.timeframe].discard(campaign_id)
+
         # Remove from ID index
         del self._campaigns_by_id[campaign_id]
 
     def _rebuild_indexes(self) -> None:
         """
-        Rebuild all indexes from _campaigns_by_id (Story 15.3).
+        Rebuild all indexes from _campaigns_by_id (Story 15.3, 16.6b).
 
         Used for recovery or after bulk operations. Clears and rebuilds
         all secondary indexes from the primary ID index.
@@ -765,21 +799,309 @@ class IntradayCampaignDetector:
         # Clear secondary indexes
         self._campaigns_by_state.clear()
         self._active_time_windows.clear()
+        self._campaigns_by_timeframe.clear()  # Story 16.6b
 
         # Rebuild from ID index
         for campaign in self._campaigns_by_id.values():
             self._campaigns_by_state[campaign.state].add(campaign.campaign_id)
             if campaign.state == CampaignState.ACTIVE:
                 self._active_time_windows[campaign.campaign_id] = True
+            # Story 16.6b: Rebuild timeframe index
+            self._campaigns_by_timeframe[campaign.timeframe].add(campaign.campaign_id)
 
         self.logger.debug(
             "Indexes rebuilt",
             total_campaigns=len(self._campaigns_by_id),
             active_campaigns=len(self._active_time_windows),
+            timeframes=list(self._campaigns_by_timeframe.keys()),
         )
 
     # ==================================================================================
     # End Story 15.3 Index Maintenance
+    # ==================================================================================
+
+    # ==================================================================================
+    # Story 16.6b: Cross-Timeframe Validation Methods
+    # ==================================================================================
+
+    def get_campaigns_by_timeframe(
+        self,
+        timeframe: str,
+        states: Optional[list[CampaignState]] = None,
+    ) -> list[Campaign]:
+        """
+        Get campaigns filtered by timeframe (Story 16.6b).
+
+        Args:
+            timeframe: Timeframe filter (e.g., "1h", "4h", "1d")
+            states: Optional list of states to filter (default: all states)
+
+        Returns:
+            List of campaigns matching the timeframe and states
+
+        Example:
+            >>> daily_campaigns = detector.get_campaigns_by_timeframe("1d")
+            >>> active_hourly = detector.get_campaigns_by_timeframe(
+            ...     "1h",
+            ...     states=[CampaignState.ACTIVE, CampaignState.FORMING]
+            ... )
+        """
+        campaign_ids = self._campaigns_by_timeframe.get(timeframe, set())
+        campaigns = [
+            self._campaigns_by_id[cid] for cid in campaign_ids if cid in self._campaigns_by_id
+        ]
+
+        # Filter by state if specified
+        if states:
+            campaigns = [c for c in campaigns if c.state in states]
+
+        return campaigns
+
+    def _get_htf_snapshots_for_symbol(self, symbol: str) -> dict[str, HTFCampaignSnapshot]:
+        """
+        Get higher timeframe campaign snapshots for a symbol (Story 16.6b).
+
+        Builds HTF snapshots from registered HTF campaigns or derives them
+        from campaigns in higher timeframes within this detector.
+
+        Args:
+            symbol: Trading symbol to get HTF data for
+
+        Returns:
+            Dictionary of HTF snapshots by timeframe
+        """
+        htf_snapshots: dict[str, HTFCampaignSnapshot] = {}
+
+        # First check manually registered HTF snapshots
+        for timeframe, symbol_snapshots in self._htf_campaign_snapshots.items():
+            if symbol in symbol_snapshots:
+                htf_snapshots[timeframe] = symbol_snapshots[symbol]
+
+        # Also derive snapshots from campaigns in higher timeframes
+        # This allows the detector to use its own HTF campaigns for validation
+        # Note: TIMEFRAME_ORDER is imported at module level from cross_timeframe_validator
+        for timeframe in TIMEFRAME_ORDER:
+            if timeframe in htf_snapshots:
+                continue  # Already have a snapshot for this timeframe
+
+            # Look for active campaigns in this timeframe
+            tf_campaigns = self.get_campaigns_by_timeframe(
+                timeframe,
+                states=[CampaignState.ACTIVE, CampaignState.FORMING],
+            )
+
+            # Find campaigns matching the symbol
+            for campaign in tf_campaigns:
+                # Get symbol from campaign's first pattern
+                if campaign.patterns:
+                    first_pattern = campaign.patterns[0]
+                    bar = first_pattern.bar
+                    campaign_symbol = "UNKNOWN"
+                    if isinstance(bar, dict):
+                        campaign_symbol = bar.get("symbol", "UNKNOWN")
+                    elif hasattr(bar, "symbol"):
+                        campaign_symbol = bar.symbol
+
+                    if campaign_symbol == symbol:
+                        # Create HTF snapshot from campaign
+                        phase = "C"  # Default phase
+                        if campaign.current_phase:
+                            phase = campaign.current_phase.value
+
+                        htf_snapshots[timeframe] = create_htf_snapshot_from_campaign(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            phase=phase,
+                            confidence=Decimal(str(campaign.strength_score)),
+                        )
+                        break  # Use first matching campaign
+
+        return htf_snapshots
+
+    def register_htf_campaign(
+        self,
+        symbol: str,
+        timeframe: str,
+        phase: str,
+        trend: Optional[str] = None,
+        confidence: Decimal = Decimal("0.5"),
+    ) -> None:
+        """
+        Register a higher timeframe campaign for cross-timeframe validation (Story 16.6b).
+
+        This allows external systems (or backtesters running multiple timeframes)
+        to register HTF campaign state for validation of lower timeframe patterns.
+
+        Args:
+            symbol: Trading symbol
+            timeframe: HTF timeframe (e.g., "4h", "1d", "1w")
+            phase: Wyckoff phase (A, B, C, D, E)
+            trend: Optional explicit trend (ACCUMULATION, DISTRIBUTION)
+            confidence: Confidence score (0.0 - 1.0)
+
+        Example:
+            >>> detector.register_htf_campaign(
+            ...     symbol="EUR/USD",
+            ...     timeframe="1d",
+            ...     phase="D",
+            ...     trend="ACCUMULATION",
+            ...     confidence=Decimal("0.8")
+            ... )
+        """
+        htf_trend = None
+        if trend:
+            htf_trend = trend.upper()
+            if htf_trend not in ("ACCUMULATION", "DISTRIBUTION"):
+                htf_trend = None
+
+        snapshot = create_htf_snapshot_from_campaign(
+            symbol=symbol,
+            timeframe=timeframe,
+            phase=phase,
+            campaign_type=htf_trend,
+            confidence=confidence,
+        )
+
+        # Cleanup stale snapshots before adding new one
+        self._cleanup_stale_htf_snapshots()
+
+        self._htf_campaign_snapshots[timeframe][symbol] = snapshot
+
+        self.logger.info(
+            "HTF campaign registered",
+            symbol=symbol,
+            timeframe=timeframe,
+            phase=phase,
+            trend=snapshot.trend.value,
+            confidence=str(confidence),
+        )
+
+    def update_htf_campaign_snapshot(
+        self,
+        symbol: str,
+        timeframe: str,
+        phase: Optional[str] = None,
+        trend: Optional[str] = None,
+        confidence: Optional[Decimal] = None,
+    ) -> bool:
+        """
+        Update an existing HTF campaign snapshot (Story 16.6b).
+
+        Args:
+            symbol: Trading symbol
+            timeframe: HTF timeframe
+            phase: New phase (optional)
+            trend: New trend (optional)
+            confidence: New confidence (optional)
+
+        Returns:
+            True if snapshot was updated, False if not found
+        """
+        if timeframe not in self._htf_campaign_snapshots:
+            return False
+        if symbol not in self._htf_campaign_snapshots[timeframe]:
+            return False
+
+        existing = self._htf_campaign_snapshots[timeframe][symbol]
+
+        # Update fields if provided
+        new_phase = phase if phase else existing.phase
+        new_confidence = confidence if confidence is not None else existing.confidence
+
+        # Determine new trend
+        if trend:
+            htf_trend = trend.upper()
+            campaign_type = htf_trend if htf_trend in ("ACCUMULATION", "DISTRIBUTION") else None
+        else:
+            campaign_type = (
+                existing.trend.value
+                if existing.trend.value in ("ACCUMULATION", "DISTRIBUTION")
+                else None
+            )
+
+        # Create updated snapshot
+        self._htf_campaign_snapshots[timeframe][symbol] = create_htf_snapshot_from_campaign(
+            symbol=symbol,
+            timeframe=timeframe,
+            phase=new_phase,
+            campaign_type=campaign_type,
+            confidence=new_confidence,
+        )
+
+        return True
+
+    def clear_htf_snapshots(
+        self, symbol: Optional[str] = None, timeframe: Optional[str] = None
+    ) -> None:
+        """
+        Clear HTF campaign snapshots (Story 16.6b).
+
+        Args:
+            symbol: Clear snapshots for specific symbol (optional)
+            timeframe: Clear snapshots for specific timeframe (optional)
+                       If both None, clears all snapshots
+        """
+        if timeframe and symbol:
+            if timeframe in self._htf_campaign_snapshots:
+                self._htf_campaign_snapshots[timeframe].pop(symbol, None)
+        elif timeframe:
+            self._htf_campaign_snapshots.pop(timeframe, None)
+        elif symbol:
+            for tf_snapshots in self._htf_campaign_snapshots.values():
+                tf_snapshots.pop(symbol, None)
+        else:
+            self._htf_campaign_snapshots.clear()
+
+    def _cleanup_stale_htf_snapshots(self) -> int:
+        """
+        Remove stale HTF snapshots based on TTL and max entries (Story 16.6b).
+
+        Cleans up snapshots that are older than HTF_SNAPSHOT_TTL_HOURS or when
+        a timeframe exceeds HTF_SNAPSHOT_MAX_PER_TIMEFRAME entries.
+
+        Returns:
+            Number of snapshots removed
+        """
+        removed_count = 0
+        cutoff_time = datetime.now(UTC) - timedelta(hours=HTF_SNAPSHOT_TTL_HOURS)
+
+        # Iterate through all timeframes
+        for timeframe in list(self._htf_campaign_snapshots.keys()):
+            tf_snapshots = self._htf_campaign_snapshots[timeframe]
+
+            # Remove stale snapshots (older than TTL)
+            stale_symbols = [
+                symbol
+                for symbol, snapshot in tf_snapshots.items()
+                if snapshot.last_updated < cutoff_time
+            ]
+            for symbol in stale_symbols:
+                del tf_snapshots[symbol]
+                removed_count += 1
+
+            # If still over max entries, remove oldest
+            while len(tf_snapshots) > HTF_SNAPSHOT_MAX_PER_TIMEFRAME:
+                oldest_symbol = min(
+                    tf_snapshots.keys(),
+                    key=lambda s: tf_snapshots[s].last_updated,
+                )
+                del tf_snapshots[oldest_symbol]
+                removed_count += 1
+
+            # Remove empty timeframe dictionaries
+            if not tf_snapshots:
+                del self._htf_campaign_snapshots[timeframe]
+
+        if removed_count > 0:
+            self.logger.debug(
+                "HTF snapshot cleanup completed",
+                removed_count=removed_count,
+            )
+
+        return removed_count
+
+    # ==================================================================================
+    # End Story 16.6b Cross-Timeframe Validation Methods
     # ==================================================================================
 
     def _handle_ar_activation(self, campaign: Campaign, pattern: AutomaticRally) -> bool:
@@ -874,6 +1196,8 @@ class IntradayCampaignDetector:
         # Story 16.1b: Correlation tracking parameters
         asset_symbol: Optional[str] = None,
         asset_category: Optional[AssetCategory] = None,
+        # Story 16.6b: Cross-timeframe validation parameters
+        timeframe: Optional[str] = None,
     ) -> Optional[Campaign]:
         """
         Add detected pattern and update campaigns.
@@ -881,6 +1205,7 @@ class IntradayCampaignDetector:
         Tasks 1-3: Pattern integration, grouping, state machine.
         Story 14.3: Added position sizing and portfolio heat checking.
         Story 16.1b: Added correlation limit checking.
+        Story 16.6b: Added cross-timeframe validation.
 
         Args:
             pattern: Detected Spring, SOS, or LPS pattern
@@ -888,6 +1213,7 @@ class IntradayCampaignDetector:
             risk_pct_per_trade: Risk percentage per trade (default 2.0%)
             asset_symbol: Trading symbol override (default: from pattern.bar.symbol)
             asset_category: Asset category override (default: auto-detected)
+            timeframe: Timeframe override (default: from pattern.bar.timeframe or "1d")
 
         Returns:
             Campaign that pattern was added to, or None if rejected
@@ -924,6 +1250,63 @@ class IntradayCampaignDetector:
             correlation_group,
         ) = CorrelationMapper.get_campaign_correlation_info(symbol, asset_category)
 
+        # Story 16.6b: Extract timeframe from pattern or use override
+        pattern_timeframe = timeframe
+        if not pattern_timeframe:
+            bar = pattern.bar
+            if isinstance(bar, dict):
+                pattern_timeframe = bar.get("timeframe", "1d")
+            elif hasattr(bar, "timeframe"):
+                pattern_timeframe = bar.timeframe
+            else:
+                pattern_timeframe = "1d"  # Default to daily
+
+        # Story 16.6b: Cross-timeframe validation
+        htf_validation_result: Optional[CrossTimeframeValidationResult] = None
+        if self.enable_htf_validation:
+            # Get pattern type for validation
+            pattern_type = type(pattern).__name__.upper()
+            if pattern_type == "SOSBREAKOUT":
+                pattern_type = "SOS"
+            elif pattern_type == "AUTOMATICRALLY":
+                pattern_type = "AR"
+
+            # Build HTF snapshots for validation
+            htf_snapshots = self._get_htf_snapshots_for_symbol(symbol)
+
+            if htf_snapshots:
+                htf_validation_result = self._htf_validator.validate_pattern(
+                    pattern_type=pattern_type,
+                    pattern_timeframe=pattern_timeframe,
+                    symbol=symbol,
+                    htf_campaigns=htf_snapshots,
+                )
+
+                # If strict mode and pattern rejected, return None
+                if not htf_validation_result.is_valid:
+                    self.logger.warning(
+                        "Pattern rejected by HTF validation",
+                        symbol=symbol,
+                        pattern_type=pattern_type,
+                        pattern_timeframe=pattern_timeframe,
+                        htf_trend=htf_validation_result.htf_trend.value,
+                        warning=htf_validation_result.warning_message,
+                    )
+                    return None
+
+                # Log warning for non-confirmed patterns
+                if htf_validation_result.severity == ValidationSeverity.WARNING:
+                    self.logger.warning(
+                        "Pattern conflicts with HTF trend",
+                        symbol=symbol,
+                        pattern_type=pattern_type,
+                        pattern_timeframe=pattern_timeframe,
+                        htf_trend=htf_validation_result.htf_trend.value,
+                        htf_timeframe=htf_validation_result.htf_timeframe,
+                        warning=htf_validation_result.warning_message,
+                        confidence_adjustment=str(htf_validation_result.confidence_adjustment),
+                    )
+
         # Task 2: Find or create campaign
         campaign = self._find_active_campaign(pattern)
 
@@ -950,6 +1333,8 @@ class IntradayCampaignDetector:
                 asset_category=detected_category,
                 sector=sector,
                 correlation_group=correlation_group,
+                # Story 16.6b: Set timeframe for cross-timeframe validation
+                timeframe=pattern_timeframe,
             )
 
             # AC4.9: Initialize risk metadata to calculate risk_per_share
