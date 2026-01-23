@@ -42,6 +42,10 @@ from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
 from src.orchestrator.service import get_orchestrator
+from src.pattern_engine.realtime_scanner import (
+    RealtimePatternScanner,
+    init_scanner,
+)
 
 app = FastAPI(
     title="BMAD Wyckoff Volume Pattern Detection API",
@@ -159,15 +163,20 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 # Global coordinator instance
 _coordinator: MarketDataCoordinator | None = None
 
+# Global scanner instance (Story 19.1)
+_scanner: RealtimePatternScanner | None = None
+
 
 @app.on_event("startup")
 async def startup_event() -> None:
     """
     FastAPI startup event handler.
 
-    Initializes and starts the real-time market data feed and paper trading integration.
+    Initializes and starts the real-time market data feed, pattern scanner,
+    and paper trading integration.
     """
     global _coordinator
+    global _scanner
 
     # Only start real-time feed if API keys are configured
     if settings.alpaca_api_key and settings.alpaca_secret_key:
@@ -183,6 +192,11 @@ async def startup_event() -> None:
 
             # Start real-time feed
             await _coordinator.start()
+
+            # Initialize and start real-time pattern scanner (Story 19.1)
+            _scanner = init_scanner()
+            await _scanner.start(_coordinator)
+            print("Real-time pattern scanner started successfully")
         except Exception as e:
             print(f"WARNING: Failed to start real-time feed: {str(e)}")
             print("Application will continue without real-time market data.")
@@ -215,9 +229,14 @@ async def shutdown_event() -> None:
     """
     FastAPI shutdown event handler.
 
-    Gracefully stops the real-time market data feed.
+    Gracefully stops the real-time pattern scanner and market data feed.
     """
     global _coordinator
+    global _scanner
+
+    # Stop scanner first (Story 19.1)
+    if _scanner:
+        await _scanner.stop()
 
     if _coordinator:
         await _coordinator.stop()
@@ -233,6 +252,41 @@ async def root() -> dict[str, str]:
 async def health_check() -> dict[str, str]:
     """Basic health check endpoint for Docker and monitoring."""
     return {"status": "healthy"}
+
+
+@app.get("/health/scanner")
+async def scanner_health_check() -> dict[str, object]:
+    """
+    Health check endpoint for real-time pattern scanner (Story 19.1).
+
+    Returns:
+        Dictionary with scanner health information:
+        - status: "healthy", "degraded", or "unhealthy"
+        - queue_depth: Current number of bars in processing queue
+        - last_processed: ISO timestamp of last processed bar
+        - avg_latency_ms: Average processing latency in milliseconds
+        - bars_processed: Total bars processed since startup
+        - bars_dropped: Total bars dropped due to backpressure
+        - circuit_state: Circuit breaker state (closed/open/half_open)
+        - is_running: Whether scanner is currently running
+    """
+    if _scanner is None:
+        return {
+            "status": "not_configured",
+            "message": "Real-time scanner not initialized (Alpaca API keys not configured)",
+        }
+
+    health = _scanner.get_health()
+    return {
+        "status": health.status,
+        "queue_depth": health.queue_depth,
+        "last_processed": health.last_processed.isoformat() if health.last_processed else None,
+        "avg_latency_ms": round(health.avg_latency_ms, 2),
+        "bars_processed": health.bars_processed,
+        "bars_dropped": health.bars_dropped,
+        "circuit_state": health.circuit_state,
+        "is_running": health.is_running,
+    }
 
 
 @app.get("/api/v1/health")
@@ -254,6 +308,7 @@ async def detailed_health_check() -> dict[str, object]:
         "database": "unknown",
         "realtime_feed": None,
         "orchestrator": None,
+        "scanner": None,  # Story 19.1
     }
 
     # Check database connection
@@ -292,6 +347,26 @@ async def detailed_health_check() -> dict[str, object]:
     except Exception as e:
         health_status["orchestrator"] = {"error": str(e)}
         health_status["status"] = "degraded"
+
+    # Check scanner status (Story 19.1)
+    if _scanner:
+        try:
+            scanner_health = _scanner.get_health()
+            health_status["scanner"] = {
+                "status": scanner_health.status,
+                "queue_depth": scanner_health.queue_depth,
+                "avg_latency_ms": round(scanner_health.avg_latency_ms, 2),
+                "bars_processed": scanner_health.bars_processed,
+                "is_running": scanner_health.is_running,
+            }
+
+            if scanner_health.status != "healthy":
+                health_status["status"] = "degraded"
+        except Exception as e:
+            health_status["scanner"] = {"error": str(e)}
+            health_status["status"] = "degraded"
+    else:
+        health_status["scanner"] = {"status": "not_configured"}
 
     return health_status
 
