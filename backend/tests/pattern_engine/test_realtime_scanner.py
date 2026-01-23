@@ -19,12 +19,12 @@ import pytest
 
 from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.realtime_scanner import (
-    CIRCUIT_BREAKER_THRESHOLD,
-    SCANNER_PROCESSING_TIMEOUT_MS,
-    SCANNER_QUEUE_MAX_SIZE,
     CircuitState,
     ProcessingMetrics,
     RealtimePatternScanner,
+    _get_circuit_breaker_threshold,
+    _get_processing_timeout_ms,
+    _get_queue_max_size,
     get_scanner,
     init_scanner,
 )
@@ -80,11 +80,11 @@ class TestRealtimePatternScannerInit:
     """Tests for scanner initialization."""
 
     def test_init_with_defaults(self):
-        """Scanner initializes with default configuration."""
+        """Scanner initializes with default configuration from settings."""
         scanner = RealtimePatternScanner()
 
-        assert scanner._queue_max_size == SCANNER_QUEUE_MAX_SIZE
-        assert scanner._processing_timeout_ms == SCANNER_PROCESSING_TIMEOUT_MS
+        assert scanner._queue_max_size == _get_queue_max_size()
+        assert scanner._processing_timeout_ms == _get_processing_timeout_ms()
         assert scanner._is_running is False
         assert scanner._circuit_state == CircuitState.CLOSED
         assert scanner.queue_depth == 0
@@ -356,7 +356,7 @@ class TestCircuitBreaker:
 
     def test_circuit_opens_on_threshold(self, scanner):
         """Circuit opens after threshold failures."""
-        for _ in range(CIRCUIT_BREAKER_THRESHOLD):
+        for _ in range(_get_circuit_breaker_threshold()):
             scanner._handle_processing_error(Exception("Test error"))
 
         assert scanner._circuit_state == CircuitState.OPEN
@@ -540,6 +540,15 @@ class TestProcessingMetrics:
 class TestGlobalFunctions:
     """Tests for global scanner functions."""
 
+    @pytest.fixture(autouse=True)
+    def reset_global_scanner(self):
+        """Save and restore global scanner state for each test."""
+        import src.pattern_engine.realtime_scanner as module
+
+        original_scanner = module._scanner
+        yield
+        module._scanner = original_scanner
+
     def test_init_scanner_creates_instance(self):
         """init_scanner creates global scanner instance."""
         scanner = init_scanner(queue_max_size=200, processing_timeout_ms=75)
@@ -557,7 +566,6 @@ class TestGlobalFunctions:
 
     def test_get_scanner_raises_if_not_initialized(self):
         """get_scanner raises if not initialized."""
-        # Clear global instance
         import src.pattern_engine.realtime_scanner as module
 
         module._scanner = None

@@ -13,10 +13,12 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import structlog
+from pydantic import BaseModel, Field
 
+from src.config import settings
 from src.models.ohlcv import OHLCVBar
 
 if TYPE_CHECKING:
@@ -25,11 +27,25 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-# Configuration constants
-SCANNER_PROCESSING_TIMEOUT_MS = 100
-SCANNER_QUEUE_MAX_SIZE = 1000
-CIRCUIT_BREAKER_THRESHOLD = 5  # Failures before circuit opens
-CIRCUIT_BREAKER_RESET_SECONDS = 30  # Time before circuit resets
+# Configuration defaults (overridden by settings if available)
+def _get_queue_max_size() -> int:
+    """Get queue max size from settings."""
+    return settings.scanner_queue_max_size
+
+
+def _get_processing_timeout_ms() -> int:
+    """Get processing timeout from settings."""
+    return settings.scanner_processing_timeout_ms
+
+
+def _get_circuit_breaker_threshold() -> int:
+    """Get circuit breaker threshold from settings."""
+    return settings.scanner_circuit_breaker_threshold
+
+
+def _get_circuit_breaker_reset_seconds() -> int:
+    """Get circuit breaker reset time from settings."""
+    return settings.scanner_circuit_breaker_reset_seconds
 
 
 class CircuitState(Enum):
@@ -40,18 +56,55 @@ class CircuitState(Enum):
     HALF_OPEN = "half_open"  # Testing if recovered
 
 
-@dataclass
-class ScannerHealth:
+class ScannerHealth(BaseModel):
     """Health status of the real-time pattern scanner."""
 
-    status: str  # "healthy", "degraded", "unhealthy"
-    queue_depth: int
-    last_processed: datetime | None
-    avg_latency_ms: float
-    bars_processed: int
-    bars_dropped: int
-    circuit_state: str
-    is_running: bool
+    status: Literal["healthy", "degraded", "unhealthy"] = Field(
+        description="Overall health status"
+    )
+    queue_depth: int = Field(ge=0, description="Number of bars in processing queue")
+    last_processed: datetime | None = Field(
+        description="Timestamp of last processed bar"
+    )
+    avg_latency_ms: float = Field(ge=0, description="Average processing latency in ms")
+    bars_processed: int = Field(ge=0, description="Total bars processed since startup")
+    bars_dropped: int = Field(ge=0, description="Total bars dropped due to backpressure")
+    circuit_state: Literal["closed", "open", "half_open"] = Field(
+        description="Circuit breaker state"
+    )
+    is_running: bool = Field(description="Whether scanner is currently running")
+
+
+class ScannerHealthResponse(BaseModel):
+    """API response model for scanner health endpoint."""
+
+    status: Literal["healthy", "degraded", "unhealthy", "not_configured"] = Field(
+        description="Overall health status"
+    )
+    queue_depth: int | None = Field(
+        default=None, ge=0, description="Number of bars in processing queue"
+    )
+    last_processed: str | None = Field(
+        default=None, description="ISO timestamp of last processed bar"
+    )
+    avg_latency_ms: float | None = Field(
+        default=None, ge=0, description="Average processing latency in ms"
+    )
+    bars_processed: int | None = Field(
+        default=None, ge=0, description="Total bars processed since startup"
+    )
+    bars_dropped: int | None = Field(
+        default=None, ge=0, description="Total bars dropped due to backpressure"
+    )
+    circuit_state: str | None = Field(
+        default=None, description="Circuit breaker state"
+    )
+    is_running: bool | None = Field(
+        default=None, description="Whether scanner is currently running"
+    )
+    message: str | None = Field(
+        default=None, description="Additional status message"
+    )
 
 
 @dataclass
@@ -93,21 +146,29 @@ class RealtimePatternScanner:
 
     def __init__(
         self,
-        queue_max_size: int = SCANNER_QUEUE_MAX_SIZE,
-        processing_timeout_ms: int = SCANNER_PROCESSING_TIMEOUT_MS,
+        queue_max_size: int | None = None,
+        processing_timeout_ms: int | None = None,
     ):
         """
         Initialize the real-time pattern scanner.
 
         Args:
-            queue_max_size: Maximum bars to queue (default 1000)
-            processing_timeout_ms: Target processing time per bar (default 100ms)
+            queue_max_size: Maximum bars to queue (defaults from settings)
+            processing_timeout_ms: Target processing time per bar (defaults from settings)
         """
-        self._queue_max_size = queue_max_size
-        self._processing_timeout_ms = processing_timeout_ms
+        self._queue_max_size = (
+            queue_max_size if queue_max_size is not None else _get_queue_max_size()
+        )
+        self._processing_timeout_ms = (
+            processing_timeout_ms
+            if processing_timeout_ms is not None
+            else _get_processing_timeout_ms()
+        )
 
         # Queue for bar buffering
-        self._bar_queue: asyncio.Queue[OHLCVBar] = asyncio.Queue(maxsize=queue_max_size)
+        self._bar_queue: asyncio.Queue[OHLCVBar] = asyncio.Queue(
+            maxsize=self._queue_max_size
+        )
 
         # State
         self._is_running = False
@@ -124,8 +185,8 @@ class RealtimePatternScanner:
 
         logger.info(
             "realtime_scanner_initialized",
-            queue_max_size=queue_max_size,
-            processing_timeout_ms=processing_timeout_ms,
+            queue_max_size=self._queue_max_size,
+            processing_timeout_ms=self._processing_timeout_ms,
         )
 
     @property
@@ -202,6 +263,10 @@ class RealtimePatternScanner:
         Callback invoked when a bar is received from the coordinator.
 
         Queues the bar for processing with backpressure handling.
+
+        Note: This is intentionally a synchronous method despite being called from
+        an async WebSocket context. It uses put_nowait() for non-blocking queue
+        insertion, making async unnecessary and avoiding event loop overhead.
 
         Args:
             bar: OHLCVBar from market data feed
@@ -337,14 +402,15 @@ class RealtimePatternScanner:
         )
 
         # Open circuit if threshold exceeded
-        if self._consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD:
+        threshold = _get_circuit_breaker_threshold()
+        if self._consecutive_failures >= threshold:
             if self._circuit_state != CircuitState.OPEN:
                 self._circuit_state = CircuitState.OPEN
                 self._circuit_opened_at = datetime.now(UTC)
                 logger.warning(
                     "circuit_breaker_opened",
                     consecutive_failures=self._consecutive_failures,
-                    threshold=CIRCUIT_BREAKER_THRESHOLD,
+                    threshold=threshold,
                 )
 
     def _check_circuit_reset(self) -> None:
@@ -356,7 +422,7 @@ class RealtimePatternScanner:
             return
 
         elapsed = (datetime.now(UTC) - self._circuit_opened_at).total_seconds()
-        if elapsed >= CIRCUIT_BREAKER_RESET_SECONDS:
+        if elapsed >= _get_circuit_breaker_reset_seconds():
             self._circuit_state = CircuitState.HALF_OPEN
             logger.info(
                 "circuit_breaker_half_open",
@@ -414,15 +480,15 @@ def get_scanner() -> RealtimePatternScanner:
 
 
 def init_scanner(
-    queue_max_size: int = SCANNER_QUEUE_MAX_SIZE,
-    processing_timeout_ms: int = SCANNER_PROCESSING_TIMEOUT_MS,
+    queue_max_size: int | None = None,
+    processing_timeout_ms: int | None = None,
 ) -> RealtimePatternScanner:
     """
     Initialize the global scanner instance.
 
     Args:
-        queue_max_size: Maximum bars to queue
-        processing_timeout_ms: Target processing time per bar
+        queue_max_size: Maximum bars to queue (defaults from settings)
+        processing_timeout_ms: Target processing time per bar (defaults from settings)
 
     Returns:
         RealtimePatternScanner instance

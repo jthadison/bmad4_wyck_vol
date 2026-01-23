@@ -43,7 +43,11 @@ from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
 from src.orchestrator.service import get_orchestrator
-from src.pattern_engine.realtime_scanner import get_scanner, init_scanner
+from src.pattern_engine.realtime_scanner import (
+    ScannerHealthResponse,
+    get_scanner,
+    init_scanner,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -259,41 +263,33 @@ async def health_check() -> dict[str, str]:
     return {"status": "healthy"}
 
 
-@app.get("/health/scanner")
-async def scanner_health_check() -> dict[str, object]:
+@app.get("/health/scanner", response_model=ScannerHealthResponse)
+async def scanner_health_check() -> ScannerHealthResponse:
     """
     Health check endpoint for real-time pattern scanner (Story 19.1).
 
     Returns:
-        Dictionary with scanner health information:
-        - status: "healthy", "degraded", or "unhealthy"
-        - queue_depth: Current number of bars in processing queue
-        - last_processed: ISO timestamp of last processed bar
-        - avg_latency_ms: Average processing latency in milliseconds
-        - bars_processed: Total bars processed since startup
-        - bars_dropped: Total bars dropped due to backpressure
-        - circuit_state: Circuit breaker state (closed/open/half_open)
-        - is_running: Whether scanner is currently running
+        ScannerHealthResponse with scanner health information.
     """
     try:
         scanner = get_scanner()
     except RuntimeError:
-        return {
-            "status": "not_configured",
-            "message": "Real-time scanner not initialized (Alpaca API keys not configured)",
-        }
+        return ScannerHealthResponse(
+            status="not_configured",
+            message="Real-time scanner not initialized (Alpaca API keys not configured)",
+        )
 
     health = scanner.get_health()
-    return {
-        "status": health.status,
-        "queue_depth": health.queue_depth,
-        "last_processed": health.last_processed.isoformat() if health.last_processed else None,
-        "avg_latency_ms": round(health.avg_latency_ms, 2),
-        "bars_processed": health.bars_processed,
-        "bars_dropped": health.bars_dropped,
-        "circuit_state": health.circuit_state,
-        "is_running": health.is_running,
-    }
+    return ScannerHealthResponse(
+        status=health.status,
+        queue_depth=health.queue_depth,
+        last_processed=health.last_processed.isoformat() if health.last_processed else None,
+        avg_latency_ms=round(health.avg_latency_ms, 2),
+        bars_processed=health.bars_processed,
+        bars_dropped=health.bars_dropped,
+        circuit_state=health.circuit_state,
+        is_running=health.is_running,
+    )
 
 
 @app.get("/api/v1/health")
