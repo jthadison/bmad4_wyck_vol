@@ -130,6 +130,32 @@ class Settings(BaseSettings):
         description="Real-time bar timeframe (1m, 5m, 15m, 1h, 1d)",
     )
 
+    # Real-Time Pattern Scanner Configuration (Story 19.1)
+    scanner_queue_max_size: int = Field(
+        default=1000,
+        ge=100,
+        le=10000,
+        description="Maximum bars to queue for pattern scanning",
+    )
+    scanner_processing_timeout_ms: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description="Target processing time per bar in milliseconds",
+    )
+    scanner_circuit_breaker_threshold: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Consecutive failures before circuit breaker opens",
+    )
+    scanner_circuit_breaker_reset_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=300,
+        description="Seconds before circuit breaker resets from open to half-open",
+    )
+
     # Data Ingestion Settings
     default_provider: str = Field(
         default="polygon",
