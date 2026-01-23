@@ -401,3 +401,65 @@ def test_db():
     # Return the db_session fixture
     # Note: This will be overridden in integration tests that use PostgreSQL
     return None  # Placeholder - use db_session directly
+
+
+# =============================
+# Story 19.2: Bar Window Test Fixtures
+# =============================
+
+
+@pytest.fixture
+def create_test_bar():
+    """
+    Provide factory function to create test OHLCVBar instances.
+
+    Returns a callable that generates OHLCVBar instances with sequential
+    timestamps for testing bar window management.
+
+    Usage:
+        ```python
+        def test_something(create_test_bar):
+            bar = create_test_bar("AAPL", 0)  # First bar
+            bar2 = create_test_bar("AAPL", 1)  # Second bar (1 minute later)
+        ```
+
+    Returns:
+        Callable[[str, int], OHLCVBar]: Factory function that takes symbol and index
+    """
+    from datetime import UTC, datetime, timedelta
+    from decimal import Decimal
+
+    from src.models.ohlcv import OHLCVBar
+
+    def _create_bar(symbol: str, index: int) -> OHLCVBar:
+        """
+        Create a test OHLCVBar for testing.
+
+        Args:
+            symbol: Stock symbol
+            index: Bar index (used to generate unique timestamps)
+
+        Returns:
+            OHLCVBar instance
+        """
+        # Start at Jan 1, 2024, 9:30 AM and add 1 minute per index
+        base_timestamp = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
+        timestamp = base_timestamp + timedelta(minutes=index)
+
+        return OHLCVBar(
+            id=uuid4(),
+            symbol=symbol,
+            timeframe="1m",
+            timestamp=timestamp,
+            open=Decimal("150.00"),
+            high=Decimal("151.00"),
+            low=Decimal("149.00"),
+            close=Decimal("150.50"),
+            volume=1000000,
+            spread=Decimal("2.00"),
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+            created_at=datetime.now(UTC),
+        )
+
+    return _create_bar
