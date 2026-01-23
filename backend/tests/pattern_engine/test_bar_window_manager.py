@@ -15,9 +15,7 @@ Author: Story 19.2
 
 from collections import deque
 from datetime import UTC, datetime
-from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
-from uuid import uuid4
 
 import pytest
 
@@ -58,29 +56,29 @@ class TestBarWindow:
         assert window.state == WindowState.HYDRATING
         assert window.last_updated is None
 
-    def test_bar_window_deque_maxlen_enforced(self):
+    def test_bar_window_deque_maxlen_enforced(self, create_test_bar):
         """Verify deque maxlen is enforced to 200 (AC1, AC3)."""
         window = BarWindow(symbol="AAPL")
 
         # Add 250 bars
         for i in range(250):
-            bar = _create_test_bar("AAPL", i)
+            bar = create_test_bar("AAPL", i)
             window.bars.append(bar)
 
         # Should only have 200 bars (oldest 50 evicted)
         assert len(window.bars) == 200
 
-    def test_bar_window_fifo_behavior(self):
+    def test_bar_window_fifo_behavior(self, create_test_bar):
         """Verify FIFO eviction behavior (AC3)."""
         window = BarWindow(symbol="AAPL")
 
         # Add 200 bars
-        bars = [_create_test_bar("AAPL", i) for i in range(200)]
+        bars = [create_test_bar("AAPL", i) for i in range(200)]
         for bar in bars:
             window.bars.append(bar)
 
         # Add one more bar
-        new_bar = _create_test_bar("AAPL", 200)
+        new_bar = create_test_bar("AAPL", 200)
         window.bars.append(new_bar)
 
         # Oldest bar (index 0) should be evicted
@@ -108,10 +106,10 @@ class TestBarWindowManager:
         assert manager._alpaca_client is mock_client
 
     @pytest.mark.asyncio
-    async def test_add_bar_creates_window_if_not_exists(self):
+    async def test_add_bar_creates_window_if_not_exists(self, create_test_bar):
         """Verify add_bar creates window for new symbol."""
         manager = BarWindowManager()
-        bar = _create_test_bar("AAPL", 0)
+        bar = create_test_bar("AAPL", 0)
 
         await manager.add_bar("AAPL", bar)
 
@@ -119,29 +117,29 @@ class TestBarWindowManager:
         assert len(manager._windows["AAPL"].bars) == 1
 
     @pytest.mark.asyncio
-    async def test_add_bar_appends_to_existing_window(self):
+    async def test_add_bar_appends_to_existing_window(self, create_test_bar):
         """Verify add_bar appends to existing window (AC3)."""
         manager = BarWindowManager()
 
         # Add 5 bars
         for i in range(5):
-            bar = _create_test_bar("AAPL", i)
+            bar = create_test_bar("AAPL", i)
             await manager.add_bar("AAPL", bar)
 
         assert len(manager._windows["AAPL"].bars) == 5
 
     @pytest.mark.asyncio
-    async def test_add_bar_fifo_eviction_when_full(self):
+    async def test_add_bar_fifo_eviction_when_full(self, create_test_bar):
         """Verify oldest bar evicted when window full (AC3)."""
         manager = BarWindowManager()
 
         # Add 200 bars
-        bars = [_create_test_bar("AAPL", i) for i in range(200)]
+        bars = [create_test_bar("AAPL", i) for i in range(200)]
         for bar in bars:
             await manager.add_bar("AAPL", bar)
 
         # Add one more
-        new_bar = _create_test_bar("AAPL", 200)
+        new_bar = create_test_bar("AAPL", 200)
         await manager.add_bar("AAPL", new_bar)
 
         window = manager._windows["AAPL"]
@@ -150,28 +148,28 @@ class TestBarWindowManager:
         assert window.bars[0].timestamp == bars[1].timestamp
 
     @pytest.mark.asyncio
-    async def test_add_bar_updates_state_to_ready(self):
+    async def test_add_bar_updates_state_to_ready(self, create_test_bar):
         """Verify window state becomes READY when 200 bars added (AC1, AC5)."""
         manager = BarWindowManager()
 
         # Add 199 bars - should still be HYDRATING
         for i in range(199):
-            bar = _create_test_bar("AAPL", i)
+            bar = create_test_bar("AAPL", i)
             await manager.add_bar("AAPL", bar)
 
         assert manager._windows["AAPL"].state == WindowState.HYDRATING
 
         # Add 200th bar - should become READY
-        bar_200 = _create_test_bar("AAPL", 199)
+        bar_200 = create_test_bar("AAPL", 199)
         await manager.add_bar("AAPL", bar_200)
 
         assert manager._windows["AAPL"].state == WindowState.READY
 
     @pytest.mark.asyncio
-    async def test_add_bar_updates_last_updated_timestamp(self):
+    async def test_add_bar_updates_last_updated_timestamp(self, create_test_bar):
         """Verify last_updated timestamp is updated on add_bar."""
         manager = BarWindowManager()
-        bar = _create_test_bar("AAPL", 0)
+        bar = create_test_bar("AAPL", 0)
 
         before = datetime.now(UTC)
         await manager.add_bar("AAPL", bar)
@@ -181,11 +179,11 @@ class TestBarWindowManager:
         assert window.last_updated is not None
         assert before <= window.last_updated <= after
 
-    def test_get_bars_returns_list_of_bars(self):
+    def test_get_bars_returns_list_of_bars(self, create_test_bar):
         """Verify get_bars returns all bars for symbol."""
         manager = BarWindowManager()
         window = BarWindow(symbol="AAPL")
-        bars = [_create_test_bar("AAPL", i) for i in range(10)]
+        bars = [create_test_bar("AAPL", i) for i in range(10)]
         window.bars.extend(bars)
         manager._windows["AAPL"] = window
 
@@ -228,14 +226,14 @@ class TestBarWindowManager:
 
         assert usage == 0
 
-    def test_get_memory_usage_single_symbol(self):
+    def test_get_memory_usage_single_symbol(self, create_test_bar):
         """Verify memory usage calculation for single symbol (AC6)."""
         manager = BarWindowManager()
         window = BarWindow(symbol="AAPL")
 
         # Add 200 bars
         for i in range(200):
-            window.bars.append(_create_test_bar("AAPL", i))
+            window.bars.append(create_test_bar("AAPL", i))
 
         manager._windows["AAPL"] = window
 
@@ -245,7 +243,7 @@ class TestBarWindowManager:
         expected = (200 * 100) + 500
         assert usage == expected
 
-    def test_get_memory_usage_50_symbols_under_limit(self):
+    def test_get_memory_usage_50_symbols_under_limit(self, create_test_bar):
         """Verify memory usage for 50 symbols is under 50MB (AC6)."""
         manager = BarWindowManager()
 
@@ -255,7 +253,7 @@ class TestBarWindowManager:
             window = BarWindow(symbol=symbol)
 
             for bar_idx in range(200):
-                window.bars.append(_create_test_bar(symbol, bar_idx))
+                window.bars.append(create_test_bar(symbol, bar_idx))
 
             manager._windows[symbol] = window
 
@@ -340,11 +338,11 @@ class TestBarWindowManager:
             await manager.hydrate_symbol("   ")
 
     @pytest.mark.asyncio
-    async def test_hydrate_symbol_normalizes_symbol(self):
+    async def test_hydrate_symbol_normalizes_symbol(self, create_test_bar):
         """Verify hydrate_symbol normalizes symbol to uppercase (High Issue #2)."""
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("AAPL", i) for i in range(200)
+            create_test_bar("AAPL", i) for i in range(200)
         ]
         manager = BarWindowManager(alpaca_client=mock_client)
 
@@ -356,11 +354,11 @@ class TestBarWindowManager:
         assert "aapl" not in manager._windows
 
     @pytest.mark.asyncio
-    async def test_hydrate_symbol_creates_window(self):
+    async def test_hydrate_symbol_creates_window(self, create_test_bar):
         """Verify hydrate_symbol creates window for symbol (AC2)."""
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("AAPL", i) for i in range(200)
+            create_test_bar("AAPL", i) for i in range(200)
         ]
 
         manager = BarWindowManager(alpaca_client=mock_client)
@@ -370,13 +368,13 @@ class TestBarWindowManager:
         assert "AAPL" in manager._windows
 
     @pytest.mark.asyncio
-    async def test_hydrate_symbol_fetches_200_bars(self):
+    async def test_hydrate_symbol_fetches_200_bars(self, create_test_bar):
         """Verify hydrate_symbol fetches historical bars (AC2)."""
         from datetime import date
 
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("AAPL", i) for i in range(200)
+            create_test_bar("AAPL", i) for i in range(200)
         ]
 
         manager = BarWindowManager(alpaca_client=mock_client)
@@ -392,11 +390,11 @@ class TestBarWindowManager:
         assert call_args.kwargs["timeframe"] == "1m"
 
     @pytest.mark.asyncio
-    async def test_hydrate_symbol_state_ready_when_200_bars(self):
+    async def test_hydrate_symbol_state_ready_when_200_bars(self, create_test_bar):
         """Verify window state is READY when 200 bars fetched (AC2, AC5)."""
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("AAPL", i) for i in range(200)
+            create_test_bar("AAPL", i) for i in range(200)
         ]
 
         manager = BarWindowManager(alpaca_client=mock_client)
@@ -407,12 +405,12 @@ class TestBarWindowManager:
         assert manager._windows["AAPL"].state == WindowState.READY
 
     @pytest.mark.asyncio
-    async def test_hydrate_symbol_insufficient_data_when_less_than_200(self):
+    async def test_hydrate_symbol_insufficient_data_when_less_than_200(self, create_test_bar):
         """Verify window state is INSUFFICIENT_DATA when < 200 bars (AC5)."""
         mock_client = AsyncMock()
         # Only 50 bars available
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("NEWIPO", i) for i in range(50)
+            create_test_bar("NEWIPO", i) for i in range(50)
         ]
 
         manager = BarWindowManager(alpaca_client=mock_client)
@@ -435,38 +433,3 @@ class TestBarWindowManager:
 
         # Window should be in INSUFFICIENT_DATA state
         assert manager._windows["AAPL"].state == WindowState.INSUFFICIENT_DATA
-
-
-# Helper Functions
-def _create_test_bar(symbol: str, index: int) -> OHLCVBar:
-    """
-    Create a test OHLCVBar for testing.
-
-    Args:
-        symbol: Stock symbol
-        index: Bar index (used to generate unique timestamps)
-
-    Returns:
-        OHLCVBar instance
-    """
-    from datetime import timedelta
-
-    # Start at Jan 1, 2024, 9:30 AM and add 1 minute per index
-    base_timestamp = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
-    timestamp = base_timestamp + timedelta(minutes=index)
-
-    return OHLCVBar(
-        id=uuid4(),
-        symbol=symbol,
-        timeframe="1m",
-        timestamp=timestamp,
-        open=Decimal("150.00"),
-        high=Decimal("151.00"),
-        low=Decimal("149.00"),
-        close=Decimal("150.50"),
-        volume=1000000,
-        spread=Decimal("2.00"),
-        spread_ratio=Decimal("1.0"),
-        volume_ratio=Decimal("1.0"),
-        created_at=datetime.now(UTC),
-    )

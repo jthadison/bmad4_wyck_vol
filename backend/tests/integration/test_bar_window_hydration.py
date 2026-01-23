@@ -8,14 +8,10 @@ Tests the complete startup hydration workflow:
 - State transitions
 """
 
-from datetime import UTC, datetime
-from decimal import Decimal
 from unittest.mock import AsyncMock
-from uuid import uuid4
 
 import pytest
 
-from src.models.ohlcv import OHLCVBar
 from src.pattern_engine.bar_window_manager import (
     BarWindowManager,
     WindowState,
@@ -26,7 +22,7 @@ from src.pattern_engine.bar_window_manager import (
 class TestBarWindowHydration:
     """Integration tests for bar window hydration."""
 
-    async def test_startup_hydration_multiple_symbols(self):
+    async def test_startup_hydration_multiple_symbols(self, create_test_bar):
         """
         Test hydrating multiple symbols on startup (Test Scenario 1).
 
@@ -38,7 +34,7 @@ class TestBarWindowHydration:
 
         # Mock Alpaca client to return 200 bars for each symbol
         def mock_fetch_bars(symbol, start_date, end_date, timeframe):
-            return [_create_test_bar(symbol, i) for i in range(200)]
+            return [create_test_bar(symbol, i) for i in range(200)]
 
         mock_client.fetch_historical_bars.side_effect = mock_fetch_bars
 
@@ -61,7 +57,7 @@ class TestBarWindowHydration:
             bars = manager.get_bars(symbol)
             assert len(bars) == 200
 
-    async def test_insufficient_data_handling(self):
+    async def test_insufficient_data_handling(self, create_test_bar):
         """
         Test handling of symbols with insufficient data (Test Scenario 2).
 
@@ -73,9 +69,9 @@ class TestBarWindowHydration:
         def mock_fetch_bars(symbol, start_date, end_date, timeframe):
             # NEWIPO has only 50 bars
             if symbol == "NEWIPO":
-                return [_create_test_bar(symbol, i) for i in range(50)]
+                return [create_test_bar(symbol, i) for i in range(50)]
             # Others have 200 bars
-            return [_create_test_bar(symbol, i) for i in range(200)]
+            return [create_test_bar(symbol, i) for i in range(200)]
 
         mock_client.fetch_historical_bars.side_effect = mock_fetch_bars
 
@@ -96,7 +92,7 @@ class TestBarWindowHydration:
         assert len(manager.get_bars("AAPL")) == 200
         assert len(manager.get_bars("NEWIPO")) == 50
 
-    async def test_rolling_update_after_hydration(self):
+    async def test_rolling_update_after_hydration(self, create_test_bar):
         """
         Test rolling window updates after initial hydration (Test Scenario 3).
 
@@ -105,7 +101,7 @@ class TestBarWindowHydration:
         # Arrange
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("AAPL", i) for i in range(200)
+            create_test_bar("AAPL", i) for i in range(200)
         ]
 
         manager = BarWindowManager(alpaca_client=mock_client)
@@ -119,7 +115,7 @@ class TestBarWindowHydration:
         newest_timestamp = bars_before[-1].timestamp
 
         # Add new bar
-        new_bar = _create_test_bar("AAPL", 200)
+        new_bar = create_test_bar("AAPL", 200)
         await manager.add_bar("AAPL", new_bar)
 
         # Assert
@@ -133,7 +129,7 @@ class TestBarWindowHydration:
         # Newest bar should be the one we just added
         assert bars_after[-1].timestamp == new_bar.timestamp
 
-    async def test_memory_usage_compliance(self):
+    async def test_memory_usage_compliance(self, create_test_bar):
         """
         Test memory usage for 50 symbols (Test Scenario 4, AC6).
 
@@ -142,7 +138,7 @@ class TestBarWindowHydration:
         # Arrange
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("SYM00", i) for i in range(200)
+            create_test_bar("SYM00", i) for i in range(200)
         ]
 
         manager = BarWindowManager(alpaca_client=mock_client)
@@ -165,7 +161,7 @@ class TestBarWindowHydration:
         assert memory_mb < 50
         assert memory_mb < 2  # Should be around 1MB
 
-    async def test_concurrent_hydration_and_updates(self):
+    async def test_concurrent_hydration_and_updates(self, create_test_bar):
         """
         Test hydration and real-time updates happening concurrently.
 
@@ -174,14 +170,14 @@ class TestBarWindowHydration:
         # Arrange
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("AAPL", i) for i in range(200)
+            create_test_bar("AAPL", i) for i in range(200)
         ]
 
         manager = BarWindowManager(alpaca_client=mock_client)
 
         # Act - Start with empty window and add bars manually
         for i in range(195):
-            bar = _create_test_bar("TSLA", i)
+            bar = create_test_bar("TSLA", i)
             await manager.add_bar("TSLA", bar)
 
         # At this point, TSLA has 195 bars and should be HYDRATING
@@ -189,7 +185,7 @@ class TestBarWindowHydration:
 
         # Add 5 more bars to reach 200
         for i in range(195, 200):
-            bar = _create_test_bar("TSLA", i)
+            bar = create_test_bar("TSLA", i)
             await manager.add_bar("TSLA", bar)
 
         # Now should be READY
@@ -200,7 +196,7 @@ class TestBarWindowHydration:
         await manager.hydrate_symbol("AAPL")
         assert manager.get_state("AAPL") == WindowState.READY
 
-    async def test_state_transitions(self):
+    async def test_state_transitions(self, create_test_bar):
         """
         Test complete state transition workflow.
 
@@ -211,9 +207,9 @@ class TestBarWindowHydration:
 
         def mock_fetch_bars(symbol, start_date, end_date, timeframe):
             if symbol == "READY_SYM":
-                return [_create_test_bar(symbol, i) for i in range(200)]
+                return [create_test_bar(symbol, i) for i in range(200)]
             elif symbol == "INSUFFICIENT_SYM":
-                return [_create_test_bar(symbol, i) for i in range(100)]
+                return [create_test_bar(symbol, i) for i in range(100)]
             return []
 
         mock_client.fetch_historical_bars.side_effect = mock_fetch_bars
@@ -230,7 +226,7 @@ class TestBarWindowHydration:
         assert state == WindowState.INSUFFICIENT_DATA
         assert manager.get_state("INSUFFICIENT_SYM") == WindowState.INSUFFICIENT_DATA
 
-    async def test_window_persistence_across_operations(self):
+    async def test_window_persistence_across_operations(self, create_test_bar):
         """
         Test that window data persists correctly across operations.
 
@@ -239,7 +235,7 @@ class TestBarWindowHydration:
         # Arrange
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
-            _create_test_bar("AAPL", i) for i in range(200)
+            create_test_bar("AAPL", i) for i in range(200)
         ]
 
         manager = BarWindowManager(alpaca_client=mock_client)
@@ -253,7 +249,7 @@ class TestBarWindowHydration:
         bars_3 = manager.get_bars("AAPL")
 
         # Add a new bar
-        new_bar = _create_test_bar("AAPL", 200)
+        new_bar = create_test_bar("AAPL", 200)
         await manager.add_bar("AAPL", new_bar)
 
         bars_4 = manager.get_bars("AAPL")
@@ -268,38 +264,3 @@ class TestBarWindowHydration:
 
         # But oldest bar should be different (evicted)
         assert bars_4[0].timestamp != bars_1[0].timestamp
-
-
-# Helper Functions
-def _create_test_bar(symbol: str, index: int) -> OHLCVBar:
-    """
-    Create a test OHLCVBar for integration testing.
-
-    Args:
-        symbol: Stock symbol
-        index: Bar index (used to generate unique timestamps)
-
-    Returns:
-        OHLCVBar instance
-    """
-    from datetime import timedelta
-
-    # Start at Jan 1, 2024, 9:30 AM and add 1 minute per index
-    base_timestamp = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
-    timestamp = base_timestamp + timedelta(minutes=index)
-
-    return OHLCVBar(
-        id=uuid4(),
-        symbol=symbol,
-        timeframe="1m",
-        timestamp=timestamp,
-        open=Decimal("150.00"),
-        high=Decimal("151.00"),
-        low=Decimal("149.00"),
-        close=Decimal("150.50"),
-        volume=1000000,
-        spread=Decimal("2.00"),
-        spread_ratio=Decimal("1.0"),
-        volume_ratio=Decimal("1.0"),
-        created_at=datetime.now(UTC),
-    )

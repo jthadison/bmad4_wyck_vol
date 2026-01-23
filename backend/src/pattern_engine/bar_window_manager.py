@@ -7,6 +7,7 @@ efficient FIFO buffer management for pattern detection algorithms.
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -59,18 +60,46 @@ class BarWindowManager:
     """
 
     WINDOW_SIZE = 200  # Required bars for pattern detection
+    MAX_CONCURRENT_REQUESTS = 5  # Max concurrent API requests (rate limiting)
 
-    def __init__(self, alpaca_client: AlpacaAdapter | None = None):
+    def __init__(
+        self, alpaca_client: AlpacaAdapter | None = None, max_concurrent_requests: int = 5
+    ):
         """
         Initialize bar window manager.
 
         Args:
             alpaca_client: Alpaca adapter for historical data fetching
+            max_concurrent_requests: Maximum concurrent API requests (default 5)
         """
         self._windows: dict[str, BarWindow] = {}
         self._alpaca_client = alpaca_client
 
-        logger.info("bar_window_manager_initialized")
+        # Rate limiting: Limit concurrent API requests to avoid overwhelming provider
+        self._rate_limiter = asyncio.Semaphore(max_concurrent_requests)
+
+        # Thread safety: Lock for protecting window state updates
+        self._window_locks: dict[str, asyncio.Lock] = {}
+        self._locks_lock = asyncio.Lock()  # Lock for the locks dict itself
+
+        logger.info(
+            "bar_window_manager_initialized", max_concurrent_requests=max_concurrent_requests
+        )
+
+    async def _get_symbol_lock(self, symbol: str) -> asyncio.Lock:
+        """
+        Get or create a lock for a specific symbol.
+
+        Args:
+            symbol: Symbol to get lock for
+
+        Returns:
+            asyncio.Lock for the symbol
+        """
+        async with self._locks_lock:
+            if symbol not in self._window_locks:
+                self._window_locks[symbol] = asyncio.Lock()
+            return self._window_locks[symbol]
 
     async def hydrate_symbol(self, symbol: str, timeframe: str = "1m") -> WindowState:
         """
@@ -98,69 +127,76 @@ class BarWindowManager:
         if not self._alpaca_client:
             raise ValueError("Alpaca client not configured for historical data fetching")
 
-        # Create window if it doesn't exist
-        if symbol not in self._windows:
-            self._windows[symbol] = BarWindow(symbol=symbol, state=WindowState.HYDRATING)
+        # Get lock for this symbol to prevent concurrent modifications
+        symbol_lock = await self._get_symbol_lock(symbol)
 
-        window = self._windows[symbol]
-        window.state = WindowState.HYDRATING
+        async with symbol_lock:
+            # Create window if it doesn't exist
+            if symbol not in self._windows:
+                self._windows[symbol] = BarWindow(symbol=symbol, state=WindowState.HYDRATING)
 
-        logger.info("hydrating_symbol", symbol=symbol, timeframe=timeframe)
+            window = self._windows[symbol]
+            window.state = WindowState.HYDRATING
 
-        try:
-            # Calculate date range to fetch ~200 bars
-            # For 1m bars: 200 minutes = ~3.3 hours of market time
-            # Request last 2 weeks to ensure we get enough data
-            end_date = date.today()
-            start_date = end_date - timedelta(days=14)
+            logger.info("hydrating_symbol", symbol=symbol, timeframe=timeframe)
 
-            # Fetch historical bars from Alpaca
-            historical_bars = await self._alpaca_client.fetch_historical_bars(
-                symbol=symbol,
-                start_date=start_date,
-                end_date=end_date,
-                timeframe=timeframe,
-            )
+            try:
+                # Calculate date range to fetch ~200 bars
+                # For 1m bars: 200 minutes = ~3.3 hours of market time
+                # Request last 2 weeks to ensure we get enough data
+                end_date = date.today()
+                start_date = end_date - timedelta(days=14)
 
-            # Take last 200 bars if more were returned
-            if len(historical_bars) > self.WINDOW_SIZE:
-                historical_bars = historical_bars[-self.WINDOW_SIZE :]
+                # Use rate limiter to avoid overwhelming Alpaca API
+                # Limits concurrent requests to MAX_CONCURRENT_REQUESTS
+                async with self._rate_limiter:
+                    # Fetch historical bars from Alpaca
+                    historical_bars = await self._alpaca_client.fetch_historical_bars(
+                        symbol=symbol,
+                        start_date=start_date,
+                        end_date=end_date,
+                        timeframe=timeframe,
+                    )
 
-            # Add bars to window
-            for bar in historical_bars:
-                window.bars.append(bar)
+                # Take last 200 bars if more were returned
+                if len(historical_bars) > self.WINDOW_SIZE:
+                    historical_bars = historical_bars[-self.WINDOW_SIZE :]
 
-            # Update window state based on bar count
-            bar_count = len(window.bars)
-            if bar_count >= self.WINDOW_SIZE:
-                window.state = WindowState.READY
-                window.last_updated = datetime.now(UTC)
-                logger.info(
-                    "symbol_hydrated",
+                # Add bars to window
+                for bar in historical_bars:
+                    window.bars.append(bar)
+
+                # Update window state based on bar count
+                bar_count = len(window.bars)
+                if bar_count >= self.WINDOW_SIZE:
+                    window.state = WindowState.READY
+                    window.last_updated = datetime.now(UTC)
+                    logger.info(
+                        "symbol_hydrated",
+                        symbol=symbol,
+                        bar_count=bar_count,
+                        state=window.state.value,
+                    )
+                else:
+                    window.state = WindowState.INSUFFICIENT_DATA
+                    logger.warning(
+                        "insufficient_data",
+                        symbol=symbol,
+                        bar_count=bar_count,
+                        required=self.WINDOW_SIZE,
+                        message=f"{symbol} has insufficient data ({bar_count}/{self.WINDOW_SIZE} bars)",
+                    )
+
+                return window.state
+
+            except Exception as e:
+                logger.error(
+                    "hydration_failed",
                     symbol=symbol,
-                    bar_count=bar_count,
-                    state=window.state.value,
+                    error=str(e),
                 )
-            else:
                 window.state = WindowState.INSUFFICIENT_DATA
-                logger.warning(
-                    "insufficient_data",
-                    symbol=symbol,
-                    bar_count=bar_count,
-                    required=self.WINDOW_SIZE,
-                    message=f"{symbol} has insufficient data ({bar_count}/{self.WINDOW_SIZE} bars)",
-                )
-
-            return window.state
-
-        except Exception as e:
-            logger.error(
-                "hydration_failed",
-                symbol=symbol,
-                error=str(e),
-            )
-            window.state = WindowState.INSUFFICIENT_DATA
-            raise RuntimeError(f"Failed to hydrate {symbol}: {e}") from e
+                raise RuntimeError(f"Failed to hydrate {symbol}: {e}") from e
 
     async def add_bar(self, symbol: str, bar: OHLCVBar) -> None:
         """
@@ -173,24 +209,28 @@ class BarWindowManager:
             symbol: Symbol for the bar
             bar: New OHLCV bar to add
         """
-        # Create window if it doesn't exist
-        if symbol not in self._windows:
-            self._windows[symbol] = BarWindow(symbol=symbol, state=WindowState.HYDRATING)
+        # Get lock for this symbol to prevent concurrent modifications
+        symbol_lock = await self._get_symbol_lock(symbol)
 
-        window = self._windows[symbol]
+        async with symbol_lock:
+            # Create window if it doesn't exist
+            if symbol not in self._windows:
+                self._windows[symbol] = BarWindow(symbol=symbol, state=WindowState.HYDRATING)
 
-        # Add bar (deque automatically evicts oldest if at maxlen)
-        window.bars.append(bar)
-        window.last_updated = datetime.now(UTC)
+            window = self._windows[symbol]
 
-        # Update state if window is now ready
-        if len(window.bars) >= self.WINDOW_SIZE and window.state != WindowState.READY:
-            window.state = WindowState.READY
-            logger.info(
-                "window_ready",
-                symbol=symbol,
-                bar_count=len(window.bars),
-            )
+            # Add bar (deque automatically evicts oldest if at maxlen)
+            window.bars.append(bar)
+            window.last_updated = datetime.now(UTC)
+
+            # Update state if window is now ready
+            if len(window.bars) >= self.WINDOW_SIZE and window.state != WindowState.READY:
+                window.state = WindowState.READY
+                logger.info(
+                    "window_ready",
+                    symbol=symbol,
+                    bar_count=len(window.bars),
+                )
 
     def get_bars(self, symbol: str) -> list[OHLCVBar]:
         """
