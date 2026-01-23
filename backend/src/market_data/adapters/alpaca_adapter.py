@@ -56,7 +56,7 @@ class AlpacaAdapter(MarketDataProvider):
         self.ws_url = self.ALPACA_PAPER_URL if use_paper else self.ALPACA_STREAM_URL
 
         self._websocket: WebSocketClientProtocol | None = None
-        self._callback: Callable[[OHLCVBar], None] | None = None
+        self._callbacks: list[Callable[[OHLCVBar], None]] = []
         self._is_connected: bool = False
         self._should_reconnect: bool = True
         self._reconnect_delay: float = 1.0
@@ -285,11 +285,24 @@ class AlpacaAdapter(MarketDataProvider):
         """
         Register callback for bar reception.
 
+        Multiple callbacks can be registered; all will be invoked for each bar.
+
         Args:
             callback: Function to call with each received OHLCVBar
         """
-        self._callback = callback
-        logger.info("bar_callback_registered")
+        self._callbacks.append(callback)
+        logger.info("bar_callback_registered", callback_count=len(self._callbacks))
+
+    def remove_bar_callback(self, callback: Callable[[OHLCVBar], None]) -> None:
+        """
+        Remove a previously registered callback.
+
+        Args:
+            callback: The callback function to remove
+        """
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
+            logger.info("bar_callback_removed", callback_count=len(self._callbacks))
 
     async def _receive_messages(self) -> None:
         """
@@ -430,9 +443,9 @@ class AlpacaAdapter(MarketDataProvider):
             self._last_bar_received[symbol] = now
             self._bars_received_count += 1
 
-            # Invoke callback if registered
-            if self._callback:
-                self._callback(bar)
+            # Invoke all registered callbacks
+            for callback in self._callbacks:
+                callback(bar)
 
         except Exception as e:
             logger.error(

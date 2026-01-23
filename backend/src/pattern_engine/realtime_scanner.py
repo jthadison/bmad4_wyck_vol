@@ -171,6 +171,10 @@ class RealtimePatternScanner:
 
         self._is_running = False
 
+        # Unregister callback from coordinator
+        if self._coordinator:
+            self._coordinator.adapter.remove_bar_callback(self._on_bar_received)
+
         # Cancel processor task
         if self._processor_task:
             self._processor_task.cancel()
@@ -225,7 +229,7 @@ class RealtimePatternScanner:
                 queue_depth=self._bar_queue.qsize(),
             )
         except asyncio.QueueFull:
-            # Backpressure: queue is full, drop oldest bar
+            # Backpressure: queue is full, drop incoming bar (newest)
             self._metrics.bars_dropped += 1
             logger.warning(
                 "bar_dropped_queue_full",
@@ -277,10 +281,12 @@ class RealtimePatternScanner:
                         latency_ms=latency_ms,
                     )
 
-                # Reset circuit breaker on success
+                # Reset consecutive failures on any successful processing
+                self._consecutive_failures = 0
+
+                # Transition circuit breaker from half-open to closed on success
                 if self._circuit_state == CircuitState.HALF_OPEN:
                     self._circuit_state = CircuitState.CLOSED
-                    self._consecutive_failures = 0
                     logger.info("circuit_breaker_closed")
 
             except asyncio.CancelledError:

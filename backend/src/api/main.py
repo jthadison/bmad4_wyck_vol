@@ -12,6 +12,7 @@ if sys.platform == "win32":
     print("[WINDOWS FIX] Set event loop policy to WindowsSelectorEventLoopPolicy", flush=True)
     print(f"[WINDOWS FIX] Current policy: {asyncio.get_event_loop_policy()}", flush=True)
 
+import structlog
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -42,10 +43,9 @@ from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
 from src.orchestrator.service import get_orchestrator
-from src.pattern_engine.realtime_scanner import (
-    RealtimePatternScanner,
-    init_scanner,
-)
+from src.pattern_engine.realtime_scanner import get_scanner, init_scanner
+
+logger = structlog.get_logger(__name__)
 
 app = FastAPI(
     title="BMAD Wyckoff Volume Pattern Detection API",
@@ -163,9 +163,6 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 # Global coordinator instance
 _coordinator: MarketDataCoordinator | None = None
 
-# Global scanner instance (Story 19.1)
-_scanner: RealtimePatternScanner | None = None
-
 
 @app.on_event("startup")
 async def startup_event() -> None:
@@ -176,7 +173,6 @@ async def startup_event() -> None:
     and paper trading integration.
     """
     global _coordinator
-    global _scanner
 
     # Only start real-time feed if API keys are configured
     if settings.alpaca_api_key and settings.alpaca_secret_key:
@@ -194,14 +190,20 @@ async def startup_event() -> None:
             await _coordinator.start()
 
             # Initialize and start real-time pattern scanner (Story 19.1)
-            _scanner = init_scanner()
-            await _scanner.start(_coordinator)
-            print("Real-time pattern scanner started successfully")
+            scanner = init_scanner()
+            await scanner.start(_coordinator)
+            logger.info("realtime_scanner_started_successfully")
         except Exception as e:
-            print(f"WARNING: Failed to start real-time feed: {str(e)}")
-            print("Application will continue without real-time market data.")
+            logger.warning(
+                "realtime_feed_startup_failed",
+                error=str(e),
+                message="Application will continue without real-time market data",
+            )
     else:
-        print("WARNING: Alpaca API keys not configured. Real-time feed disabled.")
+        logger.warning(
+            "alpaca_api_keys_not_configured",
+            message="Real-time feed disabled",
+        )
 
     # Initialize paper trading signal routing (Story 12.8)
     try:
@@ -219,9 +221,9 @@ async def startup_event() -> None:
         # Register signal listener with event bus
         register_signal_listener(event_bus, signal_router)
 
-        print("Paper trading signal routing initialized successfully")
+        logger.info("paper_trading_signal_routing_initialized")
     except Exception as e:
-        print(f"WARNING: Failed to initialize paper trading signal routing: {str(e)}")
+        logger.warning("paper_trading_signal_routing_failed", error=str(e))
 
 
 @app.on_event("shutdown")
@@ -232,11 +234,14 @@ async def shutdown_event() -> None:
     Gracefully stops the real-time pattern scanner and market data feed.
     """
     global _coordinator
-    global _scanner
 
     # Stop scanner first (Story 19.1)
-    if _scanner:
-        await _scanner.stop()
+    try:
+        scanner = get_scanner()
+        await scanner.stop()
+    except RuntimeError:
+        # Scanner was never initialized
+        pass
 
     if _coordinator:
         await _coordinator.stop()
@@ -270,13 +275,15 @@ async def scanner_health_check() -> dict[str, object]:
         - circuit_state: Circuit breaker state (closed/open/half_open)
         - is_running: Whether scanner is currently running
     """
-    if _scanner is None:
+    try:
+        scanner = get_scanner()
+    except RuntimeError:
         return {
             "status": "not_configured",
             "message": "Real-time scanner not initialized (Alpaca API keys not configured)",
         }
 
-    health = _scanner.get_health()
+    health = scanner.get_health()
     return {
         "status": health.status,
         "queue_depth": health.queue_depth,
@@ -349,24 +356,24 @@ async def detailed_health_check() -> dict[str, object]:
         health_status["status"] = "degraded"
 
     # Check scanner status (Story 19.1)
-    if _scanner:
-        try:
-            scanner_health = _scanner.get_health()
-            health_status["scanner"] = {
-                "status": scanner_health.status,
-                "queue_depth": scanner_health.queue_depth,
-                "avg_latency_ms": round(scanner_health.avg_latency_ms, 2),
-                "bars_processed": scanner_health.bars_processed,
-                "is_running": scanner_health.is_running,
-            }
+    try:
+        scanner = get_scanner()
+        scanner_health = scanner.get_health()
+        health_status["scanner"] = {
+            "status": scanner_health.status,
+            "queue_depth": scanner_health.queue_depth,
+            "avg_latency_ms": round(scanner_health.avg_latency_ms, 2),
+            "bars_processed": scanner_health.bars_processed,
+            "is_running": scanner_health.is_running,
+        }
 
-            if scanner_health.status != "healthy":
-                health_status["status"] = "degraded"
-        except Exception as e:
-            health_status["scanner"] = {"error": str(e)}
+        if scanner_health.status != "healthy":
             health_status["status"] = "degraded"
-    else:
+    except RuntimeError:
         health_status["scanner"] = {"status": "not_configured"}
+    except Exception as e:
+        health_status["scanner"] = {"error": str(e)}
+        health_status["status"] = "degraded"
 
     return health_status
 

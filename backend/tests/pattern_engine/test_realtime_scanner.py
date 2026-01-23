@@ -58,6 +58,7 @@ def mock_coordinator():
     coordinator = MagicMock()
     coordinator.adapter = MagicMock()
     coordinator.adapter.on_bar_received = MagicMock()
+    coordinator.adapter.remove_bar_callback = MagicMock()
     return coordinator
 
 
@@ -181,7 +182,16 @@ class TestScannerLifecycle:
 
         await scanner.start(mock_coordinator)
         await scanner.stop()
-        await scanner.stop()  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_stop_unregisters_callback(self, scanner, mock_coordinator):
+        """Stop unregisters the bar callback from the coordinator."""
+        await scanner.start(mock_coordinator)
+        await scanner.stop()
+
+        mock_coordinator.adapter.remove_bar_callback.assert_called_once_with(
+            scanner._on_bar_received
+        )
 
 
 # =============================
@@ -386,6 +396,26 @@ class TestCircuitBreaker:
 
         assert scanner._circuit_state == CircuitState.CLOSED
         assert scanner._consecutive_failures == 0
+
+        await scanner.stop()
+
+    @pytest.mark.asyncio
+    async def test_consecutive_failures_reset_on_any_success(
+        self, scanner, mock_coordinator, sample_ohlcv_bar
+    ):
+        """Consecutive failures counter resets on any successful processing."""
+        await scanner.start(mock_coordinator)
+
+        # Simulate some failures (but not enough to trip circuit)
+        scanner._consecutive_failures = 4  # One less than threshold
+
+        # Process a bar successfully
+        scanner._on_bar_received(sample_ohlcv_bar)
+        await asyncio.sleep(0.2)
+
+        # Consecutive failures should be reset
+        assert scanner._consecutive_failures == 0
+        assert scanner._circuit_state == CircuitState.CLOSED
 
         await scanner.stop()
 
