@@ -290,6 +290,131 @@ class CampaignLifecycleRepository:
             logger.error("get_campaigns_by_symbol_failed", symbol=symbol, error=str(e))
             raise CampaignRepositoryError(f"Failed to list campaigns: {e}") from e
 
+    async def get_campaigns_by_timeframe(
+        self,
+        timeframe: str,
+        symbol: Optional[str] = None,
+        status: Optional[CampaignStatus] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Campaign]:
+        """
+        List campaigns filtered by timeframe (Story 16.6b).
+
+        Returns campaigns for a specific timeframe, optionally filtered by symbol
+        and status. Used for cross-timeframe validation to find higher timeframe
+        campaigns that can confirm lower timeframe signals.
+
+        Parameters:
+        -----------
+        timeframe : str
+            Timeframe filter (e.g., "1h", "4h", "1d")
+        symbol : str | None
+            Optional symbol filter
+        status : CampaignStatus | None
+            Optional status filter (e.g., ACTIVE, MARKUP)
+        limit : int
+            Pagination limit (default: 50)
+        offset : int
+            Pagination offset (default: 0)
+
+        Returns:
+        --------
+        list[Campaign]
+            Campaigns matching filters, ordered by start_date DESC
+
+        Example:
+        --------
+        >>> # Get all active daily campaigns for EUR/USD
+        >>> htf_campaigns = await repo.get_campaigns_by_timeframe(
+        ...     timeframe="1d",
+        ...     symbol="EUR/USD",
+        ...     status=CampaignStatus.ACTIVE
+        ... )
+        >>> for c in htf_campaigns:
+        ...     print(f"{c.campaign_id}: Phase {c.phase}")
+        """
+        try:
+            # TODO: Implement query:
+            # SELECT * FROM campaigns
+            # WHERE timeframe = $1
+            #   AND ($2 IS NULL OR symbol = $2)
+            #   AND ($3 IS NULL OR status = $3)
+            # ORDER BY start_date DESC
+            # LIMIT $4 OFFSET $5
+            logger.warning(
+                "get_campaigns_by_timeframe_not_implemented",
+                timeframe=timeframe,
+                symbol=symbol,
+                status=status.value if status else None,
+                message="Database schema not yet implemented (Story 9.1 migration)",
+            )
+            return []
+
+        except Exception as e:
+            logger.error(
+                "get_campaigns_by_timeframe_failed",
+                timeframe=timeframe,
+                symbol=symbol,
+                error=str(e),
+            )
+            raise CampaignRepositoryError(f"Failed to list campaigns by timeframe: {e}") from e
+
+    async def get_timeframe_statistics(
+        self, timeframe: str, symbol: Optional[str] = None
+    ) -> dict[str, int]:
+        """
+        Get campaign statistics for a specific timeframe (Story 16.6b).
+
+        Returns counts of campaigns by status for performance dashboards
+        and cross-timeframe analysis.
+
+        Parameters:
+        -----------
+        timeframe : str
+            Timeframe to get statistics for
+        symbol : str | None
+            Optional symbol filter
+
+        Returns:
+        --------
+        dict[str, int]
+            Campaign counts by status: {"ACTIVE": 5, "COMPLETED": 20, ...}
+
+        Example:
+        --------
+        >>> stats = await repo.get_timeframe_statistics("1d")
+        >>> print(f"Active daily campaigns: {stats.get('ACTIVE', 0)}")
+        """
+        try:
+            # TODO: Implement query:
+            # SELECT status, COUNT(*) as count
+            # FROM campaigns
+            # WHERE timeframe = $1
+            #   AND ($2 IS NULL OR symbol = $2)
+            # GROUP BY status
+            logger.warning(
+                "get_timeframe_statistics_not_implemented",
+                timeframe=timeframe,
+                symbol=symbol,
+                message="Database schema not yet implemented (Story 9.1 migration)",
+            )
+            return {
+                "ACTIVE": 0,
+                "MARKUP": 0,
+                "COMPLETED": 0,
+                "INVALIDATED": 0,
+            }
+
+        except Exception as e:
+            logger.error(
+                "get_timeframe_statistics_failed",
+                timeframe=timeframe,
+                symbol=symbol,
+                error=str(e),
+            )
+            raise CampaignRepositoryError(f"Failed to get timeframe statistics: {e}") from e
+
     async def update_campaign(self, campaign: Campaign) -> Campaign:
         """
         Update campaign with optimistic locking (AC: 9).
