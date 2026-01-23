@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
+import httpx
 import structlog
 import websockets
 from websockets.client import WebSocketClientProtocol
@@ -527,19 +528,162 @@ class AlpacaAdapter(MarketDataProvider):
                     error=str(e),
                 )
 
-    # Historical data methods (not implemented for Alpaca in this story)
+    # Historical data methods
     async def fetch_historical_bars(
         self,
         symbol: str,
-        start_date,
-        end_date,
-        timeframe: str = "1d",
+        start_date=None,
+        end_date=None,
+        timeframe: str = "1m",
+        limit: int = 200,
     ) -> list[OHLCVBar]:
-        """Not implemented for Alpaca adapter in this story."""
-        raise NotImplementedError(
-            "Historical data fetching not implemented for Alpaca adapter. "
-            "Use Polygon or Yahoo adapter for historical data."
-        )
+        """
+        Fetch historical bars from Alpaca REST API.
+
+        Args:
+            symbol: Stock symbol (e.g., "AAPL")
+            start_date: Start date (optional, if None fetches last `limit` bars)
+            end_date: End date (optional)
+            timeframe: Bar timeframe (default "1m")
+            limit: Maximum number of bars to fetch (default 200)
+
+        Returns:
+            List of OHLCVBar objects, sorted oldest to newest
+
+        Raises:
+            RuntimeError: If API request fails
+        """
+        correlation_id = str(uuid4())
+
+        # Alpaca REST API base URL for data
+        base_url = "https://data.alpaca.markets"
+        endpoint = f"/v2/stocks/{symbol}/bars"
+
+        # Build query parameters
+        params = {
+            "timeframe": timeframe,
+            "limit": limit,
+        }
+
+        if start_date:
+            params["start"] = start_date.isoformat()
+        if end_date:
+            params["end"] = end_date.isoformat()
+
+        # Build headers with API credentials
+        headers = {
+            "APCA-API-KEY-ID": self.settings.alpaca_api_key,
+            "APCA-API-SECRET-KEY": self.settings.alpaca_secret_key,
+        }
+
+        try:
+            logger.info(
+                "fetching_historical_bars",
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit,
+                correlation_id=correlation_id,
+            )
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{base_url}{endpoint}",
+                    params=params,
+                    headers=headers,
+                    timeout=30.0,
+                )
+
+                response.raise_for_status()
+                data = response.json()
+
+            # Parse bars from Alpaca response
+            bars_data = data.get("bars", [])
+            if not bars_data:
+                logger.warning(
+                    "no_historical_bars_found",
+                    symbol=symbol,
+                    correlation_id=correlation_id,
+                )
+                return []
+
+            # Convert to OHLCVBar objects
+            bars: list[OHLCVBar] = []
+            for bar_item in bars_data:
+                try:
+                    # Parse timestamp
+                    timestamp_str = bar_item.get("t")
+                    timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=UTC)
+                    else:
+                        timestamp = timestamp.astimezone(UTC)
+
+                    # Parse OHLCV values
+                    open_price = Decimal(str(bar_item.get("o")))
+                    high_price = Decimal(str(bar_item.get("h")))
+                    low_price = Decimal(str(bar_item.get("l")))
+                    close_price = Decimal(str(bar_item.get("c")))
+                    volume = bar_item.get("v", 0)
+
+                    # Calculate spread
+                    spread = high_price - low_price
+
+                    # Create OHLCVBar
+                    bar = OHLCVBar(
+                        id=uuid4(),
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        timestamp=timestamp,
+                        open=open_price,
+                        high=high_price,
+                        low=low_price,
+                        close=close_price,
+                        volume=volume,
+                        spread=spread,
+                        spread_ratio=Decimal("1.0"),
+                        volume_ratio=Decimal("1.0"),
+                        created_at=datetime.now(UTC),
+                    )
+
+                    bars.append(bar)
+
+                except Exception as e:
+                    logger.warning(
+                        "bar_parsing_failed",
+                        symbol=symbol,
+                        bar_data=bar_item,
+                        error=str(e),
+                        correlation_id=correlation_id,
+                    )
+                    continue
+
+            logger.info(
+                "historical_bars_fetched",
+                symbol=symbol,
+                bar_count=len(bars),
+                correlation_id=correlation_id,
+            )
+
+            return bars
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "alpaca_api_error",
+                symbol=symbol,
+                status_code=e.response.status_code,
+                error=str(e),
+                correlation_id=correlation_id,
+            )
+            raise RuntimeError(f"Alpaca API error for {symbol}: {e}") from e
+
+        except Exception as e:
+            logger.error(
+                "historical_fetch_failed",
+                symbol=symbol,
+                error=str(e),
+                correlation_id=correlation_id,
+            )
+            raise RuntimeError(f"Failed to fetch historical bars for {symbol}: {e}") from e
 
     async def get_provider_name(self) -> str:
         """Return provider name."""
