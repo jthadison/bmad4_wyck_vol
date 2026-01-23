@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -72,7 +72,7 @@ class BarWindowManager:
 
         logger.info("bar_window_manager_initialized")
 
-    async def hydrate_symbol(self, symbol: str) -> WindowState:
+    async def hydrate_symbol(self, symbol: str, timeframe: str = "1m") -> WindowState:
         """
         Hydrate window for a symbol by fetching historical bars.
 
@@ -81,14 +81,20 @@ class BarWindowManager:
 
         Args:
             symbol: Symbol to hydrate (e.g., "AAPL")
+            timeframe: Bar timeframe (default "1m")
 
         Returns:
             Final window state after hydration
 
         Raises:
-            ValueError: If alpaca_client is not configured
+            ValueError: If alpaca_client is not configured or symbol is invalid
             RuntimeError: If historical data fetch fails
         """
+        # Validate symbol
+        if not symbol or not symbol.strip():
+            raise ValueError("Symbol cannot be empty")
+        symbol = symbol.upper().strip()
+
         if not self._alpaca_client:
             raise ValueError("Alpaca client not configured for historical data fetching")
 
@@ -99,18 +105,26 @@ class BarWindowManager:
         window = self._windows[symbol]
         window.state = WindowState.HYDRATING
 
-        logger.info("hydrating_symbol", symbol=symbol)
+        logger.info("hydrating_symbol", symbol=symbol, timeframe=timeframe)
 
         try:
+            # Calculate date range to fetch ~200 bars
+            # For 1m bars: 200 minutes = ~3.3 hours of market time
+            # Request last 2 weeks to ensure we get enough data
+            end_date = date.today()
+            start_date = end_date - timedelta(days=14)
+
             # Fetch historical bars from Alpaca
-            # Note: Actual Alpaca API call will be implemented in next task
-            # For now, this is a placeholder that will be replaced
             historical_bars = await self._alpaca_client.fetch_historical_bars(
                 symbol=symbol,
-                start_date=None,  # Will fetch last 200 bars
-                end_date=None,
-                timeframe="1m",
+                start_date=start_date,
+                end_date=end_date,
+                timeframe=timeframe,
             )
+
+            # Take last 200 bars if more were returned
+            if len(historical_bars) > self.WINDOW_SIZE:
+                historical_bars = historical_bars[-self.WINDOW_SIZE :]
 
             # Add bars to window
             for bar in historical_bars:
@@ -249,9 +263,7 @@ class BarWindowManager:
         Returns:
             Number of windows ready for pattern detection
         """
-        return sum(
-            1 for window in self._windows.values() if window.state == WindowState.READY
-        )
+        return sum(1 for window in self._windows.values() if window.state == WindowState.READY)
 
     def clear_symbol(self, symbol: str) -> None:
         """

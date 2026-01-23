@@ -11,7 +11,7 @@ import asyncio
 import json
 import signal
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -532,20 +532,18 @@ class AlpacaAdapter(MarketDataProvider):
     async def fetch_historical_bars(
         self,
         symbol: str,
-        start_date=None,
-        end_date=None,
-        timeframe: str = "1m",
-        limit: int = 200,
+        start_date: date,
+        end_date: date,
+        timeframe: str = "1d",
     ) -> list[OHLCVBar]:
         """
         Fetch historical bars from Alpaca REST API.
 
         Args:
             symbol: Stock symbol (e.g., "AAPL")
-            start_date: Start date (optional, if None fetches last `limit` bars)
-            end_date: End date (optional)
-            timeframe: Bar timeframe (default "1m")
-            limit: Maximum number of bars to fetch (default 200)
+            start_date: Start date for historical data (inclusive)
+            end_date: End date for historical data (inclusive)
+            timeframe: Bar timeframe (default "1d")
 
         Returns:
             List of OHLCVBar objects, sorted oldest to newest
@@ -562,13 +560,9 @@ class AlpacaAdapter(MarketDataProvider):
         # Build query parameters
         params = {
             "timeframe": timeframe,
-            "limit": limit,
+            "start": start_date.isoformat() if isinstance(start_date, date) else start_date,
+            "end": end_date.isoformat() if isinstance(end_date, date) else end_date,
         }
-
-        if start_date:
-            params["start"] = start_date.isoformat()
-        if end_date:
-            params["end"] = end_date.isoformat()
 
         # Build headers with API credentials
         headers = {

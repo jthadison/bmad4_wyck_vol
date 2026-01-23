@@ -285,9 +285,7 @@ class TestBarWindowManager:
         manager._windows["AAPL"] = BarWindow(symbol="AAPL", state=WindowState.READY)
         manager._windows["TSLA"] = BarWindow(symbol="TSLA", state=WindowState.HYDRATING)
         manager._windows["MSFT"] = BarWindow(symbol="MSFT", state=WindowState.READY)
-        manager._windows["NVDA"] = BarWindow(
-            symbol="NVDA", state=WindowState.INSUFFICIENT_DATA
-        )
+        manager._windows["NVDA"] = BarWindow(symbol="NVDA", state=WindowState.INSUFFICIENT_DATA)
 
         assert manager.get_ready_count() == 2
 
@@ -328,6 +326,36 @@ class TestBarWindowManager:
             await manager.hydrate_symbol("AAPL")
 
     @pytest.mark.asyncio
+    async def test_hydrate_symbol_validates_empty_symbol(self):
+        """Verify hydrate_symbol validates symbol parameter (High Issue #2)."""
+        mock_client = AsyncMock()
+        manager = BarWindowManager(alpaca_client=mock_client)
+
+        # Test empty string
+        with pytest.raises(ValueError, match="Symbol cannot be empty"):
+            await manager.hydrate_symbol("")
+
+        # Test whitespace only
+        with pytest.raises(ValueError, match="Symbol cannot be empty"):
+            await manager.hydrate_symbol("   ")
+
+    @pytest.mark.asyncio
+    async def test_hydrate_symbol_normalizes_symbol(self):
+        """Verify hydrate_symbol normalizes symbol to uppercase (High Issue #2)."""
+        mock_client = AsyncMock()
+        mock_client.fetch_historical_bars.return_value = [
+            _create_test_bar("AAPL", i) for i in range(200)
+        ]
+        manager = BarWindowManager(alpaca_client=mock_client)
+
+        # Hydrate with lowercase
+        await manager.hydrate_symbol("aapl")
+
+        # Should be normalized to uppercase in window
+        assert "AAPL" in manager._windows
+        assert "aapl" not in manager._windows
+
+    @pytest.mark.asyncio
     async def test_hydrate_symbol_creates_window(self):
         """Verify hydrate_symbol creates window for symbol (AC2)."""
         mock_client = AsyncMock()
@@ -344,6 +372,8 @@ class TestBarWindowManager:
     @pytest.mark.asyncio
     async def test_hydrate_symbol_fetches_200_bars(self):
         """Verify hydrate_symbol fetches historical bars (AC2)."""
+        from datetime import date
+
         mock_client = AsyncMock()
         mock_client.fetch_historical_bars.return_value = [
             _create_test_bar("AAPL", i) for i in range(200)
@@ -353,13 +383,13 @@ class TestBarWindowManager:
 
         await manager.hydrate_symbol("AAPL")
 
-        # Verify Alpaca client was called
-        mock_client.fetch_historical_bars.assert_called_once_with(
-            symbol="AAPL",
-            start_date=None,
-            end_date=None,
-            timeframe="1m",
-        )
+        # Verify Alpaca client was called with date range
+        assert mock_client.fetch_historical_bars.called
+        call_args = mock_client.fetch_historical_bars.call_args
+        assert call_args.kwargs["symbol"] == "AAPL"
+        assert isinstance(call_args.kwargs["start_date"], date)
+        assert isinstance(call_args.kwargs["end_date"], date)
+        assert call_args.kwargs["timeframe"] == "1m"
 
     @pytest.mark.asyncio
     async def test_hydrate_symbol_state_ready_when_200_bars(self):
