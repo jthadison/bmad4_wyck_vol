@@ -9,6 +9,12 @@ enabling downstream processing, audit trails, and monitoring.
 
 from __future__ import annotations
 
+__all__ = [
+    "SignalValidatedEvent",
+    "SignalRejectedEvent",
+    "ValidationAuditEntry",
+]
+
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4

@@ -243,6 +243,7 @@ class ValidationStage(str, Enum):
     - LEVELS: Level validation stage
     - RISK: Risk validation stage
     - STRATEGY: Strategy validation stage
+    - UNKNOWN: Unknown or unrecognized validation stage (fallback)
     """
 
     VOLUME = "Volume"
@@ -250,6 +251,7 @@ class ValidationStage(str, Enum):
     LEVELS = "Levels"
     RISK = "Risk"
     STRATEGY = "Strategy"
+    UNKNOWN = "Unknown"
 
 
 class StageValidationResult(BaseModel):

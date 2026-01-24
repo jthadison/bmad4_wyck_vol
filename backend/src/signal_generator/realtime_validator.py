@@ -27,7 +27,12 @@ from uuid import UUID, uuid4
 
 import structlog
 
-from src.models.validation import ValidationChain, ValidationContext, ValidationStatus
+from src.models.validation import (
+    ValidationChain,
+    ValidationContext,
+    ValidationStage,
+    ValidationStatus,
+)
 from src.pattern_engine.events import PatternDetectedEvent
 from src.signal_generator.events import (
     SignalRejectedEvent,
@@ -354,7 +359,7 @@ class RealtimeSignalValidator:
 
         return details
 
-    def _map_stage_to_enum(self, stage_name: str) -> "ValidationStage":  # type: ignore
+    def _map_stage_to_enum(self, stage_name: str) -> ValidationStage:
         """
         Map stage name string to ValidationStage enum.
 
@@ -366,10 +371,8 @@ class RealtimeSignalValidator:
         Returns:
         --------
         ValidationStage
-            Enum value
+            Enum value, or ValidationStage.UNKNOWN if unrecognized
         """
-        from src.models.validation import ValidationStage
-
         stage_map = {
             "Volume": ValidationStage.VOLUME,
             "Phase": ValidationStage.PHASE,
@@ -378,4 +381,13 @@ class RealtimeSignalValidator:
             "Strategy": ValidationStage.STRATEGY,
         }
 
-        return stage_map.get(stage_name, ValidationStage.VOLUME)  # Default to VOLUME if unknown
+        result = stage_map.get(stage_name)
+        if result is None:
+            logger.warning(
+                "unknown_validation_stage_encountered",
+                stage_name=stage_name,
+                defaulting_to="Unknown",
+            )
+            return ValidationStage.UNKNOWN
+
+        return result
