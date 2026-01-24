@@ -18,6 +18,7 @@ import pytest
 
 from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
+from src.models.validation import ValidationStage
 from src.pattern_engine.events import PatternDetectedEvent
 from src.signal_generator.events import SignalRejectedEvent, SignalValidatedEvent
 from src.signal_generator.realtime_validator import RealtimeSignalValidator
@@ -147,15 +148,15 @@ class TestRealtimeValidationIntegration:
 
         # Verify all stages were attempted
         stage_names = [entry["stage"] for entry in result.audit_trail]
-        assert "Volume" in stage_names
+        assert ValidationStage.VOLUME in stage_names
 
         # If validation passed, verify all 5 stages executed
         if isinstance(result, SignalValidatedEvent):
             assert len(result.audit_trail) == 5
-            assert "Phase" in stage_names
-            assert "Levels" in stage_names
-            assert "Risk" in stage_names
-            assert "Strategy" in stage_names
+            assert ValidationStage.PHASE in stage_names
+            assert ValidationStage.LEVELS in stage_names
+            assert ValidationStage.RISK in stage_names
+            assert ValidationStage.STRATEGY in stage_names
 
             # Verify signal metadata
             assert result.signal_id is not None
@@ -214,7 +215,7 @@ class TestRealtimeValidationIntegration:
 
         if isinstance(result, SignalRejectedEvent):
             # If Phase validation is implemented and rejects Phase B for SOS
-            assert result.rejection_stage == "Phase"
+            assert result.rejection_stage == ValidationStage.PHASE
             assert (
                 "Phase B" in result.rejection_reason
                 or "requires Phase D" in result.rejection_reason

@@ -24,6 +24,7 @@ from src.models.phase_classification import WyckoffPhase
 from src.models.validation import (
     StageValidationResult,
     ValidationContext,
+    ValidationStage,
     ValidationStatus,
 )
 from src.pattern_engine.events import PatternDetectedEvent
@@ -258,7 +259,7 @@ class TestRealtimeSignalValidator:
 
         # Assert
         assert isinstance(result, SignalRejectedEvent)
-        assert result.rejection_stage == "Volume"
+        assert result.rejection_stage == ValidationStage.VOLUME
         assert "Volume too high" in result.rejection_reason
         assert "0.9x" in result.rejection_reason
         assert result.pattern_type == "SPRING"
@@ -266,7 +267,7 @@ class TestRealtimeSignalValidator:
 
         # Verify audit trail
         assert len(result.audit_trail) == 1  # Only Volume stage executed (early exit)
-        assert result.audit_trail[0]["stage"] == "Volume"
+        assert result.audit_trail[0]["stage"] == ValidationStage.VOLUME
         assert result.audit_trail[0]["passed"] is False
 
     @pytest.mark.asyncio
@@ -300,15 +301,15 @@ class TestRealtimeSignalValidator:
 
         # Assert
         assert isinstance(result, SignalRejectedEvent)
-        assert result.rejection_stage == "Phase"
+        assert result.rejection_stage == ValidationStage.PHASE
         assert "SOS invalid in Phase B" in result.rejection_reason
         assert "requires Phase D or E" in result.rejection_reason
 
         # Verify audit trail shows Volume passed, Phase failed
         assert len(result.audit_trail) == 2  # Volume + Phase (early exit)
-        assert result.audit_trail[0]["stage"] == "Volume"
+        assert result.audit_trail[0]["stage"] == ValidationStage.VOLUME
         assert result.audit_trail[0]["passed"] is True
-        assert result.audit_trail[1]["stage"] == "Phase"
+        assert result.audit_trail[1]["stage"] == ValidationStage.PHASE
         assert result.audit_trail[1]["passed"] is False
 
     @pytest.mark.asyncio
@@ -386,7 +387,7 @@ class TestRealtimeSignalValidator:
 
         # Assert
         assert isinstance(result, SignalRejectedEvent)
-        assert result.rejection_stage == "Risk"
+        assert result.rejection_stage == ValidationStage.RISK
         assert "Insufficient portfolio heat" in result.rejection_reason
         assert "9.5%" in result.rejection_reason or "9.5" in result.rejection_reason
 
@@ -444,11 +445,11 @@ class TestRealtimeSignalValidator:
         # Verify all 5 stages executed and passed
         assert len(result.audit_trail) == 5
         stage_names = [entry["stage"] for entry in result.audit_trail]
-        assert "Volume" in stage_names
-        assert "Phase" in stage_names
-        assert "Levels" in stage_names
-        assert "Risk" in stage_names
-        assert "Strategy" in stage_names
+        assert ValidationStage.VOLUME in stage_names
+        assert ValidationStage.PHASE in stage_names
+        assert ValidationStage.LEVELS in stage_names
+        assert ValidationStage.RISK in stage_names
+        assert ValidationStage.STRATEGY in stage_names
 
         for entry in result.audit_trail:
             assert entry["passed"] is True
@@ -484,7 +485,7 @@ class TestRealtimeSignalValidator:
 
         # Verify audit trail structure
         audit_entry = result.audit_trail[0]
-        assert audit_entry["stage"] == "Volume"
+        assert audit_entry["stage"] == ValidationStage.VOLUME
         assert audit_entry["passed"] is False
         assert audit_entry["reason"] is not None
         assert "Volume too high" in audit_entry["reason"]
