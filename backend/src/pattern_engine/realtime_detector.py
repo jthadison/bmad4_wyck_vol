@@ -45,6 +45,7 @@ class DetectionContext:
     - Trading range with Creek/Ice levels
     - Phase classification
     - Recently detected patterns (to avoid duplicates)
+    - Stored pattern objects for dependent detections (LPS needs SOS, AR needs Spring/SC)
     """
 
     symbol: str
@@ -56,6 +57,10 @@ class DetectionContext:
     last_utad_bar_index: int | None = None
     last_ar_bar_index: int | None = None
     last_sc_bar_index: int | None = None
+    # Store pattern objects for dependent detections
+    last_spring: Any = None  # Spring object for AR detection
+    last_sos: Any = None  # SOSBreakout object for LPS detection
+    last_sc: Any = None  # SellingClimax object for AR detection
 
     def has_trading_range(self) -> bool:
         """Check if trading range is available for detection."""
@@ -307,8 +312,9 @@ class RealtimePatternDetector:
             if spring is None:
                 return None
 
-            # Update context to prevent duplicate detection
+            # Update context to prevent duplicate detection and store for AR
             context.last_spring_bar_index = spring.bar_index
+            context.last_spring = spring
 
             # Calculate confidence (0.0-1.0)
             confidence = spring.confidence / 100.0 if hasattr(spring, "confidence") else 0.8
@@ -380,8 +386,9 @@ class RealtimePatternDetector:
             if sos is None:
                 return None
 
-            # Update context to prevent duplicate detection
+            # Update context to prevent duplicate detection and store for LPS
             context.last_sos_bar_index = sos.bar_index
+            context.last_sos = sos
 
             # Calculate confidence (0.0-1.0)
             confidence = sos.confidence / 100.0 if hasattr(sos, "confidence") else 0.8
@@ -424,6 +431,7 @@ class RealtimePatternDetector:
         Detect LPS (Last Point of Support) pattern using existing detector.
 
         Calls the same detect_lps() function used by backtesting.
+        LPS requires a prior SOS breakout to be detected.
         """
         from src.pattern_engine.detectors.lps_detector import detect_lps
 
@@ -431,9 +439,8 @@ class RealtimePatternDetector:
         if trading_range is None or trading_range.ice is None:
             return None
 
-        # LPS requires a prior SOS - check context
-        # For now, we'll skip if no SOS has been detected
-        if context.last_sos_bar_index is None:
+        # LPS requires a prior SOS - check context for stored SOS object
+        if context.last_sos is None:
             return None
 
         # Skip if we already detected an LPS at this index
@@ -441,13 +448,19 @@ class RealtimePatternDetector:
             return None
 
         try:
-            # LPS detection requires SOS as input - fetch from context or skip
-            # This is a simplified check; full implementation would track SOS object
+            # Build volume analysis for LPS detection
+            volume_analysis: dict[int, Any] = {}
+            if len(bars) >= 20:
+                avg_volume = sum(b.volume for b in bars[-20:]) // 20
+                for i, b in enumerate(bars):
+                    vol_ratio = b.volume / avg_volume if avg_volume > 0 else 1.0
+                    volume_analysis[i] = {"volume_ratio": vol_ratio}
+
             lps = detect_lps(
                 range=trading_range,
-                sos=None,  # Would need to pass actual SOS object
+                sos=context.last_sos,
                 bars=bars,
-                volume_analysis={},  # Would need volume analysis
+                volume_analysis=volume_analysis,
             )
 
             if lps is None:
@@ -457,7 +470,7 @@ class RealtimePatternDetector:
             context.last_lps_bar_index = lps.bar_index if hasattr(lps, "bar_index") else bar_index
 
             # Calculate confidence (0.0-1.0)
-            confidence = 0.8  # Default confidence for LPS
+            confidence = lps.confidence / 100.0 if hasattr(lps, "confidence") else 0.8
 
             if confidence < self._min_confidence:
                 return None
@@ -474,10 +487,13 @@ class RealtimePatternDetector:
                 confidence=confidence,
             )
 
+            # Use actual phase from context (LPS valid in Phase D/E per CLAUDE.md)
+            current_phase = context.get_phase() or WyckoffPhase.D
+
             return PatternDetectedEvent.from_lps(
                 symbol=bar.symbol,
                 bar=lps.bar,
-                phase=WyckoffPhase.D,
+                phase=current_phase,
                 confidence=confidence,
                 ice_level=ice_level,
                 pullback_pct=pullback_pct,
@@ -567,10 +583,19 @@ class RealtimePatternDetector:
         Detect AR (Automatic Rally) pattern using existing detector.
 
         Calls the same detect_ar_after_spring() or detect_ar_after_sc() used by backtesting.
+        AR requires either a prior Spring or SC pattern to be detected.
         """
+        from src.pattern_engine.detectors.ar_detector import (
+            detect_ar_after_sc,
+            detect_ar_after_spring,
+        )
 
         # Skip if we already detected an AR at this index
         if context.last_ar_bar_index == bar_index:
+            return None
+
+        # AR requires either a Spring or SC - check context
+        if context.last_spring is None and context.last_sc is None:
             return None
 
         # Calculate average volume for the detection
@@ -580,21 +605,38 @@ class RealtimePatternDetector:
         volume_sum = sum(b.volume for b in bars[-20:])
         volume_avg = Decimal(volume_sum) / Decimal(20)
 
+        # Get ice level if available
+        ice_level = None
+        if context.trading_range and context.trading_range.ice:
+            ice_level = context.trading_range.ice.price
+
         try:
             ar = None
             prior_pattern = "UNKNOWN"
 
-            # Try AR after Spring first if we have a spring
-            if context.last_spring_bar_index is not None:
-                # Would need to pass actual Spring object
-                # For now, skip AR after Spring detection
-                pass
+            # Try AR after Spring first if we have a spring (Phase C)
+            if context.last_spring is not None:
+                ar = detect_ar_after_spring(
+                    bars=bars,
+                    spring=context.last_spring,
+                    volume_avg=volume_avg,
+                    ice_level=ice_level,
+                    start_index=context.last_spring_bar_index,
+                )
+                if ar is not None:
+                    prior_pattern = "SPRING"
 
-            # Try AR after SC if we have a selling climax
-            if context.last_sc_bar_index is not None and ar is None:
-                # Would need to pass actual SC object
-                # For now, skip AR after SC detection
-                pass
+            # Try AR after SC if we have a selling climax and no AR found yet (Phase A)
+            if context.last_sc is not None and ar is None:
+                ar = detect_ar_after_sc(
+                    bars=bars,
+                    sc=context.last_sc,
+                    volume_avg=volume_avg,
+                    ice_level=ice_level,
+                    start_index=context.last_sc_bar_index,
+                )
+                if ar is not None:
+                    prior_pattern = "SC"
 
             if ar is None:
                 return None
@@ -687,8 +729,9 @@ class RealtimePatternDetector:
                 sc.bar.get("bar_index", bar_index) if isinstance(sc.bar, dict) else bar_index
             )
 
-            # Update context to prevent duplicate detection
+            # Update context to prevent duplicate detection and store for AR
             context.last_sc_bar_index = sc_bar_index
+            context.last_sc = sc
 
             # Calculate confidence (0.0-1.0)
             confidence = sc.confidence / 100.0 if hasattr(sc, "confidence") else 0.8
