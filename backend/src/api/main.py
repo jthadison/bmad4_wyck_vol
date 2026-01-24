@@ -33,6 +33,7 @@ from src.api.routes import (
     patterns,
     portfolio,
     risk,
+    scanner,
     signals,
     summary,
     tradingview,
@@ -76,6 +77,7 @@ app.include_router(summary.router)  # Summary routes (Story 10.3)
 app.include_router(help.router)  # Help system routes (Story 11.8a)
 app.include_router(paper_trading.router)  # Paper trading routes (Story 12.8)
 app.include_router(tradingview.router)  # TradingView webhook routes (Story 16.4a)
+app.include_router(scanner.router)  # Multi-symbol scanner routes (Story 19.4)
 
 
 # WebSocket endpoint for real-time updates
