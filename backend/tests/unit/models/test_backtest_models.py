@@ -426,7 +426,7 @@ class TestBacktestResult:
             start_date=date(2024, 1, 1),
             end_date=date(2024, 12, 31),
             config=config,
-            metrics=metrics,
+            summary=metrics,
         )
 
         assert result.backtest_run_id == run_id
@@ -435,7 +435,7 @@ class TestBacktestResult:
         assert result.start_date == date(2024, 1, 1)
         assert result.end_date == date(2024, 12, 31)
         assert result.config == config
-        assert result.metrics == metrics
+        assert result.summary == metrics
         assert result.equity_curve == []
         assert result.trades == []
         assert result.look_ahead_bias_check is False
@@ -484,7 +484,7 @@ class TestBacktestResult:
             config=config,
             equity_curve=[point],
             trades=[trade],
-            metrics=metrics,
+            summary=metrics,
             look_ahead_bias_check=True,
             execution_time_seconds=3.5,
         )
@@ -509,13 +509,13 @@ class TestBacktestResult:
             start_date=date(2024, 1, 1),
             end_date=date(2024, 12, 31),
             config=config,
-            metrics=metrics,
+            summary=metrics,
         )
 
         data = result.model_dump()
         assert data["symbol"] == "AAPL"
         assert data["timeframe"] == "1d"
         assert "config" in data
-        assert "metrics" in data
+        assert "summary" in data
         assert "equity_curve" in data
         assert "trades" in data

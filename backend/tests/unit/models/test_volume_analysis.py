@@ -59,7 +59,7 @@ class TestVolumeAnalysisBasicCreation:
             volume_ratio=Decimal("2.5"),
             spread_ratio=Decimal("1.8"),
             close_position=Decimal("0.75"),
-            effort_result="High Volume Upthrust",
+            effort_result="CLIMACTIC",
             created_at=created_at,
         )
 
@@ -67,7 +67,7 @@ class TestVolumeAnalysisBasicCreation:
         assert analysis.volume_ratio == Decimal("2.5")
         assert analysis.spread_ratio == Decimal("1.8")
         assert analysis.close_position == Decimal("0.75")
-        assert analysis.effort_result == "High Volume Upthrust"
+        assert analysis.effort_result == "CLIMACTIC"
         assert analysis.created_at == created_at
 
     def test_auto_created_at_timestamp(self):
@@ -245,6 +245,7 @@ class TestVolumeAnalysisValidation:
         analysis_high = VolumeAnalysis(bar=bar, spread_ratio=100.0)
         assert analysis_high.spread_ratio == Decimal("100.0")
 
+    @pytest.mark.skip(reason="effort_result is now an enum, not a string with max_length")
     def test_effort_result_max_length(self):
         """Test that effort_result respects max_length constraint."""
         bar = create_test_bar()
@@ -311,7 +312,7 @@ class TestVolumeAnalysisSerialization:
             volume_ratio=Decimal("2.5"),
             spread_ratio=Decimal("1.8"),
             close_position=Decimal("0.75"),
-            effort_result="High Volume Test",
+            effort_result="CLIMACTIC",
             created_at=datetime(2024, 1, 15, 12, 30, tzinfo=UTC),
         )
 
@@ -368,7 +369,7 @@ class TestVolumeAnalysisSerialization:
             "volume_ratio": "2.5",  # String representation
             "spread_ratio": "1.8",
             "close_position": "0.75",
-            "effort_result": "Test",
+            "effort_result": "ABSORPTION",
             "created_at": "2024-01-15T12:30:00+00:00",
         }
 
@@ -377,7 +378,7 @@ class TestVolumeAnalysisSerialization:
         assert analysis.volume_ratio == Decimal("2.5")
         assert analysis.spread_ratio == Decimal("1.8")
         assert analysis.close_position == Decimal("0.75")
-        assert analysis.effort_result == "Test"
+        assert analysis.effort_result == "ABSORPTION"
 
 
 class TestVolumeAnalysisEdgeCases:
@@ -422,6 +423,7 @@ class TestVolumeAnalysisEdgeCases:
         assert analysis.spread_ratio == Decimal("0.0")
         assert analysis.close_position == Decimal("0.0")
 
+    @pytest.mark.skip(reason="effort_result is now an enum, empty string not valid")
     def test_empty_effort_result(self):
         """Test that empty string for effort_result is valid."""
         bar = create_test_bar()
@@ -455,12 +457,12 @@ class TestVolumeAnalysisEdgeCases:
         original = VolumeAnalysis(
             bar=bar,
             volume_ratio=Decimal("2.5"),
-            effort_result="Original",
+            effort_result="NORMAL",
         )
 
         # Create a copy with modified field
-        copy = original.model_copy(update={"effort_result": "Modified"})
+        copy = original.model_copy(update={"effort_result": "CLIMACTIC"})
 
         assert copy.volume_ratio == original.volume_ratio
-        assert copy.effort_result == "Modified"
-        assert original.effort_result == "Original"
+        assert copy.effort_result == "CLIMACTIC"
+        assert original.effort_result == "NORMAL"

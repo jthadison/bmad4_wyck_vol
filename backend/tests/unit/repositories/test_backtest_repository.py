@@ -102,7 +102,7 @@ def sample_backtest_result():
         config=config,
         equity_curve=equity_curve,
         trades=trades,
-        metrics=metrics,
+        summary=metrics,
         look_ahead_bias_check=True,
         execution_time_seconds=2.5,
         created_at=datetime(2024, 1, 31, 12, 0, 0, tzinfo=UTC),
@@ -197,15 +197,15 @@ class TestBacktestRepositorySave:
 
         backtest_run_id = await repository.save_result(sample_backtest_result)
 
-        # Retrieve and verify metrics
+        # Retrieve and verify metrics (stored in summary field)
         stmt = select(BacktestResultModel).where(
             BacktestResultModel.backtest_run_id == backtest_run_id
         )
         db_result = await db_session.scalar(stmt)
 
-        assert isinstance(db_result.metrics, dict)
-        assert "win_rate" in db_result.metrics
-        assert "total_trades" in db_result.metrics
+        assert isinstance(db_result.summary, dict)
+        assert "win_rate" in db_result.summary
+        assert "total_trades" in db_result.summary
 
 
 class TestBacktestRepositoryGet:
@@ -278,9 +278,9 @@ class TestBacktestRepositoryGet:
         retrieved = await repository.get_result(backtest_run_id)
 
         assert retrieved is not None
-        assert isinstance(retrieved.metrics, BacktestMetrics)
-        assert retrieved.metrics.win_rate == Decimal("1.0")
-        assert retrieved.metrics.total_trades == 1
+        assert isinstance(retrieved.summary, BacktestMetrics)
+        assert retrieved.summary.win_rate == Decimal("1.0")
+        assert retrieved.summary.total_trades == 1
 
     @pytest.mark.asyncio
     async def test_get_result_not_found(self, db_session):
@@ -445,6 +445,6 @@ class TestBacktestRepositoryRoundTrip:
         assert len(retrieved.trades) == len(sample_backtest_result.trades)
         assert retrieved.trades[0].entry_price == sample_backtest_result.trades[0].entry_price
 
-        # Verify metrics
-        assert retrieved.metrics.win_rate == sample_backtest_result.metrics.win_rate
-        assert retrieved.metrics.total_trades == sample_backtest_result.metrics.total_trades
+        # Verify summary (metrics)
+        assert retrieved.summary.win_rate == sample_backtest_result.summary.win_rate
+        assert retrieved.summary.total_trades == sample_backtest_result.summary.total_trades

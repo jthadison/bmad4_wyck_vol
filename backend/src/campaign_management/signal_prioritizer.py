@@ -95,7 +95,7 @@ def calculate_priority_score(signal: TradeSignal) -> float:
     pattern_priority = PATTERN_PRIORITY_WEIGHTS.get(signal.pattern_type, 0)
 
     # Calculate components
-    confidence_component = float(signal.confidence) * float(CONFIDENCE_WEIGHT)
+    confidence_component = float(signal.confidence_score) * float(CONFIDENCE_WEIGHT)
     r_multiple_component = float(signal.r_multiple * 10) * float(R_MULTIPLE_WEIGHT)
     pattern_component = pattern_priority * float(PATTERN_PRIORITY_WEIGHT)
 
@@ -107,7 +107,7 @@ def calculate_priority_score(signal: TradeSignal) -> float:
         "Calculated priority score",
         signal_id=str(signal.id),
         pattern_type=signal.pattern_type,
-        confidence=str(signal.confidence),
+        confidence=str(signal.confidence_score),
         r_multiple=str(signal.r_multiple),
         pattern_priority=pattern_priority,
         confidence_component=f"{confidence_component:.2f}",
