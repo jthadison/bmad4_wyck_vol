@@ -226,6 +226,41 @@ class SignalApprovalConfig(BaseModel):
         default=30, ge=5, le=300, description="How often to check for expired signals"
     )
 
+    # Confidence grade thresholds
+    grade_a_plus_threshold: int = Field(
+        default=90, ge=0, le=100, description="Minimum score for A+ grade"
+    )
+    grade_a_threshold: int = Field(
+        default=85, ge=0, le=100, description="Minimum score for A grade"
+    )
+    grade_b_plus_threshold: int = Field(
+        default=80, ge=0, le=100, description="Minimum score for B+ grade"
+    )
+    grade_b_threshold: int = Field(
+        default=75, ge=0, le=100, description="Minimum score for B grade"
+    )
+
     def get_default_expiry(self) -> datetime:
         """Get default expiration datetime based on timeout."""
         return datetime.now(UTC) + timedelta(minutes=self.timeout_minutes)
+
+    def get_confidence_grade(self, score: float) -> str:
+        """
+        Get confidence grade for a given score.
+
+        Args:
+            score: Confidence score (0-100)
+
+        Returns:
+            Grade string (A+, A, B+, B, or C)
+        """
+        if score >= self.grade_a_plus_threshold:
+            return "A+"
+        elif score >= self.grade_a_threshold:
+            return "A"
+        elif score >= self.grade_b_plus_threshold:
+            return "B+"
+        elif score >= self.grade_b_threshold:
+            return "B"
+        else:
+            return "C"

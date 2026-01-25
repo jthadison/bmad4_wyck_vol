@@ -334,6 +334,7 @@ class TestPendingSignals:
     async def test_get_pending_signals_success(self, service, mock_repository, sample_queue_entry):
         """Test retrieval of pending signals."""
         user_id = sample_queue_entry.user_id
+        mock_repository.expire_stale_entries.return_value = 0  # No entries expired
         mock_repository.get_pending_by_user.return_value = [sample_queue_entry]
 
         result = await service.get_pending_signals(user_id)
@@ -341,27 +342,28 @@ class TestPendingSignals:
         assert len(result) == 1
         assert result[0].queue_id == sample_queue_entry.id
         assert result[0].symbol == "AAPL"
+        mock_repository.expire_stale_entries.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_pending_signals_filters_expired(
         self, service, mock_repository, sample_queue_entry
     ):
-        """Test that expired signals are filtered out."""
+        """Test that expired signals are batch-expired before fetching."""
         user_id = sample_queue_entry.user_id
-        sample_queue_entry.expires_at = datetime.now(UTC) - timedelta(minutes=1)
-        mock_repository.get_pending_by_user.return_value = [sample_queue_entry]
-        mock_repository.update_status.return_value = sample_queue_entry
+        mock_repository.expire_stale_entries.return_value = 1  # 1 entry expired
+        mock_repository.get_pending_by_user.return_value = []  # No pending after expiration
 
         result = await service.get_pending_signals(user_id)
 
         assert len(result) == 0
-        # Verify expired signal was updated
-        mock_repository.update_status.assert_called_once()
+        # Verify batch expiration was called
+        mock_repository.expire_stale_entries.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_pending_signals_empty(self, service, mock_repository):
         """Test retrieval when no pending signals."""
         user_id = uuid4()
+        mock_repository.expire_stale_entries.return_value = 0
         mock_repository.get_pending_by_user.return_value = []
 
         result = await service.get_pending_signals(user_id)
@@ -417,6 +419,7 @@ class TestConfidenceGrade:
     async def test_confidence_grade_a_plus(self, service, mock_repository, sample_queue_entry):
         """Test A+ grade for score >= 90."""
         sample_queue_entry.signal_snapshot["confidence_score"] = 92
+        mock_repository.expire_stale_entries.return_value = 0
         mock_repository.get_pending_by_user.return_value = [sample_queue_entry]
 
         result = await service.get_pending_signals(sample_queue_entry.user_id)
@@ -427,6 +430,7 @@ class TestConfidenceGrade:
     async def test_confidence_grade_a(self, service, mock_repository, sample_queue_entry):
         """Test A grade for score >= 85."""
         sample_queue_entry.signal_snapshot["confidence_score"] = 87
+        mock_repository.expire_stale_entries.return_value = 0
         mock_repository.get_pending_by_user.return_value = [sample_queue_entry]
 
         result = await service.get_pending_signals(sample_queue_entry.user_id)
@@ -437,6 +441,7 @@ class TestConfidenceGrade:
     async def test_confidence_grade_b_plus(self, service, mock_repository, sample_queue_entry):
         """Test B+ grade for score >= 80."""
         sample_queue_entry.signal_snapshot["confidence_score"] = 82
+        mock_repository.expire_stale_entries.return_value = 0
         mock_repository.get_pending_by_user.return_value = [sample_queue_entry]
 
         result = await service.get_pending_signals(sample_queue_entry.user_id)
@@ -447,6 +452,7 @@ class TestConfidenceGrade:
     async def test_confidence_grade_b(self, service, mock_repository, sample_queue_entry):
         """Test B grade for score >= 75."""
         sample_queue_entry.signal_snapshot["confidence_score"] = 77
+        mock_repository.expire_stale_entries.return_value = 0
         mock_repository.get_pending_by_user.return_value = [sample_queue_entry]
 
         result = await service.get_pending_signals(sample_queue_entry.user_id)
@@ -457,6 +463,7 @@ class TestConfidenceGrade:
     async def test_confidence_grade_c(self, service, mock_repository, sample_queue_entry):
         """Test C grade for score < 75."""
         sample_queue_entry.signal_snapshot["confidence_score"] = 70
+        mock_repository.expire_stale_entries.return_value = 0
         mock_repository.get_pending_by_user.return_value = [sample_queue_entry]
 
         result = await service.get_pending_signals(sample_queue_entry.user_id)

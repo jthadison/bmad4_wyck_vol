@@ -263,18 +263,13 @@ class SignalApprovalService:
         Returns:
             List of PendingSignalView objects
         """
+        # Batch expire stale entries first to avoid N+1 updates in the loop
+        await self.repository.expire_stale_entries()
+
+        # Now fetch only non-expired pending entries
         entries = await self.repository.get_pending_by_user(user_id)
 
-        views = []
-        for entry in entries:
-            # Check if expired and update if needed
-            if entry.is_expired:
-                await self.repository.update_status(entry.id, QueueEntryStatus.EXPIRED)
-                continue
-
-            view = self._entry_to_view(entry)
-            views.append(view)
-
+        views = [self._entry_to_view(entry) for entry in entries]
         return views
 
     async def expire_stale_signals(self) -> int:
@@ -333,18 +328,9 @@ class SignalApprovalService:
         """
         snapshot = entry.signal_snapshot
 
-        # Calculate confidence grade from score
+        # Calculate confidence grade from score using config thresholds
         score = snapshot.get("confidence_score", 0)
-        if score >= 90:
-            grade = "A+"
-        elif score >= 85:
-            grade = "A"
-        elif score >= 80:
-            grade = "B+"
-        elif score >= 75:
-            grade = "B"
-        else:
-            grade = "C"
+        grade = self.config.get_confidence_grade(score)
 
         return PendingSignalView(
             queue_id=entry.id,

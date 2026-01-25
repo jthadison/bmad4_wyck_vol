@@ -919,6 +919,8 @@ class SignalApprovalQueueORM(Base):
     )
 
     # Signal snapshot (store signal data at submission time)
+    # Note: Uses JSON in ORM for SQLite test compatibility.
+    # Migration specifies JSONB for PostgreSQL production.
     signal_snapshot: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,

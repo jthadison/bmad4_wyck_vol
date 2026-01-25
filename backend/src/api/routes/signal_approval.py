@@ -116,7 +116,7 @@ async def list_pending_signals(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error listing pending signals: {str(e)}",
+            detail="An error occurred while listing pending signals",
         ) from e
 
 
@@ -214,7 +214,7 @@ async def approve_signal(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error approving signal: {str(e)}",
+            detail="An error occurred while approving the signal",
         ) from e
 
 
@@ -307,5 +307,5 @@ async def reject_signal(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error rejecting signal: {str(e)}",
+            detail="An error occurred while rejecting the signal",
         ) from e

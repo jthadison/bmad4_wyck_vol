@@ -127,6 +127,13 @@ def upgrade() -> None:
             "status IN ('pending', 'approved', 'rejected', 'expired')",
             name="chk_signal_queue_status",
         ),
+        # Foreign key constraint for user ownership
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name="fk_signal_queue_user",
+            ondelete="CASCADE",
+        ),
     )
 
     # Composite index for user + status queries (most common access pattern)
