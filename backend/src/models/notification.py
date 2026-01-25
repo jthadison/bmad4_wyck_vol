@@ -228,7 +228,7 @@ class SignalNotification(BaseModel):
           "timestamp": "2026-01-23T10:30:00Z",
           "symbol": "AAPL",
           "pattern_type": "SPRING",
-          "confidence_score": 92.5,
+          "confidence_score": 92,
           "confidence_grade": "A+",
           "entry_price": "150.25",
           "stop_loss": "149.50",
@@ -245,7 +245,9 @@ class SignalNotification(BaseModel):
     timestamp: datetime = Field(..., description="When signal was approved (UTC)")
     symbol: str = Field(..., max_length=20, description="Trading symbol")
     pattern_type: str = Field(..., description="Wyckoff pattern type")
-    confidence_score: float = Field(..., ge=0.0, le=100.0, description="Overall confidence score")
+    confidence_score: int = Field(
+        ..., ge=70, le=100, description="Overall confidence score (70-100)"
+    )
     confidence_grade: str = Field(..., description="Letter grade (A+, A, B, C)")
     entry_price: str = Field(..., description="Entry price as decimal string")
     stop_loss: str = Field(..., description="Stop loss price as decimal string")
@@ -259,7 +261,7 @@ class SignalNotification(BaseModel):
         json_encoders = {datetime: lambda v: v.isoformat(), UUID: lambda v: str(v)}
 
     @classmethod
-    def confidence_to_grade(cls, score: float) -> str:
+    def confidence_to_grade(cls, score: int) -> str:
         """
         Convert confidence score to letter grade.
 
@@ -270,11 +272,16 @@ class SignalNotification(BaseModel):
         - C:  70-79
 
         Args:
-            score: Confidence score (0-100)
+            score: Confidence score (70-100)
 
         Returns:
             Letter grade string
+
+        Raises:
+            ValueError: If score is below minimum threshold of 70
         """
+        if score < 70:
+            raise ValueError(f"Confidence score {score} below minimum threshold of 70")
         if score >= 90:
             return "A+"
         elif score >= 85:

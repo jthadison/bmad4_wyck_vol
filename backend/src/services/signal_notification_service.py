@@ -11,7 +11,7 @@ Features:
 - Real-time signal delivery within 500ms of approval
 - 3-retry delivery with exponential backoff (100ms, 500ms, 2000ms)
 - Delivery status logging for debugging and metrics
-- User-scoped notification delivery
+- Broadcast to all connected clients (MVP single-user)
 
 Integration:
 ------------
@@ -57,6 +57,9 @@ DEFAULT_EXPIRY_MINUTES = 5
 # Delivery timing requirement
 MAX_DELIVERY_LATENCY_MS = 500
 
+# Default risk percentage when not found in validation chain
+DEFAULT_RISK_PERCENTAGE = 1.5
+
 
 class DeliveryStatus(str, Enum):
     """Delivery status for signal notifications."""
@@ -72,7 +75,6 @@ class DeliveryResult:
 
     status: DeliveryStatus
     signal_id: UUID
-    user_id: UUID | None
     attempts: int
     latency_ms: float
     error: str | None = None
@@ -110,23 +112,25 @@ class SignalNotificationService:
     async def notify_signal_approved(
         self,
         signal: TradeSignal,
-        user_id: UUID | None = None,
     ) -> DeliveryResult:
         """
-        Deliver approved signal notification to connected clients.
+        Deliver approved signal notification to all connected clients.
 
         Creates SignalNotification payload and broadcasts via WebSocket.
         Implements retry logic with exponential backoff on failure.
 
         Args:
             signal: Approved TradeSignal to notify about
-            user_id: Optional user ID for targeted delivery (broadcasts to all if None)
 
         Returns:
             DeliveryResult with status, attempts, and latency
 
         Timing:
             Target: < 500ms from approval to delivery
+
+        Note:
+            MVP broadcasts to all connected clients. User-targeted delivery
+            can be added in future stories when multi-user support is needed.
         """
         start_time = datetime.now(UTC)
 
@@ -134,7 +138,7 @@ class SignalNotificationService:
         notification = self._create_notification(signal)
 
         # Attempt delivery with retries
-        result = await self._deliver_with_retry(notification, user_id, start_time)
+        result = await self._deliver_with_retry(notification, start_time)
 
         # Log delivery result
         self._log_delivery(result, notification)
@@ -168,7 +172,7 @@ class SignalNotificationService:
             timestamp=datetime.now(UTC),
             symbol=signal.symbol,
             pattern_type=signal.pattern_type,
-            confidence_score=float(signal.confidence_score),
+            confidence_score=signal.confidence_score,
             confidence_grade=confidence_grade,
             entry_price=str(signal.entry_price),
             stop_loss=str(signal.stop_loss),
@@ -199,13 +203,12 @@ class SignalNotificationService:
                 if "risk_percentage" in result.metadata:
                     return float(result.metadata["risk_percentage"])
 
-        # Default to 1.5% if not found (conservative estimate)
-        return 1.5
+        # Default if not found in validation chain
+        return DEFAULT_RISK_PERCENTAGE
 
     async def _deliver_with_retry(
         self,
         notification: SignalNotification,
-        user_id: UUID | None,
         start_time: datetime,
     ) -> DeliveryResult:
         """
@@ -216,7 +219,6 @@ class SignalNotificationService:
 
         Args:
             notification: SignalNotification to deliver
-            user_id: Target user ID (None for broadcast)
             start_time: When delivery was initiated
 
         Returns:
@@ -229,8 +231,8 @@ class SignalNotificationService:
                 # Calculate current latency
                 latency_ms = (datetime.now(UTC) - start_time).total_seconds() * 1000
 
-                # Attempt delivery
-                await self._send_notification(notification, user_id)
+                # Attempt delivery via emit_signal_approved
+                await self._send_notification(notification)
 
                 # Success
                 self._delivery_count += 1
@@ -238,7 +240,6 @@ class SignalNotificationService:
                 return DeliveryResult(
                     status=DeliveryStatus.SUCCESS,
                     signal_id=notification.signal_id,
-                    user_id=user_id,
                     attempts=attempt + 1,
                     latency_ms=latency_ms,
                 )
@@ -267,7 +268,6 @@ class SignalNotificationService:
         return DeliveryResult(
             status=DeliveryStatus.FAILED,
             signal_id=notification.signal_id,
-            user_id=user_id,
             attempts=MAX_RETRIES,
             latency_ms=latency_ms,
             error=last_error,
@@ -276,16 +276,14 @@ class SignalNotificationService:
     async def _send_notification(
         self,
         notification: SignalNotification,
-        user_id: UUID | None,
     ) -> None:
         """
-        Send notification via WebSocket.
+        Send notification via WebSocket using emit_signal_approved.
 
-        Broadcasts to all connected clients or targets specific user.
+        Broadcasts to all connected clients.
 
         Args:
             notification: SignalNotification payload
-            user_id: Target user ID (None for broadcast)
 
         Raises:
             Exception: If WebSocket delivery fails
@@ -293,13 +291,8 @@ class SignalNotificationService:
         # Convert notification to dict for JSON serialization
         message = notification.model_dump(mode="json")
 
-        if user_id is not None:
-            # Send to specific user (if user_id tracking is implemented)
-            # For now, broadcast to all (single-user MVP)
-            await self._connection_manager.broadcast(message)
-        else:
-            # Broadcast to all connected clients
-            await self._connection_manager.broadcast(message)
+        # Use dedicated emit_signal_approved method
+        await self._connection_manager.emit_signal_approved(message)
 
     def _log_delivery(
         self,

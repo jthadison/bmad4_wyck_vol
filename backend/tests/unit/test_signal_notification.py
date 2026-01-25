@@ -143,7 +143,7 @@ class TestSignalNotificationModel:
             timestamp=now,
             symbol="AAPL",
             pattern_type="SPRING",
-            confidence_score=92.5,
+            confidence_score=92,
             confidence_grade="A+",
             entry_price="150.25",
             stop_loss="149.50",
@@ -158,7 +158,7 @@ class TestSignalNotificationModel:
         assert notification.signal_id == signal_id
         assert notification.symbol == "AAPL"
         assert notification.pattern_type == "SPRING"
-        assert notification.confidence_score == 92.5
+        assert notification.confidence_score == 92
         assert notification.confidence_grade == "A+"
         assert notification.entry_price == "150.25"
         assert notification.r_multiple == 3.33
@@ -170,7 +170,7 @@ class TestSignalNotificationModel:
             timestamp=datetime.now(UTC),
             symbol="AAPL",
             pattern_type="SOS",
-            confidence_score=85.0,
+            confidence_score=85,
             confidence_grade="A",
             entry_price="150.00",
             stop_loss="148.00",
@@ -194,7 +194,7 @@ class TestSignalNotificationModel:
             timestamp=now,
             symbol="AAPL",
             pattern_type="SPRING",
-            confidence_score=92.5,
+            confidence_score=92,
             confidence_grade="A+",
             entry_price="150.25",
             stop_loss="149.50",
@@ -212,13 +212,13 @@ class TestSignalNotificationModel:
         assert isinstance(json_data["timestamp"], str)
         assert json_data["symbol"] == "AAPL"
         assert json_data["pattern_type"] == "SPRING"
-        assert json_data["confidence_score"] == 92.5
+        assert json_data["confidence_score"] == 92
         assert json_data["confidence_grade"] == "A+"
 
     def test_confidence_score_validation(self):
-        """Test confidence score range validation (0-100)."""
+        """Test confidence score range validation (70-100)."""
         # Valid scores
-        for score in [0.0, 50.0, 70.0, 85.0, 95.0, 100.0]:
+        for score in [70, 85, 90, 95, 100]:
             notification = SignalNotification(
                 signal_id=uuid4(),
                 timestamp=datetime.now(UTC),
@@ -236,6 +236,25 @@ class TestSignalNotificationModel:
             )
             assert notification.confidence_score == score
 
+    def test_confidence_score_below_minimum_rejected(self):
+        """Test that confidence scores below 70 are rejected by Pydantic."""
+        with pytest.raises(Exception):  # Pydantic ValidationError
+            SignalNotification(
+                signal_id=uuid4(),
+                timestamp=datetime.now(UTC),
+                symbol="AAPL",
+                pattern_type="SPRING",
+                confidence_score=65,  # Below minimum of 70
+                confidence_grade="C",
+                entry_price="150.00",
+                stop_loss="148.00",
+                target_price="156.00",
+                risk_amount="200.00",
+                risk_percentage=1.5,
+                r_multiple=3.0,
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
+
     def test_risk_percentage_validation(self):
         """Test risk percentage range validation (0-100)."""
         # Valid percentages
@@ -245,7 +264,7 @@ class TestSignalNotificationModel:
                 timestamp=datetime.now(UTC),
                 symbol="AAPL",
                 pattern_type="SPRING",
-                confidence_score=85.0,
+                confidence_score=85,
                 confidence_grade="A",
                 entry_price="150.00",
                 stop_loss="148.00",
@@ -263,27 +282,34 @@ class TestConfidenceGrading:
 
     def test_grade_a_plus(self):
         """Test A+ grade for scores >= 90."""
-        assert SignalNotification.confidence_to_grade(90.0) == "A+"
-        assert SignalNotification.confidence_to_grade(95.0) == "A+"
-        assert SignalNotification.confidence_to_grade(100.0) == "A+"
+        assert SignalNotification.confidence_to_grade(90) == "A+"
+        assert SignalNotification.confidence_to_grade(95) == "A+"
+        assert SignalNotification.confidence_to_grade(100) == "A+"
 
     def test_grade_a(self):
         """Test A grade for scores 85-89."""
-        assert SignalNotification.confidence_to_grade(85.0) == "A"
-        assert SignalNotification.confidence_to_grade(87.5) == "A"
-        assert SignalNotification.confidence_to_grade(89.9) == "A"
+        assert SignalNotification.confidence_to_grade(85) == "A"
+        assert SignalNotification.confidence_to_grade(87) == "A"
+        assert SignalNotification.confidence_to_grade(89) == "A"
 
     def test_grade_b(self):
         """Test B grade for scores 80-84."""
-        assert SignalNotification.confidence_to_grade(80.0) == "B"
-        assert SignalNotification.confidence_to_grade(82.5) == "B"
-        assert SignalNotification.confidence_to_grade(84.9) == "B"
+        assert SignalNotification.confidence_to_grade(80) == "B"
+        assert SignalNotification.confidence_to_grade(82) == "B"
+        assert SignalNotification.confidence_to_grade(84) == "B"
 
     def test_grade_c(self):
         """Test C grade for scores 70-79."""
-        assert SignalNotification.confidence_to_grade(70.0) == "C"
-        assert SignalNotification.confidence_to_grade(75.0) == "C"
-        assert SignalNotification.confidence_to_grade(79.9) == "C"
+        assert SignalNotification.confidence_to_grade(70) == "C"
+        assert SignalNotification.confidence_to_grade(75) == "C"
+        assert SignalNotification.confidence_to_grade(79) == "C"
+
+    def test_grade_below_minimum_raises_error(self):
+        """Test that scores below 70 raise ValueError."""
+        with pytest.raises(ValueError, match="below minimum threshold of 70"):
+            SignalNotification.confidence_to_grade(65)
+        with pytest.raises(ValueError, match="below minimum threshold of 70"):
+            SignalNotification.confidence_to_grade(0)
 
 
 # ============================================================================
@@ -317,11 +343,11 @@ class TestSignalNotificationService:
         """Test that notification payload matches expected format."""
         await notification_service.notify_signal_approved(sample_signal)
 
-        # Verify broadcast was called
-        mock_connection_manager.broadcast.assert_called_once()
+        # Verify emit_signal_approved was called
+        mock_connection_manager.emit_signal_approved.assert_called_once()
 
         # Get the payload
-        payload = mock_connection_manager.broadcast.call_args[0][0]
+        payload = mock_connection_manager.emit_signal_approved.call_args[0][0]
 
         assert payload["type"] == "signal_approved"
         assert payload["symbol"] == "AAPL"
@@ -345,7 +371,7 @@ class TestSignalNotificationService:
         # Sample signal has confidence_score=92, should be A+
         await notification_service.notify_signal_approved(sample_signal)
 
-        payload = mock_connection_manager.broadcast.call_args[0][0]
+        payload = mock_connection_manager.emit_signal_approved.call_args[0][0]
         assert payload["confidence_grade"] == "A+"
 
     @pytest.mark.asyncio
@@ -375,7 +401,7 @@ class TestRetryLogic:
     ):
         """Test that service retries after first failure."""
         # Configure mock to fail first time, succeed second time
-        mock_connection_manager.broadcast.side_effect = [
+        mock_connection_manager.emit_signal_approved.side_effect = [
             Exception("Connection error"),
             None,  # Success on second attempt
         ]
@@ -387,7 +413,7 @@ class TestRetryLogic:
 
         assert result.status == DeliveryStatus.SUCCESS
         assert result.attempts == 2
-        assert mock_connection_manager.broadcast.call_count == 2
+        assert mock_connection_manager.emit_signal_approved.call_count == 2
         mock_sleep.assert_called_once()  # 100ms delay
 
     @pytest.mark.asyncio
@@ -396,7 +422,7 @@ class TestRetryLogic:
     ):
         """Test that retry delays follow exponential backoff pattern."""
         # Configure mock to fail twice, succeed third time
-        mock_connection_manager.broadcast.side_effect = [
+        mock_connection_manager.emit_signal_approved.side_effect = [
             Exception("Error 1"),
             Exception("Error 2"),
             None,  # Success
@@ -422,7 +448,7 @@ class TestRetryLogic:
     ):
         """Test that delivery fails after all retries exhausted."""
         # Configure mock to always fail
-        mock_connection_manager.broadcast.side_effect = Exception("Persistent error")
+        mock_connection_manager.emit_signal_approved.side_effect = Exception("Persistent error")
 
         service = SignalNotificationService(mock_connection_manager)
 
@@ -432,14 +458,14 @@ class TestRetryLogic:
         assert result.status == DeliveryStatus.FAILED
         assert result.attempts == MAX_RETRIES
         assert result.error == "Persistent error"
-        assert mock_connection_manager.broadcast.call_count == MAX_RETRIES
+        assert mock_connection_manager.emit_signal_approved.call_count == MAX_RETRIES
 
     @pytest.mark.asyncio
     async def test_failure_metrics_on_exhausted_retries(
         self, sample_signal: TradeSignal, mock_connection_manager: MagicMock
     ):
         """Test failure metrics are updated when all retries fail."""
-        mock_connection_manager.broadcast.side_effect = Exception("Error")
+        mock_connection_manager.emit_signal_approved.side_effect = Exception("Error")
 
         service = SignalNotificationService(mock_connection_manager)
 
@@ -490,7 +516,6 @@ class TestDeliveryResult:
         result = DeliveryResult(
             status=DeliveryStatus.SUCCESS,
             signal_id=signal_id,
-            user_id=None,
             attempts=1,
             latency_ms=45.5,
         )
@@ -507,7 +532,6 @@ class TestDeliveryResult:
         result = DeliveryResult(
             status=DeliveryStatus.FAILED,
             signal_id=signal_id,
-            user_id=None,
             attempts=3,
             latency_ms=2600.0,
             error="Connection refused",
@@ -527,16 +551,16 @@ class TestWebSocketIntegration:
     """Test integration between service and WebSocket manager."""
 
     @pytest.mark.asyncio
-    async def test_notification_sent_via_broadcast(
+    async def test_notification_sent_via_emit_signal_approved(
         self,
         notification_service: SignalNotificationService,
         sample_signal: TradeSignal,
         mock_connection_manager: MagicMock,
     ):
-        """Test that notification is sent via broadcast method."""
+        """Test that notification is sent via emit_signal_approved method."""
         await notification_service.notify_signal_approved(sample_signal)
 
-        mock_connection_manager.broadcast.assert_called_once()
+        mock_connection_manager.emit_signal_approved.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_multiple_signals_sent_independently(
@@ -549,18 +573,23 @@ class TestWebSocketIntegration:
         # Send first notification
         result1 = await notification_service.notify_signal_approved(sample_signal)
 
-        # Create second signal with different symbol
-        sample_signal.symbol = "MSFT"
-        sample_signal.id = uuid4()
+        # Create copy of signal with different symbol (avoid mutating fixture)
+        from copy import deepcopy
 
-        result2 = await notification_service.notify_signal_approved(sample_signal)
+        second_signal = deepcopy(sample_signal)
+        second_signal.symbol = "MSFT"
+        second_signal.id = uuid4()
+
+        result2 = await notification_service.notify_signal_approved(second_signal)
 
         assert result1.status == DeliveryStatus.SUCCESS
         assert result2.status == DeliveryStatus.SUCCESS
-        assert mock_connection_manager.broadcast.call_count == 2
+        assert mock_connection_manager.emit_signal_approved.call_count == 2
 
         # Verify both signals sent
-        payloads = [call[0][0] for call in mock_connection_manager.broadcast.call_args_list]
+        payloads = [
+            call[0][0] for call in mock_connection_manager.emit_signal_approved.call_args_list
+        ]
         symbols = [p["symbol"] for p in payloads]
         assert "AAPL" in symbols
         assert "MSFT" in symbols
