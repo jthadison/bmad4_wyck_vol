@@ -34,6 +34,7 @@ from src.api.routes import (
     portfolio,
     risk,
     scanner,
+    signal_approval,
     signals,
     summary,
     tradingview,
@@ -78,6 +79,7 @@ app.include_router(help.router)  # Help system routes (Story 11.8a)
 app.include_router(paper_trading.router)  # Paper trading routes (Story 12.8)
 app.include_router(tradingview.router)  # TradingView webhook routes (Story 16.4a)
 app.include_router(scanner.router)  # Multi-symbol scanner routes (Story 19.4)
+app.include_router(signal_approval.router)  # Signal approval queue routes (Story 19.9)
 
 
 # WebSocket endpoint for real-time updates
@@ -231,15 +233,38 @@ async def startup_event() -> None:
     except Exception as e:
         logger.warning("paper_trading_signal_routing_failed", error=str(e))
 
+    # Initialize signal approval expiration task (Story 19.9)
+    try:
+        from src.database import async_session_maker
+        from src.tasks.signal_approval_tasks import init_expiration_task
+
+        expiration_task = init_expiration_task(async_session_maker)
+        asyncio.create_task(expiration_task.start())
+
+        logger.info("signal_approval_expiration_task_initialized")
+    except Exception as e:
+        logger.warning("signal_approval_expiration_task_failed", error=str(e))
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
     """
     FastAPI shutdown event handler.
 
-    Gracefully stops the real-time pattern scanner and market data feed.
+    Gracefully stops the real-time pattern scanner, market data feed,
+    and signal approval expiration task.
     """
     global _coordinator
+
+    # Stop signal approval expiration task (Story 19.9)
+    try:
+        from src.tasks.signal_approval_tasks import get_expiration_task
+
+        expiration_task = get_expiration_task()
+        if expiration_task:
+            await expiration_task.stop()
+    except Exception:
+        pass
 
     # Stop scanner first (Story 19.1)
     try:
