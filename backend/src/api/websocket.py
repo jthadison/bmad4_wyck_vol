@@ -30,6 +30,7 @@ Event Types:
 - signal:new: New trade signal generated
 - signal:executed: Signal executed
 - signal:rejected: Signal rejected
+- signal_approved: Approved signal notification (Story 19.7)
 - portfolio:updated: Portfolio heat changed
 - campaign:updated: Campaign risk changed
 - batch_update: Multiple events batched (high-volume scenarios)
@@ -74,6 +75,7 @@ class ConnectionManager:
     - emit_signal_generated(...): Emit signal generation event
     - emit_signal_executed(...): Emit signal execution event
     - emit_signal_rejected(...): Emit signal rejection event
+    - emit_signal_approved(...): Emit approved signal notification (Story 19.7)
     - emit_portfolio_updated(...): Emit portfolio update event
     - emit_campaign_updated(...): Emit campaign update event
     """
@@ -298,6 +300,59 @@ class ConnectionManager:
         }
 
         await self.broadcast(message)
+
+    async def emit_signal_approved(self, notification_data: dict[str, Any]) -> None:
+        """
+        Emit signal_approved event to all connected clients (Story 19.7).
+
+        Broadcasts approved signal notification for real-time trader alerts.
+        Used by SignalNotificationService for delivery with retry logic.
+
+        Args:
+            notification_data: SignalNotification as dictionary with fields:
+                - type: "signal_approved"
+                - signal_id: UUID string
+                - timestamp: ISO 8601 string
+                - symbol: Trading symbol
+                - pattern_type: SPRING, SOS, LPS, UTAD
+                - confidence_score: Float 0-100
+                - confidence_grade: A+, A, B, C
+                - entry_price: Decimal string
+                - stop_loss: Decimal string
+                - target_price: Decimal string
+                - risk_amount: Decimal string
+                - risk_percentage: Float 0-100
+                - r_multiple: Float
+                - expires_at: ISO 8601 string
+
+        Message Format:
+            {
+                "type": "signal_approved",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "signal_id": "<uuid>",
+                "symbol": "<symbol>",
+                "pattern_type": "<type>",
+                "confidence_score": <float>,
+                "confidence_grade": "<grade>",
+                "entry_price": "<decimal>",
+                "stop_loss": "<decimal>",
+                "target_price": "<decimal>",
+                "risk_amount": "<decimal>",
+                "risk_percentage": <float>,
+                "r_multiple": <float>,
+                "expires_at": "<ISO8601>"
+            }
+
+        Timing:
+            Target delivery within 500ms of signal approval.
+
+        Integration:
+            Called by SignalNotificationService.notify_signal_approved()
+        """
+        # Notification data already contains all fields from SignalNotification
+        # Just broadcast directly - timestamp and sequence_number added by broadcast()
+        await self.broadcast(notification_data)
 
     async def emit_portfolio_updated(
         self,

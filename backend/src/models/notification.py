@@ -196,3 +196,90 @@ class NotificationListResponse(BaseModel):
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat(), UUID: lambda v: str(v)}
+
+
+class SignalNotification(BaseModel):
+    """
+    WebSocket notification payload for approved signals (Story 19.7).
+
+    Broadcast via WebSocket when a signal passes all validation stages.
+    Contains all information needed for trader to act on the opportunity.
+
+    Attributes:
+        type: Message type identifier ("signal_approved")
+        signal_id: Unique signal identifier
+        timestamp: When signal was approved (UTC)
+        symbol: Trading symbol (e.g., "AAPL", "EUR/USD")
+        pattern_type: Wyckoff pattern (SPRING, SOS, LPS, UTAD)
+        confidence_score: Overall confidence (70-95)
+        confidence_grade: Letter grade (A+, A, B, C)
+        entry_price: Recommended entry price
+        stop_loss: Stop loss level
+        target_price: Primary target (Jump level)
+        risk_amount: Dollar amount at risk
+        risk_percentage: Risk as percentage of account
+        r_multiple: Reward/risk ratio
+        expires_at: Signal expiration for manual approval
+
+    Example JSON:
+        {
+          "type": "signal_approved",
+          "signal_id": "550e8400-e29b-41d4-a716-446655440000",
+          "timestamp": "2026-01-23T10:30:00Z",
+          "symbol": "AAPL",
+          "pattern_type": "SPRING",
+          "confidence_score": 92.5,
+          "confidence_grade": "A+",
+          "entry_price": "150.25",
+          "stop_loss": "149.50",
+          "target_price": "152.75",
+          "risk_amount": "75.00",
+          "risk_percentage": 1.5,
+          "r_multiple": 3.33,
+          "expires_at": "2026-01-23T10:35:00Z"
+        }
+    """
+
+    type: Literal["signal_approved"] = "signal_approved"
+    signal_id: UUID = Field(..., description="Unique signal identifier")
+    timestamp: datetime = Field(..., description="When signal was approved (UTC)")
+    symbol: str = Field(..., max_length=20, description="Trading symbol")
+    pattern_type: str = Field(..., description="Wyckoff pattern type")
+    confidence_score: float = Field(..., ge=0.0, le=100.0, description="Overall confidence score")
+    confidence_grade: str = Field(..., description="Letter grade (A+, A, B, C)")
+    entry_price: str = Field(..., description="Entry price as decimal string")
+    stop_loss: str = Field(..., description="Stop loss price as decimal string")
+    target_price: str = Field(..., description="Primary target price as decimal string")
+    risk_amount: str = Field(..., description="Dollar risk amount as decimal string")
+    risk_percentage: float = Field(..., ge=0.0, le=100.0, description="Risk as percentage")
+    r_multiple: float = Field(..., ge=0.0, description="Reward/risk ratio")
+    expires_at: datetime = Field(..., description="Signal expiration timestamp (UTC)")
+
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat(), UUID: lambda v: str(v)}
+
+    @classmethod
+    def confidence_to_grade(cls, score: float) -> str:
+        """
+        Convert confidence score to letter grade.
+
+        Grade Scale:
+        - A+: 90-100
+        - A:  85-89
+        - B:  80-84
+        - C:  70-79
+
+        Args:
+            score: Confidence score (0-100)
+
+        Returns:
+            Letter grade string
+        """
+        if score >= 90:
+            return "A+"
+        elif score >= 85:
+            return "A"
+        elif score >= 80:
+            return "B"
+        else:
+            return "C"
