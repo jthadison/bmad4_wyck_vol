@@ -60,26 +60,56 @@
 
 <script setup lang="ts">
 /**
- * App.vue - Main Application Component (Story 10.9 WebSocket Integration)
+ * App.vue - Main Application Component
  *
- * Temporarily simplified to debug loading issue
+ * Story 10.9: WebSocket Integration
+ * Story 19.8: Frontend Signal Toast Notifications
  */
 import { onMounted, onUnmounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Toast from 'primevue/toast'
+import { websocketService } from '@/services/websocketService'
+import { signalToastService } from '@/services/SignalToastService'
+import type { SignalNewMessage, WebSocketMessage } from '@/types/websocket'
+import { isSignalNewMessage } from '@/types/websocket'
 
 console.log('[App.vue] Script setup executing')
 
-// Initialize toast service for child components (required for Toast component)
-void useToast()
+// Initialize PrimeVue toast
+const toast = useToast()
+
+// Initialize SignalToastService with PrimeVue toast instance
+signalToastService.setToastService(toast)
 
 console.log('[App.vue] Toast initialized')
 
+// WebSocket signal handler
+function handleSignalNotification(message: SignalNewMessage): void {
+  console.log('[App.vue] New signal notification received:', message.data)
+  signalToastService.handleSignalNotification(message.data)
+}
+
+// Store handler reference for proper cleanup
+const signalHandler = (message: WebSocketMessage) => {
+  if (isSignalNewMessage(message)) {
+    handleSignalNotification(message)
+  }
+}
+
 onMounted(() => {
   console.log('[App.vue] Component mounted!')
+
+  // Subscribe to signal:new events from WebSocket
+  websocketService.subscribe('signal:new', signalHandler)
+
+  // Connect WebSocket
+  websocketService.connect()
 })
 
 onUnmounted(() => {
   console.log('[App.vue] Component unmounting')
+
+  // Unsubscribe from WebSocket events using same handler reference
+  websocketService.unsubscribe('signal:new', signalHandler)
 })
 </script>
