@@ -846,3 +846,102 @@ class RegressionBaselineORM(Base):
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
+
+
+class SignalApprovalQueueORM(Base):
+    """
+    Signal Approval Queue for manual trading approval workflow (Story 19.9).
+
+    Table: signal_approval_queue
+    Primary Key: id (UUID)
+    Foreign Keys: signal_id -> signals.id (conceptual), user_id -> users.id
+    Indexes: idx_signal_queue_user_status, idx_signal_queue_expires
+    """
+
+    __tablename__ = "signal_approval_queue"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Signal reference (conceptual FK - signals may be in-memory)
+    signal_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+        index=True,
+    )
+
+    # User who owns this queue entry
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+        index=True,
+    )
+
+    # Queue status: pending, approved, rejected, expired
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="pending",
+        index=True,
+    )
+
+    # Timestamps
+    submitted_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+    )
+
+    approved_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+
+    # Who approved (could be different from owner in future multi-user scenarios)
+    approved_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=True,
+    )
+
+    # Rejection reason
+    rejection_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    # Signal snapshot (store signal data at submission time)
+    signal_snapshot: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        server_default="{}",
+    )
+
+    # Standard timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'expired')",
+            name="chk_signal_queue_status",
+        ),
+    )
