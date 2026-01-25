@@ -230,6 +230,30 @@ class ValidationStatus(str, Enum):
     WARN = "WARN"
 
 
+class ValidationStage(str, Enum):
+    """
+    Validation stage names in the multi-stage validation pipeline.
+
+    Story 19.5: Used for tracking which stage rejected a signal.
+
+    Values:
+    -------
+    - VOLUME: Volume validation stage
+    - PHASE: Phase validation stage
+    - LEVELS: Level validation stage
+    - RISK: Risk validation stage
+    - STRATEGY: Strategy validation stage
+    - UNKNOWN: Unknown or unrecognized validation stage (fallback)
+    """
+
+    VOLUME = "Volume"
+    PHASE = "Phase"
+    LEVELS = "Levels"
+    RISK = "Risk"
+    STRATEGY = "Strategy"
+    UNKNOWN = "Unknown"
+
+
 class StageValidationResult(BaseModel):
     """
     Result of a single validation stage in the multi-stage validation chain.
