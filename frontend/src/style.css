@@ -1,3 +1,95 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Signal Toast Notifications - Story 19.8 */
+.signal-toast {
+  border-left: 4px solid var(--primary-color) !important;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.signal-toast:hover {
+  transform: translateX(-4px);
+}
+
+.signal-toast-content {
+  width: 100%;
+}
+
+.signal-toast-content .toast-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.signal-toast-content .pattern-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: white;
+}
+
+.signal-toast-content .pattern-badge.spring {
+  background-color: #22c55e; /* green-500 */
+}
+
+.signal-toast-content .pattern-badge.sos {
+  background-color: #3b82f6; /* blue-500 */
+}
+
+.signal-toast-content .pattern-badge.lps {
+  background-color: #06b6d4; /* cyan-500 */
+}
+
+.signal-toast-content .pattern-badge.utad {
+  background-color: #ef4444; /* red-500 */
+}
+
+.signal-toast-content .pattern-badge.sc {
+  background-color: #dc2626; /* red-600 */
+}
+
+.signal-toast-content .pattern-badge.ar {
+  background-color: #16a34a; /* green-600 */
+}
+
+.signal-toast-content .pattern-badge.st {
+  background-color: #a855f7; /* purple-500 */
+}
+
+.signal-toast-content .confidence {
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.signal-toast-content .confidence.a-plus {
+  color: #22c55e; /* green-500 */
+}
+
+.signal-toast-content .confidence.a {
+  color: #4ade80; /* green-400 */
+}
+
+.signal-toast-content .confidence.b {
+  color: #eab308; /* yellow-500 */
+}
+
+.signal-toast-content .confidence.c {
+  color: #f97316; /* orange-500 */
+}
+
+.signal-toast-content .toast-body {
+  margin-top: 0.5rem;
+}
+
+.signal-toast-content .price-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.875rem;
+  color: #9ca3af; /* gray-400 */
+}
