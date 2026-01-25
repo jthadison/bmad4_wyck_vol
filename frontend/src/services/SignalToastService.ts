@@ -20,10 +20,20 @@ export interface SignalToastData {
 export class SignalToastService {
   private toastService: ToastServiceMethods | null = null
   private audioElement: HTMLAudioElement | null = null
-  private settingsStore = useToastSettingsStore()
+  private _settingsStore: ReturnType<typeof useToastSettingsStore> | null = null
 
   constructor() {
     this.initializeAudio()
+  }
+
+  /**
+   * Lazy getter for settings store to avoid Pinia initialization errors
+   */
+  private get settingsStore() {
+    if (!this._settingsStore) {
+      this._settingsStore = useToastSettingsStore()
+    }
+    return this._settingsStore
   }
 
   /**
@@ -39,7 +49,17 @@ export class SignalToastService {
   private initializeAudio(): void {
     try {
       this.audioElement = new Audio('/sounds/signal-alert.mp3')
-      this.audioElement.volume = this.settingsStore.settings.soundVolume / 100
+
+      // Add error listener for missing audio file
+      this.audioElement.addEventListener('error', () => {
+        console.warn(
+          '[SignalToastService] Audio file not found - sound alerts disabled'
+        )
+        this.audioElement = null
+      })
+
+      // Set initial volume (will be updated when store is accessed)
+      this.audioElement.volume = 0.8
     } catch (error) {
       console.error('[SignalToastService] Failed to initialize audio:', error)
     }
@@ -142,22 +162,42 @@ export class SignalToastService {
   }
 
   /**
+   * Escape HTML to prevent XSS
+   */
+  private escapeHtml(str: string): string {
+    const escapeMap: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }
+    return str.replace(/[&<>"']/g, (m) => escapeMap[m] || m)
+  }
+
+  /**
    * Build toast content HTML
    */
   private buildToastContent(signal: Signal, confidenceGrade: string): string {
     const confidenceClass = this.getConfidenceClass(signal.confidence_score)
     const patternClass = signal.pattern_type.toLowerCase()
 
+    // Escape user-controllable data for XSS protection
+    const safeId = this.escapeHtml(signal.id)
+    const safePattern = this.escapeHtml(signal.pattern_type)
+    const safeEntryPrice = this.escapeHtml(signal.entry_price)
+    const safeRMultiple = this.escapeHtml(signal.r_multiple)
+
     return `
-      <div class="signal-toast-content" data-signal-id="${signal.id}">
+      <div class="signal-toast-content" data-signal-id="${safeId}">
         <div class="toast-header">
-          <span class="pattern-badge ${patternClass}">${signal.pattern_type}</span>
+          <span class="pattern-badge ${patternClass}">${safePattern}</span>
           <span class="confidence ${confidenceClass}">${confidenceGrade}</span>
         </div>
         <div class="toast-body">
           <div class="price-row">
-            <span>Entry: $${signal.entry_price}</span>
-            <span>R: ${signal.r_multiple}x</span>
+            <span>Entry: $${safeEntryPrice}</span>
+            <span>R: ${safeRMultiple}x</span>
           </div>
         </div>
       </div>

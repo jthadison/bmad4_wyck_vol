@@ -34,6 +34,12 @@ export const useToastSettingsStore = defineStore('toastSettings', () => {
 
   // Actions
   function loadSettings(): void {
+    // Guard for SSR/test environments where localStorage may not be available
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      settings.value = { ...DEFAULT_SETTINGS }
+      return
+    }
+
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
@@ -48,6 +54,12 @@ export const useToastSettingsStore = defineStore('toastSettings', () => {
 
   function saveSettings(newSettings: Partial<ToastSettings>): void {
     settings.value = { ...settings.value, ...newSettings }
+
+    // Guard for SSR/test environments
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return
+    }
+
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings.value))
     } catch (error) {
@@ -79,6 +91,12 @@ export const useToastSettingsStore = defineStore('toastSettings', () => {
 
   function resetToDefaults(): void {
     settings.value = { ...DEFAULT_SETTINGS }
+
+    // Guard for SSR/test environments
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return
+    }
+
     try {
       localStorage.removeItem(STORAGE_KEY)
     } catch (error) {

@@ -70,7 +70,7 @@ import { useToast } from 'primevue/usetoast'
 import Toast from 'primevue/toast'
 import { websocketService } from '@/services/websocketService'
 import { signalToastService } from '@/services/SignalToastService'
-import type { SignalNewMessage } from '@/types/websocket'
+import type { SignalNewMessage, WebSocketMessage } from '@/types/websocket'
 import { isSignalNewMessage } from '@/types/websocket'
 
 console.log('[App.vue] Script setup executing')
@@ -89,15 +89,18 @@ function handleSignalNotification(message: SignalNewMessage): void {
   signalToastService.handleSignalNotification(message.data)
 }
 
+// Store handler reference for proper cleanup
+const signalHandler = (message: WebSocketMessage) => {
+  if (isSignalNewMessage(message)) {
+    handleSignalNotification(message)
+  }
+}
+
 onMounted(() => {
   console.log('[App.vue] Component mounted!')
 
   // Subscribe to signal:new events from WebSocket
-  websocketService.subscribe('signal:new', (message) => {
-    if (isSignalNewMessage(message)) {
-      handleSignalNotification(message)
-    }
-  })
+  websocketService.subscribe('signal:new', signalHandler)
 
   // Connect WebSocket
   websocketService.connect()
@@ -106,7 +109,7 @@ onMounted(() => {
 onUnmounted(() => {
   console.log('[App.vue] Component unmounting')
 
-  // Unsubscribe from WebSocket events
-  websocketService.unsubscribe('signal:new', handleSignalNotification)
+  // Unsubscribe from WebSocket events using same handler reference
+  websocketService.unsubscribe('signal:new', signalHandler)
 })
 </script>
