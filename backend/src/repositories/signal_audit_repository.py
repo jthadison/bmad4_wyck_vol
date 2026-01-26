@@ -150,9 +150,7 @@ class SignalAuditRepository:
         offset = (query.page - 1) * query.page_size
 
         # Apply ordering and pagination
-        stmt = (
-            stmt.order_by(Signal.created_at.desc()).offset(offset).limit(query.page_size)
-        )
+        stmt = stmt.order_by(Signal.created_at.desc()).offset(offset).limit(query.page_size)
 
         # Execute query
         result = await self.session.execute(stmt)
@@ -224,9 +222,7 @@ class SignalAuditRepository:
 
         return SignalHistoryResponse(signals=history_items, pagination=pagination)
 
-    async def update_signal_lifecycle_state(
-        self, signal_id: UUID, new_state: str
-    ) -> None:
+    async def update_signal_lifecycle_state(self, signal_id: UUID, new_state: str) -> None:
         """
         Update signal lifecycle state.
 
@@ -277,9 +273,7 @@ class SignalAuditRepository:
             signal_id=str(signal_id),
         )
 
-    async def update_signal_trade_outcome(
-        self, signal_id: UUID, trade_outcome: dict
-    ) -> None:
+    async def update_signal_trade_outcome(self, signal_id: UUID, trade_outcome: dict) -> None:
         """
         Update signal trade outcome.
 

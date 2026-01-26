@@ -556,7 +556,9 @@ async def get_signal_history(
     start_date: datetime | None = Query(None, description="Filter start date (inclusive)"),
     end_date: datetime | None = Query(None, description="Filter end date (inclusive)"),
     symbol: str | None = Query(None, description="Filter by symbol"),
-    pattern_type: str | None = Query(None, description="Filter by pattern type (SPRING, SOS, etc.)"),
+    pattern_type: str | None = Query(
+        None, description="Filter by pattern type (SPRING, SOS, etc.)"
+    ),
     status: str | None = Query(None, description="Filter by lifecycle state"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(50, ge=1, le=200, description="Items per page"),
@@ -619,7 +621,7 @@ async def get_signal_history(
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to query signal history: {str(e)}",
-        )
+        ) from e
 
 
 @router.get(
@@ -682,4 +684,4 @@ async def get_signal_audit_trail(signal_id: UUID) -> dict:
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve audit trail: {str(e)}",
-        )
+        ) from e

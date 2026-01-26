@@ -253,9 +253,7 @@ class SignalAuditService:
             Created SignalAuditLogEntry
         """
         execution_metadata = metadata or {}
-        execution_metadata.update(
-            {"position_id": str(position_id), "entry_price": entry_price}
-        )
+        execution_metadata.update({"position_id": str(position_id), "entry_price": entry_price})
 
         return await self.record_state_transition(
             signal_id=signal_id,

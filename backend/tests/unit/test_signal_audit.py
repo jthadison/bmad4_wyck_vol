@@ -8,7 +8,7 @@ Author: Story 19.11
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,12 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.signal_audit import (
     SignalAuditLogEntry,
     SignalHistoryQuery,
-    SignalLifecycleState,
     TradeOutcome,
     ValidationResults,
     ValidationStageResult,
 )
-from src.orm.models import Signal, SignalAuditLogORM
+from src.orm.models import Signal
 from src.repositories.signal_audit_repository import SignalAuditRepository
 from src.services.signal_audit_service import SignalAuditService
 
@@ -165,9 +164,7 @@ class TestSignalAuditRepository:
         }
 
         # Act
-        await audit_repository.update_signal_validation_results(
-            test_signal.id, validation_results
-        )
+        await audit_repository.update_signal_validation_results(test_signal.id, validation_results)
 
         # Assert
         await db_session.refresh(test_signal)

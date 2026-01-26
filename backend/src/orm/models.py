@@ -340,7 +340,9 @@ class Signal(Base):
     approval_chain: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     # Audit trail fields (Story 19.11)
-    lifecycle_state: Mapped[str] = mapped_column(String(20), nullable=False, server_default="generated")
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="generated"
+    )
     validation_results: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     trade_outcome: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
