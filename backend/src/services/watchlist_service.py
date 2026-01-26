@@ -174,17 +174,15 @@ class WatchlistService:
         Returns:
             Updated WatchlistEntry if found, None otherwise
         """
-        # Determine if we should clear min_confidence
-        # (when explicitly passed as None vs not passed at all)
-        clear_min_confidence = min_confidence is None
-
+        # Don't auto-clear min_confidence - only update fields that are explicitly provided.
+        # If caller wants to clear min_confidence, they should use a dedicated method.
         entry = await self.repository.update_symbol(
             user_id=user_id,
             symbol=symbol.upper(),
             priority=priority,
             min_confidence=min_confidence,
             enabled=enabled,
-            clear_min_confidence=clear_min_confidence,
+            clear_min_confidence=False,
         )
 
         if entry and enabled is not None:

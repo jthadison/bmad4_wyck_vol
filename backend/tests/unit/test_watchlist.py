@@ -104,6 +104,31 @@ class TestWatchlistModels:
                 min_confidence=Decimal("-10.0"),  # Negative
             )
 
+    def test_add_symbol_request_invalid_format(self):
+        """Test symbol format validation rejects invalid symbols."""
+        # Invalid: special characters
+        with pytest.raises(ValueError, match="Invalid symbol format"):
+            AddSymbolRequest(symbol="!@#$%")
+
+        # Invalid: numeric only
+        with pytest.raises(ValueError, match="Invalid symbol format"):
+            AddSymbolRequest(symbol="12345")
+
+        # Invalid: too long
+        with pytest.raises(ValueError, match="Invalid symbol format"):
+            AddSymbolRequest(symbol="ABCDEFG")
+
+    def test_add_symbol_request_valid_formats(self):
+        """Test symbol format validation accepts valid symbols."""
+        # Standard symbols
+        assert AddSymbolRequest(symbol="AAPL").symbol == "AAPL"
+        assert AddSymbolRequest(symbol="A").symbol == "A"
+        assert AddSymbolRequest(symbol="GOOG").symbol == "GOOG"
+
+        # Share class symbols (e.g., BRK.A, BRK.B)
+        assert AddSymbolRequest(symbol="BRK.A").symbol == "BRK.A"
+        assert AddSymbolRequest(symbol="BRK.B").symbol == "BRK.B"
+
     def test_update_symbol_request_all_optional(self):
         """Test UpdateSymbolRequest allows all fields optional."""
         request = UpdateSymbolRequest()

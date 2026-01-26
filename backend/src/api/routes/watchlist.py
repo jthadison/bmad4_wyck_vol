@@ -23,6 +23,7 @@ Features:
 Author: Story 19.12
 """
 
+from collections.abc import AsyncGenerator
 from uuid import UUID
 
 import structlog
@@ -45,23 +46,31 @@ router = APIRouter(prefix="/api/v1/watchlist", tags=["watchlist"])
 
 
 # Dependency to get current user ID
-# For now, use a hardcoded test user ID until auth is fully integrated
+# SECURITY: DO NOT DEPLOY - Requires auth integration (Story 11.7)
+# This hardcoded ID means all users share the same watchlist with no authorization.
+# TODO: Replace with actual JWT token validation from auth middleware.
 async def get_current_user_id() -> UUID:
     """
     Get current authenticated user ID.
 
-    TODO: Integrate with auth system (Story 11.7)
-    For now, returns a hardcoded test user ID.
+    SECURITY WARNING: This is a hardcoded test user ID.
+    DO NOT use in production - requires auth integration (Story 11.7).
+
+    Returns:
+        Hardcoded test user UUID
     """
-    # Test user ID - replace with actual auth when available
     return UUID("00000000-0000-0000-0000-000000000001")
 
 
-async def get_watchlist_service() -> WatchlistService:
+async def get_watchlist_service() -> AsyncGenerator[WatchlistService, None]:
     """
     Dependency to get watchlist service instance.
 
     Creates repository with database session and initializes service.
+    Session is properly managed via async context manager.
+
+    Yields:
+        WatchlistService instance with active database session
     """
     async with async_session_maker() as session:
         repository = WatchlistRepository(session)
@@ -75,11 +84,10 @@ async def get_watchlist_service() -> WatchlistService:
         except ImportError:
             pass
 
-        service = WatchlistService(
+        yield WatchlistService(
             repository=repository,
             market_data_coordinator=market_data,
         )
-        yield service
 
 
 @router.get(
@@ -90,6 +98,7 @@ async def get_watchlist_service() -> WatchlistService:
 )
 async def get_watchlist(
     user_id: UUID = Depends(get_current_user_id),
+    service: WatchlistService = Depends(get_watchlist_service),
 ) -> WatchlistResponse:
     """
     Get user's watchlist.
@@ -111,31 +120,27 @@ async def get_watchlist(
             "max_allowed": 100
         }
     """
-    async with async_session_maker() as session:
-        repository = WatchlistRepository(session)
-        service = WatchlistService(repository=repository)
+    try:
+        response = await service.get_watchlist(user_id)
 
-        try:
-            response = await service.get_watchlist(user_id)
+        logger.info(
+            "watchlist_retrieved",
+            user_id=str(user_id),
+            count=response.count,
+        )
 
-            logger.info(
-                "watchlist_retrieved",
-                user_id=str(user_id),
-                count=response.count,
-            )
+        return response
 
-            return response
-
-        except Exception as e:
-            logger.error(
-                "watchlist_retrieval_failed",
-                user_id=str(user_id),
-                error=str(e),
-            )
-            raise HTTPException(
-                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to retrieve watchlist",
-            ) from e
+    except Exception as e:
+        logger.error(
+            "watchlist_retrieval_failed",
+            user_id=str(user_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve watchlist",
+        ) from e
 
 
 @router.post(
@@ -148,6 +153,7 @@ async def get_watchlist(
 async def add_symbol(
     request: AddSymbolRequest,
     user_id: UUID = Depends(get_current_user_id),
+    service: WatchlistService = Depends(get_watchlist_service),
 ) -> WatchlistEntry:
     """
     Add a symbol to user's watchlist.
@@ -175,78 +181,74 @@ async def add_symbol(
         201 Created
         {"symbol": "GOOGL", "priority": "medium", "min_confidence": null, ...}
     """
-    async with async_session_maker() as session:
-        repository = WatchlistRepository(session)
-        service = WatchlistService(repository=repository)
+    try:
+        entry = await service.add_symbol(
+            user_id=user_id,
+            symbol=request.symbol,
+            priority=request.priority,
+            min_confidence=request.min_confidence,
+            validate=True,
+        )
 
-        try:
-            entry = await service.add_symbol(
-                user_id=user_id,
-                symbol=request.symbol,
-                priority=request.priority,
-                min_confidence=request.min_confidence,
-                validate=True,
-            )
+        logger.info(
+            "symbol_added_to_watchlist",
+            user_id=str(user_id),
+            symbol=request.symbol,
+        )
 
-            logger.info(
-                "symbol_added_to_watchlist",
+        return entry
+
+    except ValueError as e:
+        error_msg = str(e)
+
+        if "not found" in error_msg.lower():
+            logger.warning(
+                "symbol_not_found",
                 user_id=str(user_id),
                 symbol=request.symbol,
             )
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=f"Symbol {request.symbol} not found",
+            ) from e
 
-            return entry
-
-        except ValueError as e:
-            error_msg = str(e)
-
-            if "not found" in error_msg.lower():
-                logger.warning(
-                    "symbol_not_found",
-                    user_id=str(user_id),
-                    symbol=request.symbol,
-                )
-                raise HTTPException(
-                    status_code=http_status.HTTP_404_NOT_FOUND,
-                    detail=f"Symbol {request.symbol} not found",
-                ) from e
-
-            if "limit" in error_msg.lower():
-                logger.warning(
-                    "watchlist_limit_reached",
-                    user_id=str(user_id),
-                )
-                raise HTTPException(
-                    status_code=http_status.HTTP_400_BAD_REQUEST,
-                    detail="Watchlist limit reached (100 symbols)",
-                ) from e
-
-            if "already" in error_msg.lower():
-                logger.warning(
-                    "symbol_already_exists",
-                    user_id=str(user_id),
-                    symbol=request.symbol,
-                )
-                raise HTTPException(
-                    status_code=http_status.HTTP_400_BAD_REQUEST,
-                    detail=f"Symbol {request.symbol} already in watchlist",
-                ) from e
-
+        if "limit" in error_msg.lower():
+            logger.warning(
+                "watchlist_limit_reached",
+                user_id=str(user_id),
+            )
             raise HTTPException(
                 status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail=error_msg,
+                detail="Watchlist limit reached (100 symbols)",
             ) from e
 
-        except Exception as e:
-            logger.error(
-                "add_symbol_failed",
+        if "already" in error_msg.lower():
+            logger.warning(
+                "symbol_already_exists",
                 user_id=str(user_id),
                 symbol=request.symbol,
-                error=str(e),
             )
             raise HTTPException(
-                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to add symbol to watchlist",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail=f"Symbol {request.symbol} already in watchlist",
             ) from e
+
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        ) from e
+
+    except Exception as e:
+        logger.error(
+            "add_symbol_failed",
+            user_id=str(user_id),
+            symbol=request.symbol,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add symbol to watchlist",
+        ) from e
 
 
 @router.delete(
@@ -258,6 +260,7 @@ async def add_symbol(
 async def remove_symbol(
     symbol: str = Path(..., description="Symbol to remove", max_length=10),
     user_id: UUID = Depends(get_current_user_id),
+    service: WatchlistService = Depends(get_watchlist_service),
 ) -> None:
     """
     Remove a symbol from user's watchlist.
@@ -278,44 +281,40 @@ async def remove_symbol(
         DELETE /api/v1/watchlist/SPY
         Response: 204 No Content
     """
-    async with async_session_maker() as session:
-        repository = WatchlistRepository(session)
-        service = WatchlistService(repository=repository)
+    try:
+        removed = await service.remove_symbol(user_id, symbol)
 
-        try:
-            removed = await service.remove_symbol(user_id, symbol)
-
-            if not removed:
-                logger.warning(
-                    "symbol_not_in_watchlist",
-                    user_id=str(user_id),
-                    symbol=symbol,
-                )
-                raise HTTPException(
-                    status_code=http_status.HTTP_404_NOT_FOUND,
-                    detail=f"Symbol {symbol.upper()} not found in watchlist",
-                )
-
-            logger.info(
-                "symbol_removed_from_watchlist",
+        if not removed:
+            logger.warning(
+                "symbol_not_in_watchlist",
                 user_id=str(user_id),
                 symbol=symbol,
-            )
-
-        except HTTPException:
-            raise
-
-        except Exception as e:
-            logger.error(
-                "remove_symbol_failed",
-                user_id=str(user_id),
-                symbol=symbol,
-                error=str(e),
             )
             raise HTTPException(
-                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to remove symbol from watchlist",
-            ) from e
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=f"Symbol {symbol.upper()} not found in watchlist",
+            )
+
+        logger.info(
+            "symbol_removed_from_watchlist",
+            user_id=str(user_id),
+            symbol=symbol,
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(
+            "remove_symbol_failed",
+            user_id=str(user_id),
+            symbol=symbol,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to remove symbol from watchlist",
+        ) from e
 
 
 @router.patch(
@@ -328,6 +327,7 @@ async def update_symbol(
     request: UpdateSymbolRequest,
     symbol: str = Path(..., description="Symbol to update", max_length=10),
     user_id: UUID = Depends(get_current_user_id),
+    service: WatchlistService = Depends(get_watchlist_service),
 ) -> WatchlistEntry:
     """
     Update a symbol's settings in watchlist.
@@ -353,49 +353,45 @@ async def update_symbol(
     Example Response:
         {"symbol": "AAPL", "priority": "high", "min_confidence": 80.0, ...}
     """
-    async with async_session_maker() as session:
-        repository = WatchlistRepository(session)
-        service = WatchlistService(repository=repository)
+    try:
+        entry = await service.update_symbol(
+            user_id=user_id,
+            symbol=symbol,
+            priority=request.priority,
+            min_confidence=request.min_confidence,
+            enabled=request.enabled,
+        )
 
-        try:
-            entry = await service.update_symbol(
-                user_id=user_id,
-                symbol=symbol,
-                priority=request.priority,
-                min_confidence=request.min_confidence,
-                enabled=request.enabled,
-            )
-
-            if not entry:
-                logger.warning(
-                    "symbol_not_in_watchlist_for_update",
-                    user_id=str(user_id),
-                    symbol=symbol,
-                )
-                raise HTTPException(
-                    status_code=http_status.HTTP_404_NOT_FOUND,
-                    detail=f"Symbol {symbol.upper()} not found in watchlist",
-                )
-
-            logger.info(
-                "symbol_updated_in_watchlist",
+        if not entry:
+            logger.warning(
+                "symbol_not_in_watchlist_for_update",
                 user_id=str(user_id),
                 symbol=symbol,
-            )
-
-            return entry
-
-        except HTTPException:
-            raise
-
-        except Exception as e:
-            logger.error(
-                "update_symbol_failed",
-                user_id=str(user_id),
-                symbol=symbol,
-                error=str(e),
             )
             raise HTTPException(
-                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update symbol in watchlist",
-            ) from e
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=f"Symbol {symbol.upper()} not found in watchlist",
+            )
+
+        logger.info(
+            "symbol_updated_in_watchlist",
+            user_id=str(user_id),
+            symbol=symbol,
+        )
+
+        return entry
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(
+            "update_symbol_failed",
+            user_id=str(user_id),
+            symbol=symbol,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update symbol in watchlist",
+        ) from e

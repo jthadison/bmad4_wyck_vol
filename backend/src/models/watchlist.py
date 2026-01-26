@@ -24,11 +24,15 @@ Features:
 Author: Story 19.12
 """
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
+
+# Valid stock symbol pattern: 1-5 uppercase letters, optional .X suffix for share classes
+SYMBOL_PATTERN = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?$")
 
 
 class WatchlistPriority(str, Enum):
@@ -90,9 +94,17 @@ class WatchlistEntry(BaseModel):
 
     @field_validator("symbol", mode="before")
     @classmethod
-    def uppercase_symbol(cls, v: str) -> str:
-        """Ensure symbol is uppercase."""
-        return v.upper().strip() if isinstance(v, str) else v
+    def validate_symbol(cls, v: str) -> str:
+        """Validate and normalize symbol format."""
+        if not isinstance(v, str):
+            raise ValueError("Symbol must be a string")
+        symbol = v.upper().strip()
+        if not SYMBOL_PATTERN.match(symbol):
+            raise ValueError(
+                f"Invalid symbol format: {symbol}. "
+                "Must be 1-5 letters, optionally followed by .X for share class"
+            )
+        return symbol
 
     model_config = {
         "json_encoders": {
@@ -167,9 +179,17 @@ class AddSymbolRequest(BaseModel):
 
     @field_validator("symbol", mode="before")
     @classmethod
-    def uppercase_symbol(cls, v: str) -> str:
-        """Ensure symbol is uppercase."""
-        return v.upper().strip() if isinstance(v, str) else v
+    def validate_symbol(cls, v: str) -> str:
+        """Validate and normalize symbol format."""
+        if not isinstance(v, str):
+            raise ValueError("Symbol must be a string")
+        symbol = v.upper().strip()
+        if not SYMBOL_PATTERN.match(symbol):
+            raise ValueError(
+                f"Invalid symbol format: {symbol}. "
+                "Must be 1-5 letters, optionally followed by .X for share class"
+            )
+        return symbol
 
     model_config = {"json_encoders": {Decimal: str}}
 
