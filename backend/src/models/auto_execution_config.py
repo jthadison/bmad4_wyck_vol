@@ -157,15 +157,14 @@ class AutoExecutionEnableRequest(BaseModel):
     """
     Request to enable auto-execution with consent.
 
-    Requires explicit user acknowledgment and password confirmation.
+    Requires explicit user acknowledgment.
+
+    Note: Password verification will be added in a future story for additional security.
     """
 
-    model_config = ConfigDict(
-        json_schema_extra={"example": {"consent_acknowledged": True, "password": "user_password"}}
-    )
+    model_config = ConfigDict(json_schema_extra={"example": {"consent_acknowledged": True}})
 
     consent_acknowledged: bool = Field(..., description="User acknowledges auto-execution risks")
-    password: str = Field(..., min_length=1, description="User password for confirmation")
 
     @field_validator("consent_acknowledged")
     @classmethod

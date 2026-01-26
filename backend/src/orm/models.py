@@ -34,7 +34,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.dialects.postgresql import NUMERIC, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -1083,18 +1085,18 @@ class AutoExecutionConfigORM(Base):
 
     # Pattern and symbol filters
     enabled_patterns: Mapped[list[str]] = mapped_column(
-        JSON,  # Using JSON for array storage
+        PG_ARRAY(String),
         nullable=False,
-        server_default='["SPRING", "SOS", "LPS"]',
+        server_default=text("ARRAY['SPRING', 'SOS', 'LPS']::VARCHAR[]"),
     )
 
     symbol_whitelist: Mapped[list[str] | None] = mapped_column(
-        JSON,
+        PG_ARRAY(String),
         nullable=True,
     )
 
     symbol_blacklist: Mapped[list[str] | None] = mapped_column(
-        JSON,
+        PG_ARRAY(String),
         nullable=True,
     )
 

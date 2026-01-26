@@ -5,7 +5,7 @@ Handles database operations for auto-execution configuration.
 Story 19.14: Auto-Execution Configuration Backend
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -59,7 +59,7 @@ class AutoExecutionRepository:
         Returns:
             Created AutoExecutionConfig
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         if config is None:
             # Create with defaults
@@ -106,7 +106,7 @@ class AutoExecutionRepository:
         Raises:
             ValueError: If config doesn't exist
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         updates["updated_at"] = now
 
         stmt = (
@@ -139,7 +139,7 @@ class AutoExecutionRepository:
         Raises:
             ValueError: If config doesn't exist
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         stmt = (
             update(AutoExecutionConfigORM)
@@ -176,7 +176,7 @@ class AutoExecutionRepository:
         Raises:
             ValueError: If config doesn't exist
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         stmt = (
             update(AutoExecutionConfigORM)
@@ -207,7 +207,7 @@ class AutoExecutionRepository:
         Raises:
             ValueError: If config doesn't exist
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         stmt = (
             update(AutoExecutionConfigORM)

@@ -5,6 +5,7 @@ Endpoints for user settings including auto-execution configuration.
 Story 19.14: Auto-Execution Configuration Backend
 """
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -20,6 +21,7 @@ from src.models.auto_execution_config import (
 from src.services.auto_execution_config_service import AutoExecutionConfigService
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/auto-execution", response_model=AutoExecutionConfigResponse)
@@ -49,9 +51,10 @@ async def get_auto_execution_config(
     try:
         return await service.get_config(user_id)
     except Exception as e:
+        logger.exception("Failed to retrieve auto-execution configuration for user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve configuration: {str(e)}",
+            detail="Failed to retrieve configuration. Please try again later.",
         ) from e
 
 
@@ -106,9 +109,10 @@ async def update_auto_execution_config(
             detail=str(e),
         ) from e
     except Exception as e:
+        logger.exception("Failed to update auto-execution configuration for user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update configuration: {str(e)}",
+            detail="Failed to update configuration. Please try again later.",
         ) from e
 
 
@@ -155,11 +159,7 @@ async def enable_auto_execution(
           }'
         ```
     """
-    # TODO: Verify password against user's password hash
-    # For now, we'll skip password verification in this implementation
-    # In production, this should verify the password before enabling
-
-    # Get client IP address
+    # Get client IP address for consent tracking
     client_ip = request.client.host if request.client else "unknown"
 
     service = AutoExecutionConfigService(db)
@@ -171,9 +171,10 @@ async def enable_auto_execution(
             detail=str(e),
         ) from e
     except Exception as e:
+        logger.exception("Failed to enable auto-execution for user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to enable auto-execution: {str(e)}",
+            detail="Failed to enable auto-execution. Please try again later.",
         ) from e
 
 
@@ -208,9 +209,10 @@ async def disable_auto_execution(
             detail=str(e),
         ) from e
     except Exception as e:
+        logger.exception("Failed to disable auto-execution for user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disable auto-execution: {str(e)}",
+            detail="Failed to disable auto-execution. Please try again later.",
         ) from e
 
 
@@ -264,9 +266,10 @@ async def activate_kill_switch(
             detail=str(e),
         ) from e
     except Exception as e:
+        logger.exception("Failed to activate kill switch for user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to activate kill switch: {str(e)}",
+            detail="Failed to activate kill switch. Please try again later.",
         ) from e
 
 
@@ -298,7 +301,8 @@ async def deactivate_kill_switch(
             detail=str(e),
         ) from e
     except Exception as e:
+        logger.exception("Failed to deactivate kill switch for user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to deactivate kill switch: {str(e)}",
+            detail="Failed to deactivate kill switch. Please try again later.",
         ) from e
