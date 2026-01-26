@@ -191,3 +191,113 @@ export interface SignalRejectedEvent {
   }
   timestamp: string
 }
+
+// ============================================================================
+// Signal Approval Queue Types (Story 19.10)
+// ============================================================================
+
+/**
+ * Pending signal in the approval queue
+ */
+export interface PendingSignal {
+  queue_id: string
+  signal: Signal
+  queued_at: string
+  expires_at: string
+  time_remaining_seconds: number
+  is_expired: boolean
+  chart_data?: ChartData
+}
+
+/**
+ * Chart data for signal preview
+ */
+export interface ChartData {
+  bars: OHLCVBar[]
+  pattern_annotation: PatternAnnotation | null
+  level_lines: LevelLine[]
+}
+
+/**
+ * Pattern annotation for chart overlay
+ */
+export interface PatternAnnotation {
+  type: 'rectangle' | 'line' | 'marker'
+  x1: string // ISO timestamp
+  y1: string // Price
+  x2: string // ISO timestamp
+  y2: string // Price
+  fill_color: string
+  border_color: string
+  label: string
+}
+
+/**
+ * Level line for chart overlay
+ */
+export interface LevelLine {
+  price: string
+  color: string
+  label: string
+  style: 'solid' | 'dashed' | 'dotted'
+}
+
+/**
+ * Approval queue API response
+ */
+export interface ApprovalQueueResponse {
+  data: PendingSignal[]
+  total_count: number
+}
+
+/**
+ * Signal rejection request
+ */
+export interface RejectSignalRequest {
+  reason: string
+  notes?: string
+}
+
+/**
+ * WebSocket events for approval queue
+ */
+export interface SignalQueueAddedEvent {
+  type: 'signal:queue_added'
+  sequence_number: number
+  data: PendingSignal
+  timestamp: string
+}
+
+export interface SignalApprovedEvent {
+  type: 'signal:approved'
+  sequence_number: number
+  data: {
+    queue_id: string
+    signal_id: string
+    approved_at: string
+  }
+  timestamp: string
+}
+
+export interface SignalQueueRejectedEvent {
+  type: 'signal:queue_rejected'
+  sequence_number: number
+  data: {
+    queue_id: string
+    signal_id: string
+    reason: string
+    rejected_at: string
+  }
+  timestamp: string
+}
+
+export interface SignalExpiredEvent {
+  type: 'signal:expired'
+  sequence_number: number
+  data: {
+    queue_id: string
+    signal_id: string
+    expired_at: string
+  }
+  timestamp: string
+}
