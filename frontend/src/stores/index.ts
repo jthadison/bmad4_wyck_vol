@@ -1,2 +1,2 @@
-// Store exports - to be populated in this story
-export {}
+// Store exports
+export { useWatchlistStore } from './watchlistStore'
