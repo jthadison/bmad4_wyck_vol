@@ -20,10 +20,13 @@ from typing import Literal
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies import get_current_user_id
+from src.database import get_db
 from src.models.signal import TradeSignal
 
 logger = structlog.get_logger()
@@ -562,6 +565,8 @@ async def get_signal_history(
     status: str | None = Query(None, description="Filter by lifecycle state"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(50, ge=1, le=200, description="Items per page"),
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Query signal history with filters and pagination (Story 19.11).
@@ -577,10 +582,20 @@ async def get_signal_history(
     Example:
         GET /api/v1/signals/history?symbol=AAPL&status=executed&page=1&page_size=50
     """
-    from src.database import get_db_session
-    from src.models.signal_audit import SignalHistoryQuery
+    from src.models.signal_audit import SignalHistoryQuery, SignalLifecycleState
     from src.repositories.signal_audit_repository import SignalAuditRepository
     from src.services.signal_audit_service import SignalAuditService
+
+    # Validate status if provided
+    if status:
+        try:
+            SignalLifecycleState(status)
+        except ValueError:
+            valid_states = [state.value for state in SignalLifecycleState]
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid lifecycle state. Valid values: {', '.join(valid_states)}",
+            ) from None
 
     try:
         # Build query
@@ -595,13 +610,13 @@ async def get_signal_history(
         )
 
         # Execute query
-        async with get_db_session() as session:
-            repository = SignalAuditRepository(session)
-            service = SignalAuditService(repository)
-            response = await service.query_signal_history(query)
+        repository = SignalAuditRepository(db)
+        service = SignalAuditService(repository)
+        response = await service.query_signal_history(query)
 
         logger.info(
             "signal_history_queried",
+            user_id=str(user_id),
             page=page,
             page_size=page_size,
             total_items=response.pagination.total_items,
@@ -616,11 +631,15 @@ async def get_signal_history(
 
         return response.model_dump()
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("signal_history_query_failed", error=str(e), exc_info=True)
+        logger.error(
+            "signal_history_query_failed", user_id=str(user_id), error=str(e), exc_info=True
+        )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to query signal history: {str(e)}",
+            detail="Failed to query signal history",
         ) from e
 
 
@@ -630,7 +649,11 @@ async def get_signal_history(
     summary="Get detailed audit trail for a signal",
     description="Retrieve complete lifecycle audit trail for a specific signal",
 )
-async def get_signal_audit_trail(signal_id: UUID) -> dict:
+async def get_signal_audit_trail(
+    signal_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """
     Get detailed audit trail for a specific signal (Story 19.11).
 
@@ -644,22 +667,22 @@ async def get_signal_audit_trail(signal_id: UUID) -> dict:
     Example:
         GET /api/v1/signals/550e8400-e29b-41d4-a716-446655440000/audit
     """
-    from src.database import get_db_session
     from src.models.signal_audit import SignalAuditLog
     from src.repositories.signal_audit_repository import SignalAuditRepository
     from src.services.signal_audit_service import SignalAuditService
 
     try:
-        async with get_db_session() as session:
-            repository = SignalAuditRepository(session)
-            service = SignalAuditService(repository)
-            audit_entries = await service.get_signal_audit_trail(signal_id)
+        repository = SignalAuditRepository(db)
+        service = SignalAuditService(repository)
+        audit_entries = await service.get_signal_audit_trail(signal_id)
 
         if not audit_entries:
-            logger.warning("signal_audit_trail_not_found", signal_id=str(signal_id))
+            logger.warning(
+                "signal_audit_trail_not_found", signal_id=str(signal_id), user_id=str(user_id)
+            )
             raise HTTPException(
                 status_code=http_status.HTTP_404_NOT_FOUND,
-                detail=f"No audit trail found for signal {signal_id}",
+                detail="No audit trail found for signal",
             )
 
         audit_log = SignalAuditLog(signal_id=signal_id, audit_entries=audit_entries)
@@ -667,6 +690,7 @@ async def get_signal_audit_trail(signal_id: UUID) -> dict:
         logger.info(
             "signal_audit_trail_retrieved",
             signal_id=str(signal_id),
+            user_id=str(user_id),
             entry_count=len(audit_entries),
         )
 
@@ -678,10 +702,11 @@ async def get_signal_audit_trail(signal_id: UUID) -> dict:
         logger.error(
             "signal_audit_trail_retrieval_failed",
             signal_id=str(signal_id),
+            user_id=str(user_id),
             error=str(e),
             exc_info=True,
         )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve audit trail: {str(e)}",
+            detail="Failed to retrieve audit trail",
         ) from e

@@ -93,7 +93,7 @@ def upgrade() -> None:
     op.create_index(
         "idx_signals_query",
         "signals",
-        ["created_at", "symbol", "lifecycle_state"],
+        ["created_at", "symbol", "signal_type", "lifecycle_state"],
         unique=False,
     )
 

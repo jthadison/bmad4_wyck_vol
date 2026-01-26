@@ -105,6 +105,45 @@ class SignalAuditRepository:
 
         return [self._audit_entry_to_model(e) for e in orm_entries]
 
+    async def get_audit_trails_for_signals(
+        self, signal_ids: list[UUID]
+    ) -> dict[UUID, list[SignalAuditLogEntry]]:
+        """
+        Get audit trails for multiple signals in a single query (batch loading).
+
+        Args:
+            signal_ids: List of signal UUIDs
+
+        Returns:
+            Dictionary mapping signal_id to list of audit entries
+        """
+        if not signal_ids:
+            return {}
+
+        stmt = (
+            select(SignalAuditLogORM)
+            .where(SignalAuditLogORM.signal_id.in_(signal_ids))
+            .order_by(SignalAuditLogORM.signal_id, SignalAuditLogORM.created_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        orm_entries = result.scalars().all()
+
+        # Group entries by signal_id
+        trails_by_signal: dict[UUID, list[SignalAuditLogEntry]] = {}
+        for orm_entry in orm_entries:
+            signal_id = orm_entry.signal_id
+            if signal_id not in trails_by_signal:
+                trails_by_signal[signal_id] = []
+            trails_by_signal[signal_id].append(self._audit_entry_to_model(orm_entry))
+
+        logger.debug(
+            "audit_trails_batch_retrieved",
+            signal_count=len(signal_ids),
+            entry_count=len(orm_entries),
+        )
+
+        return trails_by_signal
+
     async def query_signal_history(self, query: SignalHistoryQuery) -> SignalHistoryResponse:
         """
         Query signal history with filters and pagination.
@@ -156,11 +195,15 @@ class SignalAuditRepository:
         result = await self.session.execute(stmt)
         signals = result.scalars().all()
 
+        # Batch-load audit trails for all signals (fixes N+1 query problem)
+        signal_ids = [signal.id for signal in signals]
+        audit_trails_map = await self.get_audit_trails_for_signals(signal_ids)
+
         # Build history items
         history_items = []
         for signal in signals:
-            # Get audit trail for this signal
-            audit_trail = await self.get_signal_audit_trail(signal.id)
+            # Get audit trail from batch-loaded map
+            audit_trail = audit_trails_map.get(signal.id, [])
 
             # Parse validation results and trade outcome
             validation_results = None
