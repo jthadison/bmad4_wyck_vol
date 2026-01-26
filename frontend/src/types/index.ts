@@ -301,3 +301,16 @@ export interface SignalExpiredEvent {
   }
   timestamp: string
 }
+
+// ============================================================================
+// Watchlist Management Types (Story 19.13)
+// ============================================================================
+
+export type {
+  WatchlistPriority,
+  WatchlistEntry,
+  WatchlistResponse,
+  AddSymbolRequest,
+  UpdateSymbolRequest,
+  SymbolSearchResult,
+} from './watchlist'
