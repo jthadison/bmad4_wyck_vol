@@ -22,18 +22,15 @@ class VolumeThresholds(BaseModel):
     spring_volume_min: Decimal = Field(
         default=Decimal("0.7"),
         ge=Decimal("0.5"),
-        le=Decimal("1.0"),
         description="Minimum volume ratio for Spring detection (must be < 1.0x per Wyckoff)",
     )
     spring_volume_max: Decimal = Field(
         default=Decimal("1.0"),
         ge=Decimal("0.5"),
-        le=Decimal("1.0"),
         description="Maximum volume ratio for Spring detection",
     )
     sos_volume_min: Decimal = Field(
         default=Decimal("2.0"),
-        ge=Decimal("1.5"),
         le=Decimal("3.0"),
         description="Minimum volume ratio for SOS detection (≥1.5x confirms demand)",
     )
@@ -118,7 +115,6 @@ class CauseFactors(BaseModel):
 
     min_cause_factor: Decimal = Field(
         default=Decimal("2.0"),
-        ge=Decimal("2.0"),
         le=Decimal("2.5"),
         description="Minimum cause-to-effect ratio (Wyckoff requires ≥2.0)",
     )
