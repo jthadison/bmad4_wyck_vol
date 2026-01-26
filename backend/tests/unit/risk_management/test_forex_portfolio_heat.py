@@ -162,6 +162,33 @@ def sunday_6pm_time() -> datetime:
     return datetime(2025, 11, 16, 23, 0, 0, tzinfo=UTC)
 
 
+@pytest.fixture
+def friday_3pm_time() -> datetime:
+    """Friday 3pm ET (20:00 UTC) - exact threshold for WARNING."""
+    return datetime(2025, 11, 14, 20, 0, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def high_risk_friday_position() -> ForexPosition:
+    """High-risk position designed to exceed Friday heat limit.
+
+    This position creates ~5% base risk, which combined with weekend
+    adjustment (SOS Phase E = 0.6% × 1.3 = 0.78%) exceeds the 5.5% Friday limit.
+    """
+    return ForexPosition(
+        symbol="EUR/USD",
+        entry=Decimal("1.0850"),
+        stop=Decimal("1.0750"),  # Wide 100-pip stop for higher risk
+        lot_size=Decimal("5.0"),
+        lot_type="mini",
+        position_value_usd=Decimal("54250.00"),  # Larger position
+        account_balance=Decimal("10000.00"),
+        pattern_type="SOS",
+        wyckoff_phase="E",  # Phase E has 1.3x multiplier
+        direction="long",
+    )
+
+
 # =============================================================================
 # Task 2: Base Portfolio Heat Calculation Tests
 # =============================================================================
@@ -501,6 +528,21 @@ def test_generate_weekend_warning_friday_early(friday_1pm_time: datetime) -> Non
     assert "BLOCKED" in warning
 
 
+def test_generate_weekend_warning_friday_exact_3pm(friday_3pm_time: datetime) -> None:
+    """Test weekend warning at exact 3pm ET threshold (hour == 15).
+
+    Production behavior (generate_weekend_warning, line 504):
+    - Friday 3pm: hour == 15, which satisfies hour >= 15
+    - base_heat (5.0%) > 4.0%: WARNING condition is met
+    - Returns WARNING (not BLOCKED) because WARNING check happens first
+    """
+    warning = generate_weekend_warning(Decimal("5.0"), Decimal("6.5"), 3, friday_3pm_time)
+    assert warning is not None
+    # hour >= 15, base_heat > 4% → WARNING takes priority
+    assert "WARNING" in warning
+    assert "3 positions" in warning
+
+
 # =============================================================================
 # Task 13: Selective Auto-Close (Pattern-Aware) Tests
 # =============================================================================
@@ -809,38 +851,26 @@ def test_calculate_portfolio_heat_after_new_position_weekday(
 
 
 def test_calculate_portfolio_heat_after_new_position_friday_reject(
+    high_risk_friday_position: ForexPosition,
     friday_1pm_time: datetime,
 ) -> None:
     """Test portfolio heat after new position - Friday (rejected).
 
-    Creates high-risk positions to ensure total heat exceeds Friday limit of 5.5%.
+    Uses high_risk_friday_position fixture which creates ~5% base risk.
+    Adding 3% new position risk should exceed the 5.5% Friday limit.
     """
-    # Create high-risk positions to exceed Friday limit
-    high_risk_position = ForexPosition(
-        symbol="EUR/USD",
-        entry=Decimal("1.0850"),
-        stop=Decimal("1.0750"),  # Wide stop for higher risk
-        lot_size=Decimal("5.0"),
-        lot_type="mini",
-        position_value_usd=Decimal("54250.00"),  # Larger position
-        account_balance=Decimal("10000.00"),
-        pattern_type="SOS",
-        wyckoff_phase="E",  # Phase E has 1.3x multiplier
-        direction="long",
-    )
     heat = calculate_portfolio_heat_after_new_position(
-        [high_risk_position],
+        [high_risk_friday_position],
         Decimal("3.0"),  # Adding 3% risk position
         None,
         friday_1pm_time,
     )
-    # Check if total heat exceeds limit
-    if heat.total_heat_pct > WEEKEND_HEAT_LIMIT:
-        assert heat.warning is not None
-        assert "REJECTED" in heat.warning
-    else:
-        # If heat doesn't exceed limit, no warning expected
-        assert heat.warning is None
+    # Verify test data exceeds limit as intended (deterministic assertion)
+    assert (
+        heat.total_heat_pct > WEEKEND_HEAT_LIMIT
+    ), f"Test setup failed: heat {heat.total_heat_pct}% should exceed {WEEKEND_HEAT_LIMIT}%"
+    assert heat.warning is not None
+    assert "REJECTED" in heat.warning
 
 
 def test_can_open_new_position_weekday_pass(
@@ -852,45 +882,35 @@ def test_can_open_new_position_weekday_pass(
     assert msg is None
 
 
-def test_can_open_new_position_friday_reject(friday_1pm_time: datetime) -> None:
+def test_can_open_new_position_friday_reject(
+    high_risk_friday_position: ForexPosition,
+    friday_1pm_time: datetime,
+) -> None:
     """Test can_open_new_position - Friday (reject).
 
-    Creates high-risk positions to ensure total heat exceeds Friday limit of 5.5%.
+    Uses high_risk_friday_position fixture which creates ~5% base risk.
+    Adding 3% new position risk should exceed the 5.5% Friday limit.
     """
-    # Create high-risk positions to exceed Friday limit
-    high_risk_position = ForexPosition(
-        symbol="EUR/USD",
-        entry=Decimal("1.0850"),
-        stop=Decimal("1.0750"),  # Wide stop for higher risk
-        lot_size=Decimal("5.0"),
-        lot_type="mini",
-        position_value_usd=Decimal("54250.00"),  # Larger position
-        account_balance=Decimal("10000.00"),
-        pattern_type="SOS",
-        wyckoff_phase="E",  # Phase E has 1.3x multiplier
-        direction="long",
-    )
     can_open, msg = can_open_new_position(
-        [high_risk_position],
+        [high_risk_friday_position],
         Decimal("3.0"),  # Adding 3% risk position
         None,
         friday_1pm_time,
     )
-    # Calculate expected heat to determine assertion
+    # Calculate expected heat to verify test setup
     heat = calculate_portfolio_heat_after_new_position(
-        [high_risk_position],
+        [high_risk_friday_position],
         Decimal("3.0"),
         None,
         friday_1pm_time,
     )
-    if heat.total_heat_pct > WEEKEND_HEAT_LIMIT:
-        assert can_open is False
-        assert msg is not None
-        assert "REJECTED" in msg
-    else:
-        # If heat doesn't exceed limit, position can be opened
-        assert can_open is True
-        assert msg is None
+    # Verify test data exceeds limit as intended (deterministic assertion)
+    assert (
+        heat.total_heat_pct > WEEKEND_HEAT_LIMIT
+    ), f"Test setup failed: heat {heat.total_heat_pct}% should exceed {WEEKEND_HEAT_LIMIT}%"
+    assert can_open is False
+    assert msg is not None
+    assert "REJECTED" in msg
 
 
 # =============================================================================
