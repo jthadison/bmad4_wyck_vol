@@ -39,6 +39,7 @@ from src.api.routes import (
     summary,
     tradingview,
     user,
+    watchlist,
 )
 from src.api.websocket import websocket_endpoint
 from src.config import settings
@@ -80,6 +81,7 @@ app.include_router(paper_trading.router)  # Paper trading routes (Story 12.8)
 app.include_router(tradingview.router)  # TradingView webhook routes (Story 16.4a)
 app.include_router(scanner.router)  # Multi-symbol scanner routes (Story 19.4)
 app.include_router(signal_approval.router)  # Signal approval queue routes (Story 19.9)
+app.include_router(watchlist.router)  # Watchlist management routes (Story 19.12)
 
 
 # WebSocket endpoint for real-time updates

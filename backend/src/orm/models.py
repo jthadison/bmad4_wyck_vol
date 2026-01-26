@@ -1026,3 +1026,72 @@ class SignalAuditLogORM(Base):
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
+
+
+class UserWatchlistORM(Base):
+    """
+    User watchlist for symbol monitoring (Story 19.12).
+
+    Table: user_watchlist
+    Primary Key: (user_id, symbol) - composite key
+    Foreign Keys: user_id -> users.id
+    Indexes: idx_watchlist_user_enabled
+    """
+
+    __tablename__ = "user_watchlist"
+
+    # Composite primary key
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    symbol: Mapped[str] = mapped_column(
+        String(10),
+        primary_key=True,
+    )
+
+    # Priority and filtering
+    priority: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        server_default="medium",
+    )
+
+    min_confidence: Mapped[Decimal | None] = mapped_column(
+        NUMERIC(5, 2),
+        nullable=True,
+    )
+
+    # Status
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="true",
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "priority IN ('low', 'medium', 'high')",
+            name="chk_watchlist_priority",
+        ),
+        CheckConstraint(
+            "min_confidence IS NULL OR (min_confidence >= 0 AND min_confidence <= 100)",
+            name="chk_watchlist_min_confidence",
+        ),
+    )
