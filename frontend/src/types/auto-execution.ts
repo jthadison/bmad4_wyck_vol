@@ -52,7 +52,6 @@ export interface AutoExecutionConfigUpdate {
  */
 export interface AutoExecutionEnableRequest {
   consent_acknowledged: boolean
-  password: string
 }
 
 /**

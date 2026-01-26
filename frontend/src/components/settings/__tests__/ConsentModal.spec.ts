@@ -5,7 +5,6 @@
  * Test Coverage:
  * - Modal rendering and visibility
  * - Consent acknowledgment checkbox
- * - Password input handling
  * - Enable button disabled state
  * - Warning text display
  * - Cancel functionality
@@ -19,7 +18,6 @@ import PrimeVue from 'primevue/config'
 import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
-import Password from 'primevue/password'
 import Message from 'primevue/message'
 
 describe('ConsentModal', () => {
@@ -41,7 +39,6 @@ describe('ConsentModal', () => {
           Dialog,
           Button,
           Checkbox,
-          Password,
           Message,
         },
       },
@@ -75,27 +72,11 @@ describe('ConsentModal', () => {
     expect(enableButton?.props('disabled')).toBe(true)
   })
 
-  it('disables enable button when password is empty', async () => {
+  it('enables enable button when acknowledgment is checked', async () => {
     const wrapper = createWrapper()
     const checkbox = wrapper.findComponent(Checkbox)
 
     await checkbox.setValue(true)
-
-    const buttons = wrapper.findAllComponents(Button)
-    const enableButton = buttons.find((b) =>
-      b.text().includes('Enable Auto-Execution')
-    )
-
-    expect(enableButton?.props('disabled')).toBe(true)
-  })
-
-  it('enables enable button when both acknowledgment and password are provided', async () => {
-    const wrapper = createWrapper()
-    const checkbox = wrapper.findComponent(Checkbox)
-    const password = wrapper.findComponent(Password)
-
-    await checkbox.setValue(true)
-    await password.setValue('test-password')
     await wrapper.vm.$nextTick()
 
     const buttons = wrapper.findAllComponents(Button)
@@ -106,13 +87,12 @@ describe('ConsentModal', () => {
     expect(enableButton?.props('disabled')).toBe(false)
   })
 
-  it('emits enable event with password when enable button is clicked', async () => {
+  it('emits enable event when enable button is clicked', async () => {
     const wrapper = createWrapper()
     const checkbox = wrapper.findComponent(Checkbox)
-    const password = wrapper.findComponent(Password)
 
     await checkbox.setValue(true)
-    await password.setValue('my-password')
+    await wrapper.vm.$nextTick()
 
     const buttons = wrapper.findAllComponents(Button)
     const enableButton = buttons.find((b) =>
@@ -121,7 +101,7 @@ describe('ConsentModal', () => {
     await enableButton?.trigger('click')
 
     expect(wrapper.emitted('enable')).toBeTruthy()
-    expect(wrapper.emitted('enable')?.[0]).toEqual(['my-password'])
+    expect(wrapper.emitted('enable')?.[0]).toEqual([])
   })
 
   it('emits cancel event when cancel button is clicked', async () => {
@@ -136,30 +116,12 @@ describe('ConsentModal', () => {
     expect(wrapper.emitted('update:visible')?.[0]).toEqual([false])
   })
 
-  it('disables password input when acknowledgment is not checked', () => {
-    const wrapper = createWrapper()
-    const password = wrapper.findComponent(Password)
-
-    expect(password.props('disabled')).toBe(true)
-  })
-
-  it('enables password input when acknowledgment is checked', async () => {
-    const wrapper = createWrapper()
-    const checkbox = wrapper.findComponent(Checkbox)
-    const password = wrapper.findComponent(Password)
-
-    await checkbox.setValue(true)
-    await wrapper.vm.$nextTick()
-
-    expect(password.props('disabled')).toBe(false)
-  })
-
   it('displays error message when error prop is provided', () => {
     const wrapper = createWrapper({
-      error: 'Invalid password',
+      error: 'Configuration error',
     })
 
-    expect(wrapper.text()).toContain('Invalid password')
+    expect(wrapper.text()).toContain('Configuration error')
     expect(wrapper.findComponent(Message).exists()).toBe(true)
   })
 
@@ -185,18 +147,5 @@ describe('ConsentModal', () => {
     const cancelButton = buttons.find((b) => b.text().includes('Cancel'))
 
     expect(cancelButton?.props('disabled')).toBe(true)
-  })
-
-  it('allows enable on Enter key press when form is valid', async () => {
-    const wrapper = createWrapper()
-    const checkbox = wrapper.findComponent(Checkbox)
-    const password = wrapper.findComponent(Password)
-
-    await checkbox.setValue(true)
-    await password.setValue('test-password')
-    await password.trigger('keyup.enter')
-
-    expect(wrapper.emitted('enable')).toBeTruthy()
-    expect(wrapper.emitted('enable')?.[0]).toEqual(['test-password'])
   })
 })

@@ -76,8 +76,8 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>()
 
 const newSymbol = ref('')
-const inputId = computed(
-  () => `symbol-input-${Math.random().toString(36).substring(2, 9)}`
+const inputId = ref(
+  `symbol-input-${Math.random().toString(36).substring(2, 9)}`
 )
 
 const symbols = computed(() => props.modelValue || [])

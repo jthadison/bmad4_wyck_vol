@@ -71,26 +71,6 @@
         </label>
       </div>
 
-      <!-- Password Confirmation -->
-      <div class="space-y-2">
-        <label
-          for="password-input"
-          class="block text-sm font-medium text-gray-700 dark:text-gray-300"
-        >
-          Confirm your password to proceed
-        </label>
-        <Password
-          id="password-input"
-          v-model="password"
-          :feedback="false"
-          toggle-mask
-          placeholder="Enter your password"
-          class="w-full"
-          :disabled="!acknowledged"
-          @keyup.enter="handleEnable"
-        />
-      </div>
-
       <!-- Error Message -->
       <Message v-if="error" severity="error" :closable="false">
         {{ error }}
@@ -123,7 +103,6 @@ import { ref, computed } from 'vue'
 import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
-import Password from 'primevue/password'
 import Message from 'primevue/message'
 
 interface Props {
@@ -134,7 +113,7 @@ interface Props {
 
 interface Emits {
   (e: 'update:visible', value: boolean): void
-  (e: 'enable', password: string): void
+  (e: 'enable'): void
   (e: 'cancel'): void
 }
 
@@ -146,23 +125,19 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>()
 
 const acknowledged = ref(false)
-const password = ref('')
 
 const canEnable = computed(() => {
-  return (
-    acknowledged.value && password.value.trim().length > 0 && !props.loading
-  )
+  return acknowledged.value && !props.loading
 })
 
 function handleEnable(): void {
   if (canEnable.value) {
-    emit('enable', password.value)
+    emit('enable')
   }
 }
 
 function handleCancel(): void {
   acknowledged.value = false
-  password.value = ''
   emit('cancel')
   emit('update:visible', false)
 }
@@ -170,7 +145,6 @@ function handleCancel(): void {
 // Reset form when modal is closed
 function resetForm(): void {
   acknowledged.value = false
-  password.value = ''
 }
 
 defineExpose({

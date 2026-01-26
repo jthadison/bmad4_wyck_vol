@@ -74,10 +74,10 @@
             Enable auto-execution to configure automatic trade settings.
           </p>
           <p
-            v-else-if="consentGiven"
+            v-else-if="consentGiven && config.consent_given_at"
             class="text-sm text-gray-600 dark:text-gray-400"
           >
-            Consent given on {{ formatDate(config.consent_given_at!) }}
+            Consent given on {{ formatDate(config.consent_given_at) }}
           </p>
         </template>
       </Card>
@@ -366,11 +366,10 @@ function handleMasterToggle(enabled: boolean): void {
   }
 }
 
-async function handleEnableWithConsent(password: string): Promise<void> {
+async function handleEnableWithConsent(): Promise<void> {
   try {
     await store.enable({
       consent_acknowledged: true,
-      password,
     })
     showConsentModal.value = false
   } catch (err) {

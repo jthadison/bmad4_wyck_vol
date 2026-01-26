@@ -5,6 +5,12 @@ import axios, {
 } from 'axios'
 import Big from 'big.js'
 import { v4 as uuidv4 } from 'uuid'
+import type {
+  AutoExecutionConfig,
+  AutoExecutionConfigUpdate,
+  AutoExecutionEnableRequest,
+  KillSwitchActivationResponse,
+} from '@/types/auto-execution'
 
 // Get base URL from environment variables
 const API_BASE_URL =
@@ -371,13 +377,6 @@ export async function getConfigurationHistory(limit: number = 10): Promise<{
 // ============================================================================
 // Auto-Execution Configuration API (Story 19.15)
 // ============================================================================
-
-import type {
-  AutoExecutionConfig,
-  AutoExecutionConfigUpdate,
-  AutoExecutionEnableRequest,
-  KillSwitchActivationResponse,
-} from '@/types/auto-execution'
 
 /**
  * Get user's auto-execution configuration (Story 19.15)
