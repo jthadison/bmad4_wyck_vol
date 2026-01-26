@@ -37,6 +37,7 @@ const chartContainer = ref<HTMLElement | null>(null)
 const chart = ref<IChartApi | null>(null)
 const candlestickSeries = ref<ISeriesApi<'Candlestick'> | null>(null)
 const volumeSeries = ref<ISeriesApi<'Histogram'> | null>(null)
+let resizeObserver: ResizeObserver | null = null
 
 // Check if chart data is available
 const hasChartData = computed(() => {
@@ -126,8 +127,11 @@ function initializeChart() {
     },
   })
 
-  // Setup resize observer
-  const resizeObserver = new ResizeObserver(() => {
+  // Setup resize observer (disconnect previous if exists)
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+  }
+  resizeObserver = new ResizeObserver(() => {
     if (chart.value && chartContainer.value) {
       chart.value.applyOptions({
         width: chartContainer.value.clientWidth,
@@ -282,21 +286,24 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   if (chart.value) {
     chart.value.remove()
     chart.value = null
   }
 })
 
-// Watch for signal changes
+// Watch for signal changes (only queue_id to avoid expensive deep watches)
 watch(
-  () => props.signal,
+  () => props.signal.queue_id,
   () => {
     if (hasChartData.value) {
       initializeChart()
     }
-  },
-  { deep: true }
+  }
 )
 </script>
 

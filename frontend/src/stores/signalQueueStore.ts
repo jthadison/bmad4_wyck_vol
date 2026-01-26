@@ -35,6 +35,31 @@ import type {
 } from '@/types'
 import type { WebSocketMessage } from '@/types/websocket'
 
+/**
+ * Type guard for PendingSignal WebSocket data
+ */
+function isPendingSignal(data: unknown): data is PendingSignal {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'queue_id' in data &&
+    'signal' in data &&
+    'time_remaining_seconds' in data
+  )
+}
+
+/**
+ * Type guard for queue event data with queue_id
+ */
+function hasQueueId(data: unknown): data is { queue_id: string } {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'queue_id' in data &&
+    typeof (data as { queue_id: unknown }).queue_id === 'string'
+  )
+}
+
 export const useSignalQueueStore = defineStore('signalQueue', () => {
   // State
   const pendingSignals = ref<PendingSignal[]>([])
@@ -173,29 +198,26 @@ export const useSignalQueueStore = defineStore('signalQueue', () => {
   const ws = useWebSocket()
 
   ws.subscribe('signal:queue_added', (message: WebSocketMessage) => {
-    if ('data' in message && message.data) {
-      addSignalToQueue(message.data as unknown as PendingSignal)
+    if ('data' in message && isPendingSignal(message.data)) {
+      addSignalToQueue(message.data)
     }
   })
 
   ws.subscribe('signal:approved', (message: WebSocketMessage) => {
-    if ('data' in message && message.data) {
-      const data = message.data as unknown as { queue_id: string }
-      removeSignalFromQueue(data.queue_id)
+    if ('data' in message && hasQueueId(message.data)) {
+      removeSignalFromQueue(message.data.queue_id)
     }
   })
 
   ws.subscribe('signal:queue_rejected', (message: WebSocketMessage) => {
-    if ('data' in message && message.data) {
-      const data = message.data as unknown as { queue_id: string }
-      removeSignalFromQueue(data.queue_id)
+    if ('data' in message && hasQueueId(message.data)) {
+      removeSignalFromQueue(message.data.queue_id)
     }
   })
 
   ws.subscribe('signal:expired', (message: WebSocketMessage) => {
-    if ('data' in message && message.data) {
-      const data = message.data as unknown as { queue_id: string }
-      updateSignalExpiry(data.queue_id)
+    if ('data' in message && hasQueueId(message.data)) {
+      updateSignalExpiry(message.data.queue_id)
     }
   })
 
