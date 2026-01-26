@@ -5,6 +5,7 @@ Endpoints for user settings including auto-execution configuration.
 Story 19.14: Auto-Execution Configuration Backend
 """
 
+import ipaddress
 import logging
 from uuid import UUID
 
@@ -22,6 +23,30 @@ from src.services.auto_execution_config_service import AutoExecutionConfigServic
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 logger = logging.getLogger(__name__)
+
+
+def validate_ip_address(ip_str: str) -> str:
+    """
+    Validate and normalize IP address.
+
+    Args:
+        ip_str: IP address string
+
+    Returns:
+        Normalized IP address string
+
+    Raises:
+        ValueError: If IP address is invalid
+    """
+    if ip_str == "unknown":
+        return ip_str
+
+    try:
+        # Parse and normalize IP address (handles both IPv4 and IPv6)
+        ip_obj = ipaddress.ip_address(ip_str)
+        return str(ip_obj)
+    except ValueError as e:
+        raise ValueError(f"Invalid IP address format: {ip_str}") from e
 
 
 @router.get("/auto-execution", response_model=AutoExecutionConfigResponse)
@@ -161,6 +186,16 @@ async def enable_auto_execution(
     """
     # Get client IP address for consent tracking
     client_ip = request.client.host if request.client else "unknown"
+
+    # Validate IP address format
+    try:
+        client_ip = validate_ip_address(client_ip)
+    except ValueError as e:
+        logger.warning("Invalid IP address from request: %s", client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid client IP address",
+        ) from e
 
     service = AutoExecutionConfigService(db)
     try:
