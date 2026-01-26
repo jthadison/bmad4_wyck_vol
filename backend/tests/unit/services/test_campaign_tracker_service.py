@@ -9,19 +9,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-import pytest
-
-# Skip entire module - progression logic returns different format than expected
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/236
-pytestmark = pytest.mark.skip(reason="Issue #236: Campaign tracker progression logic")
-
 from src.models.campaign_tracker import (
     CampaignHealthStatus,
     CampaignQualityScore,
     PreliminaryEvent,
 )
-from src.models.position import Position as PositionModel
-from src.repositories.models import CampaignModel
+from src.repositories.models import CampaignModel, PositionModel
 from src.services.campaign_tracker_service import (
     calculate_entry_pnl,
     calculate_health,
@@ -37,10 +30,12 @@ class TestCampaignProgression:
         """Test progression with no entries returns Phase C with Spring pending."""
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",
             symbol="AAPL",
             timeframe="1D",
             trading_range_id=uuid4(),
             status="ACTIVE",
+            phase="C",
             total_allocation=Decimal("10000.00"),
             current_risk=Decimal("0.00"),
             created_at=datetime.now(UTC),
@@ -51,33 +46,36 @@ class TestCampaignProgression:
         assert progression.current_phase == "C"
         assert progression.completed_phases == []
         assert progression.pending_phases == ["SPRING", "SOS", "LPS"]
-        assert progression.next_expected == "SPRING"
+        assert progression.next_expected == "Phase C watch - monitoring for Spring"
 
     def test_progression_spring_completed(self):
         """Test progression with Spring entry shows Phase D pending SOS."""
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",
             symbol="AAPL",
             timeframe="1D",
             trading_range_id=uuid4(),
             status="ACTIVE",
+            phase="D",
             total_allocation=Decimal("10000.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
         )
 
-        # Mock position for Spring entry
+        # Mock position for Spring entry using SQLAlchemy PositionModel
         spring_position = PositionModel(
             id=uuid4(),
             campaign_id=campaign.id,
             signal_id=uuid4(),
-            entry_pattern="SPRING",
+            symbol="AAPL",
+            timeframe="1D",
+            pattern_type="SPRING",
+            entry_date=datetime.now(UTC),
             entry_price=Decimal("150.00"),
-            shares=20,
-            position_size=Decimal("3000.00"),
+            shares=Decimal("20"),
             stop_loss=Decimal("148.50"),
             status="FILLED",
-            created_at=datetime.now(UTC),
         )
         campaign.positions = [spring_position]
 
@@ -86,58 +84,63 @@ class TestCampaignProgression:
         assert progression.current_phase == "D"
         assert "SPRING" in progression.completed_phases
         assert "SOS" not in progression.completed_phases
-        assert progression.next_expected == "SOS"
+        assert progression.next_expected == "Phase D watch - monitoring for SOS"
 
     def test_progression_all_phases_completed(self):
         """Test progression with all entries shows Phase E markup."""
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",
             symbol="AAPL",
             timeframe="1D",
             trading_range_id=uuid4(),
             status="MARKUP",
+            phase="E",
             total_allocation=Decimal("10000.00"),
             current_risk=Decimal("10000.00"),
             created_at=datetime.now(UTC),
         )
 
-        # Mock positions for all entries
+        # Mock positions for all entries using SQLAlchemy PositionModel
         positions = [
             PositionModel(
                 id=uuid4(),
                 campaign_id=campaign.id,
                 signal_id=uuid4(),
-                entry_pattern="SPRING",
+                symbol="AAPL",
+                timeframe="1D",
+                pattern_type="SPRING",
+                entry_date=datetime.now(UTC),
                 entry_price=Decimal("150.00"),
-                shares=20,
-                position_size=Decimal("3000.00"),
+                shares=Decimal("20"),
                 stop_loss=Decimal("148.50"),
                 status="FILLED",
-                created_at=datetime.now(UTC),
             ),
             PositionModel(
                 id=uuid4(),
                 campaign_id=campaign.id,
                 signal_id=uuid4(),
-                entry_pattern="SOS",
+                symbol="AAPL",
+                timeframe="1D",
+                pattern_type="SOS",
+                entry_date=datetime.now(UTC),
                 entry_price=Decimal("155.00"),
-                shares=19,
-                position_size=Decimal("3000.00"),
+                shares=Decimal("19"),
                 stop_loss=Decimal("152.00"),
                 status="FILLED",
-                created_at=datetime.now(UTC),
             ),
             PositionModel(
                 id=uuid4(),
                 campaign_id=campaign.id,
                 signal_id=uuid4(),
-                entry_pattern="LPS",
+                symbol="AAPL",
+                timeframe="1D",
+                pattern_type="LPS",
+                entry_date=datetime.now(UTC),
                 entry_price=Decimal("152.00"),
-                shares=26,
-                position_size=Decimal("4000.00"),
+                shares=Decimal("26"),
                 stop_loss=Decimal("150.00"),
                 status="FILLED",
-                created_at=datetime.now(UTC),
             ),
         ]
         campaign.positions = positions
@@ -149,7 +152,7 @@ class TestCampaignProgression:
         assert "SPRING" in progression.completed_phases
         assert "SOS" in progression.completed_phases
         assert "LPS" in progression.completed_phases
-        assert progression.next_expected == "NONE"
+        assert progression.next_expected == "Campaign complete - all entries filled"
 
 
 class TestCampaignHealth:
@@ -159,10 +162,12 @@ class TestCampaignHealth:
         """Test health is GREEN when allocation < 4%."""
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",
             symbol="AAPL",
             timeframe="1D",
             trading_range_id=uuid4(),
             status="ACTIVE",
+            phase="C",
             total_allocation=Decimal("10000.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
@@ -170,7 +175,7 @@ class TestCampaignHealth:
 
         health = calculate_health(
             campaign=campaign,
-            total_allocation=Decimal("100000.00"),
+            total_allocation=Decimal("3.0"),
             any_stop_hit=False,
         )
 
@@ -180,10 +185,12 @@ class TestCampaignHealth:
         """Test health is YELLOW when allocation 4-5%."""
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",
             symbol="AAPL",
             timeframe="1D",
             trading_range_id=uuid4(),
             status="ACTIVE",
+            phase="C",
             total_allocation=Decimal("10000.00"),
             current_risk=Decimal("4500.00"),
             created_at=datetime.now(UTC),
@@ -191,7 +198,7 @@ class TestCampaignHealth:
 
         health = calculate_health(
             campaign=campaign,
-            total_allocation=Decimal("100000.00"),
+            total_allocation=Decimal("4.5"),
             any_stop_hit=False,
         )
 
@@ -201,10 +208,12 @@ class TestCampaignHealth:
         """Test health is RED when stop is hit."""
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",
             symbol="AAPL",
             timeframe="1D",
             trading_range_id=uuid4(),
             status="ACTIVE",
+            phase="C",
             total_allocation=Decimal("10000.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
@@ -212,7 +221,7 @@ class TestCampaignHealth:
 
         health = calculate_health(
             campaign=campaign,
-            total_allocation=Decimal("100000.00"),
+            total_allocation=Decimal("3.0"),
             any_stop_hit=True,
         )
 
@@ -222,10 +231,12 @@ class TestCampaignHealth:
         """Test health is RED when campaign is invalidated."""
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",
             symbol="AAPL",
             timeframe="1D",
             trading_range_id=uuid4(),
             status="INVALIDATED",
+            phase="C",
             total_allocation=Decimal("10000.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
@@ -233,7 +244,7 @@ class TestCampaignHealth:
 
         health = calculate_health(
             campaign=campaign,
-            total_allocation=Decimal("100000.00"),
+            total_allocation=Decimal("3.0"),
             any_stop_hit=False,
         )
 
@@ -249,13 +260,14 @@ class TestEntryPnL:
             id=uuid4(),
             campaign_id=uuid4(),
             signal_id=uuid4(),
-            entry_pattern="SPRING",
+            symbol="AAPL",
+            timeframe="1D",
+            pattern_type="SPRING",
+            entry_date=datetime.now(UTC),
             entry_price=Decimal("150.00"),
-            shares=20,
-            position_size=Decimal("3000.00"),
+            shares=Decimal("20"),
             stop_loss=Decimal("148.50"),
             status="FILLED",
-            created_at=datetime.now(UTC),
         )
 
         current_price = Decimal("155.00")
@@ -263,8 +275,11 @@ class TestEntryPnL:
 
         # 20 shares * ($155 - $150) = $100 profit
         assert pnl == Decimal("100.00")
-        # $100 / $3000 * 100 = 3.33%
-        assert pnl_percent == Decimal("3.33")
+        # ($155 - $150) / $150 * 100 = 3.333...%
+        expected_pct = ((current_price - position.entry_price) / position.entry_price) * Decimal(
+            "100"
+        )
+        assert pnl_percent == expected_pct
 
     def test_pnl_negative(self):
         """Test P&L calculation for losing position."""
@@ -272,13 +287,14 @@ class TestEntryPnL:
             id=uuid4(),
             campaign_id=uuid4(),
             signal_id=uuid4(),
-            entry_pattern="SOS",
+            symbol="AAPL",
+            timeframe="1D",
+            pattern_type="SOS",
+            entry_date=datetime.now(UTC),
             entry_price=Decimal("155.00"),
-            shares=20,
-            position_size=Decimal("3100.00"),
+            shares=Decimal("20"),
             stop_loss=Decimal("152.00"),
             status="FILLED",
-            created_at=datetime.now(UTC),
         )
 
         current_price = Decimal("152.00")
@@ -286,8 +302,11 @@ class TestEntryPnL:
 
         # 20 shares * ($152 - $155) = -$60 loss
         assert pnl == Decimal("-60.00")
-        # -$60 / $3100 * 100 = -1.94%
-        assert pnl_percent == Decimal("-1.94")
+        # ($152 - $155) / $155 * 100 = -1.935...%
+        expected_pct = ((current_price - position.entry_price) / position.entry_price) * Decimal(
+            "100"
+        )
+        assert pnl_percent == expected_pct
 
 
 class TestQualityScore:

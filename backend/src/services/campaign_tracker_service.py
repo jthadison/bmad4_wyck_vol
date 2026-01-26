@@ -41,8 +41,7 @@ from src.models.campaign_tracker import (
     PreliminaryEvent,
     TradingRangeLevels,
 )
-from src.models.position import Position as PositionModel
-from src.repositories.models import CampaignModel
+from src.repositories.models import CampaignModel, PositionModel
 
 logger = structlog.get_logger(__name__)
 
@@ -84,7 +83,7 @@ def calculate_progression(campaign: CampaignModel) -> CampaignProgressionModel:
     completed_phases = []
     if campaign.positions:
         for position in campaign.positions:
-            pattern = position.entry_pattern.upper()
+            pattern = position.pattern_type.upper()
             if pattern in ["SPRING", "SOS", "LPS"] and pattern not in completed_phases:
                 # Only include FILLED or CLOSED positions
                 if position.status in ["FILLED", "CLOSED"]:
