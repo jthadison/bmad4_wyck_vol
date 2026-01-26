@@ -24,9 +24,8 @@ from decimal import Decimal
 import pytest
 
 # Skip entire module - multiple formatting/calculation mismatches with production code
-pytestmark = pytest.mark.skip(
-    reason="Forex position sizer tests have calculation and formatting mismatches - needs alignment with production code"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/234
+pytestmark = pytest.mark.skip(reason="Issue #234: Forex position sizer calculation mismatches")
 
 from src.risk_management.forex_position_sizer import (
     WYCKOFF_PIP_STOP_RANGES,

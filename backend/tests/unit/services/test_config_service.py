@@ -10,9 +10,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 # Skip entire module - config service returns None instead of expected user
-pytestmark = pytest.mark.skip(
-    reason="Config service tests have return value mismatches - needs alignment with production code"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/237
+pytestmark = pytest.mark.skip(reason="Issue #237: Config service return value mismatches")
 
 from src.models.config import (
     CauseFactors,

@@ -21,9 +21,8 @@ from decimal import Decimal
 import pytest
 
 # Skip entire module - Friday restriction logic changed in production code
-pytestmark = pytest.mark.skip(
-    reason="Forex portfolio heat tests have Friday/weekend logic mismatches - needs alignment with production code"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/235
+pytestmark = pytest.mark.skip(reason="Issue #235: Forex portfolio heat Friday/weekend logic")
 
 from src.risk_management.forex_portfolio_heat import (
     PAIR_VOLATILITY_WEEKEND_MULTIPLIERS,

@@ -12,9 +12,8 @@ from uuid import uuid4
 import pytest
 
 # Skip entire module - progression logic returns different format than expected
-pytestmark = pytest.mark.skip(
-    reason="Campaign tracker service tests have progression logic mismatches - needs alignment with production code"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/236
+pytestmark = pytest.mark.skip(reason="Issue #236: Campaign tracker progression logic")
 
 from src.models.campaign_tracker import (
     CampaignHealthStatus,

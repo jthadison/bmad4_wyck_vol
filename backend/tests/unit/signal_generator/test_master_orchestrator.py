@@ -20,9 +20,8 @@ Author: Story 8.10
 import pytest
 
 # Skip entire module - MasterOrchestrator signature changes
-pytestmark = pytest.mark.skip(
-    reason="Master orchestrator tests have signature mismatches - needs alignment with production code"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/241
+pytestmark = pytest.mark.skip(reason="Issue #241: Master orchestrator signature mismatches")
 
 from datetime import UTC, datetime
 from decimal import Decimal

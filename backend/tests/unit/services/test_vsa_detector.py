@@ -19,9 +19,8 @@ Author: Story 11.9 Task 6
 import pytest
 
 # Skip entire module - OHLCVBar model validation errors
-pytestmark = pytest.mark.skip(
-    reason="VSA detector tests have OHLCVBar validation errors - needs fixture updates"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/240
+pytestmark = pytest.mark.skip(reason="Issue #240: VSA detector OHLCVBar validation")
 
 from decimal import Decimal
 

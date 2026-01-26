@@ -17,9 +17,8 @@ from uuid import uuid4
 import pytest
 
 # Skip entire module - Validator tests have dict/object attribute mismatches
-pytestmark = pytest.mark.skip(
-    reason="Validator stub tests have attribute access issues - needs fixture updates"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/243
+pytestmark = pytest.mark.skip(reason="Issue #243: Validator stub attribute access issues")
 
 from src.models.validation import ValidationContext, ValidationStatus
 from src.signal_generator.validators import (

@@ -226,6 +226,7 @@ def mock_campaign_data(test_user_id: UUID) -> dict[str, Any]:
 
     return {
         "id": uuid4(),
+        "campaign_id": "AAPL-2024-01-01",  # Required human-readable ID
         "user_id": test_user_id,
         "symbol": "AAPL",
         "timeframe": "1D",

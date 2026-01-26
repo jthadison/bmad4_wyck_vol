@@ -9,9 +9,8 @@ from decimal import Decimal
 import pytest
 
 # Skip entire module - recommendation counts don't match expected values
-pytestmark = pytest.mark.skip(
-    reason="Recommendation service tests have count mismatches - needs alignment with production code"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/239
+pytestmark = pytest.mark.skip(reason="Issue #239: Recommendation count mismatches")
 
 from src.models.config import (
     CauseFactors,

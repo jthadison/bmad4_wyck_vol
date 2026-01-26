@@ -245,19 +245,7 @@ class TestVolumeAnalysisValidation:
         analysis_high = VolumeAnalysis(bar=bar, spread_ratio=100.0)
         assert analysis_high.spread_ratio == Decimal("100.0")
 
-    @pytest.mark.skip(reason="effort_result is now an enum, not a string with max_length")
-    def test_effort_result_max_length(self):
-        """Test that effort_result respects max_length constraint."""
-        bar = create_test_bar()
-
-        # Valid: at max length (50 chars)
-        long_result = "A" * 50
-        analysis = VolumeAnalysis(bar=bar, effort_result=long_result)
-        assert analysis.effort_result == long_result
-
-        # Valid: short string
-        analysis_short = VolumeAnalysis(bar=bar, effort_result="Spring")
-        assert analysis_short.effort_result == "Spring"
+    # NOTE: test_effort_result_max_length removed - effort_result is now an enum, not a string
 
 
 class TestVolumeAnalysisTimestampHandling:

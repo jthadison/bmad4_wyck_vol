@@ -18,9 +18,8 @@ from uuid import uuid4
 import pytest
 
 # Skip entire module - StrategyValidator signature changed
-pytestmark = pytest.mark.skip(
-    reason="Validation chain tests have StrategyValidator signature mismatches - needs news_calendar_factory arg"
-)
+# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/242
+pytestmark = pytest.mark.skip(reason="Issue #242: Validation chain StrategyValidator signature")
 
 from src.models.validation import (
     StageValidationResult,
