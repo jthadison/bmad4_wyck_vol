@@ -29,10 +29,8 @@ import {
   activateKillSwitch,
   deactivateKillSwitch,
 } from '@/services/api'
-import { useToast } from 'primevue/usetoast'
 
 export const useAutoExecutionStore = defineStore('autoExecution', () => {
-  const toast = useToast()
 
   // State
   const config = ref<AutoExecutionConfig | null>(null)
@@ -84,12 +82,7 @@ export const useAutoExecutionStore = defineStore('autoExecution', () => {
       const message =
         err instanceof Error ? err.message : 'Failed to fetch configuration'
       error.value = message
-      toast.add({
-        severity: 'error',
-        summary: 'Configuration Error',
-        detail: message,
-        life: 5000,
-      })
+      throw err
     } finally {
       loading.value = false
     }
@@ -103,22 +96,10 @@ export const useAutoExecutionStore = defineStore('autoExecution', () => {
 
     try {
       config.value = await updateAutoExecutionConfig(updates)
-      toast.add({
-        severity: 'success',
-        summary: 'Settings Saved',
-        detail: 'Auto-execution configuration updated successfully',
-        life: 3000,
-      })
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Failed to update configuration'
       error.value = message
-      toast.add({
-        severity: 'error',
-        summary: 'Update Failed',
-        detail: message,
-        life: 5000,
-      })
       throw err
     } finally {
       loading.value = false
@@ -131,22 +112,10 @@ export const useAutoExecutionStore = defineStore('autoExecution', () => {
 
     try {
       config.value = await enableAutoExecution(request)
-      toast.add({
-        severity: 'success',
-        summary: 'Auto-Execution Enabled',
-        detail: 'Automatic trade execution is now active',
-        life: 5000,
-      })
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Failed to enable auto-execution'
       error.value = message
-      toast.add({
-        severity: 'error',
-        summary: 'Enable Failed',
-        detail: message,
-        life: 5000,
-      })
       throw err
     } finally {
       loading.value = false
@@ -159,22 +128,10 @@ export const useAutoExecutionStore = defineStore('autoExecution', () => {
 
     try {
       config.value = await disableAutoExecution()
-      toast.add({
-        severity: 'info',
-        summary: 'Auto-Execution Disabled',
-        detail: 'Automatic trade execution has been stopped',
-        life: 3000,
-      })
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Failed to disable auto-execution'
       error.value = message
-      toast.add({
-        severity: 'error',
-        summary: 'Disable Failed',
-        detail: message,
-        life: 5000,
-      })
       throw err
     } finally {
       loading.value = false
@@ -188,23 +145,11 @@ export const useAutoExecutionStore = defineStore('autoExecution', () => {
     try {
       const response = await activateKillSwitch()
       await fetchConfig() // Refresh config to reflect kill switch activation
-      toast.add({
-        severity: 'warn',
-        summary: 'Kill Switch Activated',
-        detail: response.message,
-        life: 5000,
-      })
       return response
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Failed to activate kill switch'
       error.value = message
-      toast.add({
-        severity: 'error',
-        summary: 'Kill Switch Failed',
-        detail: message,
-        life: 5000,
-      })
       throw err
     } finally {
       loading.value = false
@@ -217,22 +162,10 @@ export const useAutoExecutionStore = defineStore('autoExecution', () => {
 
     try {
       config.value = await deactivateKillSwitch()
-      toast.add({
-        severity: 'success',
-        summary: 'Kill Switch Deactivated',
-        detail: 'Auto-execution can now resume if enabled',
-        life: 3000,
-      })
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Failed to deactivate kill switch'
       error.value = message
-      toast.add({
-        severity: 'error',
-        summary: 'Deactivate Failed',
-        detail: message,
-        life: 5000,
-      })
       throw err
     } finally {
       loading.value = false

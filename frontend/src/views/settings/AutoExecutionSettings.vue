@@ -322,6 +322,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAutoExecutionStore } from '@/stores/autoExecutionStore'
 import { storeToRefs } from 'pinia'
+import { useToast } from 'primevue/usetoast'
+import { debounce } from '@/utils/debounce'
 import Card from 'primevue/card'
 import Button from 'primevue/button'
 import InputSwitch from 'primevue/inputswitch'
@@ -338,6 +340,7 @@ import SymbolListEditor from '@/components/settings/SymbolListEditor.vue'
 import type { PatternType } from '@/types/auto-execution'
 
 const store = useAutoExecutionStore()
+const toast = useToast()
 const {
   config,
   loading,
@@ -358,11 +361,41 @@ onMounted(() => {
   store.fetchConfig()
 })
 
-function handleMasterToggle(enabled: boolean): void {
+// Debounced update functions to prevent API spam
+const debouncedUpdateEnabledPatterns = debounce((patterns: PatternType[]) => {
+  store.updateConfig({ enabled_patterns: patterns })
+}, 500)
+
+const debouncedUpdateSymbolWhitelist = debounce((symbols: string[]) => {
+  store.updateConfig({ symbol_whitelist: symbols.length > 0 ? symbols : null })
+}, 500)
+
+const debouncedUpdateSymbolBlacklist = debounce((symbols: string[]) => {
+  store.updateConfig({ symbol_blacklist: symbols.length > 0 ? symbols : null })
+}, 500)
+
+async function handleMasterToggle(enabled: boolean): Promise<void> {
   if (enabled) {
     showConsentModal.value = true
   } else {
-    store.disable()
+    try {
+      await store.disable()
+      toast.add({
+        severity: 'info',
+        summary: 'Auto-Execution Disabled',
+        detail: 'Automatic trade execution has been stopped',
+        life: 3000,
+      })
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to disable auto-execution'
+      toast.add({
+        severity: 'error',
+        summary: 'Disable Failed',
+        detail: message,
+        life: 5000,
+      })
+    }
   }
 }
 
@@ -372,8 +405,21 @@ async function handleEnableWithConsent(): Promise<void> {
       consent_acknowledged: true,
     })
     showConsentModal.value = false
+    toast.add({
+      severity: 'success',
+      summary: 'Auto-Execution Enabled',
+      detail: 'Automatic trade execution is now active',
+      life: 5000,
+    })
   } catch (err) {
-    // Error is handled by the store and displayed in the modal
+    const message =
+      err instanceof Error ? err.message : 'Failed to enable auto-execution'
+    toast.add({
+      severity: 'error',
+      summary: 'Enable Failed',
+      detail: message,
+      life: 5000,
+    })
   }
 }
 
@@ -383,45 +429,122 @@ function handleCancelConsent(): void {
 
 async function handleActivateKillSwitch(): Promise<void> {
   try {
-    await store.activateEmergencyKillSwitch()
+    const response = await store.activateEmergencyKillSwitch()
     showKillSwitchConfirm.value = false
+    toast.add({
+      severity: 'warn',
+      summary: 'Kill Switch Activated',
+      detail: response.message,
+      life: 5000,
+    })
   } catch (err) {
-    // Error is handled by the store
+    const message =
+      err instanceof Error ? err.message : 'Failed to activate kill switch'
+    toast.add({
+      severity: 'error',
+      summary: 'Kill Switch Failed',
+      detail: message,
+      life: 5000,
+    })
   }
 }
 
 async function handleDeactivateKillSwitch(): Promise<void> {
   try {
     await store.deactivateEmergencyKillSwitch()
+    toast.add({
+      severity: 'success',
+      summary: 'Kill Switch Deactivated',
+      detail: 'Auto-execution can now resume if enabled',
+      life: 3000,
+    })
   } catch (err) {
-    // Error is handled by the store
+    const message =
+      err instanceof Error ? err.message : 'Failed to deactivate kill switch'
+    toast.add({
+      severity: 'error',
+      summary: 'Deactivate Failed',
+      detail: message,
+      life: 5000,
+    })
   }
 }
 
-function updateMinConfidence(value: number): void {
-  store.updateConfig({ min_confidence: value })
+async function updateMinConfidence(value: number): Promise<void> {
+  try {
+    await store.updateConfig({ min_confidence: value })
+    toast.add({
+      severity: 'success',
+      summary: 'Settings Saved',
+      detail: 'Minimum confidence updated',
+      life: 3000,
+    })
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to update configuration'
+    toast.add({
+      severity: 'error',
+      summary: 'Update Failed',
+      detail: message,
+      life: 5000,
+    })
+  }
 }
 
-function updateMaxTrades(value: number | null): void {
+async function updateMaxTrades(value: number | null): Promise<void> {
   if (value !== null) {
-    store.updateConfig({ max_trades_per_day: value })
+    try {
+      await store.updateConfig({ max_trades_per_day: value })
+      toast.add({
+        severity: 'success',
+        summary: 'Settings Saved',
+        detail: 'Max trades per day updated',
+        life: 3000,
+      })
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to update configuration'
+      toast.add({
+        severity: 'error',
+        summary: 'Update Failed',
+        detail: message,
+        life: 5000,
+      })
+    }
   }
 }
 
-function updateMaxRisk(value: number | null): void {
-  store.updateConfig({ max_risk_per_day: value })
+async function updateMaxRisk(value: number | null): Promise<void> {
+  try {
+    await store.updateConfig({ max_risk_per_day: value })
+    toast.add({
+      severity: 'success',
+      summary: 'Settings Saved',
+      detail: 'Max risk per day updated',
+      life: 3000,
+    })
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to update configuration'
+    toast.add({
+      severity: 'error',
+      summary: 'Update Failed',
+      detail: message,
+      life: 5000,
+    })
+  }
 }
 
 function updateEnabledPatterns(patterns: PatternType[]): void {
-  store.updateConfig({ enabled_patterns: patterns })
+  debouncedUpdateEnabledPatterns(patterns)
 }
 
 function updateSymbolWhitelist(symbols: string[]): void {
-  store.updateConfig({ symbol_whitelist: symbols.length > 0 ? symbols : null })
+  debouncedUpdateSymbolWhitelist(symbols)
 }
 
 function updateSymbolBlacklist(symbols: string[]): void {
-  store.updateConfig({ symbol_blacklist: symbols.length > 0 ? symbols : null })
+  debouncedUpdateSymbolBlacklist(symbols)
 }
 
 function formatDate(isoString: string): string {

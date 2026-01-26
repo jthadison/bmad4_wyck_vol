@@ -29,13 +29,6 @@ vi.mock('@/services/api', () => ({
   deactivateKillSwitch: vi.fn(),
 }))
 
-// Mock toast
-vi.mock('primevue/usetoast', () => ({
-  useToast: () => ({
-    add: vi.fn(),
-  }),
-}))
-
 import * as api from '@/services/api'
 
 // Helper to create mock config
@@ -100,13 +93,12 @@ describe('autoExecutionStore', () => {
       expect(store.loading).toBe(false)
     })
 
-    it('should handle fetch error', async () => {
+    it('should handle fetch error and rethrow', async () => {
       vi.mocked(api.getAutoExecutionConfig).mockRejectedValue(
         new Error('Network error')
       )
 
-      await store.fetchConfig()
-
+      await expect(store.fetchConfig()).rejects.toThrow('Network error')
       expect(store.error).toBe('Network error')
       expect(store.loading).toBe(false)
     })
@@ -147,12 +139,10 @@ describe('autoExecutionStore', () => {
 
       await store.enable({
         consent_acknowledged: true,
-        password: 'test-password',
       })
 
       expect(api.enableAutoExecution).toHaveBeenCalledWith({
         consent_acknowledged: true,
-        password: 'test-password',
       })
       expect(store.config).toEqual(mockConfig)
       expect(store.isEnabled).toBe(true)
@@ -160,16 +150,15 @@ describe('autoExecutionStore', () => {
 
     it('should handle enable error and rethrow', async () => {
       vi.mocked(api.enableAutoExecution).mockRejectedValue(
-        new Error('Invalid password')
+        new Error('Configuration error')
       )
 
       await expect(
         store.enable({
           consent_acknowledged: true,
-          password: 'wrong-password',
         })
-      ).rejects.toThrow('Invalid password')
-      expect(store.error).toBe('Invalid password')
+      ).rejects.toThrow('Configuration error')
+      expect(store.error).toBe('Configuration error')
     })
   })
 
