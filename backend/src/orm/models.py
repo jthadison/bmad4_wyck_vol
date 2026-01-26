@@ -33,13 +33,51 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.dialects.postgresql import NUMERIC, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
+
+
+class StringListType(TypeDecorator):
+    """
+    Custom type for string lists that works with both PostgreSQL and SQLite.
+
+    - PostgreSQL: Uses native ARRAY type
+    - SQLite: Uses JSON type
+
+    This enables test compatibility while maintaining PostgreSQL's native array support.
+    """
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        """Load dialect-specific implementation."""
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_ARRAY(String))
+        else:
+            return dialect.type_descriptor(JSON)
+
+    def process_bind_param(self, value, dialect):
+        """Convert Python list to database representation."""
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value  # PostgreSQL handles lists natively
+        else:
+            return value  # JSON dialect handles lists
+
+    def process_result_value(self, value, dialect):
+        """Convert database representation to Python list."""
+        if value is None:
+            return value
+        return value  # Both dialects return lists directly
 
 
 class TradingRange(Base):
@@ -1025,4 +1063,124 @@ class SignalAuditLogORM(Base):
         TIMESTAMP(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
+    )
+
+
+class AutoExecutionConfigORM(Base):
+    """
+    Auto-execution configuration model.
+
+    Stores user preferences for automatic signal execution without manual approval.
+    Includes safety features like kill switch and circuit breaker.
+
+    Table: auto_execution_config
+    Primary Key: user_id (UUID, FK to users.id)
+
+    Story 19.14: Auto-Execution Configuration Backend
+    """
+
+    __tablename__ = "auto_execution_config"
+
+    # Primary key and foreign key
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE", name="fk_auto_execution_config_user"),
+        primary_key=True,
+    )
+
+    # Auto-execution control
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+    )
+
+    # Configuration parameters
+    min_confidence: Mapped[Decimal] = mapped_column(
+        NUMERIC(5, 2),
+        nullable=False,
+        server_default="85.00",
+    )
+
+    max_trades_per_day: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="10",
+    )
+
+    max_risk_per_day: Mapped[Decimal | None] = mapped_column(
+        NUMERIC(5, 2),
+        nullable=True,
+    )
+
+    circuit_breaker_losses: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="3",
+    )
+
+    # Pattern and symbol filters
+    enabled_patterns: Mapped[list[str]] = mapped_column(
+        StringListType,
+        nullable=False,
+        # Note: server_default is in migration, omitted here for SQLite test compatibility
+    )
+
+    symbol_whitelist: Mapped[list[str] | None] = mapped_column(
+        StringListType,
+        nullable=True,
+    )
+
+    symbol_blacklist: Mapped[list[str] | None] = mapped_column(
+        StringListType,
+        nullable=True,
+    )
+
+    # Safety controls
+    kill_switch_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+    )
+
+    # Consent tracking
+    consent_given_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+
+    consent_ip_address: Mapped[str | None] = mapped_column(
+        String(45),
+        nullable=True,
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "min_confidence >= 60 AND min_confidence <= 100", name="chk_min_confidence_range"
+        ),
+        CheckConstraint(
+            "max_trades_per_day >= 1 AND max_trades_per_day <= 50", name="chk_max_trades_range"
+        ),
+        CheckConstraint(
+            "max_risk_per_day IS NULL OR (max_risk_per_day > 0 AND max_risk_per_day <= 10)",
+            name="chk_max_risk_range",
+        ),
+        CheckConstraint(
+            "circuit_breaker_losses >= 1 AND circuit_breaker_losses <= 10",
+            name="chk_circuit_breaker_range",
+        ),
     )

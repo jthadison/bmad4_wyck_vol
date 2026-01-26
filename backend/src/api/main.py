@@ -40,6 +40,7 @@ from src.api.routes import (
     tradingview,
     user,
 )
+from src.api.routes import settings as settings_routes
 from src.api.websocket import websocket_endpoint
 from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
@@ -80,6 +81,7 @@ app.include_router(paper_trading.router)  # Paper trading routes (Story 12.8)
 app.include_router(tradingview.router)  # TradingView webhook routes (Story 16.4a)
 app.include_router(scanner.router)  # Multi-symbol scanner routes (Story 19.4)
 app.include_router(signal_approval.router)  # Signal approval queue routes (Story 19.9)
+app.include_router(settings_routes.router)  # Settings routes (Story 19.14)
 
 
 # WebSocket endpoint for real-time updates
