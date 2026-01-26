@@ -5,7 +5,7 @@
  * Autocomplete component for searching and adding symbols to watchlist
  */
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import AutoComplete from 'primevue/autocomplete'
 import { useWatchlistStore } from '@/stores/watchlistStore'
 import type { SymbolSearchResult } from '@/types'
@@ -63,6 +63,13 @@ onMounted(() => {
   // Auto-focus when component mounts if watchlist is empty
   if (store.symbolCount === 0) {
     focusInput()
+  }
+})
+
+onUnmounted(() => {
+  // Clean up timeout to prevent memory leaks
+  if (searchTimeout) {
+    clearTimeout(searchTimeout)
   }
 })
 </script>

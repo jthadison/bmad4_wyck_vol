@@ -110,9 +110,8 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       return false
     }
 
-    // Optimistic update - store for potential rollback
-    const removedEntry = entry
-    const removedIndex = symbols.value.findIndex((s) => s.symbol === symbol)
+    // Optimistic update - store snapshot for potential rollback
+    const previousSymbols = [...symbols.value]
     symbols.value = symbols.value.filter((s) => s.symbol !== symbol)
 
     isSaving.value = true
@@ -122,8 +121,8 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       await apiClient.delete(`/watchlist/${symbol}`)
       return true
     } catch (err) {
-      // Rollback optimistic update
-      symbols.value.splice(removedIndex, 0, removedEntry)
+      // Rollback optimistic update by restoring the snapshot
+      symbols.value = previousSymbols
       error.value = `Failed to remove ${symbol}`
       console.error('removeSymbol error:', err)
       return false
@@ -174,13 +173,20 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       return
     }
 
+    // Sanitize input: only allow alphanumeric characters, spaces, dots, and hyphens
+    const sanitizedQuery = query.replace(/[^a-zA-Z0-9\s.-]/g, '').trim()
+    if (!sanitizedQuery) {
+      searchResults.value = []
+      return
+    }
+
     isSearching.value = true
 
     try {
       const results = await apiClient.get<SymbolSearchResult[]>(
         '/symbols/search',
         {
-          params: { query, limit: 10 },
+          params: { query: sanitizedQuery, limit: 10 },
         }
       )
       // Filter out symbols already in watchlist

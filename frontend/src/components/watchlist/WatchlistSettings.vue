@@ -5,7 +5,7 @@
  * Main watchlist management page with search, table, and count display
  */
 
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import { useWatchlistStore } from '@/stores/watchlistStore'
@@ -44,7 +44,7 @@ function onSymbolUpdated(symbol: string) {
 }
 
 // Watch for errors and show toast
-store.$subscribe((_mutation, state) => {
+const unsubscribe = store.$subscribe((_mutation, state) => {
   if (state.error) {
     toast.add({
       severity: 'error',
@@ -54,6 +54,11 @@ store.$subscribe((_mutation, state) => {
     })
     store.clearError()
   }
+})
+
+onUnmounted(() => {
+  // Clean up subscription to prevent memory leaks
+  unsubscribe()
 })
 
 onMounted(async () => {
