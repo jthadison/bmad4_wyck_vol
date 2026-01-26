@@ -21,12 +21,6 @@ Author: Story 7.2-FX
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import pytest
-
-# Skip entire module - multiple formatting/calculation mismatches with production code
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/234
-pytestmark = pytest.mark.skip(reason="Issue #234: Forex position sizer calculation mismatches")
-
 from src.risk_management.forex_position_sizer import (
     WYCKOFF_PIP_STOP_RANGES,
     ForexPositionSize,
@@ -183,21 +177,21 @@ def test_margin_validation_over_leveraged() -> None:
 # =============================================================================
 
 
-@pytest.mark.skip(reason="Lot optimization calculation changed - returns 0.50 not 5.00")
 def test_optimize_lot_type_standard_to_mini() -> None:
     """Test optimization from standard to mini lots."""
-    # 0.05 standard lots → 5 mini lots
+    # 0.05 standard lots → 0.50 mini lots (same position value, different lot type)
+    # 0.05 * 100000 = 5000 units = 0.50 mini lots (5000 / 10000)
     optimized_size, optimized_type = optimize_lot_type(Decimal("0.05"), "standard")
-    assert optimized_size == Decimal("5.00")
+    assert optimized_size == Decimal("0.50")
     assert optimized_type == "mini"
 
 
-@pytest.mark.skip(reason="Lot optimization calculation changed - returns 0.80 not 8.00")
 def test_optimize_lot_type_mini_to_micro() -> None:
     """Test optimization from mini to micro lots."""
-    # 0.08 mini lots → 8 micro lots
+    # 0.08 mini lots → 0.80 micro lots (same position value, different lot type)
+    # 0.08 * 10000 = 800 units = 0.80 micro lots (800 / 1000)
     optimized_size, optimized_type = optimize_lot_type(Decimal("0.08"), "mini")
-    assert optimized_size == Decimal("8.00")
+    assert optimized_size == Decimal("0.80")
     assert optimized_type == "micro"
 
 
@@ -421,13 +415,12 @@ def test_validate_spring_eur_usd_within_range() -> None:
     assert error is None
 
 
-@pytest.mark.skip(reason="Message format changed - '10.0 pips' vs '10 pips'")
 def test_validate_spring_eur_usd_too_tight() -> None:
     """Test SPRING EUR/USD stop too tight (below 20 pip minimum)."""
     is_valid, error = validate_wyckoff_stop_pips("SPRING", "EUR/USD", Decimal("10.0"))
     assert is_valid is False
     assert "too tight" in error
-    assert "10 pips" in error
+    assert "10.0 pips" in error
     assert "20 pip minimum" in error
 
 
@@ -438,13 +431,12 @@ def test_validate_sos_gbp_usd_within_range() -> None:
     assert error is None
 
 
-@pytest.mark.skip(reason="Message format changed - '200.0 pips' vs '200 pips'")
 def test_validate_sos_eur_usd_too_wide() -> None:
     """Test SOS EUR/USD stop too wide (above 100 pip maximum)."""
     is_valid, error = validate_wyckoff_stop_pips("SOS", "EUR/USD", Decimal("200.0"))
     assert is_valid is False
     assert "too wide" in error
-    assert "200 pips" in error
+    assert "200.0 pips" in error
     assert "100 pip maximum" in error
 
 
@@ -531,7 +523,8 @@ def test_wyckoff_lot_size_spring_climactic_overlap() -> None:
     assert details["base_risk_percent"] == "0.5"
     assert details["volume_multiplier"] == "1.00"
     assert details["session_multiplier"] == "1.00"
-    assert details["effective_risk_percent"] == "0.5"
+    # 0.5 × 1.00 × 1.00 = 0.5
+    assert Decimal(details["effective_risk_percent"]) == Decimal("0.5")
 
 
 def test_wyckoff_lot_size_sos_weak_asian() -> None:
