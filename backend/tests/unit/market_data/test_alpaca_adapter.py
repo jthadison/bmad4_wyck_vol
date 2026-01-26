@@ -44,7 +44,7 @@ async def test_alpaca_adapter_initialization(mock_settings):
     assert adapter.use_paper is True
     assert adapter._is_connected is False
     assert adapter._websocket is None
-    assert adapter._callback is None
+    assert adapter._callbacks == []
     assert adapter._reconnect_delay == 1.0
     assert adapter._bars_received_count == 0
 
@@ -418,7 +418,7 @@ async def test_on_bar_received_callback_registration(alpaca_adapter):
     callback = Mock()
     alpaca_adapter.on_bar_received(callback)
 
-    assert alpaca_adapter._callback == callback
+    assert callback in alpaca_adapter._callbacks
 
 
 @pytest.mark.asyncio

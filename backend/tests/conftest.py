@@ -226,6 +226,7 @@ def mock_campaign_data(test_user_id: UUID) -> dict[str, Any]:
 
     return {
         "id": uuid4(),
+        "campaign_id": "AAPL-2024-01-01",  # Required human-readable ID
         "user_id": test_user_id,
         "symbol": "AAPL",
         "timeframe": "1D",
@@ -401,6 +402,138 @@ def test_db():
     # Return the db_session fixture
     # Note: This will be overridden in integration tests that use PostgreSQL
     return None  # Placeholder - use db_session directly
+
+
+# =============================
+# Issue #232: TradeSignal Factory Fixtures
+# =============================
+
+
+@pytest.fixture
+def create_test_trade_signal():
+    """
+    Provide factory function to create valid TradeSignal instances.
+
+    Creates TradeSignal instances with all required fields populated,
+    suitable for use in unit tests.
+
+    Usage:
+        ```python
+        def test_something(create_test_trade_signal):
+            signal = create_test_trade_signal(pattern_type="SPRING")
+            signal2 = create_test_trade_signal(
+                pattern_type="SOS",
+                confidence_score=82,
+                phase="D"
+            )
+        ```
+
+    Returns:
+        Callable that creates TradeSignal instances with sensible defaults
+    """
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from src.models.signal import (
+        ConfidenceComponents,
+        TargetLevels,
+        TradeSignal,
+    )
+    from src.models.validation import ValidationChain
+
+    def _create_signal(
+        symbol: str = "AAPL",
+        pattern_type: str = "SPRING",
+        phase: str = "C",
+        timeframe: str = "1d",
+        entry_price: Decimal | None = None,
+        stop_loss: Decimal | None = None,
+        primary_target: Decimal | None = None,
+        position_size: Decimal | None = None,
+        risk_amount: Decimal | None = None,
+        confidence_score: int = 85,
+        asset_class: str = "STOCK",
+        **kwargs,
+    ) -> TradeSignal:
+        """
+        Create a valid TradeSignal with sensible defaults.
+
+        All prices are set to create valid entry/stop/target relationships.
+        """
+        # Default prices based on pattern type
+        if entry_price is None:
+            entry_price = Decimal("150.00")
+        if stop_loss is None:
+            stop_loss = Decimal("148.00")
+        if primary_target is None:
+            primary_target = Decimal("156.00")
+        if position_size is None:
+            position_size = Decimal("100") if asset_class == "STOCK" else Decimal("0.10")
+        if risk_amount is None:
+            risk_amount = Decimal("200.00")
+
+        # Calculate r_multiple
+        r_multiple = (primary_target - entry_price) / (entry_price - stop_loss)
+
+        # Calculate notional_value
+        notional_value = position_size * entry_price
+
+        # Create confidence components that match the overall score
+        # Formula: overall = pattern*0.5 + phase*0.3 + volume*0.2
+        # ConfidenceComponents requires overall_confidence >= 70
+        effective_score = max(confidence_score, 70)
+
+        # Use the overall score to derive components
+        pattern_confidence = min(effective_score + 5, 100)
+        phase_confidence = max(effective_score - 2, 70)
+        volume_confidence = max(effective_score - 3, 70)
+        # Recalculate to ensure it matches
+        calculated_overall = int(
+            pattern_confidence * 0.5 + phase_confidence * 0.3 + volume_confidence * 0.2
+        )
+        # Ensure minimum of 70 for ConfidenceComponents validation
+        calculated_overall = max(calculated_overall, 70)
+
+        confidence_components = ConfidenceComponents(
+            pattern_confidence=pattern_confidence,
+            phase_confidence=phase_confidence,
+            volume_confidence=volume_confidence,
+            overall_confidence=calculated_overall,
+        )
+
+        # Build kwargs for TradeSignal
+        signal_kwargs = {
+            "id": uuid4(),
+            "symbol": symbol,
+            "asset_class": asset_class,
+            "pattern_type": pattern_type,
+            "phase": phase,
+            "timeframe": timeframe,
+            "entry_price": entry_price,
+            "stop_loss": stop_loss,
+            "target_levels": TargetLevels(primary_target=primary_target),
+            "position_size": position_size,
+            "position_size_unit": "SHARES" if asset_class == "STOCK" else "LOTS",
+            "notional_value": notional_value,
+            "risk_amount": risk_amount,
+            "r_multiple": r_multiple,
+            "confidence_score": calculated_overall,
+            "confidence_components": confidence_components,
+            "validation_chain": ValidationChain(pattern_id=uuid4()),
+            "timestamp": datetime.now(UTC),
+        }
+
+        # Add forex-specific fields
+        if asset_class == "FOREX":
+            signal_kwargs["leverage"] = Decimal("50.0")
+            signal_kwargs["margin_requirement"] = notional_value / Decimal("50.0")
+
+        # Override with any additional kwargs
+        signal_kwargs.update(kwargs)
+
+        return TradeSignal(**signal_kwargs)
+
+    return _create_signal
 
 
 # =============================

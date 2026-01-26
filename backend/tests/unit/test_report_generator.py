@@ -375,7 +375,14 @@ def test_html_report_no_cost_summary():
 
 def test_generate_pdf_report(sample_backtest_result):
     """Test PDF report generation."""
-    pytest.importorskip("weasyprint", reason="WeasyPrint not installed")
+    # WeasyPrint requires system libraries (gobject-2.0-0) that may not be available
+    # The OSError occurs during import when system libraries are missing
+    try:
+        import weasyprint  # noqa: F401
+    except ImportError:
+        pytest.skip("WeasyPrint not installed")
+    except OSError as e:
+        pytest.skip(f"WeasyPrint system libraries unavailable: {e}")
 
     generator = BacktestReportGenerator()
     pdf_bytes = generator.generate_pdf_report(sample_backtest_result)

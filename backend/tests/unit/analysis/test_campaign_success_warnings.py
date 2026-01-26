@@ -9,10 +9,9 @@ Tests the warning generation for statistical validity concerns including:
 """
 
 from decimal import Decimal
-from uuid import UUID
 
 from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
-from src.models.campaign import CampaignMetrics, QualityTierPerformance
+from src.models.campaign import QualityTierPerformance
 
 # ========================================
 # Story 16.5b: Statistical Warnings Tests
@@ -171,19 +170,16 @@ def test_generate_correlation_warnings_multiple_issues():
 
 def test_none_handling_in_quality_score_calculation():
     """Test that None values are handled in quality score calculation (Story 16.5b)."""
+    from unittest.mock import MagicMock
+
     analyzer = CampaignSuccessAnalyzer(None)  # type: ignore
 
-    # Create campaign with None values
-    campaign = CampaignMetrics(
-        campaign_id=UUID("12345678-1234-5678-1234-567812345678"),
-        symbol="TEST",
-        timeframe="1D",
-        status="COMPLETED",
-        win_rate=None,
-        actual_r_achieved=None,
-        target_achievement_pct=None,
-        duration_days=10,
-    )
+    # Create mock campaign with None values to test the calculation logic
+    # (CampaignMetrics model requires these fields, but we want to test edge cases)
+    campaign = MagicMock()
+    campaign.win_rate = None
+    campaign.actual_r_achieved = None
+    campaign.target_achievement_pct = None
 
     # Should not raise error and should return 0
     score = analyzer._calculate_derived_quality_score(campaign)
