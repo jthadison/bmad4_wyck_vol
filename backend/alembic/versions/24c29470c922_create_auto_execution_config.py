@@ -156,19 +156,12 @@ def upgrade() -> None:
         "circuit_breaker_losses >= 1 AND circuit_breaker_losses <= 10",
     )
 
-    # Index for quick user lookup
-    op.create_index(
-        "idx_auto_execution_config_user",
-        "auto_execution_config",
-        ["user_id"],
-        unique=True,
-    )
+    # Note: No additional index needed on user_id as it's the primary key
 
 
 def downgrade() -> None:
     """Drop auto_execution_config table."""
 
-    op.drop_index("idx_auto_execution_config_user", table_name="auto_execution_config")
     op.drop_constraint("chk_circuit_breaker_range", "auto_execution_config", type_="check")
     op.drop_constraint("chk_max_risk_range", "auto_execution_config", type_="check")
     op.drop_constraint("chk_max_trades_range", "auto_execution_config", type_="check")

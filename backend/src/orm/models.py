@@ -33,8 +33,8 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.dialects.postgresql import NUMERIC, TIMESTAMP
@@ -42,6 +42,42 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
+
+
+class StringListType(TypeDecorator):
+    """
+    Custom type for string lists that works with both PostgreSQL and SQLite.
+
+    - PostgreSQL: Uses native ARRAY type
+    - SQLite: Uses JSON type
+
+    This enables test compatibility while maintaining PostgreSQL's native array support.
+    """
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        """Load dialect-specific implementation."""
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_ARRAY(String))
+        else:
+            return dialect.type_descriptor(JSON)
+
+    def process_bind_param(self, value, dialect):
+        """Convert Python list to database representation."""
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value  # PostgreSQL handles lists natively
+        else:
+            return value  # JSON dialect handles lists
+
+    def process_result_value(self, value, dialect):
+        """Convert database representation to Python list."""
+        if value is None:
+            return value
+        return value  # Both dialects return lists directly
 
 
 class TradingRange(Base):
@@ -1085,18 +1121,18 @@ class AutoExecutionConfigORM(Base):
 
     # Pattern and symbol filters
     enabled_patterns: Mapped[list[str]] = mapped_column(
-        PG_ARRAY(String),
+        StringListType,
         nullable=False,
-        server_default=text("ARRAY['SPRING', 'SOS', 'LPS']::VARCHAR[]"),
+        # Note: server_default is in migration, omitted here for SQLite test compatibility
     )
 
     symbol_whitelist: Mapped[list[str] | None] = mapped_column(
-        PG_ARRAY(String),
+        StringListType,
         nullable=True,
     )
 
     symbol_blacklist: Mapped[list[str] | None] = mapped_column(
-        PG_ARRAY(String),
+        StringListType,
         nullable=True,
     )
 

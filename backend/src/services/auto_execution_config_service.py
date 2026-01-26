@@ -230,7 +230,7 @@ class AutoExecutionConfigService:
             return False, "Consent not given"
 
         # Check confidence threshold
-        if signal.confidence_score < float(config.min_confidence):
+        if Decimal(str(signal.confidence_score)) < config.min_confidence:
             return (
                 False,
                 f"Confidence {signal.confidence_score}% < threshold {config.min_confidence}%",

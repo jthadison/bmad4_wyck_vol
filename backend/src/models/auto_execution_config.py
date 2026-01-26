@@ -7,7 +7,7 @@ Allows traders to set rules for automated trade execution without manual approva
 Story 19.14: Auto-Execution Configuration Backend
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -63,10 +63,10 @@ class AutoExecutionConfig(BaseModel):
         default=None, max_length=45, description="IP address when consent was given"
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Configuration creation timestamp"
+        default_factory=lambda: datetime.now(UTC), description="Configuration creation timestamp"
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Configuration last update timestamp"
+        default_factory=lambda: datetime.now(UTC), description="Configuration last update timestamp"
     )
 
     @field_validator("max_risk_per_day")

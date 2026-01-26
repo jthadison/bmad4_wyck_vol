@@ -5,7 +5,7 @@ Tests configuration CRUD operations, validation logic, and signal eligibility.
 Story 19.14: Auto-Execution Configuration Backend
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -45,7 +45,7 @@ def service(mock_session, mock_repository):
 def default_config():
     """Create default auto-execution configuration."""
     user_id = uuid4()
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     return AutoExecutionConfig(
         user_id=user_id,
         enabled=False,
@@ -68,7 +68,7 @@ def default_config():
 def enabled_config(default_config):
     """Create enabled configuration with consent."""
     default_config.enabled = True
-    default_config.consent_given_at = datetime.utcnow()
+    default_config.consent_given_at = datetime.now(UTC)
     default_config.consent_ip_address = "192.168.1.1"
     return default_config
 
@@ -118,7 +118,7 @@ def sample_signal():
         confidence_score=87,
         confidence_components=confidence_components,
         validation_chain=validation_chain,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -212,7 +212,7 @@ class TestEnableDisable:
 
         enabled_config = default_config.model_copy()
         enabled_config.enabled = True
-        enabled_config.consent_given_at = datetime.utcnow()
+        enabled_config.consent_given_at = datetime.now(UTC)
         enabled_config.consent_ip_address = consent_ip
         mock_repository.enable.return_value = enabled_config
 
