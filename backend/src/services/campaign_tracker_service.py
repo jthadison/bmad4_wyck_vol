@@ -85,8 +85,8 @@ def calculate_progression(campaign: CampaignModel) -> CampaignProgressionModel:
         for position in campaign.positions:
             pattern = position.pattern_type.upper()
             if pattern in ["SPRING", "SOS", "LPS"] and pattern not in completed_phases:
-                # Only include FILLED or CLOSED positions
-                if position.status in ["FILLED", "CLOSED"]:
+                # Only include OPEN or CLOSED positions (exclude pending)
+                if position.status in ["OPEN", "CLOSED"]:
                     completed_phases.append(pattern)
 
     # Sort by Wyckoff sequence order
@@ -379,7 +379,7 @@ def build_campaign_response(
                 any_stop_hit = True
 
             entry = CampaignEntryDetail(
-                pattern_type=position.entry_pattern,
+                pattern_type=position.pattern_type,
                 signal_id=position.signal_id,
                 entry_price=position.entry_price or Decimal("0"),
                 position_size=position.shares or Decimal("0"),

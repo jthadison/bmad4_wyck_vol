@@ -75,7 +75,7 @@ class TestCampaignProgression:
             entry_price=Decimal("150.00"),
             shares=Decimal("20"),
             stop_loss=Decimal("148.50"),
-            status="FILLED",
+            status="OPEN",
         )
         campaign.positions = [spring_position]
 
@@ -114,7 +114,7 @@ class TestCampaignProgression:
                 entry_price=Decimal("150.00"),
                 shares=Decimal("20"),
                 stop_loss=Decimal("148.50"),
-                status="FILLED",
+                status="OPEN",
             ),
             PositionModel(
                 id=uuid4(),
@@ -127,7 +127,7 @@ class TestCampaignProgression:
                 entry_price=Decimal("155.00"),
                 shares=Decimal("19"),
                 stop_loss=Decimal("152.00"),
-                status="FILLED",
+                status="OPEN",
             ),
             PositionModel(
                 id=uuid4(),
@@ -140,7 +140,7 @@ class TestCampaignProgression:
                 entry_price=Decimal("152.00"),
                 shares=Decimal("26"),
                 stop_loss=Decimal("150.00"),
-                status="FILLED",
+                status="OPEN",
             ),
         ]
         campaign.positions = positions
@@ -267,7 +267,7 @@ class TestEntryPnL:
             entry_price=Decimal("150.00"),
             shares=Decimal("20"),
             stop_loss=Decimal("148.50"),
-            status="FILLED",
+            status="OPEN",
         )
 
         current_price = Decimal("155.00")
@@ -294,7 +294,7 @@ class TestEntryPnL:
             entry_price=Decimal("155.00"),
             shares=Decimal("20"),
             stop_loss=Decimal("152.00"),
-            status="FILLED",
+            status="OPEN",
         )
 
         current_price = Decimal("152.00")
