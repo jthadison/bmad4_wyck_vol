@@ -539,3 +539,147 @@ def clear_signal_store() -> None:
     Used by tests to ensure clean state between test runs.
     """
     _signal_store.clear()
+
+
+# ============================================================================
+# Signal Audit Trail Endpoints (Story 19.11)
+# ============================================================================
+
+
+@router.get(
+    "/history",
+    response_model=dict,
+    summary="Query signal history with filters",
+    description="Query historical signals with filters and pagination for performance analysis",
+)
+async def get_signal_history(
+    start_date: datetime | None = Query(None, description="Filter start date (inclusive)"),
+    end_date: datetime | None = Query(None, description="Filter end date (inclusive)"),
+    symbol: str | None = Query(None, description="Filter by symbol"),
+    pattern_type: str | None = Query(None, description="Filter by pattern type (SPRING, SOS, etc.)"),
+    status: str | None = Query(None, description="Filter by lifecycle state"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
+) -> dict:
+    """
+    Query signal history with filters and pagination (Story 19.11).
+
+    Supports filtering by:
+    - Date range (start_date, end_date)
+    - Symbol (exact match)
+    - Pattern type (SPRING, SOS, LPS, UTAD)
+    - Lifecycle status (generated, pending, approved, executed, closed)
+
+    Returns paginated results with complete audit trail for each signal.
+
+    Example:
+        GET /api/v1/signals/history?symbol=AAPL&status=executed&page=1&page_size=50
+    """
+    from src.database import get_db_session
+    from src.models.signal_audit import SignalHistoryQuery
+    from src.repositories.signal_audit_repository import SignalAuditRepository
+    from src.services.signal_audit_service import SignalAuditService
+
+    try:
+        # Build query
+        query = SignalHistoryQuery(
+            start_date=start_date,
+            end_date=end_date,
+            symbol=symbol,
+            pattern_type=pattern_type,
+            status=status,
+            page=page,
+            page_size=page_size,
+        )
+
+        # Execute query
+        async with get_db_session() as session:
+            repository = SignalAuditRepository(session)
+            service = SignalAuditService(repository)
+            response = await service.query_signal_history(query)
+
+        logger.info(
+            "signal_history_queried",
+            page=page,
+            page_size=page_size,
+            total_items=response.pagination.total_items,
+            filters={
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None,
+                "symbol": symbol,
+                "pattern_type": pattern_type,
+                "status": status,
+            },
+        )
+
+        return response.model_dump()
+
+    except Exception as e:
+        logger.error("signal_history_query_failed", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to query signal history: {str(e)}",
+        )
+
+
+@router.get(
+    "/{signal_id}/audit",
+    response_model=dict,
+    summary="Get detailed audit trail for a signal",
+    description="Retrieve complete lifecycle audit trail for a specific signal",
+)
+async def get_signal_audit_trail(signal_id: UUID) -> dict:
+    """
+    Get detailed audit trail for a specific signal (Story 19.11).
+
+    Returns all state transitions in chronological order with:
+    - Previous and new state
+    - User who triggered transition (if applicable)
+    - Timestamp
+    - Transition reason
+    - Metadata
+
+    Example:
+        GET /api/v1/signals/550e8400-e29b-41d4-a716-446655440000/audit
+    """
+    from src.database import get_db_session
+    from src.models.signal_audit import SignalAuditLog
+    from src.repositories.signal_audit_repository import SignalAuditRepository
+    from src.services.signal_audit_service import SignalAuditService
+
+    try:
+        async with get_db_session() as session:
+            repository = SignalAuditRepository(session)
+            service = SignalAuditService(repository)
+            audit_entries = await service.get_signal_audit_trail(signal_id)
+
+        if not audit_entries:
+            logger.warning("signal_audit_trail_not_found", signal_id=str(signal_id))
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=f"No audit trail found for signal {signal_id}",
+            )
+
+        audit_log = SignalAuditLog(signal_id=signal_id, audit_entries=audit_entries)
+
+        logger.info(
+            "signal_audit_trail_retrieved",
+            signal_id=str(signal_id),
+            entry_count=len(audit_entries),
+        )
+
+        return audit_log.model_dump()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "signal_audit_trail_retrieval_failed",
+            signal_id=str(signal_id),
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve audit trail: {str(e)}",
+        )

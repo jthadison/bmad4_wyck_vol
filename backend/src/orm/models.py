@@ -29,6 +29,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -337,6 +338,11 @@ class Signal(Base):
 
     # Approval chain
     approval_chain: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    # Audit trail fields (Story 19.11)
+    lifecycle_state: Mapped[str] = mapped_column(String(20), nullable=False, server_default="generated")
+    validation_results: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    trade_outcome: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -946,4 +952,75 @@ class SignalApprovalQueueORM(Base):
             "status IN ('pending', 'approved', 'rejected', 'expired')",
             name="chk_signal_queue_status",
         ),
+    )
+
+
+class SignalAuditLogORM(Base):
+    """
+    Signal audit trail entries (Story 19.11).
+
+    Tracks all state transitions for signals throughout their lifecycle.
+    Each entry records a single state change with timestamp, user (if applicable),
+    reason, and metadata.
+
+    Table: signal_audit_log
+    Primary Key: id (UUID)
+    Foreign Keys: signal_id -> signals.id, user_id -> users.id
+    Indexes: idx_signal_audit_signal (signal_id, created_at), idx_signal_audit_time (created_at)
+    """
+
+    __tablename__ = "signal_audit_log"
+
+    # Primary key
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Signal reference
+    signal_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("signals.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # User who triggered transition (nullable for system events)
+    user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # State transition
+    previous_state: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,  # Null for initial "generated" state
+    )
+
+    new_state: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    # Transition details
+    transition_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    # Additional context (JSONB in production, JSON for SQLite test compatibility)
+    # Note: Using "transition_metadata" to avoid conflict with SQLAlchemy's reserved "metadata"
+    transition_metadata: Mapped[dict] = mapped_column(
+        "metadata",  # Actual column name in database
+        JSON,
+        nullable=False,
+        server_default="{}",
+    )
+
+    # Timestamp
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
     )
