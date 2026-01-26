@@ -152,6 +152,7 @@ function confirmRemove(entry: WatchlistEntry) {
             icon="pi pi-trash"
             class="p-button-text p-button-danger remove-button"
             :disabled="store.isSaving"
+            :aria-label="`Remove ${data.symbol} from watchlist`"
             :data-testid="`remove-${data.symbol}`"
             @click="confirmRemove(data)"
           />
@@ -162,7 +163,14 @@ function confirmRemove(entry: WatchlistEntry) {
 </template>
 
 <style scoped>
+/* Color variables following Tailwind slate palette */
 .watchlist-table {
+  --color-bg-primary: var(--slate-900, #0f172a);
+  --color-bg-secondary: var(--slate-800, #1e293b);
+  --color-border: var(--slate-700, #334155);
+  --color-text-primary: var(--slate-100, #f1f5f9);
+  --color-text-secondary: var(--slate-400, #94a3b8);
+  --color-text-muted: var(--slate-500, #64748b);
   width: 100%;
 }
 
@@ -172,14 +180,14 @@ function confirmRemove(entry: WatchlistEntry) {
 }
 
 .watchlist-table :deep(.p-datatable-header) {
-  background: #1e293b;
+  background: var(--color-bg-secondary);
   border: none;
 }
 
 .watchlist-table :deep(.p-datatable-thead > tr > th) {
-  background: #1e293b;
-  color: #94a3b8;
-  border-color: #334155;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
   font-weight: 600;
   font-size: 13px;
   text-transform: uppercase;
@@ -187,23 +195,23 @@ function confirmRemove(entry: WatchlistEntry) {
 }
 
 .watchlist-table :deep(.p-datatable-tbody > tr) {
-  background: #0f172a;
-  border-color: #1e293b;
+  background: var(--color-bg-primary);
+  border-color: var(--color-bg-secondary);
 }
 
 .watchlist-table :deep(.p-datatable-tbody > tr:hover) {
-  background: #1e293b;
+  background: var(--color-bg-secondary);
 }
 
 .watchlist-table :deep(.p-datatable-tbody > tr > td) {
-  border-color: #1e293b;
+  border-color: var(--color-bg-secondary);
   padding: 12px 16px;
 }
 
 .symbol-cell {
   font-family: var(--font-mono, 'SF Mono', Consolas, monospace);
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--color-text-primary);
   font-size: 14px;
 }
 
@@ -238,7 +246,7 @@ function confirmRemove(entry: WatchlistEntry) {
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
-  color: #64748b;
+  color: var(--color-text-muted);
   text-align: center;
 }
 
@@ -251,7 +259,7 @@ function confirmRemove(entry: WatchlistEntry) {
 .empty-state h3 {
   font-size: 18px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   margin: 0 0 8px 0;
 }
 

@@ -111,7 +111,13 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* Color variables following Tailwind palette */
 .symbol-search {
+  --color-primary: var(--blue-500, #3b82f6);
+  --color-text-secondary: var(--slate-400, #94a3b8);
+  --color-text-muted: var(--slate-500, #64748b);
+  --color-warning-bg: var(--amber-100, #fef3c7);
+  --color-warning-text: var(--amber-800, #92400e);
   width: 100%;
 }
 
@@ -135,18 +141,18 @@ onUnmounted(() => {
 .symbol-code {
   font-family: var(--font-mono, 'SF Mono', Consolas, monospace);
   font-weight: 600;
-  color: #3b82f6;
+  color: var(--color-primary);
   min-width: 60px;
 }
 
 .symbol-name {
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
 .empty-message {
   padding: 12px;
-  color: #64748b;
+  color: var(--color-text-muted);
   text-align: center;
 }
 
@@ -156,8 +162,8 @@ onUnmounted(() => {
   gap: 8px;
   margin-top: 8px;
   padding: 8px 12px;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
   border-radius: 6px;
   font-size: 14px;
 }

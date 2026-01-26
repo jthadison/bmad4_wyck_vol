@@ -107,7 +107,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* Color variables following Tailwind slate palette */
 .watchlist-settings {
+  --color-primary: var(--blue-500, #3b82f6);
+  --color-bg-secondary: var(--slate-800, #1e293b);
+  --color-text-primary: var(--slate-100, #f1f5f9);
+  --color-text-secondary: var(--slate-400, #94a3b8);
   padding: 0;
 }
 
@@ -127,13 +132,13 @@ onMounted(async () => {
 .header-left h2 {
   font-size: 20px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .count-badge {
-  background: #1e293b;
-  color: #94a3b8;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
   padding: 4px 12px;
   border-radius: 16px;
   font-size: 13px;
@@ -149,12 +154,12 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
 .saving-indicator i {
-  color: #3b82f6;
+  color: var(--color-primary);
 }
 
 .search-section {

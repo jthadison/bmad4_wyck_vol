@@ -15,6 +15,12 @@ import type {
   SymbolSearchResult,
 } from '@/types'
 
+// Structured logging helper
+const LOG_PREFIX = '[WatchlistStore]'
+function logError(action: string, err: unknown): void {
+  console.error(`${LOG_PREFIX} ${action} failed:`, err)
+}
+
 export const useWatchlistStore = defineStore('watchlist', () => {
   // State
   const symbols = ref<WatchlistEntry[]>([])
@@ -51,7 +57,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       maxAllowed.value = response.max_allowed
     } catch (err) {
       error.value = 'Failed to fetch watchlist'
-      console.error('fetchWatchlist error:', err)
+      logError('fetchWatchlist', err)
     } finally {
       isLoading.value = false
     }
@@ -96,7 +102,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       // Rollback optimistic update
       symbols.value = symbols.value.filter((s) => s.symbol !== request.symbol)
       error.value = `Failed to add ${request.symbol}`
-      console.error('addSymbol error:', err)
+      logError('addSymbol', err)
       return false
     } finally {
       isSaving.value = false
@@ -124,7 +130,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       // Rollback optimistic update by restoring the snapshot
       symbols.value = previousSymbols
       error.value = `Failed to remove ${symbol}`
-      console.error('removeSymbol error:', err)
+      logError('removeSymbol', err)
       return false
     } finally {
       isSaving.value = false
@@ -160,7 +166,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       // Rollback optimistic update
       symbols.value[index] = originalEntry
       error.value = `Failed to update ${symbol}`
-      console.error('updateSymbol error:', err)
+      logError('updateSymbol', err)
       return false
     } finally {
       isSaving.value = false
@@ -192,7 +198,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       // Filter out symbols already in watchlist
       searchResults.value = results.filter((r) => !hasSymbol(r.symbol))
     } catch (err) {
-      console.error('searchSymbols error:', err)
+      logError('searchSymbols', err)
       searchResults.value = []
     } finally {
       isSearching.value = false
