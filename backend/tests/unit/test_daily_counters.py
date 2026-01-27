@@ -16,9 +16,35 @@ from src.services.daily_counters import DailyCounters, _seconds_until_midnight, 
 
 
 @pytest.fixture
-def mock_redis():
-    """Create a mock Redis client."""
-    return AsyncMock()
+def mock_pipeline():
+    """Create a mock Redis pipeline."""
+    pipeline = AsyncMock()
+    pipeline.incr = AsyncMock()
+    pipeline.expire = AsyncMock()
+    pipeline.incrbyfloat = AsyncMock()
+    pipeline.decr = AsyncMock()
+    pipeline.execute = AsyncMock(return_value=[1, True])
+    return pipeline
+
+
+@pytest.fixture
+def mock_redis(mock_pipeline):
+    """Create a mock Redis client with pipeline support."""
+    from unittest.mock import MagicMock
+
+    redis = AsyncMock()
+
+    # Create async context manager for pipeline
+    class MockPipelineContext:
+        async def __aenter__(self):
+            return mock_pipeline
+
+        async def __aexit__(self, *args):
+            return None
+
+    # Make pipeline a regular MagicMock (not async) that returns our context manager
+    redis.pipeline = MagicMock(return_value=MockPipelineContext())
+    return redis
 
 
 @pytest.fixture
@@ -88,37 +114,42 @@ class TestIncrementTrades:
     """Tests for increment_trades method."""
 
     @pytest.mark.asyncio
-    async def test_increment_trades_returns_new_count(self, counters, mock_redis, user_id):
+    async def test_increment_trades_returns_new_count(
+        self, counters, mock_redis, mock_pipeline, user_id
+    ):
         """Test increments and returns new count."""
-        mock_redis.incr.return_value = 3
+        mock_pipeline.execute.return_value = [3, True]  # [incr result, expire result]
 
         result = await counters.increment_trades(user_id)
 
         assert result == 3
 
     @pytest.mark.asyncio
-    async def test_increment_trades_sets_expiry(self, counters, mock_redis, user_id):
-        """Test sets expiry for midnight."""
-        mock_redis.incr.return_value = 1
+    async def test_increment_trades_sets_expiry(self, counters, mock_redis, mock_pipeline, user_id):
+        """Test sets expiry for midnight via pipeline."""
+        mock_pipeline.execute.return_value = [1, True]
 
         await counters.increment_trades(user_id)
 
-        mock_redis.expire.assert_called_once()
+        # Verify pipeline expire was called
+        mock_pipeline.expire.assert_called_once()
         # Check that TTL is set to some positive value
-        call_args = mock_redis.expire.call_args
-        ttl = call_args[0][1]
+        call_args = mock_pipeline.expire.call_args[0]
+        ttl = call_args[1]
         assert ttl > 0
         assert ttl <= 86400
 
     @pytest.mark.asyncio
-    async def test_increment_trades_uses_correct_key(self, counters, mock_redis, user_id):
+    async def test_increment_trades_uses_correct_key(
+        self, counters, mock_redis, mock_pipeline, user_id
+    ):
         """Test uses correct Redis key format."""
-        mock_redis.incr.return_value = 1
+        mock_pipeline.execute.return_value = [1, True]
 
         await counters.increment_trades(user_id)
 
-        call_args = mock_redis.incr.call_args[0][0]
-        assert f"auto_exec:trades:{user_id}" in call_args
+        call_args = mock_pipeline.incr.call_args[0][0]
+        assert f"auto_exec:v1:trades:{user_id}" in call_args
 
 
 class TestGetRiskToday:
@@ -167,32 +198,32 @@ class TestAddRisk:
     """Tests for add_risk method."""
 
     @pytest.mark.asyncio
-    async def test_add_risk_returns_new_total(self, counters, mock_redis, user_id):
+    async def test_add_risk_returns_new_total(self, counters, mock_redis, mock_pipeline, user_id):
         """Test adds risk and returns new total."""
-        mock_redis.incrbyfloat.return_value = 3.5
+        mock_pipeline.execute.return_value = [3.5, True]  # [incrbyfloat result, expire result]
 
         result = await counters.add_risk(user_id, Decimal("1.5"))
 
         assert result == Decimal("3.5")
 
     @pytest.mark.asyncio
-    async def test_add_risk_sets_expiry(self, counters, mock_redis, user_id):
-        """Test sets expiry for midnight."""
-        mock_redis.incrbyfloat.return_value = 1.5
+    async def test_add_risk_sets_expiry(self, counters, mock_redis, mock_pipeline, user_id):
+        """Test sets expiry for midnight via pipeline."""
+        mock_pipeline.execute.return_value = [1.5, True]
 
         await counters.add_risk(user_id, Decimal("1.5"))
 
-        mock_redis.expire.assert_called_once()
+        mock_pipeline.expire.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_add_risk_uses_correct_key(self, counters, mock_redis, user_id):
+    async def test_add_risk_uses_correct_key(self, counters, mock_redis, mock_pipeline, user_id):
         """Test uses correct Redis key format."""
-        mock_redis.incrbyfloat.return_value = 1.5
+        mock_pipeline.execute.return_value = [1.5, True]
 
         await counters.add_risk(user_id, Decimal("1.5"))
 
-        call_args = mock_redis.incrbyfloat.call_args[0][0]
-        assert f"auto_exec:risk:{user_id}" in call_args
+        call_args = mock_pipeline.incrbyfloat.call_args[0][0]
+        assert f"auto_exec:v1:risk:{user_id}" in call_args
 
 
 class TestGetSnapshot:

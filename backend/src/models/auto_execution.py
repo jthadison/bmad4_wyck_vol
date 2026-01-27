@@ -17,15 +17,16 @@ from pydantic import BaseModel, ConfigDict, Field
 class AutoExecutionBypassReason(str, Enum):
     """Reasons why a signal was routed to manual approval queue."""
 
-    DISABLED = "Auto-execution disabled"
-    KILL_SWITCH = "Kill switch active"
-    NO_CONSENT = "Consent not given"
+    DISABLED = "disabled"
+    KILL_SWITCH = "kill_switch_active"
+    NO_CONSENT = "consent_not_given"
     CONFIDENCE_TOO_LOW = "confidence_too_low"
     PATTERN_NOT_ENABLED = "pattern_not_enabled"
     SYMBOL_NOT_IN_WHITELIST = "symbol_not_in_whitelist"
     SYMBOL_BLACKLISTED = "symbol_blacklisted"
     DAILY_TRADE_LIMIT = "daily_trade_limit_reached"
     DAILY_RISK_LIMIT = "daily_risk_limit_exceeded"
+    CIRCUIT_BREAKER = "circuit_breaker_triggered"
 
 
 class CheckResult(BaseModel):

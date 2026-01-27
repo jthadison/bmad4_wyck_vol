@@ -47,6 +47,10 @@ def _seconds_until_midnight() -> int:
     return int((midnight - now).total_seconds())
 
 
+# Key version prefix for future-proofing
+KEY_VERSION = "v1"
+
+
 class DailyCounters:
     """
     Redis-based daily counters for auto-execution limits.
@@ -54,8 +58,8 @@ class DailyCounters:
     Keys expire at midnight UTC to auto-reset daily counters.
 
     Key patterns:
-    - auto_exec:trades:{user_id}:{date} - Trade count
-    - auto_exec:risk:{user_id}:{date} - Risk percentage (stored as string)
+    - auto_exec:v1:trades:{user_id}:{date} - Trade count
+    - auto_exec:v1:risk:{user_id}:{date} - Risk percentage (stored as string)
     """
 
     def __init__(self, redis: Redis):
@@ -69,11 +73,11 @@ class DailyCounters:
 
     def _trade_key(self, user_id: UUID) -> str:
         """Generate Redis key for trade count."""
-        return f"auto_exec:trades:{user_id}:{_today_str()}"
+        return f"auto_exec:{KEY_VERSION}:trades:{user_id}:{_today_str()}"
 
     def _risk_key(self, user_id: UUID) -> str:
         """Generate Redis key for risk total."""
-        return f"auto_exec:risk:{user_id}:{_today_str()}"
+        return f"auto_exec:{KEY_VERSION}:risk:{user_id}:{_today_str()}"
 
     async def get_trades_today(self, user_id: UUID) -> int:
         """
@@ -97,6 +101,7 @@ class DailyCounters:
         """
         Increment daily trade counter.
 
+        Uses pipeline for atomic increment + expiry.
         Sets expiry to midnight UTC for automatic reset.
 
         Args:
@@ -106,11 +111,14 @@ class DailyCounters:
             New trade count after increment
         """
         key = self._trade_key(user_id)
+        ttl = _seconds_until_midnight()
         try:
-            count = await self.redis.incr(key)
-            # Set expiry for midnight UTC
-            ttl = _seconds_until_midnight()
-            await self.redis.expire(key, ttl)
+            # Use pipeline for atomic increment + expiry
+            async with self.redis.pipeline() as pipe:
+                pipe.incr(key)
+                pipe.expire(key, ttl)
+                results = await pipe.execute()
+            count = results[0]
 
             logger.debug(
                 "daily_trades_incremented",
@@ -149,7 +157,7 @@ class DailyCounters:
         """
         Add risk percentage to daily total.
 
-        Uses INCRBYFLOAT for atomic addition.
+        Uses pipeline for atomic INCRBYFLOAT + expiry.
         Sets expiry to midnight UTC for automatic reset.
 
         Args:
@@ -160,12 +168,14 @@ class DailyCounters:
             New total risk after addition
         """
         key = self._risk_key(user_id)
+        ttl = _seconds_until_midnight()
         try:
-            # INCRBYFLOAT handles atomic add
-            new_total = await self.redis.incrbyfloat(key, float(risk_pct))
-            # Set expiry for midnight UTC
-            ttl = _seconds_until_midnight()
-            await self.redis.expire(key, ttl)
+            # Use pipeline for atomic increment + expiry
+            async with self.redis.pipeline() as pipe:
+                pipe.incrbyfloat(key, float(risk_pct))
+                pipe.expire(key, ttl)
+                results = await pipe.execute()
+            new_total = results[0]
 
             logger.debug(
                 "daily_risk_added",
@@ -253,3 +263,97 @@ class DailyCounters:
                 return False, reason
 
         return True, None
+
+    async def reserve_execution(
+        self,
+        user_id: UUID,
+        max_trades: int,
+        max_risk: Optional[Decimal],
+        signal_risk: Decimal,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Atomically reserve execution slot by incrementing counters first.
+
+        This prevents race conditions by incrementing counters BEFORE execution.
+        If execution fails, call rollback_execution() to undo the reservation.
+
+        Args:
+            user_id: User UUID
+            max_trades: Maximum trades per day limit
+            max_risk: Maximum risk per day limit (None = unlimited)
+            signal_risk: Risk percentage for the pending signal
+
+        Returns:
+            Tuple of (success: bool, reason: str | None)
+        """
+        trade_key = self._trade_key(user_id)
+        risk_key = self._risk_key(user_id)
+        ttl = _seconds_until_midnight()
+
+        try:
+            # Atomically increment both counters
+            async with self.redis.pipeline() as pipe:
+                pipe.incr(trade_key)
+                pipe.expire(trade_key, ttl)
+                pipe.incrbyfloat(risk_key, float(signal_risk))
+                pipe.expire(risk_key, ttl)
+                results = await pipe.execute()
+
+            new_trade_count = results[0]
+            new_risk_total = Decimal(str(results[2]))
+
+            # Check if we exceeded limits after incrementing
+            if new_trade_count > max_trades:
+                # Rollback trade count
+                await self.redis.decr(trade_key)
+                reason = f"Daily trade limit reached ({new_trade_count - 1}/{max_trades})"
+                return False, reason
+
+            if max_risk is not None and new_risk_total > max_risk:
+                # Rollback both counters
+                await self.rollback_execution(user_id, signal_risk)
+                old_risk = new_risk_total - signal_risk
+                reason = f"Daily risk limit exceeded ({old_risk}% + {signal_risk}% > {max_risk}%)"
+                return False, reason
+
+            logger.debug(
+                "execution_reserved",
+                user_id=str(user_id),
+                trades=new_trade_count,
+                risk=float(new_risk_total),
+            )
+            return True, None
+
+        except RedisError as e:
+            logger.error("reserve_execution_failed", user_id=str(user_id), error=str(e))
+            return False, "Failed to reserve execution slot"
+
+    async def rollback_execution(self, user_id: UUID, signal_risk: Decimal) -> bool:
+        """
+        Rollback a reserved execution slot if execution fails.
+
+        Args:
+            user_id: User UUID
+            signal_risk: Risk percentage to subtract
+
+        Returns:
+            True if rollback successful
+        """
+        trade_key = self._trade_key(user_id)
+        risk_key = self._risk_key(user_id)
+
+        try:
+            async with self.redis.pipeline() as pipe:
+                pipe.decr(trade_key)
+                pipe.incrbyfloat(risk_key, -float(signal_risk))
+                await pipe.execute()
+
+            logger.debug(
+                "execution_rolled_back",
+                user_id=str(user_id),
+                risk_removed=float(signal_risk),
+            )
+            return True
+        except RedisError as e:
+            logger.error("rollback_execution_failed", user_id=str(user_id), error=str(e))
+            return False

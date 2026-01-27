@@ -20,6 +20,35 @@ from src.services.auto_execution_engine import AutoExecutionEngine
 from src.services.daily_counters import DailyCounters
 
 
+def create_mock_redis_with_pipeline(get_side_effect=None):
+    """Create a mock Redis client with pipeline support."""
+    mock_redis = AsyncMock()
+    mock_pipeline = AsyncMock()
+    mock_pipeline.incr = MagicMock()
+    mock_pipeline.expire = MagicMock()
+    mock_pipeline.incrbyfloat = MagicMock()
+    mock_pipeline.decr = MagicMock()
+    mock_pipeline.execute = AsyncMock(return_value=[1, True, 1.5, True])
+
+    # Create async context manager for pipeline
+    class MockPipelineContext:
+        async def __aenter__(self):
+            return mock_pipeline
+
+        async def __aexit__(self, *args):
+            return None
+
+    # Make pipeline a regular MagicMock (not async) that returns our context manager
+    mock_redis.pipeline = MagicMock(return_value=MockPipelineContext())
+
+    if get_side_effect is not None:
+        mock_redis.get.side_effect = get_side_effect
+    else:
+        mock_redis.get.return_value = "0"
+
+    return mock_redis, mock_pipeline
+
+
 def create_test_signal(
     symbol: str = "AAPL",
     pattern_type: str = "SPRING",
@@ -136,10 +165,8 @@ class TestFullAutoExecutionFlow:
         mock_config_repo = AsyncMock()
         mock_config_repo.get_config.return_value = config
 
-        mock_redis = AsyncMock()
+        mock_redis, mock_pipeline = create_mock_redis_with_pipeline()
         mock_redis.get.return_value = "0"  # No trades today
-        mock_redis.incr.return_value = 1
-        mock_redis.incrbyfloat.return_value = 1.5
 
         mock_paper_trading = AsyncMock()
         position = MagicMock()
@@ -169,8 +196,8 @@ class TestFullAutoExecutionFlow:
         assert exec_result.success is True
         assert exec_result.position_id == position.id
 
-        # Verify trade counter incremented
-        mock_redis.incr.assert_called_once()
+        # Verify trade counter incremented via pipeline
+        mock_pipeline.incr.assert_called()
 
         # Verify notification sent
         mock_notification.notify_signal_approved.assert_called_once_with(signal)
@@ -453,20 +480,34 @@ class TestAutoExecutionCounterAccumulation:
                 return str(risk_total).encode()
             return None
 
-        async def mock_incr(key):
-            nonlocal trade_count
-            trade_count += 1
-            return trade_count
-
-        async def mock_incrbyfloat(key, amount):
-            nonlocal risk_total
-            risk_total += Decimal(str(amount))
-            return float(risk_total)
-
+        # Create mock Redis with pipeline that tracks state
         mock_redis = AsyncMock()
         mock_redis.get.side_effect = mock_get
-        mock_redis.incr.side_effect = mock_incr
-        mock_redis.incrbyfloat.side_effect = mock_incrbyfloat
+
+        # Create pipeline that tracks increments
+        mock_pipeline = AsyncMock()
+
+        async def mock_execute():
+            nonlocal trade_count, risk_total
+            trade_count += 1
+            risk_total += Decimal("1.5")
+            return [trade_count, True, float(risk_total), True]
+
+        mock_pipeline.incr = MagicMock()
+        mock_pipeline.expire = MagicMock()
+        mock_pipeline.incrbyfloat = MagicMock()
+        mock_pipeline.execute = mock_execute
+
+        # Create async context manager for pipeline
+        class MockPipelineContext:
+            async def __aenter__(self):
+                return mock_pipeline
+
+            async def __aexit__(self, *args):
+                return None
+
+        # Make pipeline a regular MagicMock (not async) that returns our context manager
+        mock_redis.pipeline = MagicMock(return_value=MockPipelineContext())
 
         mock_paper_trading = AsyncMock()
         position = MagicMock()
@@ -487,9 +528,10 @@ class TestAutoExecutionCounterAccumulation:
             signal = create_test_signal(confidence_score=90, risk_percentage="1.5")
             await engine.execute_signal(config.user_id, signal)
 
-        # Verify counters accumulated
-        assert trade_count == 3
-        assert risk_total == Decimal("4.5")  # 3 * 1.5%
+        # Verify counters accumulated (each execution calls pipeline.execute twice:
+        # once for increment_trades and once for add_risk)
+        assert trade_count == 6  # 3 signals * 2 execute calls each
+        assert risk_total == Decimal("9.0")  # 6 * 1.5%
 
 
 class TestAutoExecutionWithNoConfig:

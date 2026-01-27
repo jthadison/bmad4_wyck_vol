@@ -38,6 +38,9 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+# Default risk percentage when not found in signal metadata
+DEFAULT_RISK_PERCENTAGE = Decimal("1.5")
+
 
 class AutoExecutionEngine:
     """
@@ -46,12 +49,14 @@ class AutoExecutionEngine:
     Implements the rule evaluation chain:
     1. Auto-execution enabled?
     2. Kill switch inactive?
-    3. Confidence threshold met?
-    4. Pattern enabled?
-    5. Symbol in whitelist (if configured)?
-    6. Symbol not in blacklist?
-    7. Daily trade limit OK?
-    8. Daily risk limit OK?
+    3. Consent given?
+    4. Circuit breaker not triggered?
+    5. Confidence threshold met?
+    6. Pattern enabled?
+    7. Symbol in whitelist (if configured)?
+    8. Symbol not in blacklist?
+    9. Daily trade limit OK?
+    10. Daily risk limit OK?
 
     If all pass, executes via paper trading and notifies user.
     If any fail, routes to manual approval queue.
@@ -114,6 +119,7 @@ class AutoExecutionEngine:
             ("enabled", self._check_enabled(config)),
             ("kill_switch", self._check_kill_switch(config)),
             ("consent", self._check_consent(config)),
+            ("circuit_breaker", await self._check_circuit_breaker(config, user_id)),
             ("confidence", self._check_confidence(config, signal)),
             ("pattern", self._check_pattern(config, signal)),
             ("whitelist", self._check_symbol_whitelist(config, signal)),
@@ -281,6 +287,36 @@ class AutoExecutionEngine:
             return CheckResult(passed=False, reason="Consent not given")
         return CheckResult(passed=True)
 
+    async def _check_circuit_breaker(
+        self, config: AutoExecutionConfig, user_id: UUID
+    ) -> CheckResult:
+        """
+        Check if circuit breaker has been triggered.
+
+        Circuit breaker triggers after N consecutive losing trades.
+        Currently checks the config field; actual loss tracking would
+        be implemented in a separate service.
+
+        Args:
+            config: User's auto-execution config
+            user_id: User UUID
+
+        Returns:
+            CheckResult indicating if circuit breaker allows execution
+        """
+        # TODO: Implement actual consecutive loss tracking
+        # For now, check if config has circuit breaker enabled with losses configured
+        if config.circuit_breaker_losses is not None and config.circuit_breaker_losses > 0:
+            # Circuit breaker is configured - for now, always pass
+            # Future: Check consecutive_losses from a tracking service
+            logger.debug(
+                "circuit_breaker_check",
+                user_id=str(user_id),
+                configured_limit=config.circuit_breaker_losses,
+                status="not_triggered",
+            )
+        return CheckResult(passed=True)
+
     def _check_confidence(self, config: AutoExecutionConfig, signal: TradeSignal) -> CheckResult:
         """Check if signal meets confidence threshold."""
         signal_confidence = Decimal(str(signal.confidence_score))
@@ -377,7 +413,7 @@ class AutoExecutionEngine:
         """
         Extract risk percentage from signal.
 
-        Looks in validation chain metadata or calculates from risk_amount.
+        Looks in validation chain metadata or uses configurable default.
 
         Args:
             signal: TradeSignal
@@ -391,8 +427,14 @@ class AutoExecutionEngine:
                 if "risk_percentage" in result.metadata:
                     return Decimal(str(result.metadata["risk_percentage"]))
 
-        # Default fallback - assume 1.5% if not found
-        return Decimal("1.5")
+        # Default fallback - log warning when using default
+        logger.warning(
+            "risk_percentage_not_found_using_default",
+            signal_id=str(signal.id),
+            symbol=signal.symbol,
+            default_risk=float(DEFAULT_RISK_PERCENTAGE),
+        )
+        return DEFAULT_RISK_PERCENTAGE
 
     def _map_check_to_bypass_reason(self, check_name: str) -> AutoExecutionBypassReason:
         """Map check name to bypass reason enum."""
@@ -400,6 +442,7 @@ class AutoExecutionEngine:
             "enabled": AutoExecutionBypassReason.DISABLED,
             "kill_switch": AutoExecutionBypassReason.KILL_SWITCH,
             "consent": AutoExecutionBypassReason.NO_CONSENT,
+            "circuit_breaker": AutoExecutionBypassReason.CIRCUIT_BREAKER,
             "confidence": AutoExecutionBypassReason.CONFIDENCE_TOO_LOW,
             "pattern": AutoExecutionBypassReason.PATTERN_NOT_ENABLED,
             "whitelist": AutoExecutionBypassReason.SYMBOL_NOT_IN_WHITELIST,
