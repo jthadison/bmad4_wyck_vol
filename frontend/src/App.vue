@@ -47,6 +47,10 @@
               </router-link>
             </div>
           </div>
+          <!-- Kill Switch Button (Story 19.22) -->
+          <div class="flex items-center">
+            <KillSwitchButton />
+          </div>
         </div>
       </div>
     </nav>
@@ -64,10 +68,12 @@
  *
  * Story 10.9: WebSocket Integration
  * Story 19.8: Frontend Signal Toast Notifications
+ * Story 19.22: Emergency Kill Switch
  */
 import { onMounted, onUnmounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Toast from 'primevue/toast'
+import KillSwitchButton from '@/components/layout/KillSwitchButton.vue'
 import { websocketService } from '@/services/websocketService'
 import { signalToastService } from '@/services/SignalToastService'
 import type { SignalNewMessage, WebSocketMessage } from '@/types/websocket'

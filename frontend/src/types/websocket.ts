@@ -137,6 +137,28 @@ export interface BatchUpdateMessage extends WebSocketMessageBase {
 }
 
 /**
+ * Kill switch activated message (Story 19.22).
+ * Sent when user activates the emergency kill switch.
+ */
+export interface KillSwitchActivatedMessage extends WebSocketMessageBase {
+  type: 'kill_switch_activated'
+  message: string
+  activated_at: string
+  user_id: string
+}
+
+/**
+ * Kill switch deactivated message (Story 19.22).
+ * Sent when user deactivates the emergency kill switch.
+ */
+export interface KillSwitchDeactivatedMessage extends WebSocketMessageBase {
+  type: 'kill_switch_deactivated'
+  message: string
+  deactivated_at: string
+  user_id: string
+}
+
+/**
  * Union type of all WebSocket messages.
  * Includes core messages, paper trading messages (Story 12.8), and backtest messages (Story 11.2).
  */
@@ -154,6 +176,8 @@ export type WebSocketMessage =
   | PaperTradeClosedMessage
   | BacktestProgressUpdate
   | BacktestCompletedMessage
+  | KillSwitchActivatedMessage
+  | KillSwitchDeactivatedMessage
 
 /**
  * WebSocket connection status.
@@ -196,6 +220,8 @@ export const WebSocketEventTypes = {
   PAPER_TRADE_CLOSED: 'paper_trade_closed',
   BACKTEST_PROGRESS: 'backtest_progress',
   BACKTEST_COMPLETED: 'backtest_completed',
+  KILL_SWITCH_ACTIVATED: 'kill_switch_activated',
+  KILL_SWITCH_DEACTIVATED: 'kill_switch_deactivated',
 } as const
 
 export type WebSocketEventType =
@@ -282,4 +308,16 @@ export function isBacktestCompletedMessage(
   msg: WebSocketMessage
 ): msg is BacktestCompletedMessage {
   return msg.type === 'backtest_completed'
+}
+
+export function isKillSwitchActivatedMessage(
+  msg: WebSocketMessage
+): msg is KillSwitchActivatedMessage {
+  return msg.type === 'kill_switch_activated'
+}
+
+export function isKillSwitchDeactivatedMessage(
+  msg: WebSocketMessage
+): msg is KillSwitchDeactivatedMessage {
+  return msg.type === 'kill_switch_deactivated'
 }
