@@ -11,10 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-# Skip entire module - impact analysis returns different messages than expected
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/238
-pytestmark = pytest.mark.skip(reason="Issue #238: Impact analysis message mismatches")
-
+# Issue #238: Fixed message mismatches
 from src.models.config import (
     CauseFactors,
     PatternConfidence,
@@ -202,7 +199,7 @@ class TestImpactAnalysis:
         impact_service._fetch_historical_patterns = AsyncMock(return_value=sample_patterns)
 
         # Create proposed config with relaxed spring volume
-        proposed_config = current_config.model_copy()
+        proposed_config = current_config.model_copy(deep=True)
         proposed_config.volume_thresholds.spring_volume_min = Decimal("0.5")  # Lowered from 0.7
 
         result = await impact_service.analyze_config_impact(current_config, proposed_config)
@@ -220,7 +217,7 @@ class TestImpactAnalysis:
         impact_service._fetch_historical_patterns = AsyncMock(return_value=sample_patterns)
 
         # Create proposed config with higher confidence threshold
-        proposed_config = current_config.model_copy()
+        proposed_config = current_config.model_copy(deep=True)
         proposed_config.pattern_confidence.min_spring_confidence = 80  # Raised from 70
 
         result = await impact_service.analyze_config_impact(current_config, proposed_config)
@@ -235,7 +232,7 @@ class TestImpactAnalysis:
         impact_service._fetch_historical_patterns = AsyncMock(return_value=sample_patterns)
 
         # Create proposed config with increased risk
-        proposed_config = current_config.model_copy()
+        proposed_config = current_config.model_copy(deep=True)
         proposed_config.risk_limits.max_risk_per_trade = Decimal("2.5")
 
         result = await impact_service.analyze_config_impact(current_config, proposed_config)
@@ -279,7 +276,7 @@ class TestImpactAnalysis:
         impact_service._fetch_historical_patterns = AsyncMock(return_value=sample_patterns)
 
         # Create proposed config with relaxed spring volume
-        proposed_config = current_config.model_copy()
+        proposed_config = current_config.model_copy(deep=True)
         proposed_config.volume_thresholds.spring_volume_min = Decimal("0.5")
 
         result = await impact_service.analyze_config_impact(current_config, proposed_config)
