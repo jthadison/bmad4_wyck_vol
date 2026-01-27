@@ -36,7 +36,7 @@ def create_mock_pattern(
     test_confirmed=False,
     confidence_score=0.85,
     pattern_bar_timestamp=None,
-):
+) -> SimpleNamespace:
     """Create a mock pattern object with proper attribute access."""
     return SimpleNamespace(
         id=pattern_id or uuid4(),
@@ -47,7 +47,7 @@ def create_mock_pattern(
     )
 
 
-def create_mock_volume_analysis(volume_ratio=Decimal("0.45")):
+def create_mock_volume_analysis(volume_ratio=Decimal("0.45")) -> SimpleNamespace:
     """Create a mock volume analysis object with proper attribute access."""
     return SimpleNamespace(
         volume_ratio=volume_ratio,
@@ -166,7 +166,7 @@ class TestPhaseValidator:
         )
         result = await validator.validate(context)
         assert result.status == ValidationStatus.FAIL
-        assert "Phase information not available" in result.reason
+        assert result.reason.startswith("Phase information not available")
 
 
 class TestLevelValidator:
@@ -187,7 +187,7 @@ class TestLevelValidator:
         This test requires many complex domain models (Creek, Ice, Jump, TouchDetail).
         Skipping in favor of dedicated test file.
         """
-        pytest.skip("Complex domain model setup - full tests in test_level_validator.py")
+        pytest.skip("Skipped: requires complex domain models (see test_level_validator.py)")
 
     @pytest.mark.asyncio
     async def test_level_validator_returns_fail_without_trading_range(self):
@@ -205,7 +205,7 @@ class TestLevelValidator:
         )
         result = await validator.validate(context)
         assert result.status == ValidationStatus.FAIL
-        assert "Trading range" in result.reason
+        assert result.reason.startswith("Trading range")
 
 
 class TestRiskValidator:
@@ -226,7 +226,7 @@ class TestRiskValidator:
         This test requires PortfolioContext with CorrelationConfig and entry/stop/target.
         Skipping in favor of dedicated test file.
         """
-        pytest.skip("Complex domain model setup - full tests in test_risk_validator.py")
+        pytest.skip("Skipped: requires complex domain models (see test_risk_validator.py)")
 
     @pytest.mark.asyncio
     async def test_risk_validator_returns_fail_without_portfolio_context(self):
@@ -244,7 +244,7 @@ class TestRiskValidator:
         )
         result = await validator.validate(context)
         assert result.status == ValidationStatus.FAIL
-        assert "Portfolio context not available" in result.reason
+        assert result.reason.startswith("Portfolio context not available")
 
 
 class TestStrategyValidator:
@@ -264,7 +264,7 @@ class TestStrategyValidator:
 
         NOTE: Full tests in test_strategy_validator.py - this is basic smoke test.
         """
-        pytest.skip("Skipping stub test - full implementation tested in test_strategy_validator.py")
+        pytest.skip("Skipped: requires complex domain models (see test_strategy_validator.py)")
 
     @pytest.mark.asyncio
     async def test_strategy_validator_returns_fail_without_market_context(self):
@@ -283,4 +283,4 @@ class TestStrategyValidator:
         )
         result = await validator.validate(context)
         assert result.status == ValidationStatus.FAIL
-        assert "Market context not available" in result.reason
+        assert result.reason.startswith("Market context not available")
