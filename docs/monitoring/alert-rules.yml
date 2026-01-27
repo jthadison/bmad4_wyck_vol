@@ -38,7 +38,9 @@ groups:
 
       # Alert when signal rejection rate exceeds 90% for 30 minutes
       - alert: HighRejectionRate
-        expr: rate(signals_rejected_total[1h]) / rate(signals_generated_total[1h]) > 0.9
+        expr: |
+          (rate(signals_rejected_total[1h]) / rate(signals_generated_total[1h])) > 0.9
+          and rate(signals_generated_total[1h]) > 0
         for: 30m
         labels:
           severity: warning
@@ -130,17 +132,17 @@ groups:
             - Market data feed disconnection
             Verify watchlist configuration and scanner status.
 
-      # Alert for sustained high pattern detection rate (potential spam)
-      - alert: AbnormallyHighPatternDetectionRate
-        expr: rate(pattern_detections_total[5m]) > 10
+      # Alert for sustained high signal generation rate (potential spam)
+      - alert: AbnormallyHighSignalGenerationRate
+        expr: sum(rate(signals_generated_total[5m])) > 10
         for: 15m
         labels:
           severity: info
           component: scanner
         annotations:
-          summary: "Unusually high pattern detection rate"
+          summary: "Unusually high signal generation rate"
           description: |
-            Pattern detection rate is {{ $value }} patterns/sec over 5 minutes.
+            Signal generation rate is {{ $value }} signals/sec over 5 minutes.
             This is higher than normal and may indicate:
             - Highly volatile market conditions (normal)
             - Pattern detection logic generating false positives

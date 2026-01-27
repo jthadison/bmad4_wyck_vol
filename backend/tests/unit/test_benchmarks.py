@@ -151,13 +151,13 @@ class TestPrometheusMetricsExport:
 
     def test_metrics_endpoint_returns_text_format(self, test_client):
         """Metrics endpoint should return Prometheus text format."""
-        response = test_client.get("/api/v1/metrics")
+        response = test_client.get("/metrics")
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/plain")
 
     def test_metrics_endpoint_accessible(self, test_client):
         """Metrics endpoint should be accessible and return valid Prometheus format."""
-        response = test_client.get("/api/v1/metrics")
+        response = test_client.get("/metrics")
         content = response.text
 
         # Verify response is not empty and contains Prometheus format markers

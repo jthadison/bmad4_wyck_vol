@@ -419,24 +419,3 @@ async def detailed_health_check() -> dict[str, object]:
         health_status["status"] = "degraded"
 
     return health_status
-
-
-@app.get("/api/v1/metrics")
-async def metrics() -> str:
-    """
-    Prometheus metrics endpoint (Story 12.9 Task 11 Subtask 11.7).
-
-    Exports performance metrics in Prometheus text format for monitoring:
-    - Signal generation latency
-    - Backtest execution duration
-    - Database query performance
-    - Pattern detection rates
-
-    Returns:
-        Prometheus-formatted metrics text (application/openmetrics-text)
-    """
-    from fastapi import Response
-    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-
-    metrics_output = generate_latest()
-    return Response(content=metrics_output, media_type=CONTENT_TYPE_LATEST)
