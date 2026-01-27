@@ -19,24 +19,21 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-
-# Skip entire module - async fixtures not being awaited properly
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/244
-pytestmark = pytest.mark.skip(reason="Issue #244: async fixtures not awaited properly")
 
 from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
 from src.models.campaign import SequencePerformance
 from src.repositories.models import CampaignMetricsModel, CampaignModel, PositionModel
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def analyzer(db_session: AsyncSession) -> CampaignSuccessAnalyzer:
     """Create analyzer instance."""
     return CampaignSuccessAnalyzer(db_session)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def sample_campaigns_100(db_session: AsyncSession) -> list[CampaignMetricsModel]:
     """
     Create 100+ sample campaigns with various pattern sequences.
