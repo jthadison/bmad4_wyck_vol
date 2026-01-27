@@ -314,3 +314,16 @@ export type {
   KillSwitchActivationResponse,
   PatternOption,
 } from './auto-execution'
+
+// ============================================================================
+// Watchlist Management Types (Story 19.13)
+// ============================================================================
+
+export type {
+  WatchlistPriority,
+  WatchlistEntry,
+  WatchlistResponse,
+  AddSymbolRequest,
+  UpdateSymbolRequest,
+  SymbolSearchResult,
+} from './watchlist'

@@ -9,10 +9,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-# Skip entire module - config service returns None instead of expected user
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/237
-pytestmark = pytest.mark.skip(reason="Issue #237: Config service return value mismatches")
-
 from src.models.config import (
     CauseFactors,
     PatternConfidence,
@@ -112,9 +108,10 @@ class TestConfigurationUpdate:
     @pytest.mark.asyncio
     async def test_update_configuration_success(self, config_service, valid_config):
         """Test successful configuration update."""
-        # Mock repository to return updated config
+        # Mock repository to return updated config with applied_by set
         updated_config = valid_config.model_copy()
         updated_config.version = 2
+        updated_config.applied_by = "test_user"
         config_service.repository.update_config = AsyncMock(return_value=updated_config)
 
         result = await config_service.update_configuration(
@@ -154,7 +151,7 @@ class TestPydanticValidation:
         """Test that spring volume > 1.0x fails Wyckoff validation."""
         with pytest.raises(ValueError, match="Spring patterns require volume BELOW average"):
             VolumeThresholds(
-                spring_volume_min=Decimal("1.1"),  # Invalid
+                spring_volume_min=Decimal("1.1"),  # Invalid: > 1.0x
                 sos_volume_min=Decimal("2.0"),
             )
 
@@ -163,23 +160,23 @@ class TestPydanticValidation:
         with pytest.raises(ValueError, match="Sign of Strength requires volume expansion"):
             VolumeThresholds(
                 spring_volume_min=Decimal("0.7"),
-                sos_volume_min=Decimal("1.0"),  # Invalid
+                sos_volume_min=Decimal("1.0"),  # Invalid: < 1.5x
             )
 
     def test_min_cause_factor_below_2_0_fails(self):
         """Test that min_cause_factor < 2.0 fails Wyckoff validation."""
         with pytest.raises(ValueError, match="Wyckoff methodology requires minimum 2:1"):
             CauseFactors(
-                min_cause_factor=Decimal("1.5"),  # Invalid
+                min_cause_factor=Decimal("1.5"),  # Invalid: < 2.0
                 max_cause_factor=Decimal("3.0"),
             )
 
     def test_risk_limits_hierarchy_validation(self):
-        """Test risk limits Pydantic validation."""
+        """Test risk limits hierarchy: campaign > per-trade."""
         with pytest.raises(ValueError, match="max_campaign_risk must be greater than"):
             RiskLimits(
                 max_risk_per_trade=Decimal("3.0"),
-                max_campaign_risk=Decimal("2.0"),  # Invalid: less than per-trade
+                max_campaign_risk=Decimal("3.0"),  # Invalid: equal to per-trade, must be greater
                 max_portfolio_heat=Decimal("10.0"),
             )
 

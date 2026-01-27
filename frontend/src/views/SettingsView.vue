@@ -22,7 +22,9 @@
 
     <!-- Tab Content -->
     <div class="tab-content">
-      <NotificationPreferences v-if="activeTab === 'notifications'" />
+      <WatchlistSettings v-if="activeTab === 'watchlist'" />
+
+      <NotificationPreferences v-else-if="activeTab === 'notifications'" />
 
       <div v-else-if="activeTab === 'general'" class="placeholder-content">
         <i class="pi pi-cog placeholder-icon"></i>
@@ -40,10 +42,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import NotificationPreferences from '@/components/notifications/NotificationPreferences.vue'
+import WatchlistSettings from '@/components/watchlist/WatchlistSettings.vue'
 
-const activeTab = ref('notifications')
+const activeTab = ref('watchlist')
 
 const tabs = [
+  {
+    id: 'watchlist',
+    label: 'Watchlist',
+    icon: 'pi pi-list',
+  },
   {
     id: 'notifications',
     label: 'Notifications',
