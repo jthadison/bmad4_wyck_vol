@@ -13,6 +13,14 @@ import {
 
 export type DateRangePreset = 'today' | '7d' | '30d' | 'custom'
 
+// Format date as YYYY-MM-DD using local timezone
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export const useSignalStatisticsStore = defineStore('signal-statistics', () => {
   // State
   const statistics = ref<SignalStatisticsResponse | null>(null)
@@ -49,7 +57,7 @@ export const useSignalStatisticsStore = defineStore('signal-statistics', () => {
   // Calculate date range based on preset
   function getDateParams(): { start_date?: string; end_date?: string } {
     const now = new Date()
-    const today = now.toISOString().split('T')[0]
+    const today = formatLocalDate(now)
 
     switch (dateRangePreset.value) {
       case 'today':
@@ -58,7 +66,7 @@ export const useSignalStatisticsStore = defineStore('signal-statistics', () => {
         const sevenDaysAgo = new Date(now)
         sevenDaysAgo.setDate(now.getDate() - 7)
         return {
-          start_date: sevenDaysAgo.toISOString().split('T')[0],
+          start_date: formatLocalDate(sevenDaysAgo),
           end_date: today,
         }
       }
@@ -66,7 +74,7 @@ export const useSignalStatisticsStore = defineStore('signal-statistics', () => {
         const thirtyDaysAgo = new Date(now)
         thirtyDaysAgo.setDate(now.getDate() - 30)
         return {
-          start_date: thirtyDaysAgo.toISOString().split('T')[0],
+          start_date: formatLocalDate(thirtyDaysAgo),
           end_date: today,
         }
       }
@@ -97,8 +105,12 @@ export const useSignalStatisticsStore = defineStore('signal-statistics', () => {
 
       statistics.value = statsResponse
       signalsOverTime.value = overTimeResponse
-    } catch (err) {
-      error.value = 'Failed to fetch signal statistics'
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        error.value = err.message || 'Failed to fetch signal statistics'
+      } else {
+        error.value = 'An unexpected error occurred'
+      }
       console.error('fetchStatistics error:', err)
     } finally {
       loading.value = false

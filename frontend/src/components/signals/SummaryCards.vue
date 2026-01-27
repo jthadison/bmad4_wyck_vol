@@ -62,19 +62,25 @@ const cards = computed<CardData[]>(() => {
     },
     {
       label: 'Win Rate',
-      value: `${s.overall_win_rate.toFixed(1)}%`,
+      value: Number.isFinite(s.overall_win_rate)
+        ? `${s.overall_win_rate.toFixed(1)}%`
+        : '-',
       icon: 'pi-trending-up',
       iconColor: 'text-green-400',
     },
     {
       label: 'Avg Confidence',
-      value: `${s.avg_confidence.toFixed(1)}%`,
+      value: Number.isFinite(s.avg_confidence)
+        ? `${s.avg_confidence.toFixed(1)}%`
+        : '-',
       icon: 'pi-bullseye',
       iconColor: 'text-yellow-400',
     },
     {
       label: 'Avg R-Multiple',
-      value: `${s.avg_r_multiple.toFixed(2)}R`,
+      value: Number.isFinite(s.avg_r_multiple)
+        ? `${s.avg_r_multiple.toFixed(2)}R`
+        : '-',
       icon: 'pi-dollar',
       iconColor: 'text-purple-400',
     },

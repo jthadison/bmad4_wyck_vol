@@ -180,7 +180,7 @@ describe('useSignalStatisticsStore', () => {
       const store = useSignalStatisticsStore()
       await store.fetchStatistics()
 
-      expect(store.error).toBe('Failed to fetch signal statistics')
+      expect(store.error).toBe('Network error')
       expect(store.loading).toBe(false)
     })
   })
