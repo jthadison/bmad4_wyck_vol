@@ -17,12 +17,6 @@ Test Coverage:
 Author: Story 8.10
 """
 
-import pytest
-
-# Skip entire module - MasterOrchestrator signature changes
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/241
-pytestmark = pytest.mark.skip(reason="Issue #241: Master orchestrator signature mismatches")
-
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
@@ -441,6 +435,21 @@ async def test_generate_signal_from_passed_validation(
             validator_id="VOLUME_VALIDATOR",
         )
     )
+    # Add Risk validation result with required metadata (Story 8.10.2)
+    chain.add_result(
+        StageValidationResult(
+            stage="Risk",
+            status=ValidationStatus.PASS,
+            validator_id="RISK_VALIDATOR",
+            metadata={
+                "position_size": Decimal("100"),
+                "position_size_unit": "SHARES",
+                "notional_value": Decimal("15000"),
+                "risk_amount": Decimal("200"),
+                "r_multiple": Decimal("3.0"),
+            },
+        )
+    )
     chain.overall_status = ValidationStatus.PASS
     chain.completed_at = datetime.now(UTC)
 
@@ -628,11 +637,25 @@ async def test_performance_tracking_records_latency(orchestrator):
 @pytest.mark.asyncio
 async def test_check_emergency_exits(orchestrator):
     """Test emergency exit checking."""
+    from src.signal_generator.master_orchestrator import PortfolioState
+
     bar = {"symbol": "AAPL", "low": Decimal("145.00"), "high": Decimal("151.00")}
 
-    exits = await orchestrator.check_emergency_exits(bar)
+    # Create portfolio state with safe values (no emergency conditions)
+    portfolio = PortfolioState(
+        total_equity=Decimal("10000"),
+        available_equity=Decimal("8000"),
+        daily_pnl=Decimal("100"),
+        daily_pnl_pct=Decimal("0.01"),  # +1% - no emergency
+        max_drawdown_pct=Decimal("0.05"),  # 5% - under 15% threshold
+        total_heat=Decimal("5.0"),
+        total_forex_notional=Decimal("0"),
+        max_forex_notional=Decimal("30000"),
+    )
 
-    # Stub implementation returns empty list
+    exits = await orchestrator.check_emergency_exits(bar, portfolio, "STOCK")
+
+    # No emergency conditions met, should return empty list
     assert isinstance(exits, list)
     assert len(exits) == 0
 
