@@ -16,12 +16,7 @@ Test Coverage:
 Author: Story 11.9 Task 6
 """
 
-import pytest
-
-# Skip entire module - OHLCVBar model validation errors
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/240
-pytestmark = pytest.mark.skip(reason="Issue #240: VSA detector OHLCVBar validation")
-
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -38,16 +33,18 @@ def create_bar(
     volume: int,
 ) -> OHLCVBar:
     """Helper to create OHLCV bar for testing"""
+    high_decimal = Decimal(str(high))
+    low_decimal = Decimal(str(low))
     return OHLCVBar(
         symbol="TEST",
-        timeframe="1D",
-        timestamp="2025-01-01T00:00:00Z",
+        timeframe="1d",
+        timestamp=datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC),
         open=Decimal(str(open_price)),
-        high=Decimal(str(high)),
-        low=Decimal(str(low)),
+        high=high_decimal,
+        low=low_decimal,
         close=Decimal(str(close)),
         volume=volume,
-        spread=Decimal(str(high - low)),
+        spread=high_decimal - low_decimal,
         spread_ratio=Decimal("1.0"),
         volume_ratio=Decimal("1.0"),
     )
@@ -64,13 +61,13 @@ class TestVSADetector:
         bar = create_bar(
             open_price=100.0,
             high=100.5,  # Narrow spread (0.5)
-            low=100.0,
-            close=100.1,  # Down close (< open)
+            low=99.9,
+            close=99.9,  # Down close (< open)
             volume=2000,  # Will be 2x average (1000)
         )
 
         avg_volume = 1000.0
-        avg_spread = 2.0  # Bar spread (0.5) is 0.25x average
+        avg_spread = 2.0  # Bar spread (0.6) is 0.3x average
 
         is_no_demand = detector.detect_no_demand(bar, avg_volume, avg_spread, in_uptrend=True)
 
@@ -191,12 +188,13 @@ class TestVSADetector:
             )
 
         # Bar 21: No Demand (high volume, narrow spread, down close)
+        # Previous bars have spread=1.0, so this needs spread < 0.5 for narrow spread criterion
         bars.append(
             create_bar(
                 open_price=120.0,
-                high=120.5,
-                low=120.0,
-                close=120.2,  # Down close
+                high=120.3,  # Narrow spread (0.4)
+                low=119.9,
+                close=119.9,  # Down close
                 volume=2000,  # High volume
             )
         )
