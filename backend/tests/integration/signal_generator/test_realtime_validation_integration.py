@@ -12,6 +12,7 @@ Author: Story 19.5
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -20,9 +21,16 @@ from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
 from src.models.validation import ValidationStage
 from src.pattern_engine.events import PatternDetectedEvent
+from src.services.news_calendar_factory import NewsCalendarFactory
 from src.signal_generator.events import SignalRejectedEvent, SignalValidatedEvent
 from src.signal_generator.realtime_validator import RealtimeSignalValidator
 from src.signal_generator.validation_chain import create_default_validation_chain
+
+
+@pytest.fixture
+def mock_news_calendar_factory():
+    """Create mock NewsCalendarFactory for testing."""
+    return Mock(spec=NewsCalendarFactory)
 
 
 def create_complete_spring_pattern_event() -> PatternDetectedEvent:
@@ -80,7 +88,7 @@ class TestRealtimeValidationIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spring_pattern_full_pipeline_validation(self):
+    async def test_spring_pattern_full_pipeline_validation(self, mock_news_calendar_factory):
         """
         Integration test: Spring pattern through full 5-stage validation.
 
@@ -91,7 +99,7 @@ class TestRealtimeValidationIntegration:
         4. SignalValidatedEvent is emitted with complete audit trail
         """
         # Arrange
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
         validator = RealtimeSignalValidator(orchestrator)
 
         pattern_event = create_complete_spring_pattern_event()
@@ -173,7 +181,7 @@ class TestRealtimeValidationIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_sos_pattern_phase_validation_integration(self):
+    async def test_sos_pattern_phase_validation_integration(self, mock_news_calendar_factory):
         """
         Integration test: SOS pattern in wrong phase (should fail Phase validation).
 
@@ -184,7 +192,7 @@ class TestRealtimeValidationIntegration:
         4. SignalRejectedEvent is emitted with correct rejection stage
         """
         # Arrange
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
         validator = RealtimeSignalValidator(orchestrator)
 
         # Create SOS pattern in Phase B (invalid - should be D or E)
@@ -229,7 +237,7 @@ class TestRealtimeValidationIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_audit_trail_completeness(self):
+    async def test_audit_trail_completeness(self, mock_news_calendar_factory):
         """
         Integration test: Verify audit trail contains all required information.
 
@@ -243,7 +251,7 @@ class TestRealtimeValidationIntegration:
         - output_data
         """
         # Arrange
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
         validator = RealtimeSignalValidator(orchestrator)
 
         pattern_event = create_complete_spring_pattern_event()
@@ -278,7 +286,7 @@ class TestRealtimeValidationIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_validation_metadata_structure(self):
+    async def test_validation_metadata_structure(self, mock_news_calendar_factory):
         """
         Integration test: Verify validation metadata structure in SignalValidatedEvent.
 
@@ -289,7 +297,7 @@ class TestRealtimeValidationIntegration:
         - stage-specific metadata
         """
         # Arrange
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
         validator = RealtimeSignalValidator(orchestrator)
 
         pattern_event = create_complete_spring_pattern_event()
@@ -328,7 +336,7 @@ class TestRealtimeValidatorErrorHandling:
     """Test error handling and edge cases in real-time validation."""
 
     @pytest.mark.asyncio
-    async def test_missing_required_context_data(self):
+    async def test_missing_required_context_data(self, mock_news_calendar_factory):
         """
         Test behavior when required context data is missing.
 
@@ -336,7 +344,7 @@ class TestRealtimeValidatorErrorHandling:
         Verify graceful handling when data is missing.
         """
         # Arrange
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
         validator = RealtimeSignalValidator(orchestrator)
 
         pattern_event = create_complete_spring_pattern_event()

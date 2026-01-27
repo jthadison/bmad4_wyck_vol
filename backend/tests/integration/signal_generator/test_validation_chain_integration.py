@@ -12,26 +12,34 @@ Author: Story 8.2
 """
 
 from decimal import Decimal
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 
 from src.models.validation import ValidationContext, ValidationStatus
+from src.services.news_calendar_factory import NewsCalendarFactory
 from src.signal_generator.validation_chain import create_default_validation_chain
+
+
+@pytest.fixture
+def mock_news_calendar_factory():
+    """Create mock NewsCalendarFactory for testing."""
+    return Mock(spec=NewsCalendarFactory)
 
 
 class TestValidationChainIntegration:
     """Integration tests for complete validation chain."""
 
     @pytest.mark.asyncio
-    async def test_full_chain_all_pass_with_complete_context(self):
+    async def test_full_chain_all_pass_with_complete_context(self, mock_news_calendar_factory):
         """
         Test full validation chain with all validators passing.
 
         Creates complete ValidationContext with all required data for all stages.
         Verifies all 5 validators execute and return PASS.
         """
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
 
         # Create complete context with all required data
         context = ValidationContext(
@@ -81,7 +89,7 @@ class TestValidationChainIntegration:
         assert chain.completed_at >= chain.started_at
 
     @pytest.mark.asyncio
-    async def test_full_chain_volume_pass_no_other_context(self):
+    async def test_full_chain_volume_pass_no_other_context(self, mock_news_calendar_factory):
         """
         Test validation chain with only volume_analysis (minimal context).
 
@@ -89,7 +97,7 @@ class TestValidationChainIntegration:
         Phase/Levels/Risk/Strategy should FAIL (missing context).
         Chain should exit early at Phase validator.
         """
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
 
         # Minimal context: only volume_analysis (REQUIRED)
         context = ValidationContext(
@@ -122,14 +130,14 @@ class TestValidationChainIntegration:
         assert chain.is_valid is False
 
     @pytest.mark.asyncio
-    async def test_full_chain_early_rejection_at_levels(self):
+    async def test_full_chain_early_rejection_at_levels(self, mock_news_calendar_factory):
         """
         Test validation chain with early rejection at Levels stage.
 
         Volume and Phase PASS, but Levels FAIL due to missing trading_range.
         Risk and Strategy should NOT execute (early exit).
         """
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
 
         context = ValidationContext(
             pattern={"id": str(uuid4()), "type": "SPRING"},
@@ -160,14 +168,14 @@ class TestValidationChainIntegration:
         assert chain.is_valid is False
 
     @pytest.mark.asyncio
-    async def test_full_chain_with_all_context_provided(self):
+    async def test_full_chain_with_all_context_provided(self, mock_news_calendar_factory):
         """
         Test validation chain with all optional context fields provided.
 
         All validators should have required context and return PASS.
         This is the "happy path" integration test.
         """
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
 
         context = ValidationContext(
             pattern={
@@ -228,7 +236,7 @@ class TestValidationChainIntegration:
         assert chain.has_warnings is False
 
     @pytest.mark.asyncio
-    async def test_full_chain_pattern_with_id_attribute(self):
+    async def test_full_chain_pattern_with_id_attribute(self, mock_news_calendar_factory):
         """
         Test validation chain with pattern object that has id attribute.
 
@@ -241,7 +249,7 @@ class TestValidationChainIntegration:
                 self.type = "SPRING"
                 self.volume_ratio = Decimal("0.45")
 
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
         pattern = MockPattern()
 
         context = ValidationContext(
@@ -262,14 +270,14 @@ class TestValidationChainIntegration:
         assert len(chain.validation_results) == 5
 
     @pytest.mark.asyncio
-    async def test_full_chain_realistic_spring_scenario(self):
+    async def test_full_chain_realistic_spring_scenario(self, mock_news_calendar_factory):
         """
         Test realistic Spring pattern validation scenario.
 
         Simulates a real Spring pattern with all context data as it would
         appear during actual signal generation.
         """
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
         pattern_id = uuid4()
 
         context = ValidationContext(

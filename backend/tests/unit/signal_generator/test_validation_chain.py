@@ -13,25 +13,29 @@ Author: Story 8.2
 """
 
 from decimal import Decimal
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-
-# Skip entire module - StrategyValidator signature changed
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/242
-pytestmark = pytest.mark.skip(reason="Issue #242: Validation chain StrategyValidator signature")
 
 from src.models.validation import (
     StageValidationResult,
     ValidationContext,
     ValidationStatus,
 )
+from src.services.news_calendar_factory import NewsCalendarFactory
 from src.signal_generator.validation_chain import (
     ValidationChainOrchestrator,
     create_default_validation_chain,
     create_validation_chain,
 )
 from src.signal_generator.validators.base import BaseValidator
+
+
+@pytest.fixture
+def mock_news_calendar_factory():
+    """Create mock NewsCalendarFactory for testing."""
+    return Mock(spec=NewsCalendarFactory)
 
 
 class MockPassValidator(BaseValidator):
@@ -324,9 +328,9 @@ class TestValidationChainOrchestrator:
 class TestValidationChainFactories:
     """Test validation chain factory functions."""
 
-    def test_create_default_validation_chain(self):
+    def test_create_default_validation_chain(self, mock_news_calendar_factory):
         """Test create_default_validation_chain returns orchestrator with 5 validators."""
-        orchestrator = create_default_validation_chain()
+        orchestrator = create_default_validation_chain(mock_news_calendar_factory)
 
         assert isinstance(orchestrator, ValidationChainOrchestrator)
         assert len(orchestrator.validators) == 5
@@ -337,9 +341,9 @@ class TestValidationChainFactories:
         assert orchestrator.validators[3].stage_name == "Risk"
         assert orchestrator.validators[4].stage_name == "Strategy"
 
-    def test_create_validation_chain_with_defaults(self):
+    def test_create_validation_chain_with_defaults(self, mock_news_calendar_factory):
         """Test create_validation_chain with no args uses defaults."""
-        orchestrator = create_validation_chain()
+        orchestrator = create_validation_chain(news_calendar_factory=mock_news_calendar_factory)
 
         assert isinstance(orchestrator, ValidationChainOrchestrator)
         assert len(orchestrator.validators) == 5
