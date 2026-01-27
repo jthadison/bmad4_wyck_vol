@@ -16,6 +16,7 @@ import structlog
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.routes import (
@@ -58,6 +59,23 @@ app = FastAPI(
     title="BMAD Wyckoff Volume Pattern Detection API",
     description="API for Wyckoff pattern detection and trade signal generation",
     version="0.1.0",
+)
+
+# Setup Prometheus instrumentation (Story 19.20)
+# Exposes default FastAPI metrics + custom metrics at /metrics endpoint
+instrumentator = Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    should_respect_env_var=False,  # Always enable metrics
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/metrics"],
+    inprogress_name="http_requests_inprogress",
+    inprogress_labels=True,
+)
+
+# Instrument the app and expose /metrics endpoint
+instrumentator.instrument(app).expose(
+    app, endpoint="/metrics", include_in_schema=True, should_gzip=False
 )
 
 # Include routers

@@ -1,13 +1,14 @@
 """
-Prometheus Metrics for Production Monitoring (Story 12.9 Task 11).
+Prometheus Metrics for Production Monitoring.
 
 Defines Prometheus metrics for tracking system performance in production:
 - Signal generation latency
 - Backtest execution duration
 - Database query performance
 - Pattern detection rates
+- Real-time scanner metrics (Story 19.20)
 
-Author: Story 12.9 Task 11
+Author: Story 12.9 Task 11, Story 19.20
 """
 
 from prometheus_client import Counter, Gauge, Histogram
@@ -74,4 +75,62 @@ api_request_duration_seconds = Histogram(
     "API request duration in seconds",
     labelnames=["method", "endpoint"],
     buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0],
+)
+
+# ===== Story 19.20: Real-Time Scanner Performance Metrics =====
+
+# Signal Lifecycle Counters
+signals_generated_total = Counter(
+    "signals_generated_total",
+    "Total number of signals generated",
+    labelnames=["pattern_type", "symbol"],
+)
+
+signals_approved_total = Counter(
+    "signals_approved_total",
+    "Total number of signals approved",
+    labelnames=["pattern_type", "approval_type"],  # manual, auto
+)
+
+signals_rejected_total = Counter(
+    "signals_rejected_total",
+    "Total number of signals rejected",
+    labelnames=["pattern_type", "rejection_stage"],
+)
+
+# Performance Histograms
+pattern_detection_latency = Histogram(
+    "pattern_detection_latency_seconds",
+    "Time to detect patterns on incoming bar",
+    labelnames=["symbol"],
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0],
+)
+
+signal_validation_latency = Histogram(
+    "signal_validation_latency_seconds",
+    "Time to validate a detected pattern",
+    labelnames=["pattern_type"],
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.2],
+)
+
+websocket_notification_latency = Histogram(
+    "websocket_notification_latency_seconds",
+    "Time from approval to WebSocket delivery",
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.0],
+)
+
+# System State Gauges
+active_symbols_count = Gauge(
+    "active_symbols_count",
+    "Number of symbols currently being monitored",
+)
+
+pending_signals_count = Gauge(
+    "pending_signals_count",
+    "Number of signals awaiting approval",
+)
+
+scanner_health = Gauge(
+    "scanner_health",
+    "Scanner health status (1=healthy, 0=unhealthy)",
 )
