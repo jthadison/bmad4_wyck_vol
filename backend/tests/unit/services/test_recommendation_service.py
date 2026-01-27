@@ -8,10 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-# Skip entire module - recommendation counts don't match expected values
-# Tracking issue: https://github.com/jthadison/bmad4_wyck_vol/issues/239
-pytestmark = pytest.mark.skip(reason="Issue #239: Recommendation count mismatches")
-
+# Tests aligned with RecommendationService production code - Issue #239 resolved
 from src.models.config import (
     CauseFactors,
     PatternConfidence,
@@ -61,7 +58,7 @@ class TestVolumeRecommendations:
 
     def test_lowered_spring_volume_generates_warning(self, recommendation_service, base_config):
         """Test that lowering spring volume generates WARNING."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.volume_thresholds.spring_volume_min = Decimal("0.6")
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -78,10 +75,14 @@ class TestVolumeRecommendations:
         self, recommendation_service, base_config
     ):
         """Test that spring volume max approaching 1.0x generates CAUTION."""
-        proposed = base_config.model_copy()
+        # Start with lower max so we can increase it toward 1.0
+        current = base_config.model_copy(deep=True)
+        current.volume_thresholds.spring_volume_max = Decimal("0.9")
+
+        proposed = current.model_copy(deep=True)
         proposed.volume_thresholds.spring_volume_max = Decimal("0.97")
 
-        recommendations = recommendation_service.generate_recommendations(base_config, proposed)
+        recommendations = recommendation_service.generate_recommendations(current, proposed)
 
         cautions = [r for r in recommendations if r.severity == "CAUTION"]
         assert len(cautions) > 0
@@ -89,7 +90,7 @@ class TestVolumeRecommendations:
 
     def test_lowered_sos_volume_generates_warning(self, recommendation_service, base_config):
         """Test that lowering SOS volume generates WARNING."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.volume_thresholds.sos_volume_min = Decimal("1.8")
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -106,7 +107,7 @@ class TestRiskRecommendations:
 
     def test_increased_per_trade_risk_generates_caution(self, recommendation_service, base_config):
         """Test that increasing per-trade risk generates CAUTION."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.risk_limits.max_risk_per_trade = Decimal("2.5")
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -123,7 +124,7 @@ class TestRiskRecommendations:
         self, recommendation_service, base_config
     ):
         """Test that significant portfolio heat increase generates CAUTION."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.risk_limits.max_portfolio_heat = Decimal("14.0")
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -138,7 +139,7 @@ class TestRiskRecommendations:
 
     def test_decreased_risk_generates_info(self, recommendation_service, base_config):
         """Test that decreasing risk limits generates INFO."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.risk_limits.max_risk_per_trade = Decimal("1.5")
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -156,7 +157,7 @@ class TestCauseFactorRecommendations:
 
     def test_cause_factor_below_2_0_generates_warning(self, recommendation_service, base_config):
         """Test that cause factor < 2.0 generates WARNING."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.cause_factors.min_cause_factor = Decimal("1.8")
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -173,7 +174,7 @@ class TestCauseFactorRecommendations:
         self, recommendation_service, base_config
     ):
         """Test that lowering cause factor (but staying >= 2.0) generates INFO."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.cause_factors.min_cause_factor = Decimal("2.1")
         base_config.cause_factors.min_cause_factor = Decimal("2.3")
 
@@ -192,7 +193,7 @@ class TestConfidenceRecommendations:
 
     def test_lowered_spring_confidence_generates_warning(self, recommendation_service, base_config):
         """Test that lowering spring confidence generates WARNING."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.pattern_confidence.min_spring_confidence = 65
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -205,7 +206,7 @@ class TestConfidenceRecommendations:
 
     def test_lowered_sos_confidence_generates_warning(self, recommendation_service, base_config):
         """Test that lowering SOS confidence generates WARNING."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.pattern_confidence.min_sos_confidence = 65
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -218,7 +219,7 @@ class TestConfidenceRecommendations:
 
     def test_increased_confidence_generates_info(self, recommendation_service, base_config):
         """Test that increasing confidence generates INFO."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.pattern_confidence.min_spring_confidence = 75
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
@@ -236,7 +237,7 @@ class TestMultipleChanges:
         self, recommendation_service, base_config
     ):
         """Test that 3+ relaxed thresholds generates WARNING."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         # Relax 3 thresholds
         proposed.volume_thresholds.spring_volume_min = Decimal("0.6")
         proposed.volume_thresholds.sos_volume_min = Decimal("1.8")
@@ -252,7 +253,7 @@ class TestMultipleChanges:
         self, recommendation_service, base_config
     ):
         """Test that 3+ tightened thresholds generates INFO."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         # Tighten 3 thresholds
         proposed.volume_thresholds.spring_volume_max = Decimal("0.9")
         proposed.volume_thresholds.sos_volume_min = Decimal("2.2")
@@ -270,7 +271,7 @@ class TestRecommendationCounting:
 
     def test_count_relaxed_thresholds(self, recommendation_service, base_config):
         """Test relaxed threshold counting."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.volume_thresholds.spring_volume_min = Decimal("0.6")
         proposed.pattern_confidence.min_spring_confidence = 65
         proposed.cause_factors.min_cause_factor = Decimal("1.9")
@@ -280,7 +281,7 @@ class TestRecommendationCounting:
 
     def test_count_tightened_thresholds(self, recommendation_service, base_config):
         """Test tightened threshold counting."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
         proposed.volume_thresholds.spring_volume_max = Decimal("0.9")
         proposed.volume_thresholds.sos_volume_min = Decimal("2.2")
         proposed.pattern_confidence.min_spring_confidence = 75
@@ -292,7 +293,7 @@ class TestRecommendationCounting:
         self, recommendation_service, base_config
     ):
         """Test that identical configs generate no recommendations."""
-        proposed = base_config.model_copy()
+        proposed = base_config.model_copy(deep=True)
 
         recommendations = recommendation_service.generate_recommendations(base_config, proposed)
 
