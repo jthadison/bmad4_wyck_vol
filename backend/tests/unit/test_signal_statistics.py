@@ -6,9 +6,9 @@ Tests signal statistics models, caching, and aggregation calculations.
 Author: Story 19.17
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from time import sleep
+from unittest.mock import patch
 
 import pytest
 
@@ -235,17 +235,24 @@ class TestStatisticsCache:
     def test_cache_expiration(self):
         """Test cache entry expires after TTL."""
         cache = StatisticsCache()
+        base_time = datetime(2026, 1, 27, 12, 0, 0)
 
-        # Set with very short TTL
-        cache.set("expiring_key", "value", ttl_seconds=1)
+        # Set with 60 second TTL at base_time
+        with patch("src.cache.statistics_cache.datetime") as mock_dt:
+            mock_dt.now.return_value = base_time
+            cache.set("expiring_key", "value", ttl_seconds=60)
 
-        # Wait for expiration
-        sleep(1.1)
+        # Verify entry exists before expiration (30 seconds later)
+        with patch("src.cache.statistics_cache.datetime") as mock_dt:
+            mock_dt.now.return_value = base_time + timedelta(seconds=30)
+            result = cache.get("expiring_key")
+            assert result == "value"
 
-        # Should return None after expiration
-        result = cache.get("expiring_key")
-
-        assert result is None
+        # Should return None after expiration (90 seconds later)
+        with patch("src.cache.statistics_cache.datetime") as mock_dt:
+            mock_dt.now.return_value = base_time + timedelta(seconds=90)
+            result = cache.get("expiring_key")
+            assert result is None
 
     def test_cache_invalidate_key(self):
         """Test invalidating specific cache key."""

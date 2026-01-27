@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies import get_current_user_id
 from src.database import get_db
 from src.models.signal import TradeSignal
+from src.models.signal_statistics import SignalStatisticsResponse
 
 logger = structlog.get_logger()
 
@@ -234,7 +235,7 @@ async def update_signal_status(signal_id: UUID, status_update: SignalStatusUpdat
 
 @router.get(
     "/statistics",
-    response_model=dict,
+    response_model=SignalStatisticsResponse,
     summary="Get signal statistics for performance dashboard",
     description="Query aggregated signal statistics including win rates, pattern performance, "
     "rejection analysis, and symbol metrics. Supports date range filtering.",
@@ -249,7 +250,7 @@ async def get_signal_statistics(
         description="Filter end date (ISO format, defaults to today)",
     ),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> SignalStatisticsResponse:
     """
     Get comprehensive signal statistics (Story 19.17).
 
@@ -289,7 +290,7 @@ async def get_signal_statistics(
             total_signals=response.summary.total_signals,
         )
 
-        return response.model_dump(mode="json")
+        return response
 
     except HTTPException:
         raise

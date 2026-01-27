@@ -51,7 +51,7 @@ class SignalSummary(BaseModel):
         ..., ge=0.0, le=100.0, description="Win rate percentage (0-100)"
     )
     avg_confidence: float = Field(..., ge=0.0, le=100.0, description="Average confidence score")
-    avg_r_multiple: float = Field(..., ge=0.0, description="Average R-multiple")
+    avg_r_multiple: float = Field(..., description="Average R-multiple (can be negative)")
     total_pnl: Decimal = Field(..., description="Total P&L from closed signals")
 
     model_config = {"json_encoders": {Decimal: str}}
@@ -81,7 +81,7 @@ class PatternWinRate(BaseModel):
     winning_signals: int = Field(..., ge=0, description="Number of winning signals")
     win_rate: float = Field(..., ge=0.0, le=100.0, description="Win rate percentage")
     avg_confidence: float = Field(..., ge=0.0, le=100.0, description="Average confidence score")
-    avg_r_multiple: float = Field(..., ge=0.0, description="Average R-multiple")
+    avg_r_multiple: float = Field(..., description="Average R-multiple (can be negative)")
 
 
 class RejectionCount(BaseModel):
@@ -124,7 +124,7 @@ class SymbolPerformance(BaseModel):
     symbol: str = Field(..., description="Trading symbol")
     total_signals: int = Field(..., ge=0, description="Total signals for symbol")
     win_rate: float = Field(..., ge=0.0, le=100.0, description="Win rate percentage")
-    avg_r_multiple: float = Field(..., ge=0.0, description="Average R-multiple")
+    avg_r_multiple: float = Field(..., description="Average R-multiple (can be negative)")
     total_pnl: Decimal = Field(..., description="Total P&L for symbol")
 
     model_config = {"json_encoders": {Decimal: str}}
