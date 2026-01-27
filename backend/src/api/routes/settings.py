@@ -3,16 +3,19 @@ Settings API Routes
 
 Endpoints for user settings including auto-execution configuration.
 Story 19.14: Auto-Execution Configuration Backend
+Story 19.22: Emergency Kill Switch - WebSocket notifications and audit logging
 """
 
 import ipaddress
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user_id, get_db_session
+from src.api.websocket import manager as websocket_manager
 from src.models.auto_execution_config import (
     AutoExecutionConfigResponse,
     AutoExecutionConfigUpdate,
@@ -291,9 +294,32 @@ async def activate_kill_switch(
     service = AutoExecutionConfigService(db)
     try:
         config = await service.activate_kill_switch(user_id)
+        activated_at = datetime.now(UTC)
+
+        # Log to audit trail (Story 19.22)
+        logger.info(
+            "Kill switch activated",
+            extra={
+                "event_type": "kill_switch_activated",
+                "user_id": str(user_id),
+                "source": "user_action",
+                "activated_at": activated_at.isoformat(),
+            },
+        )
+
+        # Broadcast WebSocket notification to all sessions (Story 19.22)
+        await websocket_manager.broadcast(
+            {
+                "type": "kill_switch_activated",
+                "message": "Kill switch activated - all auto-execution stopped",
+                "activated_at": activated_at.isoformat(),
+                "user_id": str(user_id),
+            }
+        )
+
         return KillSwitchActivationResponse(
             kill_switch_active=True,
-            activated_at=config.updated_at,
+            activated_at=activated_at,
         )
     except ValueError as e:
         raise HTTPException(
@@ -329,7 +355,20 @@ async def deactivate_kill_switch(
     """
     service = AutoExecutionConfigService(db)
     try:
-        return await service.deactivate_kill_switch(user_id)
+        config = await service.deactivate_kill_switch(user_id)
+
+        # Log to audit trail (Story 19.22)
+        logger.info(
+            "Kill switch deactivated",
+            extra={
+                "event_type": "kill_switch_deactivated",
+                "user_id": str(user_id),
+                "source": "user_action",
+                "deactivated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+
+        return config
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
