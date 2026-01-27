@@ -12,7 +12,6 @@ Author: Story 19.5
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -21,16 +20,9 @@ from src.models.ohlcv import OHLCVBar
 from src.models.phase_classification import WyckoffPhase
 from src.models.validation import ValidationStage
 from src.pattern_engine.events import PatternDetectedEvent
-from src.services.news_calendar_factory import NewsCalendarFactory
 from src.signal_generator.events import SignalRejectedEvent, SignalValidatedEvent
 from src.signal_generator.realtime_validator import RealtimeSignalValidator
 from src.signal_generator.validation_chain import create_default_validation_chain
-
-
-@pytest.fixture
-def mock_news_calendar_factory():
-    """Create mock NewsCalendarFactory for testing."""
-    return Mock(spec=NewsCalendarFactory)
 
 
 def create_complete_spring_pattern_event() -> PatternDetectedEvent:

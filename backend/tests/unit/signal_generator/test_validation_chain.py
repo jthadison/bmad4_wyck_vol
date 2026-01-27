@@ -13,7 +13,6 @@ Author: Story 8.2
 """
 
 from decimal import Decimal
-from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -23,19 +22,12 @@ from src.models.validation import (
     ValidationContext,
     ValidationStatus,
 )
-from src.services.news_calendar_factory import NewsCalendarFactory
 from src.signal_generator.validation_chain import (
     ValidationChainOrchestrator,
     create_default_validation_chain,
     create_validation_chain,
 )
 from src.signal_generator.validators.base import BaseValidator
-
-
-@pytest.fixture
-def mock_news_calendar_factory():
-    """Create mock NewsCalendarFactory for testing."""
-    return Mock(spec=NewsCalendarFactory)
 
 
 class MockPassValidator(BaseValidator):

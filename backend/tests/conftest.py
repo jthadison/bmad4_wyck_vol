@@ -596,3 +596,28 @@ def create_test_bar():
         )
 
     return _create_bar
+
+
+# =============================
+# Issue #242: Validation Chain Fixtures
+# =============================
+
+
+@pytest.fixture
+def mock_news_calendar_factory():
+    """
+    Provide mock NewsCalendarFactory for validation chain tests.
+
+    Creates a mock factory that satisfies the NewsCalendarFactory interface
+    without making actual API calls to news/earnings services.
+
+    Used by tests for validation chain and strategy validator.
+
+    Returns:
+        Mock: Mock instance with NewsCalendarFactory spec
+    """
+    from unittest.mock import Mock
+
+    from src.services.news_calendar_factory import NewsCalendarFactory
+
+    return Mock(spec=NewsCalendarFactory)
