@@ -5,6 +5,12 @@ import axios, {
 } from 'axios'
 import Big from 'big.js'
 import { v4 as uuidv4 } from 'uuid'
+import type {
+  AutoExecutionConfig,
+  AutoExecutionConfigUpdate,
+  AutoExecutionEnableRequest,
+  KillSwitchActivationResponse,
+} from '@/types/auto-execution'
 
 // Get base URL from environment variables
 const API_BASE_URL =
@@ -366,6 +372,125 @@ export async function getConfigurationHistory(limit: number = 10): Promise<{
   metadata: { count: number; limit: number }
 }> {
   return apiClient.get(`/config/history?limit=${limit}`)
+}
+
+// ============================================================================
+// Auto-Execution Configuration API (Story 19.15)
+// ============================================================================
+
+/**
+ * Get user's auto-execution configuration (Story 19.15)
+ *
+ * @returns Promise resolving to configuration with current daily metrics
+ *
+ * @example
+ * ```ts
+ * const config = await getAutoExecutionConfig()
+ * console.log(`Enabled: ${config.enabled}`)
+ * console.log(`Trades today: ${config.trades_today}/${config.max_trades_per_day}`)
+ * ```
+ */
+export async function getAutoExecutionConfig(): Promise<AutoExecutionConfig> {
+  return apiClient.get<AutoExecutionConfig>('/settings/auto-execution')
+}
+
+/**
+ * Update auto-execution configuration (Story 19.15)
+ *
+ * Allows partial updates to configuration fields.
+ *
+ * @param updates - Partial configuration updates
+ * @returns Promise resolving to updated configuration
+ * @throws 400 Bad Request if validation fails
+ *
+ * @example
+ * ```ts
+ * const updated = await updateAutoExecutionConfig({
+ *   min_confidence: 90,
+ *   enabled_patterns: ['SPRING']
+ * })
+ * ```
+ */
+export async function updateAutoExecutionConfig(
+  updates: AutoExecutionConfigUpdate
+): Promise<AutoExecutionConfig> {
+  return apiClient.put<AutoExecutionConfig>('/settings/auto-execution', updates)
+}
+
+/**
+ * Enable auto-execution with consent (Story 19.15)
+ *
+ * Requires explicit user acknowledgment and password confirmation.
+ *
+ * @param request - Enable request with consent and password
+ * @returns Promise resolving to enabled configuration
+ * @throws 400 Bad Request if consent not acknowledged or invalid password
+ * @throws 401 Unauthorized if password is incorrect
+ *
+ * @example
+ * ```ts
+ * const config = await enableAutoExecution({
+ *   consent_acknowledged: true,
+ *   password: 'user_password'
+ * })
+ * ```
+ */
+export async function enableAutoExecution(
+  request: AutoExecutionEnableRequest
+): Promise<AutoExecutionConfig> {
+  return apiClient.post<AutoExecutionConfig>(
+    '/settings/auto-execution/enable',
+    request
+  )
+}
+
+/**
+ * Disable auto-execution (Story 19.15)
+ *
+ * Immediately stops all automatic trade execution.
+ *
+ * @returns Promise resolving to disabled configuration
+ *
+ * @example
+ * ```ts
+ * const config = await disableAutoExecution()
+ * console.log(`Disabled at: ${new Date()}`)
+ * ```
+ */
+export async function disableAutoExecution(): Promise<AutoExecutionConfig> {
+  return apiClient.post<AutoExecutionConfig>('/settings/auto-execution/disable')
+}
+
+/**
+ * Activate emergency kill switch (Story 19.15)
+ *
+ * **EMERGENCY USE ONLY** - Immediately stops all auto-execution.
+ *
+ * @returns Promise resolving to kill switch activation response
+ *
+ * @example
+ * ```ts
+ * const response = await activateKillSwitch()
+ * console.log(response.message)
+ * ```
+ */
+export async function activateKillSwitch(): Promise<KillSwitchActivationResponse> {
+  return apiClient.post<KillSwitchActivationResponse>('/settings/kill-switch')
+}
+
+/**
+ * Deactivate kill switch to resume auto-execution (Story 19.15)
+ *
+ * @returns Promise resolving to updated configuration
+ *
+ * @example
+ * ```ts
+ * const config = await deactivateKillSwitch()
+ * console.log(`Kill switch deactivated, enabled: ${config.enabled}`)
+ * ```
+ */
+export async function deactivateKillSwitch(): Promise<AutoExecutionConfig> {
+  return apiClient.delete<AutoExecutionConfig>('/settings/kill-switch')
 }
 
 export default apiClient

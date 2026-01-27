@@ -36,6 +36,18 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/settings/auto-execution',
+    name: 'auto-execution',
+    component: () => import('@/views/settings/AutoExecutionSettings.vue'),
+    meta: {
+      title: 'Auto-Execution Settings',
+      breadcrumb: [
+        { label: 'Settings', to: '/settings' },
+        { label: 'Auto-Execution' },
+      ],
+    },
+  },
+  {
     path: '/audit-log',
     name: 'audit-log',
     component: TradeAuditLog,

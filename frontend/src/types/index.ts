@@ -303,6 +303,19 @@ export interface SignalExpiredEvent {
 }
 
 // ============================================================================
+// Auto-Execution Configuration Types (Story 19.15)
+// ============================================================================
+
+export type {
+  PatternType as AutoExecPatternType,
+  AutoExecutionConfig,
+  AutoExecutionConfigUpdate,
+  AutoExecutionEnableRequest,
+  KillSwitchActivationResponse,
+  PatternOption,
+} from './auto-execution'
+
+// ============================================================================
 // Watchlist Management Types (Story 19.13)
 // ============================================================================
 
