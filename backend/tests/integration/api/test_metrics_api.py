@@ -31,6 +31,31 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def reset_gauge_metrics():
+    """
+    Reset gauge metrics before each test to prevent state leakage.
+
+    Prometheus metrics are global singletons, so gauge values persist
+    across test runs. This fixture ensures test isolation by resetting
+    all gauge metrics to 0 before each test.
+
+    Note: Counters and histograms cannot be reset (by design), so those
+    tests should be written to be order-independent.
+    """
+    # Reset all gauge metrics to 0
+    active_symbols_count.set(0)
+    pending_signals_count.set(0)
+    scanner_health.set(0)
+
+    yield
+
+    # Cleanup after test (optional, but good practice)
+    active_symbols_count.set(0)
+    pending_signals_count.set(0)
+    scanner_health.set(0)
+
+
 class TestMetricsEndpoint:
     """Test suite for /metrics endpoint."""
 

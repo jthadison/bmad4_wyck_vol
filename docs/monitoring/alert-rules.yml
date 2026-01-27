@@ -20,6 +20,11 @@ groups:
             Review CPU/memory usage and consider optimizing detection algorithms.
 
       # Alert when no signals have been generated in 4 hours during market hours
+      # NOTE: Time-based filtering (market hours only) is not implemented in the PromQL expression.
+      # Use Alertmanager silence rules to prevent alerts outside market hours (e.g., weekends).
+      # Alternatively, configure time_intervals in Alertmanager route config:
+      #   - weekdays: ['monday:friday']
+      #     times: [['09:30', '16:00']]  # US market hours
       - alert: NoSignalsGenerated
         expr: increase(signals_generated_total[4h]) == 0
         for: 10m
@@ -35,6 +40,9 @@ groups:
             - Market conditions don't meet pattern criteria (normal)
             - Pattern detection logic issues
             Check scanner health and verify market data feed is active.
+
+            Note: This alert may fire outside market hours. Configure Alertmanager
+            time-based routing or silence rules to suppress alerts during non-trading hours.
 
       # Alert when signal rejection rate exceeds 90% for 30 minutes
       - alert: HighRejectionRate

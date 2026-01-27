@@ -273,6 +273,70 @@
         "xaxis": {"mode": "time", "show": true},
         "legend": {"show": true, "values": false, "current": false},
         "stack": true
+      },
+      {
+        "id": 10,
+        "title": "API Error Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 28, "w": 24, "h": 8},
+        "targets": [
+          {
+            "expr": "sum(rate(api_requests_total{status_code=~\"4..\"}[5m])) by (endpoint)",
+            "legendFormat": "4xx - {{endpoint}}",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(api_requests_total{status_code=~\"5..\"}[5m])) by (endpoint)",
+            "legendFormat": "5xx - {{endpoint}}",
+            "refId": "B"
+          },
+          {
+            "expr": "sum(rate(api_requests_total[5m]))",
+            "legendFormat": "Total requests",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"label": "Requests/sec", "format": "reqps"},
+          {"format": "short", "show": false}
+        ],
+        "xaxis": {"mode": "time", "show": true},
+        "legend": {"show": true, "values": true, "current": true, "avg": true},
+        "seriesOverrides": [
+          {
+            "alias": "/^5xx.*/",
+            "color": "red",
+            "linewidth": 2
+          },
+          {
+            "alias": "/^4xx.*/",
+            "color": "orange"
+          },
+          {
+            "alias": "Total requests",
+            "color": "blue",
+            "dashes": true,
+            "fill": 0
+          }
+        ],
+        "alert": {
+          "name": "High API Error Rate",
+          "conditions": [
+            {
+              "evaluator": {"type": "gt", "params": [0.1]},
+              "operator": {"type": "and"},
+              "query": {"params": ["B", "5m", "now"]},
+              "reducer": {"type": "avg"},
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "frequency": "1m",
+          "handler": 1,
+          "message": "API 5xx error rate > 0.1 req/s",
+          "noDataState": "ok",
+          "notifications": []
+        }
       }
     ],
     "time": {
