@@ -62,6 +62,16 @@ const routes: RouteRecordRaw[] = [
         'Monitor active trading campaigns with progression and health status',
     },
   },
+  // Signal Performance Dashboard (Story 19.18)
+  {
+    path: '/signals/performance',
+    name: 'signal-performance',
+    component: () => import('@/views/signals/SignalDashboard.vue'),
+    meta: {
+      title: 'Signal Performance',
+      breadcrumb: [{ label: 'Signal Performance' }],
+    },
+  },
   // Help System Routes (Story 11.8a - Task 15, Story 11.8c - Task 7)
   {
     path: '/help',

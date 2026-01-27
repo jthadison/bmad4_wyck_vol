@@ -493,4 +493,97 @@ export async function deactivateKillSwitch(): Promise<AutoExecutionConfig> {
   return apiClient.delete<AutoExecutionConfig>('/settings/kill-switch')
 }
 
+// ============================================================================
+// Signal Statistics API (Story 19.17/19.18)
+// ============================================================================
+
+export interface SignalSummary {
+  total_signals: number
+  signals_today: number
+  signals_this_week: number
+  signals_this_month: number
+  overall_win_rate: number
+  avg_confidence: number
+  avg_r_multiple: number
+  total_pnl: string
+}
+
+export interface PatternWinRate {
+  pattern_type: string
+  total_signals: number
+  closed_signals: number
+  winning_signals: number
+  win_rate: number
+  avg_confidence: number
+  avg_r_multiple: number
+}
+
+export interface RejectionCount {
+  reason: string
+  validation_stage: string
+  count: number
+  percentage: number
+}
+
+export interface SymbolPerformance {
+  symbol: string
+  total_signals: number
+  win_rate: number
+  avg_r_multiple: number
+  total_pnl: string
+}
+
+export interface SignalStatisticsResponse {
+  summary: SignalSummary
+  win_rate_by_pattern: PatternWinRate[]
+  rejection_breakdown: RejectionCount[]
+  symbol_performance: SymbolPerformance[]
+  date_range: {
+    start_date: string
+    end_date: string
+  }
+}
+
+export interface SignalStatisticsParams {
+  start_date?: string
+  end_date?: string
+}
+
+export interface SignalsOverTime {
+  date: string
+  generated: number
+  executed: number
+  rejected: number
+}
+
+/**
+ * Get signal statistics for the performance dashboard (Story 19.17/19.18)
+ *
+ * @param params - Optional date range filter
+ * @returns Promise resolving to signal statistics response
+ */
+export async function getSignalStatistics(
+  params?: SignalStatisticsParams
+): Promise<SignalStatisticsResponse> {
+  return apiClient.get<SignalStatisticsResponse>(
+    '/signals/statistics',
+    params as Record<string, unknown>
+  )
+}
+
+/**
+ * Get signals over time data for time series chart (Story 19.18)
+ *
+ * @param params - Optional date range filter
+ * @returns Promise resolving to signals over time data
+ */
+export async function getSignalsOverTime(
+  params?: SignalStatisticsParams
+): Promise<SignalsOverTime[]> {
+  return apiClient.get<SignalsOverTime[]>(
+    '/signals/statistics/over-time',
+    params as Record<string, unknown>
+  )
+}
+
 export default apiClient
