@@ -37,6 +37,7 @@ from src.signal_generator.master_orchestrator import (
     ForexSession,
     MasterOrchestrator,
     PerformanceTracker,
+    PortfolioState,
 )
 from src.signal_generator.validators.level_validator import LevelValidator
 from src.signal_generator.validators.phase_validator import PhaseValidator
@@ -637,8 +638,6 @@ async def test_performance_tracking_records_latency(orchestrator):
 @pytest.mark.asyncio
 async def test_check_emergency_exits(orchestrator):
     """Test emergency exit checking."""
-    from src.signal_generator.master_orchestrator import PortfolioState
-
     bar = {"symbol": "AAPL", "low": Decimal("145.00"), "high": Decimal("151.00")}
 
     # Create portfolio state with safe values (no emergency conditions)
