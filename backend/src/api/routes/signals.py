@@ -14,7 +14,7 @@ PATCH /api/v1/signals/{signal_id} - Update signal status
 Author: Story 8.8 (AC 9)
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies import get_current_user_id
 from src.database import get_db
 from src.models.signal import TradeSignal
+from src.models.signal_statistics import SignalStatisticsResponse
 
 logger = structlog.get_logger()
 
@@ -223,6 +224,86 @@ async def update_signal_status(signal_id: UUID, status_update: SignalStatusUpdat
 # ============================================================================
 # API Endpoints
 # ============================================================================
+
+
+# ============================================================================
+# Signal Statistics Endpoints (Story 19.17)
+# NOTE: These static routes MUST be defined BEFORE parameterized routes like
+#       /{signal_id} to prevent FastAPI from matching "/statistics" as a UUID.
+# ============================================================================
+
+
+@router.get(
+    "/statistics",
+    response_model=SignalStatisticsResponse,
+    summary="Get signal statistics for performance dashboard",
+    description="Query aggregated signal statistics including win rates, pattern performance, "
+    "rejection analysis, and symbol metrics. Supports date range filtering.",
+)
+async def get_signal_statistics(
+    start_date: date | None = Query(
+        None,
+        description="Filter start date (ISO format, defaults to 30 days ago)",
+    ),
+    end_date: date | None = Query(
+        None,
+        description="Filter end date (ISO format, defaults to today)",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> SignalStatisticsResponse:
+    """
+    Get comprehensive signal statistics (Story 19.17).
+
+    Returns aggregated statistics for the performance dashboard:
+    - Summary: Total signals, counts by time period, overall win rate, P&L
+    - Win rate by pattern: Performance breakdown per pattern type
+    - Rejection breakdown: Reasons and counts for rejected signals
+    - Symbol performance: Per-symbol win rate, R-multiple, and P&L
+
+    Query Parameters:
+        start_date: Filter start (ISO date, defaults to 30 days ago)
+        end_date: Filter end (ISO date, defaults to today)
+
+    Returns:
+        SignalStatisticsResponse with all statistics
+
+    Performance:
+        Response time < 500ms for 10,000 signals (cached)
+
+    Example:
+        GET /api/v1/signals/statistics
+        GET /api/v1/signals/statistics?start_date=2026-01-01&end_date=2026-01-26
+    """
+    from src.services.signal_statistics_service import SignalStatisticsService
+
+    try:
+        service = SignalStatisticsService(db)
+        response = await service.get_statistics(
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        logger.info(
+            "signal_statistics_queried",
+            start_date=start_date.isoformat() if start_date else "default",
+            end_date=end_date.isoformat() if end_date else "default",
+            total_signals=response.summary.total_signals,
+        )
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "signal_statistics_query_failed",
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve signal statistics",
+        ) from e
 
 
 @router.get("", response_model=SignalListResponse, summary="List trade signals")
