@@ -66,7 +66,10 @@ import {
 } from '@/services/api'
 import { websocketService } from '@/services/websocketService'
 import type { WebSocketMessage } from '@/types/websocket'
-import { isKillSwitchActivatedMessage } from '@/types/websocket'
+import {
+  isKillSwitchActivatedMessage,
+  isKillSwitchDeactivatedMessage,
+} from '@/types/websocket'
 
 const toast = useToast()
 
@@ -177,8 +180,8 @@ function handleCancel(): void {
   error.value = null
 }
 
-// WebSocket handler for multi-session sync
-function handleWebSocketMessage(message: WebSocketMessage): void {
+// WebSocket handlers for multi-session sync
+function handleActivatedMessage(message: WebSocketMessage): void {
   if (isKillSwitchActivatedMessage(message)) {
     killSwitchActive.value = true
     toast.add({
@@ -190,14 +193,28 @@ function handleWebSocketMessage(message: WebSocketMessage): void {
   }
 }
 
+function handleDeactivatedMessage(message: WebSocketMessage): void {
+  if (isKillSwitchDeactivatedMessage(message)) {
+    killSwitchActive.value = false
+    toast.add({
+      severity: 'success',
+      summary: 'Kill Switch Deactivated',
+      detail: message.message,
+      life: 3000,
+    })
+  }
+}
+
 // Lifecycle
 onMounted(() => {
   loadKillSwitchStatus()
-  websocketService.subscribe('kill_switch_activated', handleWebSocketMessage)
+  websocketService.subscribe('kill_switch_activated', handleActivatedMessage)
+  websocketService.subscribe('kill_switch_deactivated', handleDeactivatedMessage)
 })
 
 onUnmounted(() => {
-  websocketService.unsubscribe('kill_switch_activated', handleWebSocketMessage)
+  websocketService.unsubscribe('kill_switch_activated', handleActivatedMessage)
+  websocketService.unsubscribe('kill_switch_deactivated', handleDeactivatedMessage)
 })
 </script>
 

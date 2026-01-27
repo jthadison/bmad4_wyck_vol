@@ -356,6 +356,7 @@ async def deactivate_kill_switch(
     service = AutoExecutionConfigService(db)
     try:
         config = await service.deactivate_kill_switch(user_id)
+        deactivated_at = datetime.now(UTC)
 
         # Log to audit trail (Story 19.22)
         logger.info(
@@ -364,8 +365,18 @@ async def deactivate_kill_switch(
                 "event_type": "kill_switch_deactivated",
                 "user_id": str(user_id),
                 "source": "user_action",
-                "deactivated_at": datetime.now(UTC).isoformat(),
+                "deactivated_at": deactivated_at.isoformat(),
             },
+        )
+
+        # Broadcast WebSocket notification to all sessions (Story 19.22)
+        await websocket_manager.broadcast(
+            {
+                "type": "kill_switch_deactivated",
+                "message": "Kill switch deactivated - auto-execution resumed",
+                "deactivated_at": deactivated_at.isoformat(),
+                "user_id": str(user_id),
+            }
         )
 
         return config
