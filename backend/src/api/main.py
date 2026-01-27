@@ -16,6 +16,7 @@ import structlog
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.routes import (
@@ -58,6 +59,23 @@ app = FastAPI(
     title="BMAD Wyckoff Volume Pattern Detection API",
     description="API for Wyckoff pattern detection and trade signal generation",
     version="0.1.0",
+)
+
+# Setup Prometheus instrumentation (Story 19.20)
+# Exposes default FastAPI metrics + custom metrics at /metrics endpoint
+instrumentator = Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    should_respect_env_var=False,  # Always enable metrics
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/metrics"],
+    inprogress_name="http_requests_inprogress",
+    inprogress_labels=True,
+)
+
+# Instrument the app and expose /metrics endpoint
+instrumentator.instrument(app).expose(
+    app, endpoint="/metrics", include_in_schema=True, should_gzip=False
 )
 
 # Include routers
@@ -401,24 +419,3 @@ async def detailed_health_check() -> dict[str, object]:
         health_status["status"] = "degraded"
 
     return health_status
-
-
-@app.get("/api/v1/metrics")
-async def metrics() -> str:
-    """
-    Prometheus metrics endpoint (Story 12.9 Task 11 Subtask 11.7).
-
-    Exports performance metrics in Prometheus text format for monitoring:
-    - Signal generation latency
-    - Backtest execution duration
-    - Database query performance
-    - Pattern detection rates
-
-    Returns:
-        Prometheus-formatted metrics text (application/openmetrics-text)
-    """
-    from fastapi import Response
-    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-
-    metrics_output = generate_latest()
-    return Response(content=metrics_output, media_type=CONTENT_TYPE_LATEST)

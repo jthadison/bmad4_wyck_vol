@@ -1,0 +1,158 @@
+# Prometheus Alert Rules for Signal Scanner (Story 19.20)
+# These rules define alerting conditions for the real-time scanner performance metrics
+
+groups:
+  - name: signal_scanner
+    interval: 30s
+    rules:
+      # Alert when pattern detection latency p95 exceeds 500ms for 5 minutes
+      - alert: HighPatternDetectionLatency
+        expr: histogram_quantile(0.95, rate(pattern_detection_latency_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: scanner
+        annotations:
+          summary: "Pattern detection p95 latency > 500ms"
+          description: |
+            Pattern detection is taking longer than expected. Current p95: {{ $value }}s
+            This may indicate system resource constraints or inefficient pattern detection logic.
+            Review CPU/memory usage and consider optimizing detection algorithms.
+
+      # Alert when no signals have been generated in 4 hours during market hours
+      # NOTE: Time-based filtering (market hours only) is not implemented in the PromQL expression.
+      # Use Alertmanager silence rules to prevent alerts outside market hours (e.g., weekends).
+      # Alternatively, configure time_intervals in Alertmanager route config:
+      #   - weekdays: ['monday:friday']
+      #     times: [['09:30', '16:00']]  # US market hours
+      - alert: NoSignalsGenerated
+        expr: increase(signals_generated_total[4h]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: scanner
+        annotations:
+          summary: "No signals generated in 4 hours during market hours"
+          description: |
+            The scanner has not generated any signals in the past 4 hours.
+            This may indicate:
+            - Scanner has stopped processing bars
+            - Market conditions don't meet pattern criteria (normal)
+            - Pattern detection logic issues
+            Check scanner health and verify market data feed is active.
+
+            Note: This alert may fire outside market hours. Configure Alertmanager
+            time-based routing or silence rules to suppress alerts during non-trading hours.
+
+      # Alert when signal rejection rate exceeds 90% for 30 minutes
+      - alert: HighRejectionRate
+        expr: |
+          (rate(signals_rejected_total[1h]) / rate(signals_generated_total[1h])) > 0.9
+          and rate(signals_generated_total[1h]) > 0
+        for: 30m
+        labels:
+          severity: warning
+          component: validation
+        annotations:
+          summary: "Signal rejection rate > 90%"
+          description: |
+            More than 90% of generated signals are being rejected.
+            Current rejection rate: {{ $value | humanizePercentage }}
+            This may indicate:
+            - Pattern detection generating low-quality signals
+            - Validation rules too strict
+            - Market conditions not suitable for trading
+            Review rejection reasons breakdown and adjust validation thresholds if needed.
+
+      # Alert when scanner health check fails
+      - alert: ScannerUnhealthy
+        expr: scanner_health == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: scanner
+        annotations:
+          summary: "Signal scanner is unhealthy"
+          description: |
+            The real-time signal scanner health check is failing.
+            The scanner may have crashed or entered an error state.
+            Immediate action required - check scanner logs and restart if necessary.
+
+      # Alert when validation latency is high
+      - alert: HighSignalValidationLatency
+        expr: histogram_quantile(0.95, rate(signal_validation_latency_seconds_bucket[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: validation
+        annotations:
+          summary: "Signal validation p95 latency > 200ms"
+          description: |
+            Signal validation is taking longer than expected. Current p95: {{ $value }}s
+            This may delay signal notifications to users.
+            Check validation pipeline performance and database query times.
+
+      # Alert when WebSocket notification latency is high
+      - alert: HighWebSocketNotificationLatency
+        expr: histogram_quantile(0.95, rate(websocket_notification_latency_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: "WebSocket notification p95 latency > 1s"
+          description: |
+            WebSocket notifications are taking longer than expected. Current p95: {{ $value }}s
+            Users may experience delayed signal updates.
+            Check WebSocket connection pool and network conditions.
+
+      # Alert when too many signals are pending approval
+      - alert: HighPendingSignalsCount
+        expr: pending_signals_count > 50
+        for: 10m
+        labels:
+          severity: warning
+          component: approval_queue
+        annotations:
+          summary: "High number of pending signals ({{ $value }})"
+          description: |
+            There are {{ $value }} signals awaiting approval.
+            This may indicate:
+            - Users not actively approving signals
+            - Signal approval UI performance issues
+            - Excessive signal generation rate
+            Review approval queue and consider auto-approval for high-confidence signals.
+
+      # Alert when active symbols count drops to zero during market hours
+      - alert: NoActiveSymbols
+        expr: active_symbols_count == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: scanner
+        annotations:
+          summary: "No symbols are being monitored"
+          description: |
+            The scanner is not monitoring any symbols.
+            This may indicate:
+            - All watchlist symbols were removed
+            - Scanner initialization failure
+            - Market data feed disconnection
+            Verify watchlist configuration and scanner status.
+
+      # Alert for sustained high signal generation rate (potential spam)
+      - alert: AbnormallyHighSignalGenerationRate
+        expr: sum(rate(signals_generated_total[5m])) > 10
+        for: 15m
+        labels:
+          severity: info
+          component: scanner
+        annotations:
+          summary: "Unusually high signal generation rate"
+          description: |
+            Signal generation rate is {{ $value }} signals/sec over 5 minutes.
+            This is higher than normal and may indicate:
+            - Highly volatile market conditions (normal)
+            - Pattern detection logic generating false positives
+            - Data quality issues
+            Monitor signal quality and rejection rates.
