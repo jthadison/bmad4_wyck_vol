@@ -38,6 +38,7 @@ from src.models.validation import (
     ValidationContext,
     ValidationStatus,
 )
+from src.services.news_calendar_factory import NewsCalendarFactory
 from src.signal_generator.validators.base import BaseValidator
 from src.signal_generator.validators.level_validator import LevelValidator
 from src.signal_generator.validators.phase_validator import PhaseValidator
@@ -239,7 +240,9 @@ class ValidationChainOrchestrator:
         return chain
 
 
-def create_default_validation_chain() -> ValidationChainOrchestrator:
+def create_default_validation_chain(
+    news_calendar_factory: NewsCalendarFactory,
+) -> ValidationChainOrchestrator:
     """
     Create validation chain orchestrator with default FR20 validator sequence.
 
@@ -250,6 +253,11 @@ def create_default_validation_chain() -> ValidationChainOrchestrator:
     4. RiskValidator (Story 8.6)
     5. StrategyValidator (Story 8.7)
 
+    Parameters:
+    -----------
+    news_calendar_factory : NewsCalendarFactory
+        Factory for news calendar services (required by StrategyValidator)
+
     Returns:
     --------
     ValidationChainOrchestrator
@@ -257,7 +265,7 @@ def create_default_validation_chain() -> ValidationChainOrchestrator:
 
     Example Usage:
     --------------
-    >>> orchestrator = create_default_validation_chain()
+    >>> orchestrator = create_default_validation_chain(news_calendar_factory)
     >>> chain = await orchestrator.run_validation_chain(context)
     """
     validators = [
@@ -265,13 +273,14 @@ def create_default_validation_chain() -> ValidationChainOrchestrator:
         PhaseValidator(),
         LevelValidator(),
         RiskValidator(),
-        StrategyValidator(),
+        StrategyValidator(news_calendar_factory),
     ]
     return ValidationChainOrchestrator(validators)
 
 
 def create_validation_chain(
     validators: list[BaseValidator] | None = None,
+    news_calendar_factory: NewsCalendarFactory | None = None,
 ) -> ValidationChainOrchestrator:
     """
     Create validation chain orchestrator with custom or default validators.
@@ -284,6 +293,8 @@ def create_validation_chain(
     -----------
     validators : list[BaseValidator] | None
         Custom validators (for testing), or None for defaults
+    news_calendar_factory : NewsCalendarFactory | None
+        Factory for news calendar services (required when using default validators)
 
     Returns:
     --------
@@ -292,7 +303,7 @@ def create_validation_chain(
 
     Example (Default):
     ------------------
-    >>> orchestrator = create_validation_chain()  # Uses defaults
+    >>> orchestrator = create_validation_chain(news_calendar_factory=factory)
     >>> chain = await orchestrator.run_validation_chain(context)
 
     Example (Testing with Mocks):
@@ -302,5 +313,7 @@ def create_validation_chain(
     >>> chain = await orchestrator.run_validation_chain(context)
     """
     if validators is None:
-        return create_default_validation_chain()
+        if news_calendar_factory is None:
+            raise ValueError("news_calendar_factory is required when validators is None")
+        return create_default_validation_chain(news_calendar_factory)
     return ValidationChainOrchestrator(validators)
