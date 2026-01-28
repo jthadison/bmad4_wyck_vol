@@ -4,6 +4,9 @@ Real-time pattern scanner service for processing incoming OHLCV bars.
 This module implements the RealtimePatternScanner service that processes bars
 from the Alpaca market data feed in real-time, enabling pattern detection
 on live data. Story 19.1.
+
+Story 19.23: Added symbol priority tiers for priority-based bar processing.
+High-priority symbols are processed before medium and low during congestion.
 """
 
 from __future__ import annotations
@@ -20,6 +23,12 @@ from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.models.ohlcv import OHLCVBar
+from src.pattern_engine.priority_queue import (
+    Priority,
+    PriorityBarQueue,
+    QueueEmpty,
+    SymbolPriorityManager,
+)
 
 if TYPE_CHECKING:
     from src.market_data.service import MarketDataCoordinator
@@ -59,13 +68,9 @@ class CircuitState(Enum):
 class ScannerHealth(BaseModel):
     """Health status of the real-time pattern scanner."""
 
-    status: Literal["healthy", "degraded", "unhealthy"] = Field(
-        description="Overall health status"
-    )
+    status: Literal["healthy", "degraded", "unhealthy"] = Field(description="Overall health status")
     queue_depth: int = Field(ge=0, description="Number of bars in processing queue")
-    last_processed: datetime | None = Field(
-        description="Timestamp of last processed bar"
-    )
+    last_processed: datetime | None = Field(description="Timestamp of last processed bar")
     avg_latency_ms: float = Field(ge=0, description="Average processing latency in ms")
     bars_processed: int = Field(ge=0, description="Total bars processed since startup")
     bars_dropped: int = Field(ge=0, description="Total bars dropped due to backpressure")
@@ -96,15 +101,11 @@ class ScannerHealthResponse(BaseModel):
     bars_dropped: int | None = Field(
         default=None, ge=0, description="Total bars dropped due to backpressure"
     )
-    circuit_state: str | None = Field(
-        default=None, description="Circuit breaker state"
-    )
+    circuit_state: str | None = Field(default=None, description="Circuit breaker state")
     is_running: bool | None = Field(
         default=None, description="Whether scanner is currently running"
     )
-    message: str | None = Field(
-        default=None, description="Additional status message"
-    )
+    message: str | None = Field(default=None, description="Additional status message")
 
 
 @dataclass
@@ -165,10 +166,12 @@ class RealtimePatternScanner:
             else _get_processing_timeout_ms()
         )
 
-        # Queue for bar buffering
-        self._bar_queue: asyncio.Queue[OHLCVBar] = asyncio.Queue(
-            maxsize=self._queue_max_size
-        )
+        # Priority queue for bar buffering (Story 19.23)
+        # Uses priority-based ordering: HIGH > MEDIUM > LOW
+        self._bar_queue = PriorityBarQueue(maxsize=self._queue_max_size)
+
+        # Symbol priority manager (Story 19.23)
+        self._priority_manager = SymbolPriorityManager()
 
         # State
         self._is_running = False
@@ -245,24 +248,71 @@ class RealtimePatternScanner:
                 pass
             self._processor_task = None
 
-        # Clear queue
-        while not self._bar_queue.empty():
-            try:
-                self._bar_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        # Clear priority queue (Story 19.23)
+        cleared = await self._bar_queue.clear()
 
         logger.info(
             "realtime_scanner_stopped",
             bars_processed=self._metrics.bars_processed,
             bars_dropped=self._metrics.bars_dropped,
+            queue_cleared=cleared,
         )
+
+    # =========================================================================
+    # Symbol Priority Management (Story 19.23)
+    # =========================================================================
+
+    async def set_symbol_priority(self, symbol: str, priority: Priority) -> None:
+        """
+        Set processing priority for a symbol.
+
+        Args:
+            symbol: Symbol identifier
+            priority: Priority level (HIGH, MEDIUM, LOW)
+        """
+        await self._priority_manager.set_priority(symbol, priority)
+        logger.info(
+            "symbol_priority_set",
+            symbol=symbol,
+            priority=priority.name,
+        )
+
+    async def get_symbol_priority(self, symbol: str) -> Priority:
+        """
+        Get processing priority for a symbol.
+
+        Args:
+            symbol: Symbol identifier
+
+        Returns:
+            Priority level (MEDIUM if not explicitly set)
+        """
+        return await self._priority_manager.get_priority(symbol)
+
+    async def set_symbol_priorities(self, priorities: dict[str, Priority]) -> None:
+        """
+        Bulk set priorities for multiple symbols.
+
+        Args:
+            priorities: Mapping of symbol to priority
+        """
+        await self._priority_manager.set_priorities(priorities)
+        logger.info(
+            "symbol_priorities_bulk_set",
+            count=len(priorities),
+        )
+
+    async def clear_symbol_priorities(self) -> None:
+        """Clear all symbol priority settings (revert to MEDIUM)."""
+        await self._priority_manager.clear()
+        logger.info("symbol_priorities_cleared")
 
     def _on_bar_received(self, bar: OHLCVBar) -> None:
         """
         Callback invoked when a bar is received from the coordinator.
 
         Queues the bar for processing with backpressure handling.
+        Uses symbol priority for queue ordering (Story 19.23).
 
         Note: This is intentionally a synchronous method despite being called from
         an async WebSocket context. It uses put_nowait() for non-blocking queue
@@ -285,20 +335,25 @@ class RealtimePatternScanner:
                 )
                 return
 
-        # Try to queue the bar
-        try:
-            self._bar_queue.put_nowait(bar)
+        # Get symbol priority (Story 19.23)
+        priority = self._priority_manager.get_priority_sync(bar.symbol)
+
+        # Try to queue the bar with priority
+        success = self._bar_queue.put_nowait(bar.symbol, bar, priority)
+        if success:
             logger.debug(
                 "bar_queued",
                 symbol=bar.symbol,
+                priority=priority.name,
                 queue_depth=self._bar_queue.qsize(),
             )
-        except asyncio.QueueFull:
+        else:
             # Backpressure: queue is full, drop incoming bar (newest)
             self._metrics.bars_dropped += 1
             logger.warning(
                 "bar_dropped_queue_full",
                 symbol=bar.symbol,
+                priority=priority.name,
                 queue_depth=self._bar_queue.qsize(),
             )
 
@@ -306,18 +361,19 @@ class RealtimePatternScanner:
         """
         Background task to process bars from the queue.
 
-        Processes bars FIFO with latency tracking and circuit breaker.
+        Processes bars in priority order (HIGH > MEDIUM > LOW) with
+        latency tracking and circuit breaker. Story 19.23.
         """
         while self._is_running:
             try:
-                # Wait for next bar with timeout
+                # Wait for next bar with timeout (priority-ordered)
                 try:
-                    bar = await asyncio.wait_for(
-                        self._bar_queue.get(),
-                        timeout=1.0,  # Check is_running every second
-                    )
-                except asyncio.TimeoutError:
+                    prioritized_bar = await self._bar_queue.get(timeout=1.0)
+                except QueueEmpty:
                     continue
+
+                bar = prioritized_bar.bar
+                symbol = prioritized_bar.symbol
 
                 # Process the bar
                 start_time = datetime.now(UTC)
@@ -335,14 +391,16 @@ class RealtimePatternScanner:
                 if latency_ms > self._processing_timeout_ms:
                     logger.warning(
                         "bar_processing_slow",
-                        symbol=bar.symbol,
+                        symbol=symbol,
+                        priority=Priority(prioritized_bar.priority).name,
                         latency_ms=latency_ms,
                         target_ms=self._processing_timeout_ms,
                     )
                 else:
                     logger.debug(
                         "bar_processed",
-                        symbol=bar.symbol,
+                        symbol=symbol,
+                        priority=Priority(prioritized_bar.priority).name,
                         latency_ms=latency_ms,
                     )
 
@@ -437,7 +495,7 @@ class RealtimePatternScanner:
             ScannerHealth with current metrics
         """
         # Determine health status
-        status = "healthy"
+        status: Literal["healthy", "degraded", "unhealthy"] = "healthy"
         if not self._is_running:
             status = "unhealthy"
         elif self._circuit_state == CircuitState.OPEN:

@@ -3,12 +3,14 @@ Auto-Execution Configuration Service
 
 Business logic for automatic signal execution configuration.
 Story 19.14: Auto-Execution Configuration Backend
+Story 19.21: Circuit Breaker Logic Integration
 Story 19.24: Per-symbol confidence filtering
 """
 
 from decimal import Decimal
 from uuid import UUID
 
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.auto_execution_config import (
@@ -19,6 +21,7 @@ from src.models.auto_execution_config import (
 from src.models.signal import TradeSignal
 from src.repositories.auto_execution_repository import AutoExecutionRepository
 from src.repositories.watchlist_repository import WatchlistRepository
+from src.services.circuit_breaker_service import CircuitBreakerService
 
 
 class AutoExecutionConfigService:
@@ -32,16 +35,21 @@ class AutoExecutionConfigService:
     - Kill switch and circuit breaker logic
     """
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, redis: Redis | None = None):
         """
-        Initialize service with database session.
+        Initialize service with database session and optional Redis client.
 
         Args:
             session: SQLAlchemy async session
+            redis: Optional Redis client for circuit breaker (Story 19.21)
         """
         self.session = session
         self.repository = AutoExecutionRepository(session)
         self.watchlist_repository = WatchlistRepository(session)
+        self.redis = redis
+        self._circuit_breaker: CircuitBreakerService | None = None
+        if redis:
+            self._circuit_breaker = CircuitBreakerService(redis)
 
     async def get_config(self, user_id: UUID) -> AutoExecutionConfigResponse:
         """
@@ -200,6 +208,7 @@ class AutoExecutionConfigService:
         Validates against all configuration rules:
         - Auto-execution enabled
         - Kill switch not active
+        - Circuit breaker not triggered (Story 19.21)
         - Consent given
         - Confidence threshold met
         - Daily trade limit not exceeded
@@ -227,6 +236,11 @@ class AutoExecutionConfigService:
         # Check kill switch
         if config.kill_switch_active:
             return False, "Kill switch active"
+
+        # Check circuit breaker (Story 19.21)
+        if self._circuit_breaker:
+            if await self._circuit_breaker.is_breaker_open(user_id):
+                return False, "Circuit breaker active"
 
         # Check consent
         if config.consent_given_at is None:
@@ -277,6 +291,35 @@ class AutoExecutionConfigService:
 
         # All checks passed
         return True, "Signal eligible for auto-execution"
+
+    async def record_trade_outcome(self, user_id: UUID, is_winner: bool) -> tuple[bool, str]:
+        """
+        Record trade outcome and check circuit breaker (Story 19.21).
+
+        After a trade closes, record whether it was a winner or loser.
+        If consecutive losses exceed threshold, circuit breaker triggers.
+
+        Args:
+            user_id: User UUID
+            is_winner: True if trade was profitable, False if loss
+
+        Returns:
+            Tuple of (breaker_triggered: bool, message: str)
+        """
+        if not self._circuit_breaker:
+            return False, "Circuit breaker not configured (no Redis)"
+
+        config = await self.repository.get_config(user_id)
+        if config is None:
+            return False, "Auto-execution not configured"
+
+        threshold = config.circuit_breaker_losses
+        state = await self._circuit_breaker.record_trade_result(user_id, is_winner, threshold)
+
+        if state.value == "open":
+            return True, f"Circuit breaker triggered after {threshold} consecutive losses"
+
+        return False, "Trade outcome recorded"
 
     async def _get_trades_today(self, user_id: UUID) -> int:
         """

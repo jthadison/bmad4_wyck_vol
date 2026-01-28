@@ -3,6 +3,7 @@ Settings API Routes
 
 Endpoints for user settings including auto-execution configuration.
 Story 19.14: Auto-Execution Configuration Backend
+Story 19.21: Circuit Breaker Logic
 Story 19.22: Emergency Kill Switch - WebSocket notifications and audit logging
 """
 
@@ -12,9 +13,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import get_current_user_id, get_db_session
+from src.api.dependencies import get_current_user_id, get_db_session, get_redis_client
 from src.api.websocket import manager as websocket_manager
 from src.models.auto_execution_config import (
     AutoExecutionConfigResponse,
@@ -22,7 +24,12 @@ from src.models.auto_execution_config import (
     AutoExecutionEnableRequest,
     KillSwitchActivationResponse,
 )
+from src.models.circuit_breaker import (
+    CircuitBreakerResetResponse,
+    CircuitBreakerStatusResponse,
+)
 from src.services.auto_execution_config_service import AutoExecutionConfigService
+from src.services.circuit_breaker_service import CircuitBreakerService
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 logger = logging.getLogger(__name__)
@@ -390,4 +397,141 @@ async def deactivate_kill_switch(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to deactivate kill switch. Please try again later.",
+        ) from e
+
+
+# =============================================================================
+# Circuit Breaker Endpoints (Story 19.21)
+# =============================================================================
+
+
+@router.get("/circuit-breaker", response_model=CircuitBreakerStatusResponse)
+async def get_circuit_breaker_status(
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+    redis: Redis = Depends(get_redis_client),
+):
+    """
+    Get circuit breaker status.
+
+    Returns current circuit breaker state, consecutive loss count, and
+    threshold configuration. If breaker is open, includes trigger time
+    and next automatic reset time (midnight ET).
+
+    **Authentication**: Required (JWT Bearer token)
+
+    **Returns**:
+    - Circuit breaker state (closed = normal, open = paused)
+    - Consecutive loss count
+    - Configured threshold
+    - Trigger timestamp (if open)
+    - Next automatic reset time (if open)
+
+    Example:
+        ```bash
+        curl -X GET http://localhost:8000/api/v1/settings/circuit-breaker \\
+          -H "Authorization: Bearer YOUR_JWT_TOKEN"
+        ```
+    """
+    try:
+        # Get circuit breaker service
+        cb_service = CircuitBreakerService(redis)
+
+        # Get config service for threshold
+        config_service = AutoExecutionConfigService(db)
+        config = await config_service.get_config(user_id)
+
+        # Get circuit breaker state
+        state = await cb_service.get_state(user_id)
+        consecutive_losses = await cb_service.get_consecutive_losses(user_id)
+        triggered_at = await cb_service.get_triggered_at(user_id)
+
+        # Calculate reset time if breaker is open
+        resets_at = None
+        if state.value == "open" and triggered_at:
+            resets_at = cb_service.calculate_reset_time(triggered_at)
+
+        return CircuitBreakerStatusResponse(
+            state=state,
+            consecutive_losses=consecutive_losses,
+            threshold=config.circuit_breaker_losses,
+            triggered_at=triggered_at,
+            resets_at=resets_at,
+            can_reset=True,
+        )
+    except Exception as e:
+        logger.exception("Failed to get circuit breaker status for user %s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve circuit breaker status. Please try again later.",
+        ) from e
+
+
+@router.post("/circuit-breaker/reset", response_model=CircuitBreakerResetResponse)
+async def reset_circuit_breaker(
+    user_id: UUID = Depends(get_current_user_id),
+    redis: Redis = Depends(get_redis_client),
+):
+    """
+    Manually reset circuit breaker.
+
+    Resets the circuit breaker to CLOSED state, clearing the consecutive
+    loss counter. This allows auto-execution to resume immediately.
+
+    **Authentication**: Required (JWT Bearer token)
+
+    **Returns**:
+    - New circuit breaker state (closed)
+    - Consecutive losses (0)
+    - Reset timestamp
+    - Confirmation message
+
+    **Audit Trail**:
+    - Logs manual reset event
+
+    Example:
+        ```bash
+        curl -X POST http://localhost:8000/api/v1/settings/circuit-breaker/reset \\
+          -H "Authorization: Bearer YOUR_JWT_TOKEN"
+        ```
+    """
+    try:
+        cb_service = CircuitBreakerService(redis)
+        reset_at = datetime.now(UTC)
+
+        # Reset the breaker
+        await cb_service.reset_breaker(user_id, manual=True)
+
+        # Log to audit trail
+        logger.info(
+            "Circuit breaker manually reset",
+            extra={
+                "event_type": "circuit_breaker_reset",
+                "user_id": str(user_id),
+                "reset_type": "manual",
+                "reset_at": reset_at.isoformat(),
+            },
+        )
+
+        # Broadcast WebSocket notification
+        await websocket_manager.broadcast(
+            {
+                "type": "circuit_breaker_reset",
+                "message": "Circuit breaker reset - auto-execution resumed",
+                "reset_at": reset_at.isoformat(),
+                "user_id": str(user_id),
+            }
+        )
+
+        return CircuitBreakerResetResponse(
+            state="closed",
+            consecutive_losses=0,
+            reset_at=reset_at,
+            message="Circuit breaker reset successfully",
+        )
+    except Exception as e:
+        logger.exception("Failed to reset circuit breaker for user %s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset circuit breaker. Please try again later.",
         ) from e
