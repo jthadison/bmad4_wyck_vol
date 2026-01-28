@@ -361,6 +361,65 @@ class TestOverallStatus:
         assert status.is_running is False
 
 
+class TestStalenessBlocking:
+    """Test that stale data blocks signal processing (Story 19.26)."""
+
+    @pytest.mark.asyncio
+    async def test_stale_bar_is_skipped(self):
+        """Bars with stale timestamps should be skipped, not processed."""
+        from datetime import timedelta
+
+        from src.config import settings
+
+        processor = MultiSymbolProcessor(symbols=["AAPL"])
+        await processor.start()
+
+        try:
+            # Create a stale bar (older than threshold)
+            stale_time = datetime.now(UTC) - timedelta(
+                seconds=settings.staleness_threshold_seconds + 60
+            )
+            stale_bar = create_test_bar("AAPL", timestamp=stale_time)
+
+            # Queue the stale bar
+            result = processor.queue_bar(stale_bar)
+            assert result is True
+
+            # Give the processor time to handle the bar
+            await asyncio.sleep(0.2)
+
+            # Bar should NOT have been processed (bars_processed should be 0)
+            status = processor.get_symbol_status("AAPL")
+            assert status.bars_processed == 0
+            assert status.is_stale is True
+        finally:
+            await processor.stop()
+
+    @pytest.mark.asyncio
+    async def test_fresh_bar_is_processed(self):
+        """Bars with fresh timestamps should be processed normally."""
+        processor = MultiSymbolProcessor(symbols=["AAPL"])
+        await processor.start()
+
+        try:
+            # Create a fresh bar (current timestamp)
+            fresh_bar = create_test_bar("AAPL", timestamp=datetime.now(UTC))
+
+            # Queue the fresh bar
+            result = processor.queue_bar(fresh_bar)
+            assert result is True
+
+            # Give the processor time to handle the bar
+            await asyncio.sleep(0.2)
+
+            # Bar should have been processed
+            status = processor.get_symbol_status("AAPL")
+            assert status.bars_processed == 1
+            assert status.is_stale is False
+        finally:
+            await processor.stop()
+
+
 class TestSymbolManagement:
     """Test dynamic symbol management."""
 

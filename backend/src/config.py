@@ -167,7 +167,8 @@ class Settings(BaseSettings):
         default=900,
         ge=300,
         le=3600,
-        description="Seconds of staleness before alerting during market hours (15 minutes default)",
+        description="Seconds of staleness before alerting during market hours (15 minutes default). "
+        "Used by Prometheus alert rules in alert-rules.yml.",
     )
 
     # Data Ingestion Settings

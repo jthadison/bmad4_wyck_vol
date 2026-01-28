@@ -352,6 +352,29 @@ class MultiSymbolProcessor:
                     )
                     continue
 
+                # Story 19.26: Check staleness BEFORE processing
+                # Update last_bar_time first to reflect this new bar
+                context.metrics.last_bar_time = bar.timestamp
+
+                # Now check if the bar data itself is stale
+                if context.metrics.is_stale():
+                    age_seconds = context.metrics.get_data_age_seconds()
+                    logger.warning(
+                        "bar_skipped_stale_data",
+                        symbol=symbol,
+                        bar_timestamp=bar.timestamp.isoformat(),
+                        age_seconds=age_seconds,
+                        threshold_seconds=settings.staleness_threshold_seconds,
+                    )
+                    # Update Prometheus metrics for stale symbol
+                    stale_symbols_gauge.labels(symbol=symbol).set(1)
+                    if age_seconds is not None:
+                        symbol_data_age_seconds.labels(symbol=symbol).set(age_seconds)
+                    continue
+
+                # Data is fresh - mark as not stale in metrics
+                stale_symbols_gauge.labels(symbol=symbol).set(0)
+
                 # Process the bar with timing
                 start_time = datetime.now(UTC)
                 try:
@@ -376,8 +399,7 @@ class MultiSymbolProcessor:
                 context.metrics.total_latency_ms += latency_ms
                 context.metrics.bars_processed += 1
                 context.metrics.last_processed = end_time
-                # Track last bar time for staleness (Story 19.26)
-                context.metrics.last_bar_time = bar.timestamp
+                # Note: last_bar_time already set above before staleness check
 
                 # Log if latency exceeds target
                 if latency_ms > self._processing_timeout_ms:
