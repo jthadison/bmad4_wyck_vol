@@ -24,11 +24,11 @@ const emit = defineEmits<{
 const store = useWatchlistStore()
 const confirm = useConfirm()
 
-// Priority options with color indicators (Story 19.23)
+// Priority options for dropdown (Story 19.23)
 const priorityOptions = [
-  { label: 'High', value: 'high', icon: 'priority-high' },
-  { label: 'Medium', value: 'medium', icon: 'priority-medium' },
-  { label: 'Low', value: 'low', icon: 'priority-low' },
+  { label: 'High', value: 'high' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Low', value: 'low' },
 ]
 
 // Get CSS class for priority indicator
@@ -251,6 +251,7 @@ function confirmRemove(entry: WatchlistEntry) {
 }
 
 .priority-dropdown {
+  /* Width increased from 120px to accommodate color indicator dot + label */
   width: 130px;
 }
 
@@ -275,18 +276,18 @@ function confirmRemove(entry: WatchlistEntry) {
 }
 
 .priority-indicator.priority-high {
-  background-color: #ef4444; /* Red */
-  box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+  background-color: var(--color-danger, #ef4444);
+  box-shadow: 0 0 4px var(--color-danger-glow, rgba(239, 68, 68, 0.5));
 }
 
 .priority-indicator.priority-medium {
-  background-color: #eab308; /* Yellow */
-  box-shadow: 0 0 4px rgba(234, 179, 8, 0.5);
+  background-color: var(--color-warning, #eab308);
+  box-shadow: 0 0 4px var(--color-warning-glow, rgba(234, 179, 8, 0.5));
 }
 
 .priority-indicator.priority-low {
-  background-color: #22c55e; /* Green */
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.5);
+  background-color: var(--color-success, #22c55e);
+  box-shadow: 0 0 4px var(--color-success-glow, rgba(34, 197, 94, 0.5));
 }
 
 .confidence-input {

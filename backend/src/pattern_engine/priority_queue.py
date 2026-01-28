@@ -65,6 +65,10 @@ class PriorityBarQueue:
         item = await queue.get()  # Returns PrioritizedBar
     """
 
+    # Maximum counter value before wrapping (2^63 - 1)
+    # Prevents unbounded growth in long-running processes
+    _MAX_COUNTER = (2**63) - 1
+
     def __init__(self, maxsize: int = 0):
         """
         Initialize the priority queue.
@@ -100,7 +104,8 @@ class PriorityBarQueue:
                 return False
 
             # Use counter for FIFO ordering within same priority
-            self._counter += 1
+            # Modular arithmetic prevents unbounded growth in long-running processes
+            self._counter = (self._counter + 1) % self._MAX_COUNTER
             item = PrioritizedBar(
                 priority=priority.value,
                 timestamp=self._counter,  # Use counter instead of time for deterministic ordering
@@ -168,8 +173,19 @@ class PriorityBarQueue:
         """
         Add a bar to the priority queue without waiting (synchronous).
 
-        Note: This method is intentionally synchronous for use in sync callbacks.
-        It is NOT thread-safe and should only be called from the same event loop.
+        Warning - Concurrency Constraints:
+            This method is intentionally synchronous for use in sync callbacks
+            (e.g., WebSocket message handlers). It modifies shared state without
+            locks, which means:
+
+            1. NOT thread-safe: Do not call from multiple threads simultaneously
+            2. NOT safe for concurrent coroutines: Even within the same event loop,
+               concurrent coroutines calling this method may cause race conditions
+            3. Safe usage: Call only from a single synchronous callback context
+               where no other code can interleave (e.g., _on_bar_received)
+
+            For async contexts with potential concurrency, use the async `put()`
+            method instead, which uses proper locking.
 
         Args:
             symbol: Symbol identifier
@@ -182,7 +198,8 @@ class PriorityBarQueue:
         if self._maxsize > 0 and len(self._queue) >= self._maxsize:
             return False
 
-        self._counter += 1
+        # Use modular arithmetic to prevent unbounded growth in long-running processes
+        self._counter = (self._counter + 1) % self._MAX_COUNTER
         item = PrioritizedBar(
             priority=priority.value,
             timestamp=self._counter,
@@ -228,7 +245,17 @@ class SymbolPriorityManager:
 
     def get_priority_sync(self, symbol: str) -> Priority:
         """
-        Get priority for a symbol (synchronous, thread-safe read).
+        Get priority for a symbol (synchronous read).
+
+        Thread Safety Note:
+            This method reads from the dict without locking. This is safe in
+            CPython due to the Global Interpreter Lock (GIL), which ensures
+            atomic dict.get() operations. However, this is CPython-specific
+            behavior and may not be safe in other Python implementations
+            (e.g., PyPy, Jython).
+
+            For guaranteed thread safety across implementations, use the
+            async `get_priority()` method instead.
 
         Args:
             symbol: Symbol identifier
