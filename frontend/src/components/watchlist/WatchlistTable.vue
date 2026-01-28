@@ -24,11 +24,24 @@ const emit = defineEmits<{
 const store = useWatchlistStore()
 const confirm = useConfirm()
 
+// Priority options with color indicators (Story 19.23)
 const priorityOptions = [
-  { label: 'High', value: 'high' },
-  { label: 'Medium', value: 'medium' },
-  { label: 'Low', value: 'low' },
+  { label: 'High', value: 'high', icon: 'priority-high' },
+  { label: 'Medium', value: 'medium', icon: 'priority-medium' },
+  { label: 'Low', value: 'low', icon: 'priority-low' },
 ]
+
+// Get CSS class for priority indicator
+function getPriorityClass(priority: string): string {
+  switch (priority) {
+    case 'high':
+      return 'priority-high'
+    case 'low':
+      return 'priority-low'
+    default:
+      return 'priority-medium'
+  }
+}
 
 async function onPriorityChange(
   entry: WatchlistEntry,
@@ -115,7 +128,29 @@ function confirmRemove(entry: WatchlistEntry) {
             :disabled="store.isSaving"
             :data-testid="`priority-${data.symbol}`"
             @update:model-value="(val) => onPriorityChange(data, val)"
-          />
+          >
+            <template #value="slotProps">
+              <div v-if="slotProps.value" class="priority-value">
+                <span
+                  class="priority-indicator"
+                  :class="getPriorityClass(slotProps.value)"
+                ></span>
+                <span>{{
+                  priorityOptions.find((o) => o.value === slotProps.value)
+                    ?.label
+                }}</span>
+              </div>
+            </template>
+            <template #option="slotProps">
+              <div class="priority-option">
+                <span
+                  class="priority-indicator"
+                  :class="getPriorityClass(slotProps.option.value)"
+                ></span>
+                <span>{{ slotProps.option.label }}</span>
+              </div>
+            </template>
+          </Dropdown>
         </template>
       </Column>
 
@@ -216,11 +251,42 @@ function confirmRemove(entry: WatchlistEntry) {
 }
 
 .priority-dropdown {
-  width: 120px;
+  width: 130px;
 }
 
 .priority-dropdown :deep(.p-dropdown) {
   width: 100%;
+}
+
+/* Priority indicator styles (Story 19.23) */
+.priority-value,
+.priority-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.priority-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.priority-indicator.priority-high {
+  background-color: #ef4444; /* Red */
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+}
+
+.priority-indicator.priority-medium {
+  background-color: #eab308; /* Yellow */
+  box-shadow: 0 0 4px rgba(234, 179, 8, 0.5);
+}
+
+.priority-indicator.priority-low {
+  background-color: #22c55e; /* Green */
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.5);
 }
 
 .confidence-input {
