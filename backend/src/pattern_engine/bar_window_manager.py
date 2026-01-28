@@ -12,15 +12,26 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import structlog
+
+from src.config import settings
 
 if TYPE_CHECKING:
     from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
     from src.models.ohlcv import OHLCVBar
 
 logger = structlog.get_logger(__name__)
+
+
+class StalenessInfo(TypedDict):
+    """Staleness information for a symbol."""
+
+    is_stale: bool
+    reason: str | None
+    last_bar_time: str | None
+    age_seconds: float | None
 
 
 class WindowState(str, Enum):
@@ -321,3 +332,94 @@ class BarWindowManager:
         symbol_count = len(self._windows)
         self._windows.clear()
         logger.info("all_windows_cleared", symbol_count=symbol_count)
+
+    def is_stale(self, symbol: str) -> bool:
+        """
+        Check if symbol data is stale.
+
+        Data is considered stale if:
+        - Symbol is not tracked
+        - Window has no bars
+        - Last bar is older than staleness_threshold_seconds
+
+        Args:
+            symbol: Symbol to check
+
+        Returns:
+            True if data is stale, False if fresh
+        """
+        window = self._windows.get(symbol)
+        if not window or not window.bars:
+            return True
+
+        last_bar_time = window.bars[-1].timestamp
+        # Ensure last_bar_time is timezone-aware
+        if last_bar_time.tzinfo is None:
+            last_bar_time = last_bar_time.replace(tzinfo=UTC)
+
+        age = datetime.now(UTC) - last_bar_time
+        threshold = timedelta(seconds=settings.staleness_threshold_seconds)
+
+        return age > threshold
+
+    def get_staleness_info(self, symbol: str) -> StalenessInfo:
+        """
+        Get detailed staleness information for a symbol.
+
+        Args:
+            symbol: Symbol to query
+
+        Returns:
+            StalenessInfo dict with staleness status and details
+        """
+        window = self._windows.get(symbol)
+        if not window or not window.bars:
+            return StalenessInfo(
+                is_stale=True,
+                reason="no_data",
+                last_bar_time=None,
+                age_seconds=None,
+            )
+
+        last_bar_time = window.bars[-1].timestamp
+        # Ensure last_bar_time is timezone-aware
+        if last_bar_time.tzinfo is None:
+            last_bar_time = last_bar_time.replace(tzinfo=UTC)
+
+        age = datetime.now(UTC) - last_bar_time
+        threshold = timedelta(seconds=settings.staleness_threshold_seconds)
+        is_stale = age > threshold
+
+        return StalenessInfo(
+            is_stale=is_stale,
+            reason="data_old" if is_stale else None,
+            last_bar_time=last_bar_time.isoformat(),
+            age_seconds=age.total_seconds(),
+        )
+
+    def get_all_staleness_info(self) -> dict[str, StalenessInfo]:
+        """
+        Get staleness information for all tracked symbols.
+
+        Returns:
+            Dict mapping symbol to StalenessInfo
+        """
+        return {symbol: self.get_staleness_info(symbol) for symbol in self._windows}
+
+    def get_stale_symbols(self) -> list[str]:
+        """
+        Get list of symbols with stale data.
+
+        Returns:
+            List of symbols with stale data
+        """
+        return [symbol for symbol in self._windows if self.is_stale(symbol)]
+
+    def get_stale_count(self) -> int:
+        """
+        Get count of symbols with stale data.
+
+        Returns:
+            Number of stale symbols
+        """
+        return sum(1 for symbol in self._windows if self.is_stale(symbol))
