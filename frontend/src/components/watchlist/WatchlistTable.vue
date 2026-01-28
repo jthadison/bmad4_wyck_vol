@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * WatchlistTable Component (Story 19.13)
+ * WatchlistTable Component (Story 19.13, 19.24)
  *
- * Displays watchlist symbols with inline editing for priority, confidence, and enabled status
+ * Displays watchlist symbols with inline editing for priority, confidence, and enabled status.
+ * Story 19.24: Per-symbol confidence filter (60-100%) for auto-execution filtering.
  */
 
 import DataTable from 'primevue/datatable'
@@ -15,6 +16,11 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
 import { useWatchlistStore } from '@/stores/watchlistStore'
 import type { WatchlistEntry, WatchlistPriority } from '@/types'
+
+// Tooltip text for the confidence input
+const confidenceTooltip =
+  'Per-symbol minimum confidence threshold (60-100%). ' +
+  'Signals below this value will be rejected even if they pass the global threshold.'
 
 const emit = defineEmits<{
   (e: 'symbol-removed', symbol: string): void
@@ -155,11 +161,17 @@ function confirmRemove(entry: WatchlistEntry) {
       </Column>
 
       <Column field="min_confidence" header="Min Confidence" style="width: 20%">
+        <template #header>
+          <span v-tooltip.top="confidenceTooltip" class="confidence-header">
+            Min Confidence
+            <i class="pi pi-info-circle info-icon" />
+          </span>
+        </template>
         <template #body="{ data }">
           <InputNumber
             :model-value="data.min_confidence"
             suffix="%"
-            :min="0"
+            :min="60"
             :max="100"
             class="confidence-input"
             placeholder="-"
@@ -257,6 +269,19 @@ function confirmRemove(entry: WatchlistEntry) {
 
 .priority-dropdown :deep(.p-dropdown) {
   width: 100%;
+}
+
+/* Story 19.24: Confidence header tooltip */
+.confidence-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: help;
+}
+
+.info-icon {
+  font-size: 12px;
+  opacity: 0.6;
 }
 
 /* Priority indicator styles (Story 19.23) */

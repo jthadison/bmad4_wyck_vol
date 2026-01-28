@@ -4,6 +4,7 @@ Auto-Execution Configuration Service
 Business logic for automatic signal execution configuration.
 Story 19.14: Auto-Execution Configuration Backend
 Story 19.21: Circuit Breaker Logic Integration
+Story 19.24: Per-symbol confidence filtering
 """
 
 from decimal import Decimal
@@ -19,6 +20,7 @@ from src.models.auto_execution_config import (
 )
 from src.models.signal import TradeSignal
 from src.repositories.auto_execution_repository import AutoExecutionRepository
+from src.repositories.watchlist_repository import WatchlistRepository
 from src.services.circuit_breaker_service import CircuitBreakerService
 
 
@@ -43,6 +45,7 @@ class AutoExecutionConfigService:
         """
         self.session = session
         self.repository = AutoExecutionRepository(session)
+        self.watchlist_repository = WatchlistRepository(session)
         self.redis = redis
         self._circuit_breaker: CircuitBreakerService | None = None
         if redis:
@@ -243,12 +246,22 @@ class AutoExecutionConfigService:
         if config.consent_given_at is None:
             return False, "Consent not given"
 
-        # Check confidence threshold
-        if Decimal(str(signal.confidence_score)) < config.min_confidence:
+        # Check confidence threshold (global)
+        signal_confidence = Decimal(str(signal.confidence_score))
+        if signal_confidence < config.min_confidence:
             return (
                 False,
-                f"Confidence {signal.confidence_score}% < threshold {config.min_confidence}%",
+                f"Below minimum confidence (global: {config.min_confidence}%)",
             )
+
+        # Check symbol-specific confidence threshold (Story 19.24)
+        watchlist_entry = await self.watchlist_repository.get_symbol(user_id, signal.symbol)
+        if watchlist_entry and watchlist_entry.min_confidence is not None:
+            if signal_confidence < watchlist_entry.min_confidence:
+                return (
+                    False,
+                    f"Below symbol minimum confidence ({signal.symbol}: {watchlist_entry.min_confidence}%)",
+                )
 
         # TODO: Check daily trade limit (requires querying today's trades)
         # trades_today = await self._get_trades_today(user_id)

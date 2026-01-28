@@ -4,6 +4,7 @@ Unit tests for Auto-Execution Configuration Service
 Tests configuration CRUD operations, validation logic, and signal eligibility.
 Story 19.14: Auto-Execution Configuration Backend
 Story 19.21: Circuit Breaker Integration
+Story 19.24: Per-symbol confidence filtering
 """
 
 from datetime import UTC, datetime
@@ -35,24 +36,35 @@ def mock_session():
 
 
 @pytest.fixture
+def mock_watchlist_repository():
+    """Create a mock watchlist repository."""
+    repo = AsyncMock()
+    # Default: no symbol-specific threshold
+    repo.get_symbol.return_value = None
+    return repo
+
+
+@pytest.fixture
 def mock_redis():
     """Create a mock Redis client."""
     return AsyncMock()
 
 
 @pytest.fixture
-def service(mock_session, mock_repository):
+def service(mock_session, mock_repository, mock_watchlist_repository):
     """Create service with mock dependencies."""
     service = AutoExecutionConfigService(mock_session)
     service.repository = mock_repository
+    service.watchlist_repository = mock_watchlist_repository
     return service
 
 
 @pytest.fixture
-def service_with_redis(mock_session, mock_repository, mock_redis):
+def service_with_redis(mock_session, mock_repository, mock_watchlist_repository, mock_redis):
     """Create service with mock dependencies including Redis for circuit breaker."""
     service = AutoExecutionConfigService(mock_session, redis=mock_redis)
     service.repository = mock_repository
+    service.watchlist_repository = mock_watchlist_repository
     return service
 
 
@@ -389,6 +401,184 @@ class TestSignalEligibility:
 
         assert eligible is False
         assert "blacklist" in reason.lower()
+
+
+class TestSymbolSpecificConfidenceFilter:
+    """Tests for per-symbol confidence filtering (Story 19.24)."""
+
+    @pytest.mark.asyncio
+    async def test_signal_passes_with_no_symbol_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal passes when symbol has no min_confidence set."""
+        mock_repository.get_config.return_value = enabled_config
+        # Symbol has no min_confidence - should fall back to global threshold only
+        service.watchlist_repository.get_symbol.return_value = None
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is True
+        assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_signal_passes_symbol_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal passes when above symbol-specific threshold."""
+        from src.models.watchlist import WatchlistEntry, WatchlistPriority
+
+        mock_repository.get_config.return_value = enabled_config
+        # Signal confidence is 87%, symbol threshold is 80%
+        watchlist_entry = WatchlistEntry(
+            symbol="AAPL",
+            priority=WatchlistPriority.MEDIUM,
+            min_confidence=Decimal("80.00"),
+            enabled=True,
+            added_at=datetime.now(UTC),
+        )
+        service.watchlist_repository.get_symbol.return_value = watchlist_entry
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is True
+        assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_signal_rejected_below_symbol_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal rejected when below symbol-specific threshold."""
+        from src.models.watchlist import WatchlistEntry, WatchlistPriority
+
+        mock_repository.get_config.return_value = enabled_config
+        # Signal confidence is 87%, symbol threshold is 90%
+        watchlist_entry = WatchlistEntry(
+            symbol="AAPL",
+            priority=WatchlistPriority.MEDIUM,
+            min_confidence=Decimal("90.00"),
+            enabled=True,
+            added_at=datetime.now(UTC),
+        )
+        service.watchlist_repository.get_symbol.return_value = watchlist_entry
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is False
+        assert "Below symbol minimum confidence (AAPL: 90" in reason
+
+    @pytest.mark.asyncio
+    async def test_global_threshold_checked_before_symbol(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test that global threshold is checked before symbol threshold."""
+        from src.models.watchlist import WatchlistEntry, WatchlistPriority
+
+        # Set global threshold to 95%, signal is 87%
+        enabled_config.min_confidence = Decimal("95.00")
+        mock_repository.get_config.return_value = enabled_config
+        # Even if symbol threshold is lower (80%), global should reject first
+        watchlist_entry = WatchlistEntry(
+            symbol="AAPL",
+            priority=WatchlistPriority.MEDIUM,
+            min_confidence=Decimal("80.00"),
+            enabled=True,
+            added_at=datetime.now(UTC),
+        )
+        service.watchlist_repository.get_symbol.return_value = watchlist_entry
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is False
+        assert "Below minimum confidence (global: 95" in reason
+
+    @pytest.mark.asyncio
+    async def test_symbol_threshold_null_uses_global_only(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test that null symbol threshold only checks global threshold."""
+        from src.models.watchlist import WatchlistEntry, WatchlistPriority
+
+        mock_repository.get_config.return_value = enabled_config
+        # Symbol has explicit null min_confidence
+        watchlist_entry = WatchlistEntry(
+            symbol="AAPL",
+            priority=WatchlistPriority.MEDIUM,
+            min_confidence=None,  # Explicit null
+            enabled=True,
+            added_at=datetime.now(UTC),
+        )
+        service.watchlist_repository.get_symbol.return_value = watchlist_entry
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is True
+        assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_signal_at_exact_60_percent_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal passes when confidence exactly equals 60% threshold."""
+        from src.models.watchlist import WatchlistEntry, WatchlistPriority
+
+        # Signal confidence at 60%, threshold at 60%
+        sample_signal.confidence_score = 60.0
+        enabled_config.min_confidence = Decimal("60.00")
+        mock_repository.get_config.return_value = enabled_config
+        watchlist_entry = WatchlistEntry(
+            symbol="AAPL",
+            priority=WatchlistPriority.MEDIUM,
+            min_confidence=Decimal("60.00"),  # Exact boundary
+            enabled=True,
+            added_at=datetime.now(UTC),
+        )
+        service.watchlist_repository.get_symbol.return_value = watchlist_entry
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is True
+        assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_signal_at_exact_100_percent_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal passes when confidence exactly equals 100% threshold."""
+        from src.models.watchlist import WatchlistEntry, WatchlistPriority
+
+        # Signal confidence at 100%, threshold at 100%
+        sample_signal.confidence_score = 100.0
+        enabled_config.min_confidence = Decimal("60.00")
+        mock_repository.get_config.return_value = enabled_config
+        watchlist_entry = WatchlistEntry(
+            symbol="AAPL",
+            priority=WatchlistPriority.MEDIUM,
+            min_confidence=Decimal("100.00"),  # Maximum boundary
+            enabled=True,
+            added_at=datetime.now(UTC),
+        )
+        service.watchlist_repository.get_symbol.return_value = watchlist_entry
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is True
+        assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_signal_just_below_60_percent_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal fails when confidence just below 60% threshold."""
+        # Signal confidence at 59.99%, threshold at 60%
+        sample_signal.confidence_score = 59.99
+        enabled_config.min_confidence = Decimal("60.00")
+        mock_repository.get_config.return_value = enabled_config
+        service.watchlist_repository.get_symbol.return_value = None
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is False
+        assert "Below minimum confidence (global: 60" in reason
 
 
 class TestConfigValidation:
