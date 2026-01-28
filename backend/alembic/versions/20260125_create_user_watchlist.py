@@ -108,9 +108,9 @@ def upgrade() -> None:
             "priority IN ('low', 'medium', 'high')",
             name="chk_watchlist_priority",
         ),
-        # Check constraint for min_confidence range
+        # Check constraint for min_confidence range (Story 19.24: 60-100%)
         sa.CheckConstraint(
-            "min_confidence IS NULL OR (min_confidence >= 0 AND min_confidence <= 100)",
+            "min_confidence IS NULL OR (min_confidence >= 60 AND min_confidence <= 100)",
             name="chk_watchlist_min_confidence",
         ),
     )
