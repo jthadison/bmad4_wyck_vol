@@ -52,6 +52,10 @@ from src.pattern_engine.realtime_scanner import (
     get_scanner,
     init_scanner,
 )
+from src.tasks.circuit_breaker_scheduler import (
+    start_circuit_breaker_scheduler,
+    stop_circuit_breaker_scheduler,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -265,6 +269,20 @@ async def startup_event() -> None:
     except Exception as e:
         logger.warning("signal_approval_expiration_task_failed", error=str(e))
 
+    # Initialize circuit breaker scheduler (Story 19.21)
+    try:
+        from redis.asyncio import Redis
+
+        redis_client = Redis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=False,
+        )
+        start_circuit_breaker_scheduler(redis_client)
+        logger.info("circuit_breaker_scheduler_initialized")
+    except Exception as e:
+        logger.warning("circuit_breaker_scheduler_failed", error=str(e))
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
@@ -272,9 +290,15 @@ async def shutdown_event() -> None:
     FastAPI shutdown event handler.
 
     Gracefully stops the real-time pattern scanner, market data feed,
-    and signal approval expiration task.
+    signal approval expiration task, and circuit breaker scheduler.
     """
     global _coordinator
+
+    # Stop circuit breaker scheduler (Story 19.21)
+    try:
+        stop_circuit_breaker_scheduler()
+    except Exception:
+        pass
 
     # Stop signal approval expiration task (Story 19.9)
     try:

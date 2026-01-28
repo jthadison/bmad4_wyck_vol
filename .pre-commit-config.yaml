@@ -25,6 +25,7 @@ repos:
           - types-requests
           - types-cachetools
           - types-PyYAML
+          - types-redis
           - pandas-stubs
           - structlog
 
