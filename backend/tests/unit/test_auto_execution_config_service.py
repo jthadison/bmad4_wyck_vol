@@ -3,6 +3,7 @@ Unit tests for Auto-Execution Configuration Service
 
 Tests configuration CRUD operations, validation logic, and signal eligibility.
 Story 19.14: Auto-Execution Configuration Backend
+Story 19.21: Circuit Breaker Integration
 """
 
 from datetime import UTC, datetime
@@ -34,9 +35,23 @@ def mock_session():
 
 
 @pytest.fixture
+def mock_redis():
+    """Create a mock Redis client."""
+    return AsyncMock()
+
+
+@pytest.fixture
 def service(mock_session, mock_repository):
     """Create service with mock dependencies."""
     service = AutoExecutionConfigService(mock_session)
+    service.repository = mock_repository
+    return service
+
+
+@pytest.fixture
+def service_with_redis(mock_session, mock_repository, mock_redis):
+    """Create service with mock dependencies including Redis for circuit breaker."""
+    service = AutoExecutionConfigService(mock_session, redis=mock_redis)
     service.repository = mock_repository
     return service
 
@@ -426,3 +441,126 @@ class TestConfigValidation:
         default_config.enabled_patterns = ["SPRING", "INVALID_PATTERN"]
         errors = service.validate_config(default_config)
         assert any("invalid" in error.lower() for error in errors)
+
+
+class TestCircuitBreakerIntegration:
+    """Tests for circuit breaker integration (Story 19.21)."""
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_active_rejects_signal(
+        self, service_with_redis, mock_repository, mock_redis, enabled_config, sample_signal
+    ):
+        """Test signal rejected when circuit breaker is active."""
+        mock_repository.get_config.return_value = enabled_config
+        # Mock circuit breaker as OPEN
+        mock_redis.get.return_value = b"open"
+
+        eligible, reason = await service_with_redis.is_signal_eligible(
+            enabled_config.user_id, sample_signal
+        )
+
+        assert eligible is False
+        assert "circuit breaker" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_closed_allows_signal(
+        self, service_with_redis, mock_repository, mock_redis, enabled_config, sample_signal
+    ):
+        """Test signal allowed when circuit breaker is closed."""
+        mock_repository.get_config.return_value = enabled_config
+        # Mock circuit breaker as CLOSED
+        mock_redis.get.return_value = b"closed"
+
+        eligible, reason = await service_with_redis.is_signal_eligible(
+            enabled_config.user_id, sample_signal
+        )
+
+        assert eligible is True
+        assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_no_redis_skips_circuit_breaker_check(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal eligibility works without Redis (no circuit breaker check)."""
+        mock_repository.get_config.return_value = enabled_config
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        # Should still check other eligibility rules
+        assert eligible is True
+
+    @pytest.mark.asyncio
+    async def test_record_winning_trade(
+        self, service_with_redis, mock_repository, mock_redis, enabled_config
+    ):
+        """Test recording a winning trade resets loss counter."""
+        mock_repository.get_config.return_value = enabled_config
+        mock_redis.set = AsyncMock()
+        mock_redis.get.return_value = b"closed"
+
+        triggered, message = await service_with_redis.record_trade_outcome(
+            enabled_config.user_id, is_winner=True
+        )
+
+        assert triggered is False
+        # Should have reset counter to 0
+        mock_redis.set.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_record_losing_trade_below_threshold(
+        self, service_with_redis, mock_repository, mock_redis, enabled_config
+    ):
+        """Test recording a losing trade below threshold."""
+        mock_repository.get_config.return_value = enabled_config
+        mock_redis.incr.return_value = 2  # Below threshold of 3
+        mock_redis.get.return_value = b"closed"
+
+        triggered, message = await service_with_redis.record_trade_outcome(
+            enabled_config.user_id, is_winner=False
+        )
+
+        assert triggered is False
+        assert "recorded" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_record_losing_trade_triggers_breaker(
+        self, service_with_redis, mock_repository, mock_redis, enabled_config
+    ):
+        """Test recording a losing trade that triggers circuit breaker."""
+        mock_repository.get_config.return_value = enabled_config
+        mock_redis.incr.return_value = 3  # Matches threshold of 3
+        mock_redis.set = AsyncMock()
+
+        triggered, message = await service_with_redis.record_trade_outcome(
+            enabled_config.user_id, is_winner=False
+        )
+
+        assert triggered is True
+        assert "triggered" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_record_trade_without_redis_returns_error(
+        self, service, mock_repository, enabled_config
+    ):
+        """Test recording trade without Redis returns appropriate message."""
+        mock_repository.get_config.return_value = enabled_config
+
+        triggered, message = await service.record_trade_outcome(
+            enabled_config.user_id, is_winner=False
+        )
+
+        assert triggered is False
+        assert "not configured" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_record_trade_without_config_returns_error(
+        self, service_with_redis, mock_repository, mock_redis
+    ):
+        """Test recording trade without auto-execution config returns error."""
+        mock_repository.get_config.return_value = None
+
+        triggered, message = await service_with_redis.record_trade_outcome(uuid4(), is_winner=False)
+
+        assert triggered is False
+        assert "not configured" in message.lower()

@@ -272,6 +272,34 @@ typing_extensions = {version = ">=4.5", markers = "python_version < \"3.13\""}
 trio = ["trio (>=0.31.0) ; python_version < \"3.10\"", "trio (>=0.32.0) ; python_version >= \"3.10\""]
 
 [[package]]
+name = "apscheduler"
+version = "3.11.2"
+description = "In-process task scheduler with Cron-like capabilities"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "apscheduler-3.11.2-py3-none-any.whl", hash = "sha256:ce005177f741409db4e4dd40a7431b76feb856b9dd69d57e0da49d6715bfd26d"},
+    {file = "apscheduler-3.11.2.tar.gz", hash = "sha256:2a9966b052ec805f020c8c4c3ae6e6a06e24b1bf19f2e11d91d8cca0473eef41"},
+]
+
+[package.dependencies]
+tzlocal = ">=3.0"
+
+[package.extras]
+doc = ["packaging", "sphinx", "sphinx-rtd-theme (>=1.3.0)"]
+etcd = ["etcd3", "protobuf (<=3.21.0)"]
+gevent = ["gevent"]
+mongodb = ["pymongo (>=3.0)"]
+redis = ["redis (>=3.0)"]
+rethinkdb = ["rethinkdb (>=2.4.0)"]
+sqlalchemy = ["sqlalchemy (>=1.4)"]
+test = ["APScheduler[etcd,mongodb,redis,rethinkdb,sqlalchemy,tornado,zookeeper]", "PySide6 ; platform_python_implementation == \"CPython\" and python_version < \"3.14\"", "anyio (>=4.5.2)", "gevent ; python_version < \"3.14\"", "pytest", "pytest-timeout", "pytz", "twisted ; python_version < \"3.14\""]
+tornado = ["tornado (>=4.3)"]
+twisted = ["twisted"]
+zookeeper = ["kazoo"]
+
+[[package]]
 name = "async-timeout"
 version = "5.0.1"
 description = "Timeout context manager for asyncio programs"
@@ -693,7 +721,7 @@ files = [
     {file = "cffi-2.0.0-cp39-cp39-win_amd64.whl", hash = "sha256:b882b3df248017dba09d6b16defe9b5c407fe32fc7c65a9c69798e6175601be9"},
     {file = "cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529"},
 ]
-markers = {dev = "platform_python_implementation == \"CPython\" and sys_platform == \"win32\" or implementation_name == \"pypy\""}
+markers = {dev = "platform_python_implementation != \"PyPy\" or implementation_name == \"pypy\""}
 
 [package.dependencies]
 pycparser = {version = "*", markers = "implementation_name != \"PyPy\""}
@@ -988,7 +1016,7 @@ version = "46.0.3"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
 optional = false
 python-versions = "!=3.9.0,!=3.9.1,>=3.8"
-groups = ["main"]
+groups = ["main", "dev"]
 files = [
     {file = "cryptography-46.0.3-cp311-abi3-macosx_10_9_universal2.whl", hash = "sha256:109d4ddfadf17e8e7779c39f9b18111a09efb969a301a31e987416a0191ed93a"},
     {file = "cryptography-46.0.3-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:09859af8466b69bc3c27bdf4f5d84a665e0f7ab5088412e9e2ec49758eca5cbc"},
@@ -3804,7 +3832,7 @@ files = [
     {file = "pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"},
     {file = "pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29"},
 ]
-markers = {main = "implementation_name != \"PyPy\"", dev = "platform_python_implementation == \"CPython\" and sys_platform == \"win32\" and implementation_name != \"PyPy\" or implementation_name == \"pypy\""}
+markers = {main = "implementation_name != \"PyPy\"", dev = "implementation_name != \"PyPy\" and (platform_python_implementation != \"PyPy\" or implementation_name == \"pypy\")"}
 
 [[package]]
 name = "pydantic"
@@ -5114,6 +5142,21 @@ files = [
 ]
 
 [[package]]
+name = "types-cffi"
+version = "1.17.0.20250915"
+description = "Typing stubs for cffi"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+files = [
+    {file = "types_cffi-1.17.0.20250915-py3-none-any.whl", hash = "sha256:cef4af1116c83359c11bb4269283c50f0688e9fc1d7f0eeb390f3661546da52c"},
+    {file = "types_cffi-1.17.0.20250915.tar.gz", hash = "sha256:4362e20368f78dabd5c56bca8004752cc890e07a71605d9e0d9e069dbaac8c06"},
+]
+
+[package.dependencies]
+types-setuptools = "*"
+
+[[package]]
 name = "types-html5lib"
 version = "1.1.11.20251117"
 description = "Typing stubs for html5lib"
@@ -5127,6 +5170,22 @@ files = [
 
 [package.dependencies]
 types-webencodings = "*"
+
+[[package]]
+name = "types-pyopenssl"
+version = "24.1.0.20240722"
+description = "Typing stubs for pyOpenSSL"
+optional = false
+python-versions = ">=3.8"
+groups = ["dev"]
+files = [
+    {file = "types-pyOpenSSL-24.1.0.20240722.tar.gz", hash = "sha256:47913b4678a01d879f503a12044468221ed8576263c1540dcb0484ca21b08c39"},
+    {file = "types_pyOpenSSL-24.1.0.20240722-py3-none-any.whl", hash = "sha256:6a7a5d2ec042537934cfb4c9d4deb0e16c4c6250b09358df1f083682fe6fda54"},
+]
+
+[package.dependencies]
+cryptography = ">=35.0.0"
+types-cffi = "*"
 
 [[package]]
 name = "types-python-dateutil"
@@ -5150,6 +5209,34 @@ groups = ["dev"]
 files = [
     {file = "types_pytz-2025.2.0.20251108-py3-none-any.whl", hash = "sha256:0f1c9792cab4eb0e46c52f8845c8f77cf1e313cb3d68bf826aa867fe4717d91c"},
     {file = "types_pytz-2025.2.0.20251108.tar.gz", hash = "sha256:fca87917836ae843f07129567b74c1929f1870610681b4c92cb86a3df5817bdb"},
+]
+
+[[package]]
+name = "types-redis"
+version = "4.6.0.20241004"
+description = "Typing stubs for redis"
+optional = false
+python-versions = ">=3.8"
+groups = ["dev"]
+files = [
+    {file = "types-redis-4.6.0.20241004.tar.gz", hash = "sha256:5f17d2b3f9091ab75384153bfa276619ffa1cf6a38da60e10d5e6749cc5b902e"},
+    {file = "types_redis-4.6.0.20241004-py3-none-any.whl", hash = "sha256:ef5da68cb827e5f606c8f9c0b49eeee4c2669d6d97122f301d3a55dc6a63f6ed"},
+]
+
+[package.dependencies]
+cryptography = ">=35.0.0"
+types-pyOpenSSL = "*"
+
+[[package]]
+name = "types-setuptools"
+version = "80.10.0.20260124"
+description = "Typing stubs for setuptools"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+files = [
+    {file = "types_setuptools-80.10.0.20260124-py3-none-any.whl", hash = "sha256:efed7e044f01adb9c2806c7a8e1b6aa3656b8e382379b53d5f26ee3db24d4c01"},
+    {file = "types_setuptools-80.10.0.20260124.tar.gz", hash = "sha256:1b86d9f0368858663276a0cbe5fe5a9722caf94b5acde8aba0399a6e90680f20"},
 ]
 
 [[package]]
@@ -5203,6 +5290,24 @@ files = [
     {file = "tzdata-2025.3.tar.gz", hash = "sha256:de39c2ca5dc7b0344f2eba86f49d614019d29f060fc4ebc8a417896a620b56a7"},
 ]
 markers = {dev = "platform_system == \"Windows\""}
+
+[[package]]
+name = "tzlocal"
+version = "5.3.1"
+description = "tzinfo object for the local timezone"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "tzlocal-5.3.1-py3-none-any.whl", hash = "sha256:eb1a66c3ef5847adf7a834f1be0800581b683b5608e74f86ecbcef8ab91bb85d"},
+    {file = "tzlocal-5.3.1.tar.gz", hash = "sha256:cceffc7edecefea1f595541dbd6e990cb1ea3d19bf01b2809f362a03dd7921fd"},
+]
+
+[package.dependencies]
+tzdata = {version = "*", markers = "platform_system == \"Windows\""}
+
+[package.extras]
+devenv = ["check-manifest", "pytest (>=4.3)", "pytest-cov", "pytest-mock (>=3.3)", "zest.releaser"]
 
 [[package]]
 name = "urllib3"
@@ -5943,4 +6048,4 @@ test = ["pytest"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "243b3b2b1398eacd7ae0741299a042638f770e70b696e21d64893af9daf92539"
+content-hash = "6e6710cfde547207fe42b51afc2e29e0dacb4781d0f91967245acdc8e8424896"
