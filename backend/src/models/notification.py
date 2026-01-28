@@ -290,3 +290,136 @@ class SignalNotification(BaseModel):
             return "B"
         else:
             return "C"
+
+
+# ============================================================================
+# Email Notification Models (Story 19.25)
+# ============================================================================
+
+
+class EmailNotificationSettings(BaseModel):
+    """
+    User email notification preferences (Story 19.25).
+
+    Controls email notification behavior including:
+    - Whether emails are enabled
+    - Email address override (if different from account)
+    - Confidence filtering (all signals vs high-confidence only)
+    - Notification types (auto-executions, circuit breaker, etc.)
+    """
+
+    email_enabled: bool = Field(
+        default=False,
+        description="Whether email notifications are enabled",
+    )
+    email_address: Optional[EmailStr] = Field(
+        default=None,
+        description="Override email address (if different from account email)",
+    )
+    notify_all_signals: bool = Field(
+        default=False,
+        description="If False, only high confidence (A+, A) signals trigger emails",
+    )
+    notify_auto_executions: bool = Field(
+        default=True,
+        description="Send email when auto-execution completes",
+    )
+    notify_circuit_breaker: bool = Field(
+        default=True,
+        description="Send email when circuit breaker activates",
+    )
+
+    class Config:
+        json_encoders = {UUID: lambda v: str(v)}
+
+
+class EmailNotificationSettingsUpdate(BaseModel):
+    """
+    Request model for updating email notification settings.
+
+    All fields are optional to allow partial updates.
+    """
+
+    enabled: Optional[bool] = Field(
+        default=None,
+        description="Enable/disable email notifications",
+    )
+    address: Optional[EmailStr] = Field(
+        default=None,
+        description="Email address for notifications",
+    )
+    notify_all_signals: Optional[bool] = Field(
+        default=None,
+        description="Notify for all signals (True) or high-confidence only (False)",
+    )
+    notify_auto_executions: Optional[bool] = Field(
+        default=None,
+        description="Notify on auto-execution completion",
+    )
+    notify_circuit_breaker: Optional[bool] = Field(
+        default=None,
+        description="Notify on circuit breaker activation",
+    )
+
+
+class EmailSettingsResponse(BaseModel):
+    """Email notification settings in notification settings response."""
+
+    enabled: bool = False
+    address: Optional[str] = None
+    notify_all_signals: bool = False
+    notify_auto_executions: bool = True
+    notify_circuit_breaker: bool = True
+    rate_limit_remaining: int = Field(
+        default=10,
+        description="Emails remaining in current hour",
+    )
+
+
+class BrowserSettingsResponse(BaseModel):
+    """Browser notification settings in notification settings response."""
+
+    enabled: bool = True
+
+
+class SoundSettingsResponse(BaseModel):
+    """Sound notification settings in notification settings response."""
+
+    enabled: bool = True
+    volume: int = Field(default=80, ge=0, le=100)
+
+
+class NotificationSettingsResponse(BaseModel):
+    """
+    Complete notification settings response (Story 19.25).
+
+    Returns all notification channel settings in a single response.
+    """
+
+    email: EmailSettingsResponse = Field(default_factory=EmailSettingsResponse)
+    browser: BrowserSettingsResponse = Field(default_factory=BrowserSettingsResponse)
+    sound: SoundSettingsResponse = Field(default_factory=SoundSettingsResponse)
+
+
+class SignalEmailData(BaseModel):
+    """
+    Data structure for signal email content (Story 19.25).
+
+    Contains all information needed to render a signal alert email.
+    """
+
+    signal_id: UUID
+    symbol: str
+    pattern_type: str
+    confidence_score: int
+    confidence_grade: str
+    entry_price: str
+    stop_loss: str
+    target_price: str
+    risk_amount: str
+    r_multiple: float
+    approve_url: str
+    unsubscribe_url: str
+
+    class Config:
+        json_encoders = {UUID: lambda v: str(v)}
