@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user_id
 from src.database import get_db
+from src.models.pattern_effectiveness import PatternEffectivenessResponse
 from src.models.signal import TradeSignal
 from src.models.signal_statistics import SignalStatisticsResponse
 
@@ -303,6 +304,77 @@ async def get_signal_statistics(
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve signal statistics",
+        ) from e
+
+
+@router.get(
+    "/patterns/effectiveness",
+    response_model=PatternEffectivenessResponse,
+    summary="Get detailed pattern effectiveness metrics",
+    description="Query detailed effectiveness metrics per pattern type including win rates "
+    "with confidence intervals, R-multiple analysis, and profit factors.",
+)
+async def get_pattern_effectiveness(
+    start_date: date | None = Query(
+        None,
+        description="Filter start date (ISO format, defaults to 30 days ago)",
+    ),
+    end_date: date | None = Query(
+        None,
+        description="Filter end date (ISO format, defaults to today)",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> PatternEffectivenessResponse:
+    """
+    Get detailed pattern effectiveness report (Story 19.19).
+
+    Returns comprehensive effectiveness metrics for each pattern type:
+    - Funnel metrics: generated → approved → executed → closed → profitable
+    - Win rate with 95% Wilson score confidence interval
+    - R-multiple analysis: winners, losers, overall, max/min
+    - Profit factor: gross profit / gross loss
+    - Efficiency rates: approval rate, execution rate
+
+    Query Parameters:
+        start_date: Filter start (ISO date, defaults to 30 days ago)
+        end_date: Filter end (ISO date, defaults to today)
+
+    Returns:
+        PatternEffectivenessResponse with metrics for all patterns
+
+    Example:
+        GET /api/v1/signals/patterns/effectiveness
+        GET /api/v1/signals/patterns/effectiveness?start_date=2026-01-01&end_date=2026-01-27
+    """
+    from src.services.pattern_effectiveness_service import PatternEffectivenessService
+
+    try:
+        service = PatternEffectivenessService(db)
+        response = await service.get_pattern_effectiveness(
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        logger.info(
+            "pattern_effectiveness_queried",
+            start_date=start_date.isoformat() if start_date else "default",
+            end_date=end_date.isoformat() if end_date else "default",
+            pattern_count=len(response.patterns),
+        )
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "pattern_effectiveness_query_failed",
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve pattern effectiveness metrics",
         ) from e
 
 

@@ -72,6 +72,19 @@ const routes: RouteRecordRaw[] = [
       breadcrumb: [{ label: 'Signal Performance' }],
     },
   },
+  // Pattern Effectiveness Report (Story 19.19)
+  {
+    path: '/signals/patterns/effectiveness',
+    name: 'pattern-effectiveness',
+    component: () => import('@/views/signals/PatternEffectivenessReport.vue'),
+    meta: {
+      title: 'Pattern Effectiveness',
+      breadcrumb: [
+        { label: 'Signals', to: '/signals/performance' },
+        { label: 'Pattern Effectiveness' },
+      ],
+    },
+  },
   // Help System Routes (Story 11.8a - Task 15, Story 11.8c - Task 7)
   {
     path: '/help',
