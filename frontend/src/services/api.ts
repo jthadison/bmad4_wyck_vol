@@ -586,4 +586,63 @@ export async function getSignalsOverTime(
   )
 }
 
+// ============================================================================
+// Pattern Effectiveness API (Story 19.19)
+// ============================================================================
+
+export interface ConfidenceInterval {
+  lower: number
+  upper: number
+}
+
+export interface PatternEffectiveness {
+  pattern_type: string
+  signals_generated: number
+  signals_approved: number
+  signals_executed: number
+  signals_closed: number
+  signals_profitable: number
+  win_rate: number
+  win_rate_ci: ConfidenceInterval
+  avg_r_winners: number
+  avg_r_losers: number
+  avg_r_overall: number
+  max_r_winner: number
+  max_r_loser: number
+  profit_factor: number
+  total_pnl: string
+  avg_pnl_per_trade: string
+  approval_rate: number
+  execution_rate: number
+}
+
+export interface PatternEffectivenessResponse {
+  patterns: PatternEffectiveness[]
+  date_range: {
+    start_date: string
+    end_date: string
+  }
+}
+
+/**
+ * Get detailed pattern effectiveness metrics (Story 19.19)
+ *
+ * Returns comprehensive effectiveness metrics per pattern type including:
+ * - Funnel metrics (generated → approved → executed → profitable)
+ * - Win rate with 95% Wilson score confidence interval
+ * - R-multiple analysis (winners, losers, overall)
+ * - Profit factor and P&L metrics
+ *
+ * @param params - Optional date range filter
+ * @returns Promise resolving to pattern effectiveness response
+ */
+export async function getPatternEffectiveness(
+  params?: SignalStatisticsParams
+): Promise<PatternEffectivenessResponse> {
+  return apiClient.get<PatternEffectivenessResponse>(
+    '/signals/patterns/effectiveness',
+    params as Record<string, unknown>
+  )
+}
+
 export default apiClient
