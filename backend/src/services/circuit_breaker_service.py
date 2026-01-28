@@ -8,21 +8,18 @@ Author: Story 19.21
 """
 
 from datetime import UTC, datetime, timedelta
-from enum import Enum
 from uuid import UUID
 
 import structlog
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from src.models.circuit_breaker import CircuitBreakerState
+
 logger = structlog.get_logger(__name__)
 
-
-class CircuitBreakerState(str, Enum):
-    """Circuit breaker states."""
-
-    CLOSED = "closed"  # Normal operation, auto-execution active
-    OPEN = "open"  # Triggered, auto-execution paused
+# TTL for circuit breaker keys (7 days)
+BREAKER_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 class CircuitBreakerService:
@@ -140,7 +137,7 @@ class CircuitBreakerService:
         try:
             if is_winner:
                 # Reset consecutive losses on a win
-                await self.redis.set(self._losses_key(user_id), 0)
+                await self.redis.set(self._losses_key(user_id), 0, ex=BREAKER_TTL_SECONDS)
                 logger.info(
                     "circuit_breaker_loss_counter_reset",
                     user_id=str(user_id),
@@ -180,10 +177,19 @@ class CircuitBreakerService:
         triggered_at = datetime.now(UTC)
 
         try:
-            # Set state to OPEN
-            await self.redis.set(self._state_key(user_id), CircuitBreakerState.OPEN.value)
-            # Record trigger timestamp
-            await self.redis.set(self._triggered_key(user_id), triggered_at.isoformat())
+            # Use pipeline for atomic operations with TTL
+            async with self.redis.pipeline() as pipe:
+                pipe.set(
+                    self._state_key(user_id),
+                    CircuitBreakerState.OPEN.value,
+                    ex=BREAKER_TTL_SECONDS,
+                )
+                pipe.set(
+                    self._triggered_key(user_id),
+                    triggered_at.isoformat(),
+                    ex=BREAKER_TTL_SECONDS,
+                )
+                await pipe.execute()
 
             logger.warning(
                 "circuit_breaker_triggered",
@@ -204,12 +210,16 @@ class CircuitBreakerService:
             manual: True if user manually reset, False if automatic
         """
         try:
-            # Reset state to CLOSED
-            await self.redis.set(self._state_key(user_id), CircuitBreakerState.CLOSED.value)
-            # Reset consecutive losses
-            await self.redis.set(self._losses_key(user_id), 0)
-            # Clear trigger timestamp
-            await self.redis.delete(self._triggered_key(user_id))
+            # Use pipeline for atomic operations with TTL
+            async with self.redis.pipeline() as pipe:
+                pipe.set(
+                    self._state_key(user_id),
+                    CircuitBreakerState.CLOSED.value,
+                    ex=BREAKER_TTL_SECONDS,
+                )
+                pipe.set(self._losses_key(user_id), 0, ex=BREAKER_TTL_SECONDS)
+                pipe.delete(self._triggered_key(user_id))
+                await pipe.execute()
 
             reset_type = "manual" if manual else "automatic"
             logger.info(

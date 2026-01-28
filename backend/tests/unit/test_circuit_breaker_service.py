@@ -11,13 +11,37 @@ from uuid import uuid4
 
 import pytest
 
-from src.services.circuit_breaker_service import CircuitBreakerService, CircuitBreakerState
+from src.models.circuit_breaker import CircuitBreakerState
+from src.services.circuit_breaker_service import CircuitBreakerService
+
+
+class MockPipeline:
+    """Mock Redis pipeline with async context manager support."""
+
+    def __init__(self):
+        self.set = MagicMock()
+        self.delete = MagicMock()
+        self.execute = AsyncMock()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return None
 
 
 @pytest.fixture
-def mock_redis():
-    """Create a mock Redis client."""
+def mock_pipeline():
+    """Create a mock Redis pipeline."""
+    return MockPipeline()
+
+
+@pytest.fixture
+def mock_redis(mock_pipeline):
+    """Create a mock Redis client with pipeline support."""
     redis = AsyncMock()
+    # Configure pipeline as a regular method that returns the mock pipeline
+    redis.pipeline = MagicMock(return_value=mock_pipeline)
     return redis
 
 
@@ -136,26 +160,30 @@ class TestRecordTradeResult:
         assert state == CircuitBreakerState.CLOSED
 
     @pytest.mark.asyncio
-    async def test_threshold_breach_triggers_breaker(self, service, mock_redis, user_id):
+    async def test_threshold_breach_triggers_breaker(
+        self, service, mock_redis, mock_pipeline, user_id
+    ):
         """Test reaching threshold triggers circuit breaker."""
         mock_redis.incr.return_value = 3  # Matches threshold
-        mock_redis.set = AsyncMock()
 
         state = await service.record_trade_result(user_id, is_winner=False, threshold=3)
 
         assert state == CircuitBreakerState.OPEN
-        # Should have set state to OPEN
-        assert mock_redis.set.call_count >= 2  # state + triggered_at
+        # Should have set state to OPEN via pipeline
+        assert mock_pipeline.set.call_count >= 2  # state + triggered_at
+        mock_pipeline.execute.assert_called()
 
     @pytest.mark.asyncio
-    async def test_exceeds_threshold_triggers_breaker(self, service, mock_redis, user_id):
+    async def test_exceeds_threshold_triggers_breaker(
+        self, service, mock_redis, mock_pipeline, user_id
+    ):
         """Test exceeding threshold triggers circuit breaker."""
         mock_redis.incr.return_value = 5  # Exceeds threshold
-        mock_redis.set = AsyncMock()
 
         state = await service.record_trade_result(user_id, is_winner=False, threshold=3)
 
         assert state == CircuitBreakerState.OPEN
+        mock_pipeline.execute.assert_called()
 
     @pytest.mark.asyncio
     async def test_below_threshold_stays_closed(self, service, mock_redis, user_id):
@@ -172,47 +200,46 @@ class TestResetBreaker:
     """Tests for reset_breaker method."""
 
     @pytest.mark.asyncio
-    async def test_resets_state_to_closed(self, service, mock_redis, user_id):
+    async def test_resets_state_to_closed(self, service, mock_redis, mock_pipeline, user_id):
         """Test reset sets state to CLOSED."""
-        mock_redis.set = AsyncMock()
-        mock_redis.delete = AsyncMock()
-
         await service.reset_breaker(user_id, manual=True)
 
-        # Should set state to closed
-        mock_redis.set.assert_any_call(
+        # Should set state to closed via pipeline (with TTL)
+        mock_pipeline.set.assert_any_call(
             f"circuit_breaker:state:{user_id}",
             CircuitBreakerState.CLOSED.value,
+            ex=7 * 24 * 60 * 60,  # BREAKER_TTL_SECONDS
         )
+        mock_pipeline.execute.assert_called()
 
     @pytest.mark.asyncio
-    async def test_resets_loss_counter_to_zero(self, service, mock_redis, user_id):
+    async def test_resets_loss_counter_to_zero(self, service, mock_redis, mock_pipeline, user_id):
         """Test reset sets loss counter to 0."""
-        mock_redis.set = AsyncMock()
-        mock_redis.delete = AsyncMock()
-
         await service.reset_breaker(user_id, manual=True)
 
-        # Should set losses to 0
-        mock_redis.set.assert_any_call(f"circuit_breaker:losses:{user_id}", 0)
+        # Should set losses to 0 via pipeline (with TTL)
+        mock_pipeline.set.assert_any_call(
+            f"circuit_breaker:losses:{user_id}",
+            0,
+            ex=7 * 24 * 60 * 60,  # BREAKER_TTL_SECONDS
+        )
+        mock_pipeline.execute.assert_called()
 
     @pytest.mark.asyncio
-    async def test_clears_triggered_timestamp(self, service, mock_redis, user_id):
+    async def test_clears_triggered_timestamp(self, service, mock_redis, mock_pipeline, user_id):
         """Test reset clears triggered_at timestamp."""
-        mock_redis.set = AsyncMock()
-        mock_redis.delete = AsyncMock()
-
         await service.reset_breaker(user_id, manual=True)
 
-        # Should delete triggered_at key
-        mock_redis.delete.assert_called_once_with(f"circuit_breaker:triggered_at:{user_id}")
+        # Should delete triggered_at key via pipeline
+        mock_pipeline.delete.assert_called_once_with(f"circuit_breaker:triggered_at:{user_id}")
+        mock_pipeline.execute.assert_called()
 
     @pytest.mark.asyncio
-    async def test_propagates_redis_error(self, service, mock_redis, user_id):
+    async def test_propagates_redis_error(self, service, mock_redis, mock_pipeline, user_id):
         """Test Redis errors are propagated."""
         from redis.exceptions import RedisError
 
-        mock_redis.set.side_effect = RedisError("Connection failed")
+        mock_pipeline.execute.side_effect = RedisError("Connection failed")
 
         with pytest.raises(RedisError):
             await service.reset_breaker(user_id, manual=True)
@@ -361,10 +388,10 @@ class TestEndToEndScenarios:
     """Integration-style tests for complete scenarios."""
 
     @pytest.mark.asyncio
-    async def test_three_losses_trigger_breaker(self, service, mock_redis, user_id):
+    async def test_three_losses_trigger_breaker(
+        self, service, mock_redis, mock_pipeline, user_id
+    ):
         """Test complete scenario: 3 consecutive losses triggers breaker."""
-        mock_redis.set = AsyncMock()
-
         # First loss
         mock_redis.incr.return_value = 1
         mock_redis.get.return_value = b"closed"
@@ -380,31 +407,30 @@ class TestEndToEndScenarios:
         mock_redis.incr.return_value = 3
         state = await service.record_trade_result(user_id, is_winner=False, threshold=3)
         assert state == CircuitBreakerState.OPEN
+        # Pipeline should have been used to trigger breaker
+        mock_pipeline.execute.assert_called()
 
     @pytest.mark.asyncio
     async def test_win_after_losses_resets_counter(self, service, mock_redis, user_id):
         """Test winning trade after losses resets counter."""
-        mock_redis.set = AsyncMock()
-
         # Two losses
         mock_redis.incr.return_value = 2
         mock_redis.get.return_value = b"closed"
         await service.record_trade_result(user_id, is_winner=False, threshold=3)
 
-        # Win - should reset
+        # Win - should reset (direct set, not via pipeline)
         state = await service.record_trade_result(user_id, is_winner=True, threshold=3)
         assert state == CircuitBreakerState.CLOSED
 
-        # Verify losses were reset to 0
+        # Verify losses were reset to 0 (with TTL)
         losses_key = f"circuit_breaker:losses:{user_id}"
-        mock_redis.set.assert_any_call(losses_key, 0)
+        mock_redis.set.assert_any_call(losses_key, 0, ex=7 * 24 * 60 * 60)
 
     @pytest.mark.asyncio
-    async def test_manual_reset_after_trigger(self, service, mock_redis, user_id):
+    async def test_manual_reset_after_trigger(
+        self, service, mock_redis, mock_pipeline, user_id
+    ):
         """Test manual reset after breaker triggers."""
-        mock_redis.set = AsyncMock()
-        mock_redis.delete = AsyncMock()
-
         # Trigger breaker
         mock_redis.incr.return_value = 3
         state = await service.record_trade_result(user_id, is_winner=False, threshold=3)
@@ -413,6 +439,8 @@ class TestEndToEndScenarios:
         # Manual reset
         await service.reset_breaker(user_id, manual=True)
 
-        # Verify state was set to closed
+        # Verify state was set to closed via pipeline (with TTL)
         state_key = f"circuit_breaker:state:{user_id}"
-        mock_redis.set.assert_any_call(state_key, CircuitBreakerState.CLOSED.value)
+        mock_pipeline.set.assert_any_call(
+            state_key, CircuitBreakerState.CLOSED.value, ex=7 * 24 * 60 * 60
+        )

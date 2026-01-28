@@ -21,6 +21,41 @@ from src.database import async_session_maker
 _redis_client: Redis | None = None
 
 
+def init_redis_client() -> Redis:
+    """
+    Initialize and return the global Redis client.
+
+    For use in startup contexts where dependency injection is not available.
+    The client is shared across all requests for connection pooling.
+
+    Returns:
+        Redis: Async Redis client
+    """
+    global _redis_client
+
+    if _redis_client is None:
+        _redis_client = Redis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=False,
+        )
+
+    return _redis_client
+
+
+async def close_redis_client() -> None:
+    """
+    Close the global Redis client connection.
+
+    Should be called during application shutdown to prevent connection leaks.
+    """
+    global _redis_client
+
+    if _redis_client is not None:
+        await _redis_client.close()
+        _redis_client = None
+
+
 async def get_redis_client() -> AsyncGenerator[Redis, None]:
     """
     FastAPI dependency for Redis client.
@@ -41,16 +76,7 @@ async def get_redis_client() -> AsyncGenerator[Redis, None]:
             return {"value": value}
         ```
     """
-    global _redis_client
-
-    if _redis_client is None:
-        _redis_client = Redis.from_url(
-            settings.redis_url,
-            encoding="utf-8",
-            decode_responses=False,
-        )
-
-    yield _redis_client
+    yield init_redis_client()
 
 
 # Security scheme for Bearer token authentication

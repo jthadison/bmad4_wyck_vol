@@ -271,13 +271,9 @@ async def startup_event() -> None:
 
     # Initialize circuit breaker scheduler (Story 19.21)
     try:
-        from redis.asyncio import Redis
+        from src.api.dependencies import init_redis_client
 
-        redis_client = Redis.from_url(
-            settings.redis_url,
-            encoding="utf-8",
-            decode_responses=False,
-        )
+        redis_client = init_redis_client()
         start_circuit_breaker_scheduler(redis_client)
         logger.info("circuit_breaker_scheduler_initialized")
     except Exception as e:
@@ -320,6 +316,14 @@ async def shutdown_event() -> None:
 
     if _coordinator:
         await _coordinator.stop()
+
+    # Close Redis connection (Story 19.21)
+    try:
+        from src.api.dependencies import close_redis_client
+
+        await close_redis_client()
+    except Exception:
+        pass
 
 
 @app.get("/")
