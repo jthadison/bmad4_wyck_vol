@@ -1,7 +1,8 @@
 /**
- * Watchlist Management Types (Story 19.13)
+ * Watchlist Management Types (Story 19.13, 19.24)
  *
- * TypeScript interfaces for watchlist management UI
+ * TypeScript interfaces for watchlist management UI.
+ * Story 19.24: Per-symbol confidence filtering (60-100%).
  */
 
 /**
