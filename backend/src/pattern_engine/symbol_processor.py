@@ -16,16 +16,22 @@ import asyncio
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 
+from src.config import settings
 from src.models.ohlcv import OHLCVBar
 from src.models.scanner import (
     CircuitStateEnum,
     ScannerStatusResponse,
     SymbolState,
     SymbolStatus,
+)
+from src.observability.metrics import (
+    stale_symbols_gauge,
+    stale_symbols_total,
+    symbol_data_age_seconds,
 )
 from src.pattern_engine.circuit_breaker import CircuitBreaker, CircuitState
 
@@ -50,6 +56,8 @@ class SymbolMetrics:
     )
     last_processed: datetime | None = None
     last_error: str | None = None
+    # Staleness tracking (Story 19.26)
+    last_bar_time: datetime | None = None  # Timestamp of the last bar received
 
     @property
     def avg_latency_ms(self) -> float:
@@ -57,6 +65,27 @@ class SymbolMetrics:
         if not self.latency_samples:
             return 0.0
         return sum(self.latency_samples) / len(self.latency_samples)
+
+    def is_stale(self) -> bool:
+        """Check if symbol data is stale (Story 19.26)."""
+        if self.last_bar_time is None:
+            return True
+        last_bar = self.last_bar_time
+        if last_bar.tzinfo is None:
+            last_bar = last_bar.replace(tzinfo=UTC)
+        age = datetime.now(UTC) - last_bar
+        threshold = timedelta(seconds=settings.staleness_threshold_seconds)
+        return age > threshold
+
+    def get_data_age_seconds(self) -> float | None:
+        """Get age of last bar in seconds (Story 19.26)."""
+        if self.last_bar_time is None:
+            return None
+        last_bar = self.last_bar_time
+        if last_bar.tzinfo is None:
+            last_bar = last_bar.replace(tzinfo=UTC)
+        age = datetime.now(UTC) - last_bar
+        return age.total_seconds()
 
 
 @dataclass
@@ -323,6 +352,29 @@ class MultiSymbolProcessor:
                     )
                     continue
 
+                # Story 19.26: Check staleness BEFORE processing
+                # Update last_bar_time first to reflect this new bar
+                context.metrics.last_bar_time = bar.timestamp
+
+                # Now check if the bar data itself is stale
+                if context.metrics.is_stale():
+                    age_seconds = context.metrics.get_data_age_seconds()
+                    logger.warning(
+                        "bar_skipped_stale_data",
+                        symbol=symbol,
+                        bar_timestamp=bar.timestamp.isoformat(),
+                        age_seconds=age_seconds,
+                        threshold_seconds=settings.staleness_threshold_seconds,
+                    )
+                    # Update Prometheus metrics for stale symbol
+                    stale_symbols_gauge.labels(symbol=symbol).set(1)
+                    if age_seconds is not None:
+                        symbol_data_age_seconds.labels(symbol=symbol).set(age_seconds)
+                    continue
+
+                # Data is fresh - mark as not stale in metrics
+                stale_symbols_gauge.labels(symbol=symbol).set(0)
+
                 # Process the bar with timing
                 start_time = datetime.now(UTC)
                 try:
@@ -347,6 +399,7 @@ class MultiSymbolProcessor:
                 context.metrics.total_latency_ms += latency_ms
                 context.metrics.bars_processed += 1
                 context.metrics.last_processed = end_time
+                # Note: last_bar_time already set above before staleness check
 
                 # Log if latency exceeds target
                 if latency_ms > self._processing_timeout_ms:
@@ -419,6 +472,9 @@ class MultiSymbolProcessor:
         cb = context.circuit_breaker
         metrics = context.metrics
 
+        # Check staleness (Story 19.26)
+        is_stale = metrics.is_stale()
+
         # Determine state
         if cb.state == CircuitState.OPEN:
             state = SymbolState.FAILED
@@ -426,6 +482,8 @@ class MultiSymbolProcessor:
             state = SymbolState.PAUSED
         elif not context.enabled:
             state = SymbolState.IDLE
+        elif is_stale:
+            state = SymbolState.STALE  # Story 19.26: Mark stale symbols
         else:
             state = SymbolState.PROCESSING
 
@@ -445,6 +503,10 @@ class MultiSymbolProcessor:
             avg_latency_ms=metrics.avg_latency_ms,
             bars_processed=metrics.bars_processed,
             last_error=metrics.last_error,
+            # Staleness fields (Story 19.26)
+            is_stale=is_stale,
+            last_bar_time=metrics.last_bar_time,
+            data_age_seconds=metrics.get_data_age_seconds(),
         )
 
     def get_status(self) -> ScannerStatusResponse:
@@ -461,6 +523,7 @@ class MultiSymbolProcessor:
         healthy = sum(1 for s in symbol_statuses if s.state == SymbolState.PROCESSING)
         paused = sum(1 for s in symbol_statuses if s.state == SymbolState.PAUSED)
         failed = sum(1 for s in symbol_statuses if s.state == SymbolState.FAILED)
+        stale = sum(1 for s in symbol_statuses if s.state == SymbolState.STALE)  # Story 19.26
 
         # Calculate overall average latency
         latencies = [s.avg_latency_ms for s in symbol_statuses if s.avg_latency_ms > 0]
@@ -471,10 +534,13 @@ class MultiSymbolProcessor:
             overall_status = "unhealthy"
         elif failed > 0:
             overall_status = "degraded" if healthy > 0 else "unhealthy"
-        elif paused > 0:
+        elif paused > 0 or stale > 0:  # Story 19.26: Stale symbols degrade status
             overall_status = "degraded"
         else:
             overall_status = "healthy"
+
+        # Update staleness metrics (Story 19.26)
+        self._update_staleness_metrics(symbol_statuses)
 
         return ScannerStatusResponse(
             overall_status=overall_status,
@@ -483,9 +549,32 @@ class MultiSymbolProcessor:
             healthy_symbols=healthy,
             paused_symbols=paused,
             failed_symbols=failed,
+            stale_count=stale,  # Story 19.26
             avg_latency_ms=avg_latency,
             is_running=self._is_running,
         )
+
+    def _update_staleness_metrics(self, symbol_statuses: list[SymbolStatus]) -> None:
+        """
+        Update Prometheus metrics for staleness tracking (Story 19.26).
+
+        Args:
+            symbol_statuses: List of symbol statuses to update metrics for
+        """
+        stale_count = 0
+        for status in symbol_statuses:
+            # Update per-symbol staleness gauge
+            stale_symbols_gauge.labels(symbol=status.symbol).set(1 if status.is_stale else 0)
+
+            # Update per-symbol data age gauge
+            if status.data_age_seconds is not None:
+                symbol_data_age_seconds.labels(symbol=status.symbol).set(status.data_age_seconds)
+
+            if status.is_stale:
+                stale_count += 1
+
+        # Update total stale count gauge
+        stale_symbols_total.set(stale_count)
 
     async def reset_circuit_breaker(self, symbol: str) -> bool:
         """

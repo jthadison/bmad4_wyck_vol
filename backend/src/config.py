@@ -156,6 +156,21 @@ class Settings(BaseSettings):
         description="Seconds before circuit breaker resets from open to half-open",
     )
 
+    # Stale Data Protection Configuration (Story 19.26)
+    staleness_threshold_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=1800,
+        description="Seconds before symbol data is considered stale (5 minutes default)",
+    )
+    staleness_alert_threshold_seconds: int = Field(
+        default=900,
+        ge=300,
+        le=3600,
+        description="Seconds of staleness before alerting during market hours (15 minutes default). "
+        "Used by Prometheus alert rules in alert-rules.yml.",
+    )
+
     # Data Ingestion Settings
     default_provider: str = Field(
         default="polygon",

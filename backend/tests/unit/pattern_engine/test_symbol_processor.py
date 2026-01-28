@@ -268,13 +268,26 @@ class TestSymbolStatus:
     """Test symbol status reporting."""
 
     def test_get_symbol_status_for_existing_symbol(self):
-        """Should return status for existing symbol."""
+        """Should return status for existing symbol with fresh data."""
         processor = MultiSymbolProcessor(symbols=["AAPL"])
+        # Set a recent bar time to ensure symbol is not stale (Story 19.26)
+        processor._contexts["AAPL"].metrics.last_bar_time = datetime.now(UTC)
         status = processor.get_symbol_status("AAPL")
 
         assert status is not None
         assert status.symbol == "AAPL"
         assert status.state == SymbolState.PROCESSING
+
+    def test_get_symbol_status_for_stale_symbol(self):
+        """Should return STALE state for symbol without recent data (Story 19.26)."""
+        processor = MultiSymbolProcessor(symbols=["AAPL"])
+        # No bar time set - symbol should be stale
+        status = processor.get_symbol_status("AAPL")
+
+        assert status is not None
+        assert status.symbol == "AAPL"
+        assert status.state == SymbolState.STALE
+        assert status.is_stale is True
 
     def test_get_symbol_status_for_unknown_symbol(self):
         """Should return None for unknown symbol."""
@@ -309,16 +322,23 @@ class TestOverallStatus:
     def test_status_counts_healthy_symbols(self):
         """Status should count healthy symbols correctly."""
         processor = MultiSymbolProcessor(symbols=["AAPL", "TSLA", "MSFT"])
+        # Set recent bar times to ensure symbols are not stale (Story 19.26)
+        for symbol in ["AAPL", "TSLA", "MSFT"]:
+            processor._contexts[symbol].metrics.last_bar_time = datetime.now(UTC)
         status = processor.get_status()
 
         assert status.healthy_symbols == 3
         assert status.paused_symbols == 0
         assert status.failed_symbols == 0
+        assert status.stale_count == 0  # Story 19.26
 
     @pytest.mark.asyncio
     async def test_status_reflects_degraded_state(self):
         """Status should be degraded when symbols are failing but processor running."""
         processor = MultiSymbolProcessor(symbols=["AAPL", "TSLA"])
+        # Set recent bar times to ensure symbols are not stale (Story 19.26)
+        for symbol in ["AAPL", "TSLA"]:
+            processor._contexts[symbol].metrics.last_bar_time = datetime.now(UTC)
         await processor.start()
 
         try:
@@ -328,6 +348,7 @@ class TestOverallStatus:
             status = processor.get_status()
             assert status.overall_status == "degraded"
             assert status.failed_symbols == 1
+            assert status.healthy_symbols == 1  # AAPL should still be healthy
         finally:
             await processor.stop()
 
@@ -338,6 +359,65 @@ class TestOverallStatus:
 
         assert status.overall_status == "unhealthy"
         assert status.is_running is False
+
+
+class TestStalenessBlocking:
+    """Test that stale data blocks signal processing (Story 19.26)."""
+
+    @pytest.mark.asyncio
+    async def test_stale_bar_is_skipped(self):
+        """Bars with stale timestamps should be skipped, not processed."""
+        from datetime import timedelta
+
+        from src.config import settings
+
+        processor = MultiSymbolProcessor(symbols=["AAPL"])
+        await processor.start()
+
+        try:
+            # Create a stale bar (older than threshold)
+            stale_time = datetime.now(UTC) - timedelta(
+                seconds=settings.staleness_threshold_seconds + 60
+            )
+            stale_bar = create_test_bar("AAPL", timestamp=stale_time)
+
+            # Queue the stale bar
+            result = processor.queue_bar(stale_bar)
+            assert result is True
+
+            # Give the processor time to handle the bar
+            await asyncio.sleep(0.2)
+
+            # Bar should NOT have been processed (bars_processed should be 0)
+            status = processor.get_symbol_status("AAPL")
+            assert status.bars_processed == 0
+            assert status.is_stale is True
+        finally:
+            await processor.stop()
+
+    @pytest.mark.asyncio
+    async def test_fresh_bar_is_processed(self):
+        """Bars with fresh timestamps should be processed normally."""
+        processor = MultiSymbolProcessor(symbols=["AAPL"])
+        await processor.start()
+
+        try:
+            # Create a fresh bar (current timestamp)
+            fresh_bar = create_test_bar("AAPL", timestamp=datetime.now(UTC))
+
+            # Queue the fresh bar
+            result = processor.queue_bar(fresh_bar)
+            assert result is True
+
+            # Give the processor time to handle the bar
+            await asyncio.sleep(0.2)
+
+            # Bar should have been processed
+            status = processor.get_symbol_status("AAPL")
+            assert status.bars_processed == 1
+            assert status.is_stale is False
+        finally:
+            await processor.stop()
 
 
 class TestSymbolManagement:

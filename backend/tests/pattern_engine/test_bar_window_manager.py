@@ -1,5 +1,5 @@
 """
-Unit Tests for BarWindowManager (Story 19.2)
+Unit Tests for BarWindowManager (Story 19.2, Story 19.26)
 
 Test Coverage:
 --------------
@@ -9,12 +9,13 @@ Test Coverage:
 - Startup hydration
 - Memory usage calculation
 - Window querying and management
+- Staleness detection (Story 19.26)
 
-Author: Story 19.2
+Author: Story 19.2, Story 19.26
 """
 
 from collections import deque
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -433,3 +434,199 @@ class TestBarWindowManager:
 
         # Window should be in INSUFFICIENT_DATA state
         assert manager._windows["AAPL"].state == WindowState.INSUFFICIENT_DATA
+
+
+def _create_bar_with_timestamp(create_test_bar, symbol: str, timestamp: datetime, index: int = 0):
+    """Helper to create a bar with a specific timestamp."""
+    base_bar = create_test_bar(symbol, index)
+    return OHLCVBar(
+        symbol=symbol,
+        timeframe="1m",
+        timestamp=timestamp,
+        open=base_bar.open,
+        high=base_bar.high,
+        low=base_bar.low,
+        close=base_bar.close,
+        volume=base_bar.volume,
+        spread=base_bar.spread,
+    )
+
+
+class TestStalenessDetection:
+    """Test Suite for Staleness Detection (Story 19.26)."""
+
+    def test_is_stale_returns_true_for_unknown_symbol(self):
+        """Verify is_stale returns True for non-existent symbol."""
+        manager = BarWindowManager()
+
+        assert manager.is_stale("UNKNOWN") is True
+
+    def test_is_stale_returns_true_for_empty_window(self):
+        """Verify is_stale returns True when window has no bars."""
+        manager = BarWindowManager()
+        manager._windows["AAPL"] = BarWindow(symbol="AAPL")
+
+        assert manager.is_stale("AAPL") is True
+
+    def test_is_stale_returns_false_for_fresh_data(self, create_test_bar):
+        """Verify is_stale returns False when last bar is recent (Scenario 1)."""
+        manager = BarWindowManager()
+        window = BarWindow(symbol="AAPL")
+
+        # Create a bar with recent timestamp (30 seconds ago)
+        recent_time = datetime.now(UTC) - timedelta(seconds=30)
+        bar = _create_bar_with_timestamp(create_test_bar, "AAPL", recent_time)
+        window.bars.append(bar)
+        manager._windows["AAPL"] = window
+
+        assert manager.is_stale("AAPL") is False
+
+    def test_is_stale_returns_true_for_old_data(self, create_test_bar):
+        """Verify is_stale returns True when last bar is old (Scenario 2)."""
+        manager = BarWindowManager()
+        window = BarWindow(symbol="AAPL")
+
+        # Create a bar with old timestamp (6 minutes ago, > 5 min threshold)
+        old_time = datetime.now(UTC) - timedelta(minutes=6)
+        bar = _create_bar_with_timestamp(create_test_bar, "AAPL", old_time)
+        window.bars.append(bar)
+        manager._windows["AAPL"] = window
+
+        assert manager.is_stale("AAPL") is True
+
+    def test_get_staleness_info_no_data(self):
+        """Verify get_staleness_info returns correct info when no data."""
+        manager = BarWindowManager()
+
+        info = manager.get_staleness_info("UNKNOWN")
+
+        assert info["is_stale"] is True
+        assert info["reason"] == "no_data"
+        assert info["last_bar_time"] is None
+        assert info["age_seconds"] is None
+
+    def test_get_staleness_info_fresh_data(self, create_test_bar):
+        """Verify get_staleness_info returns correct info for fresh data."""
+        manager = BarWindowManager()
+        window = BarWindow(symbol="AAPL")
+
+        # Create a bar with recent timestamp
+        recent_time = datetime.now(UTC) - timedelta(seconds=30)
+        bar = _create_bar_with_timestamp(create_test_bar, "AAPL", recent_time)
+        window.bars.append(bar)
+        manager._windows["AAPL"] = window
+
+        info = manager.get_staleness_info("AAPL")
+
+        assert info["is_stale"] is False
+        assert info["reason"] is None
+        assert info["last_bar_time"] is not None
+        assert info["age_seconds"] is not None
+        assert info["age_seconds"] < 60  # Should be less than 60 seconds
+
+    def test_get_staleness_info_stale_data(self, create_test_bar):
+        """Verify get_staleness_info returns correct info for stale data."""
+        manager = BarWindowManager()
+        window = BarWindow(symbol="AAPL")
+
+        # Create a bar with old timestamp (8 minutes ago)
+        old_time = datetime.now(UTC) - timedelta(minutes=8)
+        bar = _create_bar_with_timestamp(create_test_bar, "AAPL", old_time)
+        window.bars.append(bar)
+        manager._windows["AAPL"] = window
+
+        info = manager.get_staleness_info("AAPL")
+
+        assert info["is_stale"] is True
+        assert info["reason"] == "data_old"
+        assert info["last_bar_time"] is not None
+        assert info["age_seconds"] is not None
+        assert info["age_seconds"] > 300  # Should be > 5 minutes
+
+    def test_get_stale_symbols(self, create_test_bar):
+        """Verify get_stale_symbols returns list of stale symbols."""
+        manager = BarWindowManager()
+
+        # Add fresh symbol
+        fresh_window = BarWindow(symbol="AAPL")
+        fresh_time = datetime.now(UTC) - timedelta(seconds=30)
+        fresh_bar = _create_bar_with_timestamp(create_test_bar, "AAPL", fresh_time)
+        fresh_window.bars.append(fresh_bar)
+        manager._windows["AAPL"] = fresh_window
+
+        # Add stale symbol
+        stale_window = BarWindow(symbol="TSLA")
+        stale_time = datetime.now(UTC) - timedelta(minutes=8)
+        stale_bar = _create_bar_with_timestamp(create_test_bar, "TSLA", stale_time)
+        stale_window.bars.append(stale_bar)
+        manager._windows["TSLA"] = stale_window
+
+        stale_symbols = manager.get_stale_symbols()
+
+        assert "TSLA" in stale_symbols
+        assert "AAPL" not in stale_symbols
+
+    def test_get_stale_count(self, create_test_bar):
+        """Verify get_stale_count returns correct count."""
+        manager = BarWindowManager()
+
+        # Add fresh symbol
+        fresh_window = BarWindow(symbol="AAPL")
+        fresh_time = datetime.now(UTC) - timedelta(seconds=30)
+        fresh_bar = _create_bar_with_timestamp(create_test_bar, "AAPL", fresh_time)
+        fresh_window.bars.append(fresh_bar)
+        manager._windows["AAPL"] = fresh_window
+
+        # Add 2 stale symbols
+        for symbol in ["TSLA", "MEME"]:
+            stale_window = BarWindow(symbol=symbol)
+            stale_time = datetime.now(UTC) - timedelta(minutes=10)
+            stale_bar = _create_bar_with_timestamp(create_test_bar, symbol, stale_time)
+            stale_window.bars.append(stale_bar)
+            manager._windows[symbol] = stale_window
+
+        assert manager.get_stale_count() == 2
+
+    @pytest.mark.asyncio
+    async def test_staleness_clears_on_fresh_data(self, create_test_bar):
+        """Verify staleness clears automatically when fresh data arrives (Scenario 3)."""
+        manager = BarWindowManager()
+
+        # Start with stale data
+        stale_window = BarWindow(symbol="AAPL")
+        stale_time = datetime.now(UTC) - timedelta(minutes=10)
+        stale_bar = _create_bar_with_timestamp(create_test_bar, "AAPL", stale_time, 0)
+        stale_window.bars.append(stale_bar)
+        manager._windows["AAPL"] = stale_window
+
+        # Verify initially stale
+        assert manager.is_stale("AAPL") is True
+
+        # Add fresh data
+        fresh_time = datetime.now(UTC) - timedelta(seconds=10)
+        fresh_bar = _create_bar_with_timestamp(create_test_bar, "AAPL", fresh_time, 1)
+        await manager.add_bar("AAPL", fresh_bar)
+
+        # Should no longer be stale
+        assert manager.is_stale("AAPL") is False
+
+    def test_get_all_staleness_info(self, create_test_bar):
+        """Verify get_all_staleness_info returns info for all symbols."""
+        manager = BarWindowManager()
+
+        # Add two symbols with different staleness states
+        for i, symbol in enumerate(["AAPL", "TSLA"]):
+            window = BarWindow(symbol=symbol)
+            # AAPL fresh, TSLA stale
+            offset = timedelta(seconds=30) if i == 0 else timedelta(minutes=10)
+            bar_time = datetime.now(UTC) - offset
+            bar = _create_bar_with_timestamp(create_test_bar, symbol, bar_time)
+            window.bars.append(bar)
+            manager._windows[symbol] = window
+
+        all_info = manager.get_all_staleness_info()
+
+        assert "AAPL" in all_info
+        assert "TSLA" in all_info
+        assert all_info["AAPL"]["is_stale"] is False
+        assert all_info["TSLA"]["is_stale"] is True

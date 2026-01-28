@@ -21,6 +21,7 @@ class SymbolState(str, Enum):
     PAUSED = "paused"
     FAILED = "failed"
     IDLE = "idle"
+    STALE = "stale"  # Story 19.26: Symbol data is stale
 
 
 class CircuitStateEnum(str, Enum):
@@ -35,7 +36,7 @@ class SymbolStatus(BaseModel):
     """
     Status of a single symbol's processing.
 
-    Tracks processing state, failures, and performance metrics.
+    Tracks processing state, failures, performance metrics, and staleness (Story 19.26).
     """
 
     symbol: str = Field(description="Symbol ticker")
@@ -51,6 +52,15 @@ class SymbolStatus(BaseModel):
     bars_processed: int = Field(default=0, ge=0, description="Total bars processed for this symbol")
     last_error: str | None = Field(default=None, description="Last error message if any")
 
+    # Staleness fields (Story 19.26)
+    is_stale: bool = Field(default=False, description="Whether symbol data is stale")
+    last_bar_time: datetime | None = Field(
+        default=None, description="Timestamp of the last bar received"
+    )
+    data_age_seconds: float | None = Field(
+        default=None, ge=0, description="Age of last bar data in seconds"
+    )
+
     class Config:
         """Pydantic config."""
 
@@ -61,7 +71,7 @@ class ScannerStatusResponse(BaseModel):
     """
     API response for scanner status endpoint.
 
-    Provides overall health and per-symbol status.
+    Provides overall health and per-symbol status, including staleness info (Story 19.26).
     """
 
     overall_status: Literal["healthy", "degraded", "unhealthy"] = Field(
@@ -72,6 +82,9 @@ class ScannerStatusResponse(BaseModel):
     healthy_symbols: int = Field(ge=0, description="Number of healthy symbols")
     paused_symbols: int = Field(ge=0, description="Number of paused symbols")
     failed_symbols: int = Field(default=0, ge=0, description="Number of failed symbols")
+    stale_count: int = Field(
+        default=0, ge=0, description="Number of symbols with stale data (Story 19.26)"
+    )
     avg_latency_ms: float = Field(default=0.0, ge=0, description="Overall average latency in ms")
     is_running: bool = Field(default=False, description="Whether scanner is currently running")
 

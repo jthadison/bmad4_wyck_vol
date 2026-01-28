@@ -161,3 +161,22 @@ scanner_health = Gauge(
     "scanner_health",
     "Scanner health status (1=healthy, 0=unhealthy)",
 )
+
+# ===== Story 19.26: Stale Data Protection Metrics =====
+
+stale_symbols_gauge = Gauge(
+    "stale_symbols",
+    "Whether symbol data is stale (1=stale, 0=fresh)",
+    labelnames=["symbol"],  # Cardinality bounded by watchlist size
+)
+
+symbol_data_age_seconds = Gauge(
+    "symbol_data_age_seconds",
+    "Age of last bar data in seconds",
+    labelnames=["symbol"],  # Cardinality bounded by watchlist size
+)
+
+stale_symbols_total = Gauge(
+    "stale_symbols_total",
+    "Total count of symbols with stale data",
+)
