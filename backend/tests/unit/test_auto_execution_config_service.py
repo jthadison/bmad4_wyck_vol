@@ -448,8 +448,7 @@ class TestSymbolSpecificConfidenceFilter:
         eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
 
         assert eligible is False
-        assert "AAPL threshold" in reason
-        assert "90" in reason
+        assert "Below symbol minimum confidence (AAPL: 90" in reason
 
     @pytest.mark.asyncio
     async def test_global_threshold_checked_before_symbol(
@@ -474,7 +473,7 @@ class TestSymbolSpecificConfidenceFilter:
         eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
 
         assert eligible is False
-        assert "global threshold" in reason.lower()
+        assert "Below minimum confidence (global: 95" in reason
 
     @pytest.mark.asyncio
     async def test_symbol_threshold_null_uses_global_only(
@@ -498,6 +497,72 @@ class TestSymbolSpecificConfidenceFilter:
 
         assert eligible is True
         assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_signal_at_exact_60_percent_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal passes when confidence exactly equals 60% threshold."""
+        from src.models.watchlist import WatchlistEntry, WatchlistPriority
+
+        # Signal confidence at 60%, threshold at 60%
+        sample_signal.confidence_score = 60.0
+        enabled_config.min_confidence = Decimal("60.00")
+        mock_repository.get_config.return_value = enabled_config
+        watchlist_entry = WatchlistEntry(
+            symbol="AAPL",
+            priority=WatchlistPriority.MEDIUM,
+            min_confidence=Decimal("60.00"),  # Exact boundary
+            enabled=True,
+            added_at=datetime.now(UTC),
+        )
+        service.watchlist_repository.get_symbol.return_value = watchlist_entry
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is True
+        assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_signal_at_exact_100_percent_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal passes when confidence exactly equals 100% threshold."""
+        from src.models.watchlist import WatchlistEntry, WatchlistPriority
+
+        # Signal confidence at 100%, threshold at 100%
+        sample_signal.confidence_score = 100.0
+        enabled_config.min_confidence = Decimal("60.00")
+        mock_repository.get_config.return_value = enabled_config
+        watchlist_entry = WatchlistEntry(
+            symbol="AAPL",
+            priority=WatchlistPriority.MEDIUM,
+            min_confidence=Decimal("100.00"),  # Maximum boundary
+            enabled=True,
+            added_at=datetime.now(UTC),
+        )
+        service.watchlist_repository.get_symbol.return_value = watchlist_entry
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is True
+        assert "eligible" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_signal_just_below_60_percent_threshold(
+        self, service, mock_repository, enabled_config, sample_signal
+    ):
+        """Test signal fails when confidence just below 60% threshold."""
+        # Signal confidence at 59.99%, threshold at 60%
+        sample_signal.confidence_score = 59.99
+        enabled_config.min_confidence = Decimal("60.00")
+        mock_repository.get_config.return_value = enabled_config
+        service.watchlist_repository.get_symbol.return_value = None
+
+        eligible, reason = await service.is_signal_eligible(enabled_config.user_id, sample_signal)
+
+        assert eligible is False
+        assert "Below minimum confidence (global: 60" in reason
 
 
 class TestConfigValidation:

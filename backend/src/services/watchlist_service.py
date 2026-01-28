@@ -160,6 +160,7 @@ class WatchlistService:
         priority: WatchlistPriority | None = None,
         min_confidence: Decimal | None = None,
         enabled: bool | None = None,
+        clear_min_confidence: bool = False,
     ) -> WatchlistEntry | None:
         """
         Update a symbol's settings.
@@ -170,19 +171,18 @@ class WatchlistService:
             priority: New priority (optional)
             min_confidence: New min confidence (optional)
             enabled: New enabled state (optional)
+            clear_min_confidence: If True, explicitly clear min_confidence to NULL
 
         Returns:
             Updated WatchlistEntry if found, None otherwise
         """
-        # Don't auto-clear min_confidence - only update fields that are explicitly provided.
-        # If caller wants to clear min_confidence, they should use a dedicated method.
         entry = await self.repository.update_symbol(
             user_id=user_id,
             symbol=symbol.upper(),
             priority=priority,
             min_confidence=min_confidence,
             enabled=enabled,
-            clear_min_confidence=False,
+            clear_min_confidence=clear_min_confidence,
         )
 
         if entry and enabled is not None:

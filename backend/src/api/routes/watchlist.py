@@ -350,16 +350,26 @@ async def update_symbol(
         PATCH /api/v1/watchlist/AAPL
         {"priority": "high", "min_confidence": 80.0}
 
+        To clear min_confidence:
+        {"min_confidence": null}
+
     Example Response:
         {"symbol": "AAPL", "priority": "high", "min_confidence": 80.0, ...}
     """
     try:
+        # Check if min_confidence was explicitly provided in the request body
+        # This allows us to distinguish between "not provided" and "explicitly null"
+        clear_min_confidence = (
+            "min_confidence" in request.model_fields_set and request.min_confidence is None
+        )
+
         entry = await service.update_symbol(
             user_id=user_id,
             symbol=symbol,
             priority=request.priority,
             min_confidence=request.min_confidence,
             enabled=request.enabled,
+            clear_min_confidence=clear_min_confidence,
         )
 
         if not entry:

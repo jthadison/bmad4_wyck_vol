@@ -21,6 +21,11 @@ Key Features:
 Indexes:
 - Primary key covers (user_id, symbol) queries
 - idx_watchlist_user_enabled: Fast lookup of enabled symbols per user
+
+Note on min_confidence constraint (Story 19.24):
+- Range is 60-100% per business requirements
+- This is a new table, so no legacy data migration is needed
+- If legacy data existed with values < 60%, a data migration would be required
 """
 from collections.abc import Sequence
 from typing import Union

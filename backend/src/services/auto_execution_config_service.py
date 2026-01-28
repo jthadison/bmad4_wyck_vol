@@ -237,7 +237,7 @@ class AutoExecutionConfigService:
         if signal_confidence < config.min_confidence:
             return (
                 False,
-                f"Confidence {signal.confidence_score}% < global threshold {config.min_confidence}%",
+                f"Below minimum confidence (global: {config.min_confidence}%)",
             )
 
         # Check symbol-specific confidence threshold (Story 19.24)
@@ -246,8 +246,7 @@ class AutoExecutionConfigService:
             if signal_confidence < watchlist_entry.min_confidence:
                 return (
                     False,
-                    f"Confidence {signal.confidence_score}% < {signal.symbol} threshold "
-                    f"{watchlist_entry.min_confidence}%",
+                    f"Below symbol minimum confidence ({signal.symbol}: {watchlist_entry.min_confidence}%)",
                 )
 
         # TODO: Check daily trade limit (requires querying today's trades)
