@@ -2,12 +2,16 @@
 Unit tests for RealtimePatternScanner service.
 
 Story 19.1: Real-Time Bar Processing Pipeline
+Story 19.23: Symbol Priority Tiers
+
 Tests cover:
 - Service startup/shutdown
 - Bar queuing and backpressure handling
 - Latency tracking and metrics
 - Circuit breaker behavior
 - Health check endpoint
+- Symbol priority management (Story 19.23)
+- Priority-based bar processing (Story 19.23)
 """
 
 import asyncio
@@ -18,6 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.models.ohlcv import OHLCVBar
+from src.pattern_engine.priority_queue import Priority
 from src.pattern_engine.realtime_scanner import (
     CircuitState,
     ProcessingMetrics,
@@ -229,8 +234,8 @@ class TestBarProcessing:
         await scanner.stop()
 
     @pytest.mark.asyncio
-    async def test_bars_processed_fifo(self, scanner, mock_coordinator):
-        """Bars are processed in FIFO order."""
+    async def test_bars_processed_fifo_within_priority(self, scanner, mock_coordinator):
+        """Bars with same priority are processed in FIFO order."""
         await scanner.start(mock_coordinator)
 
         processed_symbols = []
@@ -244,7 +249,7 @@ class TestBarProcessing:
 
         scanner._process_single_bar = track_process
 
-        # Queue bars with different symbols
+        # Queue bars with different symbols (all MEDIUM priority by default)
         for symbol in ["AAPL", "TSLA", "GOOGL"]:
             bar = OHLCVBar(
                 symbol=symbol,
@@ -264,6 +269,7 @@ class TestBarProcessing:
         # Wait for processing
         await asyncio.sleep(0.5)
 
+        # All same priority (MEDIUM), so FIFO order maintained
         assert processed_symbols == ["AAPL", "TSLA", "GOOGL"]
 
         await scanner.stop()
@@ -471,11 +477,10 @@ class TestHealthCheck:
         scanner._is_running = True
         scanner._circuit_state = CircuitState.CLOSED
 
-        # Fill queue to 85%
-        for _ in range(85):
-            try:
-                scanner._bar_queue.put_nowait(sample_ohlcv_bar)
-            except asyncio.QueueFull:
+        # Fill queue to 85% using priority queue API
+        for i in range(85):
+            success = scanner._bar_queue.put_nowait(f"SYM{i}", sample_ohlcv_bar, Priority.MEDIUM)
+            if not success:
                 break
 
         health = scanner.get_health()
@@ -653,5 +658,256 @@ class TestScannerIntegration:
         # All bars should be processed
         assert scanner._metrics.bars_processed >= 50
         assert scanner._metrics.bars_dropped == 0
+
+        await scanner.stop()
+
+
+# =============================
+# Symbol Priority Tests (Story 19.23)
+# =============================
+
+
+class TestSymbolPriorityManagement:
+    """Tests for symbol priority management in scanner."""
+
+    @pytest.mark.asyncio
+    async def test_set_symbol_priority(self, scanner):
+        """Can set priority for a symbol."""
+        await scanner.set_symbol_priority("AAPL", Priority.HIGH)
+
+        priority = await scanner.get_symbol_priority("AAPL")
+        assert priority == Priority.HIGH
+
+    @pytest.mark.asyncio
+    async def test_default_priority_is_medium(self, scanner):
+        """Default priority for unknown symbols is MEDIUM."""
+        priority = await scanner.get_symbol_priority("UNKNOWN")
+        assert priority == Priority.MEDIUM
+
+    @pytest.mark.asyncio
+    async def test_set_multiple_priorities(self, scanner):
+        """Can bulk set priorities for multiple symbols."""
+        await scanner.set_symbol_priorities(
+            {
+                "AAPL": Priority.HIGH,
+                "TSLA": Priority.LOW,
+                "SPY": Priority.HIGH,
+            }
+        )
+
+        assert await scanner.get_symbol_priority("AAPL") == Priority.HIGH
+        assert await scanner.get_symbol_priority("TSLA") == Priority.LOW
+        assert await scanner.get_symbol_priority("SPY") == Priority.HIGH
+
+    @pytest.mark.asyncio
+    async def test_clear_symbol_priorities(self, scanner):
+        """Can clear all symbol priorities."""
+        await scanner.set_symbol_priority("AAPL", Priority.HIGH)
+        await scanner.clear_symbol_priorities()
+
+        # Should revert to MEDIUM
+        priority = await scanner.get_symbol_priority("AAPL")
+        assert priority == Priority.MEDIUM
+
+
+class TestPriorityProcessingOrder:
+    """Tests for priority-based processing order."""
+
+    @pytest.mark.asyncio
+    async def test_high_priority_processed_first(self, mock_coordinator):
+        """High priority bars are processed before lower priority."""
+        scanner = RealtimePatternScanner(queue_max_size=100)
+
+        # Set up priorities
+        await scanner.set_symbol_priorities(
+            {
+                "HIGH_SYM": Priority.HIGH,
+                "LOW_SYM": Priority.LOW,
+            }
+        )
+
+        await scanner.start(mock_coordinator)
+
+        processed_symbols = []
+        original_process = scanner._process_single_bar
+
+        async def track_process(bar):
+            processed_symbols.append(bar.symbol)
+            await original_process(bar)
+
+        scanner._process_single_bar = track_process
+
+        # Add bars: LOW first, then HIGH
+        for symbol in ["LOW_SYM", "HIGH_SYM"]:
+            bar = OHLCVBar(
+                symbol=symbol,
+                timeframe="1m",
+                timestamp=datetime.now(UTC),
+                open=Decimal("100.00"),
+                high=Decimal("101.00"),
+                low=Decimal("99.00"),
+                close=Decimal("100.50"),
+                volume=10000,
+                spread=Decimal("2.00"),
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            )
+            scanner._on_bar_received(bar)
+
+        # Wait for processing
+        await asyncio.sleep(0.5)
+
+        # HIGH should be processed before LOW despite being added second
+        assert processed_symbols == ["HIGH_SYM", "LOW_SYM"]
+
+        await scanner.stop()
+
+    @pytest.mark.asyncio
+    async def test_priority_ordering_under_congestion(self, mock_coordinator):
+        """Test scenario from Story 19.23: congestion processing order."""
+        scanner = RealtimePatternScanner(queue_max_size=100)
+
+        # Configure priorities per story scenario
+        await scanner.set_symbol_priorities(
+            {
+                "AAPL": Priority.HIGH,
+                "SPY": Priority.HIGH,
+                "MSFT": Priority.MEDIUM,
+                "TSLA": Priority.LOW,
+            }
+        )
+
+        await scanner.start(mock_coordinator)
+
+        processed_symbols = []
+        original_process = scanner._process_single_bar
+
+        async def track_process(bar):
+            processed_symbols.append(bar.symbol)
+            await original_process(bar)
+
+        scanner._process_single_bar = track_process
+
+        # Add bars in mixed order (simulating congestion)
+        for symbol in ["TSLA", "MSFT", "AAPL", "SPY"]:
+            bar = OHLCVBar(
+                symbol=symbol,
+                timeframe="1m",
+                timestamp=datetime.now(UTC),
+                open=Decimal("100.00"),
+                high=Decimal("101.00"),
+                low=Decimal("99.00"),
+                close=Decimal("100.50"),
+                volume=10000,
+                spread=Decimal("2.00"),
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            )
+            scanner._on_bar_received(bar)
+
+        # Wait for processing
+        await asyncio.sleep(0.5)
+
+        # Expected order: AAPL, SPY (HIGH), MSFT (MEDIUM), TSLA (LOW)
+        assert processed_symbols == ["AAPL", "SPY", "MSFT", "TSLA"]
+
+        await scanner.stop()
+
+    @pytest.mark.asyncio
+    async def test_fifo_within_same_priority(self, mock_coordinator):
+        """FIFO order maintained within same priority level."""
+        scanner = RealtimePatternScanner(queue_max_size=100)
+
+        # All high priority
+        await scanner.set_symbol_priorities(
+            {
+                "FIRST": Priority.HIGH,
+                "SECOND": Priority.HIGH,
+                "THIRD": Priority.HIGH,
+            }
+        )
+
+        await scanner.start(mock_coordinator)
+
+        processed_symbols = []
+        original_process = scanner._process_single_bar
+
+        async def track_process(bar):
+            processed_symbols.append(bar.symbol)
+            await original_process(bar)
+
+        scanner._process_single_bar = track_process
+
+        for symbol in ["FIRST", "SECOND", "THIRD"]:
+            bar = OHLCVBar(
+                symbol=symbol,
+                timeframe="1m",
+                timestamp=datetime.now(UTC),
+                open=Decimal("100.00"),
+                high=Decimal("101.00"),
+                low=Decimal("99.00"),
+                close=Decimal("100.50"),
+                volume=10000,
+                spread=Decimal("2.00"),
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            )
+            scanner._on_bar_received(bar)
+
+        await asyncio.sleep(0.5)
+
+        # Same priority, so FIFO order
+        assert processed_symbols == ["FIRST", "SECOND", "THIRD"]
+
+        await scanner.stop()
+
+    @pytest.mark.asyncio
+    async def test_no_effect_when_queue_empty(self, mock_coordinator):
+        """Priority has no effect when no backlog (normal operation)."""
+        scanner = RealtimePatternScanner(queue_max_size=100)
+
+        # Set different priorities
+        await scanner.set_symbol_priorities(
+            {
+                "HIGH_SYM": Priority.HIGH,
+                "LOW_SYM": Priority.LOW,
+            }
+        )
+
+        await scanner.start(mock_coordinator)
+
+        processed_symbols = []
+        original_process = scanner._process_single_bar
+
+        async def track_process(bar):
+            processed_symbols.append(bar.symbol)
+            await original_process(bar)
+
+        scanner._process_single_bar = track_process
+
+        # Add bars one at a time with delays (no congestion)
+        for symbol in ["LOW_SYM", "HIGH_SYM"]:
+            bar = OHLCVBar(
+                symbol=symbol,
+                timeframe="1m",
+                timestamp=datetime.now(UTC),
+                open=Decimal("100.00"),
+                high=Decimal("101.00"),
+                low=Decimal("99.00"),
+                close=Decimal("100.50"),
+                volume=10000,
+                spread=Decimal("2.00"),
+                spread_ratio=Decimal("1.0"),
+                volume_ratio=Decimal("1.0"),
+            )
+            scanner._on_bar_received(bar)
+            # Wait for each bar to be processed before adding next
+            await asyncio.sleep(0.3)
+
+        await asyncio.sleep(0.5)
+
+        # When no backlog, bars are processed immediately in arrival order
+        # Since we wait between bars, each processes before next arrives
+        assert processed_symbols == ["LOW_SYM", "HIGH_SYM"]
 
         await scanner.stop()

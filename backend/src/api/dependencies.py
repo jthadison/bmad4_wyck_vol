@@ -1,7 +1,7 @@
 """
 FastAPI Dependencies
 
-Provides dependency injection for database sessions, authentication, and authorization.
+Provides dependency injection for database sessions, authentication, authorization, and Redis.
 """
 
 from collections.abc import AsyncGenerator
@@ -10,11 +10,74 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.token_service import TokenService
 from src.config import settings
 from src.database import async_session_maker
+
+# Global Redis client instance (lazy initialized)
+_redis_client: Redis | None = None
+
+
+def init_redis_client() -> Redis:
+    """
+    Initialize and return the global Redis client.
+
+    For use in startup contexts where dependency injection is not available.
+    The client is shared across all requests for connection pooling.
+
+    Returns:
+        Redis: Async Redis client
+    """
+    global _redis_client
+
+    if _redis_client is None:
+        _redis_client = Redis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=False,
+        )
+
+    return _redis_client
+
+
+async def close_redis_client() -> None:
+    """
+    Close the global Redis client connection.
+
+    Should be called during application shutdown to prevent connection leaks.
+    """
+    global _redis_client
+
+    if _redis_client is not None:
+        await _redis_client.close()
+        _redis_client = None
+
+
+async def get_redis_client() -> AsyncGenerator[Redis, None]:
+    """
+    FastAPI dependency for Redis client.
+
+    Provides async Redis client with lazy initialization.
+    Client is reused across requests for connection pooling.
+
+    Yields:
+        Redis: Async Redis client
+
+    Example:
+        ```python
+        @app.get("/cache")
+        async def get_cached_data(
+            redis: Redis = Depends(get_redis_client)
+        ):
+            value = await redis.get("key")
+            return {"value": value}
+        ```
+    """
+    yield init_redis_client()
+
 
 # Security scheme for Bearer token authentication
 security = HTTPBearer()

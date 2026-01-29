@@ -40,6 +40,7 @@ from src.api.routes import (
     summary,
     tradingview,
     user,
+    watchlist,
 )
 from src.api.routes import settings as settings_routes
 from src.api.websocket import websocket_endpoint
@@ -51,6 +52,10 @@ from src.pattern_engine.realtime_scanner import (
     ScannerHealthResponse,
     get_scanner,
     init_scanner,
+)
+from src.tasks.circuit_breaker_scheduler import (
+    start_circuit_breaker_scheduler,
+    stop_circuit_breaker_scheduler,
 )
 
 logger = structlog.get_logger(__name__)
@@ -100,6 +105,7 @@ app.include_router(tradingview.router)  # TradingView webhook routes (Story 16.4
 app.include_router(scanner.router)  # Multi-symbol scanner routes (Story 19.4)
 app.include_router(signal_approval.router)  # Signal approval queue routes (Story 19.9)
 app.include_router(settings_routes.router)  # Settings routes (Story 19.14)
+app.include_router(watchlist.router)  # Watchlist management routes (Story 19.12)
 
 
 # WebSocket endpoint for real-time updates
@@ -265,6 +271,16 @@ async def startup_event() -> None:
     except Exception as e:
         logger.warning("signal_approval_expiration_task_failed", error=str(e))
 
+    # Initialize circuit breaker scheduler (Story 19.21)
+    try:
+        from src.api.dependencies import init_redis_client
+
+        redis_client = init_redis_client()
+        start_circuit_breaker_scheduler(redis_client)
+        logger.info("circuit_breaker_scheduler_initialized")
+    except Exception as e:
+        logger.warning("circuit_breaker_scheduler_failed", error=str(e))
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
@@ -272,9 +288,15 @@ async def shutdown_event() -> None:
     FastAPI shutdown event handler.
 
     Gracefully stops the real-time pattern scanner, market data feed,
-    and signal approval expiration task.
+    signal approval expiration task, and circuit breaker scheduler.
     """
     global _coordinator
+
+    # Stop circuit breaker scheduler (Story 19.21)
+    try:
+        stop_circuit_breaker_scheduler()
+    except Exception:
+        pass
 
     # Stop signal approval expiration task (Story 19.9)
     try:
@@ -296,6 +318,14 @@ async def shutdown_event() -> None:
 
     if _coordinator:
         await _coordinator.stop()
+
+    # Close Redis connection (Story 19.21)
+    try:
+        from src.api.dependencies import close_redis_client
+
+        await close_redis_client()
+    except Exception:
+        pass
 
 
 @app.get("/")
