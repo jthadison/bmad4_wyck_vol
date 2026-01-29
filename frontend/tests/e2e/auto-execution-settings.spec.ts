@@ -19,7 +19,7 @@ const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 // Helper: Navigate to auto-execution settings
 async function navigateToSettings(page: Page) {
   await page.goto(`${BASE_URL}/settings/auto-execution`)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 }
 
 // Helper: Wait for consent modal to be fully visible

@@ -23,7 +23,7 @@ test.describe('Backtest Functionality - SPY Symbol', () => {
     await page.goto('http://localhost:5173')
 
     // Wait for app to be ready
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
   })
 
   test('should execute backtest for SPY and display results', async ({

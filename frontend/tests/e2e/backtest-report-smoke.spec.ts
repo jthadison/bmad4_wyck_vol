@@ -26,7 +26,7 @@ test.describe('Backtest Report Page Smoke Test', () => {
     await page.goto('http://localhost:5173/backtest/results')
 
     // Wait for page to load
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Take a screenshot for debugging
     await page.screenshot({
@@ -75,7 +75,7 @@ test.describe('Backtest Report Page Smoke Test', () => {
     const testUuid = '550e8400-e29b-41d4-a716-446655440000'
     await page.goto(`http://localhost:5173/backtest/results/${testUuid}`)
 
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     await page.screenshot({
       path: 'test-results/backtest-report-detail.png',

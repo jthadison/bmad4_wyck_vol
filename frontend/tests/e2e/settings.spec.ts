@@ -15,7 +15,7 @@ test.describe('Settings Page', () => {
     page,
   }) => {
     await page.goto(`${BASE_URL}/settings`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('h1, h2').first()).toBeVisible({ timeout: 10000 })
@@ -38,7 +38,7 @@ test.describe('Settings Page', () => {
     page,
   }) => {
     await page.goto(`${BASE_URL}/settings`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Find link to auto-execution settings
     const autoExecLink = page.locator('a[href*="auto-execution"]').first()
@@ -55,7 +55,7 @@ test.describe('Settings Page', () => {
     page,
   }) => {
     await page.goto(`${BASE_URL}/settings`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Find link to configuration
     const configLink = page.locator('a[href*="configuration"]').first()
@@ -72,7 +72,7 @@ test.describe('Settings Page', () => {
 test.describe('Configuration Wizard', () => {
   test('should load configuration wizard page', async ({ page }) => {
     await page.goto(`${BASE_URL}/settings/configuration`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -92,7 +92,7 @@ test.describe('Configuration Wizard', () => {
 
   test('should display breadcrumb navigation', async ({ page }) => {
     await page.goto(`${BASE_URL}/settings/configuration`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check for breadcrumb
     const breadcrumb = page.locator(
@@ -112,7 +112,7 @@ test.describe('Configuration Wizard', () => {
 
   test('should have form elements for configuration', async ({ page }) => {
     await page.goto(`${BASE_URL}/settings/configuration`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for form elements
     const inputs = page.locator('input, select, textarea')

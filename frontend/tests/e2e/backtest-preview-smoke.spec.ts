@@ -11,7 +11,7 @@ test.describe('Backtest Preview Smoke Test', () => {
     await page.goto('http://localhost:5173/backtest')
 
     // Wait for page to load
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check that the page title is visible
     await expect(page.locator('h1')).toContainText('Backtest')
@@ -36,7 +36,7 @@ test.describe('Backtest Preview Smoke Test', () => {
     page,
   }) => {
     await page.goto('http://localhost:5173/backtest')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check default values
     const symbolInput = page.locator('input[id="symbol"]')

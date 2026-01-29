@@ -41,23 +41,29 @@ test.describe('Signal Generation Workflow', () => {
   }) => {
     // Navigate to dashboard
     await page.goto(`${BASE_URL}/`)
+    await page.waitForLoadState('domcontentloaded')
 
-    // Wait for dashboard to load
-    await expect(page.locator('h1, h2').first()).toBeVisible({ timeout: 10000 })
+    // Wait for dashboard view to load
+    await expect(page.locator('.dashboard-view')).toBeVisible({
+      timeout: 10000,
+    })
 
     // Verify dashboard page loaded
     const title = await page.title()
     expect(title).toContain('BMAD')
 
-    // Wait for chart container
-    const chartContainer = page.locator(
-      '[data-testid="chart-container"], .chart-container, canvas'
+    // Dashboard contains DailySummaryCard and LiveSignalsDashboard
+    // Check for Live Signals Dashboard heading or Daily Summary
+    const dashboardContent = page.locator(
+      'h2:has-text("Live Signals"), h2:has-text("Daily Summary"), .live-signals-dashboard'
     )
-    await expect(chartContainer.first()).toBeVisible({ timeout: 10000 })
+    await expect(dashboardContent.first()).toBeVisible({ timeout: 10000 })
 
-    // Verify chart has rendered (either Lightweight Charts canvas or other chart library)
-    const hasCanvas = (await page.locator('canvas').count()) > 0
-    expect(hasCanvas).toBe(true)
+    // Verify dashboard has main structural elements (tabs, filters)
+    const hasTabsOrFilters =
+      (await page.locator('[role="tablist"], [role="tab"]').count()) > 0 ||
+      (await page.locator('input[placeholder*="symbol" i]').count()) > 0
+    expect(hasTabsOrFilters).toBe(true)
   })
 
   /**
@@ -71,7 +77,7 @@ test.describe('Signal Generation Workflow', () => {
     await page.goto(`${BASE_URL}/signals`)
 
     // Wait for page to load
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for pattern detection trigger button (various possible selectors)
     const detectionButton = page
@@ -130,7 +136,7 @@ test.describe('Signal Generation Workflow', () => {
     // Navigate to signals page
     await page.goto(`${BASE_URL}/signals`)
 
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Find signals table or list
     const signalsTable = page.locator(
@@ -179,7 +185,7 @@ test.describe('Signal Generation Workflow', () => {
     // Navigate to signals page
     await page.goto(`${BASE_URL}/signals`)
 
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Find an actionable signal
     const approveButton = page
@@ -244,7 +250,7 @@ test.describe('Signal Generation Workflow', () => {
     // Navigate to dashboard or chart view
     await page.goto(`${BASE_URL}/`)
 
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for symbol selector (dropdown, autocomplete, or input)
     const symbolSelector = page

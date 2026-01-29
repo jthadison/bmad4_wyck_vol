@@ -12,7 +12,7 @@ const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 test.describe('Trade Audit Log', () => {
   test('should load audit log page', async ({ page }) => {
     await page.goto(`${BASE_URL}/audit-log`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -35,7 +35,7 @@ test.describe('Trade Audit Log', () => {
 
   test('should display audit entries or empty state', async ({ page }) => {
     await page.goto(`${BASE_URL}/audit-log`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for audit entries in table or list
     const auditEntries = page.locator(
@@ -54,7 +54,7 @@ test.describe('Trade Audit Log', () => {
 
   test('should display timestamp column in audit entries', async ({ page }) => {
     await page.goto(`${BASE_URL}/audit-log`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check for timestamp header or data
     const timestampHeader = page.locator(
@@ -77,7 +77,7 @@ test.describe('Trade Audit Log', () => {
 
   test('should display action type column', async ({ page }) => {
     await page.goto(`${BASE_URL}/audit-log`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check for action/type column
     const actionHeader = page.locator(
@@ -92,7 +92,7 @@ test.describe('Trade Audit Log', () => {
 
   test('should allow filtering audit entries', async ({ page }) => {
     await page.goto(`${BASE_URL}/audit-log`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for filter controls
     const filterInput = page.locator(
@@ -121,7 +121,7 @@ test.describe('Trade Audit Log', () => {
 
   test('should support pagination for large audit logs', async ({ page }) => {
     await page.goto(`${BASE_URL}/audit-log`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for pagination controls
     const pagination = page.locator(
@@ -142,7 +142,7 @@ test.describe('Trade Audit Log', () => {
 
   test('should display audit entry details', async ({ page }) => {
     await page.goto(`${BASE_URL}/audit-log`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Find audit entries
     const auditEntries = page.locator(

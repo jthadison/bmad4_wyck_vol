@@ -32,7 +32,7 @@ test.describe('View Existing Backtest Report', () => {
 
     // Step 2: Navigate to backtest results list
     await page.goto(`${BASE_URL}/backtest/results`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Step 3: Find and click View Report button
     const viewReportLink = page.locator('a[href*="/backtest/results/"]').first()
@@ -41,7 +41,7 @@ test.describe('View Existing Backtest Report', () => {
 
     // Step 4: Wait for report page to load
     await page.waitForURL(/\/backtest\/results\/.+/)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Wait a bit for any errors to appear
     await page.waitForTimeout(2000)

@@ -12,7 +12,7 @@ const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 test.describe('404 Not Found Page', () => {
   test('should display 404 page for non-existent route', async ({ page }) => {
     await page.goto(`${BASE_URL}/this-page-does-not-exist`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -30,7 +30,7 @@ test.describe('404 Not Found Page', () => {
 
   test('should display helpful message', async ({ page }) => {
     await page.goto(`${BASE_URL}/random-invalid-path-12345`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Should have some helpful text
     const pageContent = await page.locator('body').textContent()
@@ -40,26 +40,28 @@ test.describe('404 Not Found Page', () => {
 
   test('should have link to homepage', async ({ page }) => {
     await page.goto(`${BASE_URL}/invalid-route`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
-    // Look for home link
+    // Wait for the 404 view to be visible
+    await expect(page.locator('.not-found-view')).toBeVisible({
+      timeout: 10000,
+    })
+
+    // Look for home link - the 404 page has "Go to Dashboard" router-link
     const homeLink = page.locator(
       'a[href="/"], a:has-text("Home"), a:has-text("Dashboard")'
     )
-    const hasHomeLink = await homeLink.count()
 
-    if (hasHomeLink > 0) {
-      await expect(homeLink.first()).toBeVisible()
+    await expect(homeLink.first()).toBeVisible()
 
-      // Verify link has correct href without navigating
-      const href = await homeLink.first().getAttribute('href')
-      expect(href === '/' || href === `${BASE_URL}/`).toBe(true)
-    }
+    // Verify link has correct href without navigating
+    const href = await homeLink.first().getAttribute('href')
+    expect(href === '/' || href === `${BASE_URL}/`).toBe(true)
   })
 
   test('should have navigation options', async ({ page }) => {
     await page.goto(`${BASE_URL}/non-existent-page`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for navigation elements
     const navLinks = page.locator('nav a, header a, .navigation a')
@@ -76,7 +78,7 @@ test.describe('404 Not Found Page', () => {
 
   test('should handle deeply nested invalid routes', async ({ page }) => {
     await page.goto(`${BASE_URL}/a/b/c/d/e/f/invalid`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -94,7 +96,7 @@ test.describe('404 Not Found Page', () => {
     page,
   }) => {
     await page.goto(`${BASE_URL}/invalid%20route%21`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded without error
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -102,7 +104,7 @@ test.describe('404 Not Found Page', () => {
 
   test('should display consistent styling with app', async ({ page }) => {
     await page.goto(`${BASE_URL}/not-found-test`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check that app shell is present
     const appContainer = page.locator('#app')

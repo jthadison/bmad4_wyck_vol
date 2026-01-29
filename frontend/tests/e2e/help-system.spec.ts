@@ -15,7 +15,7 @@ const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 test.describe('Help Glossary', () => {
   test('should load glossary page', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/glossary`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -36,7 +36,7 @@ test.describe('Help Glossary', () => {
 
   test('should display Wyckoff terminology', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/glossary`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for common Wyckoff terms
     const wyckoffTerms = [
@@ -64,7 +64,7 @@ test.describe('Help Glossary', () => {
 
   test('should have alphabetical navigation or search', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/glossary`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for alphabetical links or search
     const alphabetLinks = page.locator(
@@ -85,7 +85,7 @@ test.describe('Help Glossary', () => {
 
   test('should display term definitions', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/glossary`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for definition list, term-definition pairs, or glossary content
     const definitions = page.locator(
@@ -102,7 +102,7 @@ test.describe('Help Glossary', () => {
 test.describe('Help FAQ', () => {
   test('should load FAQ page', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/faq`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -126,7 +126,7 @@ test.describe('Help FAQ', () => {
 
   test('should display expandable FAQ items', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/faq`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for accordion/expandable items
     const faqItems = page.locator(
@@ -153,7 +153,7 @@ test.describe('Help FAQ', () => {
 
   test('should have question and answer format', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/faq`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for Q&A structure or FAQ content
     const pageContent = await page.locator('body').textContent()
@@ -171,7 +171,7 @@ test.describe('Help FAQ', () => {
 
   test('should allow searching FAQs', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/faq`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for search
     const searchInput = page.locator(
@@ -190,7 +190,7 @@ test.describe('Help FAQ', () => {
 test.describe('Help Search', () => {
   test('should load search results page', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/search?q=signal`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -200,7 +200,7 @@ test.describe('Help Search', () => {
     page,
   }) => {
     await page.goto(`${BASE_URL}/help/search?q=signal`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for results, empty state, or search-related content
     const results = page.locator(
@@ -221,7 +221,7 @@ test.describe('Help Search', () => {
 
   test('should have search input with query', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/search?q=pattern`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for search input or verify search page loaded
     const searchInput = page.locator(
@@ -241,7 +241,7 @@ test.describe('Help Search', () => {
 
   test('should navigate to article from search results', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/search?q=wyckoff`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Find article links in results
     const articleLinks = page.locator('a[href*="/help/article"]')
@@ -259,7 +259,7 @@ test.describe('Help Article', () => {
   test('should handle article route with slug', async ({ page }) => {
     // Try to access an article (may 404 if no articles exist)
     await page.goto(`${BASE_URL}/help/article/getting-started`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded (either article or 404)
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -272,7 +272,7 @@ test.describe('Help Article', () => {
 
   test('should display breadcrumb navigation', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/article/getting-started`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check for breadcrumb or navigation back to help
     const breadcrumb = page.locator(
@@ -293,7 +293,7 @@ test.describe('Help Article', () => {
     page,
   }) => {
     await page.goto(`${BASE_URL}/help/article/getting-started`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for markdown-rendered content
     const headings = page.locator('h1, h2, h3')
@@ -310,7 +310,7 @@ test.describe('Help Article', () => {
 
   test('should have back navigation', async ({ page }) => {
     await page.goto(`${BASE_URL}/help/article/getting-started`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for back button or link
     const backButton = page.locator(

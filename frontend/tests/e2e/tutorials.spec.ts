@@ -14,7 +14,7 @@ async function getFirstTutorialSlug(
   page: import('@playwright/test').Page
 ): Promise<string | null> {
   await page.goto(`${BASE_URL}/tutorials`)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 
   const tutorialLinks = page.locator('a[href*="/tutorials/"]')
   const hasLinks = await tutorialLinks.count()
@@ -33,7 +33,7 @@ test.describe('Tutorial Walkthrough', () => {
   test('should load tutorial walkthrough page', async ({ page }) => {
     // First go to tutorials list to find a valid tutorial
     await page.goto(`${BASE_URL}/tutorials`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Find tutorial links
     const tutorialLinks = page.locator('a[href*="/tutorials/"]')
@@ -61,7 +61,7 @@ test.describe('Tutorial Walkthrough', () => {
     }
 
     await page.goto(`${BASE_URL}/tutorials/${slug}`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for step indicators
     const stepIndicators = page.locator(
@@ -91,7 +91,7 @@ test.describe('Tutorial Walkthrough', () => {
     }
 
     await page.goto(`${BASE_URL}/tutorials/${slug}`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for next/previous buttons
     const nextButton = page.locator(
@@ -125,7 +125,7 @@ test.describe('Tutorial Walkthrough', () => {
     }
 
     await page.goto(`${BASE_URL}/tutorials/${slug}`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for instructional content
     const content = page.locator(
@@ -153,7 +153,7 @@ test.describe('Tutorial Walkthrough', () => {
     }
 
     await page.goto(`${BASE_URL}/tutorials/${slug}`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check for breadcrumb
     const breadcrumb = page.locator(
@@ -180,7 +180,7 @@ test.describe('Tutorial Walkthrough', () => {
     }
 
     await page.goto(`${BASE_URL}/tutorials/${slug}`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for completion button
     const completeButton = page.locator(
@@ -214,7 +214,7 @@ test.describe('Tutorial Walkthrough', () => {
 
   test('should handle invalid tutorial slug gracefully', async ({ page }) => {
     await page.goto(`${BASE_URL}/tutorials/non-existent-tutorial`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Should show error or redirect
     const pageContent = await page.locator('body').textContent()

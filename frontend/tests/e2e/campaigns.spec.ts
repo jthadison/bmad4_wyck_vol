@@ -12,7 +12,7 @@ const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 test.describe('Campaign Tracker', () => {
   test('should load campaign tracker page', async ({ page }) => {
     await page.goto(`${BASE_URL}/campaigns`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -34,7 +34,7 @@ test.describe('Campaign Tracker', () => {
 
   test('should display campaign list or empty state', async ({ page }) => {
     await page.goto(`${BASE_URL}/campaigns`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for campaign items, empty state, or campaign-related content
     const campaignItems = page.locator(
@@ -55,7 +55,7 @@ test.describe('Campaign Tracker', () => {
 
   test('should display campaign status indicators', async ({ page }) => {
     await page.goto(`${BASE_URL}/campaigns`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for status badges/indicators (BMAD phases: Buy, Monitor, Add, Dump)
     const pageContent = await page.locator('body').textContent()
@@ -78,7 +78,7 @@ test.describe('Campaign Tracker', () => {
 
   test('should display campaign health metrics', async ({ page }) => {
     await page.goto(`${BASE_URL}/campaigns`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for health/progress indicators
     const progressBars = page.locator(
@@ -100,7 +100,7 @@ test.describe('Campaign Tracker', () => {
 
   test('should allow filtering campaigns by status', async ({ page }) => {
     await page.goto(`${BASE_URL}/campaigns`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for filter controls
     const filterSelect = page.locator(
@@ -127,7 +127,7 @@ test.describe('Campaign Tracker', () => {
 
   test('should navigate to campaign details on click', async ({ page }) => {
     await page.goto(`${BASE_URL}/campaigns`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Find clickable campaign rows/cards
     const campaignItems = page.locator(
