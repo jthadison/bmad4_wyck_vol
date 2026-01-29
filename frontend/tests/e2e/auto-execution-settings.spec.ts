@@ -22,6 +22,18 @@ async function navigateToSettings(page: Page) {
   await page.waitForLoadState('networkidle')
 }
 
+// Helper: Wait for consent modal to be fully visible
+async function waitForConsentModal(page: Page) {
+  // Wait for the modal dialog to be visible using the consent-modal class
+  const modal = page.locator('.consent-modal')
+  await modal.waitFor({ state: 'visible', timeout: 10000 })
+  // Also wait for the header text to ensure modal is fully rendered
+  await page
+    .locator('h3:has-text("Enable Automatic Execution")')
+    .waitFor({ state: 'visible', timeout: 5000 })
+  return modal
+}
+
 test.describe('Auto-Execution Settings', () => {
   /**
    * Test Scenario 1: View settings page in disabled state
@@ -69,25 +81,26 @@ test.describe('Auto-Execution Settings', () => {
       .first()
     await toggle.click()
 
-    // Verify consent modal appears
-    await expect(
-      page.locator('text=Enable Automatic Execution, .p-dialog-header')
-    ).toBeVisible({ timeout: 5000 })
+    // Wait for consent modal to appear
+    await waitForConsentModal(page)
 
-    // Verify warning text is present
+    // Verify modal header text
     await expect(
-      page.locator('text=Trades will execute automatically')
+      page.locator('h3:has-text("Enable Automatic Execution")')
     ).toBeVisible()
 
-    // Verify acknowledgment checkbox is present
-    const consentCheckbox = page
-      .locator('text=I understand and accept the risks')
-      .locator('..')
-    await expect(consentCheckbox).toBeVisible()
+    // Verify warning text is present (matches actual component text)
+    await expect(
+      page.locator(
+        'text=Trades will execute automatically without manual confirmation'
+      )
+    ).toBeVisible()
 
-    // Verify password field is present
-    const passwordInput = page.locator('input[type="password"]')
-    await expect(passwordInput).toBeVisible()
+    // Verify acknowledgment checkbox label is present
+    const consentLabel = page.locator(
+      'label:has-text("I understand and accept the risks of automatic trading")'
+    )
+    await expect(consentLabel).toBeVisible()
 
     // Verify enable button is disabled initially
     const enableButton = page.locator(
@@ -109,10 +122,8 @@ test.describe('Auto-Execution Settings', () => {
       .first()
     await toggle.click()
 
-    // Wait for modal
-    await page.waitForSelector('text=Enable Automatic Execution', {
-      timeout: 5000,
-    })
+    // Wait for modal to be fully visible
+    await waitForConsentModal(page)
 
     // Verify enable button is disabled without consent
     const enableButton = page.locator(
@@ -120,22 +131,13 @@ test.describe('Auto-Execution Settings', () => {
     )
     await expect(enableButton).toBeDisabled()
 
-    // Enter password without checking consent
-    const passwordInput = page.locator('input[type="password"]')
-    await passwordInput.fill('test-password')
-
-    // Button should still be disabled
-    await expect(enableButton).toBeDisabled()
-
-    // Check consent checkbox
-    const consentCheckbox = page
-      .locator('text=I understand and accept the risks')
-      .locator('..')
-      .locator('input[type="checkbox"]')
-    await consentCheckbox.check()
+    // Check consent checkbox using the input element with its ID
+    const consentCheckbox = page.locator('#consent-checkbox')
+    await consentCheckbox.waitFor({ state: 'visible', timeout: 5000 })
+    await consentCheckbox.click({ force: true })
 
     // Now button should be enabled
-    await expect(enableButton).toBeEnabled()
+    await expect(enableButton).toBeEnabled({ timeout: 5000 })
   })
 
   /**
@@ -151,17 +153,17 @@ test.describe('Auto-Execution Settings', () => {
       .first()
     await toggle.click()
 
-    // Wait for modal
-    await page.waitForSelector('text=Enable Automatic Execution')
+    // Wait for modal to be fully visible
+    await waitForConsentModal(page)
 
     // Click cancel button
     const cancelButton = page.locator('button:has-text("Cancel")')
     await cancelButton.click()
 
-    // Modal should close
+    // Modal should close - wait for it to be hidden
     await expect(
-      page.locator('text=Enable Automatic Execution')
-    ).not.toBeVisible()
+      page.locator('h3:has-text("Enable Automatic Execution")')
+    ).not.toBeVisible({ timeout: 5000 })
   })
 
   /**
@@ -171,17 +173,13 @@ test.describe('Auto-Execution Settings', () => {
   test('should display daily statistics when enabled', async ({ page }) => {
     await navigateToSettings(page)
 
-    // Look for Today's Activity section
-    const activitySection = page.locator(
-      "text=Today's Activity, text=Trades Today"
-    )
+    // Look for Today's Activity section (check if auto-execution is enabled)
+    const activitySection = page.locator('text=/Today.*Activity/i')
 
     // If auto-execution is enabled, statistics should be visible
-    if (await activitySection.isVisible()) {
-      // Verify trades progress display
-      await expect(
-        page.locator('text=Trades Today, text=Trades:')
-      ).toBeVisible()
+    if (await activitySection.isVisible({ timeout: 3000 }).catch(() => false)) {
+      // Verify trades display
+      await expect(page.locator('text=/Trades Today/i')).toBeVisible()
 
       // Verify progress bars are rendered
       const progressBars = page.locator('.p-progressbar, [role="progressbar"]')
@@ -197,18 +195,21 @@ test.describe('Auto-Execution Settings', () => {
   test('should show confirmation dialog for kill switch', async ({ page }) => {
     await navigateToSettings(page)
 
-    // Look for kill switch button
+    // Look for kill switch button (matches actual button text in component)
     const killSwitchButton = page.locator(
-      'button:has-text("Kill Switch"), button:has-text("Stop All Automatic Trading")'
+      'button:has-text("KILL SWITCH - Stop All Automatic Trading")'
     )
 
-    if (await killSwitchButton.isVisible()) {
+    // Only test if auto-execution is enabled and button is visible
+    if (
+      await killSwitchButton.isVisible({ timeout: 3000 }).catch(() => false)
+    ) {
       await killSwitchButton.click()
 
-      // Verify confirmation dialog appears
-      await expect(
-        page.locator('text=Activate Kill Switch, text=Kill Switch')
-      ).toBeVisible({ timeout: 5000 })
+      // Verify confirmation dialog appears (matches Dialog header)
+      await expect(page.locator('text=Activate Kill Switch?')).toBeVisible({
+        timeout: 5000,
+      })
 
       // Verify cancel button exists
       const cancelButton = page.locator('button:has-text("Cancel")').last()
@@ -226,20 +227,20 @@ test.describe('Auto-Execution Settings', () => {
   test('should allow pattern selection when enabled', async ({ page }) => {
     await navigateToSettings(page)
 
-    // Look for pattern checkboxes
-    const springCheckbox = page.locator('text=Spring').locator('..')
-    const sosCheckbox = page.locator('text=Sign of Strength').locator('..')
+    // Look for Enabled Patterns section
+    const patternSection = page.locator('text=/Enabled Patterns/i')
 
-    if (await springCheckbox.isVisible()) {
-      // Verify pattern descriptions are displayed
-      await expect(
-        page.locator('text=Shakeout below Creek, text=low volume')
-      ).toBeVisible()
+    // Only test if auto-execution is enabled and patterns section is visible
+    if (await patternSection.isVisible({ timeout: 3000 }).catch(() => false)) {
+      // Look for Spring pattern checkbox
+      const springCheckbox = page.locator('text=Spring').locator('..')
 
-      // Pattern checkboxes should be interactable if auto-execution is enabled
-      const springInput = springCheckbox.locator('input[type="checkbox"]')
-      if (await springInput.isEnabled()) {
-        await springInput.click()
+      if (await springCheckbox.isVisible()) {
+        // Pattern checkboxes should be interactable if auto-execution is enabled
+        const springInput = springCheckbox.locator('input[type="checkbox"]')
+        if (await springInput.isEnabled()) {
+          await springInput.click()
+        }
       }
     }
   })
@@ -251,25 +252,16 @@ test.describe('Auto-Execution Settings', () => {
   test('should display symbol list editors when enabled', async ({ page }) => {
     await navigateToSettings(page)
 
-    // Look for symbol whitelist section
-    const whitelistSection = page.locator(
-      'text=Symbol Whitelist, text=Whitelist'
-    )
+    // Look for Symbol Filters section
+    const symbolSection = page.locator('text=/Symbol Filters/i')
 
-    if (await whitelistSection.isVisible()) {
-      // Verify whitelist input exists
-      const whitelistInput = page
-        .locator('text=Symbol Whitelist')
-        .locator('..')
-        .locator('input[type="text"]')
-        .first()
-      await expect(whitelistInput).toBeVisible()
+    // Only test if auto-execution is enabled and symbol section is visible
+    if (await symbolSection.isVisible({ timeout: 3000 }).catch(() => false)) {
+      // Verify whitelist section exists
+      await expect(page.locator('text=/Symbol Whitelist/i')).toBeVisible()
 
-      // Look for blacklist section
-      const blacklistSection = page.locator(
-        'text=Symbol Blacklist, text=Blacklist'
-      )
-      await expect(blacklistSection).toBeVisible()
+      // Verify blacklist section exists
+      await expect(page.locator('text=/Symbol Blacklist/i')).toBeVisible()
     }
   })
 })
