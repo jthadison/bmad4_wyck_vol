@@ -1,7 +1,7 @@
 """create signal_approval_queue table
 
 Revision ID: 20260124_signal_approval_queue
-Revises: 20260119_backtest_updated_at
+Revises: 20260120_create_users
 Create Date: 2026-01-24
 
 Story 19.9: Signal Approval Queue Backend
@@ -29,7 +29,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20260124_signal_approval_queue"
-down_revision: Union[str, Sequence[str], None] = "20260119_backtest_updated_at"
+down_revision: Union[str, Sequence[str], None] = "20260120_create_users"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
