@@ -13,7 +13,7 @@ const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 test.describe('Signal Performance Dashboard', () => {
   test('should load signal performance page', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/performance`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -36,7 +36,7 @@ test.describe('Signal Performance Dashboard', () => {
 
   test('should display performance metrics', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/performance`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for metric cards/sections or any performance-related content
     const metricCards = page.locator(
@@ -61,7 +61,7 @@ test.describe('Signal Performance Dashboard', () => {
 
   test('should display win rate metric', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/performance`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check page content for performance-related terms
     const pageContent = await page.locator('body').textContent()
@@ -75,7 +75,7 @@ test.describe('Signal Performance Dashboard', () => {
 
   test('should display profit factor metric', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/performance`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for profit factor
     const profitElement = page.locator(
@@ -90,7 +90,7 @@ test.describe('Signal Performance Dashboard', () => {
 
   test('should display signal count by pattern type', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/performance`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for pattern type breakdown
     const patternElements = page.locator(
@@ -109,7 +109,7 @@ test.describe('Signal Performance Dashboard', () => {
 
   test('should have date range filter', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/performance`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for date filters
     const dateInputs = page.locator('input[type="date"], [data-testid*="date"]')
@@ -127,7 +127,7 @@ test.describe('Signal Performance Dashboard', () => {
 
   test('should navigate to pattern effectiveness report', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/performance`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for link to pattern effectiveness
     const effectivenessLink = page.locator(
@@ -146,7 +146,7 @@ test.describe('Signal Performance Dashboard', () => {
 test.describe('Pattern Effectiveness Report', () => {
   test('should load pattern effectiveness page', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/patterns/effectiveness`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify page loaded
     await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
@@ -168,7 +168,7 @@ test.describe('Pattern Effectiveness Report', () => {
 
   test('should display breadcrumb navigation', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/patterns/effectiveness`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Check for breadcrumb
     const breadcrumb = page.locator(
@@ -188,7 +188,7 @@ test.describe('Pattern Effectiveness Report', () => {
 
   test('should display pattern-specific metrics', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/patterns/effectiveness`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for Wyckoff patterns
     const patterns = [
@@ -215,7 +215,7 @@ test.describe('Pattern Effectiveness Report', () => {
 
   test('should display effectiveness percentages', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/patterns/effectiveness`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for percentage values or numeric metrics
     const percentages = page.locator(':has-text("%")')
@@ -233,7 +233,7 @@ test.describe('Pattern Effectiveness Report', () => {
 
   test('should have comparison table or chart', async ({ page }) => {
     await page.goto(`${BASE_URL}/signals/patterns/effectiveness`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Look for table, chart, or pattern-related content
     const table = page.locator('table')

@@ -60,7 +60,7 @@ test.describe('View Report Fix Verification', () => {
 
     // Step 2: Navigate to backtest results list
     await page.goto(`${BASE_URL}/backtest/results`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Step 3: Find and click View Report button
     const viewReportLink = page.locator('a[href*="/backtest/results/"]').first()
@@ -69,7 +69,7 @@ test.describe('View Report Fix Verification', () => {
 
     // Step 4: Wait for report page to load
     await page.waitForURL(/\/backtest\/results\/.+/)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Step 5: Verify no TypeScript errors about total_return_pct
     const hasTotalReturnPctError = consoleErrors.some((err) =>
