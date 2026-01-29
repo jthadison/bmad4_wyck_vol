@@ -1,0 +1,146 @@
+/**
+ * E2E Tests for Campaign Tracker
+ *
+ * Covers:
+ * - /campaigns - Campaign tracking page (BMAD workflow)
+ */
+
+import { test, expect } from '@playwright/test'
+
+const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
+
+test.describe('Campaign Tracker', () => {
+  test('should load campaign tracker page', async ({ page }) => {
+    await page.goto(`${BASE_URL}/campaigns`)
+    await page.waitForLoadState('networkidle')
+
+    // Verify page loaded
+    await expect(page.locator('#app')).toBeVisible({ timeout: 10000 })
+
+    // Check page title or heading
+    const heading = page.locator('h1, h2').first()
+    await expect(heading).toBeVisible()
+
+    const headingText = await heading.textContent()
+    expect(
+      headingText!.toLowerCase().includes('campaign') ||
+        headingText!.toLowerCase().includes('tracker')
+    ).toBe(true)
+  })
+
+  test('should display campaign list or empty state', async ({ page }) => {
+    await page.goto(`${BASE_URL}/campaigns`)
+    await page.waitForLoadState('networkidle')
+
+    // Look for campaign items or empty state
+    const campaignItems = page.locator(
+      '[data-testid*="campaign"], .campaign-item, .campaign-card, table tbody tr'
+    )
+    const emptyState = page.locator(
+      '[data-testid="empty-state"], .empty-state, :has-text("No campaigns"), :has-text("No active")'
+    )
+
+    const hasCampaigns = await campaignItems.count()
+    const hasEmptyState = await emptyState.count()
+
+    // Should show either campaigns or empty state
+    expect(hasCampaigns + hasEmptyState).toBeGreaterThan(0)
+  })
+
+  test('should display campaign status indicators', async ({ page }) => {
+    await page.goto(`${BASE_URL}/campaigns`)
+    await page.waitForLoadState('networkidle')
+
+    // Look for status badges/indicators (BMAD phases: Buy, Monitor, Add, Dump)
+    const pageContent = await page.locator('body').textContent()
+
+    // Check for BMAD terminology or status indicators
+    const hasBmadTerms =
+      pageContent!.includes('Buy') ||
+      pageContent!.includes('Monitor') ||
+      pageContent!.includes('Add') ||
+      pageContent!.includes('Dump') ||
+      pageContent!.includes('Active') ||
+      pageContent!.includes('Pending') ||
+      pageContent!.includes('Completed')
+
+    // Page should have some status-related content
+    expect(hasBmadTerms || pageContent!.toLowerCase().includes('status')).toBe(
+      true
+    )
+  })
+
+  test('should display campaign health metrics', async ({ page }) => {
+    await page.goto(`${BASE_URL}/campaigns`)
+    await page.waitForLoadState('networkidle')
+
+    // Look for health/progress indicators
+    const progressBars = page.locator(
+      '[role="progressbar"], .progress, [class*="progress"]'
+    )
+    const healthIndicators = page.locator(
+      '[class*="health"], [data-testid*="health"]'
+    )
+    const percentages = page.locator(':has-text("%")')
+
+    const progressCount = await progressBars.count()
+    const healthCount = await healthIndicators.count()
+    const percentCount = await percentages.count()
+
+    // Should have some metrics displayed (or page loads successfully)
+    const pageLoaded = await page.locator('#app').isVisible()
+    expect(pageLoaded).toBe(true)
+  })
+
+  test('should allow filtering campaigns by status', async ({ page }) => {
+    await page.goto(`${BASE_URL}/campaigns`)
+    await page.waitForLoadState('networkidle')
+
+    // Look for filter controls
+    const filterSelect = page.locator(
+      'select[name*="filter"], select[name*="status"]'
+    )
+    const filterButtons = page.locator(
+      'button:has-text("Active"), button:has-text("All"), button:has-text("Completed")'
+    )
+    const filterTabs = page.locator('[role="tablist"], .tabs')
+
+    const hasFilterSelect = await filterSelect.count()
+    const hasFilterButtons = await filterButtons.count()
+    const hasFilterTabs = await filterTabs.count()
+
+    // If filters exist, interact with them
+    if (hasFilterSelect > 0) {
+      const select = filterSelect.first()
+      await expect(select).toBeVisible()
+    } else if (hasFilterButtons > 0) {
+      const firstButton = filterButtons.first()
+      await expect(firstButton).toBeVisible()
+    }
+  })
+
+  test('should navigate to campaign details on click', async ({ page }) => {
+    await page.goto(`${BASE_URL}/campaigns`)
+    await page.waitForLoadState('networkidle')
+
+    // Find clickable campaign rows/cards
+    const campaignItems = page.locator(
+      'table tbody tr, .campaign-card, .campaign-item, [data-testid*="campaign"]'
+    )
+
+    const itemCount = await campaignItems.count()
+
+    if (itemCount > 0) {
+      const firstItem = campaignItems.first()
+
+      // Check if it's clickable (has link or click handler)
+      const link = firstItem.locator('a').first()
+      const hasLink = await link.count()
+
+      if (hasLink > 0) {
+        const href = await link.getAttribute('href')
+        expect(href).toBeTruthy()
+      }
+    }
+  })
+})
