@@ -269,6 +269,34 @@ class Settings(BaseSettings):
         description="Refresh token expiration time in days (default: 7 days)",
     )
 
+    # Email Notification Configuration (Story 19.25)
+    email_provider: Literal["smtp", "sendgrid", "ses"] = Field(
+        default="smtp",
+        description="Email provider (smtp, sendgrid, ses)",
+    )
+    email_from_address: str = Field(
+        default="alerts@bmad-trading.com",
+        description="Sender email address for notifications",
+    )
+    email_from_name: str = Field(
+        default="BMAD Trading Alerts",
+        description="Sender name for notifications",
+    )
+    email_rate_limit_per_hour: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum email notifications per user per hour",
+    )
+    sendgrid_api_key: str = Field(
+        default="",
+        description="SendGrid API key (if using sendgrid provider)",
+    )
+    app_base_url: str = Field(
+        default="http://localhost:5173",
+        description="Base URL for links in email notifications",
+    )
+
     @field_validator("database_url", mode="before")
     @classmethod
     def validate_database_url(cls, v: str) -> str:

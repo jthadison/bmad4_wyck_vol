@@ -5,11 +5,13 @@ Endpoints for user settings including auto-execution configuration.
 Story 19.14: Auto-Execution Configuration Backend
 Story 19.21: Circuit Breaker Logic
 Story 19.22: Emergency Kill Switch - WebSocket notifications and audit logging
+Story 19.25: Email Notification Channel - Email notification settings
 """
 
 import ipaddress
 import logging
 from datetime import UTC, datetime
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -18,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user_id, get_db_session, get_redis_client
 from src.api.websocket import manager as websocket_manager
+from src.config import get_settings
 from src.models.auto_execution_config import (
     AutoExecutionConfigResponse,
     AutoExecutionConfigUpdate,
@@ -28,6 +31,13 @@ from src.models.circuit_breaker import (
     CircuitBreakerResetResponse,
     CircuitBreakerStatusResponse,
 )
+from src.models.notification import (
+    EmailNotificationSettings,
+    EmailNotificationSettingsUpdate,
+    EmailSettingsResponse,
+    NotificationSettingsResponse,
+)
+from src.notifications.rate_limiter import EmailRateLimiter
 from src.services.auto_execution_config_service import AutoExecutionConfigService
 from src.services.circuit_breaker_service import CircuitBreakerService
 
@@ -535,3 +545,221 @@ async def reset_circuit_breaker(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset circuit breaker. Please try again later.",
         ) from e
+
+
+# ============================================================================
+# Email Notification Settings (Story 19.25)
+# ============================================================================
+
+import threading
+
+# Thread-safe in-memory storage for email settings (MVP - would be database in production)
+_user_email_settings: dict[str, EmailNotificationSettings] = {}
+_settings_lock = threading.Lock()
+
+# Shared rate limiter instance with double-checked locking
+_email_rate_limiter: Optional[EmailRateLimiter] = None
+_rate_limiter_lock = threading.Lock()
+
+
+def get_email_rate_limiter() -> EmailRateLimiter:
+    """Get or create the email rate limiter singleton (thread-safe)."""
+    global _email_rate_limiter
+    if _email_rate_limiter is None:
+        with _rate_limiter_lock:
+            # Double-checked locking pattern
+            if _email_rate_limiter is None:
+                settings = get_settings()
+                _email_rate_limiter = EmailRateLimiter(
+                    max_per_hour=settings.email_rate_limit_per_hour
+                )
+    return _email_rate_limiter
+
+
+def _mask_email(email: str) -> str:
+    """Mask email address for logging (PII protection)."""
+    if not email:
+        return "***"
+    if "@" in email:
+        user, domain = email.split("@", 1)
+        if len(user) > 3:
+            masked_user = user[:2] + "***"
+        else:
+            masked_user = "***"
+        return f"{masked_user}@{domain}"
+    return "***"
+
+
+@router.get("/notifications", response_model=NotificationSettingsResponse)
+async def get_notification_settings(
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """
+    Get notification preferences for current user (Story 19.25).
+
+    Returns all notification channel settings including:
+    - Email settings with rate limit remaining
+    - Browser notification settings
+    - Sound notification settings
+
+    **Authentication**: Required (JWT Bearer token)
+
+    **Response**:
+    ```json
+    {
+      "email": {
+        "enabled": true,
+        "address": "trader@example.com",
+        "notify_all_signals": false,
+        "notify_auto_executions": true,
+        "notify_circuit_breaker": true,
+        "rate_limit_remaining": 7
+      },
+      "browser": {
+        "enabled": true
+      },
+      "sound": {
+        "enabled": true,
+        "volume": 80
+      }
+    }
+    ```
+
+    Example:
+        ```bash
+        curl -X GET http://localhost:8000/api/v1/settings/notifications \\
+          -H "Authorization: Bearer YOUR_JWT_TOKEN"
+        ```
+    """
+    user_key = str(user_id)
+    rate_limiter = get_email_rate_limiter()
+
+    # Get user's email settings or defaults (thread-safe)
+    with _settings_lock:
+        email_settings = _user_email_settings.get(user_key)
+
+    if email_settings:
+        email_response = EmailSettingsResponse(
+            enabled=email_settings.email_enabled,
+            address=email_settings.email_address,
+            notify_all_signals=email_settings.notify_all_signals,
+            notify_auto_executions=email_settings.notify_auto_executions,
+            notify_circuit_breaker=email_settings.notify_circuit_breaker,
+            rate_limit_remaining=rate_limiter.get_remaining(user_id),
+        )
+    else:
+        email_response = EmailSettingsResponse(
+            rate_limit_remaining=rate_limiter.get_remaining(user_id),
+        )
+
+    return NotificationSettingsResponse(
+        email=email_response,
+    )
+
+
+@router.put("/notifications/email", response_model=NotificationSettingsResponse)
+async def update_email_notification_settings(
+    updates: EmailNotificationSettingsUpdate,
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """
+    Update email notification settings (Story 19.25).
+
+    Allows partial updates to email notification preferences.
+
+    **Authentication**: Required (JWT Bearer token)
+
+    **Request Body**:
+    ```json
+    {
+      "enabled": true,
+      "address": "trader@example.com",
+      "notify_all_signals": true
+    }
+    ```
+
+    **Response**: Updated notification settings
+
+    **Validation**:
+    - Email address must be valid format if provided
+    - At least one field must be provided
+
+    Example:
+        ```bash
+        curl -X PUT http://localhost:8000/api/v1/settings/notifications/email \\
+          -H "Authorization: Bearer YOUR_JWT_TOKEN" \\
+          -H "Content-Type: application/json" \\
+          -d '{
+            "enabled": true,
+            "address": "trader@example.com",
+            "notify_all_signals": false
+          }'
+        ```
+    """
+    user_key = str(user_id)
+    rate_limiter = get_email_rate_limiter()
+
+    # Thread-safe read-modify-write
+    with _settings_lock:
+        # Get existing settings or create new
+        current_settings = _user_email_settings.get(user_key, EmailNotificationSettings())
+
+        # Apply updates
+        if updates.enabled is not None:
+            current_settings.email_enabled = updates.enabled
+
+        if updates.address is not None:
+            current_settings.email_address = updates.address
+
+        if updates.notify_all_signals is not None:
+            current_settings.notify_all_signals = updates.notify_all_signals
+
+        if updates.notify_auto_executions is not None:
+            current_settings.notify_auto_executions = updates.notify_auto_executions
+
+        if updates.notify_circuit_breaker is not None:
+            current_settings.notify_circuit_breaker = updates.notify_circuit_breaker
+
+        # Store updated settings
+        _user_email_settings[user_key] = current_settings
+
+    logger.info(
+        "Email notification settings updated",
+        extra={
+            "user_id": user_key,
+            "enabled": current_settings.email_enabled,
+            "address": _mask_email(current_settings.email_address)
+            if current_settings.email_address
+            else None,
+        },
+    )
+
+    # Build response
+    email_response = EmailSettingsResponse(
+        enabled=current_settings.email_enabled,
+        address=current_settings.email_address,
+        notify_all_signals=current_settings.notify_all_signals,
+        notify_auto_executions=current_settings.notify_auto_executions,
+        notify_circuit_breaker=current_settings.notify_circuit_breaker,
+        rate_limit_remaining=rate_limiter.get_remaining(user_id),
+    )
+
+    return NotificationSettingsResponse(
+        email=email_response,
+    )
+
+
+def get_user_email_settings(user_id: UUID) -> Optional[EmailNotificationSettings]:
+    """
+    Get email notification settings for a user (thread-safe).
+
+    Used by other services to check notification preferences.
+
+    Args:
+        user_id: User identifier
+
+    Returns:
+        EmailNotificationSettings if configured, None otherwise
+    """
+    with _settings_lock:
+        return _user_email_settings.get(str(user_id))
