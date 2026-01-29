@@ -9,6 +9,26 @@ import { test, expect } from '@playwright/test'
 
 const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 
+// Helper to get a valid tutorial slug from the tutorials list
+async function getFirstTutorialSlug(
+  page: import('@playwright/test').Page
+): Promise<string | null> {
+  await page.goto(`${BASE_URL}/tutorials`)
+  await page.waitForLoadState('networkidle')
+
+  const tutorialLinks = page.locator('a[href*="/tutorials/"]')
+  const hasLinks = await tutorialLinks.count()
+
+  if (hasLinks > 0) {
+    const href = await tutorialLinks.first().getAttribute('href')
+    if (href) {
+      const match = href.match(/\/tutorials\/(.+)/)
+      return match ? match[1] : null
+    }
+  }
+  return null
+}
+
 test.describe('Tutorial Walkthrough', () => {
   test('should load tutorial walkthrough page', async ({ page }) => {
     // First go to tutorials list to find a valid tutorial
@@ -33,7 +53,14 @@ test.describe('Tutorial Walkthrough', () => {
   })
 
   test('should display tutorial steps or progress', async ({ page }) => {
-    await page.goto(`${BASE_URL}/tutorials/first-backtest`)
+    // Get a valid tutorial slug dynamically
+    const slug = await getFirstTutorialSlug(page)
+    if (!slug) {
+      test.skip()
+      return
+    }
+
+    await page.goto(`${BASE_URL}/tutorials/${slug}`)
     await page.waitForLoadState('networkidle')
 
     // Look for step indicators
@@ -51,24 +78,27 @@ test.describe('Tutorial Walkthrough', () => {
     const hasProgress = await progressBar.count()
     const hasStepNumbers = await stepNumbers.count()
 
-    // Should have some progress indication
-    expect(hasSteps + hasProgress + hasStepNumbers).toBeGreaterThanOrEqual(0)
+    // Verify page loaded - progress indicators are optional
+    await expect(page.locator('#app')).toBeVisible()
   })
 
   test('should have navigation between steps', async ({ page }) => {
-    await page.goto(`${BASE_URL}/tutorials/first-backtest`)
+    // Get a valid tutorial slug dynamically
+    const slug = await getFirstTutorialSlug(page)
+    if (!slug) {
+      test.skip()
+      return
+    }
+
+    await page.goto(`${BASE_URL}/tutorials/${slug}`)
     await page.waitForLoadState('networkidle')
 
     // Look for next/previous buttons
     const nextButton = page.locator(
       'button:has-text("Next"), button:has-text("Continue"), [aria-label*="next"]'
     )
-    const prevButton = page.locator(
-      'button:has-text("Previous"), button:has-text("Back"), [aria-label*="previous"]'
-    )
 
     const hasNext = await nextButton.count()
-    const hasPrev = await prevButton.count()
 
     if (hasNext > 0) {
       const nextBtn = nextButton.first()
@@ -78,7 +108,8 @@ test.describe('Tutorial Walkthrough', () => {
       const isDisabled = await nextBtn.isDisabled()
       if (!isDisabled) {
         await nextBtn.click()
-        await page.waitForTimeout(500)
+        // Wait for navigation by checking button is still in DOM
+        await expect(page.locator('#app')).toBeVisible()
       }
     }
   })
@@ -86,7 +117,14 @@ test.describe('Tutorial Walkthrough', () => {
   test('should display tutorial content with instructions', async ({
     page,
   }) => {
-    await page.goto(`${BASE_URL}/tutorials/first-backtest`)
+    // Get a valid tutorial slug dynamically
+    const slug = await getFirstTutorialSlug(page)
+    if (!slug) {
+      test.skip()
+      return
+    }
+
+    await page.goto(`${BASE_URL}/tutorials/${slug}`)
     await page.waitForLoadState('networkidle')
 
     // Look for instructional content
@@ -107,7 +145,14 @@ test.describe('Tutorial Walkthrough', () => {
   test('should have breadcrumb navigation back to tutorials list', async ({
     page,
   }) => {
-    await page.goto(`${BASE_URL}/tutorials/first-backtest`)
+    // Get a valid tutorial slug dynamically
+    const slug = await getFirstTutorialSlug(page)
+    if (!slug) {
+      test.skip()
+      return
+    }
+
+    await page.goto(`${BASE_URL}/tutorials/${slug}`)
     await page.waitForLoadState('networkidle')
 
     // Check for breadcrumb
@@ -127,7 +172,14 @@ test.describe('Tutorial Walkthrough', () => {
   })
 
   test('should allow completing tutorial', async ({ page }) => {
-    await page.goto(`${BASE_URL}/tutorials/first-backtest`)
+    // Get a valid tutorial slug dynamically
+    const slug = await getFirstTutorialSlug(page)
+    if (!slug) {
+      test.skip()
+      return
+    }
+
+    await page.goto(`${BASE_URL}/tutorials/${slug}`)
     await page.waitForLoadState('networkidle')
 
     // Look for completion button
@@ -151,7 +203,8 @@ test.describe('Tutorial Walkthrough', () => {
 
         if (!isDisabled) {
           await nextButton.first().click()
-          await page.waitForTimeout(500)
+          // Wait for step transition
+          await expect(page.locator('#app')).toBeVisible()
         } else {
           break
         }

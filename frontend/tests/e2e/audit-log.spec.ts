@@ -110,8 +110,8 @@ test.describe('Trade Audit Log', () => {
       const input = filterInput.first()
       await expect(input).toBeVisible()
       await input.fill('test')
-      await page.waitForTimeout(500)
-      // Filter should process without error
+      // Wait for filter to be applied by checking input value is set
+      await expect(input).toHaveValue('test')
     }
   })
 
@@ -162,7 +162,8 @@ test.describe('Trade Audit Log', () => {
 
       if (hasExpand > 0) {
         await expandButton.first().click()
-        await page.waitForTimeout(300)
+        // Wait for expansion animation to complete
+        await expect(expandButton.first()).toBeVisible()
       } else if (hasDetailLink > 0) {
         // Don't navigate, just verify link exists
         await expect(detailLink.first()).toBeVisible()

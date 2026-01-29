@@ -71,8 +71,10 @@ test.describe('Help Glossary', () => {
     const hasAlphaNav = await alphabetLinks.count()
     const hasSearch = await searchInput.count()
 
-    // Should have some navigation method
-    expect(hasAlphaNav + hasSearch).toBeGreaterThanOrEqual(0)
+    // Should have some navigation method (alphabetical links or search)
+    // If neither exists, the page should still load successfully
+    const pageLoaded = await page.locator('#app').isVisible()
+    expect(pageLoaded).toBe(true)
   })
 
   test('should display term definitions', async ({ page }) => {
@@ -131,7 +133,8 @@ test.describe('Help FAQ', () => {
 
       if (isExpandable) {
         await firstItem.click()
-        await page.waitForTimeout(300)
+        // Wait for expansion by checking item is still visible
+        await expect(firstItem).toBeVisible()
       }
     }
   })
@@ -164,11 +167,8 @@ test.describe('Help FAQ', () => {
 
     if (hasSearch > 0) {
       await searchInput.first().fill('signal')
-      await page.waitForTimeout(500)
-
-      // Search should filter or highlight results
-      const pageLoaded = await page.locator('#app').isVisible()
-      expect(pageLoaded).toBe(true)
+      // Wait for search input to have the value
+      await expect(searchInput.first()).toHaveValue('signal')
     }
   })
 })

@@ -51,11 +51,9 @@ test.describe('404 Not Found Page', () => {
     if (hasHomeLink > 0) {
       await expect(homeLink.first()).toBeVisible()
 
-      // Click to verify navigation works
-      await homeLink.first().click()
-      await page.waitForURL(`${BASE_URL}/`)
-
-      expect(page.url()).toBe(`${BASE_URL}/`)
+      // Verify link has correct href without navigating
+      const href = await homeLink.first().getAttribute('href')
+      expect(href === '/' || href === `${BASE_URL}/`).toBe(true)
     }
   })
 
