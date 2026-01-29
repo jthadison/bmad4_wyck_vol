@@ -407,20 +407,43 @@ async def deactivate_kill_switch(
 # Email Notification Settings (Story 19.25)
 # ============================================================================
 
-# In-memory storage for email settings (MVP - would be database in production)
-_user_email_settings: dict[str, EmailNotificationSettings] = {}
+import threading
 
-# Shared rate limiter instance
+# Thread-safe in-memory storage for email settings (MVP - would be database in production)
+_user_email_settings: dict[str, EmailNotificationSettings] = {}
+_settings_lock = threading.Lock()
+
+# Shared rate limiter instance with double-checked locking
 _email_rate_limiter: Optional[EmailRateLimiter] = None
+_rate_limiter_lock = threading.Lock()
 
 
 def get_email_rate_limiter() -> EmailRateLimiter:
-    """Get or create the email rate limiter singleton."""
+    """Get or create the email rate limiter singleton (thread-safe)."""
     global _email_rate_limiter
     if _email_rate_limiter is None:
-        settings = get_settings()
-        _email_rate_limiter = EmailRateLimiter(max_per_hour=settings.email_rate_limit_per_hour)
+        with _rate_limiter_lock:
+            # Double-checked locking pattern
+            if _email_rate_limiter is None:
+                settings = get_settings()
+                _email_rate_limiter = EmailRateLimiter(
+                    max_per_hour=settings.email_rate_limit_per_hour
+                )
     return _email_rate_limiter
+
+
+def _mask_email(email: str) -> str:
+    """Mask email address for logging (PII protection)."""
+    if not email:
+        return "***"
+    if "@" in email:
+        user, domain = email.split("@", 1)
+        if len(user) > 3:
+            masked_user = user[:2] + "***"
+        else:
+            masked_user = "***"
+        return f"{masked_user}@{domain}"
+    return "***"
 
 
 @router.get("/notifications", response_model=NotificationSettingsResponse)
@@ -467,8 +490,9 @@ async def get_notification_settings(
     user_key = str(user_id)
     rate_limiter = get_email_rate_limiter()
 
-    # Get user's email settings or defaults
-    email_settings = _user_email_settings.get(user_key)
+    # Get user's email settings or defaults (thread-safe)
+    with _settings_lock:
+        email_settings = _user_email_settings.get(user_key)
 
     if email_settings:
         email_response = EmailSettingsResponse(
@@ -531,34 +555,36 @@ async def update_email_notification_settings(
     user_key = str(user_id)
     rate_limiter = get_email_rate_limiter()
 
-    # Get existing settings or create new
-    current_settings = _user_email_settings.get(user_key, EmailNotificationSettings())
+    # Thread-safe read-modify-write
+    with _settings_lock:
+        # Get existing settings or create new
+        current_settings = _user_email_settings.get(user_key, EmailNotificationSettings())
 
-    # Apply updates
-    if updates.enabled is not None:
-        current_settings.email_enabled = updates.enabled
+        # Apply updates
+        if updates.enabled is not None:
+            current_settings.email_enabled = updates.enabled
 
-    if updates.address is not None:
-        current_settings.email_address = updates.address
+        if updates.address is not None:
+            current_settings.email_address = updates.address
 
-    if updates.notify_all_signals is not None:
-        current_settings.notify_all_signals = updates.notify_all_signals
+        if updates.notify_all_signals is not None:
+            current_settings.notify_all_signals = updates.notify_all_signals
 
-    if updates.notify_auto_executions is not None:
-        current_settings.notify_auto_executions = updates.notify_auto_executions
+        if updates.notify_auto_executions is not None:
+            current_settings.notify_auto_executions = updates.notify_auto_executions
 
-    if updates.notify_circuit_breaker is not None:
-        current_settings.notify_circuit_breaker = updates.notify_circuit_breaker
+        if updates.notify_circuit_breaker is not None:
+            current_settings.notify_circuit_breaker = updates.notify_circuit_breaker
 
-    # Store updated settings
-    _user_email_settings[user_key] = current_settings
+        # Store updated settings
+        _user_email_settings[user_key] = current_settings
 
     logger.info(
         "Email notification settings updated",
         extra={
             "user_id": user_key,
             "enabled": current_settings.email_enabled,
-            "address": current_settings.email_address[:3] + "***"
+            "address": _mask_email(current_settings.email_address)
             if current_settings.email_address
             else None,
         },
@@ -581,7 +607,7 @@ async def update_email_notification_settings(
 
 def get_user_email_settings(user_id: UUID) -> Optional[EmailNotificationSettings]:
     """
-    Get email notification settings for a user.
+    Get email notification settings for a user (thread-safe).
 
     Used by other services to check notification preferences.
 
@@ -591,4 +617,5 @@ def get_user_email_settings(user_id: UUID) -> Optional[EmailNotificationSettings
     Returns:
         EmailNotificationSettings if configured, None otherwise
     """
-    return _user_email_settings.get(str(user_id))
+    with _settings_lock:
+        return _user_email_settings.get(str(user_id))

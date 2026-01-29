@@ -24,6 +24,7 @@ __all__ = [
 
 from dataclasses import dataclass
 from enum import Enum
+from html import escape as html_escape
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
@@ -301,7 +302,21 @@ class SignalEmailService:
             return self._render_inline_html(data)
 
     def _render_inline_html(self, data: SignalEmailData) -> str:
-        """Render inline HTML email (fallback)."""
+        """Render inline HTML email (fallback with XSS protection)."""
+        # HTML escape user-facing text for defense-in-depth
+        symbol = html_escape(str(data.symbol))
+        pattern_type = html_escape(str(data.pattern_type))
+        confidence_grade = html_escape(str(data.confidence_grade))
+        entry_price = html_escape(str(data.entry_price))
+        stop_loss = html_escape(str(data.stop_loss))
+        target_price = html_escape(str(data.target_price))
+        risk_amount = html_escape(str(data.risk_amount))
+        approve_url = html_escape(str(data.approve_url))
+        unsubscribe_url = html_escape(str(data.unsubscribe_url))
+        confidence_class = (
+            "confidence-high" if data.confidence_grade in ["A+", "A"] else "confidence-medium"
+        )
+
         return f"""
 <!DOCTYPE html>
 <html>
@@ -325,38 +340,38 @@ class SignalEmailService:
 <body>
   <div class="container">
     <div class="header">
-      <h1>🔔 New {data.pattern_type} Signal</h1>
-      <h2>{data.symbol}</h2>
+      <h1>New {pattern_type} Signal</h1>
+      <h2>{symbol}</h2>
     </div>
     <div class="content">
       <div class="signal-card">
         <div class="metric">
           <span class="metric-label">Pattern:</span>
-          <span class="metric-value">{data.pattern_type}</span>
+          <span class="metric-value">{pattern_type}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Confidence:</span>
           <span class="metric-value">
-            <span class="confidence-badge {'confidence-high' if data.confidence_grade in ['A+', 'A'] else 'confidence-medium'}">
-              {data.confidence_grade} ({data.confidence_score}%)
+            <span class="confidence-badge {confidence_class}">
+              {confidence_grade} ({data.confidence_score}%)
             </span>
           </span>
         </div>
         <div class="metric">
           <span class="metric-label">Entry Price:</span>
-          <span class="metric-value">${data.entry_price}</span>
+          <span class="metric-value">${entry_price}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Stop Loss:</span>
-          <span class="metric-value">${data.stop_loss}</span>
+          <span class="metric-value">${stop_loss}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Target Price:</span>
-          <span class="metric-value">${data.target_price}</span>
+          <span class="metric-value">${target_price}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Risk Amount:</span>
-          <span class="metric-value">${data.risk_amount}</span>
+          <span class="metric-value">${risk_amount}</span>
         </div>
         <div class="metric">
           <span class="metric-label">R-Multiple:</span>
@@ -364,12 +379,12 @@ class SignalEmailService:
         </div>
       </div>
       <p style="text-align: center;">
-        <a href="{data.approve_url}" class="cta-button">View Signal</a>
+        <a href="{approve_url}" class="cta-button">View Signal</a>
       </p>
     </div>
     <div class="footer">
       <p>You received this because you enabled email notifications for trading signals.</p>
-      <p><a href="{data.unsubscribe_url}">Manage notification preferences</a></p>
+      <p><a href="{unsubscribe_url}">Manage notification preferences</a></p>
       <p>BMAD Wyckoff Trading System</p>
     </div>
   </div>

@@ -11,6 +11,7 @@ Features:
 - Automatic cleanup of expired entries
 """
 
+import threading
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Optional
@@ -54,10 +55,11 @@ class EmailRateLimiter:
         """
         self.max_per_hour = max_per_hour
         self.user_timestamps: dict[str, list[datetime]] = defaultdict(list)
+        self._lock = threading.Lock()
 
     def can_send(self, user_id: UUID | str) -> bool:
         """
-        Check if user can send email within rate limit.
+        Check if user can send email within rate limit (thread-safe).
 
         Cleans expired entries and checks against limit.
 
@@ -71,33 +73,36 @@ class EmailRateLimiter:
         now = datetime.now(UTC)
         one_hour_ago = now - timedelta(hours=1)
 
-        # Clean expired entries (older than 1 hour)
-        self.user_timestamps[user_key] = [
-            ts for ts in self.user_timestamps[user_key] if ts > one_hour_ago
-        ]
+        with self._lock:
+            # Clean expired entries (older than 1 hour)
+            self.user_timestamps[user_key] = [
+                ts for ts in self.user_timestamps[user_key] if ts > one_hour_ago
+            ]
 
-        return len(self.user_timestamps[user_key]) < self.max_per_hour
+            return len(self.user_timestamps[user_key]) < self.max_per_hour
 
     def record_send(self, user_id: UUID | str) -> None:
         """
-        Record an email send for rate limiting.
+        Record an email send for rate limiting (thread-safe).
 
         Args:
             user_id: User identifier
         """
         user_key = str(user_id)
-        self.user_timestamps[user_key].append(datetime.now(UTC))
+        with self._lock:
+            self.user_timestamps[user_key].append(datetime.now(UTC))
+            count = len(self.user_timestamps[user_key])
 
         logger.debug(
             "email_rate_limit_recorded",
             user_id=user_key,
-            count=len(self.user_timestamps[user_key]),
+            count=count,
             max_per_hour=self.max_per_hour,
         )
 
     def get_remaining(self, user_id: UUID | str) -> int:
         """
-        Get remaining email quota for the current hour.
+        Get remaining email quota for the current hour (thread-safe).
 
         Args:
             user_id: User identifier
@@ -109,25 +114,27 @@ class EmailRateLimiter:
         now = datetime.now(UTC)
         one_hour_ago = now - timedelta(hours=1)
 
-        # Clean expired entries
-        self.user_timestamps[user_key] = [
-            ts for ts in self.user_timestamps[user_key] if ts > one_hour_ago
-        ]
+        with self._lock:
+            # Clean expired entries
+            self.user_timestamps[user_key] = [
+                ts for ts in self.user_timestamps[user_key] if ts > one_hour_ago
+            ]
 
-        current_count = len(self.user_timestamps[user_key])
+            current_count = len(self.user_timestamps[user_key])
         return max(0, self.max_per_hour - current_count)
 
     def reset(self, user_id: Optional[UUID | str] = None) -> None:
         """
-        Reset rate limit counters.
+        Reset rate limit counters (thread-safe).
 
         Args:
             user_id: Specific user to reset, or None to reset all
         """
-        if user_id:
-            user_key = str(user_id)
-            self.user_timestamps[user_key] = []
-            logger.info("email_rate_limit_reset", user_id=user_key)
-        else:
-            self.user_timestamps.clear()
-            logger.info("email_rate_limit_reset_all")
+        with self._lock:
+            if user_id:
+                user_key = str(user_id)
+                self.user_timestamps[user_key] = []
+                logger.info("email_rate_limit_reset", user_id=user_key)
+            else:
+                self.user_timestamps.clear()
+                logger.info("email_rate_limit_reset_all")
