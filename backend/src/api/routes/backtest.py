@@ -903,6 +903,7 @@ async def get_backtest_trades_csv(
 @router.get("/results")
 async def list_backtest_results(
     symbol: str | None = None,
+    format: str | None = None,
     limit: int = 100,
     offset: int = 0,
     session: AsyncSession = Depends(get_db),
@@ -911,9 +912,11 @@ async def list_backtest_results(
     List backtest results with pagination and optional filtering.
 
     AC7 Subtask 8.8-8.9: Paginated listing with optional symbol filter.
+    Story 12.6D Task 17: Added format=summary for lightweight list view.
 
     Args:
         symbol: Optional symbol filter
+        format: Response format ('summary' for lightweight, None for full)
         limit: Maximum number of results (default 100, max 1000)
         offset: Number of results to skip (default 0)
         session: Database session
@@ -921,13 +924,14 @@ async def list_backtest_results(
     Returns:
         Paginated list of backtest results
 
-    Example Response:
+    Example Response (format=summary):
         {
             "results": [
                 {
                     "backtest_run_id": "...",
                     "symbol": "AAPL",
-                    "metrics": {...},
+                    "total_return_pct": "15.5",
+                    "win_rate": "0.65",
                     ...
                 },
                 ...
@@ -962,6 +966,39 @@ async def list_backtest_results(
     repository = BacktestRepository(session)
     results = await repository.list_results(symbol=symbol, limit=limit, offset=offset)
 
+    # If format=summary, return lightweight summary without equity_curve and trades
+    if format == "summary":
+        summary_results = []
+        for r in results:
+            summary_results.append(
+                {
+                    "backtest_run_id": str(r.backtest_run_id),
+                    "symbol": r.symbol,
+                    "timeframe": r.timeframe,
+                    "start_date": r.start_date.isoformat(),
+                    "end_date": r.end_date.isoformat(),
+                    # Extract summary metrics (using actual BacktestMetrics fields)
+                    "total_return_pct": str(r.summary.total_return_pct),
+                    "cagr": str(r.summary.cagr),
+                    "sharpe_ratio": str(r.summary.sharpe_ratio),
+                    "max_drawdown_pct": str(
+                        r.summary.max_drawdown
+                    ),  # Field is named max_drawdown in model
+                    "win_rate": str(r.summary.win_rate),
+                    "total_trades": r.summary.total_trades,
+                    "campaign_completion_rate": "0.0",  # Not yet implemented in Story 12.6A
+                    "created_at": r.created_at.isoformat(),
+                }
+            )
+
+        return {
+            "results": summary_results,
+            "total": len(summary_results),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    # Default: return full results
     return {
         "results": [r.model_dump(mode="json") for r in results],
         "total": len(results),
