@@ -82,7 +82,7 @@ def upgrade() -> None:
             "enabled_patterns",
             postgresql.ARRAY(sa.String()),
             nullable=False,
-            server_default="ARRAY['SPRING', 'SOS', 'LPS']::VARCHAR[]",
+            server_default=sa.text("ARRAY['SPRING', 'SOS', 'LPS']::VARCHAR[]"),
         ),
         sa.Column(
             "symbol_whitelist",
