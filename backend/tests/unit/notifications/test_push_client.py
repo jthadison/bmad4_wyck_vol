@@ -181,6 +181,28 @@ class TestPushClientSendPushNotification:
 
             assert "410" in str(exc_info.value)
 
+    @pytest.mark.asyncio
+    async def test_send_push_notification_non_410_error_returns_false(
+        self, push_client, sample_subscription, sample_notification
+    ):
+        """Test that non-410 errors return False (not raising).
+
+        This verifies the distinction between 410 Gone errors (which are re-raised
+        for the caller to handle subscription cleanup) and other errors (which
+        return False to indicate delivery failure).
+        """
+        with patch("pywebpush.webpush") as mock_webpush:
+            # Simulate a non-410 error (e.g., network timeout, 500 server error)
+            mock_webpush.side_effect = Exception("Push failed: 500 Internal Server Error")
+
+            result = await push_client.send_push_notification(
+                subscription=sample_subscription,
+                notification=sample_notification,
+            )
+
+            # Non-410 errors should return False, not raise
+            assert result is False
+
 
 class TestPushClientSendTestPush:
     """Tests for send_test_push method."""
@@ -260,7 +282,12 @@ class TestPushClientPayloadCreation:
         assert "data" in payload
 
     def test_create_payload_critical_requires_interaction(self, client):
-        """Test that critical notifications require interaction."""
+        """Test that critical notifications require interaction.
+
+        Note: The payload creation code compares priority == "CRITICAL" as a string.
+        This works because NotificationPriority inherits from (str, Enum), making
+        the enum value directly comparable to strings without calling .value.
+        """
         notification = Notification(
             id=uuid4(),
             notification_type=NotificationType.EMERGENCY_EXIT,
