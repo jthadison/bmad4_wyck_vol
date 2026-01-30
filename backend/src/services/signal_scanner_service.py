@@ -1,15 +1,21 @@
 """
-Signal Scanner Service (Story 20.3a, 20.3b).
+Signal Scanner Service (Story 20.3a, 20.3b, 20.4).
 
 Background service for automated Wyckoff pattern scanning.
 Manages scanner lifecycle: start, stop, status reporting.
 Integrates with orchestrator for symbol analysis.
 
+Safety Controls (Story 20.4):
+    - Circuit breaker: Skip cycle when breaker is OPEN
+    - Kill switch: Stop scanner entirely when activated
+    - Session filtering: Skip forex during low-liquidity sessions
+    - Rate limiting: Skip symbols scanned too recently
+
 State Machine:
     STOPPED --(start)--> STARTING --(task created)--> RUNNING
     RUNNING --(stop)--> STOPPING --(task cancelled)--> STOPPED
 
-Author: Story 20.3a, 20.3b
+Author: Story 20.3a, 20.3b, 20.4
 """
 
 from __future__ import annotations
@@ -19,21 +25,39 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from uuid import UUID
 
 import structlog
 from pydantic import BaseModel, Field
 
 from src.models.scanner_persistence import (
+    AssetClass,
     ScanCycleStatus,
     ScannerConfigUpdate,
     ScannerHistoryCreate,
     WatchlistSymbol,
 )
+from src.services.session_filter import (
+    get_current_session,
+    should_skip_forex_symbol,
+    should_skip_rate_limit,
+)
 
 if TYPE_CHECKING:
     from src.orchestrator.master_orchestrator import MasterOrchestrator, TradeSignal
     from src.repositories.scanner_repository import ScannerRepository
+    from src.services.circuit_breaker_service import CircuitBreakerService
+
+
+@runtime_checkable
+class KillSwitchChecker(Protocol):
+    """Protocol for kill switch checker services (Story 20.4)."""
+
+    async def is_kill_switch_active(self, user_id: UUID) -> bool:
+        """Check if kill switch is active for user."""
+        ...
+
 
 logger = structlog.get_logger(__name__)
 
@@ -53,6 +77,9 @@ class ScanCycleResult:
     errors_count: int
     status: ScanCycleStatus
     signals: list[TradeSignal] = field(default_factory=list)
+    symbols_skipped_session: int = 0  # Story 20.4: forex session filtering
+    symbols_skipped_rate_limit: int = 0  # Story 20.4: rate limiting
+    kill_switch_triggered: bool = False  # Story 20.4: kill switch was activated
 
 
 class ScannerState(str, Enum):
@@ -108,10 +135,17 @@ class SignalScannerService:
     # Maximum signals to collect per cycle (memory protection)
     MAX_SIGNALS_PER_CYCLE = 1000
 
+    # Kill switch cache duration in seconds (reduces Redis overhead)
+    KILL_SWITCH_CACHE_SECONDS = 5.0
+
     def __init__(
         self,
         repository: ScannerRepository,
         orchestrator: MasterOrchestrator | None = None,
+        circuit_breaker: CircuitBreakerService | None = None,
+        kill_switch_checker: KillSwitchChecker | None = None,
+        user_id: UUID | None = None,
+        fail_safe_on_error: bool = False,
     ):
         """
         Initialize scanner service.
@@ -119,9 +153,18 @@ class SignalScannerService:
         Args:
             repository: Scanner repository for database operations
             orchestrator: MasterOrchestrator for symbol analysis (optional)
+            circuit_breaker: CircuitBreakerService for safety checks (Story 20.4)
+            kill_switch_checker: Service to check kill switch status (Story 20.4)
+            user_id: User ID for circuit breaker/kill switch checks (Story 20.4)
+            fail_safe_on_error: If True, treat safety check errors as active (fail-safe).
+                               If False (default), treat errors as inactive (fail-permissive).
         """
         self._repository = repository
         self._orchestrator = orchestrator
+        self._circuit_breaker = circuit_breaker
+        self._kill_switch_checker = kill_switch_checker
+        self._user_id = user_id
+        self._fail_safe_on_error = fail_safe_on_error
         self._state = ScannerState.STOPPED
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
@@ -132,6 +175,10 @@ class SignalScannerService:
         self._batch_delay_ms: int = self.DEFAULT_BATCH_DELAY_MS
         self._symbols_count: int = 0
         self._is_scanning: bool = False
+        self._session_filter_enabled: bool = True  # Story 20.4: session filtering
+        # Kill switch cache to reduce Redis overhead (Story 20.4 PR review)
+        self._kill_switch_cache_time: float | None = None
+        self._kill_switch_cached_value: bool = False
 
     def set_orchestrator(self, orchestrator: MasterOrchestrator) -> None:
         """
@@ -177,6 +224,7 @@ class SignalScannerService:
         self._scan_interval_seconds = config.scan_interval_seconds
         self._batch_size = config.batch_size
         self._last_cycle_at = config.last_cycle_at
+        self._session_filter_enabled = config.session_filter_enabled  # Story 20.4
 
         # Load symbol count
         self._symbols_count = await self._repository.get_symbol_count()
@@ -283,13 +331,23 @@ class SignalScannerService:
 
         Runs scan cycles at configured interval until stop is requested.
         Uses interruptible wait pattern for responsive shutdown.
+        Handles kill switch activation from scan cycle results.
         """
         logger.info("scanner_loop_started")
 
         while not self._stop_event.is_set():
             try:
+                # Clear kill switch cache at start of each cycle
+                self._kill_switch_cache_time = None
+                self._kill_switch_cached_value = False
+
                 # Execute scan cycle
                 result = await self._scan_cycle()
+
+                # Handle kill switch triggered (Story 20.4 PR review: avoid reentrancy)
+                if result.kill_switch_triggered:
+                    logger.warning("scanner_stopping_due_to_kill_switch")
+                    break
 
                 # Update last cycle time
                 self._last_cycle_at = datetime.now(UTC)
@@ -325,12 +383,80 @@ class SignalScannerService:
 
         logger.info("scanner_loop_stopped")
 
+    async def _check_kill_switch(self) -> bool:
+        """
+        Check if kill switch is activated (Story 20.4 AC2).
+
+        Uses time-based caching to reduce Redis overhead (checks every 5 seconds).
+
+        Returns:
+            True if kill switch is activated, False otherwise
+        """
+        if self._kill_switch_checker is None or self._user_id is None:
+            return False
+
+        # Check cache first (Story 20.4 PR review: reduce Redis overhead)
+        current_time = time.perf_counter()
+        if (
+            self._kill_switch_cache_time is not None
+            and (current_time - self._kill_switch_cache_time) < self.KILL_SWITCH_CACHE_SECONDS
+        ):
+            return self._kill_switch_cached_value
+
+        try:
+            # Protocol check for type safety (Story 20.4 PR review)
+            if isinstance(self._kill_switch_checker, KillSwitchChecker):
+                result = await self._kill_switch_checker.is_kill_switch_active(self._user_id)
+            elif hasattr(self._kill_switch_checker, "is_kill_switch_active"):
+                # Fallback for duck typing compatibility
+                result = await self._kill_switch_checker.is_kill_switch_active(self._user_id)
+            else:
+                result = False
+
+            # Update cache
+            self._kill_switch_cache_time = current_time
+            self._kill_switch_cached_value = result
+            return result
+        except Exception as e:
+            logger.error("kill_switch_check_failed", error=str(e))
+            # Configurable fail-safe behavior (Story 20.4 PR review)
+            if self._fail_safe_on_error:
+                logger.warning("kill_switch_check_failed_using_fail_safe_mode")
+                return True  # Fail-safe: treat error as activated
+            return False  # Fail-permissive: treat error as not activated
+
+    async def _check_circuit_breaker(self) -> bool:
+        """
+        Check if circuit breaker is open (Story 20.4 AC1).
+
+        Returns:
+            True if circuit breaker is open, False otherwise
+        """
+        if self._circuit_breaker is None or self._user_id is None:
+            return False
+
+        try:
+            return await self._circuit_breaker.is_breaker_open(self._user_id)
+        except Exception as e:
+            logger.error("circuit_breaker_check_failed", error=str(e))
+            # Configurable fail-safe behavior (Story 20.4 PR review)
+            if self._fail_safe_on_error:
+                logger.warning("circuit_breaker_check_failed_using_fail_safe_mode")
+                return True  # Fail-safe: treat error as open
+            return False  # Fail-permissive: treat error as closed
+
     async def _scan_cycle(self) -> ScanCycleResult:
         """
-        Execute a single scan cycle (Story 20.3b).
+        Execute a single scan cycle (Story 20.3b, 20.4).
 
         Processes all enabled watchlist symbols through the orchestrator,
         using batch processing with rate limiting for API protection.
+
+        Safety checks (Story 20.4):
+        1. Kill switch - stops scanner entirely if activated
+        2. Circuit breaker - skips cycle if breaker is OPEN
+        3. Session filtering - skips forex during low-liquidity sessions
+        4. Rate limiting - skips symbols scanned too recently
 
         Returns:
             ScanCycleResult with metrics and detected signals
@@ -340,11 +466,41 @@ class SignalScannerService:
         symbols_scanned = 0
         signals_generated = 0
         errors_count = 0
+        symbols_skipped_session = 0
+        symbols_skipped_rate_limit = 0
         all_signals: list[TradeSignal] = []
         was_stopped = False
         signals_truncated = False
 
         try:
+            # Story 20.4 AC2: Kill switch check - signals scanner to stop
+            # (Story 20.4 PR review: avoid reentrancy by returning flag instead of calling stop())
+            if await self._check_kill_switch():
+                logger.warning("kill_switch_activated_signaling_stop")
+                return ScanCycleResult(
+                    cycle_started_at=cycle_started_at,
+                    cycle_ended_at=datetime.now(UTC),
+                    symbols_scanned=0,
+                    signals_generated=0,
+                    errors_count=0,
+                    status=ScanCycleStatus.SKIPPED,
+                    signals=[],
+                    kill_switch_triggered=True,
+                )
+
+            # Story 20.4 AC1: Circuit breaker check - skips this cycle
+            if await self._check_circuit_breaker():
+                logger.info("scan_cycle_skipped_circuit_breaker_open")
+                return ScanCycleResult(
+                    cycle_started_at=cycle_started_at,
+                    cycle_ended_at=datetime.now(UTC),
+                    symbols_scanned=0,
+                    signals_generated=0,
+                    errors_count=0,
+                    status=ScanCycleStatus.SKIPPED,
+                    signals=[],
+                )
+
             # Fail fast if orchestrator not configured
             if self._orchestrator is None:
                 logger.error("orchestrator_not_configured_skipping_cycle")
@@ -418,6 +574,62 @@ class SignalScannerService:
                         was_stopped = True
                         break
 
+                    # Story 20.4 AC2: Kill switch check per symbol (cached to reduce Redis overhead)
+                    if await self._check_kill_switch():
+                        logger.warning(
+                            "kill_switch_activated_mid_cycle",
+                            current_symbol=symbol.symbol,
+                            symbols_processed=symbols_scanned,
+                        )
+                        # Return with kill_switch_triggered flag (avoid reentrancy)
+                        return ScanCycleResult(
+                            cycle_started_at=cycle_started_at,
+                            cycle_ended_at=datetime.now(UTC),
+                            symbols_scanned=symbols_scanned,
+                            signals_generated=signals_generated,
+                            errors_count=errors_count,
+                            status=ScanCycleStatus.PARTIAL,
+                            signals=all_signals,
+                            symbols_skipped_session=symbols_skipped_session,
+                            symbols_skipped_rate_limit=symbols_skipped_rate_limit,
+                            kill_switch_triggered=True,
+                        )
+
+                    # Capture current time once for this symbol (Story 20.4 PR review)
+                    current_time = datetime.now(UTC)
+
+                    # Story 20.4 AC3/AC4: Forex session filtering
+                    if symbol.asset_class == AssetClass.FOREX and self._session_filter_enabled:
+                        should_skip, reason = should_skip_forex_symbol(
+                            utc_time=current_time,
+                            session_filter_enabled=True,
+                        )
+                        if should_skip:
+                            session = get_current_session(current_time)
+                            logger.info(
+                                "symbol_skipped_session_filter",
+                                symbol=symbol.symbol,
+                                session=session.value,
+                                reason=reason,
+                            )
+                            symbols_skipped_session += 1
+                            continue
+
+                    # Story 20.4 AC6: Rate limiting check
+                    should_skip, reason = should_skip_rate_limit(
+                        last_scanned_at=symbol.last_scanned_at,
+                        scan_interval_seconds=self._scan_interval_seconds,
+                        utc_now=current_time,
+                    )
+                    if should_skip:
+                        logger.info(
+                            "symbol_skipped_rate_limit",
+                            symbol=symbol.symbol,
+                            reason=reason,
+                        )
+                        symbols_skipped_rate_limit += 1
+                        continue
+
                     # Analyze symbol with error isolation
                     signals, error = await self._analyze_symbol(symbol)
 
@@ -447,9 +659,14 @@ class SignalScannerService:
                     delay_seconds = self._batch_delay_ms / 1000.0
                     await asyncio.sleep(delay_seconds)
 
-            # Determine cycle status
+            # Determine cycle status (Story 20.4 PR review: include skip counts)
             status = self._determine_cycle_status(
-                total_symbols, symbols_scanned, errors_count, was_stopped
+                symbols_total=total_symbols,
+                symbols_processed=symbols_scanned,
+                errors_count=errors_count,
+                was_stopped=was_stopped,
+                symbols_skipped_session=symbols_skipped_session,
+                symbols_skipped_rate_limit=symbols_skipped_rate_limit,
             )
 
             cycle_ended_at = datetime.now(UTC)
@@ -460,6 +677,8 @@ class SignalScannerService:
                 symbols_scanned=symbols_scanned,
                 signals_generated=signals_generated,
                 errors_count=errors_count,
+                symbols_skipped_session=symbols_skipped_session,
+                symbols_skipped_rate_limit=symbols_skipped_rate_limit,
                 duration_ms=cycle_duration_ms,
                 status=status.value,
             )
@@ -473,6 +692,8 @@ class SignalScannerService:
                 errors_count=errors_count,
                 status=status,
                 signals=all_signals,
+                symbols_skipped_session=symbols_skipped_session,
+                symbols_skipped_rate_limit=symbols_skipped_rate_limit,
             )
 
             await self._record_cycle_history(result)
@@ -570,6 +791,8 @@ class SignalScannerService:
         symbols_processed: int,
         errors_count: int,
         was_stopped: bool,
+        symbols_skipped_session: int = 0,
+        symbols_skipped_rate_limit: int = 0,
     ) -> ScanCycleStatus:
         """
         Determine the status of a completed scan cycle.
@@ -579,6 +802,8 @@ class SignalScannerService:
             symbols_processed: Symbols actually processed
             errors_count: Number of errors encountered
             was_stopped: Whether cycle was interrupted by stop
+            symbols_skipped_session: Symbols skipped due to session filtering
+            symbols_skipped_rate_limit: Symbols skipped due to rate limiting
 
         Returns:
             ScanCycleStatus enum value
@@ -587,6 +812,13 @@ class SignalScannerService:
             return ScanCycleStatus.PARTIAL
         if symbols_total > 0 and errors_count == symbols_total:
             return ScanCycleStatus.FAILED
+
+        # Story 20.4 PR review: account for skipped symbols
+        total_skipped = symbols_skipped_session + symbols_skipped_rate_limit
+        if symbols_total > 0 and total_skipped == symbols_total and symbols_processed == 0:
+            # All symbols were filtered/skipped, none actually processed
+            return ScanCycleStatus.FILTERED
+
         return ScanCycleStatus.COMPLETED
 
     async def _record_cycle_history(self, result: ScanCycleResult) -> None:
@@ -604,6 +836,9 @@ class SignalScannerService:
                 signals_generated=result.signals_generated,
                 errors_count=result.errors_count,
                 status=result.status,
+                # Story 20.4 PR review: include skip counts in history
+                symbols_skipped_session=result.symbols_skipped_session,
+                symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
             )
 
             await self._repository.add_history(history_entry)
@@ -612,6 +847,8 @@ class SignalScannerService:
                 "scan_cycle_history_recorded",
                 status=result.status.value,
                 symbols_scanned=result.symbols_scanned,
+                symbols_skipped_session=result.symbols_skipped_session,
+                symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
             )
 
         except Exception as e:

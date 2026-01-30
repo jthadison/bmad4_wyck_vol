@@ -52,6 +52,7 @@ def mock_repository():
     config.scan_interval_seconds = 60
     config.batch_size = 10
     config.last_cycle_at = None
+    config.session_filter_enabled = False  # Disable session filtering for these tests
     repo.get_config = AsyncMock(return_value=config)
 
     # Mock update_config
@@ -83,10 +84,17 @@ def mock_orchestrator():
     return orchestrator
 
 
+def create_scanner_without_session_filter(repository, orchestrator):
+    """Create a SignalScannerService with session filtering disabled for tests."""
+    scanner = SignalScannerService(repository, orchestrator)
+    scanner._session_filter_enabled = False
+    return scanner
+
+
 @pytest.fixture
 def scanner(mock_repository, mock_orchestrator):
-    """Create SignalScannerService with mocks."""
-    return SignalScannerService(mock_repository, mock_orchestrator)
+    """Create SignalScannerService with mocks (session filtering disabled)."""
+    return create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
 
 class TestScanCycleProcessesEnabledOnly:
@@ -104,7 +112,7 @@ class TestScanCycleProcessesEnabledOnly:
         ]
         mock_repository.get_enabled_symbols.return_value = enabled_symbols
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         # Execute
         result = await scanner._scan_cycle()
@@ -122,7 +130,7 @@ class TestScanCycleProcessesEnabledOnly:
             create_mock_symbol("EURUSD"),
         ]
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         result = await scanner._scan_cycle()
 
@@ -135,7 +143,7 @@ class TestScanCycleProcessesEnabledOnly:
         """Test that _scan_cycle handles empty watchlist gracefully."""
         mock_repository.get_enabled_symbols.return_value = []
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         result = await scanner._scan_cycle()
 
@@ -156,7 +164,7 @@ class TestOrchestratorIntegration:
         ]
         mock_repository.get_enabled_symbols.return_value = symbols
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         await scanner._scan_cycle()
 
@@ -169,7 +177,7 @@ class TestOrchestratorIntegration:
         symbols = [create_mock_symbol("EURUSD")]
         mock_repository.get_enabled_symbols.return_value = symbols
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         await scanner._scan_cycle()
 
@@ -189,7 +197,7 @@ class TestOrchestratorIntegration:
         mock_signal_2 = MagicMock()
         mock_orchestrator.analyze_symbol.side_effect = [[mock_signal_1], [mock_signal_2]]
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         result = await scanner._scan_cycle()
 
@@ -206,6 +214,7 @@ class TestOrchestratorIntegration:
 
         # Scanner without orchestrator
         scanner = SignalScannerService(mock_repository, orchestrator=None)
+        scanner._session_filter_enabled = False
 
         result = await scanner._scan_cycle()
 
@@ -237,7 +246,7 @@ class TestErrorIsolation:
             [],  # SPY success
         ]
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         result = await scanner._scan_cycle()
 
@@ -257,7 +266,7 @@ class TestErrorIsolation:
         # All symbols fail
         mock_orchestrator.analyze_symbol.side_effect = Exception("API Error")
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         result = await scanner._scan_cycle()
 
@@ -273,7 +282,7 @@ class TestErrorIsolation:
 
         mock_orchestrator.analyze_symbol.side_effect = Exception("API Error")
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         await scanner._scan_cycle()
 
@@ -295,9 +304,10 @@ class TestBatchProcessing:
         config.scan_interval_seconds = 60
         config.batch_size = 10
         config.last_cycle_at = None
+        config.session_filter_enabled = False  # Disable session filtering for test
         mock_repository.get_config.return_value = config
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
         await scanner.start()
 
         try:
@@ -315,7 +325,7 @@ class TestBatchProcessing:
         symbols = [create_mock_symbol(f"SYM{i}") for i in range(25)]
         mock_repository.get_enabled_symbols.return_value = symbols
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
         scanner._batch_size = 10
         scanner._batch_delay_ms = 100
 
@@ -334,7 +344,7 @@ class TestBatchProcessing:
         symbols = [create_mock_symbol(f"SYM{i}") for i in range(5)]
         mock_repository.get_enabled_symbols.return_value = symbols
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
         scanner._batch_size = 10
         scanner._batch_delay_ms = 100
 
@@ -366,7 +376,7 @@ class TestScanCycleMetrics:
             [MagicMock()],  # SPY: 1 signal
         ]
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         result = await scanner._scan_cycle()
 
@@ -381,7 +391,7 @@ class TestScanCycleMetrics:
         symbols = [create_mock_symbol("EURUSD")]
         mock_repository.get_enabled_symbols.return_value = symbols
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         await scanner._scan_cycle()
 
@@ -396,7 +406,7 @@ class TestScanCycleMetrics:
         symbols = [create_mock_symbol("EURUSD")]
         mock_repository.get_enabled_symbols.return_value = symbols
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
 
         before = datetime.now(UTC)
         result = await scanner._scan_cycle()
@@ -426,7 +436,7 @@ class TestGracefulStopDuringCycle:
 
         mock_orchestrator.analyze_symbol.side_effect = slow_analyze
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
         scanner._batch_size = 5
 
         # Start scan cycle in background
@@ -457,7 +467,7 @@ class TestGracefulStopDuringCycle:
 
         mock_orchestrator.analyze_symbol.side_effect = slow_analyze
 
-        scanner = SignalScannerService(mock_repository, mock_orchestrator)
+        scanner = create_scanner_without_session_filter(mock_repository, mock_orchestrator)
         scanner._batch_size = 5
 
         cycle_task = asyncio.create_task(scanner._scan_cycle())
