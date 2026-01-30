@@ -152,14 +152,26 @@ class ScannerRepository:
             return WatchlistSymbol.model_validate(orm_entry)
         return None
 
-    async def get_all_symbols(self) -> list[WatchlistSymbol]:
+    async def get_all_symbols(
+        self,
+        order_desc: bool = False,
+    ) -> list[WatchlistSymbol]:
         """
         Get all symbols in the watchlist.
+
+        Args:
+            order_desc: If True, order by created_at descending (newest first).
+                       If False (default), order by created_at ascending.
 
         Returns:
             List of all WatchlistSymbol entries
         """
-        stmt = select(ScannerWatchlistORM).order_by(ScannerWatchlistORM.created_at.asc())
+        order_clause = (
+            ScannerWatchlistORM.created_at.desc()
+            if order_desc
+            else ScannerWatchlistORM.created_at.asc()
+        )
+        stmt = select(ScannerWatchlistORM).order_by(order_clause)
 
         result = await self.session.execute(stmt)
         orm_entries = result.scalars().all()

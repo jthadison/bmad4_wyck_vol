@@ -110,6 +110,7 @@ class WatchlistSymbolCreate(BaseModel):
     Input schema for adding a symbol to watchlist.
 
     Only requires symbol, timeframe, and asset_class.
+    Input is normalized: symbol -> uppercase, timeframe -> uppercase, asset_class -> lowercase.
     """
 
     symbol: Annotated[str, Field(min_length=1, max_length=20, description="Symbol ticker")]
@@ -121,6 +122,32 @@ class WatchlistSymbolCreate(BaseModel):
     def validate_symbol_format(cls, v: str) -> str:
         """Validate and uppercase symbol."""
         return validate_symbol(v)
+
+    @field_validator("timeframe", mode="before")
+    @classmethod
+    def normalize_timeframe(cls, v: str | Timeframe) -> str:
+        """Normalize timeframe to uppercase before enum conversion."""
+        if isinstance(v, Timeframe):
+            return v.value
+        return v.upper() if isinstance(v, str) else v
+
+    @field_validator("asset_class", mode="before")
+    @classmethod
+    def normalize_asset_class(cls, v: str | AssetClass) -> str:
+        """Normalize asset_class to lowercase before enum conversion."""
+        if isinstance(v, AssetClass):
+            return v.value
+        return v.lower() if isinstance(v, str) else v
+
+
+class WatchlistSymbolUpdate(BaseModel):
+    """
+    Input schema for updating a watchlist symbol (PATCH request).
+
+    Used to toggle the enabled state of a symbol.
+    """
+
+    enabled: bool = Field(description="New enabled state for the symbol")
 
 
 class ScannerConfig(BaseModel):
