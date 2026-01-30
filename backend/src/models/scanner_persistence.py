@@ -237,3 +237,86 @@ class ScannerHistoryCreate(BaseModel):
     symbols_skipped_rate_limit: Annotated[
         int, Field(ge=0, description="Symbols skipped due to rate limiting")
     ] = 0
+
+
+# =========================================
+# Scanner Control API Models (Story 20.5a)
+# =========================================
+
+
+class ScannerActionResponse(BaseModel):
+    """
+    Response for scanner start/stop actions (Story 20.5a AC1, AC2).
+
+    Returns action status and current running state.
+    """
+
+    status: str = Field(
+        description="Action result: 'started', 'stopped', 'already_running', 'already_stopped'"
+    )
+    message: str = Field(description="Human-readable status message")
+    is_running: bool = Field(description="Current scanner running state")
+
+
+class ScannerControlStatusResponse(BaseModel):
+    """
+    Scanner status response for control API (Story 20.5a AC3).
+
+    Provides current state, timing information, and configuration.
+    """
+
+    is_running: bool = Field(description="Whether scanner is actively running")
+    current_state: str = Field(
+        description="Current state: stopped, starting, running, waiting, scanning, stopping"
+    )
+    last_cycle_at: datetime | None = Field(
+        default=None, description="When last scan cycle completed"
+    )
+    next_scan_in_seconds: int | None = Field(
+        default=None, description="Seconds until next scan (None if stopped)"
+    )
+    symbols_count: int = Field(description="Number of enabled symbols in watchlist")
+    scan_interval_seconds: int = Field(description="Configured scan interval")
+    session_filter_enabled: bool = Field(description="Whether session filtering is enabled")
+
+
+class ScannerHistoryResponse(BaseModel):
+    """
+    Scanner history response (Story 20.5a AC4).
+
+    Returns scan cycle history records.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID = Field(description="History entry ID")
+    cycle_started_at: datetime = Field(description="Cycle start time")
+    cycle_ended_at: datetime | None = Field(default=None, description="Cycle end time")
+    symbols_scanned: int = Field(ge=0, description="Symbols processed")
+    signals_generated: int = Field(ge=0, description="Signals created")
+    errors_count: int = Field(ge=0, description="Errors encountered")
+    status: str = Field(description="Cycle outcome: COMPLETED, PARTIAL, FAILED, SKIPPED")
+
+
+class ScannerConfigUpdateRequest(BaseModel):
+    """
+    Request schema for updating scanner config via API (Story 20.5a AC5, AC6).
+
+    All fields are optional. Includes validation constraints:
+    - scan_interval_seconds: 60-3600
+    - batch_size: 1-50
+    - batch_delay_ms: 0-5000
+    """
+
+    scan_interval_seconds: Annotated[
+        int | None, Field(ge=60, le=3600, description="Scan interval (60-3600 seconds)")
+    ] = None
+    batch_size: Annotated[
+        int | None, Field(ge=1, le=50, description="Symbols per batch (1-50)")
+    ] = None
+    session_filter_enabled: bool | None = Field(
+        default=None, description="Filter by trading session"
+    )
+    batch_delay_ms: Annotated[
+        int | None, Field(ge=0, le=5000, description="Delay between batches (0-5000 ms)")
+    ] = None

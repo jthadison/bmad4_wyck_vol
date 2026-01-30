@@ -1,12 +1,20 @@
 """
-Scanner API Routes (Story 19.4, Story 20.2)
+Scanner API Routes (Story 19.4, Story 20.2, Story 20.5a)
 
-Provides REST API endpoints for multi-symbol scanner status monitoring
-and watchlist management.
+Provides REST API endpoints for multi-symbol scanner status monitoring,
+watchlist management, and scanner control.
 
-Endpoints:
-----------
-GET /api/v1/scanner/status - Get overall scanner status with all symbols
+Scanner Control (Story 20.5a):
+------------------------------
+POST /api/v1/scanner/start - Start the background scanner
+POST /api/v1/scanner/stop - Stop the background scanner
+GET /api/v1/scanner/status - Get current scanner control status
+GET /api/v1/scanner/history - Get scan history records
+PATCH /api/v1/scanner/config - Update scanner configuration
+
+Processing Status (Story 19.4):
+-------------------------------
+GET /api/v1/scanner/processing/status - Get overall scanner status with all symbols
 GET /api/v1/scanner/symbols/{symbol}/status - Get status for a specific symbol
 POST /api/v1/scanner/symbols/{symbol}/reset - Reset circuit breaker for a symbol
 
@@ -19,16 +27,27 @@ PATCH /api/v1/scanner/watchlist/{symbol} - Update symbol (enabled flag)
 
 Author: Story 19.4 (Multi-Symbol Concurrent Processing)
         Story 20.2 (Watchlist Management API)
+        Story 20.5a (Scanner Control API)
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi import status as http_status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.models.scanner import ScannerStatusResponse, SymbolStatus
 from src.models.scanner_persistence import (
+    ScannerActionResponse,
+    ScannerConfig,
+    ScannerConfigUpdate,
+    ScannerConfigUpdateRequest,
+    ScannerControlStatusResponse,
+    ScannerHistoryResponse,
     WatchlistSymbol,
     WatchlistSymbolCreate,
     WatchlistSymbolUpdate,
@@ -36,21 +55,310 @@ from src.models.scanner_persistence import (
 from src.pattern_engine.symbol_processor import get_multi_symbol_processor
 from src.repositories.scanner_repository import ScannerRepository
 
+if TYPE_CHECKING:
+    from src.services.signal_scanner_service import SignalScannerService
+
 logger = structlog.get_logger(__name__)
 
 # Constants
 MAX_WATCHLIST_SIZE = 50
+MAX_HISTORY_LIMIT = 100
+DEFAULT_HISTORY_LIMIT = 50
 
 router = APIRouter(prefix="/api/v1/scanner", tags=["scanner"])
+
+# =========================================
+# Scanner Service Singleton (Story 20.5a)
+# =========================================
+
+_scanner_service: SignalScannerService | None = None
+
+
+def set_scanner_service(service: SignalScannerService) -> None:
+    """
+    Set the global scanner service instance.
+
+    Called during application startup to wire up the scanner service.
+
+    Args:
+        service: SignalScannerService instance to use
+    """
+    global _scanner_service
+    _scanner_service = service
+    logger.info("scanner_service_registered")
+
+
+async def get_scanner_service(
+    repository: ScannerRepository = Depends(lambda: None),
+) -> SignalScannerService:
+    """
+    Dependency to get the scanner service instance.
+
+    Returns:
+        SignalScannerService singleton
+
+    Raises:
+        HTTPException 503: If scanner service not initialized
+    """
+    if _scanner_service is None:
+        logger.error("scanner_service_not_initialized")
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Scanner service not initialized",
+        )
+    return _scanner_service
+
+
+# =========================================
+# Scanner Control Endpoints (Story 20.5a)
+# =========================================
+
+
+@router.post(
+    "/start",
+    response_model=ScannerActionResponse,
+    summary="Start Scanner",
+    description="Start the background signal scanner.",
+)
+async def start_scanner(
+    scanner: SignalScannerService = Depends(get_scanner_service),
+) -> ScannerActionResponse:
+    """
+    Start the background signal scanner (Story 20.5a AC1).
+
+    Idempotent: Returns success if scanner is already running.
+
+    Returns:
+        ScannerActionResponse with status and message
+    """
+    if scanner.is_running:
+        logger.info("scanner_start_requested_already_running")
+        return ScannerActionResponse(
+            status="already_running",
+            message="Scanner is already running",
+            is_running=True,
+        )
+
+    await scanner.start()
+
+    logger.info("scanner_started_via_api")
+
+    return ScannerActionResponse(
+        status="started",
+        message="Scanner started successfully",
+        is_running=True,
+    )
+
+
+@router.post(
+    "/stop",
+    response_model=ScannerActionResponse,
+    summary="Stop Scanner",
+    description="Stop the background signal scanner.",
+)
+async def stop_scanner(
+    scanner: SignalScannerService = Depends(get_scanner_service),
+) -> ScannerActionResponse:
+    """
+    Stop the background signal scanner (Story 20.5a AC2).
+
+    Idempotent: Returns success if scanner is already stopped.
+
+    Returns:
+        ScannerActionResponse with status and message
+    """
+    if not scanner.is_running:
+        logger.info("scanner_stop_requested_already_stopped")
+        return ScannerActionResponse(
+            status="already_stopped",
+            message="Scanner is already stopped",
+            is_running=False,
+        )
+
+    await scanner.stop()
+
+    logger.info("scanner_stopped_via_api")
+
+    return ScannerActionResponse(
+        status="stopped",
+        message="Scanner stopped successfully",
+        is_running=False,
+    )
+
+
+def _get_scanner_repository_dep(
+    session: AsyncSession = Depends(get_db),
+) -> ScannerRepository:
+    """
+    Dependency to get ScannerRepository for scanner control endpoints.
+
+    Args:
+        session: Database session from get_db dependency
+
+    Returns:
+        ScannerRepository instance
+    """
+    return ScannerRepository(session)
 
 
 @router.get(
     "/status",
+    response_model=ScannerControlStatusResponse,
+    summary="Get Scanner Control Status",
+    description="Returns current scanner control status including timing and configuration.",
+)
+async def get_scanner_control_status(
+    scanner: SignalScannerService = Depends(get_scanner_service),
+    repository: ScannerRepository = Depends(_get_scanner_repository_dep),
+) -> ScannerControlStatusResponse:
+    """
+    Get scanner control status (Story 20.5a AC3).
+
+    Returns current state, timing information, and configuration.
+
+    Returns:
+        ScannerControlStatusResponse with status details
+    """
+    # Get status from scanner service
+    status = scanner.get_status()
+
+    # Get config from repository for session_filter_enabled
+    config = await repository.get_config()
+
+    # Get enabled symbol count
+    symbols_count = await repository.get_symbol_count()
+
+    logger.info(
+        "scanner_control_status_queried",
+        is_running=status.is_running,
+        current_state=status.current_state,
+    )
+
+    return ScannerControlStatusResponse(
+        is_running=status.is_running,
+        current_state=status.current_state,
+        last_cycle_at=status.last_cycle_at,
+        next_scan_in_seconds=status.next_scan_in_seconds,
+        symbols_count=symbols_count,
+        scan_interval_seconds=status.scan_interval_seconds,
+        session_filter_enabled=config.session_filter_enabled,
+    )
+
+
+@router.get(
+    "/history",
+    response_model=list[ScannerHistoryResponse],
+    summary="Get Scan History",
+    description="Returns scan cycle history records.",
+)
+async def get_scanner_history(
+    limit: int = Query(
+        default=DEFAULT_HISTORY_LIMIT,
+        ge=1,
+        le=MAX_HISTORY_LIMIT,
+        description="Maximum number of records to return (1-100)",
+    ),
+    repository: ScannerRepository = Depends(_get_scanner_repository_dep),
+) -> list[ScannerHistoryResponse]:
+    """
+    Get scan cycle history (Story 20.5a AC4).
+
+    Returns history records ordered by cycle_started_at descending.
+
+    Args:
+        limit: Maximum records to return (default 50, max 100)
+
+    Returns:
+        List of ScannerHistoryResponse records
+    """
+    history = await repository.get_history(limit=limit)
+
+    logger.info("scanner_history_queried", count=len(history), limit=limit)
+
+    return [
+        ScannerHistoryResponse(
+            id=h.id,
+            cycle_started_at=h.cycle_started_at,
+            cycle_ended_at=h.cycle_ended_at,
+            symbols_scanned=h.symbols_scanned,
+            signals_generated=h.signals_generated,
+            errors_count=h.errors_count,
+            status=h.status.value if hasattr(h.status, "value") else h.status,
+        )
+        for h in history
+    ]
+
+
+@router.patch(
+    "/config",
+    response_model=ScannerConfig,
+    summary="Update Scanner Configuration",
+    description="Update scanner configuration. Scanner must be stopped.",
+    responses={
+        200: {"description": "Configuration updated successfully"},
+        409: {"description": "Scanner is running - stop it first"},
+        422: {"description": "Validation error"},
+    },
+)
+async def update_scanner_config(
+    request: ScannerConfigUpdateRequest,
+    scanner: SignalScannerService = Depends(get_scanner_service),
+    repository: ScannerRepository = Depends(_get_scanner_repository_dep),
+) -> ScannerConfig:
+    """
+    Update scanner configuration (Story 20.5a AC5, AC6).
+
+    Scanner must be stopped before configuration can be modified.
+
+    Args:
+        request: Configuration fields to update
+
+    Returns:
+        Updated ScannerConfig
+
+    Raises:
+        HTTPException 409: If scanner is running
+        HTTPException 422: If validation fails
+    """
+    # Story 20.5a AC5: Reject if scanner is running
+    if scanner.is_running:
+        logger.warning("scanner_config_update_rejected_running")
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Cannot modify configuration while scanner is running. Stop scanner first.",
+        )
+
+    # Convert to internal update model (excluding batch_delay_ms for now)
+    updates = ScannerConfigUpdate(
+        scan_interval_seconds=request.scan_interval_seconds,
+        batch_size=request.batch_size,
+        session_filter_enabled=request.session_filter_enabled,
+    )
+
+    config = await repository.update_config(updates)
+
+    logger.info(
+        "scanner_config_updated_via_api",
+        scan_interval_seconds=request.scan_interval_seconds,
+        batch_size=request.batch_size,
+        session_filter_enabled=request.session_filter_enabled,
+    )
+
+    return config
+
+
+# =========================================
+# Processing Status Endpoints (Story 19.4)
+# =========================================
+
+
+@router.get(
+    "/processing/status",
     response_model=ScannerStatusResponse,
-    summary="Get Scanner Status",
+    summary="Get Processing Status",
     description="Returns overall scanner health and status for all monitored symbols.",
 )
-async def get_scanner_status() -> ScannerStatusResponse:
+async def get_scanner_processing_status() -> ScannerStatusResponse:
     """
     Get overall scanner status.
 
@@ -164,7 +472,7 @@ async def get_symbol_status(symbol: str) -> SymbolStatus:
     summary="Reset Symbol Circuit Breaker",
     description="Resets the circuit breaker for a symbol, restoring normal processing.",
 )
-async def reset_symbol_circuit_breaker(symbol: str) -> None:
+async def reset_symbol_circuit_breaker(symbol: str):
     """
     Reset circuit breaker for a symbol.
 
@@ -362,7 +670,7 @@ async def remove_watchlist_symbol(
         max_length=20,
     ),
     repository: ScannerRepository = Depends(get_scanner_repository),
-) -> None:
+):
     """
     Remove a symbol from the scanner watchlist.
 
