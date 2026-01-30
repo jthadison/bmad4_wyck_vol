@@ -55,6 +55,7 @@ class ScanCycleStatus(str, Enum):
     PARTIAL = "PARTIAL"
     FAILED = "FAILED"
     SKIPPED = "SKIPPED"
+    FILTERED = "FILTERED"  # Story 20.4: All symbols were filtered/skipped
 
 
 def validate_symbol(symbol: str) -> str:
@@ -207,6 +208,13 @@ class ScannerHistory(BaseModel):
     signals_generated: Annotated[int, Field(ge=0, description="Signals created")] = 0
     errors_count: Annotated[int, Field(ge=0, description="Errors encountered")] = 0
     status: ScanCycleStatus = Field(description="Cycle outcome")
+    # Story 20.4: Skip tracking
+    symbols_skipped_session: Annotated[
+        int, Field(ge=0, description="Symbols skipped due to session filter")
+    ] = 0
+    symbols_skipped_rate_limit: Annotated[
+        int, Field(ge=0, description="Symbols skipped due to rate limiting")
+    ] = 0
 
 
 class ScannerHistoryCreate(BaseModel):
@@ -222,3 +230,10 @@ class ScannerHistoryCreate(BaseModel):
     signals_generated: Annotated[int, Field(ge=0, description="Signals created")] = 0
     errors_count: Annotated[int, Field(ge=0, description="Errors encountered")] = 0
     status: ScanCycleStatus = Field(description="Cycle outcome")
+    # Story 20.4: Skip tracking
+    symbols_skipped_session: Annotated[
+        int, Field(ge=0, description="Symbols skipped due to session filter")
+    ] = 0
+    symbols_skipped_rate_limit: Annotated[
+        int, Field(ge=0, description="Symbols skipped due to rate limiting")
+    ] = 0

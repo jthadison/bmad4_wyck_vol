@@ -8,11 +8,13 @@ Tests scanner safety mechanisms:
 - Rate limiting per symbol
 """
 
+import time
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from freezegun import freeze_time
 
 from src.models.scanner_persistence import (
     AssetClass,
@@ -418,10 +420,14 @@ class TestKillSwitchIntegration:
         ]
         mock_repository.get_enabled_symbols.return_value = symbols
 
-        # Activate kill switch after second symbol check (first is at cycle start)
-        # Cycle start check (1) -> passes
-        # First symbol check (2) -> passes -> analyze EURUSD
-        # Second symbol check (3) -> activated -> stop
+        # Mock time.perf_counter to advance beyond cache TTL (5 seconds) between checks
+        # This ensures the kill switch is actually checked each time (not cached)
+        perf_counter_values = iter([0.0, 10.0, 20.0, 30.0, 40.0])
+
+        # Activate kill switch after first symbol check
+        # Call 1: cycle start -> passes (time=0)
+        # Call 2: first symbol -> passes -> analyze EURUSD (time=10)
+        # Call 3: second symbol -> activated -> stop (time=20)
         call_count = [0]
 
         async def check_kill_switch(user_id):
@@ -440,7 +446,8 @@ class TestKillSwitchIntegration:
         # Disable session filtering for this test
         scanner._session_filter_enabled = False
 
-        result = await scanner._scan_cycle()
+        with patch.object(time, "perf_counter", side_effect=perf_counter_values):
+            result = await scanner._scan_cycle()
 
         # Should have processed first symbol before kill switch activated on second
         assert result.symbols_scanned == 1
@@ -480,6 +487,7 @@ class TestSessionFilteringInScanner:
     """Tests for AC3/AC4: Forex Session Filtering."""
 
     @pytest.mark.asyncio
+    @freeze_time("2024-01-15 03:00:00", tz_offset=0)
     async def test_forex_filtered_during_asian_session(self, mock_repository, mock_orchestrator):
         """Test that forex symbols are skipped during Asian session."""
         # Create mix of forex and stock
@@ -492,14 +500,7 @@ class TestSessionFilteringInScanner:
         scanner = SignalScannerService(mock_repository, mock_orchestrator)
         scanner._session_filter_enabled = True
 
-        # Mock time to 03:00 UTC (Asian session)
-        from unittest.mock import patch
-
-        with patch("src.services.signal_scanner_service.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2024, 1, 15, 3, 0, tzinfo=UTC)
-            mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-
-            result = await scanner._scan_cycle()
+        result = await scanner._scan_cycle()
 
         # EURUSD should be skipped, SPY should be analyzed
         assert result.symbols_skipped_session == 1
@@ -507,6 +508,7 @@ class TestSessionFilteringInScanner:
         mock_orchestrator.analyze_symbol.assert_called_once_with("SPY", timeframe="1H")
 
     @pytest.mark.asyncio
+    @freeze_time("2024-01-15 21:00:00", tz_offset=0)
     async def test_forex_filtered_during_late_ny_session(self, mock_repository, mock_orchestrator):
         """Test that forex symbols are skipped during Late NY session."""
         symbols = [
@@ -517,14 +519,7 @@ class TestSessionFilteringInScanner:
         scanner = SignalScannerService(mock_repository, mock_orchestrator)
         scanner._session_filter_enabled = True
 
-        # Mock time to 21:00 UTC (Late NY session)
-        from unittest.mock import patch
-
-        with patch("src.services.signal_scanner_service.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2024, 1, 15, 21, 0, tzinfo=UTC)
-            mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-
-            result = await scanner._scan_cycle()
+        result = await scanner._scan_cycle()
 
         # GBPUSD should be skipped
         assert result.symbols_skipped_session == 1
@@ -532,6 +527,7 @@ class TestSessionFilteringInScanner:
         mock_orchestrator.analyze_symbol.assert_not_called()
 
     @pytest.mark.asyncio
+    @freeze_time("2024-01-15 14:00:00", tz_offset=0)
     async def test_forex_not_filtered_during_london_ny(self, mock_repository, mock_orchestrator):
         """Test that forex symbols are NOT skipped during London/NY overlap."""
         symbols = [
@@ -542,14 +538,7 @@ class TestSessionFilteringInScanner:
         scanner = SignalScannerService(mock_repository, mock_orchestrator)
         scanner._session_filter_enabled = True
 
-        # Mock time to 14:00 UTC (London/NY overlap - peak liquidity)
-        from unittest.mock import patch
-
-        with patch("src.services.signal_scanner_service.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2024, 1, 15, 14, 0, tzinfo=UTC)
-            mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-
-            result = await scanner._scan_cycle()
+        result = await scanner._scan_cycle()
 
         # EURUSD should be analyzed
         assert result.symbols_skipped_session == 0
@@ -557,6 +546,7 @@ class TestSessionFilteringInScanner:
         mock_orchestrator.analyze_symbol.assert_called_once()
 
     @pytest.mark.asyncio
+    @freeze_time("2024-01-15 03:00:00", tz_offset=0)
     async def test_session_filtering_disabled_analyzes_all(
         self, mock_repository, mock_orchestrator
     ):
@@ -570,14 +560,7 @@ class TestSessionFilteringInScanner:
         scanner = SignalScannerService(mock_repository, mock_orchestrator)
         scanner._session_filter_enabled = False
 
-        # Mock time to 03:00 UTC (Asian session - would normally filter)
-        from unittest.mock import patch
-
-        with patch("src.services.signal_scanner_service.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2024, 1, 15, 3, 0, tzinfo=UTC)
-            mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-
-            result = await scanner._scan_cycle()
+        result = await scanner._scan_cycle()
 
         # Both forex symbols should be analyzed (no filtering)
         assert result.symbols_skipped_session == 0
@@ -585,6 +568,7 @@ class TestSessionFilteringInScanner:
         assert mock_orchestrator.analyze_symbol.call_count == 2
 
     @pytest.mark.asyncio
+    @freeze_time("2024-01-15 03:00:00", tz_offset=0)
     async def test_non_forex_symbols_not_filtered(self, mock_repository, mock_orchestrator):
         """Test that non-forex symbols are never filtered by session."""
         symbols = [
@@ -597,14 +581,7 @@ class TestSessionFilteringInScanner:
         scanner = SignalScannerService(mock_repository, mock_orchestrator)
         scanner._session_filter_enabled = True
 
-        # Mock time to 03:00 UTC (Asian session)
-        from unittest.mock import patch
-
-        with patch("src.services.signal_scanner_service.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2024, 1, 15, 3, 0, tzinfo=UTC)
-            mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-
-            result = await scanner._scan_cycle()
+        result = await scanner._scan_cycle()
 
         # All non-forex symbols should be analyzed
         assert result.symbols_skipped_session == 0
@@ -737,13 +714,8 @@ class TestCombinedSafetyChecks:
         )
         scanner._session_filter_enabled = True
 
-        # Mock time to Asian session
-        from unittest.mock import patch
-
-        with patch("src.services.signal_scanner_service.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2024, 1, 15, 3, 0, tzinfo=UTC)
-            mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-
+        # Use freezegun for cleaner time mocking (Story 20.4 PR review)
+        with freeze_time("2024-01-15 03:00:00", tz_offset=0):
             result = await scanner._scan_cycle()
 
         # EURUSD filtered by session, SPY analyzed
