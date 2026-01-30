@@ -281,6 +281,59 @@ async def startup_event() -> None:
     except Exception as e:
         logger.warning("circuit_breaker_scheduler_failed", error=str(e))
 
+    # Initialize signal scanner service and auto-restart if needed (Story 20.5b)
+    await _initialize_signal_scanner_service()
+
+
+async def _initialize_signal_scanner_service() -> None:
+    """
+    Initialize the signal scanner service (Story 20.5b).
+
+    Sets up the scanner service singleton with WebSocket manager.
+    Auto-restarts scanner if it was running before shutdown.
+
+    Note: The scanner service uses a session factory pattern - it creates
+    new sessions for each operation internally rather than holding a
+    persistent session reference.
+    """
+    try:
+        from src.api.routes.scanner import set_scanner_service
+        from src.api.websocket import manager as websocket_manager
+        from src.database import async_session_maker
+        from src.repositories.scanner_repository import ScannerRepository
+        from src.services.signal_scanner_service import SignalScannerService
+
+        # Check if scanner should auto-start (use temporary session)
+        should_auto_start = False
+        async with async_session_maker() as session:
+            repository = ScannerRepository(session)
+            config = await repository.get_config()
+            should_auto_start = config.is_running
+
+        # Create scanner service with session factory (Story 20.5b)
+        # The service will create repository instances as needed
+        scanner_service = SignalScannerService(
+            session_factory=async_session_maker,
+            websocket_manager=websocket_manager,
+        )
+
+        # Register scanner service for API routes
+        set_scanner_service(scanner_service)
+
+        # Story 20.5b AC4/AC5: Auto-restart if was running before shutdown
+        if should_auto_start:
+            logger.info("scanner_auto_starting_was_running_before_shutdown")
+            await scanner_service.start()
+            # Broadcast auto_started event (distinct from manual start)
+            await scanner_service._broadcast_status_change(is_running=True, event="auto_started")
+        else:
+            logger.info("scanner_not_auto_starting_was_stopped")
+
+        logger.info("signal_scanner_service_initialized")
+    except Exception as e:
+        logger.error("signal_scanner_service_initialization_failed", error=str(e))
+        # Don't crash the app - scanner can be started manually
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
@@ -314,6 +367,16 @@ async def shutdown_event() -> None:
         await scanner.stop()
     except RuntimeError:
         # Scanner was never initialized
+        pass
+
+    # Stop signal scanner service (Story 20.5b)
+    try:
+        from src.api.routes.scanner import get_scanner_service
+
+        scanner_service = await get_scanner_service()
+        await scanner_service.stop()
+    except Exception:
+        # Scanner service was never initialized or already stopped
         pass
 
     if _coordinator:
