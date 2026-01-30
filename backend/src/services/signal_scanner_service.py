@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import structlog
 from pydantic import BaseModel, Field
@@ -32,7 +32,7 @@ from src.models.scanner_persistence import (
 )
 
 if TYPE_CHECKING:
-    from src.orchestrator.master_orchestrator import MasterOrchestrator
+    from src.orchestrator.master_orchestrator import MasterOrchestrator, TradeSignal
     from src.repositories.scanner_repository import ScannerRepository
 
 logger = structlog.get_logger(__name__)
@@ -52,7 +52,7 @@ class ScanCycleResult:
     signals_generated: int
     errors_count: int
     status: ScanCycleStatus
-    signals: list[Any] = field(default_factory=list)
+    signals: list[TradeSignal] = field(default_factory=list)
 
 
 class ScannerState(str, Enum):
@@ -102,8 +102,11 @@ class SignalScannerService:
     # Timeout for graceful shutdown (seconds)
     GRACEFUL_SHUTDOWN_TIMEOUT = 10
 
-    # Default batch delay in milliseconds
+    # Default batch delay in milliseconds (rate limiting between batches)
     DEFAULT_BATCH_DELAY_MS = 100
+
+    # Maximum signals to collect per cycle (memory protection)
+    MAX_SIGNALS_PER_CYCLE = 1000
 
     def __init__(
         self,
@@ -337,10 +340,24 @@ class SignalScannerService:
         symbols_scanned = 0
         signals_generated = 0
         errors_count = 0
-        all_signals: list[Any] = []
+        all_signals: list[TradeSignal] = []
         was_stopped = False
+        signals_truncated = False
 
         try:
+            # Fail fast if orchestrator not configured
+            if self._orchestrator is None:
+                logger.error("orchestrator_not_configured_skipping_cycle")
+                return ScanCycleResult(
+                    cycle_started_at=cycle_started_at,
+                    cycle_ended_at=datetime.now(UTC),
+                    symbols_scanned=0,
+                    signals_generated=0,
+                    errors_count=0,
+                    status=ScanCycleStatus.SKIPPED,
+                    signals=[],
+                )
+
             # Get enabled symbols from repository
             enabled_symbols = await self._repository.get_enabled_symbols()
             self._symbols_count = len(enabled_symbols)
@@ -409,7 +426,17 @@ class SignalScannerService:
                     if error:
                         errors_count += 1
                     else:
-                        all_signals.extend(signals)
+                        # Memory protection: limit signals per cycle
+                        if len(all_signals) < self.MAX_SIGNALS_PER_CYCLE:
+                            remaining_capacity = self.MAX_SIGNALS_PER_CYCLE - len(all_signals)
+                            signals_to_add = signals[:remaining_capacity]
+                            all_signals.extend(signals_to_add)
+                            if len(signals) > remaining_capacity and not signals_truncated:
+                                signals_truncated = True
+                                logger.warning(
+                                    "max_signals_reached",
+                                    max=self.MAX_SIGNALS_PER_CYCLE,
+                                )
                         signals_generated += len(signals)
 
                 if was_stopped:
@@ -455,11 +482,14 @@ class SignalScannerService:
         finally:
             self._is_scanning = False
 
-    async def _analyze_symbol(self, symbol: WatchlistSymbol) -> tuple[list[Any], str | None]:
+    async def _analyze_symbol(
+        self, symbol: WatchlistSymbol
+    ) -> tuple[list[TradeSignal], str | None]:
         """
         Analyze a single symbol using the orchestrator (Story 20.3b AC2).
 
         Handles error isolation - errors are logged but don't stop the cycle.
+        Note: Orchestrator is guaranteed non-None by _scan_cycle fail-fast check.
 
         Args:
             symbol: Watchlist symbol to analyze
@@ -471,12 +501,8 @@ class SignalScannerService:
         start_time = time.perf_counter()
 
         try:
-            if self._orchestrator is None:
-                logger.warning(
-                    "orchestrator_not_configured",
-                    symbol=symbol.symbol,
-                )
-                return [], None  # Skip analysis but don't count as error
+            # Note: orchestrator guaranteed non-None by _scan_cycle fail-fast check
+            assert self._orchestrator is not None
 
             logger.info(
                 "analyzing_symbol",

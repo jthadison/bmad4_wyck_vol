@@ -199,8 +199,8 @@ class TestOrchestratorIntegration:
         assert mock_signal_2 in result.signals
 
     @pytest.mark.asyncio
-    async def test_orchestrator_not_configured_skips_analysis(self, mock_repository):
-        """Test that scanner handles missing orchestrator gracefully."""
+    async def test_orchestrator_not_configured_returns_skipped(self, mock_repository):
+        """Test that scanner returns SKIPPED when orchestrator not configured."""
         symbols = [create_mock_symbol("EURUSD")]
         mock_repository.get_enabled_symbols.return_value = symbols
 
@@ -209,10 +209,10 @@ class TestOrchestratorIntegration:
 
         result = await scanner._scan_cycle()
 
-        # Should complete without errors (orchestrator not configured is not an error)
-        assert result.symbols_scanned == 1
+        # Should return SKIPPED status without processing any symbols
+        assert result.symbols_scanned == 0
         assert result.errors_count == 0
-        assert result.status == ScanCycleStatus.COMPLETED
+        assert result.status == ScanCycleStatus.SKIPPED
 
 
 class TestErrorIsolation:
