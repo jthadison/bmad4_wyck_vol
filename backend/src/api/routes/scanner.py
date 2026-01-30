@@ -251,10 +251,8 @@ async def get_watchlist(
             }
         ]
     """
-    symbols = await repository.get_all_symbols()
-
-    # Story 20.2 specifies descending order by created_at (newest first)
-    symbols.sort(key=lambda s: s.created_at, reverse=True)
+    # Story 20.2: order by created_at descending (newest first)
+    symbols = await repository.get_all_symbols(order_desc=True)
 
     logger.info("scanner_watchlist_retrieved", count=len(symbols))
 
