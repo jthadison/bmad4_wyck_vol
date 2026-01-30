@@ -10,7 +10,7 @@ These tables persist scanner state across service restarts.
 """
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -35,7 +35,7 @@ class ScannerWatchlistORM(Base):
     __tablename__ = "scanner_watchlist"
 
     # Primary key
-    id: Mapped[str] = mapped_column(
+    id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
@@ -80,6 +80,14 @@ class ScannerWatchlistORM(Base):
         nullable=False,
     )
 
+    # When this symbol was last modified
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
     # Note: PostgreSQL-specific constraints like symbol ~ '^[A-Z0-9./^-]+$'
     # are defined in the migration. The ORM constraints are SQLite-compatible
     # for testing purposes.
@@ -95,6 +103,10 @@ class ScannerWatchlistORM(Base):
         CheckConstraint(
             "asset_class IN ('forex', 'stock', 'index', 'crypto')",
             name="chk_scanner_watchlist_asset_class",
+        ),
+        Index(
+            "idx_scanner_watchlist_enabled",
+            "enabled",
         ),
     )
 
@@ -113,7 +125,7 @@ class ScannerConfigORM(Base):
     __tablename__ = "scanner_config"
 
     # Primary key
-    id: Mapped[str] = mapped_column(
+    id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
@@ -188,7 +200,7 @@ class ScannerHistoryORM(Base):
     __tablename__ = "scanner_history"
 
     # Primary key
-    id: Mapped[str] = mapped_column(
+    id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,

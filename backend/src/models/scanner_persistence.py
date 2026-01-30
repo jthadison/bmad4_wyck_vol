@@ -96,6 +96,7 @@ class WatchlistSymbol(BaseModel):
     enabled: bool = Field(default=True, description="Whether symbol is actively scanned")
     last_scanned_at: datetime | None = Field(default=None, description="Last scan timestamp")
     created_at: datetime = Field(description="When symbol was added")
+    updated_at: datetime = Field(description="When symbol was last modified")
 
     @field_validator("symbol", mode="before")
     @classmethod

@@ -81,6 +81,12 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("NOW()"),
         ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
     )
 
     # Symbol length and format constraints
@@ -108,6 +114,14 @@ def upgrade() -> None:
         "chk_scanner_watchlist_asset_class",
         "scanner_watchlist",
         "asset_class IN ('forex', 'stock', 'index', 'crypto')",
+    )
+
+    # Index on enabled for efficient get_enabled_symbols() queries
+    op.create_index(
+        "idx_scanner_watchlist_enabled",
+        "scanner_watchlist",
+        ["enabled"],
+        postgresql_using="btree",
     )
 
     # ===========================================
@@ -254,6 +268,7 @@ def downgrade() -> None:
     op.drop_table("scanner_config")
 
     # Drop scanner_watchlist
+    op.drop_index("idx_scanner_watchlist_enabled", table_name="scanner_watchlist")
     op.drop_constraint("chk_scanner_watchlist_asset_class", "scanner_watchlist", type_="check")
     op.drop_constraint("chk_scanner_watchlist_timeframe", "scanner_watchlist", type_="check")
     op.drop_constraint("chk_scanner_watchlist_symbol_format", "scanner_watchlist", type_="check")
