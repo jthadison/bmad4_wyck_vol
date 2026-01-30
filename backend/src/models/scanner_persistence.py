@@ -305,7 +305,6 @@ class ScannerConfigUpdateRequest(BaseModel):
     All fields are optional. Includes validation constraints:
     - scan_interval_seconds: 60-3600
     - batch_size: 1-50
-    - batch_delay_ms: 0-5000
     """
 
     scan_interval_seconds: Annotated[
@@ -317,6 +316,3 @@ class ScannerConfigUpdateRequest(BaseModel):
     session_filter_enabled: bool | None = Field(
         default=None, description="Filter by trading session"
     )
-    batch_delay_ms: Annotated[
-        int | None, Field(ge=0, le=5000, description="Delay between batches (0-5000 ms)")
-    ] = None

@@ -11,6 +11,7 @@ Tests for:
 Author: Story 20.5a (Scanner Control API)
 """
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -24,6 +25,12 @@ from src.api.routes.scanner import set_scanner_service
 from src.database import get_db
 from src.models.scanner_persistence import ScanCycleStatus
 from src.orm.scanner import ScannerConfigORM, ScannerHistoryORM
+
+# Test constants
+DEFAULT_SCAN_INTERVAL = 300
+DEFAULT_BATCH_SIZE = 10
+TEST_NEXT_SCAN_SECONDS = 180
+TEST_SYMBOLS_COUNT = 12
 
 
 @pytest.fixture
@@ -39,24 +46,22 @@ def mock_scanner_service():
             current_state="stopped",
             last_cycle_at=None,
             next_scan_in_seconds=None,
-            scan_interval_seconds=300,
+            scan_interval_seconds=DEFAULT_SCAN_INTERVAL,
             symbols_count=0,
         )
     )
     return mock
 
 
-@pytest.fixture
-async def scanner_control_client(db_session: AsyncSession, mock_scanner_service) -> AsyncClient:
+@asynccontextmanager
+async def create_test_client(db_session: AsyncSession, scanner_service):
     """
-    Provide async HTTP client with mocked scanner service.
+    Helper to create async HTTP client with overrides.
 
-    Sets up the scanner service singleton and overrides database dependency.
+    Reduces duplication in tests that need custom db session setup.
     """
-    # Set up the mock scanner service
-    set_scanner_service(mock_scanner_service)
+    set_scanner_service(scanner_service)
 
-    # Override database dependency
     async def override_get_db():
         yield db_session
 
@@ -66,18 +71,29 @@ async def scanner_control_client(db_session: AsyncSession, mock_scanner_service)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
-    # Clean up
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def scanner_control_client(
+    db_session: AsyncSession, mock_scanner_service
+) -> AsyncClient:
+    """
+    Provide async HTTP client with mocked scanner service.
+
+    Sets up the scanner service singleton and overrides database dependency.
+    """
+    async with create_test_client(db_session, mock_scanner_service) as client:
+        yield client
 
 
 @pytest.fixture
 async def db_with_scanner_config(db_session: AsyncSession) -> AsyncSession:
     """Provide database session with scanner config seeded."""
-    # Create default scanner config
     config = ScannerConfigORM(
         id=uuid4(),
-        scan_interval_seconds=300,
-        batch_size=10,
+        scan_interval_seconds=DEFAULT_SCAN_INTERVAL,
+        batch_size=DEFAULT_BATCH_SIZE,
         session_filter_enabled=True,
         is_running=False,
         last_cycle_at=None,
@@ -95,18 +111,8 @@ async def scanner_client_with_config(
     """
     Provide async HTTP client with scanner config in database.
     """
-    set_scanner_service(mock_scanner_service)
-
-    async def override_get_db():
-        yield db_with_scanner_config
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with create_test_client(db_with_scanner_config, mock_scanner_service) as client:
         yield client
-
-    app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -193,9 +199,9 @@ class TestGetScannerStatus:
             is_running=True,
             current_state="waiting",
             last_cycle_at=last_cycle,
-            next_scan_in_seconds=180,
-            scan_interval_seconds=300,
-            symbols_count=12,
+            next_scan_in_seconds=TEST_NEXT_SCAN_SECONDS,
+            scan_interval_seconds=DEFAULT_SCAN_INTERVAL,
+            symbols_count=TEST_SYMBOLS_COUNT,
         )
 
         response = await scanner_client_with_config.get("/api/v1/scanner/status")
@@ -204,8 +210,8 @@ class TestGetScannerStatus:
         data = response.json()
         assert data["is_running"] is True
         assert data["current_state"] == "waiting"
-        assert data["next_scan_in_seconds"] == 180
-        assert data["scan_interval_seconds"] == 300
+        assert data["next_scan_in_seconds"] == TEST_NEXT_SCAN_SECONDS
+        assert data["scan_interval_seconds"] == DEFAULT_SCAN_INTERVAL
         assert data["session_filter_enabled"] is True
 
     async def test_returns_status_when_stopped(
@@ -218,7 +224,7 @@ class TestGetScannerStatus:
             current_state="stopped",
             last_cycle_at=None,
             next_scan_in_seconds=None,
-            scan_interval_seconds=300,
+            scan_interval_seconds=DEFAULT_SCAN_INTERVAL,
             symbols_count=0,
         )
 
@@ -251,7 +257,6 @@ class TestGetScannerHistory:
     ):
         """Should return history records ordered by cycle_started_at descending."""
         # Add history records
-        now = datetime.now(UTC)
         for i in range(3):
             history = ScannerHistoryORM(
                 id=uuid4(),
@@ -265,18 +270,10 @@ class TestGetScannerHistory:
             db_with_scanner_config.add(history)
         await db_with_scanner_config.commit()
 
-        set_scanner_service(mock_scanner_service)
-
-        async def override_get_db():
-            yield db_with_scanner_config
-
-        app.dependency_overrides[get_db] = override_get_db
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with create_test_client(
+            db_with_scanner_config, mock_scanner_service
+        ) as client:
             response = await client.get("/api/v1/scanner/history")
-
-        app.dependency_overrides.clear()
 
         assert response.status_code == 200
         data = response.json()
@@ -317,18 +314,10 @@ class TestGetScannerHistory:
             db_with_scanner_config.add(history)
         await db_with_scanner_config.commit()
 
-        set_scanner_service(mock_scanner_service)
-
-        async def override_get_db():
-            yield db_with_scanner_config
-
-        app.dependency_overrides[get_db] = override_get_db
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with create_test_client(
+            db_with_scanner_config, mock_scanner_service
+        ) as client:
             response = await client.get("/api/v1/scanner/history?limit=5")
-
-        app.dependency_overrides.clear()
 
         assert response.status_code == 200
         data = response.json()
@@ -354,18 +343,10 @@ class TestGetScannerHistory:
             db_with_scanner_config.add(history)
         await db_with_scanner_config.commit()
 
-        set_scanner_service(mock_scanner_service)
-
-        async def override_get_db():
-            yield db_with_scanner_config
-
-        app.dependency_overrides[get_db] = override_get_db
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with create_test_client(
+            db_with_scanner_config, mock_scanner_service
+        ) as client:
             response = await client.get("/api/v1/scanner/history?limit=100")
-
-        app.dependency_overrides.clear()
 
         assert response.status_code == 200
         data = response.json()
@@ -468,7 +449,9 @@ class TestPatchScannerConfig:
 class TestScannerServiceNotInitialized:
     """Test behavior when scanner service is not initialized."""
 
-    async def test_returns_503_when_service_not_set(self, db_with_scanner_config: AsyncSession):
+    async def test_returns_503_when_service_not_set(
+        self, db_with_scanner_config: AsyncSession
+    ):
         """Should return 503 when scanner service is not initialized."""
         # Clear any existing scanner service
         from src.api.routes import scanner as scanner_module
@@ -520,7 +503,9 @@ class TestOpenAPISchema:
         assert "/api/v1/scanner/config" in paths
         assert "patch" in paths["/api/v1/scanner/config"]
 
-    async def test_response_models_in_schema(self, scanner_client_with_config: AsyncClient):
+    async def test_response_models_in_schema(
+        self, scanner_client_with_config: AsyncClient
+    ):
         """Response models should be in OpenAPI schema."""
         response = await scanner_client_with_config.get("/openapi.json")
         assert response.status_code == 200

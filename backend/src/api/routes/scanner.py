@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
 from src.models.scanner import ScannerStatusResponse, SymbolStatus
 from src.models.scanner_persistence import (
+    ScanCycleStatus,
     ScannerActionResponse,
     ScannerConfig,
     ScannerConfigUpdate,
@@ -88,9 +89,7 @@ def set_scanner_service(service: SignalScannerService) -> None:
     logger.info("scanner_service_registered")
 
 
-async def get_scanner_service(
-    repository: ScannerRepository = Depends(lambda: None),
-) -> SignalScannerService:
+async def get_scanner_service() -> SignalScannerService:
     """
     Dependency to get the scanner service instance.
 
@@ -283,7 +282,7 @@ async def get_scanner_history(
             symbols_scanned=h.symbols_scanned,
             signals_generated=h.signals_generated,
             errors_count=h.errors_count,
-            status=h.status.value if hasattr(h.status, "value") else h.status,
+            status=h.status.value if isinstance(h.status, ScanCycleStatus) else str(h.status),
         )
         for h in history
     ]
@@ -328,7 +327,7 @@ async def update_scanner_config(
             detail="Cannot modify configuration while scanner is running. Stop scanner first.",
         )
 
-    # Convert to internal update model (excluding batch_delay_ms for now)
+    # Convert to internal update model
     updates = ScannerConfigUpdate(
         scan_interval_seconds=request.scan_interval_seconds,
         batch_size=request.batch_size,
