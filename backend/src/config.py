@@ -120,6 +120,28 @@ class Settings(BaseSettings):
         description="Alpaca Markets secret key for authentication",
     )
 
+    # Twelve Data API Configuration (Story 21.1)
+    twelvedata_api_key: str = Field(
+        default="",
+        description="Twelve Data API key for symbol validation",
+    )
+    twelvedata_base_url: str = Field(
+        default="https://api.twelvedata.com",
+        description="Twelve Data API base URL",
+    )
+    twelvedata_rate_limit: int = Field(
+        default=8,
+        ge=1,
+        le=100,
+        description="Twelve Data API rate limit (requests per minute)",
+    )
+    twelvedata_timeout: int = Field(
+        default=10,
+        ge=1,
+        le=60,
+        description="Twelve Data API request timeout in seconds",
+    )
+
     # Real-Time Data Feed Configuration
     watchlist_symbols: list[str] = Field(
         default=["AAPL", "TSLA", "SPY"],
