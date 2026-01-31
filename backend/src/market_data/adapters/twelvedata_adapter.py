@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import structlog
+from pydantic import ValidationError
 
 from src.config import settings
 from src.market_data.adapters.twelvedata_exceptions import (
@@ -31,6 +32,9 @@ from src.models.twelvedata import (
 )
 
 logger = structlog.get_logger(__name__)
+
+# Known forex base currencies for symbol normalization
+FOREX_BASES = {"EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
 
 
 class RateLimiter:
@@ -52,27 +56,33 @@ class RateLimiter:
         self.max_calls = max_calls
         self.period = timedelta(seconds=period_seconds)
         self.calls: deque[datetime] = deque()
+        self._lock = asyncio.Lock()
 
     async def acquire(self) -> None:
         """
         Acquire permission to make an API call.
 
         Waits if rate limit is reached, logging a warning.
+        Thread-safe using asyncio.Lock.
         """
-        now = datetime.now(UTC)
+        while True:
+            async with self._lock:
+                now = datetime.now(UTC)
 
-        # Remove old calls outside the window
-        while self.calls and self.calls[0] < now - self.period:
-            self.calls.popleft()
+                # Remove old calls outside the window
+                while self.calls and self.calls[0] < now - self.period:
+                    self.calls.popleft()
 
-        if len(self.calls) >= self.max_calls:
-            wait_time = (self.calls[0] + self.period - now).total_seconds()
+                if len(self.calls) < self.max_calls:
+                    self.calls.append(now)
+                    return
+
+                wait_time = (self.calls[0] + self.period - now).total_seconds()
+
+            # Sleep outside the lock
             if wait_time > 0:
                 logger.warning("rate_limit_reached", wait_seconds=round(wait_time, 1))
                 await asyncio.sleep(wait_time)
-                return await self.acquire()
-
-        self.calls.append(now)
 
     @property
     def remaining(self) -> int:
@@ -135,8 +145,13 @@ class TwelveDataAdapter:
         Returns:
             Normalized symbol (e.g., EUR/USD for forex)
         """
-        # EURUSD -> EUR/USD
-        if len(symbol) == 6 and symbol.isalpha() and "/" not in symbol:
+        # EURUSD -> EUR/USD (only for known forex base currencies)
+        if (
+            len(symbol) == 6
+            and symbol.isalpha()
+            and "/" not in symbol
+            and symbol[:3].upper() in FOREX_BASES
+        ):
             return f"{symbol[:3]}/{symbol[3:]}"
         return symbol
 
@@ -194,7 +209,15 @@ class TwelveDataAdapter:
         self._backoff_multiplier = 1
         self._backoff_until = None
 
-        return response.json()
+        data = response.json()
+
+        # Check for API-level errors (200 status but error in body)
+        if data.get("status") == "error" or "code" in data:
+            error_code = data.get("code", response.status_code)
+            error_msg = data.get("message", "Unknown API error")
+            raise TwelveDataAPIError(error_msg, status_code=error_code)
+
+        return data
 
     async def _make_request(self, endpoint: str, params: dict | None = None) -> dict:
         """
@@ -275,7 +298,7 @@ class TwelveDataAdapter:
                     currency=item.get("currency", ""),
                 )
                 results.append(result)
-            except Exception as e:
+            except ValidationError as e:
                 logger.warning("symbol_parse_error", symbol=item.get("symbol"), error=str(e))
                 continue
 
@@ -362,7 +385,7 @@ class TwelveDataAdapter:
                     currency_quote=item.get("currency_quote", ""),
                 )
                 results.append(result)
-            except Exception as e:
+            except ValidationError as e:
                 logger.warning("forex_parse_error", symbol=item.get("symbol"), error=str(e))
                 continue
 
@@ -394,7 +417,7 @@ class TwelveDataAdapter:
                     currency=item.get("currency", ""),
                 )
                 results.append(result)
-            except Exception as e:
+            except ValidationError as e:
                 logger.warning("index_parse_error", symbol=item.get("symbol"), error=str(e))
                 continue
 
@@ -426,7 +449,7 @@ class TwelveDataAdapter:
                     available_exchanges=item.get("available_exchanges", []),
                 )
                 results.append(result)
-            except Exception as e:
+            except ValidationError as e:
                 logger.warning("crypto_parse_error", symbol=item.get("symbol"), error=str(e))
                 continue
 
@@ -435,3 +458,11 @@ class TwelveDataAdapter:
     async def close(self) -> None:
         """Close the HTTP client."""
         await self._client.aclose()
+
+    async def __aenter__(self) -> TwelveDataAdapter:
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context manager exit - ensures client is closed."""
+        await self.close()

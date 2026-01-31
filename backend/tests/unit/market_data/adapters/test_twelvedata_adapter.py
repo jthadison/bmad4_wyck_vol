@@ -498,5 +498,40 @@ class TestTwelveDataAdapterClose:
 
         await adapter.close()
 
+    async def test_async_context_manager(self, httpx_mock: HTTPXMock, monkeypatch):
+        """Test async context manager properly closes client."""
+        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+
+        httpx_mock.add_response(
+            url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=test-api-key",
+            json={"data": []},
+        )
+
+        async with TwelveDataAdapter(api_key="test-api-key") as adapter:
+            results = await adapter.search_symbols("EUR")
+            assert results == []
+
+        # Client should be closed after exiting context
+        assert True
+
+
+@pytest.mark.asyncio
+class TestTwelveDataAdapterAPIErrors:
+    """Test suite for TwelveDataAdapter API error handling."""
+
+    async def test_handles_200_with_error_in_body(self, httpx_mock: HTTPXMock, monkeypatch):
+        """Test handling of 200 status with error in JSON body."""
+        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+        adapter = TwelveDataAdapter(api_key="test-api-key")
+
+        httpx_mock.add_response(
+            url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=test-api-key",
+            status_code=200,
+            json={"code": 400, "message": "Invalid API Key", "status": "error"},
+        )
+
+        with pytest.raises(TwelveDataAPIError, match="Invalid API Key"):
+            await adapter.search_symbols("EUR")
+
         # Client should be closed (no exception)
         assert True

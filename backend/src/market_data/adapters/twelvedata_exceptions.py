@@ -16,6 +16,9 @@ class TwelveDataAPIError(Exception):
         self.status_code = status_code
         super().__init__(self.message)
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(message={self.message!r}, status_code={self.status_code})"
+
 
 class TwelveDataAuthError(TwelveDataAPIError):
     """Raised when API authentication fails (HTTP 401)."""
@@ -31,6 +34,9 @@ class TwelveDataRateLimitError(TwelveDataAPIError):
         super().__init__(message, status_code=429)
         self.retry_after = retry_after
 
+    def __repr__(self) -> str:
+        return f"TwelveDataRateLimitError(message={self.message!r}, retry_after={self.retry_after})"
+
 
 class TwelveDataTimeoutError(TwelveDataAPIError):
     """Raised when API request times out."""
@@ -38,6 +44,9 @@ class TwelveDataTimeoutError(TwelveDataAPIError):
     def __init__(self, message: str = "Request timed out", timeout_seconds: int | None = None):
         super().__init__(message, status_code=None)
         self.timeout_seconds = timeout_seconds
+
+    def __repr__(self) -> str:
+        return f"TwelveDataTimeoutError(message={self.message!r}, timeout_seconds={self.timeout_seconds})"
 
 
 class ConfigurationError(Exception):
