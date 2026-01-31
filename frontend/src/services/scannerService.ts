@@ -14,6 +14,7 @@ import type {
   UpdateScannerSymbolRequest,
   ScannerHistoryRecord,
   SymbolSearchResult,
+  ScannerAssetClass,
 } from '@/types/scanner'
 
 const BASE_PATH = '/scanner'
@@ -127,7 +128,7 @@ export async function getScannerHistory(
  */
 export async function searchSymbols(
   query: string,
-  type?: string,
+  type?: ScannerAssetClass,
   limit: number = 10
 ): Promise<SymbolSearchResult[]> {
   const params: Record<string, string | number> = { q: query, limit }

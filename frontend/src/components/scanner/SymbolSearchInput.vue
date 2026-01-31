@@ -11,9 +11,14 @@
  * - Verified checkmark on selection
  */
 
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { scannerService } from '@/services/scannerService'
 import type { SymbolSearchResult, ScannerAssetClass } from '@/types/scanner'
+
+// Constants
+const DEBOUNCE_MS = 300
+const MIN_QUERY_LENGTH = 2
+const DEFAULT_RESULT_LIMIT = 10
 
 const props = defineProps<{
   modelValue?: string
@@ -37,12 +42,25 @@ const highlightedIndex = ref(0)
 const error = ref<string | null>(null)
 const containerRef = ref<HTMLElement | null>(null)
 
+// ARIA: Generate unique ID for listbox
+const listboxId = `symbol-search-listbox-${Math.random()
+  .toString(36)
+  .slice(2, 9)}`
+
+// ARIA: Compute active descendant ID
+const activeDescendantId = computed(() => {
+  if (showDropdown.value && results.value.length > 0) {
+    return `${listboxId}-option-${highlightedIndex.value}`
+  }
+  return undefined
+})
+
 // Debounce timer
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // Search function
 async function performSearch(searchQuery: string) {
-  if (searchQuery.length < 2) {
+  if (searchQuery.length < MIN_QUERY_LENGTH) {
     results.value = []
     showDropdown.value = false
     return
@@ -55,7 +73,7 @@ async function performSearch(searchQuery: string) {
     results.value = await scannerService.searchSymbols(
       searchQuery,
       props.assetType,
-      10
+      DEFAULT_RESULT_LIMIT
     )
     showDropdown.value = true
     highlightedIndex.value = 0
@@ -74,12 +92,12 @@ function debouncedSearch(searchQuery: string) {
     clearTimeout(debounceTimer)
   }
   // Don't schedule search for short queries
-  if (searchQuery.length < 2) {
+  if (searchQuery.length < MIN_QUERY_LENGTH) {
     return
   }
   debounceTimer = setTimeout(() => {
     performSearch(searchQuery)
-  }, 300)
+  }, DEBOUNCE_MS)
 }
 
 // Event handlers
@@ -93,7 +111,7 @@ function onInput(event: Event) {
 }
 
 function onFocus() {
-  if (results.value.length > 0 || query.value.length >= 2) {
+  if (results.value.length > 0 || query.value.length >= MIN_QUERY_LENGTH) {
     showDropdown.value = true
   }
 }
@@ -213,6 +231,11 @@ onUnmounted(() => {
           'input-verified': isVerified,
           'input-default': !isVerified,
         }"
+        role="combobox"
+        aria-autocomplete="list"
+        :aria-expanded="showDropdown"
+        :aria-controls="listboxId"
+        :aria-activedescendant="activeDescendantId"
         data-testid="symbol-input"
         @input="onInput"
         @keydown="onKeydown"
@@ -235,10 +258,13 @@ onUnmounted(() => {
     <!-- Dropdown -->
     <div v-if="showDropdown" class="dropdown" data-testid="search-dropdown">
       <!-- Results -->
-      <div class="dropdown-list">
+      <div :id="listboxId" role="listbox" class="dropdown-list">
         <div
           v-for="(result, index) in results"
+          :id="`${listboxId}-option-${index}`"
           :key="result.symbol"
+          role="option"
+          :aria-selected="index === highlightedIndex"
           class="dropdown-item"
           :class="{
             highlighted: index === highlightedIndex,
@@ -259,7 +285,12 @@ onUnmounted(() => {
 
       <!-- Empty State -->
       <div
-        v-if="results.length === 0 && !isLoading && !error && query.length >= 2"
+        v-if="
+          results.length === 0 &&
+          !isLoading &&
+          !error &&
+          query.length >= MIN_QUERY_LENGTH
+        "
         class="empty-state"
         data-testid="empty-state"
       >
