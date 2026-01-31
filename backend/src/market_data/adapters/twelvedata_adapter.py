@@ -64,14 +64,20 @@ class RateLimiter:
         Acquire a rate limit slot.
 
         Waits if rate limit is reached until a slot becomes available.
+        Uses iterative approach to avoid stack overflow on repeated waits.
         """
-        now = datetime.now(UTC)
+        while True:
+            now = datetime.now(UTC)
 
-        # Remove old calls outside the window
-        while self.calls and self.calls[0] < now - self.period:
-            self.calls.popleft()
+            # Remove old calls outside the window
+            while self.calls and self.calls[0] < now - self.period:
+                self.calls.popleft()
 
-        if len(self.calls) >= self.max_calls:
+            if len(self.calls) < self.max_calls:
+                self.calls.append(now)
+                return
+
+            # Rate limit reached - wait and retry
             wait_time = (self.calls[0] + self.period - now).total_seconds()
             logger.warning(
                 "rate_limit_reached_waiting",
@@ -80,9 +86,6 @@ class RateLimiter:
                 period_seconds=self.period.total_seconds(),
             )
             await asyncio.sleep(max(0, wait_time))
-            return await self.acquire()
-
-        self.calls.append(now)
 
     @property
     def remaining(self) -> int:
@@ -146,13 +149,22 @@ class TwelveDataAdapter:
         )
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create async HTTP client."""
+        """Get or create async HTTP client with API key in headers."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=self._timeout,
+                headers={"Authorization": f"apikey {self.api_key}"},
             )
         return self._client
+
+    async def __aenter__(self) -> "TwelveDataAdapter":
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context manager exit - ensures client cleanup."""
+        await self.close()
 
     async def close(self) -> None:
         """Close the HTTP client."""
@@ -206,7 +218,7 @@ class TwelveDataAdapter:
 
         client = await self._get_client()
         request_params = params or {}
-        request_params["apikey"] = self.api_key
+        # API key is passed via Authorization header, not query params
 
         try:
             response = await client.get(endpoint, params=request_params)

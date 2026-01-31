@@ -1,19 +1,22 @@
 """
 TwelveData API Response Models (Story 21.1)
 
-Pydantic models for parsing TwelveData API responses:
-- SymbolSearchResult: Symbol search endpoint response
+Pydantic models for parsing TwelveData API responses.
+These are separate from validation.py models which are for internal use.
+
+Models:
+- TwelveDataSearchResult: Symbol search endpoint response (API-specific)
 - SymbolInfo: General symbol information
 - ForexPairInfo: Forex pair details
 - IndexInfo: Index details
 - CryptoInfo: Cryptocurrency details
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SymbolSearchResult(BaseModel):
-    """Result from TwelveData symbol search endpoint."""
+    """Result from TwelveData symbol search endpoint (API response model)."""
 
     symbol: str = Field(..., description="Symbol identifier (e.g., EURUSD)")
     name: str = Field(..., description="Full instrument name")
@@ -22,12 +25,11 @@ class SymbolSearchResult(BaseModel):
     currency: str | None = Field(default=None, description="Quote currency")
     country: str | None = Field(default=None, description="Country of origin")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class SymbolInfo(BaseModel):
-    """Detailed symbol information from TwelveData."""
+    """Detailed symbol information from TwelveData (API response model)."""
 
     symbol: str = Field(..., description="Symbol identifier")
     name: str = Field(..., description="Full instrument name")
@@ -37,8 +39,7 @@ class SymbolInfo(BaseModel):
     currency_base: str | None = Field(default=None, description="Base currency (forex)")
     currency_quote: str | None = Field(default=None, description="Quote currency (forex)")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class ForexPairInfo(BaseModel):
@@ -49,8 +50,7 @@ class ForexPairInfo(BaseModel):
     currency_base: str | None = Field(default=None, description="Base currency name")
     currency_quote: str | None = Field(default=None, description="Quote currency name")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class IndexInfo(BaseModel):
@@ -61,8 +61,7 @@ class IndexInfo(BaseModel):
     country: str | None = Field(default=None, description="Country")
     currency: str | None = Field(default=None, description="Currency")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class CryptoInfo(BaseModel):
@@ -72,5 +71,4 @@ class CryptoInfo(BaseModel):
     currency_base: str | None = Field(default=None, description="Base cryptocurrency")
     currency_quote: str | None = Field(default=None, description="Quote currency")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")

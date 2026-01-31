@@ -13,7 +13,9 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -34,6 +36,16 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+# Valid asset classes
+VALID_ASSET_CLASSES = {"forex", "index", "crypto", "stock"}
+
+# Pattern for valid symbol characters (alphanumeric, slash, dot, hyphen)
+SYMBOL_PATTERN = re.compile(r"^[A-Z0-9/.\-]{1,20}$")
+
+# Relevance scoring constants for search results
+RELEVANCE_EXACT_MATCH = 1.0  # Exact symbol match
+RELEVANCE_PARTIAL_MATCH = 0.7  # Partial/prefix match
+
 
 class SymbolValidationService:
     """
@@ -50,6 +62,7 @@ class SymbolValidationService:
     # Cache TTL defaults
     DEFAULT_SYMBOL_CACHE_TTL = 86400  # 24 hours
     DEFAULT_SEARCH_CACHE_TTL = 3600  # 1 hour
+    DEFAULT_REDIS_TIMEOUT = 5.0  # 5 seconds
 
     def __init__(
         self,
@@ -58,6 +71,7 @@ class SymbolValidationService:
         redis: Redis | None = None,
         symbol_cache_ttl: int = DEFAULT_SYMBOL_CACHE_TTL,
         search_cache_ttl: int = DEFAULT_SEARCH_CACHE_TTL,
+        redis_timeout: float = DEFAULT_REDIS_TIMEOUT,
     ):
         """
         Initialize Symbol Validation Service.
@@ -68,12 +82,14 @@ class SymbolValidationService:
             redis: Redis client for caching
             symbol_cache_ttl: Symbol validation cache TTL in seconds
             search_cache_ttl: Search results cache TTL in seconds
+            redis_timeout: Timeout for Redis operations in seconds
         """
         self._twelvedata = twelvedata_adapter
         self._alpaca = alpaca_adapter
         self._redis = redis
         self._symbol_cache_ttl = symbol_cache_ttl
         self._search_cache_ttl = search_cache_ttl
+        self._redis_timeout = redis_timeout
 
         logger.info(
             "symbol_validation_service_initialized",
@@ -82,6 +98,7 @@ class SymbolValidationService:
             has_redis=redis is not None,
             symbol_cache_ttl=symbol_cache_ttl,
             search_cache_ttl=search_cache_ttl,
+            redis_timeout=redis_timeout,
         )
 
     async def validate_symbol(self, symbol: str, asset_class: str) -> ValidSymbolResult:
@@ -99,9 +116,37 @@ class SymbolValidationService:
         Returns:
             ValidSymbolResult with validation status and info
         """
-        # Normalize symbol
-        symbol = symbol.upper().strip()
-        asset_class = asset_class.lower()
+        # Normalize and validate inputs
+        symbol = symbol.upper().strip() if symbol else ""
+        asset_class = asset_class.lower().strip() if asset_class else ""
+
+        # Input validation
+        if not symbol:
+            return ValidSymbolResult(
+                valid=False,
+                symbol="",
+                asset_class=asset_class or "unknown",
+                source=SymbolValidationSource.STATIC,
+                error="Symbol cannot be empty",
+            )
+
+        if not SYMBOL_PATTERN.match(symbol):
+            return ValidSymbolResult(
+                valid=False,
+                symbol=symbol,
+                asset_class=asset_class or "unknown",
+                source=SymbolValidationSource.STATIC,
+                error="Invalid symbol format",
+            )
+
+        if asset_class not in VALID_ASSET_CLASSES:
+            return ValidSymbolResult(
+                valid=False,
+                symbol=symbol,
+                asset_class=asset_class or "unknown",
+                source=SymbolValidationSource.STATIC,
+                error=f"Invalid asset class. Must be one of: {', '.join(VALID_ASSET_CLASSES)}",
+            )
 
         logger.info(
             "validating_symbol",
@@ -331,8 +376,12 @@ class SymbolValidationService:
             # Convert to SymbolSearchResult
             search_results = []
             for r in results[:limit]:
-                # Calculate relevance (exact match = 1.0, partial = 0.5-0.9)
-                relevance = 1.0 if r.symbol.upper() == query else 0.7
+                # Calculate relevance score
+                relevance = (
+                    RELEVANCE_EXACT_MATCH
+                    if r.symbol.upper() == query
+                    else RELEVANCE_PARTIAL_MATCH
+                )
                 search_results.append(
                     SymbolSearchResult(
                         symbol=r.symbol,
@@ -359,55 +408,89 @@ class SymbolValidationService:
             )
             return []
 
+    def _sanitize_cache_key(self, value: str) -> str:
+        """Sanitize user input for use in cache keys to prevent injection."""
+        # Only allow alphanumeric, underscore, hyphen, slash
+        sanitized = re.sub(r"[^A-Za-z0-9_\-/]", "", value)
+        # Limit length to prevent overly long keys
+        return sanitized[:50]
+
     async def _get_cached_validation(
         self, symbol: str, asset_class: str
     ) -> ValidSymbolResult | None:
-        """Get cached validation result."""
+        """Get cached validation result with timeout."""
         if not self._redis:
             return None
 
-        key = self.CACHE_KEY_SYMBOL.format(symbol=symbol, asset_class=asset_class)
+        # Sanitize inputs for cache key
+        safe_symbol = self._sanitize_cache_key(symbol)
+        safe_asset_class = self._sanitize_cache_key(asset_class)
+        key = self.CACHE_KEY_SYMBOL.format(symbol=safe_symbol, asset_class=safe_asset_class)
+
         try:
-            data = await self._redis.get(key)
+            data = await asyncio.wait_for(
+                self._redis.get(key),
+                timeout=self._redis_timeout,
+            )
             if data:
                 result_dict = json.loads(data)
                 result = ValidSymbolResult.model_validate(result_dict)
                 result.source = SymbolValidationSource.CACHE
                 return result
+        except asyncio.TimeoutError:
+            logger.warning("cache_read_timeout", key=key)
         except Exception as e:
             logger.warning("cache_read_error", key=key, error=str(e))
 
         return None
 
     async def _cache_validation(self, result: ValidSymbolResult) -> None:
-        """Cache validation result."""
+        """Cache validation result with timeout."""
         if not self._redis:
             return
 
-        key = self.CACHE_KEY_SYMBOL.format(symbol=result.symbol, asset_class=result.asset_class)
+        # Sanitize inputs for cache key
+        safe_symbol = self._sanitize_cache_key(result.symbol)
+        safe_asset_class = self._sanitize_cache_key(result.asset_class)
+        key = self.CACHE_KEY_SYMBOL.format(symbol=safe_symbol, asset_class=safe_asset_class)
+
         try:
             result.cached_at = datetime.now(UTC)
-            await self._redis.setex(
-                key,
-                self._symbol_cache_ttl,
-                result.model_dump_json(),
+            await asyncio.wait_for(
+                self._redis.setex(
+                    key,
+                    self._symbol_cache_ttl,
+                    result.model_dump_json(),
+                ),
+                timeout=self._redis_timeout,
             )
+        except asyncio.TimeoutError:
+            logger.warning("cache_write_timeout", key=key)
         except Exception as e:
             logger.warning("cache_write_error", key=key, error=str(e))
 
     async def _get_cached_search(
         self, query: str, asset_class: str | None
     ) -> list[SymbolSearchResult] | None:
-        """Get cached search results."""
+        """Get cached search results with timeout."""
         if not self._redis:
             return None
 
-        key = self.CACHE_KEY_SEARCH.format(query=query, asset_class=asset_class or "all")
+        # Sanitize inputs for cache key
+        safe_query = self._sanitize_cache_key(query)
+        safe_asset_class = self._sanitize_cache_key(asset_class or "all")
+        key = self.CACHE_KEY_SEARCH.format(query=safe_query, asset_class=safe_asset_class)
+
         try:
-            data = await self._redis.get(key)
+            data = await asyncio.wait_for(
+                self._redis.get(key),
+                timeout=self._redis_timeout,
+            )
             if data:
                 results_list = json.loads(data)
                 return [SymbolSearchResult.model_validate(r) for r in results_list]
+        except asyncio.TimeoutError:
+            logger.warning("cache_read_timeout", key=key)
         except Exception as e:
             logger.warning("cache_read_error", key=key, error=str(e))
 
@@ -419,14 +502,23 @@ class SymbolValidationService:
         asset_class: str | None,
         results: list[SymbolSearchResult],
     ) -> None:
-        """Cache search results."""
+        """Cache search results with timeout."""
         if not self._redis:
             return
 
-        key = self.CACHE_KEY_SEARCH.format(query=query, asset_class=asset_class or "all")
+        # Sanitize inputs for cache key
+        safe_query = self._sanitize_cache_key(query)
+        safe_asset_class = self._sanitize_cache_key(asset_class or "all")
+        key = self.CACHE_KEY_SEARCH.format(query=safe_query, asset_class=safe_asset_class)
+
         try:
             results_json = json.dumps([r.model_dump() for r in results])
-            await self._redis.setex(key, self._search_cache_ttl, results_json)
+            await asyncio.wait_for(
+                self._redis.setex(key, self._search_cache_ttl, results_json),
+                timeout=self._redis_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("cache_write_timeout", key=key)
         except Exception as e:
             logger.warning("cache_write_error", key=key, error=str(e))
 

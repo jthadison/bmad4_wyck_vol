@@ -270,6 +270,13 @@ class TestTwelveDataAdapter:
         # Should be able to close again without error
         await adapter.close()
 
+    async def test_async_context_manager(self):
+        """Test async context manager for automatic cleanup."""
+        async with TwelveDataAdapter(api_key="test-api-key") as adapter:
+            assert adapter is not None
+            assert adapter.api_key == "test-api-key"
+        # After exiting, client should be cleaned up
+
     def test_normalize_symbol(self):
         """Test symbol normalization."""
         adapter = TwelveDataAdapter(api_key="test-api-key")

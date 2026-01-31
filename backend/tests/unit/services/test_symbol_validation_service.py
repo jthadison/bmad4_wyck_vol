@@ -67,6 +67,27 @@ class TestSymbolValidationService:
             redis=fake_redis,
         )
 
+    async def test_validate_empty_symbol_returns_error(self, service):
+        """Test that empty symbol returns validation error."""
+        result = await service.validate_symbol("", "forex")
+
+        assert result.valid is False
+        assert "cannot be empty" in result.error
+
+    async def test_validate_invalid_asset_class_returns_error(self, service):
+        """Test that invalid asset class returns validation error."""
+        result = await service.validate_symbol("EURUSD", "invalid")
+
+        assert result.valid is False
+        assert "Invalid asset class" in result.error
+
+    async def test_validate_invalid_symbol_format_returns_error(self, service):
+        """Test that invalid symbol format returns validation error."""
+        result = await service.validate_symbol("EUR@USD!", "forex")
+
+        assert result.valid is False
+        assert "Invalid symbol format" in result.error
+
     async def test_validate_valid_forex_symbol(self, service, mock_twelvedata):
         """Test validating a valid forex symbol."""
         mock_twelvedata.get_forex_pairs.return_value = [
