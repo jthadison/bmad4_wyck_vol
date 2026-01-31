@@ -6,6 +6,7 @@ import NotFoundView from '@/views/NotFoundView.vue'
 import TradeAuditLog from '@/components/audit/TradeAuditLog.vue'
 import ConfigurationWizard from '@/components/configuration/ConfigurationWizard.vue'
 import CampaignTracker from '@/components/campaigns/CampaignTracker.vue'
+import ScannerView from '@/views/ScannerView.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -60,6 +61,17 @@ const routes: RouteRecordRaw[] = [
       title: 'Campaign Tracker',
       description:
         'Monitor active trading campaigns with progression and health status',
+    },
+  },
+  // Scanner Control UI (Story 20.6)
+  {
+    path: '/scanner',
+    name: 'scanner',
+    component: ScannerView,
+    meta: {
+      title: 'Signal Scanner',
+      description: 'Configure and control the background signal scanner',
+      breadcrumb: [{ label: 'Scanner' }],
     },
   },
   // Signal Performance Dashboard (Story 19.18)

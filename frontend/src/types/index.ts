@@ -327,3 +327,26 @@ export type {
   UpdateSymbolRequest,
   SymbolSearchResult,
 } from './watchlist'
+
+// ============================================================================
+// Scanner Control Types (Story 20.6)
+// ============================================================================
+
+export type {
+  ScannerTimeframe,
+  ScannerAssetClass,
+  ScannerState,
+  ScannerControlStatus,
+  ScannerActionResponse,
+  ScannerWatchlistSymbol,
+  AddScannerSymbolRequest,
+  UpdateScannerSymbolRequest,
+  ScannerHistoryRecord,
+  ScannerStatusChangedEvent,
+} from './scanner'
+
+export {
+  TIMEFRAME_OPTIONS,
+  ASSET_CLASS_OPTIONS,
+  MAX_WATCHLIST_SIZE,
+} from './scanner'
