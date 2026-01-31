@@ -17,13 +17,19 @@ import type {
 } from '@/types/scanner'
 import type { WebSocketMessage } from '@/types/websocket'
 
-// Structured logging helper
+// Environment-aware structured logging (only logs in development)
 const LOG_PREFIX = '[ScannerStore]'
+const isDev = import.meta.env.DEV
+
 function logInfo(action: string, data?: Record<string, unknown>): void {
-  console.log(`${LOG_PREFIX} ${action}`, data || '')
+  if (isDev) {
+    console.log(`${LOG_PREFIX} ${action}`, data || '')
+  }
 }
 function logError(action: string, err: unknown): void {
-  console.error(`${LOG_PREFIX} ${action} failed:`, err)
+  if (isDev) {
+    console.error(`${LOG_PREFIX} ${action} failed:`, err)
+  }
 }
 
 export const useScannerStore = defineStore('scanner', () => {
@@ -46,6 +52,9 @@ export const useScannerStore = defineStore('scanner', () => {
 
   // Countdown interval ID
   let countdownInterval: number | null = null
+
+  // Version counter for race condition mitigation in fetchStatus
+  let statusFetchVersion = 0
 
   // =========================================
   // Getters
@@ -95,11 +104,21 @@ export const useScannerStore = defineStore('scanner', () => {
   // Actions - Scanner Control
   // =========================================
   async function fetchStatus(): Promise<void> {
+    // Increment version for race condition mitigation
+    const currentVersion = ++statusFetchVersion
+
     isLoading.value = true
     error.value = null
 
     try {
       const status = await scannerService.getStatus()
+
+      // Check if this response is stale (a newer fetch was initiated)
+      if (currentVersion !== statusFetchVersion) {
+        logInfo('fetchStatus', { skipped: true, reason: 'stale response' })
+        return
+      }
+
       isRunning.value = status.is_running
       currentState.value = status.current_state
       lastCycleAt.value = status.last_cycle_at
@@ -117,10 +136,16 @@ export const useScannerStore = defineStore('scanner', () => {
 
       logInfo('fetchStatus', { isRunning: isRunning.value })
     } catch (err) {
-      error.value = 'Failed to fetch scanner status'
-      logError('fetchStatus', err)
+      // Only update error if this is still the current fetch
+      if (currentVersion === statusFetchVersion) {
+        error.value = 'Failed to fetch scanner status'
+        logError('fetchStatus', err)
+      }
     } finally {
-      isLoading.value = false
+      // Only clear loading if this is still the current fetch
+      if (currentVersion === statusFetchVersion) {
+        isLoading.value = false
+      }
     }
   }
 
@@ -328,11 +353,20 @@ export const useScannerStore = defineStore('scanner', () => {
   // =========================================
   const ws = useWebSocket()
 
-  ws.subscribe('scanner:status_changed', (message: WebSocketMessage) => {
+  // Track handler for proper cleanup
+  const wsHandler = (message: WebSocketMessage) => {
     if (message.type === 'scanner:status_changed') {
       handleStatusChanged(message as unknown as ScannerStatusChangedEvent)
     }
-  })
+  }
+  ws.subscribe('scanner:status_changed', wsHandler)
+
+  // Cleanup function for proper resource disposal
+  function cleanup(): void {
+    ws.unsubscribe('scanner:status_changed', wsHandler)
+    stopCountdown()
+    logInfo('cleanup', { message: 'Store resources cleaned up' })
+  }
 
   return {
     // State
@@ -373,5 +407,6 @@ export const useScannerStore = defineStore('scanner', () => {
     // Utilities
     clearError,
     stopCountdown,
+    cleanup,
   }
 })
