@@ -177,6 +177,19 @@ def get_symbol_suggester() -> SymbolSuggester:
     return _symbol_suggester
 
 
+def _get_source_value(source) -> str:
+    """
+    Extract string value from validation source (may be enum or string).
+
+    Args:
+        source: SymbolValidationSource enum or string value
+
+    Returns:
+        String representation of the source
+    """
+    return source.value if hasattr(source, "value") else source
+
+
 # =========================================
 # Scanner Control Endpoints (Story 20.5a)
 # =========================================
@@ -707,7 +720,7 @@ async def add_watchlist_symbol(
 
         # Add validation source header
         # Note: source may be a string or enum depending on model config
-        source_value = result.source.value if hasattr(result.source, "value") else result.source
+        source_value = _get_source_value(result.source)
         response.headers["X-Validation-Source"] = source_value
 
         if not result.valid:
@@ -987,7 +1000,7 @@ async def validate_symbol(
         result = await validation_service.validate_symbol(symbol_upper, asset_class_lower)
 
         # Note: source may be a string or enum depending on model config
-        source_value = result.source.value if hasattr(result.source, "value") else result.source
+        source_value = _get_source_value(result.source)
 
         if result.valid:
             logger.info(

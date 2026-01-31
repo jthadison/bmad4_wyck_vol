@@ -82,17 +82,22 @@ class SymbolSuggester:
             )
             return []
 
-        # Calculate similarity scores
+        # Calculate similarity scores with quick_ratio pre-filter for performance
         scored: list[tuple[float, str]] = []
+        symbol_normalized = symbol_upper.replace("/", "")
+
         for known in known_symbols:
             # Normalize for comparison (remove slashes)
             known_normalized = known.replace("/", "")
-            symbol_normalized = symbol_upper.replace("/", "")
 
-            score = SequenceMatcher(None, symbol_normalized, known_normalized).ratio()
+            matcher = SequenceMatcher(None, symbol_normalized, known_normalized)
 
-            if score >= self._min_similarity:
-                scored.append((score, known))
+            # Use quick_ratio() as pre-filter - it's faster but less accurate
+            # Only compute full ratio() if quick_ratio passes threshold
+            if matcher.quick_ratio() >= self._min_similarity:
+                score = matcher.ratio()
+                if score >= self._min_similarity:
+                    scored.append((score, known))
 
         # Sort by score descending, take top N
         scored.sort(key=lambda x: x[0], reverse=True)
