@@ -145,6 +145,9 @@ class SymbolSearchService:
         # Normalize query
         query = query.strip()
 
+        # Always cache up to max limit (50) to avoid cache misses for larger requests
+        cache_limit = 50
+
         # Check cache first
         cached = await self._get_cached_search(query, asset_type)
         if cached is not None:
@@ -156,13 +159,13 @@ class SymbolSearchService:
             )
             return cached[:limit]
 
-        # Search based on type filter
+        # Search based on type filter (always fetch up to cache_limit for caching)
         if asset_type:
-            results = await self._search_single_type(query, asset_type, limit)
+            results = await self._search_single_type(query, asset_type, cache_limit)
         else:
-            results = await self._search_all_types(query, limit)
+            results = await self._search_all_types(query, cache_limit)
 
-        # Cache results
+        # Cache full results for future requests with larger limits
         await self._cache_search_results(query, asset_type, results)
 
         logger.info(
@@ -226,11 +229,9 @@ class SymbolSearchService:
 
         Interleaves results from each type to avoid one type dominating.
         """
-        # Search each type in parallel
+        # Search each type in parallel (use VALID_ASSET_TYPES to include all types)
         tasks = [
-            self._search_single_type(query, "forex", limit),
-            self._search_single_type(query, "crypto", limit),
-            self._search_single_type(query, "index", limit),
+            self._search_single_type(query, asset_type, limit) for asset_type in VALID_ASSET_TYPES
         ]
 
         results_by_type = await asyncio.gather(*tasks, return_exceptions=True)

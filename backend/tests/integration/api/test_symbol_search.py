@@ -309,8 +309,6 @@ class TestSymbolSearchService:
 
     def test_score_exact_match(self):
         """Exact symbol match gets highest score."""
-        from src.services.symbol_search import SymbolSearchService
-
         # Create service with mock validation service
         mock_validation = AsyncMock()
         service = SymbolSearchService(mock_validation)
@@ -321,8 +319,6 @@ class TestSymbolSearchService:
 
     def test_score_prefix_match(self):
         """Symbol prefix match gets high score."""
-        from src.services.symbol_search import SymbolSearchService
-
         mock_validation = AsyncMock()
         service = SymbolSearchService(mock_validation)
 
@@ -332,8 +328,6 @@ class TestSymbolSearchService:
 
     def test_score_symbol_contains(self):
         """Symbol containing query gets medium score."""
-        from src.services.symbol_search import SymbolSearchService
-
         mock_validation = AsyncMock()
         service = SymbolSearchService(mock_validation)
 
@@ -343,8 +337,6 @@ class TestSymbolSearchService:
 
     def test_score_name_contains(self):
         """Name containing query gets lower score."""
-        from src.services.symbol_search import SymbolSearchService
-
         mock_validation = AsyncMock()
         service = SymbolSearchService(mock_validation)
 
@@ -354,8 +346,6 @@ class TestSymbolSearchService:
 
     def test_score_name_starts_with(self):
         """Name starting with query gets bonus."""
-        from src.services.symbol_search import SymbolSearchService
-
         mock_validation = AsyncMock()
         service = SymbolSearchService(mock_validation)
 
@@ -365,8 +355,6 @@ class TestSymbolSearchService:
 
     def test_score_no_match(self):
         """No match gets zero score."""
-        from src.services.symbol_search import SymbolSearchService
-
         mock_validation = AsyncMock()
         service = SymbolSearchService(mock_validation)
 

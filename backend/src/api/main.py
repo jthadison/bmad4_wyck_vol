@@ -284,6 +284,9 @@ async def startup_event() -> None:
     # Initialize signal scanner service and auto-restart if needed (Story 20.5b)
     await _initialize_signal_scanner_service()
 
+    # Initialize symbol search service (Story 21.4)
+    await _initialize_search_service()
+
 
 async def _initialize_signal_scanner_service() -> None:
     """
@@ -334,6 +337,47 @@ async def _initialize_signal_scanner_service() -> None:
     except Exception as e:
         logger.error("signal_scanner_service_initialization_failed", error=str(e))
         # Don't crash the app - scanner can be started manually
+
+
+async def _initialize_search_service() -> None:
+    """
+    Initialize the symbol search service (Story 21.4).
+
+    Sets up the search service singleton with validation service and optional Redis.
+    """
+    try:
+        from src.api.dependencies import init_redis_client
+        from src.api.routes.scanner import get_validation_service, set_search_service
+        from src.services.symbol_search import SymbolSearchService
+
+        # Get validation service (may be None if not configured)
+        validation_service = get_validation_service()
+
+        if validation_service is None:
+            # Create a minimal validation service for search
+            from src.services.symbol_validation_service import SymbolValidationService
+
+            validation_service = SymbolValidationService()
+            logger.info("search_service_using_minimal_validation_service")
+
+        # Try to get Redis for caching (optional)
+        redis_client = None
+        try:
+            redis_client = init_redis_client()
+        except Exception:
+            logger.warning("search_service_redis_not_available_caching_disabled")
+
+        # Create and register search service
+        search_service = SymbolSearchService(
+            validation_service=validation_service,
+            redis=redis_client,
+        )
+        set_search_service(search_service)
+
+        logger.info("symbol_search_service_initialized", has_redis=redis_client is not None)
+    except Exception as e:
+        logger.error("symbol_search_service_initialization_failed", error=str(e))
+        # Don't crash the app - search endpoint will return 503
 
 
 @app.on_event("shutdown")
