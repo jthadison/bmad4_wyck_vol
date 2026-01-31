@@ -1,25 +1,30 @@
 """
-Twelve Data API adapter for symbol validation.
+TwelveData API Adapter (Story 21.1)
 
-This module implements an adapter for the Twelve Data API, enabling symbol
-validation across forex, indices, and cryptocurrency asset classes.
+Provides access to TwelveData API for symbol validation across forex, indices,
+and cryptocurrency asset classes.
+
+Features:
+- Symbol search and lookup
+- Rate limiting (8 requests/minute for free tier)
+- Exponential backoff for rate limit errors
+- Proper error handling with custom exceptions
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 from collections import deque
 from datetime import UTC, datetime, timedelta
 
 import httpx
 import structlog
-from pydantic import ValidationError
 
-from src.config import settings
 from src.market_data.adapters.twelvedata_exceptions import (
-    ConfigurationError,
     TwelveDataAPIError,
     TwelveDataAuthError,
+    TwelveDataConfigurationError,
     TwelveDataRateLimitError,
     TwelveDataTimeoutError,
 )
@@ -33,60 +38,55 @@ from src.models.twelvedata import (
 
 logger = structlog.get_logger(__name__)
 
-# Known forex base currencies for symbol normalization
-FOREX_BASES = {"EUR", "USD", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
-
 
 class RateLimiter:
     """
-    Sliding window rate limiter for API calls.
+    Sliding window rate limiter for API requests.
 
-    Tracks API calls within a time window and enforces rate limits
-    by waiting when the limit is reached.
+    Tracks request timestamps and enforces rate limits with
+    automatic waiting when limit is reached.
     """
 
-    def __init__(self, max_calls: int, period_seconds: int = 60):
+    def __init__(self, max_calls: int, period_seconds: int):
         """
         Initialize rate limiter.
 
         Args:
-            max_calls: Maximum number of calls allowed per period
-            period_seconds: Time period in seconds (default: 60)
+            max_calls: Maximum calls allowed in the period
+            period_seconds: Time window in seconds
         """
         self.max_calls = max_calls
         self.period = timedelta(seconds=period_seconds)
         self.calls: deque[datetime] = deque()
-        self._lock = asyncio.Lock()
 
     async def acquire(self) -> None:
         """
-        Acquire permission to make an API call.
+        Acquire a rate limit slot.
 
-        Waits if rate limit is reached, logging a warning.
-        Thread-safe using asyncio.Lock.
+        Waits if rate limit is reached until a slot becomes available.
         """
-        while True:
-            async with self._lock:
-                now = datetime.now(UTC)
+        now = datetime.now(UTC)
 
-                # Remove old calls outside the window
-                while self.calls and self.calls[0] < now - self.period:
-                    self.calls.popleft()
+        # Remove old calls outside the window
+        while self.calls and self.calls[0] < now - self.period:
+            self.calls.popleft()
 
-                if len(self.calls) < self.max_calls:
-                    self.calls.append(now)
-                    return
+        if len(self.calls) >= self.max_calls:
+            wait_time = (self.calls[0] + self.period - now).total_seconds()
+            logger.warning(
+                "rate_limit_reached_waiting",
+                wait_seconds=round(wait_time, 1),
+                max_calls=self.max_calls,
+                period_seconds=self.period.total_seconds(),
+            )
+            await asyncio.sleep(max(0, wait_time))
+            return await self.acquire()
 
-                wait_time = (self.calls[0] + self.period - now).total_seconds()
-
-            # Sleep outside the lock
-            if wait_time > 0:
-                logger.warning("rate_limit_reached", wait_seconds=round(wait_time, 1))
-                await asyncio.sleep(wait_time)
+        self.calls.append(now)
 
     @property
     def remaining(self) -> int:
-        """Get the number of remaining calls in the current window."""
+        """Get number of remaining calls in current window."""
         now = datetime.now(UTC)
         while self.calls and self.calls[0] < now - self.period:
             self.calls.popleft()
@@ -95,175 +95,148 @@ class RateLimiter:
 
 class TwelveDataAdapter:
     """
-    Twelve Data API adapter for symbol validation.
+    TwelveData API adapter for symbol validation.
 
     Provides methods to search and validate symbols across forex,
     indices, and cryptocurrency asset classes.
-
-    API Documentation: https://twelvedata.com/docs
     """
 
-    def __init__(self, api_key: str | None = None):
+    DEFAULT_BASE_URL = "https://api.twelvedata.com"
+    DEFAULT_RATE_LIMIT = 8  # Free tier: 8 requests/minute
+    DEFAULT_TIMEOUT = 10  # seconds
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        rate_limit: int | None = None,
+        timeout: int | None = None,
+    ):
         """
-        Initialize Twelve Data adapter.
+        Initialize TwelveData adapter.
 
         Args:
-            api_key: Twelve Data API key (defaults to settings.twelvedata_api_key)
+            api_key: TwelveData API key (defaults to TWELVEDATA_API_KEY env var)
+            base_url: API base URL (defaults to TWELVEDATA_BASE_URL env var)
+            rate_limit: Max requests per minute (defaults to TWELVEDATA_RATE_LIMIT env var)
+            timeout: Request timeout in seconds (defaults to TWELVEDATA_TIMEOUT env var)
 
         Raises:
-            ConfigurationError: If TWELVEDATA_API_KEY is not configured
+            TwelveDataConfigurationError: If API key is not configured
         """
-        self.api_key = api_key or settings.twelvedata_api_key
+        self.api_key = api_key or os.getenv("TWELVEDATA_API_KEY")
         if not self.api_key:
-            raise ConfigurationError("TWELVEDATA_API_KEY not configured")
+            raise TwelveDataConfigurationError("TWELVEDATA_API_KEY not configured")
 
-        self.base_url = settings.twelvedata_base_url
-        self._rate_limiter = RateLimiter(
-            max_calls=settings.twelvedata_rate_limit, period_seconds=60
+        self.base_url = base_url or os.getenv("TWELVEDATA_BASE_URL", self.DEFAULT_BASE_URL)
+        rate_limit_val = rate_limit or int(
+            os.getenv("TWELVEDATA_RATE_LIMIT", str(self.DEFAULT_RATE_LIMIT))
         )
-        self._timeout = settings.twelvedata_timeout
-        self._client = httpx.AsyncClient(
+        timeout_val = timeout or int(os.getenv("TWELVEDATA_TIMEOUT", str(self.DEFAULT_TIMEOUT)))
+
+        self._rate_limiter = RateLimiter(max_calls=rate_limit_val, period_seconds=60)
+        self._client: httpx.AsyncClient | None = None
+        self._timeout = timeout_val
+
+        logger.info(
+            "twelvedata_adapter_initialized",
             base_url=self.base_url,
-            timeout=self._timeout,
-            headers={"User-Agent": "BMAD-Wyckoff/1.0"},
+            rate_limit=rate_limit_val,
+            timeout=timeout_val,
         )
-        self._backoff_until: datetime | None = None
-        self._backoff_multiplier = 1
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create async HTTP client."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=self._timeout,
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Close the HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     @property
     def rate_limit_remaining(self) -> int:
-        """Get the number of remaining API calls in the current window."""
+        """Get number of remaining API calls in current window."""
         return self._rate_limiter.remaining
 
     def _normalize_symbol(self, symbol: str) -> str:
         """
-        Normalize symbol to Twelve Data format (with slash for forex).
+        Normalize symbol to TwelveData format (with slash for forex).
 
-        Args:
-            symbol: Symbol string (e.g., EURUSD or EUR/USD)
-
-        Returns:
-            Normalized symbol (e.g., EUR/USD for forex)
+        Converts EURUSD -> EUR/USD for API calls.
         """
-        # EURUSD -> EUR/USD (only for known forex base currencies)
-        if (
-            len(symbol) == 6
-            and symbol.isalpha()
-            and "/" not in symbol
-            and symbol[:3].upper() in FOREX_BASES
-        ):
+        symbol = symbol.upper().strip()
+        # If 6 chars and all alpha, assume forex pair without slash
+        if len(symbol) == 6 and symbol.isalpha():
             return f"{symbol[:3]}/{symbol[3:]}"
         return symbol
 
     def _denormalize_symbol(self, symbol: str) -> str:
         """
-        Convert Twelve Data format to our format (no slash).
+        Convert TwelveData format to our format (no slash).
 
-        Args:
-            symbol: Symbol from Twelve Data (e.g., EUR/USD)
-
-        Returns:
-            Symbol without slash (e.g., EURUSD)
+        Converts EUR/USD -> EURUSD.
         """
         return symbol.replace("/", "")
 
-    async def _handle_response(self, response: httpx.Response) -> dict:
-        """
-        Handle HTTP response and raise appropriate exceptions.
-
-        Args:
-            response: HTTP response from Twelve Data API
-
-        Returns:
-            Parsed JSON response
-
-        Raises:
-            TwelveDataAuthError: For HTTP 401
-            TwelveDataRateLimitError: For HTTP 429
-            TwelveDataAPIError: For other errors
-        """
-        if response.status_code == 401:
-            raise TwelveDataAuthError("Invalid API key")
-
-        if response.status_code == 429:
-            # Implement exponential backoff
-            self._backoff_multiplier = min(self._backoff_multiplier * 2, 32)
-            backoff_seconds = self._backoff_multiplier * 5
-            self._backoff_until = datetime.now(UTC) + timedelta(seconds=backoff_seconds)
-            raise TwelveDataRateLimitError(
-                f"Rate limit exceeded, backing off {backoff_seconds}s",
-                retry_after=backoff_seconds,
-            )
-
-        if response.status_code >= 400:
-            error_msg = f"API error: HTTP {response.status_code}"
-            try:
-                data = response.json()
-                if "message" in data:
-                    error_msg = data["message"]
-            except Exception:
-                pass
-            raise TwelveDataAPIError(error_msg, status_code=response.status_code)
-
-        # Reset backoff on success
-        self._backoff_multiplier = 1
-        self._backoff_until = None
-
-        data = response.json()
-
-        # Check for API-level errors (200 status but error in body)
-        if data.get("status") == "error" or "code" in data:
-            error_code = data.get("code", response.status_code)
-            error_msg = data.get("message", "Unknown API error")
-            raise TwelveDataAPIError(error_msg, status_code=error_code)
-
-        return data
-
     async def _make_request(self, endpoint: str, params: dict | None = None) -> dict:
         """
-        Make an API request with rate limiting and error handling.
+        Make authenticated API request with rate limiting.
 
         Args:
-            endpoint: API endpoint (e.g., /symbol_search)
+            endpoint: API endpoint path
             params: Query parameters
 
         Returns:
             Parsed JSON response
 
         Raises:
-            TwelveDataTimeoutError: On request timeout
-            TwelveDataAuthError: On authentication failure
-            TwelveDataRateLimitError: On rate limit exceeded
-            TwelveDataAPIError: On other API errors
+            TwelveDataAuthError: If API key is invalid
+            TwelveDataRateLimitError: If rate limit exceeded
+            TwelveDataTimeoutError: If request times out
+            TwelveDataAPIError: For other API errors
         """
-        # Check for exponential backoff
-        if self._backoff_until and datetime.now(UTC) < self._backoff_until:
-            wait_time = (self._backoff_until - datetime.now(UTC)).total_seconds()
-            logger.warning("exponential_backoff_wait", wait_seconds=round(wait_time, 1))
-            await asyncio.sleep(wait_time)
-
         await self._rate_limiter.acquire()
 
-        params = params or {}
-        params["apikey"] = self.api_key
-
-        log = logger.bind(
-            endpoint=endpoint, params={k: v for k, v in params.items() if k != "apikey"}
-        )
+        client = await self._get_client()
+        request_params = params or {}
+        request_params["apikey"] = self.api_key
 
         try:
-            response = await self._client.get(endpoint, params=params)
-            log.debug("api_request_completed", status_code=response.status_code)
-            return await self._handle_response(response)
+            response = await client.get(endpoint, params=request_params)
+
+            if response.status_code == 401:
+                raise TwelveDataAuthError("Invalid API key")
+            elif response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                raise TwelveDataRateLimitError(
+                    "Rate limit exceeded",
+                    retry_after=int(retry_after) if retry_after else None,
+                )
+            elif response.status_code >= 400:
+                raise TwelveDataAPIError(
+                    f"API error: {response.text}", status_code=response.status_code
+                )
+
+            data = response.json()
+
+            # Check for API-level errors in response
+            if isinstance(data, dict) and data.get("status") == "error":
+                error_msg = data.get("message", "Unknown API error")
+                raise TwelveDataAPIError(error_msg)
+
+            return data
+
         except httpx.TimeoutException as e:
-            log.error("request_timeout", timeout=self._timeout)
-            raise TwelveDataTimeoutError(
-                f"Request timed out after {self._timeout} seconds",
-                timeout_seconds=self._timeout,
-            ) from e
-        except httpx.HTTPError as e:
-            log.error("http_error", error=str(e))
-            raise TwelveDataAPIError(f"HTTP error: {e}") from e
+            raise TwelveDataTimeoutError(f"Request timeout: {e}") from e
+        except httpx.RequestError as e:
+            raise TwelveDataAPIError(f"Request failed: {e}") from e
 
     async def search_symbols(
         self, query: str, asset_class: str | None = None
@@ -272,95 +245,112 @@ class TwelveDataAdapter:
         Search for symbols matching a query.
 
         Args:
-            query: Search query (e.g., "EUR" for forex pairs)
-            asset_class: Optional filter by asset class (forex, indices, crypto, stocks)
+            query: Search query (e.g., "EUR", "AAPL")
+            asset_class: Optional filter by type (forex, index, crypto, stock)
 
         Returns:
             List of matching symbols
 
         Raises:
-            TwelveDataAPIError: On API error
+            TwelveDataAPIError: If API request fails
         """
         params = {"symbol": query}
-        if asset_class:
-            params["type"] = asset_class
 
-        data = await self._make_request("/symbol_search", params)
+        # Map asset_class to TwelveData types
+        type_mapping = {
+            "forex": "Physical Currency",
+            "index": "Index",
+            "crypto": "Digital Currency",
+            "stock": "Common Stock",
+        }
+        if asset_class and asset_class.lower() in type_mapping:
+            params["type"] = type_mapping[asset_class.lower()]
 
-        results = []
-        for item in data.get("data", []):
-            try:
-                # Denormalize symbol before validation
-                item_copy = dict(item)
-                item_copy["symbol"] = self._denormalize_symbol(item.get("symbol", ""))
-                result = SymbolSearchResult.model_validate(item_copy)
+        try:
+            data = await self._make_request("/symbol_search", params)
+
+            results = []
+            for item in data.get("data", []):
+                result = SymbolSearchResult(
+                    symbol=self._denormalize_symbol(item.get("symbol", "")),
+                    name=item.get("instrument_name", ""),
+                    exchange=item.get("exchange", ""),
+                    type=item.get("instrument_type", ""),
+                    currency=item.get("currency"),
+                    country=item.get("country"),
+                )
                 results.append(result)
-            except ValidationError as e:
-                logger.warning("symbol_parse_error", symbol=item.get("symbol"), error=str(e))
-                continue
 
-        return results
+            logger.info(
+                "symbol_search_completed",
+                query=query,
+                asset_class=asset_class,
+                result_count=len(results),
+            )
+            return results
+
+        except TwelveDataAPIError:
+            raise
+        except Exception as e:
+            logger.error("symbol_search_failed", query=query, error=str(e))
+            raise TwelveDataAPIError(f"Symbol search failed: {e}") from e
 
     async def get_symbol_info(self, symbol: str) -> SymbolInfo | None:
         """
-        Get detailed information for a specific symbol.
+        Get detailed information about a symbol.
 
-        Queries forex, indices, and crypto endpoints in parallel for efficiency.
+        Tries forex_pairs first, then indices, then cryptocurrencies.
 
         Args:
-            symbol: Symbol to look up (e.g., EURUSD)
+            symbol: Symbol to look up
 
         Returns:
             SymbolInfo if found, None otherwise
+
+        Raises:
+            TwelveDataAPIError: If API request fails
         """
         normalized = self._normalize_symbol(symbol)
 
-        # Query all endpoints in parallel for efficiency
-        results = await asyncio.gather(
-            self.get_forex_pairs(normalized),
-            self.get_indices(symbol),
-            self.get_cryptocurrencies(normalized),
-            return_exceptions=True,
-        )
-
-        forex_pairs, indices, crypto = results
-
-        # Check forex (priority 1)
-        if isinstance(forex_pairs, list) and forex_pairs:
-            pair = forex_pairs[0]
+        # Try forex pairs first
+        forex_info = await self.get_forex_pairs(normalized)
+        if forex_info:
+            pair = forex_info[0]
             return SymbolInfo(
                 symbol=self._denormalize_symbol(pair.symbol),
-                name=f"{pair.currency_base} / {pair.currency_quote}",
+                name=f"{pair.currency_base or ''} / {pair.currency_quote or ''}".strip(" /"),
                 exchange="FOREX",
-                type="Physical Currency",
+                type="forex",
                 currency_base=pair.currency_base,
                 currency_quote=pair.currency_quote,
             )
 
-        # Check indices (priority 2)
-        if isinstance(indices, list) and indices:
-            idx = indices[0]
+        # Try indices
+        index_info = await self.get_indices(symbol)
+        if index_info:
+            idx = index_info[0]
             return SymbolInfo(
                 symbol=idx.symbol,
                 name=idx.name,
                 exchange="INDEX",
-                type="Index",
-                currency_base=None,
-                currency_quote=idx.currency,
+                type="index",
+                currency=idx.currency,
             )
 
-        # Check crypto (priority 3)
-        if isinstance(crypto, list) and crypto:
-            cr = crypto[0]
+        # Try cryptocurrencies
+        crypto_info = await self.get_cryptocurrencies(normalized)
+        if crypto_info:
+            crypto = crypto_info[0]
             return SymbolInfo(
-                symbol=self._denormalize_symbol(cr.symbol),
-                name=f"{cr.currency_base} / {cr.currency_quote}",
+                symbol=self._denormalize_symbol(crypto.symbol),
+                name=f"{crypto.currency_base or ''}/{crypto.currency_quote or ''}",
                 exchange="CRYPTO",
-                type="Digital Currency",
-                currency_base=cr.currency_base,
-                currency_quote=cr.currency_quote,
+                type="crypto",
+                currency_base=crypto.currency_base,
+                currency_quote=crypto.currency_quote,
             )
 
+        logger.info("symbol_not_found", symbol=symbol)
         return None
 
     async def get_forex_pairs(self, symbol: str | None = None) -> list[ForexPairInfo]:
@@ -368,7 +358,7 @@ class TwelveDataAdapter:
         Get forex pair information.
 
         Args:
-            symbol: Optional specific symbol to look up (e.g., EUR/USD)
+            symbol: Specific symbol to look up (optional)
 
         Returns:
             List of forex pair info
@@ -377,25 +367,33 @@ class TwelveDataAdapter:
         if symbol:
             params["symbol"] = symbol
 
-        data = await self._make_request("/forex_pairs", params)
+        try:
+            data = await self._make_request("/forex_pairs", params)
 
-        results = []
-        for item in data.get("data", []):
-            try:
-                result = ForexPairInfo.model_validate(item)
+            results = []
+            for item in data.get("data", []):
+                result = ForexPairInfo(
+                    symbol=item.get("symbol", ""),
+                    currency_group=item.get("currency_group"),
+                    currency_base=item.get("currency_base"),
+                    currency_quote=item.get("currency_quote"),
+                )
                 results.append(result)
-            except ValidationError as e:
-                logger.warning("forex_parse_error", symbol=item.get("symbol"), error=str(e))
-                continue
 
-        return results
+            return results
+
+        except TwelveDataAPIError as e:
+            # Return empty list if symbol not found
+            if "not found" in str(e).lower():
+                return []
+            raise
 
     async def get_indices(self, symbol: str | None = None) -> list[IndexInfo]:
         """
         Get index information.
 
         Args:
-            symbol: Optional specific symbol to look up (e.g., SPX)
+            symbol: Specific symbol to look up (optional)
 
         Returns:
             List of index info
@@ -404,25 +402,33 @@ class TwelveDataAdapter:
         if symbol:
             params["symbol"] = symbol
 
-        data = await self._make_request("/indices", params)
+        try:
+            data = await self._make_request("/indices", params)
 
-        results = []
-        for item in data.get("data", []):
-            try:
-                result = IndexInfo.model_validate(item)
+            results = []
+            for item in data.get("data", []):
+                result = IndexInfo(
+                    symbol=item.get("symbol", ""),
+                    name=item.get("name", ""),
+                    country=item.get("country"),
+                    currency=item.get("currency"),
+                )
                 results.append(result)
-            except ValidationError as e:
-                logger.warning("index_parse_error", symbol=item.get("symbol"), error=str(e))
-                continue
 
-        return results
+            return results
+
+        except TwelveDataAPIError as e:
+            # Return empty list if symbol not found
+            if "not found" in str(e).lower():
+                return []
+            raise
 
     async def get_cryptocurrencies(self, symbol: str | None = None) -> list[CryptoInfo]:
         """
         Get cryptocurrency information.
 
         Args:
-            symbol: Optional specific symbol to look up (e.g., BTC/USD)
+            symbol: Specific symbol to look up (optional)
 
         Returns:
             List of crypto info
@@ -431,27 +437,22 @@ class TwelveDataAdapter:
         if symbol:
             params["symbol"] = symbol
 
-        data = await self._make_request("/cryptocurrencies", params)
+        try:
+            data = await self._make_request("/cryptocurrencies", params)
 
-        results = []
-        for item in data.get("data", []):
-            try:
-                result = CryptoInfo.model_validate(item)
+            results = []
+            for item in data.get("data", []):
+                result = CryptoInfo(
+                    symbol=item.get("symbol", ""),
+                    currency_base=item.get("currency_base"),
+                    currency_quote=item.get("currency_quote"),
+                )
                 results.append(result)
-            except ValidationError as e:
-                logger.warning("crypto_parse_error", symbol=item.get("symbol"), error=str(e))
-                continue
 
-        return results
+            return results
 
-    async def close(self) -> None:
-        """Close the HTTP client."""
-        await self._client.aclose()
-
-    async def __aenter__(self) -> TwelveDataAdapter:
-        """Async context manager entry."""
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Async context manager exit - ensures client is closed."""
-        await self.close()
+        except TwelveDataAPIError as e:
+            # Return empty list if symbol not found
+            if "not found" in str(e).lower():
+                return []
+            raise
