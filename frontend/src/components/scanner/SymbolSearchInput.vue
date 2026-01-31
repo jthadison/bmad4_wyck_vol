@@ -73,6 +73,10 @@ function debouncedSearch(searchQuery: string) {
   if (debounceTimer) {
     clearTimeout(debounceTimer)
   }
+  // Don't schedule search for short queries
+  if (searchQuery.length < 2) {
+    return
+  }
   debounceTimer = setTimeout(() => {
     performSearch(searchQuery)
   }, 300)
@@ -200,7 +204,6 @@ onUnmounted(() => {
     <!-- Input Field -->
     <div class="input-wrapper">
       <input
-        ref="inputRef"
         :value="query"
         type="text"
         :placeholder="placeholder || 'Search symbols...'"
