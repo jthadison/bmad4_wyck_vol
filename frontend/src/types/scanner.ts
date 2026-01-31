@@ -140,3 +140,15 @@ export const ASSET_CLASS_OPTIONS: {
  * Maximum watchlist size
  */
 export const MAX_WATCHLIST_SIZE = 50
+
+/**
+ * Symbol search result from GET /api/v1/scanner/symbols/search (Story 21.5)
+ *
+ * Matches backend SymbolSearchResponse model.
+ */
+export interface SymbolSearchResult {
+  symbol: string
+  name: string
+  exchange: string
+  type: ScannerAssetClass
+}
