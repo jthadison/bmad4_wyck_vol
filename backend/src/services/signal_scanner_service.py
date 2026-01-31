@@ -1,5 +1,5 @@
 """
-Signal Scanner Service (Story 20.3a, 20.3b, 20.4).
+Signal Scanner Service (Story 20.3a, 20.3b, 20.4, 20.5b).
 
 Background service for automated Wyckoff pattern scanning.
 Manages scanner lifecycle: start, stop, status reporting.
@@ -11,21 +11,27 @@ Safety Controls (Story 20.4):
     - Session filtering: Skip forex during low-liquidity sessions
     - Rate limiting: Skip symbols scanned too recently
 
+WebSocket Integration (Story 20.5b):
+    - Broadcasts signal:new events when signals are detected
+    - Broadcasts scanner:status_changed events on start/stop
+    - Supports auto-restart on application startup
+
 State Machine:
     STOPPED --(start)--> STARTING --(task created)--> RUNNING
     RUNNING --(stop)--> STOPPING --(task cancelled)--> STOPPED
 
-Author: Story 20.3a, 20.3b, 20.4
+Author: Story 20.3a, 20.3b, 20.4, 20.5b
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol, runtime_checkable
 from uuid import UUID
 
 import structlog
@@ -45,6 +51,7 @@ from src.services.session_filter import (
 )
 
 if TYPE_CHECKING:
+    from src.api.websocket import ConnectionManager
     from src.orchestrator.master_orchestrator import MasterOrchestrator, TradeSignal
     from src.repositories.scanner_repository import ScannerRepository
     from src.services.circuit_breaker_service import CircuitBreakerService
@@ -138,33 +145,42 @@ class SignalScannerService:
     # Kill switch cache duration in seconds (reduces Redis overhead)
     KILL_SWITCH_CACHE_SECONDS = 5.0
 
+    # Pattern types that indicate short direction (Story 20.5b)
+    SHORT_PATTERNS: frozenset[str] = frozenset({"UTAD", "UT"})
+
     def __init__(
         self,
-        repository: ScannerRepository,
+        repository: ScannerRepository | None = None,
         orchestrator: MasterOrchestrator | None = None,
         circuit_breaker: CircuitBreakerService | None = None,
         kill_switch_checker: KillSwitchChecker | None = None,
         user_id: UUID | None = None,
         fail_safe_on_error: bool = False,
+        websocket_manager: ConnectionManager | None = None,
+        session_factory: Any | None = None,
     ):
         """
         Initialize scanner service.
 
         Args:
-            repository: Scanner repository for database operations
+            repository: Scanner repository for database operations (deprecated, use session_factory)
             orchestrator: MasterOrchestrator for symbol analysis (optional)
             circuit_breaker: CircuitBreakerService for safety checks (Story 20.4)
             kill_switch_checker: Service to check kill switch status (Story 20.4)
             user_id: User ID for circuit breaker/kill switch checks (Story 20.4)
             fail_safe_on_error: If True, treat safety check errors as active (fail-safe).
                                If False (default), treat errors as inactive (fail-permissive).
+            websocket_manager: ConnectionManager for WebSocket broadcasts (Story 20.5b)
+            session_factory: Async session factory for creating database sessions (Story 20.5b)
         """
         self._repository = repository
+        self._session_factory = session_factory
         self._orchestrator = orchestrator
         self._circuit_breaker = circuit_breaker
         self._kill_switch_checker = kill_switch_checker
         self._user_id = user_id
         self._fail_safe_on_error = fail_safe_on_error
+        self._websocket_manager = websocket_manager
         self._state = ScannerState.STOPPED
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
@@ -179,6 +195,9 @@ class SignalScannerService:
         # Kill switch cache to reduce Redis overhead (Story 20.4 PR review)
         self._kill_switch_cache_time: float | None = None
         self._kill_switch_cached_value: bool = False
+        # WebSocket broadcast metrics (Story 20.5b)
+        self._signals_broadcast: int = 0
+        self._broadcast_errors: int = 0
 
     def set_orchestrator(self, orchestrator: MasterOrchestrator) -> None:
         """
@@ -190,17 +209,74 @@ class SignalScannerService:
         self._orchestrator = orchestrator
         logger.info("scanner_orchestrator_set")
 
+    def set_websocket_manager(self, websocket_manager: ConnectionManager) -> None:
+        """
+        Set the WebSocket manager for signal broadcasting (Story 20.5b).
+
+        Args:
+            websocket_manager: ConnectionManager instance for broadcasts
+        """
+        self._websocket_manager = websocket_manager
+        logger.info("scanner_websocket_manager_set")
+
+    def set_repository(self, repository: ScannerRepository) -> None:
+        """
+        Set the repository for database operations.
+
+        Args:
+            repository: ScannerRepository instance
+        """
+        self._repository = repository
+        logger.info("scanner_repository_set")
+
+    @asynccontextmanager
+    async def _get_repository(self) -> AsyncIterator[ScannerRepository]:
+        """
+        Get a repository instance with proper session lifecycle management (Story 20.5b).
+
+        If session_factory is configured, creates a new session and repository,
+        yielding it for use, then properly closes the session when done.
+        If a static repository is configured, yields it directly.
+
+        Usage:
+            async with self._get_repository() as repository:
+                await repository.get_config()
+
+        Yields:
+            ScannerRepository instance
+
+        Raises:
+            RuntimeError: If no repository or session factory configured
+        """
+        if self._repository is not None:
+            yield self._repository
+            return
+
+        if self._session_factory is None:
+            raise RuntimeError("No repository or session factory configured")
+
+        # Import here to avoid circular imports
+        from src.repositories.scanner_repository import ScannerRepository as ScanRepo
+
+        # Create session using context manager for proper lifecycle
+        async with self._session_factory() as session:
+            yield ScanRepo(session)
+
     @property
     def is_running(self) -> bool:
         """Check if scanner is running."""
         return self._state == ScannerState.RUNNING
 
-    async def start(self) -> None:
+    async def start(self, *, broadcast: bool = True) -> None:
         """
         Start the scanner background task.
 
         Idempotent: safe to call multiple times.
         Non-blocking: returns immediately after starting task.
+
+        Args:
+            broadcast: If True (default), broadcast status change via WebSocket.
+                      Set to False when using custom broadcast (e.g., auto_started).
 
         State Transition: STOPPED -> STARTING -> RUNNING
         """
@@ -220,17 +296,18 @@ class SignalScannerService:
         self._state = ScannerState.STARTING
 
         # Load config from database
-        config = await self._repository.get_config()
-        self._scan_interval_seconds = config.scan_interval_seconds
-        self._batch_size = config.batch_size
-        self._last_cycle_at = config.last_cycle_at
-        self._session_filter_enabled = config.session_filter_enabled  # Story 20.4
+        async with self._get_repository() as repository:
+            config = await repository.get_config()
+            self._scan_interval_seconds = config.scan_interval_seconds
+            self._batch_size = config.batch_size
+            self._last_cycle_at = config.last_cycle_at
+            self._session_filter_enabled = config.session_filter_enabled  # Story 20.4
 
-        # Load symbol count
-        self._symbols_count = await self._repository.get_symbol_count()
+            # Load symbol count
+            self._symbols_count = await repository.get_symbol_count()
 
-        # Update database state
-        await self._repository.update_config(ScannerConfigUpdate(is_running=True))
+            # Update database state
+            await repository.update_config(ScannerConfigUpdate(is_running=True))
 
         # Reset stop event for new run
         self._stop_event.clear()
@@ -240,6 +317,10 @@ class SignalScannerService:
 
         self._state = ScannerState.RUNNING
         logger.info("scanner_started", scan_interval=self._scan_interval_seconds)
+
+        # Story 20.5b AC6: Broadcast status change (unless caller handles it)
+        if broadcast:
+            await self._broadcast_status_change(is_running=True, event="started")
 
     async def stop(self) -> None:
         """
@@ -285,10 +366,14 @@ class SignalScannerService:
         self._task = None
 
         # Update database state
-        await self._repository.update_config(ScannerConfigUpdate(is_running=False))
+        async with self._get_repository() as repository:
+            await repository.update_config(ScannerConfigUpdate(is_running=False))
 
         self._state = ScannerState.STOPPED
         logger.info("scanner_stopped")
+
+        # Story 20.5b AC6: Broadcast status change
+        await self._broadcast_status_change(is_running=False, event="stopped")
 
     def get_status(self) -> ScannerStatus:
         """
@@ -351,7 +436,8 @@ class SignalScannerService:
 
                 # Update last cycle time
                 self._last_cycle_at = datetime.now(UTC)
-                await self._repository.set_last_cycle_at(self._last_cycle_at)
+                async with self._get_repository() as repository:
+                    await repository.set_last_cycle_at(self._last_cycle_at)
 
                 logger.info(
                     "scan_cycle_complete_waiting",
@@ -515,7 +601,8 @@ class SignalScannerService:
                 )
 
             # Get enabled symbols from repository
-            enabled_symbols = await self._repository.get_enabled_symbols()
+            async with self._get_repository() as repository:
+                enabled_symbols = await repository.get_enabled_symbols()
             self._symbols_count = len(enabled_symbols)
             total_symbols = len(enabled_symbols)
 
@@ -638,6 +725,10 @@ class SignalScannerService:
                     if error:
                         errors_count += 1
                     else:
+                        # Story 20.5b AC1/AC3: Broadcast each signal individually
+                        for sig in signals:
+                            await self._broadcast_signal(sig)
+
                         # Memory protection: limit signals per cycle
                         if len(all_signals) < self.MAX_SIGNALS_PER_CYCLE:
                             remaining_capacity = self.MAX_SIGNALS_PER_CYCLE - len(all_signals)
@@ -737,7 +828,8 @@ class SignalScannerService:
             )
 
             # Update last_scanned_at
-            await self._repository.update_last_scanned(symbol.symbol, datetime.now(UTC))
+            async with self._get_repository() as repository:
+                await repository.update_last_scanned(symbol.symbol, datetime.now(UTC))
 
             duration_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -841,18 +933,110 @@ class SignalScannerService:
                 symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
             )
 
-            await self._repository.add_history(history_entry)
+            async with self._get_repository() as repository:
+                await repository.add_history(history_entry)
 
-            logger.debug(
-                "scan_cycle_history_recorded",
-                status=result.status.value,
-                symbols_scanned=result.symbols_scanned,
-                symbols_skipped_session=result.symbols_skipped_session,
-                symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
-            )
+                logger.debug(
+                    "scan_cycle_history_recorded",
+                    status=result.status.value,
+                    symbols_scanned=result.symbols_scanned,
+                    symbols_skipped_session=result.symbols_skipped_session,
+                    symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
+                )
 
         except Exception as e:
             logger.error(
                 "scan_cycle_history_recording_failed",
                 error=str(e),
             )
+
+    async def _broadcast_signal(self, signal: TradeSignal) -> None:
+        """
+        Broadcast detected signal via WebSocket (Story 20.5b AC1).
+
+        Formats signal data according to WebSocket message schema and
+        broadcasts to all connected clients.
+
+        Args:
+            signal: TradeSignal from orchestrator to broadcast
+        """
+        if self._websocket_manager is None:
+            return
+
+        try:
+            # Determine direction from pattern type
+            direction = "short" if signal.pattern_type in self.SHORT_PATTERNS else "long"
+
+            message = {
+                "type": "signal:new",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "data": {
+                    "id": str(signal.signal_id),
+                    "symbol": signal.symbol,
+                    "pattern": signal.pattern_type,
+                    "direction": direction,
+                    "confidence": signal.confidence_score,
+                    "entry_price": str(signal.entry_price),
+                    "stop_loss": str(signal.stop_price),
+                    "take_profit": str(signal.target_price),
+                    "timeframe": signal.timeframe,
+                    "source": "scanner",
+                    "detected_at": datetime.now(UTC).isoformat(),
+                },
+            }
+
+            await self._websocket_manager.broadcast(message)
+            self._signals_broadcast += 1
+
+            logger.info(
+                "signal_broadcast",
+                symbol=signal.symbol,
+                pattern=signal.pattern_type,
+                signal_id=str(signal.signal_id),
+            )
+
+        except Exception as e:
+            self._broadcast_errors += 1
+            logger.error(
+                "signal_broadcast_failed",
+                symbol=signal.symbol,
+                error=str(e),
+            )
+            # Don't re-raise - scan should continue
+
+    async def _broadcast_status_change(self, is_running: bool, event: str) -> None:
+        """
+        Broadcast scanner status change via WebSocket (Story 20.5b AC6).
+
+        Args:
+            is_running: Current scanner running state
+            event: Event type (started, stopped, auto_started)
+        """
+        if self._websocket_manager is None:
+            return
+
+        try:
+            message = {
+                "type": "scanner:status_changed",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "data": {
+                    "is_running": is_running,
+                    "event": event,
+                },
+            }
+
+            await self._websocket_manager.broadcast(message)
+
+            logger.info(
+                "scanner_status_broadcast",
+                is_running=is_running,
+                event=event,
+            )
+
+        except Exception as e:
+            logger.error(
+                "scanner_status_broadcast_failed",
+                event=event,
+                error=str(e),
+            )
+            # Don't re-raise - scanner operation should continue
