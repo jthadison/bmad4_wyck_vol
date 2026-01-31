@@ -159,6 +159,16 @@ export interface KillSwitchDeactivatedMessage extends WebSocketMessageBase {
 }
 
 /**
+ * Scanner status changed message (Story 20.6).
+ * Sent when scanner starts, stops, or completes a cycle.
+ */
+export interface ScannerStatusChangedMessage extends WebSocketMessageBase {
+  type: 'scanner:status_changed'
+  is_running: boolean
+  event: 'started' | 'stopped' | 'cycle_completed'
+}
+
+/**
  * Union type of all WebSocket messages.
  * Includes core messages, paper trading messages (Story 12.8), and backtest messages (Story 11.2).
  */
@@ -178,6 +188,7 @@ export type WebSocketMessage =
   | BacktestCompletedMessage
   | KillSwitchActivatedMessage
   | KillSwitchDeactivatedMessage
+  | ScannerStatusChangedMessage
 
 /**
  * WebSocket connection status.
@@ -222,6 +233,7 @@ export const WebSocketEventTypes = {
   BACKTEST_COMPLETED: 'backtest_completed',
   KILL_SWITCH_ACTIVATED: 'kill_switch_activated',
   KILL_SWITCH_DEACTIVATED: 'kill_switch_deactivated',
+  SCANNER_STATUS_CHANGED: 'scanner:status_changed',
 } as const
 
 export type WebSocketEventType =
@@ -320,4 +332,10 @@ export function isKillSwitchDeactivatedMessage(
   msg: WebSocketMessage
 ): msg is KillSwitchDeactivatedMessage {
   return msg.type === 'kill_switch_deactivated'
+}
+
+export function isScannerStatusChangedMessage(
+  msg: WebSocketMessage
+): msg is ScannerStatusChangedMessage {
+  return msg.type === 'scanner:status_changed'
 }
