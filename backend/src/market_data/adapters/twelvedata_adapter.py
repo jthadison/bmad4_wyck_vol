@@ -290,13 +290,10 @@ class TwelveDataAdapter:
         results = []
         for item in data.get("data", []):
             try:
-                result = SymbolSearchResult(
-                    symbol=self._denormalize_symbol(item.get("symbol", "")),
-                    instrument_name=item.get("instrument_name", ""),
-                    exchange=item.get("exchange", ""),
-                    instrument_type=item.get("instrument_type", ""),
-                    currency=item.get("currency", ""),
-                )
+                # Denormalize symbol before validation
+                item_copy = dict(item)
+                item_copy["symbol"] = self._denormalize_symbol(item.get("symbol", ""))
+                result = SymbolSearchResult.model_validate(item_copy)
                 results.append(result)
             except ValidationError as e:
                 logger.warning("symbol_parse_error", symbol=item.get("symbol"), error=str(e))
@@ -308,7 +305,7 @@ class TwelveDataAdapter:
         """
         Get detailed information for a specific symbol.
 
-        Attempts to find the symbol across forex, indices, and crypto endpoints.
+        Queries forex, indices, and crypto endpoints in parallel for efficiency.
 
         Args:
             symbol: Symbol to look up (e.g., EURUSD)
@@ -318,9 +315,18 @@ class TwelveDataAdapter:
         """
         normalized = self._normalize_symbol(symbol)
 
-        # Try forex first
-        forex_pairs = await self.get_forex_pairs(normalized)
-        if forex_pairs:
+        # Query all endpoints in parallel for efficiency
+        results = await asyncio.gather(
+            self.get_forex_pairs(normalized),
+            self.get_indices(symbol),
+            self.get_cryptocurrencies(normalized),
+            return_exceptions=True,
+        )
+
+        forex_pairs, indices, crypto = results
+
+        # Check forex (priority 1)
+        if isinstance(forex_pairs, list) and forex_pairs:
             pair = forex_pairs[0]
             return SymbolInfo(
                 symbol=self._denormalize_symbol(pair.symbol),
@@ -331,9 +337,8 @@ class TwelveDataAdapter:
                 currency_quote=pair.currency_quote,
             )
 
-        # Try indices
-        indices = await self.get_indices(symbol)
-        if indices:
+        # Check indices (priority 2)
+        if isinstance(indices, list) and indices:
             idx = indices[0]
             return SymbolInfo(
                 symbol=idx.symbol,
@@ -344,9 +349,8 @@ class TwelveDataAdapter:
                 currency_quote=idx.currency,
             )
 
-        # Try crypto
-        crypto = await self.get_cryptocurrencies(normalized)
-        if crypto:
+        # Check crypto (priority 3)
+        if isinstance(crypto, list) and crypto:
             cr = crypto[0]
             return SymbolInfo(
                 symbol=self._denormalize_symbol(cr.symbol),
@@ -378,12 +382,7 @@ class TwelveDataAdapter:
         results = []
         for item in data.get("data", []):
             try:
-                result = ForexPairInfo(
-                    symbol=item.get("symbol", ""),
-                    currency_group=item.get("currency_group", ""),
-                    currency_base=item.get("currency_base", ""),
-                    currency_quote=item.get("currency_quote", ""),
-                )
+                result = ForexPairInfo.model_validate(item)
                 results.append(result)
             except ValidationError as e:
                 logger.warning("forex_parse_error", symbol=item.get("symbol"), error=str(e))
@@ -410,12 +409,7 @@ class TwelveDataAdapter:
         results = []
         for item in data.get("data", []):
             try:
-                result = IndexInfo(
-                    symbol=item.get("symbol", ""),
-                    name=item.get("name", ""),
-                    country=item.get("country", ""),
-                    currency=item.get("currency", ""),
-                )
+                result = IndexInfo.model_validate(item)
                 results.append(result)
             except ValidationError as e:
                 logger.warning("index_parse_error", symbol=item.get("symbol"), error=str(e))
@@ -442,12 +436,7 @@ class TwelveDataAdapter:
         results = []
         for item in data.get("data", []):
             try:
-                result = CryptoInfo(
-                    symbol=item.get("symbol", ""),
-                    currency_base=item.get("currency_base", ""),
-                    currency_quote=item.get("currency_quote", ""),
-                    available_exchanges=item.get("available_exchanges", []),
-                )
+                result = CryptoInfo.model_validate(item)
                 results.append(result)
             except ValidationError as e:
                 logger.warning("crypto_parse_error", symbol=item.get("symbol"), error=str(e))

@@ -6,10 +6,12 @@ Tests Twelve Data API integration with mocked HTTP responses.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import httpx
 import pytest
+from freezegun import freeze_time
 from pytest_httpx import HTTPXMock
 
 from src.market_data.adapters.twelvedata_adapter import RateLimiter, TwelveDataAdapter
@@ -53,18 +55,20 @@ class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_rate_limiter_clears_old_calls(self):
         """Test that old calls are removed from the window."""
-        limiter = RateLimiter(max_calls=2, period_seconds=1)
+        # Use a fixed start time
+        start_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
-        await limiter.acquire()
-        await limiter.acquire()
-        assert limiter.remaining == 0
+        with freeze_time(start_time) as frozen_time:
+            limiter = RateLimiter(max_calls=2, period_seconds=60)
 
-        # Wait for window to reset
-        import asyncio
+            await limiter.acquire()
+            await limiter.acquire()
+            assert limiter.remaining == 0
 
-        await asyncio.sleep(1.1)
+            # Advance time past the window
+            frozen_time.tick(timedelta(seconds=61))
 
-        assert limiter.remaining == 2
+            assert limiter.remaining == 2
 
 
 class TestTwelveDataAdapterInit:
