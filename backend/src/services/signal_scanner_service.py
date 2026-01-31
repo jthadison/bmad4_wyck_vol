@@ -27,10 +27,11 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol, runtime_checkable
 from uuid import UUID
 
 import structlog
@@ -144,6 +145,9 @@ class SignalScannerService:
     # Kill switch cache duration in seconds (reduces Redis overhead)
     KILL_SWITCH_CACHE_SECONDS = 5.0
 
+    # Pattern types that indicate short direction (Story 20.5b)
+    SHORT_PATTERNS: frozenset[str] = frozenset({"UTAD", "UT"})
+
     def __init__(
         self,
         repository: ScannerRepository | None = None,
@@ -225,18 +229,28 @@ class SignalScannerService:
         self._repository = repository
         logger.info("scanner_repository_set")
 
-    async def _get_repository(self):
+    @asynccontextmanager
+    async def _get_repository(self) -> AsyncIterator[ScannerRepository]:
         """
-        Get a repository instance (Story 20.5b).
+        Get a repository instance with proper session lifecycle management (Story 20.5b).
 
-        If session_factory is configured, creates a new session and repository.
-        Otherwise returns the statically configured repository.
+        If session_factory is configured, creates a new session and repository,
+        yielding it for use, then properly closes the session when done.
+        If a static repository is configured, yields it directly.
 
-        Note: When using session_factory, caller must use this as an async
-        context manager to properly manage the session lifecycle.
+        Usage:
+            async with self._get_repository() as repository:
+                await repository.get_config()
+
+        Yields:
+            ScannerRepository instance
+
+        Raises:
+            RuntimeError: If no repository or session factory configured
         """
         if self._repository is not None:
-            return self._repository
+            yield self._repository
+            return
 
         if self._session_factory is None:
             raise RuntimeError("No repository or session factory configured")
@@ -244,21 +258,25 @@ class SignalScannerService:
         # Import here to avoid circular imports
         from src.repositories.scanner_repository import ScannerRepository as ScanRepo
 
-        # Create a session and repository
-        session = self._session_factory()
-        return ScanRepo(session)
+        # Create session using context manager for proper lifecycle
+        async with self._session_factory() as session:
+            yield ScanRepo(session)
 
     @property
     def is_running(self) -> bool:
         """Check if scanner is running."""
         return self._state == ScannerState.RUNNING
 
-    async def start(self) -> None:
+    async def start(self, *, broadcast: bool = True) -> None:
         """
         Start the scanner background task.
 
         Idempotent: safe to call multiple times.
         Non-blocking: returns immediately after starting task.
+
+        Args:
+            broadcast: If True (default), broadcast status change via WebSocket.
+                      Set to False when using custom broadcast (e.g., auto_started).
 
         State Transition: STOPPED -> STARTING -> RUNNING
         """
@@ -278,18 +296,18 @@ class SignalScannerService:
         self._state = ScannerState.STARTING
 
         # Load config from database
-        repository = await self._get_repository()
-        config = await repository.get_config()
-        self._scan_interval_seconds = config.scan_interval_seconds
-        self._batch_size = config.batch_size
-        self._last_cycle_at = config.last_cycle_at
-        self._session_filter_enabled = config.session_filter_enabled  # Story 20.4
+        async with self._get_repository() as repository:
+            config = await repository.get_config()
+            self._scan_interval_seconds = config.scan_interval_seconds
+            self._batch_size = config.batch_size
+            self._last_cycle_at = config.last_cycle_at
+            self._session_filter_enabled = config.session_filter_enabled  # Story 20.4
 
-        # Load symbol count
-        self._symbols_count = await repository.get_symbol_count()
+            # Load symbol count
+            self._symbols_count = await repository.get_symbol_count()
 
-        # Update database state
-        await repository.update_config(ScannerConfigUpdate(is_running=True))
+            # Update database state
+            await repository.update_config(ScannerConfigUpdate(is_running=True))
 
         # Reset stop event for new run
         self._stop_event.clear()
@@ -300,8 +318,9 @@ class SignalScannerService:
         self._state = ScannerState.RUNNING
         logger.info("scanner_started", scan_interval=self._scan_interval_seconds)
 
-        # Story 20.5b AC6: Broadcast status change
-        await self._broadcast_status_change(is_running=True, event="started")
+        # Story 20.5b AC6: Broadcast status change (unless caller handles it)
+        if broadcast:
+            await self._broadcast_status_change(is_running=True, event="started")
 
     async def stop(self) -> None:
         """
@@ -347,8 +366,8 @@ class SignalScannerService:
         self._task = None
 
         # Update database state
-        repository = await self._get_repository()
-        await repository.update_config(ScannerConfigUpdate(is_running=False))
+        async with self._get_repository() as repository:
+            await repository.update_config(ScannerConfigUpdate(is_running=False))
 
         self._state = ScannerState.STOPPED
         logger.info("scanner_stopped")
@@ -417,8 +436,8 @@ class SignalScannerService:
 
                 # Update last cycle time
                 self._last_cycle_at = datetime.now(UTC)
-                repository = await self._get_repository()
-                await repository.set_last_cycle_at(self._last_cycle_at)
+                async with self._get_repository() as repository:
+                    await repository.set_last_cycle_at(self._last_cycle_at)
 
                 logger.info(
                     "scan_cycle_complete_waiting",
@@ -582,8 +601,8 @@ class SignalScannerService:
                 )
 
             # Get enabled symbols from repository
-            repository = await self._get_repository()
-            enabled_symbols = await repository.get_enabled_symbols()
+            async with self._get_repository() as repository:
+                enabled_symbols = await repository.get_enabled_symbols()
             self._symbols_count = len(enabled_symbols)
             total_symbols = len(enabled_symbols)
 
@@ -809,8 +828,8 @@ class SignalScannerService:
             )
 
             # Update last_scanned_at
-            repository = await self._get_repository()
-            await repository.update_last_scanned(symbol.symbol, datetime.now(UTC))
+            async with self._get_repository() as repository:
+                await repository.update_last_scanned(symbol.symbol, datetime.now(UTC))
 
             duration_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -914,16 +933,16 @@ class SignalScannerService:
                 symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
             )
 
-            repository = await self._get_repository()
-            await repository.add_history(history_entry)
+            async with self._get_repository() as repository:
+                await repository.add_history(history_entry)
 
-            logger.debug(
-                "scan_cycle_history_recorded",
-                status=result.status.value,
-                symbols_scanned=result.symbols_scanned,
-                symbols_skipped_session=result.symbols_skipped_session,
-                symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
-            )
+                logger.debug(
+                    "scan_cycle_history_recorded",
+                    status=result.status.value,
+                    symbols_scanned=result.symbols_scanned,
+                    symbols_skipped_session=result.symbols_skipped_session,
+                    symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
+                )
 
         except Exception as e:
             logger.error(
@@ -946,9 +965,7 @@ class SignalScannerService:
 
         try:
             # Determine direction from pattern type
-            direction = "long"
-            if signal.pattern_type in ("UTAD", "UT"):
-                direction = "short"
+            direction = "short" if signal.pattern_type in self.SHORT_PATTERNS else "long"
 
             message = {
                 "type": "signal:new",

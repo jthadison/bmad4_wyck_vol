@@ -398,6 +398,64 @@ class TestScannerIntegrationWithBroadcast:
         assert status_broadcasts[0][0][0]["data"]["is_running"] is False
         assert status_broadcasts[0][0][0]["data"]["event"] == "stopped"
 
+    @pytest.mark.asyncio
+    async def test_scanner_start_no_broadcast_with_flag(
+        self,
+        db_session: AsyncSession,
+        scanner_config_in_db: ScannerConfigORM,
+        mock_websocket_manager,
+    ):
+        """Starting with broadcast=False should not broadcast status."""
+        repository = ScannerRepository(db_session)
+        scanner = SignalScannerService(
+            repository=repository,
+            websocket_manager=mock_websocket_manager,
+        )
+
+        # Start with broadcast=False (used for auto-restart)
+        await scanner.start(broadcast=False)
+
+        # Verify NO status broadcast was called
+        status_broadcasts = [
+            call
+            for call in mock_websocket_manager.broadcast.call_args_list
+            if call[0][0].get("type") == "scanner:status_changed"
+        ]
+        assert len(status_broadcasts) == 0
+
+        # Clean up - stop the scanner
+        await scanner.stop()
+
+    @pytest.mark.asyncio
+    async def test_auto_start_sends_auto_started_event_only(
+        self,
+        db_session: AsyncSession,
+        scanner_config_in_db: ScannerConfigORM,
+        mock_websocket_manager,
+    ):
+        """Auto-start should only send auto_started, not started event."""
+        repository = ScannerRepository(db_session)
+        scanner = SignalScannerService(
+            repository=repository,
+            websocket_manager=mock_websocket_manager,
+        )
+
+        # Simulate auto-start: broadcast=False then manual auto_started event
+        await scanner.start(broadcast=False)
+        await scanner._broadcast_status_change(is_running=True, event="auto_started")
+
+        # Verify only ONE status broadcast (auto_started)
+        status_broadcasts = [
+            call
+            for call in mock_websocket_manager.broadcast.call_args_list
+            if call[0][0].get("type") == "scanner:status_changed"
+        ]
+        assert len(status_broadcasts) == 1
+        assert status_broadcasts[0][0][0]["data"]["event"] == "auto_started"
+
+        # Clean up - stop the scanner
+        await scanner.stop()
+
 
 class TestWebSocketManagerSetup:
     """Test WebSocket manager configuration."""

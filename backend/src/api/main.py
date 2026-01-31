@@ -323,8 +323,9 @@ async def _initialize_signal_scanner_service() -> None:
         # Story 20.5b AC4/AC5: Auto-restart if was running before shutdown
         if should_auto_start:
             logger.info("scanner_auto_starting_was_running_before_shutdown")
-            await scanner_service.start()
-            # Broadcast auto_started event (distinct from manual start)
+            # Use broadcast=False to avoid double broadcast, then send auto_started event
+            await scanner_service.start(broadcast=False)
+            # Broadcast auto_started event (distinct from manual "started" event)
             await scanner_service._broadcast_status_change(is_running=True, event="auto_started")
         else:
             logger.info("scanner_not_auto_starting_was_stopped")
