@@ -1,5 +1,5 @@
 """
-Scanner API Routes (Story 19.4, Story 20.2, Story 20.5a)
+Scanner API Routes (Story 19.4, Story 20.2, Story 20.5a, Story 21.3)
 
 Provides REST API endpoints for multi-symbol scanner status monitoring,
 watchlist management, and scanner control.
@@ -18,16 +18,21 @@ GET /api/v1/scanner/processing/status - Get overall scanner status with all symb
 GET /api/v1/scanner/symbols/{symbol}/status - Get status for a specific symbol
 POST /api/v1/scanner/symbols/{symbol}/reset - Reset circuit breaker for a symbol
 
-Watchlist Management (Story 20.2):
-----------------------------------
+Watchlist Management (Story 20.2, Story 21.3):
+----------------------------------------------
 GET /api/v1/scanner/watchlist - List all watchlist symbols
-POST /api/v1/scanner/watchlist - Add symbol to watchlist
+POST /api/v1/scanner/watchlist - Add symbol to watchlist (with validation)
 DELETE /api/v1/scanner/watchlist/{symbol} - Remove symbol from watchlist
 PATCH /api/v1/scanner/watchlist/{symbol} - Update symbol (enabled flag)
+
+Symbol Validation (Story 21.3):
+-------------------------------
+GET /api/v1/scanner/symbols/validate - Validate a symbol without adding to watchlist
 
 Author: Story 19.4 (Multi-Symbol Concurrent Processing)
         Story 20.2 (Watchlist Management API)
         Story 20.5a (Scanner Control API)
+        Story 21.3 (Scanner Watchlist Validation Integration)
 """
 
 from __future__ import annotations
@@ -35,7 +40,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from fastapi import status as http_status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +60,8 @@ from src.models.scanner_persistence import (
 )
 from src.pattern_engine.symbol_processor import get_multi_symbol_processor
 from src.repositories.scanner_repository import ScannerRepository
+from src.services.symbol_suggester import SymbolSuggester
+from src.services.symbol_validation_service import SymbolValidationService
 
 if TYPE_CHECKING:
     from src.services.signal_scanner_service import SignalScannerService
@@ -106,6 +113,68 @@ async def get_scanner_service() -> SignalScannerService:
             detail="Scanner service not initialized",
         )
     return _scanner_service
+
+
+# =========================================
+# Symbol Validation Service (Story 21.3)
+# =========================================
+
+_validation_service: SymbolValidationService | None = None
+_symbol_suggester: SymbolSuggester | None = None
+
+
+def set_validation_service(service: SymbolValidationService) -> None:
+    """
+    Set the global validation service instance.
+
+    Called during application startup.
+
+    Args:
+        service: SymbolValidationService instance to use
+    """
+    global _validation_service
+    _validation_service = service
+    logger.info("validation_service_registered")
+
+
+def set_symbol_suggester(suggester: SymbolSuggester) -> None:
+    """
+    Set the global symbol suggester instance.
+
+    Called during application startup.
+
+    Args:
+        suggester: SymbolSuggester instance to use
+    """
+    global _symbol_suggester
+    _symbol_suggester = suggester
+    logger.info("symbol_suggester_registered")
+
+
+def get_validation_service() -> SymbolValidationService | None:
+    """
+    Get the validation service instance.
+
+    Returns:
+        SymbolValidationService singleton, or None if not configured
+    """
+    return _validation_service
+
+
+def get_symbol_suggester() -> SymbolSuggester:
+    """
+    Get the symbol suggester instance.
+
+    Returns:
+        SymbolSuggester singleton
+
+    Note:
+        If not set, creates a default instance.
+    """
+    global _symbol_suggester
+    if _symbol_suggester is None:
+        _symbol_suggester = SymbolSuggester()
+    return _symbol_suggester
 
 
 # =========================================
@@ -571,25 +640,36 @@ async def get_watchlist(
     response_model=WatchlistSymbol,
     status_code=http_status.HTTP_201_CREATED,
     summary="Add Symbol to Watchlist",
-    description="Add a new symbol to the scanner watchlist.",
+    description="Add a new symbol to the scanner watchlist with validation (Story 21.3).",
     responses={
         201: {"description": "Symbol created successfully"},
         400: {"description": "Watchlist limit reached"},
         409: {"description": "Symbol already exists"},
-        422: {"description": "Validation error"},
+        422: {"description": "Validation error - invalid symbol or asset class mismatch"},
     },
 )
 async def add_watchlist_symbol(
     request: WatchlistSymbolCreate,
+    response: Response,
     repository: ScannerRepository = Depends(get_scanner_repository),
 ) -> WatchlistSymbol:
     """
-    Add a symbol to the scanner watchlist.
+    Add a symbol to the scanner watchlist (Story 20.2, Story 21.3).
+
+    Story 21.3: Validates symbol against market data before adding.
 
     Input is normalized:
     - Symbol is converted to uppercase
     - Timeframe is validated against allowed values
     - Asset class is validated against allowed values
+
+    Validation (Story 21.3):
+    - Symbol is validated against TwelveData (forex, index, crypto) or Alpaca (stock)
+    - Invalid symbols return 422 with suggestions for typo corrections
+    - Asset class mismatches return 422 with actual type
+
+    Response Headers:
+    - X-Validation-Source: api, cache, or static (indicates validation source)
 
     Args:
         request: WatchlistSymbolCreate with symbol, timeframe, asset_class
@@ -600,7 +680,7 @@ async def add_watchlist_symbol(
     Raises:
         HTTPException 400: Watchlist limit reached (50 symbols)
         HTTPException 409: Symbol already exists in watchlist
-        HTTPException 422: Validation error (invalid symbol, timeframe, or asset_class)
+        HTTPException 422: Validation error (invalid symbol, asset class mismatch)
     """
     # Check watchlist size limit
     current_count = await repository.get_symbol_count()
@@ -614,6 +694,73 @@ async def add_watchlist_symbol(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Watchlist limit of {MAX_WATCHLIST_SIZE} symbols reached",
         )
+
+    # Story 21.3: Validate symbol before adding
+    validation_service = get_validation_service()
+    suggester = get_symbol_suggester()
+
+    if validation_service is not None:
+        result = await validation_service.validate_symbol(
+            request.symbol,
+            request.asset_class.value,
+        )
+
+        # Add validation source header
+        # Note: source may be a string or enum depending on model config
+        source_value = result.source.value if hasattr(result.source, "value") else result.source
+        response.headers["X-Validation-Source"] = source_value
+
+        if not result.valid:
+            # Get suggestions for invalid symbol
+            suggestions = suggester.get_suggestions(
+                request.symbol,
+                request.asset_class.value,
+            )
+
+            # Check for asset class mismatch
+            if result.info and result.info.type != request.asset_class.value:
+                logger.warning(
+                    "symbol_asset_class_mismatch",
+                    symbol=request.symbol,
+                    requested=request.asset_class.value,
+                    actual=result.info.type,
+                )
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "detail": f"Symbol {request.symbol.upper()} is a {result.info.type}, not a {request.asset_class.value}",
+                        "code": "ASSET_CLASS_MISMATCH",
+                        "symbol": request.symbol.upper(),
+                        "asset_class": request.asset_class.value,
+                        "actual_asset_class": result.info.type,
+                    },
+                )
+
+            # Build error message with suggestions
+            suggestion_text = ""
+            if suggestions:
+                suggestion_text = f" Did you mean {suggestions[0]}?"
+
+            logger.warning(
+                "invalid_symbol_rejected",
+                symbol=request.symbol,
+                asset_class=request.asset_class.value,
+                suggestions=suggestions,
+            )
+
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "detail": f"Invalid symbol: {request.symbol.upper()} not found.{suggestion_text}",
+                    "code": "INVALID_SYMBOL",
+                    "symbol": request.symbol.upper(),
+                    "asset_class": request.asset_class.value,
+                    "suggestions": suggestions,
+                },
+            )
+    else:
+        # No validation service configured - use static as fallback source
+        response.headers["X-Validation-Source"] = "static"
 
     try:
         # Add symbol (repository handles validation and normalization)
@@ -754,3 +901,126 @@ async def update_watchlist_symbol(
     )
 
     return updated
+
+
+# =========================================
+# Symbol Validation Endpoint (Story 21.3)
+# =========================================
+
+
+@router.get(
+    "/symbols/validate",
+    summary="Validate Symbol",
+    description="Validate a symbol without adding to watchlist (Story 21.3 AC6).",
+    responses={
+        200: {"description": "Validation result with symbol info or error"},
+    },
+)
+async def validate_symbol(
+    symbol: str = Query(
+        ...,
+        description="Symbol to validate (e.g., EURUSD, AAPL)",
+        max_length=20,
+    ),
+    asset_class: str = Query(
+        ...,
+        description="Asset class (forex, index, crypto, stock)",
+    ),
+) -> dict:
+    """
+    Validate a symbol without adding to watchlist (Story 21.3 AC6).
+
+    Useful for checking if a symbol is valid before attempting to add it.
+    Returns detailed information about valid symbols, or error with
+    suggestions for invalid symbols.
+
+    Args:
+        symbol: Symbol to validate
+        asset_class: Asset class to validate against
+
+    Returns:
+        dict: Validation result:
+            - valid: True if symbol is valid
+            - symbol: The validated symbol (normalized)
+            - name: Full instrument name (if valid)
+            - exchange: Exchange or market (if valid)
+            - type: Asset type (if valid)
+            - source: Validation source (api, cache, static)
+            - error: Error message (if invalid)
+            - suggestions: Similar symbols (if invalid)
+    """
+    validation_service = get_validation_service()
+    suggester = get_symbol_suggester()
+
+    # Normalize inputs
+    symbol_upper = symbol.upper().strip()
+    asset_class_lower = asset_class.lower().strip()
+
+    # Validate asset class
+    valid_asset_classes = {"forex", "index", "crypto", "stock"}
+    if asset_class_lower not in valid_asset_classes:
+        return {
+            "valid": False,
+            "symbol": symbol_upper,
+            "error": f"Invalid asset class. Must be one of: {', '.join(valid_asset_classes)}",
+            "suggestions": [],
+        }
+
+    if validation_service is not None:
+        result = await validation_service.validate_symbol(symbol_upper, asset_class_lower)
+
+        # Note: source may be a string or enum depending on model config
+        source_value = result.source.value if hasattr(result.source, "value") else result.source
+
+        if result.valid:
+            logger.info(
+                "symbol_validated_successfully",
+                symbol=symbol_upper,
+                asset_class=asset_class_lower,
+                source=source_value,
+            )
+            return {
+                "valid": True,
+                "symbol": result.symbol,
+                "name": result.info.name if result.info else None,
+                "exchange": result.info.exchange if result.info else None,
+                "type": result.info.type if result.info else None,
+                "source": source_value,
+            }
+        else:
+            suggestions = suggester.get_suggestions(symbol_upper, asset_class_lower)
+            logger.info(
+                "symbol_validation_failed",
+                symbol=symbol_upper,
+                asset_class=asset_class_lower,
+                error=result.error,
+                suggestions=suggestions,
+            )
+            return {
+                "valid": False,
+                "symbol": symbol_upper,
+                "error": result.error or f"Symbol {symbol_upper} not found",
+                "suggestions": suggestions,
+            }
+    else:
+        # No validation service - check static lists
+        from src.data.static_symbols import get_symbol_info_from_static, is_known_symbol
+
+        if is_known_symbol(symbol_upper, asset_class_lower):
+            info = get_symbol_info_from_static(symbol_upper, asset_class_lower)
+            return {
+                "valid": True,
+                "symbol": symbol_upper,
+                "name": info["name"] if info else symbol_upper,
+                "exchange": info["exchange"] if info else asset_class_lower.upper(),
+                "type": info["type"] if info else asset_class_lower,
+                "source": "static",
+            }
+        else:
+            suggestions = suggester.get_suggestions(symbol_upper, asset_class_lower)
+            return {
+                "valid": False,
+                "symbol": symbol_upper,
+                "error": f"Symbol {symbol_upper} not found",
+                "suggestions": suggestions,
+            }
