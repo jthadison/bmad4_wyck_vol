@@ -1,111 +1,74 @@
 """
-Pydantic models for Twelve Data API responses.
+TwelveData API Response Models (Story 21.1)
 
-These models represent the data structures returned by the Twelve Data API
-for symbol search, forex pairs, indices, and cryptocurrency endpoints.
+Pydantic models for parsing TwelveData API responses.
+These are separate from validation.py models which are for internal use.
+
+Models:
+- TwelveDataSearchResult: Symbol search endpoint response (API-specific)
+- SymbolInfo: General symbol information
+- ForexPairInfo: Forex pair details
+- IndexInfo: Index details
+- CryptoInfo: Cryptocurrency details
 """
 
-from __future__ import annotations
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SymbolSearchResult(BaseModel):
-    """
-    Result from Twelve Data symbol search endpoint.
-
-    API Response Example:
-    {
-        "symbol": "EURUSD",
-        "instrument_name": "Euro / US Dollar",
-        "exchange": "FOREX",
-        "exchange_timezone": "UTC",
-        "instrument_type": "Physical Currency",
-        "country": "",
-        "currency": "USD"
-    }
-    """
+    """Result from TwelveData symbol search endpoint (API response model)."""
 
     symbol: str = Field(..., description="Symbol identifier (e.g., EURUSD)")
-    name: str = Field(..., alias="instrument_name", description="Full instrument name")
-    exchange: str = Field(..., description="Exchange name")
-    type: str = Field(..., alias="instrument_type", description="Instrument type")
-    currency: str = Field(default="", description="Quote currency")
+    name: str = Field(..., description="Full instrument name")
+    exchange: str = Field(..., description="Exchange where traded")
+    type: str = Field(..., description="Instrument type")
+    currency: str | None = Field(default=None, description="Quote currency")
+    country: str | None = Field(default=None, description="Country of origin")
 
-    model_config = {"populate_by_name": True}
+    model_config = ConfigDict(extra="ignore")
 
 
 class SymbolInfo(BaseModel):
-    """
-    Detailed symbol information.
-
-    Generic structure for symbol info across asset classes.
-    """
+    """Detailed symbol information from TwelveData (API response model)."""
 
     symbol: str = Field(..., description="Symbol identifier")
     name: str = Field(..., description="Full instrument name")
-    exchange: str = Field(..., description="Exchange name")
-    type: str = Field(..., description="Instrument type")
-    currency_base: str | None = Field(default=None, description="Base currency (for forex/crypto)")
-    currency_quote: str | None = Field(
-        default=None, description="Quote currency (for forex/crypto)"
-    )
+    exchange: str = Field(..., description="Exchange")
+    type: str = Field(..., description="Instrument type (forex, index, crypto, stock)")
+    currency: str | None = Field(default=None, description="Quote currency")
+    currency_base: str | None = Field(default=None, description="Base currency (forex)")
+    currency_quote: str | None = Field(default=None, description="Quote currency (forex)")
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class ForexPairInfo(BaseModel):
-    """
-    Forex pair information from Twelve Data.
+    """Forex pair information from TwelveData."""
 
-    API Response Example:
-    {
-        "symbol": "EUR/USD",
-        "currency_group": "Major",
-        "currency_base": "Euro",
-        "currency_quote": "US Dollar"
-    }
-    """
+    symbol: str = Field(..., description="Forex pair symbol (EUR/USD format)")
+    currency_group: str | None = Field(default=None, description="Major/Minor/Exotic")
+    currency_base: str | None = Field(default=None, description="Base currency name")
+    currency_quote: str | None = Field(default=None, description="Quote currency name")
 
-    symbol: str = Field(..., description="Forex pair symbol (e.g., EUR/USD)")
-    currency_group: str = Field(default="", description="Currency group (Major, Minor, Exotic)")
-    currency_base: str = Field(..., description="Base currency name")
-    currency_quote: str = Field(..., description="Quote currency name")
+    model_config = ConfigDict(extra="ignore")
 
 
 class IndexInfo(BaseModel):
-    """
-    Index information from Twelve Data.
-
-    API Response Example:
-    {
-        "symbol": "SPX",
-        "name": "S&P 500",
-        "country": "United States",
-        "currency": "USD"
-    }
-    """
+    """Index information from TwelveData."""
 
     symbol: str = Field(..., description="Index symbol")
     name: str = Field(..., description="Index name")
-    country: str = Field(default="", description="Country of origin")
-    currency: str = Field(default="", description="Index currency")
+    country: str | None = Field(default=None, description="Country")
+    currency: str | None = Field(default=None, description="Currency")
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class CryptoInfo(BaseModel):
-    """
-    Cryptocurrency information from Twelve Data.
+    """Cryptocurrency information from TwelveData."""
 
-    API Response Example:
-    {
-        "symbol": "BTC/USD",
-        "currency_base": "Bitcoin",
-        "currency_quote": "US Dollar",
-        "available_exchanges": ["Binance", "Coinbase"]
-    }
-    """
+    symbol: str = Field(..., description="Crypto pair symbol")
+    currency_base: str | None = Field(default=None, description="Base cryptocurrency")
+    currency_quote: str | None = Field(default=None, description="Quote currency")
 
-    symbol: str = Field(..., description="Crypto pair symbol (e.g., BTC/USD)")
-    currency_base: str = Field(..., description="Base cryptocurrency name")
-    currency_quote: str = Field(..., description="Quote currency name")
-    available_exchanges: list[str] = Field(
-        default_factory=list, description="List of available exchanges"
-    )
+    model_config = ConfigDict(extra="ignore")

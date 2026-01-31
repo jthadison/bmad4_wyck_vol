@@ -652,3 +652,85 @@ class ValidationContext(BaseModel):
         arbitrary_types_allowed=True,  # Allow complex types like Pattern, VolumeAnalysis, etc.
         extra="allow",  # Allow dynamic fields added by validators (e.g., entry_price, stop_loss)
     )
+
+
+# ============================================================================
+# Story 21.2: Symbol Validation Models
+# ============================================================================
+
+
+class SymbolValidationSource(str, Enum):
+    """
+    Source of symbol validation result.
+
+    Values:
+    -------
+    - API: Validated via TwelveData API
+    - CACHE: Retrieved from Redis cache
+    - STATIC: Validated against static fallback list
+    - ALPACA: Validated via Alpaca API (stocks)
+    """
+
+    API = "api"
+    CACHE = "cache"
+    STATIC = "static"
+    ALPACA = "alpaca"
+
+
+class SymbolInfo(BaseModel):
+    """
+    Detailed symbol information returned from validation.
+
+    Used across all asset classes (forex, index, crypto, stock).
+    """
+
+    symbol: str = Field(..., description="Symbol identifier (e.g., EURUSD)")
+    name: str = Field(..., description="Full instrument name")
+    exchange: str = Field(..., description="Exchange or market")
+    type: str = Field(..., description="Asset type (forex, index, crypto, stock)")
+    currency: str | None = Field(default=None, description="Quote currency")
+    currency_base: str | None = Field(default=None, description="Base currency (forex/crypto)")
+    currency_quote: str | None = Field(default=None, description="Quote currency (forex/crypto)")
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class ValidSymbolResult(BaseModel):
+    """
+    Result of symbol validation (Story 21.2).
+
+    Contains validation status, source, and either symbol info (if valid)
+    or error message (if invalid).
+    """
+
+    valid: bool = Field(..., description="Whether symbol is valid")
+    symbol: str = Field(..., description="Symbol that was validated")
+    asset_class: str = Field(..., description="Asset class (forex, index, crypto, stock)")
+    source: SymbolValidationSource = Field(..., description="Source of validation")
+    info: SymbolInfo | None = Field(default=None, description="Symbol info if valid")
+    error: str | None = Field(default=None, description="Error message if invalid")
+    suggestions: list[str] | None = Field(
+        default=None, description="Suggested symbols for typo corrections"
+    )
+    cached_at: datetime | None = Field(default=None, description="When result was cached")
+
+    model_config = ConfigDict(
+        json_encoders={datetime: lambda v: v.isoformat()},
+        use_enum_values=True,
+    )
+
+
+class SymbolSearchResult(BaseModel):
+    """
+    Result from symbol search (Story 21.2).
+
+    Used when searching for symbols by query string.
+    """
+
+    symbol: str = Field(..., description="Symbol identifier")
+    name: str = Field(..., description="Full instrument name")
+    exchange: str = Field(..., description="Exchange or market")
+    type: str = Field(..., description="Asset type")
+    relevance: float = Field(default=1.0, description="Relevance score (0-1)")
+
+    model_config = ConfigDict(extra="ignore")

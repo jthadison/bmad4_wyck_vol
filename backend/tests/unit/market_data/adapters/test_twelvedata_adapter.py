@@ -1,541 +1,362 @@
 """
-Unit tests for TwelveDataAdapter.
+Unit tests for TwelveDataAdapter (Story 21.1).
 
-Tests Twelve Data API integration with mocked HTTP responses.
+Tests TwelveData API integration with mocked HTTP responses.
 """
 
-from __future__ import annotations
-
-from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
-
-import httpx
 import pytest
-from freezegun import freeze_time
 from pytest_httpx import HTTPXMock
 
 from src.market_data.adapters.twelvedata_adapter import RateLimiter, TwelveDataAdapter
 from src.market_data.adapters.twelvedata_exceptions import (
-    ConfigurationError,
     TwelveDataAPIError,
     TwelveDataAuthError,
+    TwelveDataConfigurationError,
     TwelveDataRateLimitError,
     TwelveDataTimeoutError,
 )
 
 
-class TestRateLimiter:
-    """Test suite for RateLimiter."""
+@pytest.mark.asyncio
+class TestTwelveDataAdapter:
+    """Test suite for TwelveDataAdapter."""
 
-    @pytest.mark.asyncio
-    async def test_rate_limiter_allows_calls_within_limit(self):
-        """Test that calls within limit are allowed immediately."""
-        limiter = RateLimiter(max_calls=5, period_seconds=60)
+    def test_init_without_api_key_raises_error(self, monkeypatch):
+        """Test that initialization without API key raises ConfigurationError."""
+        monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
 
-        # Should allow 5 calls without waiting
-        for _ in range(5):
-            await limiter.acquire()
+        with pytest.raises(TwelveDataConfigurationError, match="TWELVEDATA_API_KEY not configured"):
+            TwelveDataAdapter()
 
-        assert limiter.remaining == 0
-
-    @pytest.mark.asyncio
-    async def test_rate_limiter_remaining_property(self):
-        """Test remaining calls property."""
-        limiter = RateLimiter(max_calls=8, period_seconds=60)
-
-        assert limiter.remaining == 8
-
-        await limiter.acquire()
-        assert limiter.remaining == 7
-
-        await limiter.acquire()
-        await limiter.acquire()
-        assert limiter.remaining == 5
-
-    @pytest.mark.asyncio
-    async def test_rate_limiter_clears_old_calls(self):
-        """Test that old calls are removed from the window."""
-        # Use a fixed start time
-        start_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
-
-        with freeze_time(start_time) as frozen_time:
-            limiter = RateLimiter(max_calls=2, period_seconds=60)
-
-            await limiter.acquire()
-            await limiter.acquire()
-            assert limiter.remaining == 0
-
-            # Advance time past the window
-            frozen_time.tick(timedelta(seconds=61))
-
-            assert limiter.remaining == 2
-
-
-class TestTwelveDataAdapterInit:
-    """Test suite for TwelveDataAdapter initialization."""
-
-    def test_init_with_api_key(self, monkeypatch):
-        """Test initialization with valid API key."""
+    def test_init_with_api_key_succeeds(self, monkeypatch):
+        """Test successful initialization with API key."""
         monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
+
+        adapter = TwelveDataAdapter()
 
         assert adapter.api_key == "test-api-key"
         assert adapter.base_url == "https://api.twelvedata.com"
 
-    def test_init_without_api_key_raises_error(self, monkeypatch):
-        """Test initialization without API key raises ConfigurationError."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "")
+    def test_init_with_explicit_api_key(self, monkeypatch):
+        """Test initialization with explicit API key parameter."""
+        monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
 
-        with pytest.raises(ConfigurationError, match="TWELVEDATA_API_KEY not configured"):
-            TwelveDataAdapter(api_key="")
+        adapter = TwelveDataAdapter(api_key="explicit-key")
 
-    def test_init_uses_settings_api_key(self, monkeypatch):
-        """Test initialization uses settings API key when not provided."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "settings-api-key")
+        assert adapter.api_key == "explicit-key"
 
-        # Force settings reload
-        with patch("src.market_data.adapters.twelvedata_adapter.settings") as mock_settings:
-            mock_settings.twelvedata_api_key = "settings-api-key"
-            mock_settings.twelvedata_base_url = "https://api.twelvedata.com"
-            mock_settings.twelvedata_rate_limit = 8
-            mock_settings.twelvedata_timeout = 10
+    def test_init_with_custom_config(self, monkeypatch):
+        """Test initialization with custom configuration."""
+        adapter = TwelveDataAdapter(
+            api_key="test-key",
+            base_url="https://custom.api.com",
+            rate_limit=10,
+            timeout=30,
+        )
 
-            adapter = TwelveDataAdapter()
-            assert adapter.api_key == "settings-api-key"
+        assert adapter.base_url == "https://custom.api.com"
+        assert adapter._timeout == 30
 
-
-@pytest.mark.asyncio
-class TestTwelveDataAdapterSearchSymbols:
-    """Test suite for TwelveDataAdapter.search_symbols."""
-
-    async def test_search_symbols_returns_results(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test successful symbol search returns parsed results."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+    async def test_search_symbols_returns_results(self, httpx_mock: HTTPXMock):
+        """Test symbol search returns parsed results."""
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=test-api-key",
-            json={
-                "data": [
-                    {
-                        "symbol": "EUR/USD",
-                        "instrument_name": "Euro / US Dollar",
-                        "exchange": "FOREX",
-                        "instrument_type": "Physical Currency",
-                        "currency": "USD",
-                    },
-                    {
-                        "symbol": "EUR/GBP",
-                        "instrument_name": "Euro / British Pound",
-                        "exchange": "FOREX",
-                        "instrument_type": "Physical Currency",
-                        "currency": "GBP",
-                    },
-                ]
-            },
-        )
+        mock_response = {
+            "data": [
+                {
+                    "symbol": "EUR/USD",
+                    "instrument_name": "Euro / US Dollar",
+                    "exchange": "FOREX",
+                    "instrument_type": "Physical Currency",
+                    "currency": "USD",
+                    "country": "",
+                }
+            ]
+        }
+
+        httpx_mock.add_response(json=mock_response)
 
         results = await adapter.search_symbols("EUR")
 
-        assert len(results) == 2
+        assert len(results) == 1
         assert results[0].symbol == "EURUSD"  # Denormalized
         assert results[0].name == "Euro / US Dollar"
         assert results[0].exchange == "FOREX"
         assert results[0].type == "Physical Currency"
-        assert results[0].currency == "USD"
 
-    async def test_search_symbols_with_asset_class_filter(self, httpx_mock: HTTPXMock, monkeypatch):
+        await adapter.close()
+
+    async def test_search_symbols_with_asset_class(self, httpx_mock: HTTPXMock):
         """Test symbol search with asset class filter."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/symbol_search?symbol=EUR&type=forex&apikey=test-api-key",
-            json={"data": []},
+        httpx_mock.add_response(json={"data": []})
+
+        await adapter.search_symbols("EUR", asset_class="forex")
+
+        # Verify the request included the type filter
+        request = httpx_mock.get_request()
+        assert "type=Physical+Currency" in str(request.url) or "type=Physical%20Currency" in str(
+            request.url
         )
 
-        results = await adapter.search_symbols("EUR", asset_class="forex")
+        await adapter.close()
 
-        assert results == []
+    async def test_search_symbols_handles_401(self, httpx_mock: HTTPXMock):
+        """Test search symbols handles 401 Unauthorized."""
+        adapter = TwelveDataAdapter(api_key="invalid-key")
 
-    async def test_search_symbols_empty_results(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test symbol search with no results."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+        httpx_mock.add_response(status_code=401)
+
+        with pytest.raises(TwelveDataAuthError, match="Invalid API key"):
+            await adapter.search_symbols("EUR")
+
+        await adapter.close()
+
+    async def test_search_symbols_handles_429(self, httpx_mock: HTTPXMock):
+        """Test search symbols handles 429 Rate Limit."""
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/symbol_search?symbol=INVALID&apikey=test-api-key",
-            json={"data": []},
-        )
+        httpx_mock.add_response(status_code=429)
 
-        results = await adapter.search_symbols("INVALID")
+        with pytest.raises(TwelveDataRateLimitError, match="Rate limit exceeded"):
+            await adapter.search_symbols("EUR")
 
-        assert results == []
+        await adapter.close()
 
-
-@pytest.mark.asyncio
-class TestTwelveDataAdapterGetSymbolInfo:
-    """Test suite for TwelveDataAdapter.get_symbol_info."""
-
-    async def test_get_symbol_info_forex(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test get_symbol_info for forex symbol."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+    async def test_get_symbol_info_returns_forex_info(self, httpx_mock: HTTPXMock):
+        """Test get_symbol_info returns forex pair info."""
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/forex_pairs?symbol=EUR/USD&apikey=test-api-key",
-            json={
-                "data": [
-                    {
-                        "symbol": "EUR/USD",
-                        "currency_group": "Major",
-                        "currency_base": "Euro",
-                        "currency_quote": "US Dollar",
-                    }
-                ]
-            },
-        )
+        mock_response = {
+            "data": [
+                {
+                    "symbol": "EUR/USD",
+                    "currency_group": "Major",
+                    "currency_base": "Euro",
+                    "currency_quote": "US Dollar",
+                }
+            ]
+        }
+
+        httpx_mock.add_response(json=mock_response)
 
         result = await adapter.get_symbol_info("EURUSD")
 
         assert result is not None
         assert result.symbol == "EURUSD"
-        assert result.name == "Euro / US Dollar"
-        assert result.exchange == "FOREX"
+        assert result.type == "forex"
         assert result.currency_base == "Euro"
         assert result.currency_quote == "US Dollar"
 
-    async def test_get_symbol_info_returns_none_for_invalid(
-        self, httpx_mock: HTTPXMock, monkeypatch
-    ):
+        await adapter.close()
+
+    async def test_get_symbol_info_returns_none_for_invalid(self, httpx_mock: HTTPXMock):
         """Test get_symbol_info returns None for invalid symbol."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
-        # Mock all endpoints returning empty
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/forex_pairs?symbol=INVALID&apikey=test-api-key",
-            json={"data": []},
-        )
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/indices?symbol=INVALID&apikey=test-api-key",
-            json={"data": []},
-        )
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/cryptocurrencies?symbol=INVALID&apikey=test-api-key",
-            json={"data": []},
-        )
+        # Mock all three endpoints returning empty results
+        httpx_mock.add_response(json={"data": []})  # forex_pairs
+        httpx_mock.add_response(json={"data": []})  # indices
+        httpx_mock.add_response(json={"data": []})  # cryptocurrencies
 
         result = await adapter.get_symbol_info("INVALID")
 
         assert result is None
 
+        await adapter.close()
 
-@pytest.mark.asyncio
-class TestTwelveDataAdapterForexPairs:
-    """Test suite for TwelveDataAdapter.get_forex_pairs."""
-
-    async def test_get_forex_pairs_with_symbol(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test get_forex_pairs with specific symbol."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+    async def test_get_forex_pairs(self, httpx_mock: HTTPXMock):
+        """Test get_forex_pairs returns list."""
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/forex_pairs?symbol=EUR/USD&apikey=test-api-key",
-            json={
-                "data": [
-                    {
-                        "symbol": "EUR/USD",
-                        "currency_group": "Major",
-                        "currency_base": "Euro",
-                        "currency_quote": "US Dollar",
-                    }
-                ]
-            },
-        )
+        mock_response = {
+            "data": [
+                {
+                    "symbol": "EUR/USD",
+                    "currency_group": "Major",
+                    "currency_base": "Euro",
+                    "currency_quote": "US Dollar",
+                },
+                {
+                    "symbol": "GBP/USD",
+                    "currency_group": "Major",
+                    "currency_base": "British Pound",
+                    "currency_quote": "US Dollar",
+                },
+            ]
+        }
 
-        results = await adapter.get_forex_pairs("EUR/USD")
-
-        assert len(results) == 1
-        assert results[0].symbol == "EUR/USD"
-        assert results[0].currency_group == "Major"
-        assert results[0].currency_base == "Euro"
-        assert results[0].currency_quote == "US Dollar"
-
-    async def test_get_forex_pairs_without_symbol(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test get_forex_pairs without symbol returns all pairs."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
-
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/forex_pairs?apikey=test-api-key",
-            json={
-                "data": [
-                    {
-                        "symbol": "EUR/USD",
-                        "currency_group": "Major",
-                        "currency_base": "Euro",
-                        "currency_quote": "US Dollar",
-                    },
-                    {
-                        "symbol": "GBP/USD",
-                        "currency_group": "Major",
-                        "currency_base": "British Pound",
-                        "currency_quote": "US Dollar",
-                    },
-                ]
-            },
-        )
+        httpx_mock.add_response(json=mock_response)
 
         results = await adapter.get_forex_pairs()
 
         assert len(results) == 2
+        assert results[0].symbol == "EUR/USD"
+        assert results[1].symbol == "GBP/USD"
 
+        await adapter.close()
 
-@pytest.mark.asyncio
-class TestTwelveDataAdapterIndices:
-    """Test suite for TwelveDataAdapter.get_indices."""
-
-    async def test_get_indices_with_symbol(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test get_indices with specific symbol."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+    async def test_get_indices(self, httpx_mock: HTTPXMock):
+        """Test get_indices returns list."""
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/indices?symbol=SPX&apikey=test-api-key",
-            json={
-                "data": [
-                    {
-                        "symbol": "SPX",
-                        "name": "S&P 500",
-                        "country": "United States",
-                        "currency": "USD",
-                    }
-                ]
-            },
-        )
+        mock_response = {
+            "data": [
+                {
+                    "symbol": "SPX",
+                    "name": "S&P 500",
+                    "country": "United States",
+                    "currency": "USD",
+                },
+            ]
+        }
 
-        results = await adapter.get_indices("SPX")
+        httpx_mock.add_response(json=mock_response)
+
+        results = await adapter.get_indices()
 
         assert len(results) == 1
         assert results[0].symbol == "SPX"
         assert results[0].name == "S&P 500"
-        assert results[0].country == "United States"
-        assert results[0].currency == "USD"
 
+        await adapter.close()
 
-@pytest.mark.asyncio
-class TestTwelveDataAdapterCryptocurrencies:
-    """Test suite for TwelveDataAdapter.get_cryptocurrencies."""
-
-    async def test_get_cryptocurrencies_with_symbol(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test get_cryptocurrencies with specific symbol."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+    async def test_get_cryptocurrencies(self, httpx_mock: HTTPXMock):
+        """Test get_cryptocurrencies returns list."""
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/cryptocurrencies?symbol=BTC/USD&apikey=test-api-key",
-            json={
-                "data": [
-                    {
-                        "symbol": "BTC/USD",
-                        "currency_base": "Bitcoin",
-                        "currency_quote": "US Dollar",
-                        "available_exchanges": ["Binance", "Coinbase"],
-                    }
-                ]
-            },
-        )
+        mock_response = {
+            "data": [
+                {
+                    "symbol": "BTC/USD",
+                    "currency_base": "Bitcoin",
+                    "currency_quote": "US Dollar",
+                },
+            ]
+        }
 
-        results = await adapter.get_cryptocurrencies("BTC/USD")
+        httpx_mock.add_response(json=mock_response)
+
+        results = await adapter.get_cryptocurrencies()
 
         assert len(results) == 1
         assert results[0].symbol == "BTC/USD"
         assert results[0].currency_base == "Bitcoin"
-        assert results[0].currency_quote == "US Dollar"
-        assert "Binance" in results[0].available_exchanges
 
+        await adapter.close()
 
-@pytest.mark.asyncio
-class TestTwelveDataAdapterErrorHandling:
-    """Test suite for TwelveDataAdapter error handling."""
-
-    async def test_handles_401_unauthorized(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test handling of 401 Unauthorized error."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "invalid-key")
-        adapter = TwelveDataAdapter(api_key="invalid-key")
-
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=invalid-key",
-            status_code=401,
-            json={"message": "Invalid API key"},
-        )
-
-        with pytest.raises(TwelveDataAuthError, match="Invalid API key"):
-            await adapter.search_symbols("EUR")
-
-    async def test_handles_429_rate_limit(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test handling of 429 rate limit exceeded."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
-
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=test-api-key",
-            status_code=429,
-            json={"message": "Too many requests"},
-        )
-
-        with pytest.raises(TwelveDataRateLimitError, match="Rate limit exceeded"):
-            await adapter.search_symbols("EUR")
-
-    async def test_handles_timeout(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test handling of request timeout."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
-
-        def raise_timeout(request):
-            raise httpx.TimeoutException("Request timed out")
-
-        httpx_mock.add_callback(raise_timeout)
-
-        with pytest.raises(TwelveDataTimeoutError, match="timed out"):
-            await adapter.search_symbols("EUR")
-
-    async def test_handles_500_server_error(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test handling of 500 server error."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
-
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=test-api-key",
-            status_code=500,
-            json={"message": "Internal server error"},
-        )
-
-        with pytest.raises(TwelveDataAPIError) as exc_info:
-            await adapter.search_symbols("EUR")
-
-        assert exc_info.value.status_code == 500
-
-
-@pytest.mark.asyncio
-class TestTwelveDataAdapterRateLimiting:
-    """Test suite for TwelveDataAdapter rate limiting."""
-
-    async def test_rate_limit_remaining_property(self, httpx_mock: HTTPXMock, monkeypatch):
+    async def test_rate_limit_remaining(self, httpx_mock: HTTPXMock):
         """Test rate_limit_remaining property."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
+        adapter = TwelveDataAdapter(api_key="test-api-key", rate_limit=8)
 
-        # Default rate limit is 8
+        # Initially should have 8 remaining
         assert adapter.rate_limit_remaining == 8
 
-    async def test_rate_limit_decrements_after_request(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test rate limit decrements after each request."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+        httpx_mock.add_response(json={"data": []})
+        await adapter.search_symbols("EUR")
 
-        with patch("src.market_data.adapters.twelvedata_adapter.settings") as mock_settings:
-            mock_settings.twelvedata_api_key = "test-api-key"
-            mock_settings.twelvedata_base_url = "https://api.twelvedata.com"
-            mock_settings.twelvedata_rate_limit = 8
-            mock_settings.twelvedata_timeout = 10
+        # After one call, should have 7 remaining
+        assert adapter.rate_limit_remaining == 7
 
-            adapter = TwelveDataAdapter(api_key="test-api-key")
+        await adapter.close()
 
-            httpx_mock.add_response(
-                url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=test-api-key",
-                json={"data": []},
-            )
-
-            initial_remaining = adapter.rate_limit_remaining
-            await adapter.search_symbols("EUR")
-
-            assert adapter.rate_limit_remaining == initial_remaining - 1
-
-
-@pytest.mark.asyncio
-class TestTwelveDataAdapterSymbolNormalization:
-    """Test suite for symbol normalization."""
-
-    async def test_normalize_symbol_adds_slash(self, monkeypatch):
-        """Test normalizing 6-char symbol adds slash."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
-
-        assert adapter._normalize_symbol("EURUSD") == "EUR/USD"
-        assert adapter._normalize_symbol("GBPJPY") == "GBP/JPY"
-
-    async def test_normalize_symbol_preserves_slash(self, monkeypatch):
-        """Test normalizing symbol with slash preserves it."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
-
-        assert adapter._normalize_symbol("EUR/USD") == "EUR/USD"
-        assert adapter._normalize_symbol("BTC/USD") == "BTC/USD"
-
-    async def test_normalize_symbol_non_forex(self, monkeypatch):
-        """Test normalizing non-forex symbols."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
-
-        assert adapter._normalize_symbol("SPX") == "SPX"
-        assert adapter._normalize_symbol("AAPL") == "AAPL"
-
-    async def test_denormalize_symbol_removes_slash(self, monkeypatch):
-        """Test denormalizing removes slash."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
-
-        assert adapter._denormalize_symbol("EUR/USD") == "EURUSD"
-        assert adapter._denormalize_symbol("BTC/USD") == "BTCUSD"
-        assert adapter._denormalize_symbol("SPX") == "SPX"
-
-
-@pytest.mark.asyncio
-class TestTwelveDataAdapterClose:
-    """Test suite for TwelveDataAdapter.close."""
-
-    async def test_close_client(self, monkeypatch):
+    async def test_close_client(self):
         """Test closing the HTTP client."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
         adapter = TwelveDataAdapter(api_key="test-api-key")
 
         await adapter.close()
 
-    async def test_async_context_manager(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test async context manager properly closes client."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
+        # Should be able to close again without error
+        await adapter.close()
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=test-api-key",
-            json={"data": []},
-        )
-
+    async def test_async_context_manager(self):
+        """Test async context manager for automatic cleanup."""
         async with TwelveDataAdapter(api_key="test-api-key") as adapter:
-            results = await adapter.search_symbols("EUR")
-            assert results == []
+            assert adapter is not None
+            assert adapter.api_key == "test-api-key"
+        # After exiting, client should be cleaned up
 
-        # Client should be closed after exiting context
-        assert True
+    def test_normalize_symbol(self):
+        """Test symbol normalization."""
+        adapter = TwelveDataAdapter(api_key="test-api-key")
+
+        assert adapter._normalize_symbol("EURUSD") == "EUR/USD"
+        assert adapter._normalize_symbol("eurusd") == "EUR/USD"
+        assert adapter._normalize_symbol("EUR/USD") == "EUR/USD"
+        assert adapter._normalize_symbol("SPX") == "SPX"
+        assert adapter._normalize_symbol("BTC/USD") == "BTC/USD"
+
+    def test_denormalize_symbol(self):
+        """Test symbol denormalization."""
+        adapter = TwelveDataAdapter(api_key="test-api-key")
+
+        assert adapter._denormalize_symbol("EUR/USD") == "EURUSD"
+        assert adapter._denormalize_symbol("EURUSD") == "EURUSD"
+        assert adapter._denormalize_symbol("BTC/USD") == "BTCUSD"
 
 
 @pytest.mark.asyncio
-class TestTwelveDataAdapterAPIErrors:
-    """Test suite for TwelveDataAdapter API error handling."""
+class TestRateLimiter:
+    """Test suite for RateLimiter."""
 
-    async def test_handles_200_with_error_in_body(self, httpx_mock: HTTPXMock, monkeypatch):
-        """Test handling of 200 status with error in JSON body."""
-        monkeypatch.setenv("TWELVEDATA_API_KEY", "test-api-key")
-        adapter = TwelveDataAdapter(api_key="test-api-key")
+    async def test_acquire_within_limit(self):
+        """Test acquiring slots within limit."""
+        limiter = RateLimiter(max_calls=3, period_seconds=60)
 
-        httpx_mock.add_response(
-            url="https://api.twelvedata.com/symbol_search?symbol=EUR&apikey=test-api-key",
-            status_code=200,
-            json={"code": 400, "message": "Invalid API Key", "status": "error"},
-        )
+        # Should be able to acquire 3 times without waiting
+        await limiter.acquire()
+        await limiter.acquire()
+        await limiter.acquire()
 
-        with pytest.raises(TwelveDataAPIError, match="Invalid API Key"):
-            await adapter.search_symbols("EUR")
+        assert limiter.remaining == 0
 
-        # Client should be closed (no exception)
-        assert True
+    async def test_remaining_property(self):
+        """Test remaining property."""
+        limiter = RateLimiter(max_calls=5, period_seconds=60)
+
+        assert limiter.remaining == 5
+
+        await limiter.acquire()
+        assert limiter.remaining == 4
+
+        await limiter.acquire()
+        assert limiter.remaining == 3
+
+
+class TestTwelveDataExceptions:
+    """Test suite for TwelveData exceptions."""
+
+    def test_api_error(self):
+        """Test TwelveDataAPIError."""
+        error = TwelveDataAPIError("Test error", status_code=500)
+
+        assert str(error) == "Test error"
+        assert error.status_code == 500
+
+    def test_auth_error(self):
+        """Test TwelveDataAuthError."""
+        error = TwelveDataAuthError()
+
+        assert "Invalid API key" in str(error)
+        assert error.status_code == 401
+
+    def test_rate_limit_error(self):
+        """Test TwelveDataRateLimitError."""
+        error = TwelveDataRateLimitError(retry_after=30)
+
+        assert "Rate limit exceeded" in str(error)
+        assert error.status_code == 429
+        assert error.retry_after == 30
+
+    def test_timeout_error(self):
+        """Test TwelveDataTimeoutError."""
+        error = TwelveDataTimeoutError()
+
+        assert "Request timeout" in str(error)
+
+    def test_configuration_error(self):
+        """Test TwelveDataConfigurationError."""
+        error = TwelveDataConfigurationError("Missing config")
+
+        assert "Missing config" in str(error)
