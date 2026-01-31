@@ -161,6 +161,34 @@ class TestAddWatchlistSymbolValidation:
         assert "forex" in detail["detail"]
         assert "stock" in detail["detail"]
 
+    async def test_asset_class_mismatch_via_static_lookup(self, async_client: AsyncClient):
+        """AC3: Asset class mismatch detected via static list when API returns no info."""
+        # Simulate API returning not found (no info), but EURUSD exists in static forex list
+        mock_result = ValidSymbolResult(
+            valid=False,
+            symbol="EURUSD",
+            asset_class="stock",
+            source=SymbolValidationSource.API,
+            error="Symbol EURUSD not found",
+            info=None,  # API didn't return info
+        )
+
+        with patch("src.api.routes.scanner.get_validation_service") as mock_get_service:
+            mock_service = AsyncMock()
+            mock_service.validate_symbol.return_value = mock_result
+            mock_get_service.return_value = mock_service
+
+            response = await async_client.post(
+                "/api/v1/scanner/watchlist",
+                json={"symbol": "EURUSD", "timeframe": "1H", "asset_class": "stock"},
+            )
+
+        # Should detect mismatch via static list lookup
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert detail["code"] == "ASSET_CLASS_MISMATCH"
+        assert detail["actual_asset_class"] == "forex"
+
     async def test_static_fallback_includes_header(self, async_client: AsyncClient):
         """AC5: Fallback to static list includes X-Validation-Source: static."""
         mock_result = ValidSymbolResult(

@@ -717,22 +717,38 @@ async def add_watchlist_symbol(
                 request.asset_class.value,
             )
 
-            # Check for asset class mismatch
+            # Check for asset class mismatch - symbol exists but in different class
+            # First check if validation service returned info (mismatch detected by service)
+            actual_type = None
             if result.info and result.info.type != request.asset_class.value:
+                actual_type = result.info.type
+            else:
+                # Service didn't find it - check static lists for cross-asset-class match
+                from src.data.static_symbols import get_symbol_info_from_static
+
+                other_classes = ["forex", "index", "crypto", "stock"]
+                for other_class in other_classes:
+                    if other_class != request.asset_class.value:
+                        info = get_symbol_info_from_static(request.symbol, other_class)
+                        if info:
+                            actual_type = info["type"]
+                            break
+
+            if actual_type:
                 logger.warning(
                     "symbol_asset_class_mismatch",
                     symbol=request.symbol,
                     requested=request.asset_class.value,
-                    actual=result.info.type,
+                    actual=actual_type,
                 )
                 raise HTTPException(
                     status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail={
-                        "detail": f"Symbol {request.symbol.upper()} is a {result.info.type}, not a {request.asset_class.value}",
+                        "detail": f"Symbol {request.symbol.upper()} is a {actual_type}, not a {request.asset_class.value}",
                         "code": "ASSET_CLASS_MISMATCH",
                         "symbol": request.symbol.upper(),
                         "asset_class": request.asset_class.value,
-                        "actual_asset_class": result.info.type,
+                        "actual_asset_class": actual_type,
                     },
                 )
 
@@ -925,6 +941,7 @@ async def validate_symbol(
     asset_class: str = Query(
         ...,
         description="Asset class (forex, index, crypto, stock)",
+        max_length=10,
     ),
 ) -> dict:
     """
