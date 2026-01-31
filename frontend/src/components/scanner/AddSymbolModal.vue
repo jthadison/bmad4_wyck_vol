@@ -1,26 +1,29 @@
 <script setup lang="ts">
 /**
- * AddSymbolModal Component (Story 20.6)
+ * AddSymbolModal Component (Story 20.6, Story 21.5)
  *
  * Modal dialog for adding a symbol to the scanner watchlist.
  * AC4: Form with symbol, timeframe, asset class fields
+ * - Symbol search autocomplete (Story 21.5)
  * - Auto-uppercase symbol input
+ * - Auto-fill asset class on symbol selection
  * - Duplicate detection
  * - Error handling
  */
 
 import { ref, watch, nextTick } from 'vue'
 import Dialog from 'primevue/dialog'
-import InputText from 'primevue/inputtext'
 import Dropdown from 'primevue/dropdown'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
+import SymbolSearchInput from './SymbolSearchInput.vue'
 import { useScannerStore } from '@/stores/scannerStore'
 import {
   TIMEFRAME_OPTIONS,
   ASSET_CLASS_OPTIONS,
   type ScannerTimeframe,
   type ScannerAssetClass,
+  type SymbolSearchResult,
 } from '@/types/scanner'
 
 const props = defineProps<{
@@ -42,12 +45,13 @@ const localError = ref<string | null>(null)
 const isSubmitting = ref(false)
 
 // Refs for auto-focus
-const symbolInput = ref<{ $el: HTMLElement } | null>(null)
+const symbolSearchRef = ref<InstanceType<typeof SymbolSearchInput> | null>(null)
 
-// Auto-uppercase symbol input
-function onSymbolInput(event: Event) {
-  const input = event.target as HTMLInputElement
-  symbol.value = input.value.toUpperCase()
+// Handle symbol selection from autocomplete (Story 21.5 AC4)
+function onSymbolSelect(result: SymbolSearchResult) {
+  symbol.value = result.symbol
+  // Auto-fill asset class from selected result
+  assetClass.value = result.type
 }
 
 // Reset form when modal opens
@@ -61,9 +65,10 @@ watch(
       localError.value = null
       store.clearError()
 
-      // Focus symbol input after DOM update
+      // Focus symbol search input after DOM update
       nextTick(() => {
-        symbolInput.value?.$el?.querySelector('input')?.focus()
+        const input = symbolSearchRef.value?.$el?.querySelector('input')
+        input?.focus()
       })
     }
   }
@@ -145,17 +150,15 @@ function onCancel() {
         {{ localError }}
       </Message>
 
-      <!-- Symbol Field -->
+      <!-- Symbol Field with Autocomplete (Story 21.5) -->
       <div class="form-field">
         <label for="symbol-input">Symbol</label>
-        <InputText
-          id="symbol-input"
-          ref="symbolInput"
-          :model-value="symbol"
-          placeholder="e.g., EURUSD, AAPL"
+        <SymbolSearchInput
+          ref="symbolSearchRef"
+          v-model="symbol"
+          placeholder="Search or enter symbol..."
           :disabled="isSubmitting"
-          data-testid="symbol-input"
-          @input="onSymbolInput"
+          @select="onSymbolSelect"
         />
       </div>
 

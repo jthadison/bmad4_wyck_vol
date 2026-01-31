@@ -13,6 +13,8 @@ import type {
   AddScannerSymbolRequest,
   UpdateScannerSymbolRequest,
   ScannerHistoryRecord,
+  SymbolSearchResult,
+  ScannerAssetClass,
 } from '@/types/scanner'
 
 const BASE_PATH = '/scanner'
@@ -116,6 +118,29 @@ export async function getScannerHistory(
   })
 }
 
+/**
+ * Search for symbols by name or ticker (Story 21.5)
+ *
+ * @param query - Search query (2-20 characters)
+ * @param type - Optional asset type filter (forex, crypto, index, stock)
+ * @param limit - Maximum results to return (default 10, max 50)
+ * @returns Promise resolving to list of matching symbols
+ */
+export async function searchSymbols(
+  query: string,
+  type?: ScannerAssetClass,
+  limit: number = 10
+): Promise<SymbolSearchResult[]> {
+  const params: Record<string, string | number> = { q: query, limit }
+  if (type) {
+    params.type = type
+  }
+  return apiClient.get<SymbolSearchResult[]>(
+    `${BASE_PATH}/symbols/search`,
+    params
+  )
+}
+
 export const scannerService = {
   getStatus: getScannerStatus,
   start: startScanner,
@@ -125,6 +150,7 @@ export const scannerService = {
   removeSymbol: removeScannerSymbol,
   toggleSymbol: toggleScannerSymbol,
   getHistory: getScannerHistory,
+  searchSymbols,
 }
 
 export default scannerService
