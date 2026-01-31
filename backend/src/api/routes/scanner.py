@@ -1,5 +1,5 @@
 """
-Scanner API Routes (Story 19.4, Story 20.2, Story 20.5a, Story 21.3)
+Scanner API Routes (Story 19.4, Story 20.2, Story 20.5a, Story 21.3, Story 21.4)
 
 Provides REST API endpoints for multi-symbol scanner status monitoring,
 watchlist management, and scanner control.
@@ -29,10 +29,15 @@ Symbol Validation (Story 21.3):
 -------------------------------
 GET /api/v1/scanner/symbols/validate - Validate a symbol without adding to watchlist
 
+Symbol Search (Story 21.4):
+---------------------------
+GET /api/v1/scanner/symbols/search - Search for symbols by name or partial match
+
 Author: Story 19.4 (Multi-Symbol Concurrent Processing)
         Story 20.2 (Watchlist Management API)
         Story 20.5a (Scanner Control API)
         Story 21.3 (Scanner Watchlist Validation Integration)
+        Story 21.4 (Symbol Search & Autocomplete API)
 """
 
 from __future__ import annotations
@@ -58,8 +63,10 @@ from src.models.scanner_persistence import (
     WatchlistSymbolCreate,
     WatchlistSymbolUpdate,
 )
+from src.models.symbol_search import SymbolSearchResponse
 from src.pattern_engine.symbol_processor import get_multi_symbol_processor
 from src.repositories.scanner_repository import ScannerRepository
+from src.services.symbol_search import SymbolSearchService
 from src.services.symbol_suggester import SymbolSuggester
 from src.services.symbol_validation_service import SymbolValidationService
 
@@ -121,6 +128,7 @@ async def get_scanner_service() -> SignalScannerService:
 
 _validation_service: SymbolValidationService | None = None
 _symbol_suggester: SymbolSuggester | None = None
+_search_service: SymbolSearchService | None = None
 
 
 def set_validation_service(service: SymbolValidationService) -> None:
@@ -175,6 +183,30 @@ def get_symbol_suggester() -> SymbolSuggester:
     if _symbol_suggester is None:
         _symbol_suggester = SymbolSuggester()
     return _symbol_suggester
+
+
+def set_search_service(service: SymbolSearchService) -> None:
+    """
+    Set the global search service instance (Story 21.4).
+
+    Called during application startup.
+
+    Args:
+        service: SymbolSearchService instance to use
+    """
+    global _search_service
+    _search_service = service
+    logger.info("search_service_registered")
+
+
+def get_search_service() -> SymbolSearchService | None:
+    """
+    Get the search service instance (Story 21.4).
+
+    Returns:
+        SymbolSearchService singleton, or None if not configured
+    """
+    return _search_service
 
 
 def _get_source_value(source) -> str:
@@ -1054,3 +1086,97 @@ async def validate_symbol(
                 "error": f"Symbol {symbol_upper} not found",
                 "suggestions": suggestions,
             }
+
+
+# =========================================
+# Symbol Search Endpoint (Story 21.4)
+# =========================================
+
+
+@router.get(
+    "/symbols/search",
+    response_model=list[SymbolSearchResponse],
+    summary="Search Symbols",
+    description="Search for symbols by name or ticker (Story 21.4).",
+    responses={
+        200: {"description": "List of matching symbols sorted by relevance"},
+        422: {"description": "Validation error (query too short/long)"},
+        503: {"description": "Search service not available"},
+    },
+)
+async def search_symbols(
+    q: str = Query(
+        ...,
+        min_length=2,
+        max_length=20,
+        description="Search query (2-20 characters)",
+    ),
+    type: str | None = Query(
+        None,
+        description="Asset type filter (forex, crypto, index, stock)",
+    ),
+    limit: int = Query(
+        10,
+        ge=1,
+        le=50,
+        description="Maximum results (1-50, default 10)",
+    ),
+) -> list[SymbolSearchResponse]:
+    """
+    Search for symbols by name or ticker (Story 21.4).
+
+    Returns matching symbols sorted by relevance:
+    - Exact symbol matches first
+    - Symbol prefix matches
+    - Name substring matches
+
+    Searches across forex, crypto, and indices by default.
+    Use the `type` parameter to filter by asset class.
+
+    Args:
+        q: Search query (2-20 characters)
+        type: Optional asset type filter (forex, crypto, index, stock)
+        limit: Maximum results to return (default 10, max 50)
+
+    Returns:
+        List of SymbolSearchResponse sorted by relevance
+
+    Raises:
+        HTTPException 422: Query too short/long or invalid type
+        HTTPException 503: Search service not configured
+    """
+    search_service = get_search_service()
+
+    if search_service is None:
+        logger.warning("search_service_not_configured")
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Search service not available",
+        )
+
+    # Validate type if provided
+    valid_types = {"forex", "crypto", "index", "stock"}
+    if type and type.lower() not in valid_types:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid type. Must be one of: {', '.join(valid_types)}",
+        )
+
+    # Normalize type
+    normalized_type = type.lower() if type else None
+
+    results = await search_service.search(
+        query=q.strip(),
+        asset_type=normalized_type,
+        limit=limit,
+    )
+
+    logger.info(
+        "symbol_search_api_completed",
+        query=q,
+        type=normalized_type,
+        limit=limit,
+        count=len(results),
+    )
+
+    return results
