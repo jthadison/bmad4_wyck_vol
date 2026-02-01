@@ -23,7 +23,6 @@
 
 import { test, expect } from '@playwright/test'
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000'
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4173'
 const TIMEOUT = 30000 // 30 seconds
 

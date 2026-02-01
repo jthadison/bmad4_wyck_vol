@@ -9,7 +9,6 @@ import {
   parseRejectionReason,
   getVolumeThreshold,
   getVolumeRequirement,
-  type RejectionReasonParsed,
 } from '@/utils/rejectionParser'
 
 describe('parseRejectionReason', () => {

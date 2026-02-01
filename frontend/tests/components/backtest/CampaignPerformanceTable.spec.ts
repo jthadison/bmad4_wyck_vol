@@ -17,7 +17,7 @@
  * - Campaigns with no trades
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CampaignPerformanceTable from '@/components/backtest/CampaignPerformanceTable.vue'
 import type { CampaignPerformance, BacktestTrade } from '@/types/backtest'

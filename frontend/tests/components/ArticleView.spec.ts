@@ -10,7 +10,6 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import ArticleView from '@/components/help/ArticleView.vue'
-import ArticleFeedback from '@/components/help/ArticleFeedback.vue'
 import { useHelpStore } from '@/stores/helpStore'
 import type { HelpArticle } from '@/stores/helpStore'
 

@@ -41,6 +41,7 @@ class MockWebSocket {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   send(data: string) {
     // Mock send - do nothing
   }
@@ -110,7 +111,7 @@ describe('WebSocketService', () => {
       vi.stubGlobal('WebSocket', FailingWebSocket)
 
       // Initiate connection
-      const connectPromise = websocketService.connect()
+      websocketService.connect()
 
       // Wait for async connection attempt
       await new Promise((resolve) => setTimeout(resolve, 50))

@@ -51,8 +51,8 @@
             label="Deactivate"
             severity="secondary"
             size="small"
-            @click="handleDeactivateKillSwitch"
             :loading="loading"
+            @click="handleDeactivateKillSwitch"
           />
         </div>
       </Message>
@@ -64,8 +64,8 @@
             <span>Auto-Execution</span>
             <InputSwitch
               :model-value="isEnabled"
-              @update:model-value="handleMasterToggle"
               :disabled="loading || isKillSwitchActive"
+              @update:model-value="handleMasterToggle"
             />
           </div>
         </template>
@@ -98,12 +98,12 @@
                 </label>
                 <Slider
                   :model-value="Number(config.min_confidence)"
-                  @update:model-value="updateMinConfidence"
                   :min="60"
                   :max="100"
                   :step="5"
                   :disabled="loading || isKillSwitchActive"
                   class="w-full"
+                  @update:model-value="updateMinConfidence"
                 />
                 <small class="text-gray-500 dark:text-gray-400">
                   Only signals with confidence ≥ {{ config.min_confidence }}%
@@ -122,12 +122,12 @@
                 <InputNumber
                   id="max-trades"
                   :model-value="config.max_trades_per_day"
-                  @update:model-value="updateMaxTrades"
                   :min="1"
                   :max="50"
                   :disabled="loading || isKillSwitchActive"
                   show-buttons
                   class="w-full"
+                  @update:model-value="updateMaxTrades"
                 />
               </div>
 
@@ -146,7 +146,6 @@
                       ? Number(config.max_risk_per_day)
                       : null
                   "
-                  @update:model-value="updateMaxRisk"
                   :min="0"
                   :max="10"
                   :min-fraction-digits="1"
@@ -156,6 +155,7 @@
                   :step="0.5"
                   suffix="%"
                   class="w-full"
+                  @update:model-value="updateMaxRisk"
                 />
                 <small class="text-gray-500 dark:text-gray-400">
                   Leave empty for no daily risk limit
@@ -171,9 +171,9 @@
           <template #content>
             <PatternSelector
               :model-value="config.enabled_patterns"
-              @update:model-value="updateEnabledPatterns"
               :disabled="loading || isKillSwitchActive"
               help-text="Select which Wyckoff patterns should trigger automatic execution"
+              @update:model-value="updateEnabledPatterns"
             />
           </template>
         </Card>
@@ -186,12 +186,12 @@
               <!-- Whitelist -->
               <SymbolListEditor
                 :model-value="config.symbol_whitelist || []"
-                @update:model-value="updateSymbolWhitelist"
                 label="Symbol Whitelist"
                 placeholder="Add symbol (e.g., AAPL)"
                 empty-message="All symbols allowed"
                 help-text="Only these symbols will execute automatically (leave empty to allow all)"
                 :disabled="loading || isKillSwitchActive"
+                @update:model-value="updateSymbolWhitelist"
               />
 
               <Divider />
@@ -199,12 +199,12 @@
               <!-- Blacklist -->
               <SymbolListEditor
                 :model-value="config.symbol_blacklist || []"
-                @update:model-value="updateSymbolBlacklist"
                 label="Symbol Blacklist"
                 placeholder="Add symbol (e.g., MEME)"
                 empty-message="No symbols blocked"
                 help-text="These symbols will never execute automatically"
                 :disabled="loading || isKillSwitchActive"
+                @update:model-value="updateSymbolBlacklist"
               />
             </div>
           </template>
@@ -270,9 +270,9 @@
                 label="KILL SWITCH - Stop All Automatic Trading"
                 severity="danger"
                 icon="pi pi-ban"
-                @click="showKillSwitchConfirm = true"
                 :disabled="loading || isKillSwitchActive"
                 class="w-full"
+                @click="showKillSwitchConfirm = true"
               />
             </div>
           </template>
@@ -310,8 +310,8 @@
           label="Activate Kill Switch"
           severity="danger"
           icon="pi pi-ban"
-          @click="handleActivateKillSwitch"
           :loading="loading"
+          @click="handleActivateKillSwitch"
         />
       </template>
     </Dialog>
@@ -319,7 +319,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAutoExecutionStore } from '@/stores/autoExecutionStore'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'primevue/usetoast'

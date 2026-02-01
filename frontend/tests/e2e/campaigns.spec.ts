@@ -89,9 +89,9 @@ test.describe('Campaign Tracker', () => {
     )
     const percentages = page.locator(':has-text("%")')
 
-    const progressCount = await progressBars.count()
-    const healthCount = await healthIndicators.count()
-    const percentCount = await percentages.count()
+    void progressBars.count() // Suppress unused variable warning
+    void healthIndicators.count() // Suppress unused variable warning
+    void percentages.count() // Suppress unused variable warning
 
     // Should have some metrics displayed (or page loads successfully)
     const pageLoaded = await page.locator('#app').isVisible()
@@ -113,7 +113,7 @@ test.describe('Campaign Tracker', () => {
 
     const hasFilterSelect = await filterSelect.count()
     const hasFilterButtons = await filterButtons.count()
-    const hasFilterTabs = await filterTabs.count()
+    void filterTabs.count() // Suppress unused variable warning
 
     // If filters exist, interact with them
     if (hasFilterSelect > 0) {

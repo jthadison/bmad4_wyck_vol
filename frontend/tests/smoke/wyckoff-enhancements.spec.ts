@@ -460,7 +460,7 @@ test.describe('Wyckoff Charting Enhancements (Story 11.5.1)', () => {
       }
     })
 
-    test('Chart renders within performance budget', async ({ page }) => {
+    test('Chart renders within performance budget', async () => {
       // Skip this test for now - chart rendering issues in test environment
       test.skip()
     })

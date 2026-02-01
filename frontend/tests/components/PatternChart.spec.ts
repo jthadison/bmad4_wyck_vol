@@ -59,7 +59,7 @@ vi.mock('@/components/charts/ChartToolbar.vue', () => ({
 
 // Mock date-fns
 vi.mock('date-fns', () => ({
-  format: vi.fn((date, formatStr) => '2025-01-01'),
+  format: vi.fn(() => '2025-01-01'),
 }))
 
 describe('PatternChart.vue', () => {

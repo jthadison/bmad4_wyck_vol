@@ -11,7 +11,7 @@
  * - Error message display
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ConsentModal from '@/components/settings/ConsentModal.vue'
 import PrimeVue from 'primevue/config'
