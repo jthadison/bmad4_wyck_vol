@@ -62,7 +62,7 @@ class CampaignRiskMetadata:
         ...     jump_level=Decimal("175.00")
         ... )
         >>> risk.calculate_risk_reward()
-        Decimal('3.0')
+        Decimal('3.4')
     """
 
     # Price levels

@@ -12,7 +12,7 @@ from src.models.campaign_composed import (
     ComposedCampaign,
 )
 from src.models.campaign_core import CampaignCore, CampaignState
-from src.models.campaign_performance import ExitReason
+from src.models.campaign_performance import CampaignPerformanceMetrics, ExitReason
 from src.models.campaign_risk import CampaignRiskMetadata
 from src.models.campaign_volume import (
     CampaignVolumeProfile,
@@ -328,7 +328,3 @@ class TestSubModelIntegration:
 
         # Also accessible via backward compat
         assert campaign.volume_profile == VolumeProfile.INCREASING
-
-
-# Need to import for test
-from src.models.campaign_performance import CampaignPerformanceMetrics

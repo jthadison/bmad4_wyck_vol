@@ -116,7 +116,8 @@ class ComposedCampaign:
     volume: CampaignVolumeProfile = field(default_factory=CampaignVolumeProfile)
 
     # Phase history tracking (not in sub-models, campaign-level concern)
-    phase_history: list[tuple[datetime, Any]] = field(default_factory=list)
+    # Phase is stored as string for flexibility (e.g., "A", "B", "C", "D", "E")
+    phase_history: list[tuple[datetime, str]] = field(default_factory=list)
     phase_transition_count: int = 0
 
     # Phase duration tracking (Story 13.6.3)

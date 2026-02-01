@@ -69,11 +69,11 @@ class EffortVsResult(Enum):
 
 
 # Volume Analysis Thresholds
-VOLUME_TREND_THRESHOLD = 0.7  # Minimum ratio for trend classification (70%)
-VOLUME_MINIMUM_PATTERNS = 3  # Minimum patterns needed for volume profile analysis
-CLIMAX_VOLUME_THRESHOLD = 2.0  # Volume ratio threshold for climactic events
-SPRING_HIGH_EFFORT_THRESHOLD = 0.5  # High volume threshold for Spring patterns
-SOS_HIGH_EFFORT_THRESHOLD = 1.5  # High volume threshold for SOS/LPS patterns
+VOLUME_TREND_THRESHOLD: float = 0.7  # Minimum ratio for trend classification (70%)
+VOLUME_MINIMUM_PATTERNS: int = 3  # Minimum patterns needed for volume profile analysis
+CLIMAX_VOLUME_THRESHOLD: float = 2.0  # Volume ratio threshold for climactic events
+SPRING_HIGH_EFFORT_THRESHOLD: float = 0.5  # High volume threshold for Spring patterns
+SOS_HIGH_EFFORT_THRESHOLD: float = 1.5  # High volume threshold for SOS/LPS patterns
 
 
 @dataclass
@@ -257,7 +257,7 @@ class CampaignVolumeProfile:
         first_half_avg = sum(self.volume_history[:mid]) / Decimal(mid)
         second_half_avg = sum(self.volume_history[mid:]) / Decimal(len(self.volume_history) - mid)
 
-        ratio = float(second_half_avg / first_half_avg) if first_half_avg else 1.0
+        ratio = float(second_half_avg / first_half_avg) if first_half_avg > Decimal("0") else 1.0
 
         if ratio > 1.0 + (1.0 - VOLUME_TREND_THRESHOLD):
             return VolumeProfile.INCREASING
