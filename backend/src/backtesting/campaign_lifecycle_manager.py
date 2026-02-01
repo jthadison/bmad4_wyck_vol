@@ -28,11 +28,12 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 import structlog
+from structlog.stdlib import BoundLogger
 
 if TYPE_CHECKING:
     from src.backtesting.intraday_campaign_detector import Campaign
 
-logger = structlog.get_logger(__name__)
+logger: BoundLogger = structlog.get_logger(__name__)
 
 __all__ = [
     "CampaignLifecycleManager",
@@ -74,13 +75,13 @@ class CampaignLifecycleManager:
         IntradayCampaignDetector handles synchronization when using this manager.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize with empty indexes."""
         self._campaigns_by_id: dict[str, Campaign] = {}
         self._campaigns_by_state: dict[str, set[str]] = defaultdict(set)
         self._campaigns_by_timeframe: dict[str, set[str]] = defaultdict(set)
         self._active_time_windows: dict[str, bool] = {}
-        self._logger = logger.bind(component="campaign_lifecycle_manager")
+        self._logger: BoundLogger = logger.bind(component="campaign_lifecycle_manager")
 
     def register_campaign(self, campaign: Campaign) -> None:
         """Register a campaign. Raises ValueError if already registered."""
@@ -212,7 +213,13 @@ class CampaignLifecycleManager:
         del self._campaigns_by_id[campaign_id]
 
     def _update_indexes_for_state_change(self, campaign: Campaign, old_state: Enum | str) -> None:
-        """Update indexes after external state change."""
+        """
+        Update indexes after external state change.
+
+        Use this when campaign state is modified directly (e.g., by IntradayCampaignDetector)
+        rather than through transition_to(). This keeps indexes synchronized with the
+        campaign's actual state without re-validating the transition.
+        """
         campaign_id = campaign.campaign_id
         old_value = self._get_state_value(old_state)
         new_value = self._get_state_value(campaign.state)
