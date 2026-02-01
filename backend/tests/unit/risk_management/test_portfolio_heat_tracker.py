@@ -273,6 +273,21 @@ class TestAlertStateTransitions:
 
         callback.assert_not_called()
 
+    def test_callback_exception_does_not_corrupt_state(self):
+        """Callback exception should be caught and state should remain valid."""
+
+        def raising_callback(old_state, new_state, heat):
+            raise ValueError("Callback error")
+
+        tracker = PortfolioHeatTracker(on_state_change=raising_callback)
+        tracker.add_campaign_risk("c1", 8000.0)
+
+        # Should not raise, state should still transition
+        state = tracker.get_alert_state(100_000.0)
+
+        assert state == HeatAlertState.WARNING
+        assert tracker.current_state == HeatAlertState.WARNING
+
     def test_boundary_at_exactly_7_percent(self):
         """Boundary test: exactly 7% should be WARNING."""
         tracker = PortfolioHeatTracker()

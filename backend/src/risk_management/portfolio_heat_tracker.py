@@ -16,6 +16,18 @@ Trading Rules:
   - Critical threshold: 9.0% (urgent attention required)
   - Warning threshold: 7.0% (caution advised)
 
+Related Modules:
+  - forex_portfolio_heat.py: Forex-specific heat tracking with weekend gap risk
+    adjustments, Wyckoff pattern-weighted buffers, and dynamic limits (6%/5.5%).
+    Use forex_portfolio_heat for forex positions with weekend exposure.
+  - PortfolioHeatTracker (this module): General-purpose heat tracking for
+    IntradayCampaignDetector integration. Uses simpler fixed thresholds (7/9/10%)
+    without asset-specific or time-based adjustments.
+
+Thread Safety:
+  This class is NOT thread-safe. All methods that modify state must be called
+  from a single thread or with external synchronization.
+
 Integration with IntradayCampaignDetector:
   >>> # Inject via constructor
   >>> heat_tracker = PortfolioHeatTracker(
@@ -226,14 +238,22 @@ class PortfolioHeatTracker:
         if new_state != self._current_state:
             old_state = self._current_state
             self._current_state = new_state
-            if self._on_state_change:
-                self._on_state_change(old_state, new_state, heat)
             self._logger.info(
                 "heat_state_changed",
                 from_state=old_state.value,
                 to_state=new_state.value,
                 heat_pct=heat,
             )
+            # Call callback after state update to prevent corruption on exception
+            if self._on_state_change:
+                try:
+                    self._on_state_change(old_state, new_state, heat)
+                except Exception:
+                    self._logger.exception(
+                        "state_change_callback_error",
+                        from_state=old_state.value,
+                        to_state=new_state.value,
+                    )
 
         return new_state
 
