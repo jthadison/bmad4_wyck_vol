@@ -53,12 +53,15 @@ class StateTransitionError(Exception):
         super().__init__(f"Campaign {campaign_id}: {msg}" if campaign_id else msg)
 
 
+# State name constant for hot-path optimization (avoids repeated string literals)
+_ACTIVE_STATE = "ACTIVE"
+
 # Valid state transitions (terminal states have empty sets)
 # Note: Only includes states that exist in CampaignState enum
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    "FORMING": {"ACTIVE", "DORMANT", "FAILED"},
-    "ACTIVE": {"COMPLETED", "FAILED", "DORMANT"},
-    "DORMANT": {"ACTIVE", "FAILED"},
+    "FORMING": {_ACTIVE_STATE, "DORMANT", "FAILED"},
+    _ACTIVE_STATE: {"COMPLETED", "FAILED", "DORMANT"},
+    "DORMANT": {_ACTIVE_STATE, "FAILED"},
     "COMPLETED": set(),  # Terminal state
     "FAILED": set(),  # Terminal state
 }
@@ -70,9 +73,13 @@ class CampaignLifecycleManager:
 
     Provides O(1) lookups by ID, state, and timeframe.
 
-    Warning:
-        Not thread-safe - external synchronization required.
+    Thread Safety:
+        This class is NOT thread-safe. All methods that modify state must be
+        called from a single thread or with external synchronization.
         IntradayCampaignDetector handles synchronization when using this manager.
+
+        In debug mode, consider wrapping this class with assertions to detect
+        concurrent access violations during development.
     """
 
     def __init__(self) -> None:
@@ -125,7 +132,7 @@ class CampaignLifecycleManager:
         self._campaigns_by_state[current_state_value].discard(campaign_id)
         self._campaigns_by_state[new_state_value].add(campaign_id)
 
-        if new_state_value == "ACTIVE":
+        if new_state_value == _ACTIVE_STATE:
             self._active_time_windows[campaign_id] = True
         else:
             self._active_time_windows.pop(campaign_id, None)
@@ -198,7 +205,7 @@ class CampaignLifecycleManager:
         state_value = self._get_state_value(campaign.state)
         self._campaigns_by_state[state_value].add(campaign_id)
         self._campaigns_by_timeframe[campaign.timeframe].add(campaign_id)
-        if state_value == "ACTIVE":
+        if state_value == _ACTIVE_STATE:
             self._active_time_windows[campaign_id] = True
 
     def _remove_from_indexes(self, campaign_id: str) -> None:
@@ -219,13 +226,23 @@ class CampaignLifecycleManager:
         Use this when campaign state is modified directly (e.g., by IntradayCampaignDetector)
         rather than through transition_to(). This keeps indexes synchronized with the
         campaign's actual state without re-validating the transition.
+
+        Example usage in IntradayCampaignDetector::
+
+            old_state = campaign.state
+            campaign.state = CampaignState.ACTIVE  # Direct modification
+            self._lifecycle_manager._update_indexes_for_state_change(campaign, old_state)
+
+        Args:
+            campaign: The campaign whose state was changed externally.
+            old_state: The campaign's previous state before the external change.
         """
         campaign_id = campaign.campaign_id
         old_value = self._get_state_value(old_state)
         new_value = self._get_state_value(campaign.state)
         self._campaigns_by_state[old_value].discard(campaign_id)
         self._campaigns_by_state[new_value].add(campaign_id)
-        if new_value == "ACTIVE":
+        if new_value == _ACTIVE_STATE:
             self._active_time_windows[campaign_id] = True
         else:
             self._active_time_windows.pop(campaign_id, None)
@@ -239,7 +256,7 @@ class CampaignLifecycleManager:
             state_value = self._get_state_value(campaign.state)
             self._campaigns_by_state[state_value].add(campaign.campaign_id)
             self._campaigns_by_timeframe[campaign.timeframe].add(campaign.campaign_id)
-            if state_value == "ACTIVE":
+            if state_value == _ACTIVE_STATE:
                 self._active_time_windows[campaign.campaign_id] = True
         self._logger.info(
             "indexes_rebuilt",
