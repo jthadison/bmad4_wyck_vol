@@ -10,7 +10,7 @@
  * - Disabled state handling
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SymbolListEditor from '@/components/settings/SymbolListEditor.vue'
 import PrimeVue from 'primevue/config'

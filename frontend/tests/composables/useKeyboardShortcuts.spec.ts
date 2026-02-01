@@ -117,7 +117,7 @@ describe('useKeyboardShortcuts', () => {
     searchInput.setAttribute('placeholder', 'Search')
     document.body.appendChild(searchInput)
 
-    const focusSpy = vi.spyOn(searchInput, 'focus')
+    vi.spyOn(searchInput, 'focus')
 
     // Simulate "/" key press
     const event = new KeyboardEvent('keydown', { key: '/' })
@@ -156,7 +156,7 @@ describe('useKeyboardShortcuts', () => {
     })
     Object.defineProperty(event, 'target', { value: input, enumerable: true })
 
-    const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+    vi.spyOn(event, 'preventDefault')
     window.dispatchEvent(event)
 
     // Should not prevent default or change overlay state when typing in input

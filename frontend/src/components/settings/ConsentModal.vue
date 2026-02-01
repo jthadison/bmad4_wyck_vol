@@ -82,16 +82,16 @@
         <Button
           label="Cancel"
           severity="secondary"
-          @click="handleCancel"
           :disabled="loading"
+          @click="handleCancel"
         />
         <Button
           label="Enable Auto-Execution"
           severity="warning"
-          @click="handleEnable"
           :disabled="!canEnable"
           :loading="loading"
           icon="pi pi-check"
+          @click="handleEnable"
         />
       </div>
     </template>

@@ -17,8 +17,8 @@
             :model-value="isPatternSelected(pattern.value)"
             :binary="true"
             :disabled="disabled"
-            @update:model-value="togglePattern(pattern.value)"
             :input-id="`pattern-${pattern.value}`"
+            @update:model-value="togglePattern(pattern.value)"
           />
           <div class="flex-1">
             <label

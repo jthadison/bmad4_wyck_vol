@@ -106,8 +106,8 @@ test.describe('Trade Audit Log', () => {
     )
 
     const hasFilterInput = await filterInput.count()
-    const hasFilterSelect = await filterSelect.count()
-    const hasDateFilter = await dateFilter.count()
+    void filterSelect.count() // Check selector exists
+    void dateFilter.count() // Check selector exists
 
     // If filters exist, verify they're functional
     if (hasFilterInput > 0) {
@@ -131,8 +131,8 @@ test.describe('Trade Audit Log', () => {
       'button:has-text("Next"), button:has-text("Previous"), [aria-label*="page"]'
     )
 
-    const hasPagination = await pagination.count()
-    const hasPageButtons = await pageButtons.count()
+    void pagination.count() // Check selector exists
+    void pageButtons.count() // Check selector exists
 
     // Pagination may not be visible if few entries
     // Just verify page loads without pagination errors

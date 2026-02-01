@@ -12,9 +12,12 @@ export const useBarStore = defineStore('bar', () => {
   const fetchBars = async (
     symbol: string,
     timeframe: string,
-    _startTime: string,
-    _endTime: string
+    // TODO: Implement time range filtering when API supports it
+    _startTime?: string,
+    _endTime?: string
   ) => {
+    void _startTime
+    void _endTime
     loading.value = true
     error.value = null
     const key = `${symbol}-${timeframe}`

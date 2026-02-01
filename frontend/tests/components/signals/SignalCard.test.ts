@@ -240,7 +240,7 @@ describe('SignalCard', () => {
   })
 
   it('displays position size', () => {
-    const wrapper = mount(SignalCard, {
+    mount(SignalCard, {
       props: { signal: mockSignal },
       global: {
         plugins: [PrimeVue],

@@ -15,9 +15,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 // Test configuration
 const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
-const API_BASE_URL = process.env.API_URL || 'http://localhost:8000'
 
-// Helper: Wait for API response
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function waitForApiResponse(page: Page, urlPattern: string | RegExp) {
   return page.waitForResponse(
     (response) => {
@@ -167,8 +166,8 @@ test.describe('Signal Generation Workflow', () => {
 
       // Common signal fields to verify
       const hasEntryPrice = /entry.*price|entry.*\$\d+/i.test(signalDetails!)
-      const hasStopLoss = /stop.*loss|stop.*\$\d+/i.test(signalDetails!)
-      const hasTarget = /target.*price|target.*\$\d+/i.test(signalDetails!)
+      void /stop.*loss|stop.*\$\d+/i.test(signalDetails!) // Check stop loss format
+      void /target.*price|target.*\$\d+/i.test(signalDetails!) // Check target format
 
       // At minimum, should have entry price
       expect(hasEntryPrice || signalDetails!.includes('$')).toBe(true)

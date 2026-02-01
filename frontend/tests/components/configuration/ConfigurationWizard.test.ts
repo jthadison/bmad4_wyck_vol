@@ -96,7 +96,7 @@ describe('ConfigurationWizard', () => {
         data: mockConfig,
       } as unknown)
 
-      const wrapper = createWrapper()
+      createWrapper()
       await flushPromises()
 
       expect(api.getConfiguration).toHaveBeenCalledTimes(1)
@@ -135,7 +135,7 @@ describe('ConfigurationWizard', () => {
         new Error('Network error')
       )
 
-      const wrapper = createWrapper()
+      createWrapper()
       await flushPromises()
 
       // Toast should be added (can't easily test PrimeVue toast in unit tests)

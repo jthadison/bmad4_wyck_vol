@@ -13,8 +13,8 @@
         :key="symbol"
         :label="symbol"
         removable
-        @remove="removeSymbol(symbol)"
         class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-100"
+        @remove="removeSymbol(symbol)"
       />
       <span
         v-if="symbols.length === 0"
@@ -29,15 +29,15 @@
         v-model="newSymbol"
         :placeholder="placeholder"
         class="flex-1"
-        @keyup.enter="addSymbol"
         :disabled="disabled"
+        @keyup.enter="addSymbol"
       />
       <Button
         label="Add"
         icon="pi pi-plus"
-        @click="addSymbol"
         :disabled="disabled || !newSymbol.trim()"
         size="small"
+        @click="addSymbol"
       />
     </div>
     <small v-if="helpText" class="text-gray-500 dark:text-gray-400 mt-1 block">
