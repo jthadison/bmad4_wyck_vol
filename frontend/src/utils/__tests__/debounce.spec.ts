@@ -150,5 +150,15 @@ describe('debounce', () => {
 
       expect(fn).toHaveBeenCalledWith('test', 42)
     })
+
+    it('handles zero delay', () => {
+      const fn = vi.fn()
+      const debounced = debounce(fn, 0)
+
+      debounced()
+      vi.advanceTimersByTime(0)
+
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
   })
 })

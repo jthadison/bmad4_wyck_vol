@@ -10,7 +10,8 @@
  * invocation until after `wait` milliseconds have elapsed since the
  * last call.
  *
- * @typeParam T - The function type being debounced
+ * @typeParam Args - The argument types of the function being debounced
+ * @typeParam R - The return type of the function being debounced
  * @param fn - The function to debounce
  * @param delay - Delay in milliseconds
  * @returns A debounced version of the function
@@ -30,13 +31,13 @@
  * is deferred. If you need the return value, consider using a
  * promise-based debounce implementation.
  */
-export function debounce<T extends (...args: Parameters<T>) => ReturnType<T>>(
-  fn: T,
+export function debounce<Args extends unknown[], R>(
+  fn: (...args: Args) => R,
   delay: number
-): (...args: Parameters<T>) => void {
+): (...args: Args) => void {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
 
-  return function (this: ThisParameterType<T>, ...args: Parameters<T>): void {
+  return function (this: unknown, ...args: Args): void {
     if (timeoutId) {
       clearTimeout(timeoutId)
     }
