@@ -2074,23 +2074,6 @@ class IntradayCampaignDetector:
             "hit_rate_pct": (metrics.hit_rate * 100) if total > 0 else 0.0,
         }
 
-    def invalidate_campaign_cache(self, campaign_id: str) -> int:
-        """
-        Invalidate all cache entries for a campaign (Story 22.6).
-
-        Useful when campaign state changes require fresh validation.
-
-        Args:
-            campaign_id: Campaign ID to invalidate cache entries for
-
-        Returns:
-            Number of cache entries invalidated
-        """
-        # Cache keys use pattern hashes, not campaign IDs directly
-        # Since pattern hashes change when patterns change, this is mainly
-        # for explicit cache clearing if needed
-        return self._validation_cache.invalidate_pattern(campaign_id)
-
     def _empty_statistics(self) -> dict[str, Any]:
         """
         Return empty statistics structure (Story 15.2).

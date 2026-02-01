@@ -257,6 +257,24 @@ class TestValidationCacheMetrics:
         assert metrics1.hits == 1
         assert metrics2.hits == 2
 
+    def test_reset_metrics(self):
+        cache: ValidationCache[str] = ValidationCache()
+        cache.set("key1", "value1")
+
+        cache.get("key1")  # Hit
+        cache.get("nonexistent")  # Miss
+
+        metrics_before = cache.get_metrics()
+        assert metrics_before.hits == 1
+        assert metrics_before.misses == 1
+
+        cache.reset_metrics()
+
+        metrics_after = cache.get_metrics()
+        assert metrics_after.hits == 0
+        assert metrics_after.misses == 0
+        assert metrics_after.evictions == 0
+
 
 class TestValidationCacheInvalidatePattern:
     """Tests for pattern-based invalidation."""

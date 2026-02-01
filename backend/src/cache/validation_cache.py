@@ -63,13 +63,14 @@ class ValidationCache(Generic[T]):
 
     def get(self, key: str) -> Optional[T]:
         """Get cached value, or None if missing/expired."""
+        now = datetime.now(UTC)  # Outside lock to minimize contention
         with self._lock:
             entry = self._cache.get(key)
             if entry is None:
                 self._metrics.misses += 1
                 return None
 
-            if datetime.now(UTC) > entry.expires_at:
+            if now > entry.expires_at:
                 del self._cache[key]
                 self._metrics.misses += 1
                 logger.debug("cache_entry_expired", key=key)
@@ -81,6 +82,7 @@ class ValidationCache(Generic[T]):
 
     def set(self, key: str, value: T) -> None:
         """Set a cached value with TTL."""
+        now = datetime.now(UTC)  # Outside lock to minimize contention
         with self._lock:
             if key in self._cache:
                 del self._cache[key]
@@ -90,7 +92,7 @@ class ValidationCache(Generic[T]):
                 self._metrics.evictions += 1
                 logger.debug("cache_eviction_lru", key=evicted_key)
 
-            expires_at = datetime.now(UTC) + self._ttl
+            expires_at = now + self._ttl
             self._cache[key] = CacheEntry(value=value, expires_at=expires_at)
 
     def invalidate(self, key: str) -> bool:
@@ -129,15 +131,27 @@ class ValidationCache(Generic[T]):
                 evictions=self._metrics.evictions,
             )
 
+    def reset_metrics(self) -> None:
+        """Reset metrics counters. Useful for fresh measurement periods."""
+        with self._lock:
+            self._metrics = CacheMetrics()
+            logger.debug("cache_metrics_reset")
+
     def __len__(self) -> int:
         """Get current cache size."""
         with self._lock:
             return len(self._cache)
 
     def __contains__(self, key: str) -> bool:
-        """Check if key is in cache (without updating LRU or metrics)."""
+        """
+        Check if key is in cache (without updating LRU or metrics).
+
+        Note: Expired entries are not removed by this check (lazy eviction).
+        They remain in memory until the next get() call removes them.
+        """
+        now = datetime.now(UTC)  # Outside lock to minimize contention
         with self._lock:
             entry = self._cache.get(key)
             if entry is None:
                 return False
-            return datetime.now(UTC) <= entry.expires_at
+            return now <= entry.expires_at
