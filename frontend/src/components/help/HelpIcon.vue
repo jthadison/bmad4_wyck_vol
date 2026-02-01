@@ -34,12 +34,9 @@
 
       <!-- Article Content -->
       <div v-else-if="helpStore.currentArticle" class="dialog-content">
-        <!-- Rendered HTML Content -->
+        <!-- Rendered HTML Content - sanitized via DOMPurify to prevent XSS -->
         <!-- eslint-disable-next-line vue/no-v-html -->
-        <div
-          class="article-html"
-          v-html="helpStore.currentArticle.content_html"
-        ></div>
+        <div class="article-html" v-html="sanitizedContent"></div>
 
         <!-- View Full Article Link -->
         <div class="full-article-link">
@@ -112,6 +109,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useHelpStore } from '@/stores/helpStore'
+import { sanitizeHtml } from '@/utils/sanitize'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
@@ -141,6 +139,14 @@ const feedbackComment = ref('')
 // Computed
 const articleTitle = computed(() => {
   return helpStore.currentArticle?.title || 'Help'
+})
+
+/**
+ * Sanitized HTML content to prevent XSS attacks.
+ * Uses DOMPurify to remove malicious scripts/event handlers while preserving safe formatting.
+ */
+const sanitizedContent = computed(() => {
+  return sanitizeHtml(helpStore.currentArticle?.content_html || '')
 })
 
 // ============================================================================
