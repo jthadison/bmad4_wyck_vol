@@ -13,6 +13,7 @@ These tests validate the Campaign._validation_cache system
 before refactoring work begins.
 """
 
+import queue
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -261,15 +262,15 @@ class TestThreadSafety:
         # Set cached value
         sample_campaign.set_cached_validation(True)
 
-        results = []
-        errors = []
+        results: queue.Queue = queue.Queue()
+        errors: queue.Queue = queue.Queue()
 
         def read_cache():
             try:
                 result = sample_campaign.get_cached_validation()
-                results.append(result)
+                results.put(result)
             except Exception as e:
-                errors.append(e)
+                errors.put(e)
 
         # Launch multiple threads
         threads = [threading.Thread(target=read_cache) for _ in range(10)]
@@ -279,19 +280,22 @@ class TestThreadSafety:
             t.join()
 
         # Should have no errors
-        assert len(errors) == 0
+        assert errors.empty()
         # All reads should return True
-        assert all(r is True for r in results)
+        results_list = []
+        while not results.empty():
+            results_list.append(results.get())
+        assert all(r is True for r in results_list)
 
     def test_concurrent_cache_writes(self, sample_campaign: Campaign):
         """AC3: Concurrent writes should not cause corruption."""
-        errors = []
+        errors: queue.Queue = queue.Queue()
 
         def write_cache(value):
             try:
                 sample_campaign.set_cached_validation(value)
             except Exception as e:
-                errors.append(e)
+                errors.put(e)
 
         # Launch multiple write threads
         threads = []
@@ -305,7 +309,7 @@ class TestThreadSafety:
             t.join()
 
         # Should have no errors
-        assert len(errors) == 0
+        assert errors.empty()
         # Cache should have an entry (last write wins)
         assert sample_campaign.get_cached_validation() is not None
 
@@ -314,13 +318,13 @@ class TestThreadSafety:
         # Set cached value
         sample_campaign.set_cached_validation(True)
 
-        errors = []
+        errors: queue.Queue = queue.Queue()
 
         def invalidate():
             try:
                 sample_campaign.invalidate_validation_cache()
             except Exception as e:
-                errors.append(e)
+                errors.put(e)
 
         # Launch multiple invalidation threads
         threads = [threading.Thread(target=invalidate) for _ in range(10)]
@@ -330,7 +334,7 @@ class TestThreadSafety:
             t.join()
 
         # Should have no errors
-        assert len(errors) == 0
+        assert errors.empty()
         # Cache should be empty
         assert len(sample_campaign._validation_cache) == 0
 

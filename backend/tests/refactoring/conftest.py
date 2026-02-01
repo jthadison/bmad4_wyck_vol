@@ -2,6 +2,9 @@
 Shared fixtures for refactoring test suite (Story 22.14).
 
 Provides common test data and fixtures for validating refactoring work.
+
+Note: Fixtures from tests/conftest.py (async_client, event_loop, etc.) are
+automatically inherited via pytest's conftest discovery mechanism.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -311,3 +314,19 @@ def mock_portfolio() -> dict[str, Any]:
             },
         ],
     }
+
+
+@pytest.fixture
+def clean_backtest_runs():
+    """
+    Fixture to safely manage backtest_runs global state.
+
+    Preserves original state and restores it after test completion,
+    preventing state corruption if exceptions occur.
+    """
+    from src.api.routes.backtest import backtest_runs
+
+    original = dict(backtest_runs)
+    yield backtest_runs
+    backtest_runs.clear()
+    backtest_runs.update(original)

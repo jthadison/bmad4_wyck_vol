@@ -15,5 +15,5 @@ Test Modules:
 - test_backtest_routes_baseline.py: AC5 - Backtest API tests
 - test_campaign_routes_baseline.py: AC5 - Campaign API tests
 
-Coverage Target: >=80% on target files (AC6)
+Coverage Target: >=90% on target files (AC6)
 """

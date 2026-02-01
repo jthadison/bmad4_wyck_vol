@@ -181,8 +181,6 @@ class TestCampaignEntrySchema:
 
     def test_campaign_entry_rejects_st(self):
         """AC5: CampaignEntry should reject ST (Secondary Test) as entry pattern."""
-        import pytest
-
         with pytest.raises(ValueError, match="confirmation event"):
             CampaignEntry(
                 pattern_type="ST",

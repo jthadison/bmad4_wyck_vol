@@ -227,31 +227,26 @@ class TestBacktestPreviewConcurrencyLimit:
     """Test backtest preview concurrency limiting."""
 
     @pytest.mark.asyncio
-    async def test_concurrent_limit_returns_503(self, async_client: AsyncClient):
+    async def test_concurrent_limit_returns_503(self, async_client: AsyncClient, clean_backtest_runs):
         """AC5: Should return 503 when too many concurrent backtests."""
-        from src.api.routes.backtest import backtest_runs
+        backtest_runs = clean_backtest_runs
 
         # Fill up with fake "running" backtests
-        original_runs = dict(backtest_runs)
-        try:
-            for i in range(6):  # More than limit of 5
-                backtest_runs[uuid4()] = {
-                    "status": "running",
-                    "progress": {},
-                    "created_at": datetime.now(UTC),
-                    "error": None,
-                }
+        for i in range(6):  # More than limit of 5
+            backtest_runs[uuid4()] = {
+                "status": "running",
+                "progress": {},
+                "created_at": datetime.now(UTC),
+                "error": None,
+            }
 
-            response = await async_client.post(
-                "/api/v1/backtest/preview",
-                json={
-                    "days": 30,
-                    "proposed_config": {},
-                },
-            )
+        response = await async_client.post(
+            "/api/v1/backtest/preview",
+            json={
+                "days": 30,
+                "proposed_config": {},
+            },
+        )
 
-            assert response.status_code == 503
-        finally:
-            # Restore original state
-            backtest_runs.clear()
-            backtest_runs.update(original_runs)
+        assert response.status_code == 503
+        # Fixture automatically restores original state after test
