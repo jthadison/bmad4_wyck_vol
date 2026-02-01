@@ -359,3 +359,237 @@ class TestScoringFactors:
 
         expected = 1.0 * 0.5 + 0.5 * 0.2 + 0.5 * 0.2 + 0.5 * 0.1
         assert abs(factors.aggregate(custom_weights) - expected) < 0.001
+
+
+class TestPhaseConfidenceScorerTiming:
+    """Tests for PhaseConfidenceScorer._score_timing method."""
+
+    def test_score_timing_too_short_returns_low_score(self):
+        """Test that duration below min_phase_duration returns low score."""
+        from src.pattern_engine.phase_detection import (
+            DetectionConfig,
+            PhaseConfidenceScorer,
+            PhaseType,
+        )
+
+        config = DetectionConfig(min_phase_duration=10)
+        scorer = PhaseConfidenceScorer(config)
+
+        # 5 bars when min is 10 -> should return 0.25 (5/10 * 0.5)
+        score = scorer._score_timing(PhaseType.B, duration_bars=5)
+        assert abs(score - 0.25) < 0.001
+
+    def test_score_timing_zero_duration_returns_zero(self):
+        """Test that zero duration returns zero score."""
+        from src.pattern_engine.phase_detection import (
+            DetectionConfig,
+            PhaseConfidenceScorer,
+            PhaseType,
+        )
+
+        config = DetectionConfig(min_phase_duration=10)
+        scorer = PhaseConfidenceScorer(config)
+
+        score = scorer._score_timing(PhaseType.A, duration_bars=0)
+        assert score == 0.0
+
+    def test_score_timing_optimal_duration_returns_one(self):
+        """Test that duration within optimal range returns 1.0."""
+        from src.pattern_engine.phase_detection import (
+            DetectionConfig,
+            PhaseConfidenceScorer,
+            PhaseType,
+        )
+
+        config = DetectionConfig(min_phase_duration=10)
+        scorer = PhaseConfidenceScorer(config)
+
+        # Optimal range is 1-3x minimum (10-30 bars)
+        for duration in [10, 15, 20, 25, 30]:
+            score = scorer._score_timing(PhaseType.B, duration_bars=duration)
+            assert score == 1.0, f"Expected 1.0 for duration {duration}"
+
+    def test_score_timing_excessive_duration_reduces_score(self):
+        """Test that duration beyond 3x min reduces score slightly."""
+        from src.pattern_engine.phase_detection import (
+            DetectionConfig,
+            PhaseConfidenceScorer,
+            PhaseType,
+        )
+
+        config = DetectionConfig(min_phase_duration=10)
+        scorer = PhaseConfidenceScorer(config)
+
+        # 40 bars = 4x minimum, beyond 3x (30) so should be < 1.0
+        score = scorer._score_timing(PhaseType.C, duration_bars=40)
+        assert 0.6 <= score < 1.0
+
+    def test_score_timing_very_long_duration_clamps_to_minimum(self):
+        """Test that very long durations clamp to minimum 0.6."""
+        from src.pattern_engine.phase_detection import (
+            DetectionConfig,
+            PhaseConfidenceScorer,
+            PhaseType,
+        )
+
+        config = DetectionConfig(min_phase_duration=10)
+        scorer = PhaseConfidenceScorer(config)
+
+        # Very long duration should clamp to 0.6
+        score = scorer._score_timing(PhaseType.D, duration_bars=1000)
+        assert score == 0.6
+
+
+class TestPhaseConfidenceScorerEventSequence:
+    """Tests for PhaseConfidenceScorer._score_event_sequence method."""
+
+    def test_score_event_sequence_no_expected_events_returns_neutral(self):
+        """Test that phases with no expected events return neutral score."""
+        from src.pattern_engine.phase_detection import (
+            PhaseConfidenceScorer,
+            PhaseType,
+        )
+
+        scorer = PhaseConfidenceScorer()
+
+        # Phase B and E have no specific expected events
+        score_b = scorer._score_event_sequence(PhaseType.B, [])
+        score_e = scorer._score_event_sequence(PhaseType.E, [])
+
+        assert score_b == 0.7
+        assert score_e == 0.7
+
+    def test_score_event_sequence_all_events_detected_returns_one(self):
+        """Test that detecting all expected events returns 1.0."""
+        from src.pattern_engine.phase_detection import (
+            EventType,
+            PhaseConfidenceScorer,
+            PhaseEvent,
+            PhaseType,
+        )
+
+        scorer = PhaseConfidenceScorer()
+
+        # Phase A expects SC, AR, ST
+        events = [
+            PhaseEvent(
+                event_type=EventType.SELLING_CLIMAX,
+                timestamp=datetime.now(),
+                bar_index=1,
+                price=100.0,
+                volume=1000000.0,
+            ),
+            PhaseEvent(
+                event_type=EventType.AUTOMATIC_RALLY,
+                timestamp=datetime.now(),
+                bar_index=5,
+                price=110.0,
+                volume=500000.0,
+            ),
+            PhaseEvent(
+                event_type=EventType.SECONDARY_TEST,
+                timestamp=datetime.now(),
+                bar_index=10,
+                price=102.0,
+                volume=400000.0,
+            ),
+        ]
+
+        score = scorer._score_event_sequence(PhaseType.A, events)
+        assert score == 1.0
+
+    def test_score_event_sequence_partial_events_returns_fraction(self):
+        """Test that detecting some expected events returns proportional score."""
+        from src.pattern_engine.phase_detection import (
+            EventType,
+            PhaseConfidenceScorer,
+            PhaseEvent,
+            PhaseType,
+        )
+
+        scorer = PhaseConfidenceScorer()
+
+        # Phase A expects SC, AR, ST - only provide SC
+        events = [
+            PhaseEvent(
+                event_type=EventType.SELLING_CLIMAX,
+                timestamp=datetime.now(),
+                bar_index=1,
+                price=100.0,
+                volume=1000000.0,
+            ),
+        ]
+
+        score = scorer._score_event_sequence(PhaseType.A, events)
+        # 1 out of 3 expected events
+        assert abs(score - 1 / 3) < 0.001
+
+    def test_score_event_sequence_no_events_detected_returns_zero(self):
+        """Test that detecting no expected events returns 0.0."""
+        from src.pattern_engine.phase_detection import (
+            PhaseConfidenceScorer,
+            PhaseType,
+        )
+
+        scorer = PhaseConfidenceScorer()
+
+        # Phase A expects SC, AR, ST but none provided
+        score = scorer._score_event_sequence(PhaseType.A, [])
+        assert score == 0.0
+
+    def test_score_event_sequence_phase_c_spring(self):
+        """Test Phase C scoring with Spring event."""
+        from src.pattern_engine.phase_detection import (
+            EventType,
+            PhaseConfidenceScorer,
+            PhaseEvent,
+            PhaseType,
+        )
+
+        scorer = PhaseConfidenceScorer()
+
+        # Phase C expects SPRING
+        events = [
+            PhaseEvent(
+                event_type=EventType.SPRING,
+                timestamp=datetime.now(),
+                bar_index=50,
+                price=98.0,
+                volume=300000.0,
+            ),
+        ]
+
+        score = scorer._score_event_sequence(PhaseType.C, events)
+        assert score == 1.0
+
+    def test_score_event_sequence_phase_d_sos_lps(self):
+        """Test Phase D scoring with SOS and LPS events."""
+        from src.pattern_engine.phase_detection import (
+            EventType,
+            PhaseConfidenceScorer,
+            PhaseEvent,
+            PhaseType,
+        )
+
+        scorer = PhaseConfidenceScorer()
+
+        # Phase D expects SOS, LPS
+        events = [
+            PhaseEvent(
+                event_type=EventType.SIGN_OF_STRENGTH,
+                timestamp=datetime.now(),
+                bar_index=60,
+                price=115.0,
+                volume=800000.0,
+            ),
+            PhaseEvent(
+                event_type=EventType.LAST_POINT_OF_SUPPORT,
+                timestamp=datetime.now(),
+                bar_index=70,
+                price=112.0,
+                volume=400000.0,
+            ),
+        ]
+
+        score = scorer._score_event_sequence(PhaseType.D, events)
+        assert score == 1.0

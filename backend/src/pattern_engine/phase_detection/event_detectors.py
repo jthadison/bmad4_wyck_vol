@@ -85,9 +85,11 @@ class SellingClimaxDetector(BaseEventDetector):
             List of detected SC events
 
         Raises:
+            ValueError: If DataFrame is missing required columns
             NotImplementedError: Implementation pending Story 22.7b
         """
-        # Placeholder - to be implemented in 22.7b
+        if not self._validate_dataframe(ohlcv):
+            raise ValueError("Invalid DataFrame: missing required columns")
         raise NotImplementedError("Implementation pending Story 22.7b")
 
 
@@ -114,8 +116,11 @@ class AutomaticRallyDetector(BaseEventDetector):
             List of detected AR events
 
         Raises:
+            ValueError: If DataFrame is missing required columns
             NotImplementedError: Implementation pending Story 22.7b
         """
+        if not self._validate_dataframe(ohlcv):
+            raise ValueError("Invalid DataFrame: missing required columns")
         raise NotImplementedError("Implementation pending Story 22.7b")
 
 
@@ -143,8 +148,11 @@ class SecondaryTestDetector(BaseEventDetector):
             List of detected ST events
 
         Raises:
+            ValueError: If DataFrame is missing required columns
             NotImplementedError: Implementation pending Story 22.7b
         """
+        if not self._validate_dataframe(ohlcv):
+            raise ValueError("Invalid DataFrame: missing required columns")
         raise NotImplementedError("Implementation pending Story 22.7b")
 
 
@@ -175,8 +183,11 @@ class SpringDetector(BaseEventDetector):
             List of detected Spring events
 
         Raises:
+            ValueError: If DataFrame is missing required columns
             NotImplementedError: Implementation pending Story 22.7b
         """
+        if not self._validate_dataframe(ohlcv):
+            raise ValueError("Invalid DataFrame: missing required columns")
         raise NotImplementedError("Implementation pending Story 22.7b")
 
 
@@ -204,8 +215,11 @@ class SignOfStrengthDetector(BaseEventDetector):
             List of detected SOS events
 
         Raises:
+            ValueError: If DataFrame is missing required columns
             NotImplementedError: Implementation pending Story 22.7b
         """
+        if not self._validate_dataframe(ohlcv):
+            raise ValueError("Invalid DataFrame: missing required columns")
         raise NotImplementedError("Implementation pending Story 22.7b")
 
 
@@ -233,6 +247,9 @@ class LastPointOfSupportDetector(BaseEventDetector):
             List of detected LPS events
 
         Raises:
+            ValueError: If DataFrame is missing required columns
             NotImplementedError: Implementation pending Story 22.7b
         """
+        if not self._validate_dataframe(ohlcv):
+            raise ValueError("Invalid DataFrame: missing required columns")
         raise NotImplementedError("Implementation pending Story 22.7b")

@@ -81,13 +81,14 @@ class PhaseConfidenceScorer:
         "event": 0.25,
     }
 
-    # Expected events per phase
-    PHASE_EXPECTED_EVENTS: dict[PhaseType, list[str]] = {
-        PhaseType.A: ["SC", "AR", "ST"],
-        PhaseType.B: [],  # Variable, mostly range-bound action
-        PhaseType.C: ["SPRING"],  # or UTAD for distribution
-        PhaseType.D: ["SOS", "LPS"],  # or SOW, LPSY for distribution
-        PhaseType.E: [],  # Trend continuation
+    # Expected events per phase (using tuples for immutability)
+    # Note: Distribution events (UTAD, SOW, LPSY) to be added in Story 22.7b
+    PHASE_EXPECTED_EVENTS: dict[PhaseType, tuple[str, ...]] = {
+        PhaseType.A: ("SC", "AR", "ST"),
+        PhaseType.B: (),  # Variable, mostly range-bound action
+        PhaseType.C: ("SPRING",),  # or UTAD for distribution
+        PhaseType.D: ("SOS", "LPS"),  # or SOW, LPSY for distribution
+        PhaseType.E: (),  # Trend continuation
     }
 
     def __init__(self, config: Optional[DetectionConfig] = None) -> None:
@@ -254,7 +255,7 @@ class PhaseConfidenceScorer:
         Returns:
             Event sequence score (0-1)
         """
-        expected = self.PHASE_EXPECTED_EVENTS.get(phase, [])
+        expected = self.PHASE_EXPECTED_EVENTS.get(phase, ())
 
         if not expected:
             # No specific events expected (Phase B, E)
