@@ -41,6 +41,9 @@ import structlog
 
 from src.backtesting.event_publisher import EventPublisher
 
+# Story 22.6: Extracted ValidationCache
+from src.cache.validation_cache import ValidationCache
+
 # Story 16.1b: Correlation imports
 from src.campaign_management.correlation_mapper import CorrelationMapper
 from src.models.automatic_rally import AutomaticRally
@@ -609,6 +612,8 @@ class IntradayCampaignDetector:
         # Story 16.6b: Cross-timeframe validation parameters
         htf_strict_mode: bool = False,  # If True, reject patterns against HTF trend
         enable_htf_validation: bool = True,  # Enable/disable HTF validation
+        # Story 22.6: Extracted validation cache
+        validation_cache: ValidationCache[bool] | None = None,
     ):
         """Initialize intraday campaign detector."""
         self.campaign_window_hours = campaign_window_hours
@@ -645,9 +650,10 @@ class IntradayCampaignDetector:
         # Story 16.6b: Campaigns indexed by timeframe for quick lookups
         self._campaigns_by_timeframe: dict[str, set[str]] = defaultdict(set)
 
-        # Story 15.4: Cache metrics tracking
-        self._cache_hits: int = 0
-        self._cache_misses: int = 0
+        # Story 22.6: Extracted validation cache (replaces embedded cache in Campaign)
+        self._validation_cache: ValidationCache[bool] = validation_cache or ValidationCache(
+            ttl_seconds=300, max_entries=VALIDATION_CACHE_MAX_ENTRIES
+        )
 
         # Story 15.7: Heat alert state tracking
         self._heat_alert_state: HeatAlertState = HeatAlertState.NORMAL
@@ -1403,8 +1409,7 @@ class IntradayCampaignDetector:
 
             return campaign
 
-        # Story 15.4: Invalidate cache before modifying patterns
-        campaign.invalidate_validation_cache()
+        # Story 22.6: Cache invalidation not needed - pattern hash changes when patterns change
 
         # AC4.10: Validate sequence before adding
         # Create temporary campaign with new pattern for validation
@@ -1422,7 +1427,7 @@ class IntradayCampaignDetector:
             )
             # Still add pattern but don't update phase
             campaign.patterns.append(pattern)
-            campaign.invalidate_validation_cache()  # Story 15.4: Invalidate after pattern added
+            # Story 22.6: Cache invalidation not needed - pattern hash changes when patterns change
             self._update_campaign_metadata(campaign)
 
             # Story 14.4: Volume profile tracking (Issue #3: Use helper method)
@@ -1439,7 +1444,7 @@ class IntradayCampaignDetector:
 
         # Add to existing campaign
         campaign.patterns.append(pattern)
-        campaign.invalidate_validation_cache()  # Story 15.4: Invalidate after pattern added
+        # Story 22.6: Cache invalidation not needed - pattern hash changes when patterns change
 
         # AC4.9: Update risk metadata
         self._update_campaign_metadata(campaign)
@@ -2034,16 +2039,18 @@ class IntradayCampaignDetector:
 
     def get_cache_statistics(self) -> dict[str, Any]:
         """
-        Get cache performance statistics (Story 15.4).
+        Get cache performance statistics (Story 15.4, 22.6).
 
+        Uses ValidationCache metrics for centralized tracking.
         Provides visibility into validation cache effectiveness,
-        including hit rate and total checks.
+        including hit rate, evictions, and total checks.
 
         Returns:
             Dictionary with cache performance metrics:
             {
                 "cache_hits": 150,
                 "cache_misses": 50,
+                "evictions": 10,
                 "total_checks": 200,
                 "hit_rate_pct": 75.0
             }
@@ -2055,14 +2062,34 @@ class IntradayCampaignDetector:
             >>> stats["hit_rate_pct"]
             75.0
         """
-        total = self._cache_hits + self._cache_misses
+        # Story 22.6: Use extracted ValidationCache metrics
+        metrics = self._validation_cache.get_metrics()
+        total = metrics.total_requests
 
         return {
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
+            "cache_hits": metrics.hits,
+            "cache_misses": metrics.misses,
+            "evictions": metrics.evictions,
             "total_checks": total,
-            "hit_rate_pct": (self._cache_hits / total * 100) if total > 0 else 0.0,
+            "hit_rate_pct": (metrics.hit_rate * 100) if total > 0 else 0.0,
         }
+
+    def invalidate_campaign_cache(self, campaign_id: str) -> int:
+        """
+        Invalidate all cache entries for a campaign (Story 22.6).
+
+        Useful when campaign state changes require fresh validation.
+
+        Args:
+            campaign_id: Campaign ID to invalidate cache entries for
+
+        Returns:
+            Number of cache entries invalidated
+        """
+        # Cache keys use pattern hashes, not campaign IDs directly
+        # Since pattern hashes change when patterns change, this is mainly
+        # for explicit cache clearing if needed
+        return self._validation_cache.invalidate_pattern(campaign_id)
 
     def _empty_statistics(self) -> dict[str, Any]:
         """
@@ -2396,10 +2423,11 @@ class IntradayCampaignDetector:
 
     def _validate_sequence_cached(self, campaign: Campaign) -> bool:
         """
-        Validate pattern sequence with caching (Story 15.4).
+        Validate pattern sequence with caching (Story 15.4, 22.6).
 
-        Checks cache first, runs validation on miss, caches result.
-        Provides significant performance improvement for repeated validations.
+        Uses ValidationCache for centralized cache management with LRU eviction
+        and TTL expiration. Provides significant performance improvement for
+        repeated validations.
 
         Args:
             campaign: Campaign to validate
@@ -2415,12 +2443,13 @@ class IntradayCampaignDetector:
             >>> result2 = detector._validate_sequence_cached(campaign)
             >>> # Second call: cache hit, returns cached result
         """
+        # Story 22.6: Use extracted ValidationCache
+        cache_key = campaign._get_pattern_sequence_hash()
+
         # Check cache
-        cached_result = campaign.get_cached_validation()
+        cached_result = self._validation_cache.get(cache_key)
 
         if cached_result is not None:
-            # Cache hit
-            self._cache_hits += 1
             self.logger.debug(
                 "Validation cache hit",
                 campaign_id=campaign.campaign_id,
@@ -2429,12 +2458,10 @@ class IntradayCampaignDetector:
             return cached_result
 
         # Cache miss - run validation
-        self._cache_misses += 1
-
         result = self._validate_sequence(campaign.patterns)
 
         # Cache result
-        campaign.set_cached_validation(result)
+        self._validation_cache.set(cache_key, result)
 
         self.logger.debug(
             "Validation cache miss",
