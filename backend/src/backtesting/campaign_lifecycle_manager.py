@@ -1,13 +1,22 @@
 """
-Campaign State Manager - Story 22.4
+Campaign Lifecycle Manager - Story 22.4
 
 Extracts campaign state management from IntradayCampaignDetector.
 Manages campaign lifecycle state transitions and indexes for O(1) lookups.
 
 State Machine:
   FORMING → ACTIVE (required patterns detected)
-  ACTIVE → COMPLETED/FAILED (exit conditions)
-  COMPLETED/FAILED/CANCELLED are terminal states
+  FORMING → DORMANT (inactivity timeout)
+  FORMING → FAILED (expiration)
+  ACTIVE → COMPLETED (target hit or Phase E)
+  ACTIVE → FAILED (stop loss or expiration)
+  ACTIVE → DORMANT (inactivity)
+  DORMANT → ACTIVE (reactivation with new patterns)
+  DORMANT → FAILED (expiration)
+  COMPLETED/FAILED are terminal states (no further transitions)
+
+Note: This class is distinct from CampaignStateManager in backtesting/exit/
+which handles exit position state management (Story 18.11.3).
 
 Author: Story 22.4 Implementation
 """
@@ -25,6 +34,12 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+__all__ = [
+    "CampaignLifecycleManager",
+    "StateTransitionError",
+    "VALID_TRANSITIONS",
+]
+
 
 class StateTransitionError(Exception):
     """Raised when an invalid state transition is attempted."""
@@ -38,22 +53,25 @@ class StateTransitionError(Exception):
 
 
 # Valid state transitions (terminal states have empty sets)
+# Note: Only includes states that exist in CampaignState enum
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    "FORMING": {"ACTIVE", "DORMANT", "CANCELLED", "FAILED"},
-    "ACTIVE": {"COMPLETED", "FAILED", "DORMANT", "CANCELLED"},
-    "DORMANT": {"ACTIVE", "FAILED", "CANCELLED"},
-    "COMPLETED": set(),
-    "FAILED": set(),
-    "CANCELLED": set(),
+    "FORMING": {"ACTIVE", "DORMANT", "FAILED"},
+    "ACTIVE": {"COMPLETED", "FAILED", "DORMANT"},
+    "DORMANT": {"ACTIVE", "FAILED"},
+    "COMPLETED": set(),  # Terminal state
+    "FAILED": set(),  # Terminal state
 }
 
 
-class CampaignStateManager:
+class CampaignLifecycleManager:
     """
-    Manages campaign state transitions and index operations.
+    Manages campaign lifecycle state transitions and index operations.
 
     Provides O(1) lookups by ID, state, and timeframe.
-    Not thread-safe - external synchronization required.
+
+    Warning:
+        Not thread-safe - external synchronization required.
+        IntradayCampaignDetector handles synchronization when using this manager.
     """
 
     def __init__(self):
@@ -62,7 +80,7 @@ class CampaignStateManager:
         self._campaigns_by_state: dict[str, set[str]] = defaultdict(set)
         self._campaigns_by_timeframe: dict[str, set[str]] = defaultdict(set)
         self._active_time_windows: dict[str, bool] = {}
-        self._logger = logger.bind(component="campaign_state_manager")
+        self._logger = logger.bind(component="campaign_lifecycle_manager")
 
     def register_campaign(self, campaign: Campaign) -> None:
         """Register a campaign. Raises ValueError if already registered."""
@@ -158,10 +176,12 @@ class CampaignStateManager:
         return len(self._campaigns_by_id)
 
     def _get_state_value(self, state: Enum | str) -> str:
-        """Convert state to string."""
+        """Convert state to string. Raises TypeError for invalid types."""
         if isinstance(state, str):
             return state
-        return state.value if hasattr(state, "value") else str(state)
+        if isinstance(state, Enum):
+            return state.value
+        raise TypeError(f"Expected Enum or str, got {type(state).__name__}")
 
     def _set_campaign_state(self, campaign: Campaign, new_state: Enum | str) -> None:
         """Set campaign state with type conversion."""
