@@ -2,107 +2,163 @@
  * Debounce Utility Unit Tests
  *
  * Test Coverage:
+ * - Type safety (parameter types, return type)
  * - Function execution is delayed
  * - Multiple rapid calls only execute once
  * - Last call wins when multiple calls occur
  * - Correct arguments are passed
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  expectTypeOf,
+} from 'vitest'
 import { debounce } from '@/utils/debounce'
 
 describe('debounce', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
+  describe('type safety', () => {
+    it('preserves parameter types', () => {
+      const fn = (a: string, b: number) => a.repeat(b)
+      const debounced = debounce(fn, 100)
+
+      // Type-level assertion - verifies the debounced function has correct parameter types
+      expectTypeOf(debounced).toBeCallableWith('hello', 3)
+    })
+
+    it('returns void for debounced functions', () => {
+      const fn = (x: number) => x * 2
+      const debounced = debounce(fn, 100)
+
+      expectTypeOf(debounced).returns.toBeVoid()
+    })
+
+    it('infers types from async functions', () => {
+      const asyncFn = async (query: string) => ({ results: [query] })
+      const debounced = debounce(asyncFn, 100)
+
+      expectTypeOf(debounced).toBeCallableWith('search term')
+      expectTypeOf(debounced).returns.toBeVoid()
+    })
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
+  describe('functionality', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
 
-  it('delays function execution', () => {
-    const fn = vi.fn()
-    const debounced = debounce(fn, 500)
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
 
-    debounced()
+    it('delays function execution', () => {
+      const fn = vi.fn()
+      const debounced = debounce(fn, 500)
 
-    expect(fn).not.toHaveBeenCalled()
+      debounced()
 
-    vi.advanceTimersByTime(500)
+      expect(fn).not.toHaveBeenCalled()
 
-    expect(fn).toHaveBeenCalledTimes(1)
-  })
+      vi.advanceTimersByTime(500)
 
-  it('only executes once for multiple rapid calls', () => {
-    const fn = vi.fn()
-    const debounced = debounce(fn, 500)
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
 
-    debounced()
-    debounced()
-    debounced()
-    debounced()
+    it('only executes once for multiple rapid calls', () => {
+      const fn = vi.fn()
+      const debounced = debounce(fn, 500)
 
-    expect(fn).not.toHaveBeenCalled()
+      debounced()
+      debounced()
+      debounced()
+      debounced()
 
-    vi.advanceTimersByTime(500)
+      expect(fn).not.toHaveBeenCalled()
 
-    expect(fn).toHaveBeenCalledTimes(1)
-  })
+      vi.advanceTimersByTime(500)
 
-  it('uses arguments from the last call', () => {
-    const fn = vi.fn()
-    const debounced = debounce(fn, 500)
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
 
-    debounced('first')
-    debounced('second')
-    debounced('third')
+    it('uses arguments from the last call', () => {
+      const fn = vi.fn()
+      const debounced = debounce(fn, 500)
 
-    vi.advanceTimersByTime(500)
+      debounced('first')
+      debounced('second')
+      debounced('third')
 
-    expect(fn).toHaveBeenCalledTimes(1)
-    expect(fn).toHaveBeenCalledWith('third')
-  })
+      vi.advanceTimersByTime(500)
 
-  it('resets timer on each call', () => {
-    const fn = vi.fn()
-    const debounced = debounce(fn, 500)
+      expect(fn).toHaveBeenCalledTimes(1)
+      expect(fn).toHaveBeenCalledWith('third')
+    })
 
-    debounced()
-    vi.advanceTimersByTime(300)
+    it('resets timer on each call', () => {
+      const fn = vi.fn()
+      const debounced = debounce(fn, 500)
 
-    debounced()
-    vi.advanceTimersByTime(300)
+      debounced()
+      vi.advanceTimersByTime(300)
 
-    expect(fn).not.toHaveBeenCalled()
+      debounced()
+      vi.advanceTimersByTime(300)
 
-    vi.advanceTimersByTime(200)
+      expect(fn).not.toHaveBeenCalled()
 
-    expect(fn).toHaveBeenCalledTimes(1)
-  })
+      vi.advanceTimersByTime(200)
 
-  it('handles multiple arguments', () => {
-    const fn = vi.fn()
-    const debounced = debounce(fn, 500)
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
 
-    debounced('arg1', 'arg2', 'arg3')
+    it('handles multiple arguments', () => {
+      const fn = vi.fn()
+      const debounced = debounce(fn, 500)
 
-    vi.advanceTimersByTime(500)
+      debounced('arg1', 'arg2', 'arg3')
 
-    expect(fn).toHaveBeenCalledWith('arg1', 'arg2', 'arg3')
-  })
+      vi.advanceTimersByTime(500)
 
-  it('allows multiple executions after delay expires', () => {
-    const fn = vi.fn()
-    const debounced = debounce(fn, 500)
+      expect(fn).toHaveBeenCalledWith('arg1', 'arg2', 'arg3')
+    })
 
-    debounced()
-    vi.advanceTimersByTime(500)
+    it('allows multiple executions after delay expires', () => {
+      const fn = vi.fn()
+      const debounced = debounce(fn, 500)
 
-    expect(fn).toHaveBeenCalledTimes(1)
+      debounced()
+      vi.advanceTimersByTime(500)
 
-    debounced()
-    vi.advanceTimersByTime(500)
+      expect(fn).toHaveBeenCalledTimes(1)
 
-    expect(fn).toHaveBeenCalledTimes(2)
+      debounced()
+      vi.advanceTimersByTime(500)
+
+      expect(fn).toHaveBeenCalledTimes(2)
+    })
+
+    it('passes arguments correctly with typed function', () => {
+      const fn = vi.fn((a: string, b: number) => `${a}-${b}`)
+      const debounced = debounce(fn, 100)
+
+      debounced('test', 42)
+      vi.advanceTimersByTime(100)
+
+      expect(fn).toHaveBeenCalledWith('test', 42)
+    })
+
+    it('handles zero delay', () => {
+      const fn = vi.fn()
+      const debounced = debounce(fn, 0)
+
+      debounced()
+      vi.advanceTimersByTime(0)
+
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
   })
 })
