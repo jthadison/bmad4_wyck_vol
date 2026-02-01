@@ -11,24 +11,10 @@
  * Author: Story 12.11 Task 2 - Subtask 2.4
  */
 
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 
 // Test configuration
 const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function waitForApiResponse(page: Page, urlPattern: string | RegExp) {
-  return page.waitForResponse(
-    (response) => {
-      const url = response.url()
-      if (typeof urlPattern === 'string') {
-        return url.includes(urlPattern)
-      }
-      return urlPattern.test(url)
-    },
-    { timeout: 15000 }
-  )
-}
 
 test.describe('Signal Generation Workflow', () => {
   /**
@@ -166,8 +152,8 @@ test.describe('Signal Generation Workflow', () => {
 
       // Common signal fields to verify
       const hasEntryPrice = /entry.*price|entry.*\$\d+/i.test(signalDetails!)
-      void /stop.*loss|stop.*\$\d+/i.test(signalDetails!) // Check stop loss format
-      void /target.*price|target.*\$\d+/i.test(signalDetails!) // Check target format
+      void /stop.*loss|stop.*\$\d+/i.test(signalDetails!) // Suppress unused variable warning
+      void /target.*price|target.*\$\d+/i.test(signalDetails!) // Suppress unused variable warning
 
       // At minimum, should have entry price
       expect(hasEntryPrice || signalDetails!.includes('$')).toBe(true)

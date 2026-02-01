@@ -74,8 +74,8 @@ test.describe('Help Glossary', () => {
       'input[placeholder*="Search"], input[type="search"]'
     )
 
-    void alphabetLinks.count() // Check selector exists
-    void searchInput.count() // Check selector exists
+    void alphabetLinks.count() // Suppress unused variable warning
+    void searchInput.count() // Suppress unused variable warning
 
     // Should have some navigation method (alphabetical links or search)
     // If neither exists, the page should still load successfully
@@ -91,7 +91,7 @@ test.describe('Help Glossary', () => {
     const definitions = page.locator(
       'dl, .definition, .term-definition, [class*="glossary-item"], [class*="glossary"]'
     )
-    void definitions.count() // Check selector exists
+    void definitions.count() // Suppress unused variable warning
 
     // Glossary page should have loaded - verify content area exists
     const pageLoaded = await page.locator('#app').isVisible()
@@ -280,8 +280,8 @@ test.describe('Help Article', () => {
     )
     const helpLink = page.locator('a[href="/help"], a[href*="/help"]')
 
-    void breadcrumb.count() // Check selector exists
-    void helpLink.count() // Check selector exists
+    void breadcrumb.count() // Suppress unused variable warning
+    void helpLink.count() // Suppress unused variable warning
 
     // Should have breadcrumb or at least a link back to help section
     // Page may show 404 if article doesn't exist, which is acceptable

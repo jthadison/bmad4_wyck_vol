@@ -117,8 +117,8 @@ test.describe('Signal Performance Dashboard', () => {
       'select:has-text("7 days"), select:has-text("30 days"), button:has-text("7D"), button:has-text("30D")'
     )
 
-    void dateInputs.count() // Check selector exists
-    void dateRangeSelect.count() // Check selector exists
+    void dateInputs.count() // Suppress unused variable warning
+    void dateRangeSelect.count() // Suppress unused variable warning
 
     // Date filtering may or may not be available - verify page loads
     const pageLoaded = await page.locator('#app').isVisible()
@@ -223,8 +223,8 @@ test.describe('Pattern Effectiveness Report', () => {
       '[class*="metric"], [class*="value"], [class*="stat"]'
     )
 
-    void percentages.count() // Check selector exists
-    void metrics.count() // Check selector exists
+    void percentages.count() // Suppress unused variable warning
+    void metrics.count() // Suppress unused variable warning
 
     // Should display some form of effectiveness data
     const pageLoaded = await page.locator('#app').isVisible()

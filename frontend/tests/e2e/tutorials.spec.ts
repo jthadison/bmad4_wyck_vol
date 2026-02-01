@@ -74,9 +74,9 @@ test.describe('Tutorial Walkthrough', () => {
       ':has-text("Step 1"), :has-text("Step 2"), :has-text("1/"), :has-text("2/")'
     )
 
-    void stepIndicators.count() // Check selector exists
-    void progressBar.count() // Check selector exists
-    void stepNumbers.count() // Check selector exists
+    void stepIndicators.count() // Suppress unused variable warning
+    void progressBar.count() // Suppress unused variable warning
+    void stepNumbers.count() // Suppress unused variable warning
 
     // Verify page loaded - progress indicators are optional
     await expect(page.locator('#app')).toBeVisible()
