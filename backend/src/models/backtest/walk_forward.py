@@ -9,13 +9,20 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
 from .config import BacktestConfig
 from .metrics import BacktestMetrics
+
+__all__ = [
+    "ValidationWindow",
+    "WalkForwardConfig",
+    "WalkForwardChartData",
+    "WalkForwardResult",
+]
 
 
 class ValidationWindow(BaseModel):
@@ -63,10 +70,10 @@ class ValidationWindow(BaseModel):
     @field_validator("created_at")
     @classmethod
     def validate_utc_timestamp(cls, v: datetime) -> datetime:
-        """Ensure timestamp is UTC."""
-        if v.tzinfo is not None and v.tzinfo.utcoffset(v) is not None:
-            # Convert to UTC if timezone-aware
-            return v.replace(tzinfo=None)
+        """Ensure timestamp is UTC, then convert to naive UTC."""
+        if v.tzinfo is not None:
+            # Convert to UTC first, then strip timezone
+            return v.astimezone(UTC).replace(tzinfo=None)
         return v
 
 
@@ -177,7 +184,7 @@ class WalkForwardResult(BaseModel):
     statistical_significance: dict[str, float] = Field(
         default_factory=dict, description="P-values for statistical tests"
     )
-    chart_data: Optional[WalkForwardChartData] = Field(
+    chart_data: WalkForwardChartData | None = Field(
         default=None, description="Chart data for visualization"
     )
     total_execution_time_seconds: float = Field(default=0.0, ge=0, description="Total exec time")
@@ -191,7 +198,8 @@ class WalkForwardResult(BaseModel):
     @field_validator("created_at")
     @classmethod
     def validate_utc_timestamp(cls, v: datetime) -> datetime:
-        """Ensure timestamp is UTC."""
-        if v.tzinfo is not None and v.tzinfo.utcoffset(v) is not None:
-            return v.replace(tzinfo=None)
+        """Ensure timestamp is UTC, then convert to naive UTC."""
+        if v.tzinfo is not None:
+            # Convert to UTC first, then strip timezone
+            return v.astimezone(UTC).replace(tzinfo=None)
         return v

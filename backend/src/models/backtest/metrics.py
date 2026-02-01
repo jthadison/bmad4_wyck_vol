@@ -9,11 +9,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-# Re-export cost and accuracy models for backward compatibility
+__all__ = [
+    "BacktestMetrics",
+    "PatternPerformance",
+    "MonthlyReturn",
+    "DrawdownPeriod",
+    "RiskMetrics",
+    "CampaignPerformance",
+]
 
 
 class BacktestMetrics(BaseModel):
@@ -169,7 +176,7 @@ class DrawdownPeriod(BaseModel):
 
     peak_date: datetime = Field(..., description="Peak portfolio value date (UTC)")
     trough_date: datetime = Field(..., description="Trough (lowest) value date (UTC)")
-    recovery_date: Optional[datetime] = Field(
+    recovery_date: datetime | None = Field(
         default=None, description="Recovery date (None if not recovered)"
     )
     peak_value: Decimal = Field(
@@ -178,20 +185,20 @@ class DrawdownPeriod(BaseModel):
     trough_value: Decimal = Field(
         ..., ge=Decimal("0"), decimal_places=2, description="Trough portfolio value"
     )
-    recovery_value: Optional[Decimal] = Field(
+    recovery_value: Decimal | None = Field(
         default=None, ge=Decimal("0"), decimal_places=2, description="Recovery portfolio value"
     )
     drawdown_pct: Decimal = Field(
         ..., le=Decimal("0"), decimal_places=4, description="Drawdown % from peak (negative)"
     )
     duration_days: int = Field(..., ge=0, description="Days from peak to trough")
-    recovery_duration_days: Optional[int] = Field(
+    recovery_duration_days: int | None = Field(
         default=None, ge=0, description="Days from trough to recovery"
     )
 
     @field_validator("peak_date", "trough_date", "recovery_date", mode="before")
     @classmethod
-    def ensure_utc(cls, v: Optional[datetime]) -> Optional[datetime]:
+    def ensure_utc(cls, v: datetime | None) -> datetime | None:
         """Enforce UTC timezone."""
         if v is None:
             return None
@@ -330,7 +337,7 @@ class CampaignPerformance(BaseModel):
     campaign_type: Literal["ACCUMULATION", "DISTRIBUTION"] = Field(..., description="Campaign type")
     symbol: str = Field(..., max_length=20, description="Trading symbol")
     start_date: datetime = Field(..., description="Campaign start date (UTC)")
-    end_date: Optional[datetime] = Field(default=None, description="Campaign end date (UTC)")
+    end_date: datetime | None = Field(default=None, description="Campaign end date (UTC)")
     status: Literal["COMPLETED", "FAILED", "IN_PROGRESS"] = Field(
         ..., description="Campaign status"
     )
@@ -342,17 +349,17 @@ class CampaignPerformance(BaseModel):
     pattern_sequence: list[str] = Field(
         default_factory=list, description="Ordered pattern sequence"
     )
-    failure_reason: Optional[str] = Field(
+    failure_reason: str | None = Field(
         default=None, max_length=200, description="Failure reason (if FAILED)"
     )
     total_campaign_pnl: Decimal = Field(..., decimal_places=2, description="Total campaign P&L")
     risk_reward_realized: Decimal = Field(
         ..., decimal_places=4, description="Actual R-multiple for campaign"
     )
-    avg_markup_return: Optional[Decimal] = Field(
+    avg_markup_return: Decimal | None = Field(
         default=None, decimal_places=4, description="Avg Markup return % (ACCUMULATION)"
     )
-    avg_markdown_return: Optional[Decimal] = Field(
+    avg_markdown_return: Decimal | None = Field(
         default=None, decimal_places=4, description="Avg Markdown return % (DISTRIBUTION)"
     )
     phases_completed: list[str] = Field(
@@ -361,7 +368,7 @@ class CampaignPerformance(BaseModel):
 
     @field_validator("start_date", "end_date", mode="before")
     @classmethod
-    def ensure_utc(cls, v: Optional[datetime]) -> Optional[datetime]:
+    def ensure_utc(cls, v: datetime | None) -> datetime | None:
         """Enforce UTC timezone."""
         if v is None:
             return None
@@ -379,7 +386,7 @@ class CampaignPerformance(BaseModel):
         mode="before",
     )
     @classmethod
-    def convert_to_decimal(cls, v) -> Optional[Decimal]:
+    def convert_to_decimal(cls, v) -> Decimal | None:
         """Convert numeric values to Decimal."""
         if v is None:
             return None

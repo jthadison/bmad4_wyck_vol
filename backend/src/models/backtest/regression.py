@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime as dt
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -18,6 +18,14 @@ from pydantic import BaseModel, Field, field_validator
 from .config import BacktestConfig
 from .metrics import BacktestMetrics
 from .results import BacktestResult
+
+__all__ = [
+    "MetricComparison",
+    "RegressionComparison",
+    "RegressionTestConfig",
+    "RegressionBaseline",
+    "RegressionTestResult",
+]
 
 
 class MetricComparison(BaseModel):
@@ -58,7 +66,7 @@ class MetricComparison(BaseModel):
         mode="before",
     )
     @classmethod
-    def convert_to_decimal(cls, v) -> Optional[Decimal]:
+    def convert_to_decimal(cls, v) -> Decimal | None:
         """Convert numeric values to Decimal."""
         if v is None:
             return None
@@ -131,7 +139,7 @@ class RegressionTestConfig(BaseModel):
         description="Test period end (default: yesterday)",
     )
     backtest_config: BacktestConfig = Field(description="Base backtest configuration")
-    baseline_test_id: Optional[UUID] = Field(
+    baseline_test_id: UUID | None = Field(
         default=None, description="Reference to baseline test for comparison"
     )
     degradation_thresholds: dict[str, Decimal] = Field(
@@ -230,7 +238,7 @@ class RegressionTestResult(BaseModel):
     per_symbol_results: dict[str, BacktestResult] = Field(
         description="Full backtest result per symbol"
     )
-    baseline_comparison: Optional[RegressionComparison] = Field(
+    baseline_comparison: RegressionComparison | None = Field(
         default=None, description="Comparison to baseline (if exists)"
     )
     regression_detected: bool = Field(

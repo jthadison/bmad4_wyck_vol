@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -28,6 +28,18 @@ from .metrics import (
     PatternPerformance,
     RiskMetrics,
 )
+
+__all__ = [
+    "EquityCurvePoint",
+    "BacktestComparison",
+    "BacktestPreviewResponse",
+    "BacktestProgressUpdate",
+    "BacktestCompletedMessage",
+    "BacktestOrder",
+    "BacktestPosition",
+    "BacktestTrade",
+    "BacktestResult",
+]
 
 
 class EquityCurvePoint(BaseModel):
@@ -158,19 +170,19 @@ class BacktestOrder(BaseModel):
     order_type: Literal["MARKET", "LIMIT"] = Field(description="Order type")
     side: Literal["BUY", "SELL"] = Field(description="Order side")
     quantity: int = Field(gt=0, description="Share quantity")
-    limit_price: Optional[Decimal] = Field(default=None, description="Limit price if LIMIT order")
+    limit_price: Decimal | None = Field(default=None, description="Limit price if LIMIT order")
     created_bar_timestamp: datetime = Field(description="Bar timestamp when created")
-    filled_bar_timestamp: Optional[datetime] = Field(
+    filled_bar_timestamp: datetime | None = Field(
         default=None, description="Bar timestamp when filled"
     )
-    fill_price: Optional[Decimal] = Field(default=None, description="Actual fill price")
+    fill_price: Decimal | None = Field(default=None, description="Actual fill price")
     commission: Decimal = Field(default=Decimal("0"), description="Commission cost")
     slippage: Decimal = Field(default=Decimal("0"), description="Slippage cost")
     # Story 12.5: Detailed breakdowns
-    commission_breakdown: Optional[CommissionBreakdown] = Field(
+    commission_breakdown: CommissionBreakdown | None = Field(
         default=None, description="Detailed commission breakdown (Story 12.5)"
     )
-    slippage_breakdown: Optional[SlippageBreakdown] = Field(
+    slippage_breakdown: SlippageBreakdown | None = Field(
         default=None, description="Detailed slippage breakdown (Story 12.5)"
     )
     status: Literal["PENDING", "FILLED", "REJECTED"] = Field(description="Order status")
@@ -278,11 +290,9 @@ class BacktestTrade(BaseModel):
         default=Decimal("0"), description="R-multiple before costs (Story 12.5)"
     )
     r_multiple: Decimal = Field(default=Decimal("0"), description="Risk-adjusted return")
-    pattern_type: Optional[str] = Field(
-        default=None, description="Pattern type that triggered trade"
-    )
+    pattern_type: str | None = Field(default=None, description="Pattern type that triggered trade")
     # Story 13.6: Wyckoff exit reason tracking (FR6.7)
-    exit_reason: Optional[str] = Field(
+    exit_reason: str | None = Field(
         default=None, description="Reason for exit (JUMP_LEVEL_HIT, UTAD_DETECTED, etc.)"
     )
 
@@ -371,7 +381,7 @@ class BacktestResult(BaseModel):
     trades: list[BacktestTrade] = Field(default_factory=list, description="Completed trades")
     summary: BacktestMetrics = Field(description="Performance summary metrics")
     # Story 12.5: Transaction cost summary
-    cost_summary: Optional[BacktestCostSummary] = Field(
+    cost_summary: BacktestCostSummary | None = Field(
         default=None, description="Transaction cost summary (Story 12.5)"
     )
     # Story 12.6A: Enhanced metrics
@@ -384,17 +394,17 @@ class BacktestResult(BaseModel):
     drawdown_periods: list[DrawdownPeriod] = Field(
         default_factory=list, description="Individual drawdown events (Story 12.6A)"
     )
-    risk_metrics: Optional[RiskMetrics] = Field(
+    risk_metrics: RiskMetrics | None = Field(
         default=None, description="Portfolio risk statistics (Story 12.6A)"
     )
     campaign_performance: list[CampaignPerformance] = Field(
         default_factory=list, description="Wyckoff campaign tracking (Story 12.6A)"
     )
     # Story 12.6A AC6: Extreme trades and streaks
-    largest_winner: Optional[BacktestTrade] = Field(
+    largest_winner: BacktestTrade | None = Field(
         default=None, description="Trade with highest P&L (Story 12.6A AC6)"
     )
-    largest_loser: Optional[BacktestTrade] = Field(
+    largest_loser: BacktestTrade | None = Field(
         default=None, description="Trade with lowest P&L (Story 12.6A AC6)"
     )
     longest_winning_streak: int = Field(

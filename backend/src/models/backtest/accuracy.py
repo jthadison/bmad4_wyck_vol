@@ -9,10 +9,15 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+__all__ = [
+    "AccuracyMetrics",
+    "LabeledPattern",
+]
 
 
 class AccuracyMetrics(BaseModel):
@@ -241,9 +246,9 @@ class LabeledPattern(BaseModel):
     correctness: str = Field(
         ..., max_length=20, description="Ground truth (CORRECT, INCORRECT, AMBIGUOUS)"
     )
-    phase: Optional[str] = Field(None, max_length=20, description="Wyckoff phase context")
-    campaign_id: Optional[UUID] = Field(None, description="Associated campaign ID")
-    notes: Optional[str] = Field(None, max_length=500, description="Additional context")
+    phase: str | None = Field(None, max_length=20, description="Wyckoff phase context")
+    campaign_id: UUID | None = Field(None, description="Associated campaign ID")
+    notes: str | None = Field(None, max_length=500, description="Additional context")
 
     model_config = ConfigDict(
         populate_by_name=True,  # Allow both 'pattern_date' and 'date' alias

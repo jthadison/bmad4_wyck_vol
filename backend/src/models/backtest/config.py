@@ -9,9 +9,16 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+__all__ = [
+    "BacktestPreviewRequest",
+    "CommissionConfig",
+    "SlippageConfig",
+    "BacktestConfig",
+]
 
 
 class BacktestPreviewRequest(BaseModel):
@@ -81,7 +88,7 @@ class CommissionConfig(BaseModel):
         decimal_places=2,
         description="Minimum commission per trade",
     )
-    max_commission: Optional[Decimal] = Field(
+    max_commission: Decimal | None = Field(
         default=None, ge=Decimal("0"), decimal_places=2, description="Maximum commission cap"
     )
     broker_name: str = Field(
@@ -97,7 +104,7 @@ class CommissionConfig(BaseModel):
         mode="before",
     )
     @classmethod
-    def convert_to_decimal(cls, v) -> Optional[Decimal]:
+    def convert_to_decimal(cls, v) -> Decimal | None:
         """Convert numeric values to Decimal for financial precision."""
         if v is None:
             return None
@@ -239,10 +246,10 @@ class BacktestConfig(BaseModel):
         description="Base slippage percentage (deprecated)",
     )
     # Story 12.5: New comprehensive configs
-    commission_config: Optional[CommissionConfig] = Field(
+    commission_config: CommissionConfig | None = Field(
         default=None, description="Commission configuration (Story 12.5)"
     )
-    slippage_config: Optional[SlippageConfig] = Field(
+    slippage_config: SlippageConfig | None = Field(
         default=None, description="Slippage configuration (Story 12.5)"
     )
     risk_limits: dict[str, Any] = Field(
