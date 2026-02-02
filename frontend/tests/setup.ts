@@ -1,11 +1,13 @@
 /**
  * Vitest Test Setup (Story 10.8)
  *
- * Configures global test environment including PrimeVue plugin setup.
+ * Configures global test environment including PrimeVue plugin setup
+ * and global API mocking to prevent ECONNREFUSED errors.
  */
 
 import { config } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import { vi } from 'vitest'
 
 // Configure PrimeVue plugin for all tests
 config.global.plugins = [PrimeVue]
@@ -63,3 +65,21 @@ config.global.mocks = {
     },
   },
 }
+
+// ============================================================================
+// Global API Mocking (Issue #335)
+// ============================================================================
+
+/**
+ * Mock the API client globally to prevent real HTTP requests in tests.
+ * Individual tests can override these mocks as needed.
+ */
+vi.mock('@/services/api', () => ({
+  apiClient: {
+    get: vi.fn().mockResolvedValue(null),
+    post: vi.fn().mockResolvedValue(null),
+    put: vi.fn().mockResolvedValue(null),
+    patch: vi.fn().mockResolvedValue(null),
+    delete: vi.fn().mockResolvedValue(null),
+  },
+}))
