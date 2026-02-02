@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file */
 /**
  * KillSwitchModal Component Unit Tests
  * Story 19.22 - Emergency Kill Switch
@@ -11,15 +12,77 @@
  * - Loading state
  */
 
-import { describe, it, expect } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, it, expect, afterEach } from 'vitest'
+import { mount, VueWrapper } from '@vue/test-utils'
 import KillSwitchModal from '@/components/layout/KillSwitchModal.vue'
 import PrimeVue from 'primevue/config'
-import Dialog from 'primevue/dialog'
-import Button from 'primevue/button'
-import Message from 'primevue/message'
+import { defineComponent } from 'vue'
+
+// Define stub components with proper structure for testing
+// Using 'PButton' and 'PDialog' names to avoid reserved HTML element name conflicts
+const ButtonStub = defineComponent({
+  name: 'PButton',
+  props: {
+    label: { type: String, default: '' },
+    severity: { type: String, default: '' },
+    disabled: { type: Boolean, default: false },
+    loading: { type: Boolean, default: false },
+    icon: { type: String, default: '' },
+  },
+  emits: ['click'],
+  template: `
+    <button
+      class="p-button"
+      :disabled="disabled"
+      :data-loading="loading"
+      @click="$emit('click', $event)"
+    >
+      {{ label }}
+    </button>
+  `,
+})
+
+const MessageStub = defineComponent({
+  name: 'PMessage',
+  props: {
+    severity: { type: String, default: '' },
+    closable: { type: Boolean, default: false },
+  },
+  template: `
+    <div class="p-message p-message-error" data-testid="error-message">
+      <slot />
+    </div>
+  `,
+})
+
+const DialogStub = defineComponent({
+  name: 'PDialog',
+  props: {
+    visible: { type: Boolean, default: false },
+    modal: { type: Boolean, default: false },
+    closable: { type: Boolean, default: true },
+    draggable: { type: Boolean, default: true },
+    style: { type: [Object, String], default: () => ({}) },
+  },
+  emits: ['update:visible'],
+  template: `
+    <div v-if="visible" class="p-dialog" data-testid="kill-switch-modal">
+      <div class="p-dialog-header">
+        <slot name="header" />
+      </div>
+      <div class="p-dialog-content">
+        <slot />
+      </div>
+      <div class="p-dialog-footer">
+        <slot name="footer" />
+      </div>
+    </div>
+  `,
+})
 
 describe('KillSwitchModal', () => {
+  let wrapper: VueWrapper | undefined
+
   const defaultProps = {
     visible: true,
     loading: false,
@@ -34,14 +97,20 @@ describe('KillSwitchModal', () => {
       },
       global: {
         plugins: [PrimeVue],
-        components: {
-          Dialog,
-          Button,
-          Message,
+        stubs: {
+          Dialog: DialogStub,
+          Button: ButtonStub,
+          Message: MessageStub,
         },
       },
     })
   }
+
+  afterEach(() => {
+    if (wrapper) {
+      wrapper.unmount()
+    }
+  })
 
   it('renders emergency stop header', () => {
     const wrapper = createWrapper()
@@ -67,7 +136,7 @@ describe('KillSwitchModal', () => {
 
   it('emits confirm event when stop button is clicked', async () => {
     const wrapper = createWrapper()
-    const buttons = wrapper.findAllComponents(Button)
+    const buttons = wrapper.findAllComponents(ButtonStub)
     const confirmButton = buttons.find((b) =>
       b.text().includes('Stop All Trading')
     )
@@ -80,7 +149,7 @@ describe('KillSwitchModal', () => {
 
   it('emits cancel event when cancel button is clicked', async () => {
     const wrapper = createWrapper()
-    const buttons = wrapper.findAllComponents(Button)
+    const buttons = wrapper.findAllComponents(ButtonStub)
     const cancelButton = buttons.find((b) => b.text().includes('Cancel'))
 
     await cancelButton?.trigger('click')
@@ -96,7 +165,7 @@ describe('KillSwitchModal', () => {
     })
 
     expect(wrapper.text()).toContain('Failed to activate kill switch')
-    expect(wrapper.findComponent(Message).exists()).toBe(true)
+    expect(wrapper.findComponent(MessageStub).exists()).toBe(true)
   })
 
   it('shows loading state on confirm button when loading prop is true', () => {
@@ -104,7 +173,7 @@ describe('KillSwitchModal', () => {
       loading: true,
     })
 
-    const buttons = wrapper.findAllComponents(Button)
+    const buttons = wrapper.findAllComponents(ButtonStub)
     const confirmButton = buttons.find((b) =>
       b.text().includes('Stop All Trading')
     )
@@ -117,7 +186,7 @@ describe('KillSwitchModal', () => {
       loading: true,
     })
 
-    const buttons = wrapper.findAllComponents(Button)
+    const buttons = wrapper.findAllComponents(ButtonStub)
     const cancelButton = buttons.find((b) => b.text().includes('Cancel'))
 
     expect(cancelButton?.props('disabled')).toBe(true)
@@ -128,6 +197,6 @@ describe('KillSwitchModal', () => {
       error: null,
     })
 
-    expect(wrapper.findComponent(Message).exists()).toBe(false)
+    expect(wrapper.findComponent(MessageStub).exists()).toBe(false)
   })
 })
