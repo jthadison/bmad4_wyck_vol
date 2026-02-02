@@ -290,7 +290,7 @@ class TestCostValidator:
                 end_date=date(2024, 12, 31),
             ),
             trades=[],
-            metrics=BacktestMetrics(),
+            summary=BacktestMetrics(),
             cost_summary=BacktestCostSummary(
                 total_trades=10,
                 total_commission_paid=Decimal("50.00"),
@@ -333,7 +333,7 @@ class TestCostValidator:
                 end_date=date(2024, 12, 31),
             ),
             trades=[],
-            metrics=BacktestMetrics(),
+            summary=BacktestMetrics(),
             cost_summary=None,  # Missing cost summary
         )
 

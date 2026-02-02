@@ -188,7 +188,7 @@ class TestTransactionCostAnalyzer:
                 end_date=date(2024, 12, 31),
             ),
             trades=trades,
-            metrics=BacktestMetrics(),
+            summary=BacktestMetrics(),
         )
 
         summary = analyzer.analyze_backtest_costs(backtest_result)
@@ -233,7 +233,7 @@ class TestTransactionCostAnalyzer:
                 end_date=date(2024, 12, 31),
             ),
             trades=[],  # No trades
-            metrics=BacktestMetrics(),
+            summary=BacktestMetrics(),
         )
 
         summary = analyzer.analyze_backtest_costs(backtest_result)
