@@ -31,7 +31,7 @@ from src.models.pivot import Pivot, PivotType
 from src.models.price_cluster import PriceCluster
 from src.models.trading_range import RangeStatus, TradingRange
 from src.models.volume_analysis import VolumeAnalysis
-from src.pattern_engine.phase_detector_v2 import (
+from src.pattern_engine._phase_detector_v2_impl import (
     _calculate_markup_slope,
     _check_phase_confirmation,
     _check_phase_invalidation,
