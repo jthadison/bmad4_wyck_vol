@@ -158,7 +158,7 @@ class TwelveDataAdapter:
             )
         return self._client
 
-    async def __aenter__(self) -> "TwelveDataAdapter":
+    async def __aenter__(self) -> TwelveDataAdapter:
         """Async context manager entry."""
         return self
 

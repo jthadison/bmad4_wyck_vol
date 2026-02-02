@@ -17,7 +17,7 @@ Author: Wayne (Analyst), William (Mentor), Victoria (Volume), Rachel (Risk)
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional, Union
+from typing import Optional, Union
 
 import structlog
 
