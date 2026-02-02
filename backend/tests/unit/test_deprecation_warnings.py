@@ -427,9 +427,9 @@ class TestLegacyFacadeLineCount:
             source_file = Path(inspect.getfile(phase_detector))
             line_count = len(source_file.read_text().splitlines())
 
-        assert line_count < MAX_FACADE_LINES, (
-            f"phase_detector.py has {line_count} lines, should be <{MAX_FACADE_LINES}"
-        )
+        assert (
+            line_count < MAX_FACADE_LINES
+        ), f"phase_detector.py has {line_count} lines, should be <{MAX_FACADE_LINES}"
 
     def test_phase_detector_v2_facade_under_limit(self) -> None:
         """Facade should be thin wrapper, not bloated."""
@@ -442,6 +442,6 @@ class TestLegacyFacadeLineCount:
             source_file = Path(inspect.getfile(phase_detector_v2))
             line_count = len(source_file.read_text().splitlines())
 
-        assert line_count < MAX_FACADE_LINES, (
-            f"phase_detector_v2.py has {line_count} lines, should be <{MAX_FACADE_LINES}"
-        )
+        assert (
+            line_count < MAX_FACADE_LINES
+        ), f"phase_detector_v2.py has {line_count} lines, should be <{MAX_FACADE_LINES}"

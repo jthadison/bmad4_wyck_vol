@@ -378,9 +378,7 @@ class SymbolValidationService:
             for r in results[:limit]:
                 # Calculate relevance score
                 relevance = (
-                    RELEVANCE_EXACT_MATCH
-                    if r.symbol.upper() == query
-                    else RELEVANCE_PARTIAL_MATCH
+                    RELEVANCE_EXACT_MATCH if r.symbol.upper() == query else RELEVANCE_PARTIAL_MATCH
                 )
                 search_results.append(
                     SymbolSearchResult(

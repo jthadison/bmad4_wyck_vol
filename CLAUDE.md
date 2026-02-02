@@ -115,7 +115,12 @@ poetry install  # Uses pyproject.toml
 cd frontend
 npm install
 
-# 4. Start development environment
+# 4. Install pre-commit hooks (recommended)
+cd backend
+poetry run pre-commit install
+cd ..
+
+# 5. Start development environment
 docker-compose up  # All services
 
 # OR run individually:
@@ -136,14 +141,20 @@ cd frontend && npm run dev
 ### Code Quality Commands
 
 ```bash
+# Pre-commit hooks (runs all checks automatically on commit)
+cd backend && poetry run pre-commit install  # One-time setup
+poetry run pre-commit run --all-files        # Manual run on all files
+
 # Backend
 poetry run ruff check src/          # Linting
+poetry run ruff format src/         # Auto-format
 poetry run mypy src/               # Type checking
 poetry run pytest                  # Unit tests
 poetry run pytest -v --cov         # Coverage report (90%+ required)
 
 # Frontend
 npm run lint                       # ESLint
+npm run format                     # Prettier
 npm run type-check                # TypeScript
 npm run test                       # Vitest
 npm run test:smoke                # Playwright E2E
@@ -262,7 +273,7 @@ The project uses GitHub Actions for comprehensive CI/CD automation:
   - Frontend: Linting (ESLint + Prettier), type checking, unit tests (Vitest)
   - E2E: Playwright tests across Chromium, Firefox, WebKit
   - Quality: Detector accuracy, code quality checks, security scanning
-  - Gate: All checks must pass for merge (except mypy is advisory)
+  - Gate: All checks must pass for merge (including mypy type checking)
 
 - **Main CI** (`main-ci.yaml`) - Triggered on pushes to `main` branch
   - Runs all PR CI checks plus extended backtests and codegen validation

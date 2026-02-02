@@ -17,39 +17,35 @@ import SignalQueuePanel from '@/components/signals/SignalQueuePanel.vue'
 import type { PendingSignal, Signal } from '@/types'
 import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
+import type { useSignalQueueStore } from '@/stores/signalQueueStore'
 
-// Mock store type for testing
-interface MockSignalQueueStore {
-  pendingSignals: PendingSignal[]
-  selectedSignal: PendingSignal | null
-  isLoading: boolean
-  error: string | null
-  queueCount: number
-  hasSignals: boolean
-  sortedSignals: PendingSignal[]
-  fetchPendingSignals: ReturnType<typeof vi.fn>
-  approveSignal: ReturnType<typeof vi.fn>
-  rejectSignal: ReturnType<typeof vi.fn>
-  selectSignal: ReturnType<typeof vi.fn>
-  stopCountdownTimer: ReturnType<typeof vi.fn>
-}
+// Type alias for the store return type
+type SignalQueueStoreType = ReturnType<typeof useSignalQueueStore>
+
+// Helper to create a mock store with all required properties
+const createMockStore = (overrides = {}) => ({
+  pendingSignals: [],
+  selectedSignal: null,
+  isLoading: false,
+  error: null,
+  queueCount: 0,
+  hasSignals: false,
+  sortedSignals: [],
+  fetchPendingSignals: vi.fn(),
+  approveSignal: vi.fn(),
+  rejectSignal: vi.fn(),
+  selectSignal: vi.fn(),
+  stopCountdownTimer: vi.fn(),
+  removeSignalFromQueue: vi.fn(),
+  addSignalToQueue: vi.fn(),
+  clearQueue: vi.fn(),
+  startCountdownTimer: vi.fn(),
+  ...overrides,
+})
 
 // Mock the store
 vi.mock('@/stores/signalQueueStore', () => ({
-  useSignalQueueStore: vi.fn(() => ({
-    pendingSignals: [],
-    selectedSignal: null,
-    isLoading: false,
-    error: null,
-    queueCount: 0,
-    hasSignals: false,
-    sortedSignals: [],
-    fetchPendingSignals: vi.fn(),
-    approveSignal: vi.fn(),
-    rejectSignal: vi.fn(),
-    selectSignal: vi.fn(),
-    stopCountdownTimer: vi.fn(),
-  })),
+  useSignalQueueStore: vi.fn(() => createMockStore()),
 }))
 
 // Helper to create mock signal
@@ -153,20 +149,9 @@ describe('SignalQueuePanel.vue', () => {
   describe('Panel Header', () => {
     it('should display "Signal Queue" title', async () => {
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: false,
-        error: null,
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore() as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -176,20 +161,9 @@ describe('SignalQueuePanel.vue', () => {
 
     it('should show connection status indicator', async () => {
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: false,
-        error: null,
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore() as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -201,20 +175,9 @@ describe('SignalQueuePanel.vue', () => {
   describe('Loading State', () => {
     it('should show loading spinner when isLoading is true', async () => {
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: true,
-        error: null,
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore({ isLoading: true }) as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -228,20 +191,11 @@ describe('SignalQueuePanel.vue', () => {
   describe('Error State', () => {
     it('should show error message when error exists', async () => {
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: false,
-        error: 'Failed to fetch signals',
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore({
+          error: 'Failed to fetch signals',
+        }) as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -253,20 +207,12 @@ describe('SignalQueuePanel.vue', () => {
     it('should have retry button in error state', async () => {
       const fetchMock = vi.fn()
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: false,
-        error: 'Failed to fetch signals',
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: fetchMock,
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore({
+          error: 'Failed to fetch signals',
+          fetchPendingSignals: fetchMock,
+        }) as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -278,20 +224,9 @@ describe('SignalQueuePanel.vue', () => {
   describe('Empty State', () => {
     it('should show empty state when no signals exist', async () => {
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: false,
-        error: null,
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore() as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -302,20 +237,9 @@ describe('SignalQueuePanel.vue', () => {
 
     it('should show helpful message in empty state', async () => {
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: false,
-        error: null,
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore() as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -328,20 +252,14 @@ describe('SignalQueuePanel.vue', () => {
     it('should render signal cards when signals exist', async () => {
       const signals = [createMockPendingSignal(), createMockPendingSignal()]
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: signals,
-        selectedSignal: null,
-        isLoading: false,
-        error: null,
-        queueCount: 2,
-        hasSignals: true,
-        sortedSignals: signals,
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore({
+          pendingSignals: signals,
+          queueCount: 2,
+          hasSignals: true,
+          sortedSignals: signals,
+        }) as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -354,20 +272,14 @@ describe('SignalQueuePanel.vue', () => {
     it('should show count badge when signals exist', async () => {
       const signals = [createMockPendingSignal(), createMockPendingSignal()]
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: signals,
-        selectedSignal: null,
-        isLoading: false,
-        error: null,
-        queueCount: 2,
-        hasSignals: true,
-        sortedSignals: signals,
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore({
+          pendingSignals: signals,
+          queueCount: 2,
+          hasSignals: true,
+          sortedSignals: signals,
+        }) as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -381,20 +293,9 @@ describe('SignalQueuePanel.vue', () => {
   describe('Component Data Testid', () => {
     it('should have data-testid on main container', async () => {
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: false,
-        error: null,
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: vi.fn(),
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore() as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()
@@ -409,20 +310,11 @@ describe('SignalQueuePanel.vue', () => {
     it('should fetch pending signals on mount', async () => {
       const fetchMock = vi.fn()
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
-      vi.mocked(useSignalQueueStore).mockReturnValue({
-        pendingSignals: [],
-        selectedSignal: null,
-        isLoading: false,
-        error: null,
-        queueCount: 0,
-        hasSignals: false,
-        sortedSignals: [],
-        fetchPendingSignals: fetchMock,
-        approveSignal: vi.fn(),
-        rejectSignal: vi.fn(),
-        selectSignal: vi.fn(),
-        stopCountdownTimer: vi.fn(),
-      } as MockSignalQueueStore)
+      vi.mocked(useSignalQueueStore).mockReturnValue(
+        createMockStore({
+          fetchPendingSignals: fetchMock,
+        }) as unknown as SignalQueueStoreType
+      )
 
       wrapper = mountComponent()
       await flushPromises()

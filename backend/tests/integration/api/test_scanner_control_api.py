@@ -75,9 +75,7 @@ async def create_test_client(db_session: AsyncSession, scanner_service):
 
 
 @pytest.fixture
-async def scanner_control_client(
-    db_session: AsyncSession, mock_scanner_service
-) -> AsyncClient:
+async def scanner_control_client(db_session: AsyncSession, mock_scanner_service) -> AsyncClient:
     """
     Provide async HTTP client with mocked scanner service.
 
@@ -270,9 +268,7 @@ class TestGetScannerHistory:
             db_with_scanner_config.add(history)
         await db_with_scanner_config.commit()
 
-        async with create_test_client(
-            db_with_scanner_config, mock_scanner_service
-        ) as client:
+        async with create_test_client(db_with_scanner_config, mock_scanner_service) as client:
             response = await client.get("/api/v1/scanner/history")
 
         assert response.status_code == 200
@@ -314,9 +310,7 @@ class TestGetScannerHistory:
             db_with_scanner_config.add(history)
         await db_with_scanner_config.commit()
 
-        async with create_test_client(
-            db_with_scanner_config, mock_scanner_service
-        ) as client:
+        async with create_test_client(db_with_scanner_config, mock_scanner_service) as client:
             response = await client.get("/api/v1/scanner/history?limit=5")
 
         assert response.status_code == 200
@@ -343,9 +337,7 @@ class TestGetScannerHistory:
             db_with_scanner_config.add(history)
         await db_with_scanner_config.commit()
 
-        async with create_test_client(
-            db_with_scanner_config, mock_scanner_service
-        ) as client:
+        async with create_test_client(db_with_scanner_config, mock_scanner_service) as client:
             response = await client.get("/api/v1/scanner/history?limit=100")
 
         assert response.status_code == 200
@@ -449,9 +441,7 @@ class TestPatchScannerConfig:
 class TestScannerServiceNotInitialized:
     """Test behavior when scanner service is not initialized."""
 
-    async def test_returns_503_when_service_not_set(
-        self, db_with_scanner_config: AsyncSession
-    ):
+    async def test_returns_503_when_service_not_set(self, db_with_scanner_config: AsyncSession):
         """Should return 503 when scanner service is not initialized."""
         # Clear any existing scanner service
         from src.api.routes import scanner as scanner_module
@@ -503,9 +493,7 @@ class TestOpenAPISchema:
         assert "/api/v1/scanner/config" in paths
         assert "patch" in paths["/api/v1/scanner/config"]
 
-    async def test_response_models_in_schema(
-        self, scanner_client_with_config: AsyncClient
-    ):
+    async def test_response_models_in_schema(self, scanner_client_with_config: AsyncClient):
         """Response models should be in OpenAPI schema."""
         response = await scanner_client_with_config.get("/openapi.json")
         assert response.status_code == 200

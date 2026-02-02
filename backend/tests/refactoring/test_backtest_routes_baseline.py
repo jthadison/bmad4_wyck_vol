@@ -227,7 +227,9 @@ class TestBacktestPreviewConcurrencyLimit:
     """Test backtest preview concurrency limiting."""
 
     @pytest.mark.asyncio
-    async def test_concurrent_limit_returns_503(self, async_client: AsyncClient, clean_backtest_runs):
+    async def test_concurrent_limit_returns_503(
+        self, async_client: AsyncClient, clean_backtest_runs
+    ):
         """AC5: Should return 503 when too many concurrent backtests."""
         backtest_runs = clean_backtest_runs
 

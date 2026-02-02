@@ -297,6 +297,45 @@ claude-review
 - Commit generated types to `shared/types/`
 - Create PR if changes detected
 
+## Version Requirements
+
+### Python Version Policy
+
+The project targets **Python 3.11 exclusively** and does not use matrix testing for multiple Python versions.
+
+**Rationale:**
+- All tooling (ruff, mypy) is configured for Python 3.11 specifically
+- NumPy 2.0+ dependency limits backward compatibility
+- Trading systems prioritize stability over broad version compatibility
+- Matrix testing would double CI time with minimal benefit for a single-deployment trading platform
+
+**Configuration:**
+- `pyproject.toml`: `python = "^3.11"` (supports 3.11+, but CI tests only 3.11)
+- `ruff target-version`: `"py311"`
+- `mypy python_version`: `"3.11"`
+
+### Node.js Version Policy
+
+The project targets **Node.js 20 LTS exclusively** and does not use matrix testing for multiple Node versions.
+
+**Rationale:**
+- Node 20 is the Active LTS version (support through April 2026)
+- Node 18 LTS enters end-of-life maintenance in April 2025
+- Modern frontend dependencies (Vue 3.4+, TypeScript 5.9+, Vite 5.0+) work best with Node 20
+- Matrix testing would double frontend CI time for a version approaching end-of-life
+
+**Configuration:**
+- `package.json`: `"engines": { "node": ">=20.0.0", "npm": ">=10.0.0" }`
+- CI workflows: Node.js 20 exclusively
+
+### When to Reconsider Matrix Testing
+
+Consider adding matrix testing if:
+1. The project needs to support customers running different Python/Node versions
+2. A major version upgrade (e.g., Python 3.12, Node 22) is planned
+3. Dependencies introduce breaking changes across versions
+4. The trading platform transitions to a multi-tenant deployment model
+
 ## Required Secrets
 
 | Secret | Purpose | Where Used | Type |

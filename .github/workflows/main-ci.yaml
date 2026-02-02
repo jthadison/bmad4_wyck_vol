@@ -82,7 +82,6 @@ jobs:
       - name: Run mypy type checking
         working-directory: backend
         run: poetry run mypy src/ --allow-missing-baseline
-        continue-on-error: true
 
   backend-tests:
     name: Backend Tests

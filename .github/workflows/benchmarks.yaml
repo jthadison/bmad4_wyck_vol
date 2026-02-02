@@ -22,13 +22,13 @@ jobs:
       postgres:
         image: timescale/timescaledb:latest-pg15
         env:
-          POSTGRES_USER: benchmark_user
-          POSTGRES_PASSWORD: benchmark_pass
-          POSTGRES_DB: benchmark_db
+          POSTGRES_USER: wyckoff_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: wyckoff_db_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U benchmark_user"
+          --health-cmd "pg_isready -U wyckoff_user"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -64,13 +64,13 @@ jobs:
 
       - name: Initialize database extensions
         run: |
-          PGPASSWORD=benchmark_pass psql -h localhost -U benchmark_user -d benchmark_db -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
-          PGPASSWORD=benchmark_pass psql -h localhost -U benchmark_user -d benchmark_db -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
 
       - name: Run database migrations
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+psycopg://benchmark_user:benchmark_pass@localhost:5432/benchmark_db
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
         run: |
           poetry run alembic upgrade head
 
@@ -78,7 +78,7 @@ jobs:
         working-directory: backend
         id: run_benchmarks
         env:
-          DATABASE_URL: postgresql+psycopg://benchmark_user:benchmark_pass@localhost:5432/benchmark_db
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
           ENVIRONMENT: test
         run: |
           # Run benchmark tests from tests/benchmarks/ directory
@@ -104,7 +104,7 @@ jobs:
         id: compare
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+psycopg://benchmark_user:benchmark_pass@localhost:5432/benchmark_db
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
           ENVIRONMENT: test
         run: |
           if [ -f baseline/benchmark-results.json ]; then

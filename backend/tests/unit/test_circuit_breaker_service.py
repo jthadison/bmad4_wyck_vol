@@ -388,9 +388,7 @@ class TestEndToEndScenarios:
     """Integration-style tests for complete scenarios."""
 
     @pytest.mark.asyncio
-    async def test_three_losses_trigger_breaker(
-        self, service, mock_redis, mock_pipeline, user_id
-    ):
+    async def test_three_losses_trigger_breaker(self, service, mock_redis, mock_pipeline, user_id):
         """Test complete scenario: 3 consecutive losses triggers breaker."""
         # First loss
         mock_redis.incr.return_value = 1
@@ -427,9 +425,7 @@ class TestEndToEndScenarios:
         mock_redis.set.assert_any_call(losses_key, 0, ex=7 * 24 * 60 * 60)
 
     @pytest.mark.asyncio
-    async def test_manual_reset_after_trigger(
-        self, service, mock_redis, mock_pipeline, user_id
-    ):
+    async def test_manual_reset_after_trigger(self, service, mock_redis, mock_pipeline, user_id):
         """Test manual reset after breaker triggers."""
         # Trigger breaker
         mock_redis.incr.return_value = 3

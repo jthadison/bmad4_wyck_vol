@@ -365,7 +365,9 @@ class TestCanTransitionTo:
         """Should return True for valid FORMING → ACTIVE."""
         lifecycle_manager.register_campaign(forming_campaign)
 
-        assert lifecycle_manager.can_transition_to(forming_campaign.campaign_id, CampaignState.ACTIVE)
+        assert lifecycle_manager.can_transition_to(
+            forming_campaign.campaign_id, CampaignState.ACTIVE
+        )
 
     def test_cannot_transition_completed_to_active(
         self, lifecycle_manager: CampaignLifecycleManager, active_campaign: Campaign
@@ -378,7 +380,9 @@ class TestCanTransitionTo:
             active_campaign.campaign_id, CampaignState.ACTIVE
         )
 
-    def test_cannot_transition_nonexistent_campaign(self, lifecycle_manager: CampaignLifecycleManager):
+    def test_cannot_transition_nonexistent_campaign(
+        self, lifecycle_manager: CampaignLifecycleManager
+    ):
         """Should return False for nonexistent campaign."""
         assert not lifecycle_manager.can_transition_to("nonexistent-id", CampaignState.ACTIVE)
 
@@ -434,7 +438,9 @@ class TestQueryMethods:
 
         assert result is forming_campaign
 
-    def test_get_campaign_returns_none_for_nonexistent(self, lifecycle_manager: CampaignLifecycleManager):
+    def test_get_campaign_returns_none_for_nonexistent(
+        self, lifecycle_manager: CampaignLifecycleManager
+    ):
         """get_campaign should return None for nonexistent campaign."""
         result = lifecycle_manager.get_campaign("nonexistent-id")
 

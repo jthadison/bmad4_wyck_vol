@@ -81,11 +81,9 @@ jobs:
         working-directory: backend
         run: poetry install --with dev
 
-      # Type checking is advisory, doesn't block build
       - name: Run mypy type checking
         working-directory: backend
         run: poetry run mypy src/ --allow-missing-baseline
-        continue-on-error: true
 
   # Backend tests with coverage
   backend-tests:
@@ -163,6 +161,7 @@ jobs:
             --cov-report=xml \
             --cov-report=term \
             --cov-report=html \
+            --cov-fail-under=90 \
             --junitxml=pytest-results.xml \
             --reruns 2 \
             --reruns-delay 1 \
