@@ -50,7 +50,6 @@ result = detector.detect(ohlcv_data)
 
 ```python
 from pattern_engine.phase_detection import (
-    PhaseDetector,
     PhaseClassifier,
     PhaseType,
     EventType,
@@ -65,17 +64,14 @@ from pattern_engine.phase_detection import (
     LastPointOfSupportDetector,
 )
 
-# Using the main PhaseDetector
-detector = PhaseDetector()
-result = detector.detect_phase(ohlcv_data)
+# Using the main classifier
+classifier = PhaseClassifier()
+result = classifier.classify(ohlcv_data)
+print(f"Current phase: {result.phase.value}, confidence: {result.confidence}")
 
 # Using individual event detectors
 sc_detector = SellingClimaxDetector()
 events = sc_detector.detect(ohlcv_data)
-
-# Using the classifier
-classifier = PhaseClassifier()
-phase_result = classifier.classify(events, ohlcv_data)
 ```
 
 ### Type Mapping
@@ -90,7 +86,7 @@ phase_result = classifier.classify(events, ohlcv_data)
 
 | Old Function | New Approach |
 |--------------|--------------|
-| `detect_phase()` | `PhaseDetector().detect_phase()` |
+| `detect_phase()` | `PhaseClassifier().classify()` |
 | `detect_selling_climax()` | `SellingClimaxDetector().detect()` |
 | `detect_automatic_rally()` | `AutomaticRallyDetector().detect()` |
 | `detect_secondary_test()` | `SecondaryTestDetector().detect()` |

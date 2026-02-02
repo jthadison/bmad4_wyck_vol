@@ -118,6 +118,7 @@ from risk_management.portfolio_heat_tracker import (
 | `forex_portfolio_heat.py` | Forex-specific heat tracking with weekend gap risk |
 | `forex_position_sizer.py` | Forex lot/pip position sizing |
 | `forex_campaign_tracker.py` | Forex campaign tracking |
+| `forex_currency_correlation_validator.py` | Currency correlation validation for forex pairs |
 
 ---
 
@@ -162,8 +163,7 @@ pattern_engine/
 │   ├── types.py              # Type definitions
 │   ├── event_detectors.py    # Event detection classes
 │   ├── phase_classifier.py   # Phase classification logic
-│   ├── confidence_scorer.py  # Confidence scoring
-│   └── detector.py           # Main PhaseDetector class
+│   └── confidence_scorer.py  # Confidence scoring
 ├── phase_detector.py         # DEPRECATED: Facade to new package
 └── phase_detector_v2.py      # DEPRECATED: Facade to new package
 ```
@@ -195,14 +195,15 @@ pattern_engine/
 ```python
 # NEW: Recommended import
 from pattern_engine.phase_detection import (
-    PhaseDetector,
+    PhaseClassifier,
     PhaseType,
     EventType,
     PhaseResult,
 )
 
-detector = PhaseDetector()
-result = detector.detect_phase(ohlcv_data)
+classifier = PhaseClassifier()
+result = classifier.classify(ohlcv_data)
+print(f"Current phase: {result.phase.value}, confidence: {result.confidence}")
 ```
 
 ### Deprecated Modules (v0.2.0 → Removed v0.3.0)
