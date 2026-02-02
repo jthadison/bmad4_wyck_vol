@@ -393,6 +393,135 @@ Bugs will only be fixed in the new `phase_detection` package. Migrate to get fix
 
 ---
 
+## Deprecation Policy (Story 22.13)
+
+This project follows a consistent deprecation policy to ensure smooth transitions during refactoring.
+
+### Standard Deprecation Warning Format
+
+All deprecation warnings MUST follow this format:
+
+```
+"{old_name} is deprecated. Use {new_import} instead. Will be removed in {version}."
+```
+
+Example:
+```
+"'pattern_engine.phase_detector' is deprecated. Use 'pattern_engine.phase_detection' instead. This module will be removed in v0.3.0."
+```
+
+### Warning Implementation Pattern
+
+```python
+import warnings
+
+# Module-level warning (at import time)
+warnings.warn(
+    "'module_name' is deprecated. "
+    "Use 'new_module' instead. "
+    "This module will be removed in v0.3.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# Function decorator for individual functions
+def deprecated(new_import: str, removal_version: str = "v0.3.0"):
+    """Decorator to mark functions as deprecated."""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"'{func.__name__}' is deprecated. Use '{new_import}' instead. "
+                f"Will be removed in {removal_version}.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+```
+
+### Deprecation Timeline
+
+| Version | Status | Action |
+|---------|--------|--------|
+| v0.2.0 | Current | Deprecation warnings added, old APIs still work |
+| v0.3.0 | Planned | Deprecated modules removed |
+
+### Deprecation Checklist
+
+When deprecating an API:
+
+1. **Add module-level warning** - Warns on import
+2. **Add function/class-level warnings** - Warns on use
+3. **Include migration guidance** - Tell users what to use instead
+4. **Include removal version** - Always v0.3.0 for Epic 22 changes
+5. **Create facade module** - Maintains backward compatibility
+6. **Add deprecation tests** - Verify warnings are emitted
+7. **Update migration guide** - Document the change here
+
+### Currently Deprecated Modules
+
+| Module | Replacement | Status | Tests |
+|--------|-------------|--------|-------|
+| `pattern_engine.phase_detector` | `pattern_engine.phase_detection` | DeprecationWarning | ✅ |
+| `pattern_engine.phase_detector_v2` | `pattern_engine.phase_detection` | DeprecationWarning | ✅ |
+| `backtesting.backtest_engine` | `backtesting.engine.UnifiedBacktestEngine` | DeprecationWarning | ✅ |
+| `backtesting.engine_enhanced` | `backtesting.engine.UnifiedBacktestEngine` | DeprecationWarning | ✅ |
+
+### Quick Reference: Old vs New Imports
+
+**Phase Detector:**
+```python
+# Old (deprecated)
+from src.pattern_engine.phase_detector import detect_selling_climax
+from src.pattern_engine.phase_detector_v2 import PhaseDetector
+
+# New (recommended)
+from src.pattern_engine.phase_detection import SellingClimaxDetector, PhaseClassifier
+```
+
+**Backtest Engine:**
+```python
+# Old (deprecated)
+from src.backtesting.backtest_engine import BacktestEngine
+from src.backtesting.engine_enhanced import EnhancedBacktestEngine
+
+# New (recommended)
+from src.backtesting.engine import UnifiedBacktestEngine
+```
+
+### Testing Deprecation Warnings
+
+Run the deprecation test suite to verify all warnings are properly configured:
+
+```bash
+cd backend
+poetry run pytest tests/unit/test_deprecation_warnings.py -v
+```
+
+### Suppressing Warnings (Not Recommended)
+
+If you need to suppress deprecation warnings during testing:
+
+```python
+import warnings
+
+# Suppress specific module
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module="pattern_engine.phase_detector"
+)
+
+# In pytest
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_legacy_code():
+    ...
+```
+
+---
+
 ## Support
 
 If you encounter issues during migration:
