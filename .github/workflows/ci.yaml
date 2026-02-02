@@ -234,6 +234,7 @@ jobs:
         working-directory: backend
         run: poetry install --no-interaction --no-root
 
+      # Testing: Detector accuracy is optional at PR stage, enforced at deployment
       - name: Run detector accuracy tests
         id: accuracy_tests
         working-directory: backend
@@ -244,6 +245,7 @@ jobs:
         env:
           PYTHONPATH: .
 
+      # Testing: Report generation is optional, failure doesn't block
       - name: Generate HTML accuracy reports
         if: always()
         working-directory: backend
@@ -263,6 +265,7 @@ jobs:
               print('No baselines directory found, skipping regression detection')
           "
 
+      # Testing: Regression check is optional, only informational at PR stage
       - name: Load baseline metrics for regression detection
         id: regression_check
         if: always()
