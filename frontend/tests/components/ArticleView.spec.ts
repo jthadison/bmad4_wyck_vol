@@ -88,6 +88,22 @@ describe('ArticleView', () => {
     view_count: 1234,
   }
 
+  /**
+   * Helper to mock fetchArticle with consistent behavior
+   * Reduces duplication and provides single point of change for mock behavior
+   */
+  const mockFetchArticle = (
+    store: ReturnType<typeof useHelpStore>,
+    article: HelpArticle | null = null,
+    error: string | null = null
+  ) => {
+    return vi.spyOn(store, 'fetchArticle').mockImplementation(async () => {
+      store.currentArticle = article
+      store.isLoading = false
+      store.error = error
+    })
+  }
+
   beforeEach(async () => {
     pinia = createPinia()
     setActivePinia(pinia)
@@ -123,13 +139,10 @@ describe('ArticleView', () => {
       configurable: true,
     })
 
-    // Get the help store and mock fetchArticle by default to prevent real API calls
+    // Mock fetchArticle by default to prevent real API calls
     // Individual tests can override this mock as needed
     const helpStore = useHelpStore()
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      // Default: do nothing (no article loaded)
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore)
   })
 
   afterEach(() => {
@@ -168,13 +181,7 @@ describe('ArticleView', () => {
 
   it('should display error state when article not found', async () => {
     const helpStore = useHelpStore()
-
-    // Mock fetchArticle to simulate error state
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = null
-      helpStore.isLoading = false
-      helpStore.error = 'Not found'
-    })
+    mockFetchArticle(helpStore, null, 'Not found')
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -194,13 +201,7 @@ describe('ArticleView', () => {
 
   it('should navigate to help center on error state button click', async () => {
     const helpStore = useHelpStore()
-
-    // Mock fetchArticle to simulate error state
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = null
-      helpStore.isLoading = false
-      helpStore.error = 'Not found'
-    })
+    mockFetchArticle(helpStore, null, 'Not found')
 
     await router.push('/help/article/nonexistent')
     await router.isReady()
@@ -227,12 +228,7 @@ describe('ArticleView', () => {
 
   it('should display article content when loaded', async () => {
     const helpStore = useHelpStore()
-
-    // Mock fetchArticle to set the article data
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -253,12 +249,7 @@ describe('ArticleView', () => {
 
   it('should display article metadata', async () => {
     const helpStore = useHelpStore()
-
-    // Mock fetchArticle to set the article data
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -281,10 +272,7 @@ describe('ArticleView', () => {
   it('should format date correctly', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -307,10 +295,7 @@ describe('ArticleView', () => {
   it('should render article body HTML content', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -333,10 +318,7 @@ describe('ArticleView', () => {
   it('should display article tags', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -359,11 +341,7 @@ describe('ArticleView', () => {
   it('should not display tags section if no tags', async () => {
     const articleNoTags = { ...mockArticle, tags: [] }
     const helpStore = useHelpStore()
-
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = articleNoTags
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, articleNoTags)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -383,10 +361,7 @@ describe('ArticleView', () => {
   it('should render ArticleFeedback component', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -409,10 +384,7 @@ describe('ArticleView', () => {
   it('should generate table of contents from h2 and h3 headers', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -450,10 +422,7 @@ describe('ArticleView', () => {
   it('should display TOC sidebar on desktop', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -483,10 +452,7 @@ describe('ArticleView', () => {
   it('should display TOC accordion on mobile', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -514,14 +480,11 @@ describe('ArticleView', () => {
 
   it('should not display TOC if no table of contents', async () => {
     const helpStore = useHelpStore()
-
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = {
-        ...mockArticle,
-        content_html: '<p>Simple content</p>',
-      }
-      helpStore.isLoading = false
-    })
+    const articleWithSimpleContent = {
+      ...mockArticle,
+      content_html: '<p>Simple content</p>',
+    }
+    mockFetchArticle(helpStore, articleWithSimpleContent)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -547,10 +510,7 @@ describe('ArticleView', () => {
   it('should apply correct CSS class for TOC levels', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -582,10 +542,7 @@ describe('ArticleView', () => {
   it('should scroll to heading when TOC link clicked', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     // Mock scrollIntoView
     const scrollIntoViewMock = vi.fn()
@@ -743,10 +700,7 @@ describe('ArticleView', () => {
     const helpStore = useHelpStore()
 
     // Mock fetchArticle to allow component to mount properly
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -776,12 +730,8 @@ describe('ArticleView', () => {
 
   it('should fetch article on mount', async () => {
     const helpStore = useHelpStore()
-    // Mock fetchArticle to prevent real API calls while still tracking calls
-    const fetchSpy = vi
-      .spyOn(helpStore, 'fetchArticle')
-      .mockImplementation(async () => {
-        helpStore.isLoading = false
-      })
+    // Use helper to mock fetchArticle while tracking calls
+    const fetchSpy = mockFetchArticle(helpStore)
 
     await router.push('/help/article/what-is-wyckoff')
     await router.isReady()
@@ -800,11 +750,7 @@ describe('ArticleView', () => {
 
   it('should handle missing article gracefully', async () => {
     const helpStore = useHelpStore()
-
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = null
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, null)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -825,10 +771,7 @@ describe('ArticleView', () => {
   it('should assign IDs to headers during TOC generation', async () => {
     const helpStore = useHelpStore()
 
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = mockArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, mockArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
@@ -862,7 +805,6 @@ describe('ArticleView', () => {
 
   it('should sanitize malicious HTML in article content', async () => {
     const helpStore = useHelpStore()
-
     const maliciousArticle: HelpArticle = {
       id: '999',
       slug: 'xss-test-article',
@@ -878,11 +820,7 @@ describe('ArticleView', () => {
       helpful_count: 0,
       not_helpful_count: 0,
     }
-
-    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
-      helpStore.currentArticle = maliciousArticle
-      helpStore.isLoading = false
-    })
+    mockFetchArticle(helpStore, maliciousArticle)
 
     const wrapper = mount(ArticleView, {
       global: {
