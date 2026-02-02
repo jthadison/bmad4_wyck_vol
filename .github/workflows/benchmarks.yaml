@@ -76,15 +76,16 @@ jobs:
 
       - name: Run benchmarks
         working-directory: backend
+        id: run_benchmarks
+        continue-on-error: true
         env:
           DATABASE_URL: postgresql+psycopg://benchmark_user:benchmark_pass@localhost:5432/benchmark_db
           ENVIRONMENT: test
         run: |
-          # Run all benchmark tests (both legacy benchmarks/ and tests/benchmarks/)
+          # Run benchmark tests from tests/benchmarks/ directory
           poetry run pytest tests/benchmarks/ -v -m benchmark \
             --benchmark-json=benchmark-results.json \
-            --benchmark-save=pr-${{ github.event.pull_request.number || 'main' }} \
-            2>&1 || true
+            --benchmark-save=pr-${{ github.event.pull_request.number || 'main' }}
 
       - name: Download baseline benchmarks
         if: github.event_name == 'pull_request'
@@ -124,7 +125,7 @@ jobs:
             const results = JSON.parse(fs.readFileSync('backend/benchmark-results.json', 'utf8'));
 
             let comment = '## ⚠️ Performance Regression Detected\n\n';
-            comment += 'One or more benchmarks are >10% slower than baseline.\n\n';
+            comment += 'One or more benchmarks are >5% slower than baseline (AC4 threshold).\n\n';
             comment += '| Benchmark | Status |\n';
             comment += '|-----------|--------|\n';
 
@@ -150,5 +151,5 @@ jobs:
       - name: Fail if regression detected
         if: steps.compare.outputs.regression == 'true'
         run: |
-          echo "Performance regression detected (>10% slower)"
+          echo "Performance regression detected (>5% slower than baseline per AC4)"
           exit 1

@@ -16,6 +16,34 @@ from httpx import AsyncClient
 from tests.benchmarks.conftest import PERFORMANCE_TARGETS
 
 
+def calculate_percentile(sorted_times: list[float], percentile: float) -> float:
+    """
+    Calculate percentile value from sorted list.
+
+    Uses linear interpolation method consistent with numpy.percentile.
+
+    Args:
+        sorted_times: Pre-sorted list of timing values
+        percentile: Percentile to calculate (0-100)
+
+    Returns:
+        Percentile value
+    """
+    if not sorted_times:
+        return 0.0
+    if len(sorted_times) == 1:
+        return sorted_times[0]
+
+    # Use 0-based index calculation with bounds checking
+    idx = (len(sorted_times) - 1) * (percentile / 100.0)
+    lower_idx = int(idx)
+    upper_idx = min(lower_idx + 1, len(sorted_times) - 1)
+    fraction = idx - lower_idx
+
+    # Linear interpolation
+    return sorted_times[lower_idx] + fraction * (sorted_times[upper_idx] - sorted_times[lower_idx])
+
+
 @pytest.mark.benchmark
 @pytest.mark.asyncio
 class TestAPIPerformance:
@@ -63,16 +91,15 @@ class TestAPIPerformance:
 
                 if response.status_code in [200, 202]:
                     success_count += 1
-            except Exception:
+            except Exception as e:
                 timeout_count += 1
+                print(f"  Request failed: {type(e).__name__}: {e}")
 
         if times:
             p50 = statistics.median(times)
             sorted_times = sorted(times)
-            p95_idx = int(len(sorted_times) * 0.95)
-            p95 = sorted_times[p95_idx] if p95_idx < len(sorted_times) else sorted_times[-1]
-            p99_idx = int(len(sorted_times) * 0.99)
-            p99 = sorted_times[p99_idx] if p99_idx < len(sorted_times) else sorted_times[-1]
+            p95 = calculate_percentile(sorted_times, 95)
+            p99 = calculate_percentile(sorted_times, 99)
             avg = sum(times) / len(times)
 
             print(f"\nBacktest Preview Latency ({len(times)} requests):")
@@ -109,7 +136,7 @@ class TestAPIPerformance:
 
         p50 = statistics.median(times)
         sorted_times = sorted(times)
-        p95 = sorted_times[94] if len(sorted_times) >= 95 else sorted_times[-1]
+        p95 = calculate_percentile(sorted_times, 95)
         avg = sum(times) / len(times)
 
         print("\nCampaign List Latency (100 requests):")
@@ -117,9 +144,12 @@ class TestAPIPerformance:
         print(f"  p50: {p50:.2f}ms")
         print(f"  p95: {p95:.2f}ms")
 
+        # Note: Actual latency depends on database and data volume.
+        # This test establishes baseline for regression comparison.
+        # Assertion relaxed for CI environments with varying performance.
         target = PERFORMANCE_TARGETS.get("api_campaign_list_p95_ms", 30)
-        # Note: actual latency depends on database and data volume
-        # This test establishes baseline for comparison
+        # Allow 10x target in CI to account for cold start and resource contention
+        assert p95 < target * 10, f"p95 {p95:.2f}ms exceeds relaxed target {target * 10}ms"
 
     async def test_campaign_list_with_filters_latency(
         self, async_client: AsyncClient, auth_headers: dict
@@ -194,7 +224,8 @@ class TestAPIPerformance:
             print(f"  Batch: {batch_elapsed:.2f}ms total, {statistics.mean(batch_times):.2f}ms avg")
 
         overall_avg = sum(times) / len(times)
-        overall_p95 = sorted(times)[int(len(times) * 0.95)]
+        sorted_times = sorted(times)
+        overall_p95 = calculate_percentile(sorted_times, 95)
 
         print("\nConcurrent Request Performance (50 total):")
         print(f"  Average: {overall_avg:.2f}ms")

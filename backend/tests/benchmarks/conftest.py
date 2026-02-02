@@ -15,6 +15,37 @@ import pandas as pd
 import pytest
 
 
+def generate_ohlcv_dataframe(num_bars: int, seed: int = 42) -> pd.DataFrame:
+    """
+    Generate OHLCV data for benchmarking.
+
+    Creates realistic price/volume data with random walk characteristics.
+
+    Args:
+        num_bars: Number of bars to generate
+        seed: Random seed for reproducibility
+
+    Returns:
+        DataFrame with columns: timestamp, open, high, low, close, volume
+    """
+    np.random.seed(seed)
+    dates = pd.date_range(start="2025-01-01", periods=num_bars, freq="1h", tz=UTC)
+    base_price = 100.0
+    returns = np.random.normal(0.0001, 0.01, num_bars)
+    prices = base_price * np.exp(np.cumsum(returns))
+
+    return pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": prices * (1 + np.random.uniform(-0.005, 0.005, num_bars)),
+            "high": prices * (1 + np.random.uniform(0, 0.01, num_bars)),
+            "low": prices * (1 - np.random.uniform(0, 0.01, num_bars)),
+            "close": prices,
+            "volume": np.random.randint(1000, 10000, num_bars),
+        }
+    )
+
+
 @pytest.fixture
 def benchmark_ohlcv_500() -> pd.DataFrame:
     """
@@ -26,22 +57,7 @@ def benchmark_ohlcv_500() -> pd.DataFrame:
     Returns:
         DataFrame with columns: timestamp, open, high, low, close, volume
     """
-    np.random.seed(42)
-    dates = pd.date_range(start="2025-01-01", periods=500, freq="1h", tz=UTC)
-    base_price = 100.0
-    returns = np.random.normal(0.0001, 0.01, 500)
-    prices = base_price * np.exp(np.cumsum(returns))
-
-    return pd.DataFrame(
-        {
-            "timestamp": dates,
-            "open": prices * (1 + np.random.uniform(-0.005, 0.005, 500)),
-            "high": prices * (1 + np.random.uniform(0, 0.01, 500)),
-            "low": prices * (1 - np.random.uniform(0, 0.01, 500)),
-            "close": prices,
-            "volume": np.random.randint(1000, 10000, 500),
-        }
-    )
+    return generate_ohlcv_dataframe(500)
 
 
 @pytest.fixture
@@ -55,22 +71,7 @@ def benchmark_ohlcv_1000() -> pd.DataFrame:
     Returns:
         DataFrame with columns: timestamp, open, high, low, close, volume
     """
-    np.random.seed(42)
-    dates = pd.date_range(start="2025-01-01", periods=1000, freq="1h", tz=UTC)
-    base_price = 100.0
-    returns = np.random.normal(0.0001, 0.01, 1000)
-    prices = base_price * np.exp(np.cumsum(returns))
-
-    return pd.DataFrame(
-        {
-            "timestamp": dates,
-            "open": prices * (1 + np.random.uniform(-0.005, 0.005, 1000)),
-            "high": prices * (1 + np.random.uniform(0, 0.01, 1000)),
-            "low": prices * (1 - np.random.uniform(0, 0.01, 1000)),
-            "close": prices,
-            "volume": np.random.randint(1000, 10000, 1000),
-        }
-    )
+    return generate_ohlcv_dataframe(1000)
 
 
 @pytest.fixture
@@ -118,6 +119,7 @@ PERFORMANCE_TARGETS = {
     "campaign_detection_per_bar_ms": 0.1,  # AC1: <10ms per pattern (0.01ms per bar)
     "memory_operation_mb": 50,  # AC1: <50MB for operation
     "api_preview_p95_ms": 50,  # AC3: p95 <50ms
+    "api_campaign_list_p95_ms": 30,  # AC3: p95 <30ms
     "event_detection_individual_ms": 50,  # Individual event detector target
 }
 
