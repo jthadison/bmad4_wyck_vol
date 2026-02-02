@@ -103,7 +103,7 @@
                   :step="5"
                   :disabled="loading || isKillSwitchActive"
                   class="w-full"
-                  @update:model-value="updateMinConfidence"
+                  @update:model-value="handleSliderChange"
                 />
                 <small class="text-gray-500 dark:text-gray-400">
                   Only signals with confidence ≥ {{ config.min_confidence }}%
@@ -468,6 +468,13 @@ async function handleDeactivateKillSwitch(): Promise<void> {
       life: 5000,
     })
   }
+}
+
+function handleSliderChange(value: number | number[]): void {
+  // Slider can emit number or number[] (for range sliders)
+  // We only use single-value slider, so extract the number
+  const numValue = Array.isArray(value) ? value[0] : value
+  void updateMinConfidence(numValue)
 }
 
 async function updateMinConfidence(value: number): Promise<void> {

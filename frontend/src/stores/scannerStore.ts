@@ -59,21 +59,23 @@ export const useScannerStore = defineStore('scanner', () => {
   // =========================================
   // Getters
   // =========================================
-  const watchlistCount = computed(() => watchlist.value.length)
+  const watchlistCount = computed(() => watchlist.value?.length ?? 0)
   const enabledCount = computed(
-    () => watchlist.value.filter((s) => s.enabled).length
+    () => watchlist.value?.filter((s) => s.enabled).length ?? 0
   )
-  const isAtLimit = computed(() => watchlist.value.length >= 50)
+  const isAtLimit = computed(() => (watchlist.value?.length ?? 0) >= 50)
 
   const getSymbol = (symbol: string): ScannerWatchlistSymbol | undefined => {
-    return watchlist.value.find(
+    return watchlist.value?.find(
       (s) => s.symbol.toUpperCase() === symbol.toUpperCase()
     )
   }
 
   const hasSymbol = (symbol: string): boolean => {
-    return watchlist.value.some(
-      (s) => s.symbol.toUpperCase() === symbol.toUpperCase()
+    return (
+      watchlist.value?.some(
+        (s) => s.symbol.toUpperCase() === symbol.toUpperCase()
+      ) ?? false
     )
   }
 
@@ -203,7 +205,7 @@ export const useScannerStore = defineStore('scanner', () => {
 
     try {
       watchlist.value = await scannerService.getWatchlist()
-      logInfo('fetchWatchlist', { count: watchlist.value.length })
+      logInfo('fetchWatchlist', { count: watchlist.value?.length ?? 0 })
     } catch (err) {
       error.value = 'Failed to fetch watchlist'
       logError('fetchWatchlist', err)
@@ -214,7 +216,9 @@ export const useScannerStore = defineStore('scanner', () => {
 
   async function addSymbol(request: AddScannerSymbolRequest): Promise<boolean> {
     if (isAtLimit.value) {
-      error.value = `Watchlist limit reached (${watchlist.value.length}/50)`
+      error.value = `Watchlist limit reached (${
+        watchlist.value?.length ?? 0
+      }/50)`
       return false
     }
 
@@ -262,8 +266,8 @@ export const useScannerStore = defineStore('scanner', () => {
     }
 
     // Optimistic update
-    const previousWatchlist = [...watchlist.value]
-    watchlist.value = watchlist.value.filter(
+    const previousWatchlist = [...(watchlist.value ?? [])]
+    watchlist.value = (watchlist.value ?? []).filter(
       (s) => s.symbol.toUpperCase() !== upperSymbol
     )
 
@@ -290,7 +294,7 @@ export const useScannerStore = defineStore('scanner', () => {
     enabled: boolean
   ): Promise<boolean> {
     const upperSymbol = symbol.toUpperCase()
-    const index = watchlist.value.findIndex(
+    const index = (watchlist.value ?? []).findIndex(
       (s) => s.symbol.toUpperCase() === upperSymbol
     )
     if (index === -1) {

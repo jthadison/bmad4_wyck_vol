@@ -133,7 +133,7 @@ onMounted(() => {
 
     <!-- Empty State -->
     <div
-      v-else-if="store.watchlist.length === 0"
+      v-else-if="store.watchlistCount === 0"
       class="empty-state"
       data-testid="empty-state"
     >
@@ -152,7 +152,7 @@ onMounted(() => {
     <!-- Symbol List -->
     <div v-else class="symbol-list" data-testid="symbol-list">
       <WatchlistRow
-        v-for="symbol in store.watchlist"
+        v-for="symbol in store.watchlist ?? []"
         :key="symbol.id"
         :symbol="symbol"
         :disabled="store.isSaving"
