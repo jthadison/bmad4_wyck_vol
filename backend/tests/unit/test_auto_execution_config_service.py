@@ -9,7 +9,7 @@ Story 19.24: Per-symbol confidence filtering
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -46,8 +46,22 @@ def mock_watchlist_repository():
 
 @pytest.fixture
 def mock_redis():
-    """Create a mock Redis client."""
-    return AsyncMock()
+    """Create a mock Redis client with async context manager support for pipeline."""
+    mock = AsyncMock()
+
+    # Create a mock pipeline that supports async context manager protocol
+    mock_pipeline = MagicMock()
+    mock_pipeline.__aenter__ = AsyncMock(return_value=mock_pipeline)
+    mock_pipeline.__aexit__ = AsyncMock(return_value=None)
+    # Pipeline methods (set, delete) are synchronous - only execute() is async
+    mock_pipeline.set = MagicMock()
+    mock_pipeline.delete = MagicMock()
+    mock_pipeline.execute = AsyncMock(return_value=[])
+
+    # Make pipeline() return the mock directly (not a coroutine)
+    mock.pipeline = MagicMock(return_value=mock_pipeline)
+
+    return mock
 
 
 @pytest.fixture
