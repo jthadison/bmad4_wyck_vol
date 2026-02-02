@@ -23,6 +23,8 @@ describe('SignalToastService', () => {
     play: ReturnType<typeof vi.fn>
     volume: number
     currentTime: number
+    addEventListener: ReturnType<typeof vi.fn>
+    removeEventListener: ReturnType<typeof vi.fn>
   }
 
   const createMockSignal = (confidenceScore: number): Signal => ({
@@ -62,39 +64,48 @@ describe('SignalToastService', () => {
       add: vi.fn(),
     }
 
-    // Mock audio element
+    // Mock audio element with all required methods
     mockAudioElement = {
       play: vi.fn().mockResolvedValue(undefined),
       volume: 0.8,
       currentTime: 0,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
     }
 
-    // Mock Audio constructor
-    global.Audio = vi.fn(() => mockAudioElement) as unknown as typeof Audio
+    // Mock Audio constructor using vi.stubGlobal for proper browser API mocking
+    vi.stubGlobal(
+      'Audio',
+      vi.fn(() => mockAudioElement)
+    )
 
     // Mock document.hasFocus
-    global.document.hasFocus = vi.fn(() => true)
+    vi.stubGlobal('document', {
+      ...document,
+      hasFocus: vi.fn(() => true),
+    })
 
     // Mock Notification API
-    global.Notification = {
+    vi.stubGlobal('Notification', {
       permission: 'default',
       requestPermission: vi.fn(),
-    } as unknown as typeof Notification
+    })
 
     service = new SignalToastService()
   })
 
   afterEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllGlobals()
   })
 
   describe('setToastService', () => {
-    it('should set the toast service instance', () => {
+    it('should set the toast service instance', async () => {
       service.setToastService(mockToastService)
 
       // Verify by attempting to show a toast
       const signal = createMockSignal(90)
-      service.handleSignalNotification(signal)
+      await service.handleSignalNotification(signal)
 
       expect(mockToastService.add).toHaveBeenCalled()
     })
@@ -182,12 +193,14 @@ describe('SignalToastService', () => {
         '@/stores/toastSettingsStore'
       )
       const settingsStore = useToastSettingsStore()
+      settingsStore.updateSoundEnabled(true)
       settingsStore.updateSoundVolume(50)
 
       const signal = createMockSignal(90)
 
       await service.handleSignalNotification(signal)
 
+      expect(mockAudioElement.play).toHaveBeenCalled()
       expect(mockAudioElement.volume).toBe(0.5) // 50% = 0.5
     })
   })
@@ -276,16 +289,14 @@ describe('SignalToastService', () => {
       const settingsStore = useToastSettingsStore()
       settingsStore.updateBrowserNotifications(true)
 
-      global.Notification = {
-        permission: 'granted',
-      } as unknown as typeof Notification
-
-      global.document.hasFocus = vi.fn(() => true)
-
       const mockNotificationConstructor = vi.fn()
-      global.Notification =
-        mockNotificationConstructor as unknown as typeof Notification
-      ;(global.Notification as typeof Notification).permission = 'granted'
+      mockNotificationConstructor.permission = 'granted'
+      vi.stubGlobal('Notification', mockNotificationConstructor)
+
+      vi.stubGlobal('document', {
+        ...document,
+        hasFocus: vi.fn(() => true),
+      })
 
       const signal = createMockSignal(90)
 
@@ -301,17 +312,18 @@ describe('SignalToastService', () => {
       const settingsStore = useToastSettingsStore()
       settingsStore.updateBrowserNotifications(true)
 
-      global.document.hasFocus = vi.fn(() => false)
+      vi.stubGlobal('document', {
+        ...document,
+        hasFocus: vi.fn(() => false),
+      })
 
       const mockNotificationInstance = {
         onclick: null,
         close: vi.fn(),
       }
       const mockNotificationConstructor = vi.fn(() => mockNotificationInstance)
-      global.Notification =
-        mockNotificationConstructor as unknown as typeof Notification
-      ;(global.Notification as unknown as typeof Notification).permission =
-        'granted'
+      mockNotificationConstructor.permission = 'granted'
+      vi.stubGlobal('Notification', mockNotificationConstructor)
 
       const signal = createMockSignal(90)
 
@@ -334,13 +346,14 @@ describe('SignalToastService', () => {
       const settingsStore = useToastSettingsStore()
       settingsStore.updateBrowserNotifications(true)
 
-      global.document.hasFocus = vi.fn(() => false)
+      vi.stubGlobal('document', {
+        ...document,
+        hasFocus: vi.fn(() => false),
+      })
 
       const mockNotificationConstructor = vi.fn()
-      global.Notification =
-        mockNotificationConstructor as unknown as typeof Notification
-      ;(global.Notification as unknown as typeof Notification).permission =
-        'default'
+      mockNotificationConstructor.permission = 'default'
+      vi.stubGlobal('Notification', mockNotificationConstructor)
 
       const signal = createMockSignal(90)
 
