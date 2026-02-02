@@ -469,6 +469,28 @@ When deprecating an API:
 | `backtesting.backtest_engine` | `backtesting.engine.UnifiedBacktestEngine` | DeprecationWarning | ✅ |
 | `backtesting.engine_enhanced` | `backtesting.engine.UnifiedBacktestEngine` | DeprecationWarning | ✅ |
 
+### Quick Reference: Old vs New Imports
+
+**Phase Detector:**
+```python
+# Old (deprecated)
+from src.pattern_engine.phase_detector import detect_selling_climax
+from src.pattern_engine.phase_detector_v2 import PhaseDetector
+
+# New (recommended)
+from src.pattern_engine.phase_detection import SellingClimaxDetector, PhaseClassifier
+```
+
+**Backtest Engine:**
+```python
+# Old (deprecated)
+from src.backtesting.backtest_engine import BacktestEngine
+from src.backtesting.engine_enhanced import EnhancedBacktestEngine
+
+# New (recommended)
+from src.backtesting.engine import UnifiedBacktestEngine
+```
+
 ### Testing Deprecation Warnings
 
 Run the deprecation test suite to verify all warnings are properly configured:

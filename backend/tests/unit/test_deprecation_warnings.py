@@ -10,84 +10,66 @@ Ensures all legacy APIs emit proper deprecation warnings with:
 - Migration guidance (what to use instead)
 
 Note: Module-level deprecation warnings are emitted at import time. Since pytest
-imports modules during collection, we verify warnings via subprocess or by checking
-the warning message format when functions/classes are used.
+imports modules during collection, we verify warnings via module reload.
 """
 
 import importlib
-import sys
 import warnings
+from pathlib import Path
 
 import pytest
 
+# List of deprecated modules for parametrized tests
+DEPRECATED_PHASE_MODULES = [
+    "src.pattern_engine.phase_detector",
+    "src.pattern_engine.phase_detector_v2",
+]
 
-def _force_reimport(module_name: str) -> None:
-    """Force reimport a module by removing it and its submodules from cache."""
-    to_remove = [
-        mod for mod in sys.modules if mod == module_name or mod.startswith(f"{module_name}.")
-    ]
-    for mod in to_remove:
-        del sys.modules[mod]
+# Facade line count limit: Facades should be thin wrappers (~50-100 lines typically).
+# 200 lines allows for docstrings, type re-exports, and deprecation boilerplate.
+MAX_FACADE_LINES = 200
 
 
 class TestDeprecationWarningFormat:
     """Tests that all deprecation messages follow standard format."""
 
-    def test_all_warnings_include_removal_version(self) -> None:
+    @pytest.mark.parametrize("module_name", DEPRECATED_PHASE_MODULES)
+    def test_warning_includes_removal_version(self, module_name: str) -> None:
         """AC4: All deprecation warnings must include removal version."""
-        deprecated_modules = [
-            "src.pattern_engine.phase_detector",
-            "src.pattern_engine.phase_detector_v2",
-        ]
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
 
-        for module_name in deprecated_modules:
-            # Clear module cache
-            for mod in list(sys.modules.keys()):
-                if "phase_detector" in mod and "_impl" not in mod:
-                    del sys.modules[mod]
+            try:
+                module = importlib.import_module(module_name)
+                importlib.reload(module)
+            except ImportError:
+                pytest.skip(f"Module {module_name} not yet implemented")
 
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+            for warning in w:
+                if issubclass(warning.category, DeprecationWarning):
+                    msg = str(warning.message)
+                    assert (
+                        "v0.3.0" in msg or "removed" in msg.lower()
+                    ), f"Warning missing removal version: {msg}"
 
-                try:
-                    __import__(module_name)
-                except ImportError:
-                    continue  # Module doesn't exist yet
-
-                for warning in w:
-                    if issubclass(warning.category, DeprecationWarning):
-                        msg = str(warning.message)
-                        assert (
-                            "v0.3.0" in msg or "removed" in msg.lower()
-                        ), f"Warning missing removal version: {msg}"
-
-    def test_all_warnings_include_alternative(self) -> None:
+    @pytest.mark.parametrize("module_name", DEPRECATED_PHASE_MODULES)
+    def test_warning_includes_alternative(self, module_name: str) -> None:
         """AC1: All deprecation warnings must include what to use instead."""
-        deprecated_modules = [
-            "src.pattern_engine.phase_detector",
-            "src.pattern_engine.phase_detector_v2",
-        ]
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
 
-        for module_name in deprecated_modules:
-            # Clear module cache
-            for mod in list(sys.modules.keys()):
-                if "phase_detector" in mod and "_impl" not in mod:
-                    del sys.modules[mod]
+            try:
+                module = importlib.import_module(module_name)
+                importlib.reload(module)
+            except ImportError:
+                pytest.skip(f"Module {module_name} not yet implemented")
 
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-
-                try:
-                    __import__(module_name)
-                except ImportError:
-                    continue
-
-                for warning in w:
-                    if issubclass(warning.category, DeprecationWarning):
-                        msg = str(warning.message)
-                        assert (
-                            "Use" in msg or "use" in msg or "instead" in msg.lower()
-                        ), f"Warning missing alternative: {msg}"
+            for warning in w:
+                if issubclass(warning.category, DeprecationWarning):
+                    msg = str(warning.message)
+                    assert (
+                        "Use" in msg or "use" in msg or "instead" in msg.lower()
+                    ), f"Warning missing alternative: {msg}"
 
 
 class TestPhaseDetectorDeprecation:
@@ -434,7 +416,7 @@ class TestBacktestEngineDeprecation:
 class TestLegacyFacadeLineCount:
     """Test that facades remain compact."""
 
-    def test_phase_detector_facade_under_200_lines(self) -> None:
+    def test_phase_detector_facade_under_limit(self) -> None:
         """Facade should be thin wrapper, not bloated."""
         import inspect
 
@@ -442,13 +424,14 @@ class TestLegacyFacadeLineCount:
             warnings.simplefilter("ignore")
             from src.pattern_engine import phase_detector
 
-            source_file = inspect.getfile(phase_detector)
-            with open(source_file) as f:
-                line_count = len(f.readlines())
+            source_file = Path(inspect.getfile(phase_detector))
+            line_count = len(source_file.read_text().splitlines())
 
-        assert line_count < 200, f"phase_detector.py has {line_count} lines, should be <200"
+        assert line_count < MAX_FACADE_LINES, (
+            f"phase_detector.py has {line_count} lines, should be <{MAX_FACADE_LINES}"
+        )
 
-    def test_phase_detector_v2_facade_under_200_lines(self) -> None:
+    def test_phase_detector_v2_facade_under_limit(self) -> None:
         """Facade should be thin wrapper, not bloated."""
         import inspect
 
@@ -456,8 +439,9 @@ class TestLegacyFacadeLineCount:
             warnings.simplefilter("ignore")
             from src.pattern_engine import phase_detector_v2
 
-            source_file = inspect.getfile(phase_detector_v2)
-            with open(source_file) as f:
-                line_count = len(f.readlines())
+            source_file = Path(inspect.getfile(phase_detector_v2))
+            line_count = len(source_file.read_text().splitlines())
 
-        assert line_count < 200, f"phase_detector_v2.py has {line_count} lines, should be <200"
+        assert line_count < MAX_FACADE_LINES, (
+            f"phase_detector_v2.py has {line_count} lines, should be <{MAX_FACADE_LINES}"
+        )
