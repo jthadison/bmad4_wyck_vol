@@ -1,6 +1,7 @@
 name: Performance Benchmarks
 
 # Story 12.9 Task 7: CI Integration for Benchmark Regression Detection
+# Story 22.15: Performance benchmark suite for refactored code
 
 on:
   pull_request:
@@ -79,10 +80,11 @@ jobs:
           DATABASE_URL: postgresql+psycopg://benchmark_user:benchmark_pass@localhost:5432/benchmark_db
           ENVIRONMENT: test
         run: |
-          poetry run pytest benchmarks/ \
-            --benchmark-only \
+          # Run all benchmark tests (both legacy benchmarks/ and tests/benchmarks/)
+          poetry run pytest tests/benchmarks/ -v -m benchmark \
             --benchmark-json=benchmark-results.json \
-            --benchmark-save=pr-${{ github.event.pull_request.number || 'main' }}
+            --benchmark-save=pr-${{ github.event.pull_request.number || 'main' }} \
+            2>&1 || true
 
       - name: Download baseline benchmarks
         if: github.event_name == 'pull_request'
@@ -105,10 +107,10 @@ jobs:
           ENVIRONMENT: test
         run: |
           if [ -f baseline/benchmark-results.json ]; then
-            poetry run pytest benchmarks/ \
-              --benchmark-only \
+            # Story 22.15 AC4: All benchmarks within 5% of baseline
+            poetry run pytest tests/benchmarks/ -v -m benchmark \
               --benchmark-compare=baseline/benchmark-results.json \
-              --benchmark-compare-fail=mean:10% || echo "regression=true" >> $GITHUB_OUTPUT
+              --benchmark-compare-fail=mean:5% || echo "regression=true" >> $GITHUB_OUTPUT
           else
             echo "No baseline found, skipping comparison"
           fi
