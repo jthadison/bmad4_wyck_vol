@@ -29,7 +29,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
@@ -70,7 +70,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
@@ -128,7 +128,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
@@ -450,7 +450,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
