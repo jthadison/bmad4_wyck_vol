@@ -4,7 +4,6 @@
  * Tests for article display, TOC generation, responsive behavior, and user actions.
  */
 
-import { createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -12,6 +11,17 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import ArticleView from '@/components/help/ArticleView.vue'
 import { useHelpStore } from '@/stores/helpStore'
 import type { HelpArticle } from '@/stores/helpStore'
+
+// Mock the API client to prevent real HTTP requests
+vi.mock('@/services/api', () => ({
+  apiClient: {
+    get: vi.fn().mockResolvedValue(null),
+    post: vi.fn().mockResolvedValue(null),
+    put: vi.fn().mockResolvedValue(null),
+    patch: vi.fn().mockResolvedValue(null),
+    delete: vi.fn().mockResolvedValue(null),
+  },
+}))
 
 // Mock PrimeVue components
 vi.mock('primevue/message', () => ({
@@ -78,7 +88,7 @@ describe('ArticleView', () => {
     view_count: 1234,
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     pinia = createPinia()
     setActivePinia(pinia)
 
@@ -111,6 +121,14 @@ describe('ArticleView', () => {
       },
       writable: true,
       configurable: true,
+    })
+
+    // Get the help store and mock fetchArticle by default to prevent real API calls
+    // Individual tests can override this mock as needed
+    const helpStore = useHelpStore()
+    vi.spyOn(helpStore, 'fetchArticle').mockImplementation(async () => {
+      // Default: do nothing (no article loaded)
+      helpStore.isLoading = false
     })
   })
 
@@ -758,7 +776,12 @@ describe('ArticleView', () => {
 
   it('should fetch article on mount', async () => {
     const helpStore = useHelpStore()
-    const fetchSpy = vi.spyOn(helpStore, 'fetchArticle')
+    // Mock fetchArticle to prevent real API calls while still tracking calls
+    const fetchSpy = vi
+      .spyOn(helpStore, 'fetchArticle')
+      .mockImplementation(async () => {
+        helpStore.isLoading = false
+      })
 
     await router.push('/help/article/what-is-wyckoff')
     await router.isReady()
