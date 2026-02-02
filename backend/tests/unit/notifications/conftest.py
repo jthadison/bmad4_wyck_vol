@@ -16,7 +16,6 @@ from src.models.notification import (
     PushSubscription,
 )
 
-
 # =============================================================================
 # CircuitBreaker Constants (from twilio_client.py defaults)
 # =============================================================================
