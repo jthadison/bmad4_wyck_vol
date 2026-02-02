@@ -36,15 +36,15 @@ jobs:
     # PostgreSQL service container for testing
     services:
       postgres:
-        image: postgres:15
+        image: timescale/timescaledb:latest-pg15
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: wyckoff_test
+          POSTGRES_USER: wyckoff_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: wyckoff_db_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U wyckoff_user"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -80,9 +80,14 @@ jobs:
           cd backend
           poetry install --no-interaction --no-root
 
+      - name: Initialize database extensions
+        run: |
+          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
       - name: Set up database
         env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
         run: |
           cd backend
           poetry run alembic upgrade head
@@ -90,7 +95,7 @@ jobs:
       - name: Run regression test
         id: regression
         env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/wyckoff_test
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
