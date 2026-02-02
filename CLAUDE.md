@@ -33,16 +33,25 @@ bmad4_wyck_vol/
 
 ### Backend (`backend/src/`)
 
-- **pattern_engine/** - Wyckoff pattern detection, volume analysis, phase classification
-- **signal_generator/** - Signal generation pipeline with 5-stage validation
-- **backtesting/** - Backtesting engine with walk-forward validation
 - **api/** - FastAPI REST API + WebSocket for real-time streaming
-- **models/** - Pydantic/SQLAlchemy models (40+ models)
-- **repositories/** - Data access layer
-- **services/** - Business logic services
-- **risk_management/** - Position sizing & risk limits
+  - **routes/backtest/** - Backtest endpoint modules (preview, full, walk-forward, regression)
+  - **routes/campaigns/** - Campaign endpoint modules (lifecycle, performance, positions, risk)
+- **backtesting/** - Backtesting engine with walk-forward validation
+- **cache/** - Caching utilities (validation cache, statistics cache, bar cache)
+- **campaign_management/** - Campaign lifecycle and BMAD workflow management
+  - Campaign state machine, allocation, event notifications
 - **market_data/** - Data ingestion & caching
+- **models/** - Pydantic/SQLAlchemy models (40+ models)
+  - **backtest/** - Backtest model package (config, results, metrics, walk-forward, regression)
+  - **campaign_*.py** - Decomposed campaign models (lifecycle, events, tracker)
 - **observability/** - Logging & monitoring
+- **pattern_engine/** - Wyckoff pattern detection, volume analysis, phase classification
+  - **phase_detection/** - Unified phase detection package (types, event detectors, classifier)
+- **repositories/** - Data access layer
+- **risk_management/** - Position sizing, risk limits, portfolio heat tracking
+  - **portfolio_heat_tracker.py** - Portfolio heat monitoring with alert states
+- **services/** - Business logic services
+- **signal_generator/** - Signal generation pipeline with 5-stage validation
 
 ### Frontend (`frontend/src/`)
 
@@ -213,10 +222,15 @@ The system uses specialized validation agents:
 - Win rate target: 60-75% (pattern-dependent)
 - Profit factor: 2.0+ expected
 
-### Recent Development Focus (Epic 13)
+### Recent Development Focus
 
-Current work focuses on intraday integration:
+**Epic 22** (Completed) - Code Modularization:
+- Extracted campaign_management, cache, phase_detection packages
+- Split monolithic API routes into focused modules
+- Decomposed large model files into subpackages
+- Added deprecation facades for gradual migration
 
+**Epic 13** (Active) - Intraday Wyckoff Integration:
 - Timeframe-adaptive thresholds
 - Session-relative volume analysis
 - Confidence scoring refinement
@@ -229,3 +243,9 @@ Current work focuses on intraday integration:
 - `.bmad-core/core-config.yaml` - Project configuration (PRD location, story patterns, etc.)
 - `.env` - Environment variables (database, API keys, ports)
 - `docker-compose.yml` - Local development services
+
+### Key Documentation
+
+- `docs/architecture/module-structure.md` - Backend module organization
+- `docs/architecture/migration-guide-epic22.md` - Migration guide for Epic 22 changes
+- `docs/architecture/asset-class-abstraction.md` - Multi-asset confidence scoring architecture
