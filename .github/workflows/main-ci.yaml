@@ -400,51 +400,6 @@ jobs:
           path: backtest-results/
           retention-days: 30
 
-  # Pydantic-to-TypeScript codegen validation
-  pydantic-to-typescript-codegen:
-    name: Pydantic to TypeScript Codegen
-    runs-on: ubuntu-latest
-    needs: backend-tests
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: 1.7.1
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Install dependencies
-        working-directory: backend
-        run: poetry install --with dev
-
-      - name: Run Pydantic to TypeScript codegen
-        working-directory: backend
-        run: |
-          # Placeholder for codegen script
-          echo "Pydantic-to-TypeScript codegen would run here"
-          # poetry run pydantic-to-typescript
-
-      - name: Check for uncommitted changes
-        run: |
-          if [[ -n $(git status --porcelain) ]]; then
-            echo "Error: Generated types differ from committed types"
-            echo "Please run 'poetry run pydantic-to-typescript' and commit the changes"
-            git status
-            exit 1
-          else
-            echo "Success: Generated types are up-to-date"
-          fi
-        continue-on-error: true
-
   # Notify on failure (optional)
   notify-on-failure:
     name: Notify on Failure
@@ -458,7 +413,6 @@ jobs:
       - frontend-tests
       - accuracy-tests
       - extended-backtests
-      - pydantic-to-typescript-codegen
     if: failure()
     steps:
       - name: Send notification
