@@ -156,6 +156,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        run: |
+          missing=""
+          if [ -z "$DOCKER_USERNAME" ]; then missing="$missing DOCKER_USERNAME"; fi
+          if [ -z "$DOCKER_PASSWORD" ]; then missing="$missing DOCKER_PASSWORD"; fi
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required secrets:$missing"
+            exit 1
+          fi
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
