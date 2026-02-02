@@ -31,7 +31,6 @@ import {
 } from '@/services/api'
 
 export const useAutoExecutionStore = defineStore('autoExecution', () => {
-
   // State
   const config = ref<AutoExecutionConfig | null>(null)
   const loading = ref<boolean>(false)

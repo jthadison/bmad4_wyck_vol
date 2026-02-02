@@ -209,12 +209,18 @@ function handleDeactivatedMessage(message: WebSocketMessage): void {
 onMounted(() => {
   loadKillSwitchStatus()
   websocketService.subscribe('kill_switch_activated', handleActivatedMessage)
-  websocketService.subscribe('kill_switch_deactivated', handleDeactivatedMessage)
+  websocketService.subscribe(
+    'kill_switch_deactivated',
+    handleDeactivatedMessage
+  )
 })
 
 onUnmounted(() => {
   websocketService.unsubscribe('kill_switch_activated', handleActivatedMessage)
-  websocketService.unsubscribe('kill_switch_deactivated', handleDeactivatedMessage)
+  websocketService.unsubscribe(
+    'kill_switch_deactivated',
+    handleDeactivatedMessage
+  )
 })
 </script>
 

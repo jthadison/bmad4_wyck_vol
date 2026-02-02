@@ -1,30 +1,177 @@
 <script setup lang="ts">
 /**
- * AddSymbolModal Component (Story 20.6, Story 21.5)
+ * AddSymbolModal Component (Story 20.6)
  *
- * Modal dialog for adding a symbol to the scanner watchlist.
- * AC4: Form with symbol, timeframe, asset class fields
- * - Symbol search autocomplete (Story 21.5)
- * - Auto-uppercase symbol input
- * - Auto-fill asset class on symbol selection
+ * Modal dialog for adding symbols to the scanner watchlist.
+ * Uses predefined dropdown of major forex pairs and indices.
+ * - MultiSelect for batch adding multiple symbols
+ * - Grouped by asset class (Forex / Indices)
  * - Duplicate detection
  * - Error handling
  */
 
-import { ref, watch, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import Dialog from 'primevue/dialog'
 import Dropdown from 'primevue/dropdown'
+import MultiSelect from 'primevue/multiselect'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import SymbolSearchInput from './SymbolSearchInput.vue'
 import { useScannerStore } from '@/stores/scannerStore'
 import {
   TIMEFRAME_OPTIONS,
-  ASSET_CLASS_OPTIONS,
   type ScannerTimeframe,
   type ScannerAssetClass,
-  type SymbolSearchResult,
 } from '@/types/scanner'
+
+// Predefined symbols - Major Forex Pairs and Indices
+interface PredefinedSymbol {
+  symbol: string
+  name: string
+  type: ScannerAssetClass
+  group: string
+}
+
+const PREDEFINED_SYMBOLS: PredefinedSymbol[] = [
+  // Major Forex Pairs
+  {
+    symbol: 'EURUSD',
+    name: 'Euro / US Dollar',
+    type: 'forex',
+    group: 'Forex - Majors',
+  },
+  {
+    symbol: 'GBPUSD',
+    name: 'British Pound / US Dollar',
+    type: 'forex',
+    group: 'Forex - Majors',
+  },
+  {
+    symbol: 'USDJPY',
+    name: 'US Dollar / Japanese Yen',
+    type: 'forex',
+    group: 'Forex - Majors',
+  },
+  {
+    symbol: 'AUDUSD',
+    name: 'Australian Dollar / US Dollar',
+    type: 'forex',
+    group: 'Forex - Majors',
+  },
+  {
+    symbol: 'USDCAD',
+    name: 'US Dollar / Canadian Dollar',
+    type: 'forex',
+    group: 'Forex - Majors',
+  },
+  {
+    symbol: 'USDCHF',
+    name: 'US Dollar / Swiss Franc',
+    type: 'forex',
+    group: 'Forex - Majors',
+  },
+  {
+    symbol: 'NZDUSD',
+    name: 'New Zealand Dollar / US Dollar',
+    type: 'forex',
+    group: 'Forex - Majors',
+  },
+  // Cross Pairs
+  {
+    symbol: 'EURGBP',
+    name: 'Euro / British Pound',
+    type: 'forex',
+    group: 'Forex - Crosses',
+  },
+  {
+    symbol: 'EURJPY',
+    name: 'Euro / Japanese Yen',
+    type: 'forex',
+    group: 'Forex - Crosses',
+  },
+  {
+    symbol: 'GBPJPY',
+    name: 'British Pound / Japanese Yen',
+    type: 'forex',
+    group: 'Forex - Crosses',
+  },
+  {
+    symbol: 'AUDJPY',
+    name: 'Australian Dollar / Japanese Yen',
+    type: 'forex',
+    group: 'Forex - Crosses',
+  },
+  {
+    symbol: 'EURAUD',
+    name: 'Euro / Australian Dollar',
+    type: 'forex',
+    group: 'Forex - Crosses',
+  },
+  {
+    symbol: 'EURCHF',
+    name: 'Euro / Swiss Franc',
+    type: 'forex',
+    group: 'Forex - Crosses',
+  },
+  {
+    symbol: 'GBPAUD',
+    name: 'British Pound / Australian Dollar',
+    type: 'forex',
+    group: 'Forex - Crosses',
+  },
+  {
+    symbol: 'CADJPY',
+    name: 'Canadian Dollar / Japanese Yen',
+    type: 'forex',
+    group: 'Forex - Crosses',
+  },
+  // Major Indices
+  { symbol: 'SPX', name: 'S&P 500', type: 'index', group: 'Indices - US' },
+  { symbol: 'NDX', name: 'Nasdaq 100', type: 'index', group: 'Indices - US' },
+  {
+    symbol: 'DJI',
+    name: 'Dow Jones Industrial',
+    type: 'index',
+    group: 'Indices - US',
+  },
+  { symbol: 'RUT', name: 'Russell 2000', type: 'index', group: 'Indices - US' },
+  {
+    symbol: 'VIX',
+    name: 'CBOE Volatility Index',
+    type: 'index',
+    group: 'Indices - US',
+  },
+  // International Indices
+  {
+    symbol: 'FTSE',
+    name: 'FTSE 100',
+    type: 'index',
+    group: 'Indices - International',
+  },
+  {
+    symbol: 'DAX',
+    name: 'DAX 40',
+    type: 'index',
+    group: 'Indices - International',
+  },
+  {
+    symbol: 'N225',
+    name: 'Nikkei 225',
+    type: 'index',
+    group: 'Indices - International',
+  },
+  {
+    symbol: 'HSI',
+    name: 'Hang Seng Index',
+    type: 'index',
+    group: 'Indices - International',
+  },
+  {
+    symbol: 'STOXX50',
+    name: 'Euro Stoxx 50',
+    type: 'index',
+    group: 'Indices - International',
+  },
+]
 
 const props = defineProps<{
   visible: boolean
@@ -38,64 +185,61 @@ const emit = defineEmits<{
 const store = useScannerStore()
 
 // Form state
-const symbol = ref('')
+const selectedSymbols = ref<PredefinedSymbol[]>([])
 const timeframe = ref<ScannerTimeframe>('1H')
-const assetClass = ref<ScannerAssetClass>('forex')
 const localError = ref<string | null>(null)
 const isSubmitting = ref(false)
+const addedCount = ref(0)
 
-// Refs for auto-focus
-const symbolSearchRef = ref<InstanceType<typeof SymbolSearchInput> | null>(null)
+// Filter out symbols already in watchlist and group for MultiSelect
+const groupedSymbols = computed(() => {
+  const available = PREDEFINED_SYMBOLS.filter((s) => !store.hasSymbol(s.symbol))
+  const groups: Record<string, PredefinedSymbol[]> = {}
 
-// Handle symbol selection from autocomplete (Story 21.5 AC4)
-function onSymbolSelect(result: SymbolSearchResult) {
-  symbol.value = result.symbol
-  // Auto-fill asset class from selected result
-  assetClass.value = result.type
-}
+  for (const symbol of available) {
+    if (!groups[symbol.group]) {
+      groups[symbol.group] = []
+    }
+    groups[symbol.group].push(symbol)
+  }
+
+  // Convert to PrimeVue grouped format: { group: string, items: PredefinedSymbol[] }[]
+  return Object.entries(groups).map(([groupName, items]) => ({
+    group: groupName,
+    items: items,
+  }))
+})
+
+// Count of available symbols
+const availableCount = computed(() => {
+  return groupedSymbols.value.reduce((sum, g) => sum + g.items.length, 0)
+})
 
 // Reset form when modal opens
 watch(
   () => props.visible,
   (visible) => {
     if (visible) {
-      symbol.value = ''
+      selectedSymbols.value = []
       timeframe.value = '1H'
-      assetClass.value = 'forex'
       localError.value = null
+      addedCount.value = 0
       store.clearError()
-
-      // Focus symbol search input after DOM update
-      nextTick(() => {
-        const input = symbolSearchRef.value?.$el?.querySelector('input')
-        input?.focus()
-      })
     }
   }
 )
 
 // Validate form
 function validate(): boolean {
-  if (!symbol.value.trim()) {
-    localError.value = 'Symbol is required'
+  if (selectedSymbols.value.length === 0) {
+    localError.value = 'Please select at least one symbol'
     return false
   }
 
-  // Basic symbol validation (uppercase alphanumeric with ./^-)
-  const symbolPattern = /^[A-Z0-9./^-]+$/
-  if (!symbolPattern.test(symbol.value)) {
-    localError.value = 'Invalid symbol format'
-    return false
-  }
-
-  if (symbol.value.length > 20) {
-    localError.value = 'Symbol must be 1-20 characters'
-    return false
-  }
-
-  // Check for duplicates locally
-  if (store.hasSymbol(symbol.value)) {
-    localError.value = `${symbol.value} already exists in watchlist`
+  // Check watchlist limit
+  const remainingSlots = 50 - store.watchlistCount
+  if (selectedSymbols.value.length > remainingSlots) {
+    localError.value = `Can only add ${remainingSlots} more symbol(s). Watchlist limit is 50.`
     return false
   }
 
@@ -103,28 +247,39 @@ function validate(): boolean {
   return true
 }
 
-// Submit form
+// Submit form - add all selected symbols
 async function onSubmit() {
   if (!validate()) {
     return
   }
 
   isSubmitting.value = true
+  addedCount.value = 0
+  const errors: string[] = []
 
-  const success = await store.addSymbol({
-    symbol: symbol.value,
-    timeframe: timeframe.value,
-    asset_class: assetClass.value,
-  })
+  for (const sym of selectedSymbols.value) {
+    const success = await store.addSymbol({
+      symbol: sym.symbol,
+      timeframe: timeframe.value,
+      asset_class: sym.type,
+    })
+
+    if (success) {
+      addedCount.value++
+      emit('added', sym.symbol)
+    } else {
+      errors.push(`${sym.symbol}: ${store.error}`)
+    }
+  }
 
   isSubmitting.value = false
 
-  if (success) {
-    emit('added', symbol.value)
-    emit('update:visible', false)
+  if (errors.length > 0) {
+    localError.value = `Added ${
+      addedCount.value
+    } symbol(s). Errors: ${errors.join(', ')}`
   } else {
-    // Show store error (may include server-side duplicate check)
-    localError.value = store.error
+    emit('update:visible', false)
   }
 }
 
@@ -136,7 +291,7 @@ function onCancel() {
 <template>
   <Dialog
     :visible="visible"
-    header="Add Symbol"
+    header="Add Symbols"
     :modal="true"
     :closable="true"
     :draggable="false"
@@ -145,26 +300,59 @@ function onCancel() {
     @update:visible="emit('update:visible', $event)"
   >
     <form class="add-symbol-form" @submit.prevent="onSubmit">
-      <!-- Error Message -->
+      <!-- Error/Success Message -->
       <Message v-if="localError" severity="error" :closable="false">
         {{ localError }}
       </Message>
 
-      <!-- Symbol Field with Autocomplete (Story 21.5) -->
+      <Message v-if="store.isAtLimit" severity="warn" :closable="false">
+        Watchlist is full (50 symbols max)
+      </Message>
+
+      <!-- Symbol MultiSelect -->
       <div class="form-field">
-        <label for="symbol-input">Symbol</label>
-        <SymbolSearchInput
-          ref="symbolSearchRef"
-          v-model="symbol"
-          placeholder="Search or enter symbol..."
-          :disabled="isSubmitting"
-          @select="onSymbolSelect"
-        />
+        <label for="symbol-select">Select Symbols</label>
+        <MultiSelect
+          id="symbol-select"
+          v-model="selectedSymbols"
+          :options="groupedSymbols"
+          option-label="symbol"
+          option-group-label="group"
+          option-group-children="items"
+          placeholder="Select forex pairs or indices..."
+          :filter="true"
+          filter-placeholder="Search..."
+          :show-toggle-all="true"
+          :disabled="isSubmitting || store.isAtLimit"
+          :max-selected-labels="5"
+          selected-items-label="{0} symbols selected"
+          display="chip"
+          data-testid="symbol-multiselect"
+          class="symbol-multiselect"
+        >
+          <template #option="slotProps">
+            <div class="symbol-option">
+              <span class="symbol-ticker">{{ slotProps.option.symbol }}</span>
+              <span class="symbol-name">{{ slotProps.option.name }}</span>
+            </div>
+          </template>
+          <template #optiongroup="slotProps">
+            <div class="symbol-group-header">
+              {{ slotProps.option.group }}
+            </div>
+          </template>
+        </MultiSelect>
+        <small class="field-hint">
+          {{ availableCount }} symbols available
+          <span v-if="selectedSymbols.length > 0">
+            · {{ selectedSymbols.length }} selected
+          </span>
+        </small>
       </div>
 
       <!-- Timeframe Field -->
       <div class="form-field">
-        <label for="timeframe-select">Timeframe</label>
+        <label for="timeframe-select">Timeframe (applies to all)</label>
         <Dropdown
           id="timeframe-select"
           v-model="timeframe"
@@ -173,20 +361,6 @@ function onCancel() {
           option-value="value"
           :disabled="isSubmitting"
           data-testid="timeframe-select"
-        />
-      </div>
-
-      <!-- Asset Class Field -->
-      <div class="form-field">
-        <label for="asset-class-select">Asset Class</label>
-        <Dropdown
-          id="asset-class-select"
-          v-model="assetClass"
-          :options="ASSET_CLASS_OPTIONS"
-          option-label="label"
-          option-value="value"
-          :disabled="isSubmitting"
-          data-testid="asset-class-select"
         />
       </div>
     </form>
@@ -201,9 +375,15 @@ function onCancel() {
           @click="onCancel"
         />
         <Button
-          label="Add"
+          :label="
+            selectedSymbols.length > 1
+              ? `Add ${selectedSymbols.length} Symbols`
+              : 'Add Symbol'
+          "
           :loading="isSubmitting"
-          :disabled="isSubmitting || store.isAtLimit"
+          :disabled="
+            isSubmitting || store.isAtLimit || selectedSymbols.length === 0
+          "
           data-testid="add-button"
           @click="onSubmit"
         />
@@ -217,7 +397,7 @@ function onCancel() {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-width: 300px;
+  min-width: 350px;
 }
 
 .form-field {
@@ -232,9 +412,43 @@ function onCancel() {
   color: var(--text-color-secondary, #94a3b8);
 }
 
-.form-field :deep(.p-inputtext),
-.form-field :deep(.p-dropdown) {
+.field-hint {
+  font-size: 12px;
+  color: var(--text-color-secondary, #64748b);
+}
+
+.form-field :deep(.p-dropdown),
+.form-field :deep(.p-multiselect) {
   width: 100%;
+}
+
+.symbol-multiselect :deep(.p-multiselect-panel) {
+  max-height: 350px;
+}
+
+.symbol-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.symbol-ticker {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.symbol-name {
+  font-size: 12px;
+  color: var(--text-color-secondary, #64748b);
+}
+
+.symbol-group-header {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--primary-color, #3b82f6);
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--surface-border, #334155);
 }
 
 .modal-footer {
@@ -243,7 +457,7 @@ function onCancel() {
   gap: 8px;
 }
 
-/* Responsive (AC9) */
+/* Responsive */
 @media (max-width: 768px) {
   :deep(.add-symbol-modal) {
     width: 100% !important;
