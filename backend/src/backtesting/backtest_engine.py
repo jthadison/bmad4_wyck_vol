@@ -21,8 +21,9 @@ Author: Story 18.9.4
 import warnings
 
 warnings.warn(
-    "src.backtesting.backtest_engine is deprecated. "
-    "Use src.backtesting.engine.UnifiedBacktestEngine instead.",
+    "'src.backtesting.backtest_engine' is deprecated. "
+    "Use 'src.backtesting.engine.UnifiedBacktestEngine' instead. "
+    "This module will be removed in v0.3.0.",
     DeprecationWarning,
     stacklevel=2,
 )
