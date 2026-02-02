@@ -212,55 +212,65 @@ describe('useToastSettingsStore', () => {
 
   describe('requestBrowserPermission', () => {
     it('should return true if permission already granted', async () => {
-      global.Notification = {
+      const mockRequestPermission = vi.fn()
+      vi.stubGlobal('Notification', {
         permission: 'granted',
-        requestPermission: vi.fn(),
-      } as unknown as typeof Notification
+        requestPermission: mockRequestPermission,
+      })
 
       const store = useToastSettingsStore()
       const result = await store.requestBrowserPermission()
 
       expect(result).toBe(true)
-      expect(Notification.requestPermission).not.toHaveBeenCalled()
+      expect(mockRequestPermission).not.toHaveBeenCalled()
+
+      vi.unstubAllGlobals()
     })
 
     it('should return false if permission denied', async () => {
-      global.Notification = {
+      vi.stubGlobal('Notification', {
         permission: 'denied',
         requestPermission: vi.fn(),
-      } as unknown as typeof Notification
+      })
 
       const store = useToastSettingsStore()
       const result = await store.requestBrowserPermission()
 
       expect(result).toBe(false)
+
+      vi.unstubAllGlobals()
     })
 
     it('should request permission and return result', async () => {
-      global.Notification = {
+      const mockRequestPermission = vi.fn().mockResolvedValue('granted')
+      vi.stubGlobal('Notification', {
         permission: 'default',
-        requestPermission: vi.fn().mockResolvedValue('granted'),
-      } as unknown as typeof Notification
+        requestPermission: mockRequestPermission,
+      })
 
       const store = useToastSettingsStore()
       const result = await store.requestBrowserPermission()
 
       expect(result).toBe(true)
-      expect(Notification.requestPermission).toHaveBeenCalled()
+      expect(mockRequestPermission).toHaveBeenCalled()
       expect(store.settings.browserNotificationsEnabled).toBe(true)
+
+      vi.unstubAllGlobals()
     })
 
     it('should return false if Notification API not supported', async () => {
-      const originalNotification = global.Notification
-      // @ts-expect-error - intentionally setting to undefined
-      global.Notification = undefined
+      // Delete Notification from window to simulate unsupported API
+      const originalNotification = window.Notification
+      // @ts-expect-error - intentionally deleting to simulate unsupported browser
+      delete window.Notification
 
       const store = useToastSettingsStore()
       const result = await store.requestBrowserPermission()
 
       expect(result).toBe(false)
 
-      global.Notification = originalNotification
+      // Restore original Notification
+      window.Notification = originalNotification
     })
   })
 })
