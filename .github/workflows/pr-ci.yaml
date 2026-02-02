@@ -81,10 +81,11 @@ jobs:
         working-directory: backend
         run: poetry install --with dev
 
+      # Type checking is advisory, doesn't block build
       - name: Run mypy type checking
         working-directory: backend
         run: poetry run mypy src/ --allow-missing-baseline
-        continue-on-error: true  # Type checking is advisory, don't fail build
+        continue-on-error: true
 
   # Backend tests with coverage
   backend-tests:
@@ -175,6 +176,7 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+      # External service: Codecov upload may fail due to network/service issues
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -296,6 +298,7 @@ jobs:
         working-directory: frontend
         run: npm run coverage
 
+      # External service: Codecov upload may fail due to network/service issues
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -477,6 +480,7 @@ jobs:
         run: |
           poetry run alembic upgrade head
 
+      # Testing: Accuracy tests are optional at PR stage, will be enforced at deployment
       - name: Run accuracy tests
         id: accuracy
         working-directory: backend
@@ -488,6 +492,7 @@ jobs:
           echo "accuracy_status=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
 
+      # Testing: Optional metric parsing (informational)
       - name: Parse accuracy metrics
         id: parse_metrics
         run: |
@@ -495,6 +500,7 @@ jobs:
           # Placeholder for accuracy metric parsing
         continue-on-error: true
 
+      # Non-critical: Commenting on PR is informational, doesn't block merge
       - name: Comment accuracy results on PR
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
@@ -548,6 +554,7 @@ jobs:
         working-directory: backend
         run: poetry install --with dev
 
+      # Optional quality check: informational only, doesn't block merge
       - name: Run code complexity check (radon)
         working-directory: backend
         run: |
@@ -555,11 +562,13 @@ jobs:
           poetry run radon mi src/ --min B
         continue-on-error: true
 
+      # Optional check: license compatibility (informational only)
       - name: Check license compatibility
         working-directory: backend
         run: poetry run pip-licenses --format=markdown --with-urls
         continue-on-error: true
 
+      # Optional quality check: code duplication detection (informational)
       - name: Check code duplication
         working-directory: backend
         run: poetry run pylint --disable=all --enable=duplicate-code src/
@@ -592,7 +601,6 @@ jobs:
       - name: Run Python security scan (safety)
         working-directory: backend
         run: poetry run pip list --format=json | python -m json.tool
-        continue-on-error: true
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
@@ -602,7 +610,6 @@ jobs:
       - name: Run npm audit
         working-directory: frontend
         run: npm audit --audit-level=high
-        continue-on-error: true
 
   # Set required status checks
   all-checks-passed:

@@ -77,7 +77,6 @@ jobs:
       - name: Run benchmarks
         working-directory: backend
         id: run_benchmarks
-        continue-on-error: true
         env:
           DATABASE_URL: postgresql+psycopg://benchmark_user:benchmark_pass@localhost:5432/benchmark_db
           ENVIRONMENT: test
@@ -87,6 +86,7 @@ jobs:
             --benchmark-json=benchmark-results.json \
             --benchmark-save=pr-${{ github.event.pull_request.number || 'main' }}
 
+      # External fetch: Downloading baseline from previous runs may fail if none exist
       - name: Download baseline benchmarks
         if: github.event_name == 'pull_request'
         continue-on-error: true

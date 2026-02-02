@@ -61,6 +61,7 @@ jobs:
         working-directory: backend
         run: poetry install --no-interaction --no-root
 
+      # Testing: Accuracy tests may fail initially, regression status is what matters
       - name: Run comprehensive detector accuracy tests
         id: accuracy_tests
         working-directory: backend
@@ -74,6 +75,7 @@ jobs:
         env:
           PYTHONPATH: .
 
+      # Testing: Regression detection is critical for tracking accuracy drift
       - name: Run regression detection
         id: regression_check
         working-directory: backend
@@ -141,6 +143,7 @@ jobs:
             echo "regression_detected=false" >> $GITHUB_OUTPUT
           fi
 
+      # Non-critical: Report generation is informational, failure to generate doesn't affect workflow
       - name: Generate HTML accuracy reports
         if: always()
         working-directory: backend
