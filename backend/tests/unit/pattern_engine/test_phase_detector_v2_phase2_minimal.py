@@ -8,7 +8,7 @@ Full integration testing will be done with real market data in integration tests
 from decimal import Decimal
 from unittest.mock import Mock
 
-from src.pattern_engine.phase_detector_v2 import (
+from src.pattern_engine._phase_detector_v2_impl import (
     _calculate_markup_slope,
     _count_lps_pullbacks,
     _detect_volume_trend,
@@ -119,7 +119,7 @@ def test_count_lps_pullbacks_placeholder():
 # Summary test to verify all enhancement methods are callable
 def test_phase_2_methods_exist_and_callable():
     """Smoke test: Verify all Phase 2 enhancement methods exist."""
-    from src.pattern_engine.phase_detector_v2 import (
+    from src.pattern_engine._phase_detector_v2_impl import (
         _calculate_markup_slope,
         _check_phase_confirmation,
         _check_phase_invalidation,
