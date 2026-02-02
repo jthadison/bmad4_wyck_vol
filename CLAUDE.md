@@ -249,3 +249,65 @@ The system uses specialized validation agents:
 - `docs/architecture/module-structure.md` - Backend module organization
 - `docs/architecture/migration-guide-epic22.md` - Migration guide for Epic 22 changes
 - `docs/architecture/asset-class-abstraction.md` - Multi-asset confidence scoring architecture
+- `docs/architecture/cicd-workflows.md` - CI/CD workflow architecture and troubleshooting
+
+## CI/CD Quick Reference
+
+The project uses GitHub Actions for comprehensive CI/CD automation:
+
+### Primary Workflows
+
+- **PR CI** (`pr-ci.yaml`) - Triggered on pull requests to `main` or `story-*` branches
+  - Backend: Linting (Ruff), type checking (mypy), tests with coverage
+  - Frontend: Linting (ESLint + Prettier), type checking, unit tests (Vitest)
+  - E2E: Playwright tests across Chromium, Firefox, WebKit
+  - Quality: Detector accuracy, code quality checks, security scanning
+  - Gate: All checks must pass for merge (except mypy is advisory)
+
+- **Main CI** (`main-ci.yaml`) - Triggered on pushes to `main` branch
+  - Runs all PR CI checks plus extended backtests and codegen validation
+  - Stricter coverage and regression thresholds
+
+- **Deploy** (`deploy.yaml`) - Manual trigger or version tag push
+  - Pre-deployment validation: accuracy, regression, 90% coverage, security
+  - Docker image building
+  - Production deployment (Phase 2 placeholder)
+
+- **Performance Benchmarks** (`benchmarks.yaml`) - PR/main push or manual
+  - Detects performance regressions > 5% vs baseline (Story 22.15)
+
+- **Monthly Regression** (`monthly-regression.yaml`) - 1st of month at 2 AM UTC
+  - Detector accuracy regression testing (NFR21: ±5% tolerance)
+  - Auto-creates GitHub issue if regression detected
+
+- **Claude AI** (`claude.yml`, `claude-code-review.yml`)
+  - Interactive assistance via `@claude` mentions
+  - Automated code review on PR creation
+
+### Local CI Checks
+
+```bash
+# Backend checks
+cd backend
+poetry run ruff check . && poetry run ruff format --check .
+poetry run mypy src/
+poetry run pytest --cov=src --cov-fail-under=90
+
+# Frontend checks
+cd frontend
+npm run lint && npx prettier --check src/
+npm run type-check
+npm run test:run && npm run coverage
+npm run test:smoke  # E2E
+
+# Full pipeline (see docs/architecture/cicd-workflows.md for details)
+```
+
+### Required Secrets
+
+- `CLAUDE_CODE_OAUTH_TOKEN` - Claude AI authentication
+- `DOCKER_USERNAME` / `DOCKER_PASSWORD` - Docker Hub push
+- `SLACK_WEBHOOK_URL` - Failure notifications (optional)
+- `CODECOV_TOKEN` - Coverage tracking (optional)
+
+For detailed workflow documentation, requirements, and troubleshooting, see `docs/architecture/cicd-workflows.md`.
