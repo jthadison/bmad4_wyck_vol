@@ -167,6 +167,14 @@ jobs:
             --reruns-delay 1 \
             -v
 
+      - name: Check optional Codecov secret
+        run: |
+          if [ -z "$CODECOV_TOKEN" ]; then
+            echo "::warning::CODECOV_TOKEN not configured - Codecov upload will be limited"
+          fi
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
