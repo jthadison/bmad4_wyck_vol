@@ -345,21 +345,22 @@ def test_cache_invalidation_on_pattern_add(detector, sample_spring, sample_sos):
     AC5.2: Cache is invalidated when patterns change via add_pattern().
 
     Validates:
-    - Adding pattern invalidates cache
-    - New validation is computed fresh
+    - Adding pattern changes the pattern sequence hash
+    - New validation uses a different cache key
+    - Story 22.6: Validation cache is now centralized at detector level
     """
     # Create initial campaign
     campaign = detector.add_pattern(sample_spring)
 
-    # Cache should be empty initially for new campaign
-    assert len(campaign._validation_cache) == 0, "New campaign should have empty cache"
+    # Get initial hash for single-pattern campaign
+    initial_hash = campaign._get_pattern_sequence_hash()
 
-    # Add second pattern (triggers validation)
+    # Add second pattern (triggers validation with new hash)
     detector.add_pattern(sample_sos)
 
-    # Cache should be invalidated after pattern added
-    # (cache is cleared after patterns.append in add_pattern)
-    assert len(campaign._validation_cache) == 0, "Cache should be invalidated after adding pattern"
+    # Hash should change after pattern added (Story 22.6: invalidation via hash change)
+    new_hash = campaign._get_pattern_sequence_hash()
+    assert initial_hash != new_hash, "Pattern sequence hash should change after adding pattern"
 
 
 # ============================================================================
@@ -469,24 +470,31 @@ def test_add_pattern_uses_cached_validation(detector, sample_spring, sample_sos)
 
 def test_cache_invalidated_after_invalid_sequence(detector, sample_spring, sample_sos):
     """
-    AC7.2: Cache invalidated even when sequence validation fails.
+    AC7.2: Cache validation uses new hash when patterns change.
 
     Validates:
-    - Invalid sequences still trigger cache invalidation
-    - Ensures cache consistency
+    - Pattern changes result in different cache keys
+    - Story 22.6: Uses hash-based invalidation (no explicit clear needed)
     """
     # Create campaign with Spring
     campaign = detector.add_pattern(sample_spring)
 
-    # Manually cache a validation result
+    # Get initial pattern sequence hash
+    initial_hash = campaign._get_pattern_sequence_hash()
+
+    # Manually cache a validation result for the single-pattern sequence
     campaign.set_cached_validation(True)
     assert len(campaign._validation_cache) > 0, "Cache should have entry"
 
-    # Try to add SOS (valid sequence, will pass and invalidate)
+    # Try to add SOS (valid sequence)
     detector.add_pattern(sample_sos)
 
-    # Cache should be invalidated after pattern added
-    assert len(campaign._validation_cache) == 0, "Cache should be invalidated after pattern add"
+    # Hash should change (Story 22.6: invalidation via hash change, not explicit clear)
+    new_hash = campaign._get_pattern_sequence_hash()
+    assert initial_hash != new_hash, "Pattern sequence hash should change after adding pattern"
+
+    # Old hash entry may still exist, but new validation uses different key
+    # The important thing is the hash changed, so new validations will compute fresh results
 
 
 # ============================================================================
@@ -526,27 +534,39 @@ def test_cache_with_multiple_campaigns(detector, sample_spring, sample_sos):
     AC8.2: Cache works correctly with multiple campaigns.
 
     Validates:
-    - Each campaign has independent cache
-    - No cache cross-contamination between campaigns
+    - Story 22.6: Detector uses centralized ValidationCache
+    - Different pattern sequences produce different cache keys
+    - Cache entries are keyed by pattern sequence hash
     """
     # Create two independent campaigns
     campaign1 = Campaign(patterns=[sample_spring])
     campaign2 = Campaign(patterns=[sample_spring, sample_sos])
 
-    # Cache validation for both
+    # Get hashes for both campaigns
+    hash1 = campaign1._get_pattern_sequence_hash()
+    hash2 = campaign2._get_pattern_sequence_hash()
+
+    # Verify different sequences produce different hashes
+    assert hash1 != hash2, "Different pattern sequences should have different hashes"
+
+    # Cache validation for both using detector's centralized cache
+    result1 = detector._validate_sequence_cached(campaign1)
+    result2 = detector._validate_sequence_cached(campaign2)
+
+    # Both should validate successfully
+    assert result1 is True, "Single Spring pattern should be valid"
+    assert result2 is True, "Spring + SOS sequence should be valid"
+
+    # Verify detector's cache has entries (Story 22.6: centralized cache)
+    stats = detector.get_cache_statistics()
+    assert stats["cache_misses"] == 2, "Should have 2 cache misses (first validation of each)"
+
+    # Validate again - should hit cache
     detector._validate_sequence_cached(campaign1)
     detector._validate_sequence_cached(campaign2)
 
-    # Verify independent caches
-    assert len(campaign1._validation_cache) > 0, "Campaign 1 should have cached result"
-    assert len(campaign2._validation_cache) > 0, "Campaign 2 should have cached result"
-
-    # Invalidate campaign1 cache
-    campaign1.invalidate_validation_cache()
-
-    # Campaign2 cache should remain intact
-    assert len(campaign1._validation_cache) == 0, "Campaign 1 cache cleared"
-    assert len(campaign2._validation_cache) > 0, "Campaign 2 cache unaffected"
+    stats_after = detector.get_cache_statistics()
+    assert stats_after["cache_hits"] == 2, "Should have 2 cache hits on repeated validation"
 
 
 # ============================================================================
