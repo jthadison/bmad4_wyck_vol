@@ -86,35 +86,48 @@ jobs:
             --benchmark-json=benchmark-results.json \
             --benchmark-save=pr-${{ github.event.pull_request.number || 'main' }}
 
-      # External fetch: Downloading baseline from previous runs may fail if none exist
       - name: Download baseline benchmarks
+        id: baseline
         if: github.event_name == 'pull_request'
-        continue-on-error: true
         run: |
-          gh run download \
+          if gh run download \
             --repo ${{ github.repository }} \
             --branch main \
             --name benchmark-results \
-            --dir backend/baseline
+            --dir backend/baseline 2>/dev/null; then
+            echo "baseline_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Baseline downloaded successfully"
+          else
+            echo "baseline_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No baseline found - this is the first run or baseline expired"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compare benchmarks
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.baseline_exists == 'true'
         id: compare
         working-directory: backend
         env:
           DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
           ENVIRONMENT: test
         run: |
-          if [ -f baseline/benchmark-results.json ]; then
-            # Story 22.15 AC4: All benchmarks within 5% of baseline
-            poetry run pytest tests/benchmarks/ -v -m benchmark \
-              --benchmark-compare=baseline/benchmark-results.json \
-              --benchmark-compare-fail=mean:5% || echo "regression=true" >> $GITHUB_OUTPUT
-          else
-            echo "No baseline found, skipping comparison"
-          fi
+          # Story 22.15 AC4: All benchmarks within 5% of baseline
+          poetry run pytest tests/benchmarks/ -v -m benchmark \
+            --benchmark-compare=baseline/benchmark-results.json \
+            --benchmark-compare-fail=mean:5% || echo "regression=true" >> $GITHUB_OUTPUT
+
+      - name: Post first-run notice
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.baseline_exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '📊 **Benchmark Notice**: No baseline exists yet. This PR will establish the baseline for future comparisons.'
+            });
 
       - name: Post PR comment
         if: github.event_name == 'pull_request' && steps.compare.outputs.regression == 'true'
