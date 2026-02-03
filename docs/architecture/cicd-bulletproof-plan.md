@@ -143,17 +143,33 @@
 
 ## Phase 3: Reliability Improvements (Week 2)
 
-### 3.1 Replace Fragile Sleep with Health Check Polling
+### 3.1 Replace Fragile Sleep with Health Check Polling ✅ COMPLETED
 
-**Status**: ⏳ PENDING
+**Status**: ✅ **DONE** (2024-02-03)
 
-**Create helper script:** `.github/scripts/wait-for-api.sh`
+**PR Merged**: PR #375: `ci(reliability): Add robust API health check polling script`
 
-### 3.2 Fix Benchmark Baseline Handling
+**Commit**: `4bf7e7d`
 
-**Status**: ⏳ PENDING
+**Changes made:**
+- Created `.github/scripts/wait-for-api.sh` with exponential backoff polling
+- Script supports configurable max_attempts, base_url, health_endpoint
+- Updated pr-ci.yaml E2E job to use the script instead of `sleep 5`
+- Clear terminal output with emoji indicators for CI debugging
 
-**File:** `.github/workflows/benchmarks.yaml`
+### 3.2 Fix Benchmark Baseline Handling ✅ COMPLETED
+
+**Status**: ✅ **DONE** (2024-02-03)
+
+**PR Merged**: PR #374: `ci(benchmarks): fix baseline handling with explicit first-run detection`
+
+**Commit**: `507ee4f`
+
+**Changes made:**
+- Removed `continue-on-error: true` from baseline download step
+- Added explicit `baseline_exists` output variable
+- Compare step now only runs when baseline exists
+- Added helpful PR comment for first-run scenarios (no baseline yet)
 
 ### 3.3 Fix Monthly Regression SLACK_WEBHOOK_URL
 
@@ -220,10 +236,10 @@
 
 ### Week 2 (Reliability)
 
-- [ ] **3.1** Create `.github/scripts/wait-for-api.sh`
-- [ ] **3.1** Update pr-ci.yaml E2E health check
-- [ ] **3.1** Update main-ci.yaml E2E health check
-- [ ] **3.2** Fix benchmark baseline handling
+- [x] **3.1** Create `.github/scripts/wait-for-api.sh`
+- [x] **3.1** Update pr-ci.yaml E2E health check
+- [x] **3.1** Update main-ci.yaml E2E health check (done in Phase 2.2)
+- [x] **3.2** Fix benchmark baseline handling
 - [x] **3.3** Make SLACK_WEBHOOK_URL optional
 
 ### Week 3 (Duplication + Accuracy)
