@@ -597,9 +597,19 @@ jobs:
         working-directory: backend
         run: poetry install --with dev
 
-      - name: Run Python security scan (safety)
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit (Python dependency scanning)
         working-directory: backend
-        run: poetry run pip list --format=json | python -m json.tool
+        run: |
+          poetry export -f requirements.txt --without-hashes > requirements.txt
+          pip-audit -r requirements.txt --strict
+
+      - name: Run Gitleaks secret detection
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
