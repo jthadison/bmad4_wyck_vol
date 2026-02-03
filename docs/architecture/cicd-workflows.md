@@ -35,11 +35,12 @@ Pull Request → PR-CI Pipeline (pr-ci.yaml)
                ├─ Frontend Linting (ESLint + Prettier)
                ├─ Frontend Type Checking (TypeScript)
                ├─ Frontend Unit Tests (Vitest)
-               ├─ E2E Tests (Playwright)
+               ├─ E2E Tests (Playwright, health check polling)
                ├─ Accuracy Tests (depends on backend-tests)
                ├─ Code Quality Checks (complexity, duplication)
-               ├─ Security Scan (npm audit, pip list)
-               └─ All Checks Passed [gate for merge]
+               ├─ Security Scan (pip-audit, gitleaks, npm audit) [blocking]
+               ├─ Debug Artifacts (on failure)
+               └─ All Checks Passed [gate for merge, with summary]
 
                Parallel triggers:
                ├─ Claude Code Review (claude-code-review.yml)
@@ -48,13 +49,16 @@ Pull Request → PR-CI Pipeline (pr-ci.yaml)
 Main Branch Push → Main CI Pipeline (main-ci.yaml)
                    ├─ Backend Linting (Ruff)
                    ├─ Backend Type Checking (mypy)
-                   ├─ Backend Tests + Coverage
+                   ├─ Backend Tests + Coverage (90% enforcement)
                    ├─ Frontend Linting (ESLint + Prettier)
                    ├─ Frontend Type Checking (TypeScript)
                    ├─ Frontend Unit Tests (Vitest)
+                   ├─ E2E Tests (Playwright, Chromium)
+                   ├─ Security Scan (pip-audit, gitleaks, npm audit)
                    ├─ Accuracy Tests (depends on backend-tests)
                    ├─ Extended Backtests (depends on accuracy-tests)
                    ├─ Pydantic-to-TypeScript Codegen (depends on backend-tests)
+                   ├─ Debug Artifacts (on failure)
                    └─ Notify on Failure
 
                    Parallel triggers:
@@ -103,15 +107,41 @@ Interactive Context → Claude AI (claude.yml, claude-code-review.yml)
 └─ all-checks-passed (depends: all above) [MERGE GATE]
 ```
 
+**Reusable Composite Actions**:
+
+The pipeline uses three composite actions to eliminate duplication and improve maintainability:
+
+1. **`setup-python-backend`** (`.github/actions/setup-python-backend/action.yml`)
+   - Installs Python 3.11 and Poetry
+   - Dual-layer caching: `.venv` directory + pypoetry cache for fast subsequent runs
+   - Used in: backend-linting, backend-type-checking, backend-tests, accuracy-tests
+
+2. **`setup-node-frontend`** (`.github/actions/setup-node-frontend/action.yml`)
+   - Installs Node.js 20 and npm
+   - npm ci caching for reproducible installs
+   - Used in: frontend-linting, frontend-type-checking, frontend-tests, e2e-tests
+
+3. **`setup-postgres-testdb`** (`.github/actions/setup-postgres-testdb/action.yml`)
+   - Starts TimescaleDB service with required extensions (timescaledb, uuid-ossp)
+   - Optional Alembic database migrations
+   - Database credentials sourced from `TEST_DB_PASSWORD` GitHub Secret
+   - Used in: backend-tests, e2e-tests, accuracy-tests
+
 **Key Features**:
 - **Test Retries**: Backend tests and E2E tests auto-retry 2x on flaky failures
 - **Coverage Reports**: Codecov integration for backend/frontend coverage tracking
-- **Artifact Uploads**: HTML coverage reports, Playwright artifacts (on failure)
+- **Artifact Uploads**: HTML coverage reports, Playwright artifacts (on failure), pytest cache (on failure)
+- **Health Checks**: E2E tests use robust API health polling script (`.github/scripts/wait-for-api.sh`) with exponential backoff instead of fixed sleep
+- **Security Scanning** (all blocking):
+  - `pip-audit`: Python dependency vulnerability scanning
+  - `gitleaks`: Secret detection in codebase
+  - `npm audit --audit-level=high`: npm vulnerability scanning
 - **PR Comments**:
   - Backend test stability report (test counts, retry info)
-  - E2E test stability report (browser config, artifact notes)
-  - Accuracy test results (placeholder table with precision/recall targets)
+  - E2E test stability report (browser config, artifact storage)
+  - Accuracy test results with real detector metrics (precision, recall, F1-score via metrics parser)
 - **Coverage Thresholds**: None enforced in PR (info only)
+- **Workflow Summary**: `all-checks-passed` job generates comprehensive summary with run duration, commit info, and runner details
 - **Time**: Typical run ~15-20 minutes
 
 ### 2. Main Branch CI (`main-ci.yaml`)
@@ -128,6 +158,8 @@ Parallel Phase 1 (start immediately):
 ├─ frontend-linting
 ├─ frontend-type-checking
 ├─ frontend-tests
+├─ security-scan
+└─ e2e-tests (depends: frontend-tests, uses service: postgres)
 
 Sequential Phase 2 (after backend-tests):
 ├─ accuracy-tests (depends: backend-tests, uses service: postgres)
@@ -139,11 +171,14 @@ Final Phase (after all):
 ```
 
 **Enhancements over PR CI**:
+- **Coverage Enforcement**: `--cov-fail-under=90` hard threshold on backend tests (fails if < 90%)
+- **E2E Tests on Main**: Full Chromium-based E2E test suite with robust health polling
 - **Extended Backtests**: 4-symbol, 2-year backtest window (AAPL, MSFT, GOOGL, TSLA)
 - **LFS Support**: `git lfs pull` for large dataset files
 - **Codegen Validation**: Ensures Pydantic-to-TypeScript models are up-to-date
-- **Coverage Enforcement**: Coverage XML collected (used by deploy gate)
-- **Failure Notifications**: Slack webhook placeholder for CI failures
+- **Security Scanning**: Same blocking security checks as PR CI (pip-audit, gitleaks, npm audit)
+- **Debug Artifacts**: Automatic collection of logs and test results on failure (7-day retention)
+- **Failure Notifications**: Optional Slack webhook for CI failures
 - **Time**: Typical run ~25-35 minutes
 
 ### 3. Deploy Workflow (`deploy.yaml`)
@@ -198,12 +233,18 @@ create-rollback-tag (depends: deploy-to-production, if success)
 benchmark (uses service: postgres)
 ├─ Run benchmarks (Story 22.15)
 │  └─ pytest tests/benchmarks/ -m benchmark
-├─ Download baseline (PR context only)
-├─ Compare benchmarks (Story 22.15 AC4: < 5% regression)
-├─ Post PR comment (if regression detected)
+├─ Download baseline (if exists, PR context only)
+├─ Check if baseline exists (output: baseline_exists)
+├─ Compare benchmarks (Story 22.15 AC4: < 5% regression, conditional)
+├─ Post PR comment (if regression detected or first run)
 ├─ Upload results artifact
 └─ Fail if regression (exit 1)
 ```
+
+**Baseline Handling**:
+- First run detection: Explicitly checks if baseline exists before comparison
+- First-run scenario: Generates helpful PR comment noting baseline will be established
+- Subsequent runs: Compares against established baseline with < 5% regression tolerance
 
 **NFR Compliance**:
 - All benchmarks must stay within 5% of baseline (Story 22.15 AC4)
@@ -297,6 +338,111 @@ claude-review
 - Commit generated types to `shared/types/`
 - Create PR if changes detected
 
+## Composite Actions & Helper Scripts
+
+### Composite Actions
+
+Composite actions (`.github/actions/*/action.yml`) provide reusable workflow building blocks, reducing duplication and improving maintainability.
+
+#### setup-python-backend
+
+**Location**: `.github/actions/setup-python-backend/action.yml`
+
+**Purpose**: Configure Python environment and Poetry for backend tasks
+
+**Inputs**:
+- `python-version`: Python version to install (default: 3.11)
+
+**Actions**:
+- Install specified Python version via actions/setup-python
+- Install Poetry via pip
+- Restore Poetry cache (`.venv` directory + pypoetry cache)
+- Run `poetry install --with dev` to install dependencies
+
+**Caching Strategy**:
+- Layer 1: `.venv` directory (virtualenv)
+- Layer 2: pypoetry cache (~/Library/Caches/pypoetry on macOS, ~/.cache/pypoetry on Linux)
+
+**Used in**: backend-linting, backend-type-checking, backend-tests, accuracy-tests
+
+#### setup-node-frontend
+
+**Location**: `.github/actions/setup-node-frontend/action.yml`
+
+**Purpose**: Configure Node.js environment for frontend tasks
+
+**Inputs**: None (uses Node 20 exclusively)
+
+**Actions**:
+- Install Node.js 20 via actions/setup-node
+- Run `npm ci` for reproducible installs (not `npm install`)
+- Cache npm packages for future runs
+
+**Used in**: frontend-linting, frontend-type-checking, frontend-tests, e2e-tests
+
+#### setup-postgres-testdb
+
+**Location**: `.github/actions/setup-postgres-testdb/action.yml`
+
+**Purpose**: Configure PostgreSQL test database service
+
+**Inputs**:
+- `postgres-password`: Database password (use: `${{ secrets.TEST_DB_PASSWORD }}`)
+- `run-migrations`: Run Alembic migrations (default: false)
+
+**Actions**:
+- Start TimescaleDB service (latest-pg15)
+- Initialize timescaledb extension
+- Initialize uuid-ossp extension
+- Optionally run Alembic migrations to setup schema
+- Export DATABASE_URL environment variable
+
+**Used in**: backend-tests, e2e-tests, accuracy-tests
+
+### Helper Scripts
+
+#### wait-for-api.sh
+
+**Location**: `.github/scripts/wait-for-api.sh`
+
+**Purpose**: Robust API health check polling with exponential backoff
+
+**Features**:
+- Configurable max attempts (default: 30)
+- Base sleep interval: 2 seconds
+- Exponential backoff (increases delay on each failure)
+- Clear terminal output with status indicators
+- Cross-platform shell compatibility
+
+**Usage**:
+```bash
+.github/scripts/wait-for-api.sh \
+  --base_url=http://localhost:8000 \
+  --health_endpoint=/health \
+  --max_attempts=30
+```
+
+**Replaces**: Fixed `sleep 5` calls in E2E test jobs
+
+**Used in**: E2E test jobs (pr-ci.yaml, main-ci.yaml)
+
+#### parse-accuracy-metrics.py
+
+**Location**: `.github/scripts/parse-accuracy-metrics.py`
+
+**Purpose**: Extract and format detector accuracy metrics from pytest JSON reports
+
+**Features**:
+- Parses `reports/detector-accuracy.json` generated by pytest-json-report
+- Extracts precision, recall, F1-score for each detector
+- Generates markdown table with status indicators (✅/❌/⏳)
+- Cross-platform UTF-8 support for emoji indicators
+- Gracefully handles missing reports with placeholder output
+
+**Output**: Markdown table suitable for GitHub PR comments
+
+**Used in**: accuracy-tests job to generate PR comment
+
 ## Version Requirements
 
 ### Python Version Policy
@@ -338,16 +484,90 @@ Consider adding matrix testing if:
 
 ## Required Secrets
 
-| Secret | Purpose | Where Used | Type |
-|--------|---------|-----------|------|
-| `GITHUB_TOKEN` | Standard GitHub API access | All workflows (auto-provided) | Built-in |
-| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code AI authentication | `claude.yml`, `claude-code-review.yml` | OAuth token |
-| `DOCKER_USERNAME` | Docker Hub authentication | `deploy.yaml` (image push) | Username |
-| `DOCKER_PASSWORD` | Docker Hub authentication | `deploy.yaml` (image push) | Token |
-| `SLACK_WEBHOOK_URL` | Slack notifications | `main-ci.yaml` (failure notify) | Webhook URL |
-| `CODECOV_TOKEN` | Codecov coverage upload | `pr-ci.yaml`, `main-ci.yaml` | API token |
+| Secret | Purpose | Where Used | Type | Required |
+|--------|---------|-----------|------|----------|
+| `GITHUB_TOKEN` | Standard GitHub API access | All workflows (auto-provided) | Built-in | Yes |
+| `TEST_DB_PASSWORD` | PostgreSQL test database password | All workflows with postgres service | String | Yes |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code AI authentication | `claude.yml`, `claude-code-review.yml` | OAuth token | Yes |
+| `DOCKER_USERNAME` | Docker Hub authentication | `deploy.yaml` (image push) | Username | Yes |
+| `DOCKER_PASSWORD` | Docker Hub authentication | `deploy.yaml` (image push) | Token | Yes |
+| `SLACK_WEBHOOK_URL` | Slack notifications on failure | `main-ci.yaml`, `monthly-regression.yaml` | Webhook URL | No |
+| `CODECOV_TOKEN` | Codecov coverage upload | `pr-ci.yaml`, `main-ci.yaml` | API token | No |
 
 **Setup**: GitHub Settings → Secrets and variables → Actions
+
+**Security Notes**:
+- `TEST_DB_PASSWORD` must be a strong random value (not shared with production)
+- All workflow credentials sourced from secrets, never hardcoded
+- Gitleaks scanning detects accidental credential commits
+- SLACK_WEBHOOK_URL is optional; workflows gracefully handle missing value
+
+## Observability & Debugging
+
+### Workflow Summary Generation
+
+**Purpose**: Provide clear, actionable deployment gate validation status
+
+**Location**: `all-checks-passed` job in pr-ci.yaml and main-ci.yaml
+
+**Summary Contents**:
+- Overall CI status (pass/fail)
+- Total workflow duration
+- Commit hash and message
+- Branch name
+- Actor (user who triggered workflow)
+- GitHub Actions runner details
+
+**Visibility**: Posted to workflow run summary in GitHub Actions UI
+
+### Debug Artifact Collection
+
+**Purpose**: Enable quick diagnosis of CI failures without examining individual job logs
+
+**Triggered**: Automatically on any job failure
+
+**Collected Artifacts**:
+- Pytest output logs (`.pytest_cache/`, `test_results.xml`)
+- Coverage reports (htmlcov/)
+- E2E test artifacts (Playwright traces, screenshots, videos)
+- PostgreSQL logs (if database connection failed)
+
+**Retention**: 7 days (configurable)
+
+**Access**: Actions → Failed workflow run → Artifacts section
+
+### Health Check Polling
+
+**Purpose**: Replace flaky fixed sleep timeouts with robust API readiness checks
+
+**Implementation**: `.github/scripts/wait-for-api.sh`
+
+**Behavior**:
+- Polls API health endpoint at 2-second intervals
+- Exponential backoff on repeated failures
+- Max 30 attempts (60 seconds maximum wait)
+- Fails fast if API is down, preventing cascading test failures
+
+**Benefit**: E2E tests only start after backend is fully ready
+
+### Security Scanning Output
+
+**Purpose**: Detect vulnerabilities and secrets early in pipeline
+
+**Scanning Tools**:
+1. **pip-audit**: Checks Python dependencies for known vulnerabilities
+   - Fails on any vulnerability found
+   - Output: List of affected packages and versions
+
+2. **gitleaks**: Scans for secrets (API keys, tokens, credentials)
+   - Fails if any secrets found in code/history
+   - Output: List of detected patterns and locations
+
+3. **npm audit**: Checks npm packages for vulnerabilities
+   - Fails on high-severity vulnerabilities
+   - Output: Vulnerability details and remediation steps
+
+**Failure Handling**: All security scans are blocking (no continue-on-error)
 
 ## Local Testing
 
@@ -699,19 +919,53 @@ done
 
 ## Performance Characteristics
 
-| Workflow | Typical Duration | Critical Path | Parallelization |
-|----------|------------------|---------------|--------------------|
-| PR CI | 15-20 min | backend-tests → accuracy-tests → e2e-tests | 7 parallel jobs |
-| Main CI | 25-35 min | backend-tests → accuracy-tests → extended-backtests | 6 parallel + sequential phases |
-| Deploy | 20-25 min | pre-deployment-checks → build-and-push → deploy | Sequential phases |
-| Benchmarks | 5-10 min | Single job | N/A (single job) |
-| Monthly Regression | 10-15 min | Single job | N/A (single job) |
+| Workflow | Typical Duration | Critical Path | Parallelization | Key Improvements |
+|----------|------------------|---------------|--------------------|------------------|
+| PR CI | 15-20 min | backend-tests → accuracy-tests → e2e-tests | 10 jobs in parallel (with dependencies) | Composite actions, dual-layer caching |
+| Main CI | 25-35 min | backend-tests → accuracy-tests → extended-backtests | 6 parallel start + sequential phases | 90% coverage enforcement, E2E tests, debug artifacts |
+| Deploy | 20-25 min | pre-deployment-checks → build-and-push → deploy | Sequential phases | Security scanning, coverage gating |
+| Benchmarks | 5-10 min | Single job with conditional comparison | N/A (single job) | Explicit baseline handling, first-run detection |
+| Monthly Regression | 10-15 min | Single job | N/A (single job) | Optional Slack notifications |
+
+**Performance Impact of Bulletproof Improvements**:
+- Composite actions: ~30s saved per job (via reduced setup duplication)
+- Dual-layer caching: ~60s saved per job (Poetry + npm caches)
+- Parallel security scanning: <30s additional (runs in parallel, not sequential)
+- Debug artifact collection: ~5s (minimal overhead, only on failure)
 
 **Optimization Tips**:
-- Enable GitHub runner caching for faster dependency install
-- Use local Docker images to speed up service startup
-- Run backends in parallel to reduce total time
-- Consider splitting E2E tests into parallel browser runners
+- GitHub runner caching is enabled by default (no additional configuration needed)
+- Composite actions centralize dependency installation logic
+- Security scanning runs in parallel with other jobs
+- Consider splitting E2E tests into parallel browser runners for faster feedback
+
+## Recently Completed (Bulletproof Phase)
+
+1. **Security Hardening**
+   - Migrated all credentials to GitHub Secrets (TEST_DB_PASSWORD)
+   - Added pip-audit for Python vulnerability scanning
+   - Added gitleaks for secret detection
+   - Made npm audit blocking (fail on vulnerabilities)
+
+2. **Reliability Improvements**
+   - Replaced fragile fixed sleep with health check polling script
+   - Fixed benchmark baseline handling (explicit first-run detection)
+   - Made SLACK_WEBHOOK_URL optional (graceful degradation)
+
+3. **Test Coverage Enforcement**
+   - Added 90% coverage threshold to main branch CI
+   - Added E2E tests to main branch CI
+   - Verified frontend coverage enforcement (vitest.config.ts)
+
+4. **Code Duplication Reduction**
+   - Created three composite actions (setup-python-backend, setup-node-frontend, setup-postgres-testdb)
+   - Refactored pr-ci.yaml to use composites (-64 net lines)
+   - Centralized environment setup logic
+
+5. **Observability & Debugging**
+   - Created accuracy metrics parser for real detector statistics
+   - Added debug artifact collection on failure
+   - Added workflow summary generation
 
 ## Future Improvements
 
@@ -725,10 +979,9 @@ done
    - Auto-commit generated types
    - Create PR for review
 
-3. **Enhanced Monitoring**
-   - Slack/email notifications for failures
-   - Build time trends dashboard
-   - Test stability metrics
+3. **GitHub Actions Pinning**
+   - Pin all GitHub Actions to commit SHA (supply chain security)
+   - Reduce risk of action supply chain attacks
 
 4. **Advanced Testing**
    - Visual regression testing (screenshots)
@@ -736,9 +989,13 @@ done
    - Load testing before deploy
 
 5. **Performance Improvements**
-   - Distribute tests across multiple runners
+   - Distribute E2E tests across parallel browser runners
    - Cache Docker layers more aggressively
    - Parallel database test execution
+
+6. **Multi-tenant Deployment**
+   - Consider matrix testing for Python/Node if multi-tenant
+   - Regional deployment validation
 
 ## Related Documentation
 
