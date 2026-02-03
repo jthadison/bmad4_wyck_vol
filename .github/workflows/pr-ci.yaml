@@ -345,16 +345,28 @@ jobs:
           DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
           ENVIRONMENT: test
         run: |
-          poetry run pytest tests/integration/test_detector_accuracy.py -v --tb=short || true
+          poetry run pytest tests/integration/test_detector_accuracy_integration.py \
+            -v \
+            --tb=short \
+            --json-report \
+            --json-report-file=accuracy-report.json \
+            || true
           echo "accuracy_status=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       # Testing: Optional metric parsing (informational)
       - name: Parse accuracy metrics
         id: parse_metrics
+        working-directory: backend
         run: |
-          echo "Accuracy test results parsed"
-          # Placeholder for accuracy metric parsing
+          if [ -f accuracy-report.json ]; then
+            METRICS=$(python ../.github/scripts/parse-accuracy-metrics.py accuracy-report.json)
+          else
+            METRICS=$(python ../.github/scripts/parse-accuracy-metrics.py)
+          fi
+          echo "table<<EOF" >> $GITHUB_OUTPUT
+          echo "$METRICS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       # Non-critical: Commenting on PR is informational, doesn't block merge
@@ -364,26 +376,21 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const comment = `## Accuracy Test Results
+            const table = `${{ steps.parse_metrics.outputs.table }}`;
 
-            | Detector | Precision | Recall | F1-Score | Status |
-            |----------|-----------|--------|----------|--------|
-            | Spring   | Pending   | Pending | Pending | ⏳ |
-            | SOS      | Pending   | Pending | Pending | ⏳ |
-            | UTAD     | Pending   | Pending | Pending | ⏳ |
-            | LPS      | Pending   | Pending | Pending | ⏳ |
+            const body = `## 🎯 Detector Accuracy Results
 
-            *Accuracy tests are currently under development. Full metrics will be available once test infrastructure is complete.*
+            ${table || '| Detector | Precision | Recall | F1 Score | Status |\n|----------|-----------|--------|----------|--------|\n| Spring | Pending | Pending | Pending | ⏳ |'}
 
             ---
-            _Note: Accuracy tests require precision ≥ 75% and recall ≥ 70% to pass (NFR2, NFR3, NFR4)_
-            `;
+            *Thresholds: Precision ≥75%, Recall ≥70% (NFR2/NFR3)*
+            *Full metrics will be available once detector accuracy tests are complete.*`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              body: body
             });
         continue-on-error: true
 
