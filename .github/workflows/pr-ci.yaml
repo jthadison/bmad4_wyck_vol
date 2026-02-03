@@ -147,6 +147,19 @@ jobs:
             echo "No test results file found" >> $GITHUB_STEP_SUMMARY
           fi
 
+      - name: Collect debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-backend-tests-${{ github.run_number }}
+          path: |
+            backend/logs/
+            backend/.pytest_cache/
+            backend/pytest-results.xml
+            backend/coverage.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Frontend linting
   frontend-linting:
     name: Frontend Linting
@@ -284,6 +297,21 @@ jobs:
             frontend/test-results/
           retention-days: 7
 
+      - name: Collect debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-e2e-tests-${{ github.run_number }}
+          path: |
+            backend/logs/
+            backend/.pytest_cache/
+            backend/pytest-results.xml
+            backend/coverage.xml
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Generate E2E test stability report
         if: always()
         run: |
@@ -393,6 +421,20 @@ jobs:
               body: body
             });
         continue-on-error: true
+
+      - name: Collect debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-accuracy-tests-${{ github.run_number }}
+          path: |
+            backend/logs/
+            backend/.pytest_cache/
+            backend/pytest-results.xml
+            backend/coverage.xml
+            backend/accuracy-report.json
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Code quality checks
   code-quality:
