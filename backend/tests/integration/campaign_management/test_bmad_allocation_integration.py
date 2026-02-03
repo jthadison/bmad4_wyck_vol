@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.campaign_management.allocator import CampaignAllocator
 from src.campaign_management.service import CampaignService
@@ -27,7 +26,6 @@ from src.models.campaign_lifecycle import CampaignStatus
 from src.models.signal import ConfidenceComponents, TargetLevels, TradeSignal, ValidationChain
 from src.models.trading_range import TradingRange
 from src.repositories.allocation_repository import AllocationRepository
-from src.repositories.campaign_lifecycle_repository import CampaignLifecycleRepository
 
 
 @pytest.fixture
