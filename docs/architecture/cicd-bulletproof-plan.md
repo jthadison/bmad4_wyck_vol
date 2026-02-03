@@ -179,21 +179,47 @@
 
 ## Phase 4: Reduce Duplication with Composite Actions (Week 2-3)
 
-### 4.1 Create Composite Actions Directory
+### 4.1 Create Composite Actions Directory ✅ COMPLETED
 
-**Status**: ⏳ PENDING
+**Status**: ✅ **DONE** (2024-02-03)
 
-### 4.2 Python Backend Setup Composite
+Created `.github/actions/` directory with three reusable composite actions.
 
-**Status**: ⏳ PENDING
+### 4.2 Python Backend Setup Composite ✅ COMPLETED
 
-### 4.3 PostgreSQL TestDB Setup Composite
+**Status**: ✅ **DONE** (2024-02-03)
 
-**Status**: ⏳ PENDING
+Created `.github/actions/setup-python-backend/action.yml`:
+- Configurable Python version (default: 3.11)
+- Poetry installation with caching
+- Dual-layer caching (.venv + pypoetry cache)
 
-### 4.4 Usage in Workflows
+### 4.3 PostgreSQL TestDB Setup Composite ✅ COMPLETED
 
-**Status**: ⏳ PENDING
+**Status**: ✅ **DONE** (2024-02-03)
+
+Created `.github/actions/setup-postgres-testdb/action.yml`:
+- TimescaleDB and uuid-ossp extension initialization
+- Optional Alembic migrations
+- Configurable database credentials (from secrets)
+
+**Bonus**: Also created `.github/actions/setup-node-frontend/action.yml`:
+- Node.js setup with npm caching
+- Uses npm ci for reproducible installs
+
+### 4.4 Usage in Workflows ✅ COMPLETED
+
+**Status**: ✅ **DONE** (2024-02-03)
+
+**PR Merged**: PR #379: `ci(composite): add composite actions and refactor pr-ci.yaml to use them`
+
+**Commit**: `cb59d6a`
+
+**Changes made:**
+- Refactored all 10 jobs in pr-ci.yaml to use composite actions
+- Code reduction: -215 lines, +151 lines (net -64 lines)
+- 10 identical setup blocks → 3 reusable actions
+- Zero functionality lost, improved maintainability
 
 ---
 
@@ -244,10 +270,10 @@
 
 ### Week 3 (Duplication + Accuracy)
 
-- [ ] **4.1** Create `.github/actions/` directory
-- [ ] **4.2** Create `setup-python-backend` composite
-- [ ] **4.3** Create `setup-postgres-testdb` composite
-- [ ] **4.4** Refactor workflows to use composites
+- [x] **4.1** Create `.github/actions/` directory
+- [x] **4.2** Create `setup-python-backend` composite
+- [x] **4.3** Create `setup-postgres-testdb` composite
+- [x] **4.4** Refactor workflows to use composites
 - [ ] **5.1** Create accuracy metrics parser script
 - [ ] **5.2** Update PR accuracy comment with real metrics
 
