@@ -53,41 +53,32 @@
 - All `DATABASE_URL` connection strings updated to use secret
 - `SLACK_WEBHOOK_URL` made optional in monthly-regression.yaml
 
-### 1.2 Add Real Security Scanning
+### 1.2 Add Real Security Scanning ✅ COMPLETED
 
-**Status**: ⏳ PENDING
+**Status**: ✅ **DONE** (2024-02-03)
 
-**Add to pr-ci.yaml (new job):**
-```yaml
-security-scan:
-  name: Security Scanning
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
+**PRs Merged**:
+- PR #369: `security(ci): add pip-audit and Gitleaks security scanning`
+- PR #370: `security(ci): ensure npm audit blocks on vulnerabilities`
 
-    # Python dependency scanning (REAL, not placeholder)
-    - name: Install pip-audit
-      run: pip install pip-audit
+**Commits**:
+- `e2a6e0d` - Backend security scanning (pip-audit + Gitleaks)
+- `0d4014d` - Frontend npm audit blocking enforcement
 
-    - name: Run pip-audit
-      working-directory: backend
-      run: |
-        poetry export -f requirements.txt --without-hashes > requirements.txt
-        pip-audit -r requirements.txt --strict
-      # NO continue-on-error - this MUST block merge
+**Changes made:**
+- Added pip-audit for Python dependency vulnerability scanning
+- Added Gitleaks for secret detection in codebase
+- Removed placeholder security scan that only ran `pip list`
+- Added npm ci step before npm audit in pr-ci.yaml
+- Added complete security-scan job to main-ci.yaml for consistency
+- All security scans are BLOCKING (no continue-on-error)
+- Added warning comments to prevent regression
 
-    # Secret detection
-    - name: Run Gitleaks
-      uses: gitleaks/gitleaks-action@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    # Frontend dependency scanning
-    - name: npm audit (blocking)
-      working-directory: frontend
-      run: npm audit --audit-level=high
-      # NO continue-on-error - this MUST block merge
-```
+**Vulnerabilities Detected** (follow-up needed):
+- `starlette` 0.36.3 → upgrade to >= 0.47.2
+- `weasyprint` 62.3 → upgrade to >= 68.0
+- `ecdsa` 0.19.1 (no fix available)
+- `protobuf` 6.33.4 (no fix available)
 
 ### 1.3 Pin GitHub Actions to SHA
 
@@ -221,9 +212,9 @@ Add new job (copy from pr-ci.yaml with modifications) - see full plan for detail
 
 - [x] **1.1** Create `TEST_DB_PASSWORD` GitHub Secret
 - [x] **1.1** Update all 5 workflows to use secret
-- [ ] **1.2** Add `pip-audit` security scanning job
-- [ ] **1.2** Add `gitleaks` secret detection
-- [ ] **1.2** Make npm audit blocking (remove continue-on-error)
+- [x] **1.2** Add `pip-audit` security scanning job
+- [x] **1.2** Add `gitleaks` secret detection
+- [x] **1.2** Make npm audit blocking (remove continue-on-error)
 - [ ] **2.1** Add `--cov-fail-under=90` to main-ci.yaml
 - [ ] **2.2** Add E2E tests job to main-ci.yaml
 - [ ] **2.3** Verify frontend coverage enforcement
