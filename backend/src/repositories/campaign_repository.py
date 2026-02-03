@@ -1166,14 +1166,17 @@ class CampaignRepository:
         """
         Get campaigns with optional filtering by user, status and symbol (Story 11.4 Subtask 1.6).
 
-        **Security:** Filters campaigns by user_id to ensure user isolation.
+        **Note:** User isolation (user_id parameter) is currently not supported as the
+        CampaignModel does not have a user_id field. This parameter is accepted for
+        API compatibility but is ignored.
+
         **Performance:** Uses eager loading (selectinload) to avoid N+1 queries.
         **Pagination:** Supports limit/offset for efficient data retrieval.
 
         Parameters:
         -----------
         user_id : Optional[UUID]
-            Filter by user ID for user isolation (recommended for security)
+            Not currently used (campaigns table does not have user_id field)
         status : Optional[str]
             Filter by status: ACTIVE, MARKUP, COMPLETED, INVALIDATED
         symbol : Optional[str]
@@ -1191,16 +1194,15 @@ class CampaignRepository:
         Example:
         --------
         >>> campaigns, total = await repo.get_campaigns(
-        ...     user_id=user_id, status="ACTIVE", symbol="AAPL", limit=20, offset=0
+        ...     status="ACTIVE", symbol="AAPL", limit=20, offset=0
         ... )
         """
         try:
             # Build query with eager loading to prevent N+1 queries (PERF-001)
             stmt = select(CampaignModel).options(selectinload(CampaignModel.positions))
 
-            # Apply user isolation filter (SEC-001, CODE-002)
-            if user_id:
-                stmt = stmt.where(CampaignModel.user_id == user_id)
+            # Note: user_id filter not applied - CampaignModel does not have user_id field
+            # TODO: Add user_id field to campaigns table for multi-user support
 
             # Apply status filter
             if status:
@@ -1215,8 +1217,7 @@ class CampaignRepository:
             from sqlalchemy import select as sql_select
 
             count_stmt = sql_select(func.count()).select_from(CampaignModel)
-            if user_id:
-                count_stmt = count_stmt.where(CampaignModel.user_id == user_id)
+            # Note: user_id filter not applied in count
             if status:
                 count_stmt = count_stmt.where(CampaignModel.status == status)
             if symbol:

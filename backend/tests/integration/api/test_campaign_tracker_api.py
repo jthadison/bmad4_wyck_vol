@@ -12,53 +12,46 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from src.models.position import Position as PositionModel
-from src.models.trading_range import TradingRange
 from src.repositories.models import CampaignModel
+from src.repositories.models import PositionModel as PositionDBModel
 
 
 @pytest.mark.asyncio
 class TestCampaignTrackerAPI:
     """Integration tests for campaign tracker API endpoint."""
 
-    async def test_get_campaigns_empty(self, async_client: AsyncClient):
+    async def test_get_campaigns_empty(self, async_client: AsyncClient, auth_headers: dict):
         """Test GET /campaigns with no campaigns returns empty list."""
-        response = await async_client.get("/api/v1/campaigns")
+        response = await async_client.get("/api/v1/campaigns", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
         assert "data" in data
+        assert "pagination" in data
         assert isinstance(data["data"], list)
 
-    async def test_get_campaigns_with_data(self, async_client: AsyncClient, db_session):
+    async def test_get_campaigns_with_data(
+        self, async_client: AsyncClient, auth_headers: dict, db_session
+    ):
         """Test GET /campaigns returns campaign list with correct structure."""
-        # Create test trading range
-        trading_range = TradingRange(
-            id=uuid4(),
-            symbol="AAPL",
-            timeframe="1D",
-            range_low=Decimal("148.00"),
-            range_high=Decimal("156.00"),
-            start_timestamp=datetime.now(UTC),
-            status="ACTIVE",
-        )
-        db_session.add(trading_range)
-
-        # Create test campaign
+        # Create test campaign (trading_range_id is optional)
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",  # Required field
             symbol="AAPL",
             timeframe="1D",
-            trading_range_id=trading_range.id,
+            trading_range_id=uuid4(),  # Just use a UUID reference
             status="ACTIVE",
-            total_allocation=Decimal("10000.00"),
+            phase="C",  # Wyckoff phase
+            start_date=datetime.now(UTC),
+            total_allocation=Decimal("5.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
         )
         db_session.add(campaign)
         await db_session.commit()
 
-        response = await async_client.get("/api/v1/campaigns")
+        response = await async_client.get("/api/v1/campaigns", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -76,28 +69,21 @@ class TestCampaignTrackerAPI:
         assert "health" in campaign_response
         assert "entries" in campaign_response
 
-    async def test_filter_campaigns_by_status(self, async_client: AsyncClient, db_session):
+    async def test_filter_campaigns_by_status(
+        self, async_client: AsyncClient, auth_headers: dict, db_session
+    ):
         """Test filtering campaigns by status parameter."""
-        # Create trading range
-        trading_range = TradingRange(
-            id=uuid4(),
-            symbol="AAPL",
-            timeframe="1D",
-            range_low=Decimal("148.00"),
-            range_high=Decimal("156.00"),
-            start_timestamp=datetime.now(UTC),
-            status="ACTIVE",
-        )
-        db_session.add(trading_range)
-
         # Create active campaign
         active_campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",  # Required field
             symbol="AAPL",
             timeframe="1D",
-            trading_range_id=trading_range.id,
+            trading_range_id=uuid4(),  # Just use a UUID reference
             status="ACTIVE",
-            total_allocation=Decimal("10000.00"),
+            phase="C",  # Wyckoff phase
+            start_date=datetime.now(UTC),
+            total_allocation=Decimal("5.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
         )
@@ -106,11 +92,14 @@ class TestCampaignTrackerAPI:
         # Create completed campaign
         completed_campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-02",  # Required field
             symbol="AAPL",
             timeframe="1D",
-            trading_range_id=trading_range.id,
+            trading_range_id=uuid4(),  # Just use a UUID reference
             status="COMPLETED",
-            total_allocation=Decimal("10000.00"),
+            phase="C",  # Wyckoff phase
+            start_date=datetime.now(UTC),
+            total_allocation=Decimal("5.00"),
             current_risk=Decimal("0.00"),
             created_at=datetime.now(UTC),
         )
@@ -118,7 +107,7 @@ class TestCampaignTrackerAPI:
         await db_session.commit()
 
         # Filter by ACTIVE status
-        response = await async_client.get("/api/v1/campaigns?status=ACTIVE")
+        response = await async_client.get("/api/v1/campaigns?status=ACTIVE", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -128,39 +117,21 @@ class TestCampaignTrackerAPI:
         for campaign in campaigns:
             assert campaign["status"] == "ACTIVE"
 
-    async def test_filter_campaigns_by_symbol(self, async_client: AsyncClient, db_session):
+    async def test_filter_campaigns_by_symbol(
+        self, async_client: AsyncClient, auth_headers: dict, db_session
+    ):
         """Test filtering campaigns by symbol parameter."""
-        # Create trading ranges for different symbols
-        trading_range_aapl = TradingRange(
-            id=uuid4(),
-            symbol="AAPL",
-            timeframe="1D",
-            range_low=Decimal("148.00"),
-            range_high=Decimal("156.00"),
-            start_timestamp=datetime.now(UTC),
-            status="ACTIVE",
-        )
-        db_session.add(trading_range_aapl)
-
-        trading_range_msft = TradingRange(
-            id=uuid4(),
-            symbol="MSFT",
-            timeframe="1D",
-            range_low=Decimal("320.00"),
-            range_high=Decimal("330.00"),
-            start_timestamp=datetime.now(UTC),
-            status="ACTIVE",
-        )
-        db_session.add(trading_range_msft)
-
         # Create campaigns
         campaign_aapl = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",  # Required field
             symbol="AAPL",
             timeframe="1D",
-            trading_range_id=trading_range_aapl.id,
+            trading_range_id=uuid4(),  # Just use a UUID reference
             status="ACTIVE",
-            total_allocation=Decimal("10000.00"),
+            phase="C",  # Wyckoff phase
+            start_date=datetime.now(UTC),
+            total_allocation=Decimal("5.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
         )
@@ -168,11 +139,14 @@ class TestCampaignTrackerAPI:
 
         campaign_msft = CampaignModel(
             id=uuid4(),
+            campaign_id="MSFT-2024-01-01",  # Required field
             symbol="MSFT",
             timeframe="1D",
-            trading_range_id=trading_range_msft.id,
+            trading_range_id=uuid4(),  # Just use a UUID reference
             status="ACTIVE",
-            total_allocation=Decimal("10000.00"),
+            phase="C",  # Wyckoff phase
+            start_date=datetime.now(UTC),
+            total_allocation=Decimal("5.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
         )
@@ -180,7 +154,7 @@ class TestCampaignTrackerAPI:
         await db_session.commit()
 
         # Filter by AAPL symbol
-        response = await async_client.get("/api/v1/campaigns?symbol=AAPL")
+        response = await async_client.get("/api/v1/campaigns?symbol=AAPL", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -190,49 +164,44 @@ class TestCampaignTrackerAPI:
         for campaign in campaigns:
             assert campaign["symbol"] == "AAPL"
 
-    async def test_campaign_response_structure(self, async_client: AsyncClient, db_session):
+    async def test_campaign_response_structure(
+        self, async_client: AsyncClient, auth_headers: dict, db_session
+    ):
         """Test campaign response has all required fields."""
-        # Create trading range
-        trading_range = TradingRange(
-            id=uuid4(),
-            symbol="AAPL",
-            timeframe="1D",
-            range_low=Decimal("148.00"),
-            range_high=Decimal("156.00"),
-            start_timestamp=datetime.now(UTC),
-            status="ACTIVE",
-        )
-        db_session.add(trading_range)
-
         # Create campaign with position
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="AAPL-2024-01-01",  # Required field
             symbol="AAPL",
             timeframe="1D",
-            trading_range_id=trading_range.id,
+            trading_range_id=uuid4(),  # Just use a UUID reference
             status="ACTIVE",
-            total_allocation=Decimal("10000.00"),
+            phase="C",  # Wyckoff phase
+            start_date=datetime.now(UTC),
+            total_allocation=Decimal("5.00"),
             current_risk=Decimal("3000.00"),
             created_at=datetime.now(UTC),
         )
         db_session.add(campaign)
 
-        position = PositionModel(
+        position = PositionDBModel(
             id=uuid4(),
             campaign_id=campaign.id,
             signal_id=uuid4(),
-            entry_pattern="SPRING",
+            symbol="AAPL",
+            timeframe="1D",
+            pattern_type="SPRING",
+            entry_date=datetime.now(UTC),
             entry_price=Decimal("150.00"),
             shares=20,
-            position_size=Decimal("3000.00"),
             stop_loss=Decimal("148.50"),
-            status="FILLED",
+            status="OPEN",
             created_at=datetime.now(UTC),
         )
         db_session.add(position)
         await db_session.commit()
 
-        response = await async_client.get("/api/v1/campaigns")
+        response = await async_client.get("/api/v1/campaigns", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
