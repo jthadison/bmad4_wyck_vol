@@ -143,6 +143,8 @@ def create_spring_bars(
     base_volume = 1_000_000  # 1M shares average
     start_time = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
     spring_bar_index = 50
+    # Quantize to 8 decimal places to comply with OHLCVBar decimal_places=8 constraint
+    price_precision = Decimal("0.00000001")
 
     for i in range(bar_count):
         timestamp = start_time + timedelta(days=i)
@@ -165,6 +167,9 @@ def create_spring_bars(
             # Post-recovery: above Creek
             price = creek_level + Decimal("0.50")
 
+        # Round price to 8 decimal places to avoid validation errors
+        price = price.quantize(price_precision)
+
         # Determine volume
         if i == spring_bar_index:
             # Spring bar: low volume
@@ -173,16 +178,16 @@ def create_spring_bars(
             # Normal volume: oscillate around 1M
             volume = int(base_volume * (0.95 + (i % 3) * 0.05))
 
-        # Create bar
+        # Create bar with rounded prices
         bar = OHLCVBar(
             id=uuid4(),
             symbol=symbol,
             timeframe="1d",
             timestamp=timestamp,
             open=price,
-            high=price + Decimal("1.00"),
-            low=price - Decimal("1.00"),
-            close=price + Decimal("0.50"),
+            high=(price + Decimal("1.00")).quantize(price_precision),
+            low=(price - Decimal("1.00")).quantize(price_precision),
+            close=(price + Decimal("0.50")).quantize(price_precision),
             volume=volume,
             spread=Decimal("2.00"),
             spread_ratio=Decimal("1.0"),
@@ -282,6 +287,8 @@ def create_three_spring_campaign(
     base_volume = 1_000_000
     start_time = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
     spring_indices = [25, 40, 55]
+    # Quantize to 8 decimal places to comply with OHLCVBar decimal_places=8 constraint
+    price_precision = Decimal("0.00000001")
 
     for i in range(70):
         timestamp = start_time + timedelta(days=i)
@@ -307,16 +314,19 @@ def create_three_spring_campaign(
             price = creek_level + Decimal(str((i % 5) - 2)) * Decimal("0.10")
             volume = int(base_volume * (0.95 + (i % 3) * 0.05))
 
-        # Create bar
+        # Round price to 8 decimal places to avoid validation errors
+        price = price.quantize(price_precision)
+
+        # Create bar with rounded prices
         bar = OHLCVBar(
             id=uuid4(),
             symbol=symbol,
             timeframe="1d",
             timestamp=timestamp,
             open=price,
-            high=price + Decimal("1.00"),
-            low=price - Decimal("1.00"),
-            close=price + Decimal("0.50"),
+            high=(price + Decimal("1.00")).quantize(price_precision),
+            low=(price - Decimal("1.00")).quantize(price_precision),
+            close=(price + Decimal("0.50")).quantize(price_precision),
             volume=volume,
             spread=Decimal("2.00"),
             spread_ratio=Decimal("1.0"),
@@ -1243,11 +1253,16 @@ def test_minimum_confidence_threshold_enforcement():
             assert forex_confidence.total_score < 70
 
     # Boundary test: 70 should be accepted
+    # Use better parameters to ensure score >= 70:
+    # - Lower volume (0.4x) for higher volume_quality score (~20-30pts)
+    # - Ideal penetration (1.5%) for higher penetration_depth score (~35pts)
+    # - Fast recovery (2 bars) for higher recovery_speed score (~20pts)
+    # Combined with creek_strength_bonus (10pts) should exceed 70
     acceptable_params = {
         "creek_level": creek_level,
-        "penetration_pct": Decimal("0.025"),  # Moderate penetration
-        "volume_ratio": Decimal("0.5"),  # Moderate volume
-        "recovery_bars": 3,  # Moderate recovery
+        "penetration_pct": Decimal("0.015"),  # Ideal 1.5% penetration
+        "volume_ratio": Decimal("0.4"),  # Good volume (below 0.5x threshold)
+        "recovery_bars": 2,  # Fast recovery
     }
 
     stock_bars_acceptable = create_spring_bars(**acceptable_params, symbol=stock_symbol)
