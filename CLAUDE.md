@@ -261,6 +261,7 @@ The system uses specialized validation agents:
 - `docs/architecture/migration-guide-epic22.md` - Migration guide for Epic 22 changes
 - `docs/architecture/asset-class-abstraction.md` - Multi-asset confidence scoring architecture
 - `docs/architecture/cicd-workflows.md` - CI/CD workflow architecture and troubleshooting
+- `docs/architecture/github-secrets.md` - GitHub Secrets setup, rotation, and security best practices
 
 ## CI/CD Quick Reference
 
@@ -316,9 +317,15 @@ npm run test:smoke  # E2E
 
 ### Required Secrets
 
-- `CLAUDE_CODE_OAUTH_TOKEN` - Claude AI authentication
-- `DOCKER_USERNAME` / `DOCKER_PASSWORD` - Docker Hub push
-- `SLACK_WEBHOOK_URL` - Failure notifications (optional)
-- `CODECOV_TOKEN` - Coverage tracking (optional)
+**REQUIRED (must be configured):**
+- `TEST_DB_PASSWORD` - PostgreSQL test database password (90-day rotation)
+- `DOCKER_USERNAME` / `DOCKER_PASSWORD` - Docker Hub credentials for deployments
+- `CLAUDE_CODE_OAUTH_TOKEN` - Claude Code AI authentication
 
-For detailed workflow documentation, requirements, and troubleshooting, see `docs/architecture/cicd-workflows.md`.
+**OPTIONAL (workflows skip gracefully without these):**
+- `CODECOV_TOKEN` - Code coverage tracking (shows warnings if missing)
+- `SLACK_WEBHOOK_URL` - Slack notifications for failures
+
+For comprehensive GitHub Secrets setup, rotation procedures, and security best practices, see:
+- `docs/architecture/github-secrets.md` - Complete secrets configuration guide
+- `docs/architecture/cicd-workflows.md` - Workflow architecture and troubleshooting
