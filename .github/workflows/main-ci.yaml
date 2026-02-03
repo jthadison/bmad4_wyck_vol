@@ -155,6 +155,7 @@ jobs:
         run: |
           poetry run pytest tests/ \
             --cov=src \
+            --cov-fail-under=90 \
             --cov-report=xml \
             --cov-report=term \
             -v
