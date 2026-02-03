@@ -255,7 +255,7 @@ def spring_signal():
         target_levels=TargetLevels(primary_target=Decimal("156.00")),
         position_size=Decimal("100"),
         position_size_unit="SHARES",
-        risk_amount=Decimal("225.00"),  # (150.25-148)*100
+        risk_amount=Decimal("2000.00"),  # 2% of $100k portfolio = $2000
         notional_value=Decimal("15025.00"),  # 150.25 * 100
         r_multiple=Decimal("2.56"),  # (156-150.25)/(150.25-148) = 5.75/2.25 = 2.56
         confidence_score=85,
@@ -283,7 +283,7 @@ def sos_signal():
         target_levels=TargetLevels(primary_target=Decimal("156.00")),
         position_size=Decimal("50"),
         position_size_unit="SHARES",
-        risk_amount=Decimal("225.00"),  # (152.50-148)*50
+        risk_amount=Decimal("1500.00"),  # 1.5% of $100k portfolio = $1500
         notional_value=Decimal("7625.00"),  # 152.50 * 50
         r_multiple=Decimal("0.78"),  # (156-152.5)/(152.5-148) = 3.5/4.5 = 0.78
         confidence_score=82,
@@ -311,7 +311,7 @@ def lps_signal():
         target_levels=TargetLevels(primary_target=Decimal("156.00")),
         position_size=Decimal("50"),
         position_size_unit="SHARES",
-        risk_amount=Decimal("150.00"),  # (151-148)*50
+        risk_amount=Decimal("1500.00"),  # 1.5% of $100k portfolio = $1500
         notional_value=Decimal("7550.00"),  # 151 * 50
         r_multiple=Decimal("1.67"),  # (156-151)/(151-148) = 5/3 = 1.67
         confidence_score=80,
@@ -373,9 +373,9 @@ class TestFullCampaignLifecycle:
         assert len(campaign.positions) == 1  # Spring position
         assert campaign.positions[0].pattern_type == "SPRING"
         assert campaign.total_allocation == Decimal("2.0")  # Spring: 2%
-        assert campaign.total_risk == Decimal("225.00")
+        assert campaign.total_risk == Decimal("2000.00")
 
-        print(f"✓ Campaign created: {campaign.campaign_id}")
+        print(f"OK Campaign created: {campaign.campaign_id}")
         print(f"  Status: {campaign.status.value}")
         print(f"  Positions: {len(campaign.positions)} (Spring)")
         print(f"  Allocation: {campaign.total_allocation}%")
@@ -392,7 +392,7 @@ class TestFullCampaignLifecycle:
         assert campaign2.campaign_id == campaign.campaign_id
 
         # Add SOS position to campaign
-        campaign = await campaign_service.add_signal_to_campaign(campaign2, sos_signal)
+        campaign, _ = await campaign_service.add_signal_to_campaign(campaign2, sos_signal)
 
         # Verify SOS added and status transitioned (AC: 4, 6)
         assert len(campaign.positions) == 2  # Spring + SOS
@@ -400,7 +400,7 @@ class TestFullCampaignLifecycle:
         assert campaign.status == CampaignStatus.MARKUP  # ACTIVE → MARKUP after SOS
         assert campaign.total_allocation == Decimal("3.5")  # 2.0 + 1.5
 
-        print(f"✓ SOS position added to campaign: {campaign.campaign_id}")
+        print(f"OK SOS position added to campaign: {campaign.campaign_id}")
         print(f"  Status: {campaign.status.value} (transitioned from ACTIVE)")
         print(f"  Positions: {len(campaign.positions)} (Spring + SOS)")
         print(f"  Allocation: {campaign.total_allocation}%")
@@ -416,16 +416,16 @@ class TestFullCampaignLifecycle:
         assert campaign3.id == campaign.id
 
         # Add LPS position to campaign
-        campaign = await campaign_service.add_signal_to_campaign(campaign3, lps_signal)
+        campaign, _ = await campaign_service.add_signal_to_campaign(campaign3, lps_signal)
 
         # Verify LPS added (AC: 6, 8)
         assert len(campaign.positions) == 3  # Spring + SOS + LPS
         assert campaign.positions[2].pattern_type == "LPS"
         assert campaign.status == CampaignStatus.MARKUP  # Still MARKUP
         assert campaign.total_allocation == Decimal("5.0")  # 2.0 + 1.5 + 1.5 = 5%
-        assert campaign.total_risk == Decimal("600.00")  # 225 + 225 + 150
+        assert campaign.total_risk == Decimal("5000.00")  # 2000 + 1500 + 1500
 
-        print(f"✓ LPS position added to campaign: {campaign.campaign_id}")
+        print(f"OK LPS position added to campaign: {campaign.campaign_id}")
         print(f"  Status: {campaign.status.value}")
         print(f"  Positions: {len(campaign.positions)} (Spring + SOS + LPS)")
         print(f"  Allocation: {campaign.total_allocation}% (at 5% limit)")
@@ -450,7 +450,7 @@ class TestFullCampaignLifecycle:
         assert campaign.completed_at is not None
         assert all(p.status == "CLOSED" for p in campaign.positions)
 
-        print(f"✓ Campaign completed: {campaign.campaign_id}")
+        print(f"OK Campaign completed: {campaign.campaign_id}")
         print(f"  Status: {campaign.status.value}")
         print(f"  Completed at: {campaign.completed_at}")
         print(f"  All positions closed: {len(campaign.positions)}")
@@ -473,7 +473,7 @@ class TestFullCampaignLifecycle:
         assert campaign.positions[1].pattern_type == "SOS"
         assert campaign.positions[2].pattern_type == "LPS"
 
-        print("✓ Campaign lifecycle completed successfully")
+        print("OK Campaign lifecycle completed successfully")
         print(f"  Campaign ID: {campaign.campaign_id}")
         print(f"  Status: {campaign.status.value}")
         print(f"  Total Allocation: {campaign.total_allocation}%")
@@ -502,7 +502,7 @@ class TestFullCampaignLifecycle:
         assert campaign.invalidation_reason == "Spring low break"
         assert campaign.completed_at is not None
 
-        print(f"✓ Campaign invalidated: {campaign.invalidation_reason}")
+        print(f"OK Campaign invalidated: {campaign.invalidation_reason}")
 
     async def test_campaign_prevents_duplicate_for_same_range(
         self,
@@ -523,4 +523,4 @@ class TestFullCampaignLifecycle:
         assert campaign1.id == campaign2.id
         assert campaign1.campaign_id == campaign2.campaign_id
 
-        print(f"✓ Same campaign returned for duplicate range: {campaign1.campaign_id}")
+        print(f"OK Same campaign returned for duplicate range: {campaign1.campaign_id}")
