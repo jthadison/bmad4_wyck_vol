@@ -263,3 +263,10 @@ class SpringSignal(BaseModel):
             UUID: str,
         }
         validate_assignment = True
+
+
+# Rebuild SpringSignal model to resolve forward reference to ForexPositionSize
+# Import must be outside TYPE_CHECKING for Pydantic to resolve the type at runtime
+from src.risk_management.forex_position_sizer import ForexPositionSize  # noqa: E402, F401
+
+SpringSignal.model_rebuild()

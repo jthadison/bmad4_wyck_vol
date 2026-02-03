@@ -299,6 +299,30 @@ def determine_urgency(recovery_bars: int) -> str:
     return urgency
 
 
+def get_r_multiple_status(r_multiple: Decimal) -> tuple[str, Optional[str]]:
+    """
+    Determine R-multiple status and warning message.
+
+    Story 7.6 thresholds:
+    - IDEAL: >= 3.0R (no warning)
+    - ACCEPTABLE: >= 2.0R and < 3.0R (warning)
+    - REJECTED: < 2.0R (should be filtered before this)
+
+    Args:
+        r_multiple: The calculated risk-reward ratio
+
+    Returns:
+        Tuple of (status, warning_message)
+    """
+    if r_multiple >= Decimal("3.0"):
+        return "IDEAL", None
+    elif r_multiple >= MIN_R_MULTIPLE:
+        return "ACCEPTABLE", f"R-multiple {r_multiple:.2f}R below ideal threshold of 3.0R"
+    else:
+        # This shouldn't happen as we filter earlier, but handle defensively
+        return "REJECTED", f"R-multiple {r_multiple:.2f}R below minimum threshold of 2.0R"
+
+
 def generate_spring_signal(
     spring: Spring,
     test: Test,
@@ -543,6 +567,9 @@ def generate_spring_signal(
     target_distance_pct = (target_price - entry_price) / entry_price
     volume_decrease_pct = test.volume_decrease_pct
 
+    # STEP 9.5: Calculate R-multiple status (Story 7.6)
+    r_multiple_status, r_multiple_warning = get_r_multiple_status(r_multiple)
+
     # STEP 10: Create SpringSignal Instance (AC 5, 8, 11, 12)
     signal = SpringSignal(
         # Core fields (AC 5)
@@ -553,6 +580,8 @@ def generate_spring_signal(
         target_price=target_price,
         confidence=confidence,
         r_multiple=r_multiple.quantize(Decimal("0.01")),
+        r_multiple_status=r_multiple_status,
+        r_multiple_warning=r_multiple_warning,
         signal_type="LONG_ENTRY",
         pattern_type="SPRING",
         signal_timestamp=datetime.now(UTC),
