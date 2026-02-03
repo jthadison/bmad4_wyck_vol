@@ -51,7 +51,10 @@ const CheckboxStub = defineComponent({
   emits: ['update:modelValue'],
   methods: {
     handleChange(event: Event) {
-      this.$emit('update:modelValue', (event.target as HTMLInputElement).checked)
+      this.$emit(
+        'update:modelValue',
+        (event.target as HTMLInputElement).checked
+      )
     },
   },
   template: `
