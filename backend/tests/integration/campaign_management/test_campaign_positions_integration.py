@@ -306,6 +306,7 @@ class TestQueryPerformance:
 
         # Add 150 positions
         for i in range(150):
+            is_closed = i % 10 == 0  # 90% open, 10% closed
             pos = PositionModel(
                 campaign_id=campaign.id,
                 signal_id=uuid4(),
@@ -316,11 +317,12 @@ class TestQueryPerformance:
                 entry_price=Decimal(f"1.{1000 + i:04d}"),
                 shares=Decimal("1000"),
                 stop_loss=Decimal(f"1.{995 + i:04d}"),
-                current_price=Decimal(f"1.{1005 + i:04d}"),
-                current_pnl=Decimal("5.00"),
-                status=["OPEN", "CLOSED"][i % 10 == 0],  # 90% open, 10% closed
-                exit_price=Decimal(f"1.{1010 + i:04d}") if i % 10 == 0 else None,
-                realized_pnl=Decimal("10.00") if i % 10 == 0 else None,
+                current_price=Decimal(f"1.{1005 + i:04d}") if not is_closed else None,
+                current_pnl=Decimal("5.00") if not is_closed else None,
+                status="CLOSED" if is_closed else "OPEN",
+                closed_date=datetime.now(UTC) if is_closed else None,
+                exit_price=Decimal(f"1.{1010 + i:04d}") if is_closed else None,
+                realized_pnl=Decimal("10.00") if is_closed else None,
             )
             test_db.add(pos)
         await test_db.commit()
