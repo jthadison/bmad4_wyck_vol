@@ -225,13 +225,31 @@ Created `.github/actions/setup-postgres-testdb/action.yml`:
 
 ## Phase 5: Accuracy Tests Implementation (Week 3)
 
-### 5.1 Create Accuracy Metrics Parser
+### 5.1 Create Accuracy Metrics Parser ✅ COMPLETED
 
-**Status**: ⏳ PENDING
+**Status**: ✅ **DONE** (2024-02-03)
 
-### 5.2 Update PR Accuracy Comment
+Created `.github/scripts/parse-accuracy-metrics.py`:
+- Parses pytest JSON reports for detector accuracy metrics
+- Extracts precision, recall, F1-score for each detector
+- Generates markdown table with status indicators (✅/❌/⏳)
+- Handles missing reports gracefully with placeholder output
+- Cross-platform UTF-8 support for emoji indicators
 
-**Status**: ⏳ PENDING
+### 5.2 Update PR Accuracy Comment ✅ COMPLETED
+
+**Status**: ✅ **DONE** (2024-02-03)
+
+**PR Merged**: PR #381: `ci(accuracy): integrate accuracy metrics parser into PR workflow`
+
+**Commit**: `008c315`
+
+**Changes made:**
+- Added `pytest-json-report` dependency to pyproject.toml
+- Updated accuracy tests to generate JSON report
+- Integrated parser script into PR workflow
+- PR comments now show real detector accuracy metrics
+- Fixed test file path to `test_detector_accuracy_integration.py`
 
 ---
 
@@ -274,8 +292,8 @@ Created `.github/actions/setup-postgres-testdb/action.yml`:
 - [x] **4.2** Create `setup-python-backend` composite
 - [x] **4.3** Create `setup-postgres-testdb` composite
 - [x] **4.4** Refactor workflows to use composites
-- [ ] **5.1** Create accuracy metrics parser script
-- [ ] **5.2** Update PR accuracy comment with real metrics
+- [x] **5.1** Create accuracy metrics parser script
+- [x] **5.2** Update PR accuracy comment with real metrics
 
 ### Week 4 (Observability + Polish)
 
