@@ -755,7 +755,9 @@ def test_forex_spring_detection_eurusd():
     symbol = "EUR/USD"
     creek_level = Decimal("1.1000")
     ice_level = Decimal("1.1500")  # Realistic forex range (~4.5%)
-    trading_range = create_trading_range(symbol=symbol, creek_level=creek_level, ice_level=ice_level)
+    trading_range = create_trading_range(
+        symbol=symbol, creek_level=creek_level, ice_level=ice_level
+    )
 
     # Create spring pattern: 1.5% penetration, 0.35x volume, 2-bar recovery
     # Expected score (forex): ~81pts (capped at 85 max)
@@ -889,7 +891,9 @@ def test_forex_spring_detection_gbpusd():
     symbol = "GBP/USD"
     creek_level = Decimal("1.2500")
     ice_level = Decimal("1.3000")
-    trading_range = create_trading_range(symbol=symbol, creek_level=creek_level, ice_level=ice_level)
+    trading_range = create_trading_range(
+        symbol=symbol, creek_level=creek_level, ice_level=ice_level
+    )
 
     # Create spring pattern with better quality to meet 70 threshold
     bars = create_spring_bars(
@@ -943,7 +947,9 @@ def test_cfd_spring_detection_us30():
     symbol = "US30"
     creek_level = Decimal("34000.00")
     ice_level = Decimal("35000.00")
-    trading_range = create_trading_range(symbol=symbol, creek_level=creek_level, ice_level=ice_level)
+    trading_range = create_trading_range(
+        symbol=symbol, creek_level=creek_level, ice_level=ice_level
+    )
 
     # Create spring pattern with better quality
     bars = create_spring_bars(
@@ -1058,7 +1064,9 @@ def test_stock_vs_forex_confidence_comparison():
     forex_symbol = "EUR/USD"
     forex_creek = Decimal("1.1000")  # Different price level but same percentage structure
     forex_ice = Decimal("1.1500")
-    forex_range = create_trading_range(symbol=forex_symbol, creek_level=forex_creek, ice_level=forex_ice)
+    forex_range = create_trading_range(
+        symbol=forex_symbol, creek_level=forex_creek, ice_level=forex_ice
+    )
     forex_bars = create_spring_bars(
         creek_level=forex_creek,
         penetration_pct=Decimal("0.015"),  # Same 1.5% penetration
@@ -1202,7 +1210,9 @@ def test_minimum_confidence_threshold_enforcement():
     forex_symbol = "EUR/USD"
     forex_creek = Decimal("1.1000")
     forex_ice = Decimal("1.1500")
-    forex_range = create_trading_range(symbol=forex_symbol, creek_level=forex_creek, ice_level=forex_ice)
+    forex_range = create_trading_range(
+        symbol=forex_symbol, creek_level=forex_creek, ice_level=forex_ice
+    )
     forex_bars = create_spring_bars(
         creek_level=forex_creek,
         penetration_pct=Decimal("0.045"),
@@ -1482,7 +1492,9 @@ def test_forex_multi_spring_accumulation_campaign():
     )
 
     # Create trading range
-    trading_range = create_trading_range(symbol=symbol, creek_level=creek_level, ice_level=ice_level)
+    trading_range = create_trading_range(
+        symbol=symbol, creek_level=creek_level, ice_level=ice_level
+    )
 
     # Detect all springs in campaign
     detector = SpringDetector()
@@ -1577,7 +1589,9 @@ def test_stock_vs_forex_campaign_comparison():
         penetrations=campaign_params["penetrations"],
         creek_level=forex_creek,
     )
-    forex_range = create_trading_range(symbol=forex_symbol, creek_level=forex_creek, ice_level=forex_ice)
+    forex_range = create_trading_range(
+        symbol=forex_symbol, creek_level=forex_creek, ice_level=forex_ice
+    )
     forex_detector = SpringDetector()
     forex_history = forex_detector.detect_all_springs(
         range=forex_range,
@@ -1656,7 +1670,9 @@ def test_forex_rising_volume_campaign_warning():
     )
 
     # Create trading range
-    trading_range = create_trading_range(symbol=symbol, creek_level=creek_level, ice_level=ice_level)
+    trading_range = create_trading_range(
+        symbol=symbol, creek_level=creek_level, ice_level=ice_level
+    )
 
     # Detect all springs in campaign
     detector = SpringDetector()
