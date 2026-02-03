@@ -62,6 +62,7 @@ async def campaign_repository_mock():
         campaign = campaigns_store.get(campaign_id)
         if campaign is None:
             from src.repositories.campaign_lifecycle_repository import CampaignNotFoundError
+
             raise CampaignNotFoundError(f"Campaign {campaign_id} not found")
         return campaign
 
@@ -77,6 +78,7 @@ async def campaign_repository_mock():
         campaign = campaigns_store.get(campaign_id)
         if campaign is None:
             from src.repositories.campaign_lifecycle_repository import CampaignNotFoundError
+
             raise CampaignNotFoundError(f"Campaign {campaign_id} not found")
 
         # Add position to campaign
