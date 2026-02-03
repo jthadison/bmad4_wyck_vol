@@ -2,7 +2,7 @@
 Integration Tests for Scanner API (Story 19.4)
 
 Tests for:
-- GET /api/v1/scanner/status - Overall scanner status
+- GET /api/v1/scanner/processing/status - Overall scanner processing status
 - GET /api/v1/scanner/symbols/{symbol}/status - Symbol-specific status
 - POST /api/v1/scanner/symbols/{symbol}/reset - Circuit breaker reset
 
@@ -52,13 +52,13 @@ def initialized_processor(mock_processor):
 
 
 class TestGetScannerStatus:
-    """Test GET /api/v1/scanner/status endpoint."""
+    """Test GET /api/v1/scanner/processing/status endpoint."""
 
     def test_returns_status_when_processor_initialized(
         self, client: TestClient, initialized_processor
     ):
         """Should return scanner status when processor is initialized."""
-        response = client.get("/api/v1/scanner/status")
+        response = client.get("/api/v1/scanner/processing/status")
 
         assert response.status_code == 200
         data = response.json()
@@ -76,7 +76,7 @@ class TestGetScannerStatus:
         sp._processor = None
 
         try:
-            response = client.get("/api/v1/scanner/status")
+            response = client.get("/api/v1/scanner/processing/status")
 
             assert response.status_code == 200
             data = response.json()
@@ -88,7 +88,7 @@ class TestGetScannerStatus:
 
     def test_includes_all_symbols(self, client: TestClient, initialized_processor):
         """Should include status for all monitored symbols."""
-        response = client.get("/api/v1/scanner/status")
+        response = client.get("/api/v1/scanner/processing/status")
 
         assert response.status_code == 200
         data = response.json()
@@ -100,7 +100,7 @@ class TestGetScannerStatus:
 
     def test_response_schema_matches_model(self, client: TestClient, initialized_processor):
         """Response should match ScannerStatusResponse schema."""
-        response = client.get("/api/v1/scanner/status")
+        response = client.get("/api/v1/scanner/processing/status")
 
         assert response.status_code == 200
         data = response.json()
@@ -219,8 +219,8 @@ class TestOpenAPISchema:
         schema = response.json()
         paths = schema.get("paths", {})
 
-        assert "/api/v1/scanner/status" in paths
-        assert "get" in paths["/api/v1/scanner/status"]
+        assert "/api/v1/scanner/processing/status" in paths
+        assert "get" in paths["/api/v1/scanner/processing/status"]
 
     def test_symbol_status_in_schema(self, client: TestClient):
         """Symbol status endpoint should be in OpenAPI schema."""
