@@ -119,12 +119,17 @@ def sample_backtest_result_minimal():
 
     # Cost summary
     cost_summary = BacktestCostSummary(
+        total_trades=1,
         total_commission_paid=Decimal("10.00"),
         total_slippage_cost=Decimal("5.00"),
         total_transaction_costs=Decimal("15.00"),
         cost_as_pct_of_total_pnl=Decimal("0.02"),  # 2% as decimal
         avg_commission_per_trade=Decimal("10.00"),
         avg_slippage_per_trade=Decimal("5.00"),
+        avg_transaction_cost_per_trade=Decimal("15.00"),
+        gross_avg_r_multiple=Decimal("2.50"),
+        net_avg_r_multiple=Decimal("2.50"),
+        r_multiple_degradation=Decimal("0.00"),
     )
 
     return BacktestResult(
@@ -136,7 +141,7 @@ def sample_backtest_result_minimal():
         config=config,
         equity_curve=equity_curve,
         trades=trades,
-        metrics=metrics,
+        summary=metrics,
         cost_summary=cost_summary,
         look_ahead_bias_check=True,
         execution_time_seconds=12.5,
@@ -163,7 +168,7 @@ async def test_get_html_report_success(test_client, sample_backtest_result_minim
         return MockRepository()
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Make request
@@ -195,7 +200,7 @@ async def test_get_html_report_not_found(test_client, monkeypatch):
             return None
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Make request with random UUID
@@ -219,7 +224,7 @@ async def test_get_html_report_generation_error(
             return sample_backtest_result_minimal
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Mock report generator to raise exception
@@ -227,7 +232,9 @@ async def test_get_html_report_generation_error(
         def generate_html_report(self, result):
             raise ValueError("Template rendering failed")
 
-    monkeypatch.setattr("src.api.routes.backtest.BacktestReportGenerator", lambda: MockGenerator())
+    monkeypatch.setattr(
+        "src.backtesting.backtest_report_generator.BacktestReportGenerator", lambda: MockGenerator()
+    )
 
     # Make request
     backtest_id = str(sample_backtest_result_minimal.backtest_run_id)
@@ -243,10 +250,23 @@ async def test_get_html_report_generation_error(
 # ==========================================================================================
 
 
+def _check_weasyprint_available():
+    """Check if WeasyPrint with GTK dependencies is available."""
+    try:
+        import weasyprint
+
+        weasyprint.HTML(string="<html></html>").write_pdf()
+        return True
+    except (ImportError, OSError):
+        return False
+
+
+@pytest.mark.skipif(
+    not _check_weasyprint_available(), reason="WeasyPrint or GTK dependencies not available"
+)
 @pytest.mark.asyncio
 async def test_get_pdf_report_success(test_client, sample_backtest_result_minimal, monkeypatch):
     """Test successful PDF report generation via API."""
-    pytest.importorskip("weasyprint", reason="WeasyPrint not installed")
 
     # Mock repository
     class MockRepository:
@@ -256,7 +276,7 @@ async def test_get_pdf_report_success(test_client, sample_backtest_result_minima
             return None
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Make request
@@ -286,7 +306,7 @@ async def test_get_pdf_report_not_found(test_client, monkeypatch):
             return None
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Make request
@@ -309,7 +329,7 @@ async def test_get_pdf_report_weasyprint_missing(
             return sample_backtest_result_minimal
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Mock report generator to raise ImportError
@@ -317,7 +337,9 @@ async def test_get_pdf_report_weasyprint_missing(
         def generate_pdf_report(self, result):
             raise ImportError("WeasyPrint is required")
 
-    monkeypatch.setattr("src.api.routes.backtest.BacktestReportGenerator", lambda: MockGenerator())
+    monkeypatch.setattr(
+        "src.backtesting.backtest_report_generator.BacktestReportGenerator", lambda: MockGenerator()
+    )
 
     # Make request
     backtest_id = str(sample_backtest_result_minimal.backtest_run_id)
@@ -345,7 +367,7 @@ async def test_get_trades_csv_success(test_client, sample_backtest_result_minima
             return None
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Make request
@@ -356,7 +378,7 @@ async def test_get_trades_csv_success(test_client, sample_backtest_result_minima
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/csv; charset=utf-8"
     assert "attachment" in response.headers["content-disposition"]
-    assert f"backtest_{backtest_id}_trades.csv" in response.headers["content-disposition"]
+    assert f"trades_AAPL_{backtest_id}.csv" in response.headers["content-disposition"]
 
     # Parse CSV
     csv_content = response.text
@@ -401,7 +423,7 @@ async def test_get_trades_csv_not_found(test_client, monkeypatch):
             return None
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Make request
@@ -451,7 +473,7 @@ async def test_get_trades_csv_empty_trades(test_client, monkeypatch):
         config=config,
         equity_curve=[],
         trades=[],  # No trades
-        metrics=metrics,
+        summary=metrics,
         cost_summary=None,
         look_ahead_bias_check=False,
         execution_time_seconds=5.0,
@@ -463,7 +485,7 @@ async def test_get_trades_csv_empty_trades(test_client, monkeypatch):
             return empty_result
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     # Make request
@@ -505,7 +527,7 @@ async def test_concurrent_report_requests(test_client, sample_backtest_result_mi
             return sample_backtest_result_minimal
 
     monkeypatch.setattr(
-        "src.api.routes.backtest.BacktestRepository", lambda session: MockRepository()
+        "src.api.routes.backtest.reports.BacktestRepository", lambda session: MockRepository()
     )
 
     backtest_id = str(sample_backtest_result_minimal.backtest_run_id)
