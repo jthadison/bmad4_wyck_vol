@@ -176,10 +176,15 @@ Final Phase (after all):
 - **Extended Backtests**: 4-symbol, 2-year backtest window (AAPL, MSFT, GOOGL, TSLA)
 - **LFS Support**: `git lfs pull` for large dataset files
 - **Codegen Validation**: Ensures Pydantic-to-TypeScript models are up-to-date
-- **Security Scanning**: Same blocking security checks as PR CI (pip-audit, gitleaks, npm audit)
+- **Security Scanning**: Simplified security scanning (inline setup, npm audit only; no pip-audit/gitleaks)
 - **Debug Artifacts**: Automatic collection of logs and test results on failure (7-day retention)
 - **Failure Notifications**: Optional Slack webhook for CI failures
 - **Time**: Typical run ~25-35 minutes
+
+**Note on Security Scanning**: Main CI uses simplified security scanning compared to PR CI for faster feedback:
+- Main CI does NOT use composite actions (uses inline Python/Node setup)
+- Main CI security scan only runs `npm audit` (no pip-audit or gitleaks)
+- Consider upgrading Main CI for parity with PR CI if comprehensive security validation is required on every main branch commit
 
 ### 3. Deploy Workflow (`deploy.yaml`)
 
@@ -416,11 +421,13 @@ Composite actions (`.github/actions/*/action.yml`) provide reusable workflow bui
 
 **Usage**:
 ```bash
-.github/scripts/wait-for-api.sh \
-  --base_url=http://localhost:8000 \
-  --health_endpoint=/health \
-  --max_attempts=30
+.github/scripts/wait-for-api.sh 30 http://localhost:8000 /api/health
 ```
+
+**Arguments** (positional, in order):
+1. `max_attempts` - Maximum number of health check attempts (default: 30)
+2. `base_url` - Base URL of the API (e.g., http://localhost:8000)
+3. `health_endpoint` - Health check endpoint path (e.g., /api/health)
 
 **Replaces**: Fixed `sleep 5` calls in E2E test jobs
 
