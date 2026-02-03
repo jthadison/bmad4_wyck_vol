@@ -463,6 +463,7 @@ jobs:
   all-checks-passed:
     name: All Checks Passed
     runs-on: ubuntu-latest
+    if: always()
     needs:
       - backend-linting
       - backend-type-checking
@@ -475,30 +476,35 @@ jobs:
       - code-quality
       - security-scan
     steps:
-      - name: All checks passed
-        run: echo "All PR checks passed successfully"
-
-      - name: Generate deployment gate summary
+      - name: Check job results
         run: |
-          echo "## Deployment Gate Validation" >> $GITHUB_STEP_SUMMARY
+          # Check if any required job failed
+          if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
+            echo "❌ Some checks failed"
+            exit 1
+          fi
+          echo "✅ All checks passed"
+
+      - name: Generate workflow summary
+        if: always()
+        run: |
+          echo "## 📊 PR CI Workflow Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ✅ All Required Checks Passed" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend Linting | ${{ needs.backend-linting.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend Type Checking | ${{ needs.backend-type-checking.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend Tests | ${{ needs.backend-tests.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Linting | ${{ needs.frontend-linting.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Type Checking | ${{ needs.frontend-type-checking.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Tests | ${{ needs.frontend-tests.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| E2E Tests | ${{ needs.e2e-tests.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Accuracy Tests | ${{ needs.accuracy-tests.result == 'success' && '✅' || needs.accuracy-tests.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Quality | ${{ needs.code-quality.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The following checks have completed successfully:" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Backend linting (Ruff)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Backend type checking (mypy)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Backend tests with coverage" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Frontend linting (ESLint + Prettier)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Frontend type checking (TypeScript)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Frontend unit tests (Vitest)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ E2E tests (Playwright - Chromium, Firefox, WebKit)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Accuracy tests" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Code quality checks" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Security vulnerability scan" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Test Stability Features" >> $GITHUB_STEP_SUMMARY
-          echo "- Automatic test retries (2x for backend, 2x for E2E)" >> $GITHUB_STEP_SUMMARY
-          echo "- Flaky test detection and reporting" >> $GITHUB_STEP_SUMMARY
-          echo "- Test result artifact upload on failure" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**This PR is ready for merge pending code review approval.**" >> $GITHUB_STEP_SUMMARY
+          echo "### Run Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: \`${{ github.head_ref }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Actor**: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run ID**: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
