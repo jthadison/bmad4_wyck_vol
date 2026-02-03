@@ -12,23 +12,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f677139bbe732f74a09dfb398b0a54e3ea03947f  # v5.2.0
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04ef03d97c41f76dcd0e3bdfe285917156664  # v1.3.5
         with:
           version: 1.7.1
           virtualenvs-create: true
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@704facf57c6b727bc533a60cbb73474fad876c91  # v4.1.1
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
@@ -52,23 +52,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f677139bbe732f74a09dfb398b0a54e3ea03947f  # v5.2.0
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04ef03d97c41f76dcd0e3bdfe285917156664  # v1.3.5
         with:
           version: 1.7.1
           virtualenvs-create: true
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@704facf57c6b727bc533a60cbb73474fad876c91  # v4.1.1
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
@@ -103,7 +103,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
         with:
           lfs: true
 
@@ -111,20 +111,20 @@ jobs:
         run: git lfs pull
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f677139bbe732f74a09dfb398b0a54e3ea03947f  # v5.2.0
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04ef03d97c41f76dcd0e3bdfe285917156664  # v1.3.5
         with:
           version: 1.7.1
           virtualenvs-create: true
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@704facf57c6b727bc533a60cbb73474fad876c91  # v4.1.1
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
@@ -165,10 +165,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@60edb3dd0365c1c7c932d4eea48c1f1df2b3c8e2  # v4.2.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -191,10 +191,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@60edb3dd0365c1c7c932d4eea48c1f1df2b3c8e2  # v4.2.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -213,10 +213,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@60edb3dd0365c1c7c932d4eea48c1f1df2b3c8e2  # v4.2.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -252,16 +252,16 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f677139bbe732f74a09dfb398b0a54e3ea03947f  # v5.2.0
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04ef03d97c41f76dcd0e3bdfe285917156664  # v1.3.5
         with:
           version: 1.7.1
           virtualenvs-create: true
@@ -295,7 +295,7 @@ jobs:
           TESTING: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@60edb3dd0365c1c7c932d4eea48c1f1df2b3c8e2  # v4.2.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -322,7 +322,7 @@ jobs:
 
       - name: Upload Playwright artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@84480fda7e119e3d8abb28e653ee19c3ca4ee6c8  # v4.6.1
         with:
           name: e2e-failure-artifacts-main
           path: |
@@ -336,15 +336,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f677139bbe732f74a09dfb398b0a54e3ea03947f  # v5.2.0
         with:
           python-version: '3.11'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04ef03d97c41f76dcd0e3bdfe285917156664  # v1.3.5
         with:
           version: 1.7.1
           virtualenvs-create: true
@@ -359,7 +359,7 @@ jobs:
         run: poetry run pip list --format=json | python -m json.tool
 
       - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@60edb3dd0365c1c7c932d4eea48c1f1df2b3c8e2  # v4.2.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -396,7 +396,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
         with:
           lfs: true
 
@@ -404,20 +404,20 @@ jobs:
         run: git lfs pull
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f677139bbe732f74a09dfb398b0a54e3ea03947f  # v5.2.0
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04ef03d97c41f76dcd0e3bdfe285917156664  # v1.3.5
         with:
           version: 1.7.1
           virtualenvs-create: true
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@704facf57c6b727bc533a60cbb73474fad876c91  # v4.1.1
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
@@ -472,7 +472,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
         with:
           lfs: true
 
@@ -480,20 +480,20 @@ jobs:
         run: git lfs pull
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f677139bbe732f74a09dfb398b0a54e3ea03947f  # v5.2.0
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04ef03d97c41f76dcd0e3bdfe285917156664  # v1.3.5
         with:
           version: 1.7.1
           virtualenvs-create: true
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@704facf57c6b727bc533a60cbb73474fad876c91  # v4.1.1
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('backend/poetry.lock') }}
@@ -539,7 +539,7 @@ jobs:
 
       - name: Upload backtest results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@84480fda7e119e3d8abb28e653ee19c3ca4ee6c8  # v4.6.1
         with:
           name: backtest-results-${{ github.sha }}
           path: backtest-results/
