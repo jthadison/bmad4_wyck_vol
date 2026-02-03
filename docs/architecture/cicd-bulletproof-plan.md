@@ -255,13 +255,29 @@ Created `.github/scripts/parse-accuracy-metrics.py`:
 
 ## Phase 6: Observability & Debugging (Week 3)
 
-### 6.1 Add Debug Artifact Collection on Failure
+### 6.1 Add Debug Artifact Collection on Failure ✅ COMPLETED
 
-**Status**: ⏳ PENDING
+**Status**: ✅ **DONE** (2024-02-03)
 
-### 6.2 Add Workflow Summary
+**PR Merged**: PR #383: `ci(observability): add debug artifact collection on failure`
 
-**Status**: ⏳ PENDING
+**Changes made:**
+- Added conditional debug artifact collection to all workflow jobs
+- Uploads logs, pytest cache, and test results on failure
+- 7-day retention for debugging artifacts
+- Enhanced E2E test artifact collection with traces
+
+### 6.2 Add Workflow Summary ✅ COMPLETED
+
+**Status**: ✅ **DONE** (2024-02-03)
+
+**PR Merged**: PR #382: `ci(observability): add workflow summary generation`
+
+**Changes made:**
+- Enhanced `all-checks-passed` job with comprehensive workflow summary
+- Added workflow run duration and metadata
+- Added commit info and runner details to summary
+- Provides clear deployment gate validation status
 
 ---
 
@@ -297,8 +313,8 @@ Created `.github/scripts/parse-accuracy-metrics.py`:
 
 ### Week 4 (Observability + Polish)
 
-- [ ] **6.1** Add debug artifact collection to all jobs
-- [ ] **6.2** Add workflow summary generation
+- [x] **6.1** Add debug artifact collection to all jobs
+- [x] **6.2** Add workflow summary generation
 - [ ] Pin GitHub Actions to SHA hashes
 - [ ] Update `docs/architecture/cicd-workflows.md`
 - [ ] Document all required secrets
