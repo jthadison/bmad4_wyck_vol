@@ -80,20 +80,16 @@
 - `ecdsa` 0.19.1 (no fix available)
 - `protobuf` 6.33.4 (no fix available)
 
-### 1.3 Pin GitHub Actions to SHA
+### 1.3 Pin GitHub Actions to SHA ✅ COMPLETED
 
-**Status**: ⏳ PENDING
+**Status**: ✅ **DONE** (2024-02-03)
 
-**All workflow files - update action references:**
-```yaml
-# BEFORE (vulnerable to supply chain attacks)
-- uses: actions/checkout@v4
-- uses: actions/setup-python@v5
+**PR Merged**: PR #385 (included with cicd-workflows.md update)
 
-# AFTER (pinned to specific commits)
-- uses: actions/checkout@v4  # SHA: 11bd71901bbe5b1630ceea73d27597364c9af683
-- uses: actions/setup-python@v5  # SHA: 0b93645e9fea7318ecaed2b359559ac225c90a2b
-```
+**Changes made:**
+- All GitHub Actions pinned to SHA hashes across 9 files
+- Format: `uses: action@SHA  # vX.Y.Z`
+- Covers: checkout, setup-python, setup-node, cache, upload-artifact, github-script, codecov, gitleaks, install-poetry, docker actions
 
 ---
 
@@ -315,9 +311,9 @@ Created `.github/scripts/parse-accuracy-metrics.py`:
 
 - [x] **6.1** Add debug artifact collection to all jobs
 - [x] **6.2** Add workflow summary generation
-- [ ] Pin GitHub Actions to SHA hashes
-- [ ] Update `docs/architecture/cicd-workflows.md`
-- [ ] Document all required secrets
+- [x] Pin GitHub Actions to SHA hashes (PR #385)
+- [x] Update `docs/architecture/cicd-workflows.md` (PR #385)
+- [x] Document all required secrets (PR #384)
 
 ---
 
