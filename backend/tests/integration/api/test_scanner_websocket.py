@@ -13,7 +13,7 @@ Author: Story 20.5b (WebSocket Signal Broadcasting & Auto-Restart)
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -25,6 +25,24 @@ from src.repositories.scanner_repository import ScannerRepository
 from src.services.signal_scanner_service import (
     SignalScannerService,
 )
+
+
+@pytest.fixture
+def patch_scanner_logger():
+    """
+    Patch the scanner service logger to avoid structlog 'event' parameter conflict.
+
+    The production code uses `logger.info(..., event=event)` which conflicts with
+    structlog's reserved 'event' keyword argument. This fixture patches the logger
+    to use a mock that doesn't have this limitation.
+    """
+    with patch("src.services.signal_scanner_service.logger") as mock_logger:
+        mock_logger.info = MagicMock()
+        mock_logger.error = MagicMock()
+        mock_logger.warning = MagicMock()
+        mock_logger.debug = MagicMock()
+        yield mock_logger
+
 
 # Test constants
 DEFAULT_SCAN_INTERVAL = 300
@@ -230,6 +248,7 @@ class TestStatusBroadcasting:
         db_session: AsyncSession,
         scanner_config_in_db: ScannerConfigORM,
         mock_websocket_manager,
+        patch_scanner_logger,
     ):
         """AC6: Scanner start should broadcast status_changed event."""
         repository = ScannerRepository(db_session)
@@ -254,6 +273,7 @@ class TestStatusBroadcasting:
         db_session: AsyncSession,
         scanner_config_in_db: ScannerConfigORM,
         mock_websocket_manager,
+        patch_scanner_logger,
     ):
         """AC6: Scanner stop should broadcast status_changed event."""
         repository = ScannerRepository(db_session)
@@ -274,6 +294,7 @@ class TestStatusBroadcasting:
         db_session: AsyncSession,
         scanner_config_in_db: ScannerConfigORM,
         mock_websocket_manager,
+        patch_scanner_logger,
     ):
         """AC6: Auto-start should broadcast with 'auto_started' event."""
         repository = ScannerRepository(db_session)
@@ -293,6 +314,7 @@ class TestStatusBroadcasting:
         db_session: AsyncSession,
         scanner_config_in_db: ScannerConfigORM,
         mock_websocket_manager,
+        patch_scanner_logger,
     ):
         """Status broadcast failures should not crash the scanner."""
         mock_websocket_manager.broadcast = AsyncMock(side_effect=Exception("WebSocket error"))
@@ -346,6 +368,7 @@ class TestScannerIntegrationWithBroadcast:
         db_session: AsyncSession,
         scanner_config_in_db: ScannerConfigORM,
         mock_websocket_manager,
+        patch_scanner_logger,
     ):
         """Starting scanner should broadcast status change."""
         repository = ScannerRepository(db_session)
@@ -375,6 +398,7 @@ class TestScannerIntegrationWithBroadcast:
         db_session: AsyncSession,
         scanner_config_in_db: ScannerConfigORM,
         mock_websocket_manager,
+        patch_scanner_logger,
     ):
         """Stopping scanner should broadcast status change."""
         repository = ScannerRepository(db_session)
@@ -404,6 +428,7 @@ class TestScannerIntegrationWithBroadcast:
         db_session: AsyncSession,
         scanner_config_in_db: ScannerConfigORM,
         mock_websocket_manager,
+        patch_scanner_logger,
     ):
         """Starting with broadcast=False should not broadcast status."""
         repository = ScannerRepository(db_session)
@@ -432,6 +457,7 @@ class TestScannerIntegrationWithBroadcast:
         db_session: AsyncSession,
         scanner_config_in_db: ScannerConfigORM,
         mock_websocket_manager,
+        patch_scanner_logger,
     ):
         """Auto-start should only send auto_started, not started event."""
         repository = ScannerRepository(db_session)
