@@ -429,6 +429,8 @@ jobs:
         run: |
           poetry run alembic upgrade head
 
+      # CRITICAL: Accuracy tests MUST block CI for trading system
+      # Broken detectors cannot reach main branch - detector accuracy is non-negotiable for live trading
       - name: Run accuracy tests
         working-directory: backend
         env:
@@ -439,7 +441,6 @@ jobs:
             -v \
             --tb=short \
             --json-report
-        continue-on-error: true
 
   # Extended backtests (main branch only)
   extended-backtests:
@@ -508,6 +509,8 @@ jobs:
         run: |
           poetry run alembic upgrade head
 
+      # Non-critical: Extended backtests are informational performance analysis
+      # Results are reported as artifacts but don't block merge - accuracy tests validate detector quality
       - name: Run extended backtests
         working-directory: backend
         env:
