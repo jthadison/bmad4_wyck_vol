@@ -435,7 +435,10 @@ jobs:
           DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
           ENVIRONMENT: test
         run: |
-          poetry run pytest tests/integration/test_detector_accuracy.py -v --tb=short
+          poetry run pytest tests/integration/test_detector_accuracy_integration.py \
+            -v \
+            --tb=short \
+            --json-report
         continue-on-error: true
 
   # Extended backtests (main branch only)

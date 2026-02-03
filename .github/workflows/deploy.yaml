@@ -88,7 +88,9 @@ jobs:
           DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
           ENVIRONMENT: test
         run: |
-          poetry run pytest tests/integration/test_detector_accuracy.py -v
+          poetry run pytest tests/integration/test_detector_accuracy_integration.py \
+            -v \
+            --json-report
           echo "accuracy_status=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
 
