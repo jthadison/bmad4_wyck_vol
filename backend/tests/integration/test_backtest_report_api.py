@@ -257,7 +257,9 @@ def _check_weasyprint_available():
 
         weasyprint.HTML(string="<html></html>").write_pdf()
         return True
-    except (ImportError, OSError):
+    except Exception:
+        # Catch all exceptions: ImportError, OSError, AttributeError (pycairo compatibility),
+        # and any other WeasyPrint/GTK initialization errors
         return False
 
 
