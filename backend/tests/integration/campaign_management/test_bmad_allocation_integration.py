@@ -66,17 +66,129 @@ async def campaign_service(campaign_repository, allocation_repository, allocator
 @pytest.fixture
 def trading_range():
     """Sample trading range for campaigns."""
+    from src.models.ohlcv import OHLCVBar
+    from src.models.pivot import Pivot, PivotType
+    from src.models.price_cluster import PriceCluster
+
+    # Create sample OHLCV bars for pivots
+    support_bar1 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        open=Decimal("145.50"),
+        high=Decimal("146.00"),
+        low=Decimal("145.00"),
+        close=Decimal("145.50"),
+        volume=1000000,
+        spread=Decimal("1.00"),  # high - low
+        timestamp=datetime.now(UTC),
+    )
+    support_bar2 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        open=Decimal("145.30"),
+        high=Decimal("145.80"),
+        low=Decimal("145.10"),
+        close=Decimal("145.40"),
+        volume=900000,
+        spread=Decimal("0.70"),  # high - low
+        timestamp=datetime.now(UTC),
+    )
+    resistance_bar1 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        open=Decimal("154.50"),
+        high=Decimal("155.00"),
+        low=Decimal("154.00"),
+        close=Decimal("154.50"),
+        volume=1100000,
+        spread=Decimal("1.00"),  # high - low
+        timestamp=datetime.now(UTC),
+    )
+    resistance_bar2 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        open=Decimal("154.80"),
+        high=Decimal("154.90"),
+        low=Decimal("154.20"),
+        close=Decimal("154.60"),
+        volume=950000,
+        spread=Decimal("0.70"),  # high - low
+        timestamp=datetime.now(UTC),
+    )
+
+    # Create pivots
+    support_pivot1 = Pivot(
+        bar=support_bar1,
+        price=Decimal("145.00"),
+        type=PivotType.LOW,
+        strength=5,
+        timestamp=support_bar1.timestamp,
+        index=10,
+    )
+    support_pivot2 = Pivot(
+        bar=support_bar2,
+        price=Decimal("145.10"),
+        type=PivotType.LOW,
+        strength=5,
+        timestamp=support_bar2.timestamp,
+        index=15,
+    )
+    resistance_pivot1 = Pivot(
+        bar=resistance_bar1,
+        price=Decimal("155.00"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar1.timestamp,
+        index=20,
+    )
+    resistance_pivot2 = Pivot(
+        bar=resistance_bar2,
+        price=Decimal("154.90"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar2.timestamp,
+        index=25,
+    )
+
+    # Create price clusters
+    support_cluster = PriceCluster(
+        pivots=[support_pivot1, support_pivot2],
+        average_price=Decimal("145.05"),
+        min_price=Decimal("145.00"),
+        max_price=Decimal("145.10"),
+        price_range=Decimal("0.10"),
+        touch_count=2,
+        cluster_type=PivotType.LOW,
+        std_deviation=Decimal("0.05"),
+        timestamp_range=(support_bar1.timestamp, support_bar2.timestamp),
+    )
+    resistance_cluster = PriceCluster(
+        pivots=[resistance_pivot1, resistance_pivot2],
+        average_price=Decimal("154.95"),
+        min_price=Decimal("154.90"),
+        max_price=Decimal("155.00"),
+        price_range=Decimal("0.10"),
+        touch_count=2,
+        cluster_type=PivotType.HIGH,
+        std_deviation=Decimal("0.05"),
+        timestamp_range=(resistance_bar1.timestamp, resistance_bar2.timestamp),
+    )
+
     return TradingRange(
         id=uuid4(),
         symbol="AAPL",
         timeframe="1d",
-        range_low=Decimal("145.00"),
-        range_high=Decimal("155.00"),
-        creek=Decimal("150.00"),
-        phase="C",
-        is_active=True,
+        support_cluster=support_cluster,
+        resistance_cluster=resistance_cluster,
+        support=Decimal("145.00"),
+        resistance=Decimal("155.00"),
+        midpoint=Decimal("150.00"),
+        range_width=Decimal("10.00"),
+        range_width_pct=Decimal("0.0689"),  # 10/145 = 6.89%
+        start_index=10,
+        end_index=25,
+        duration=16,
         created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
     )
 
 
@@ -125,7 +237,7 @@ def sos_signal(portfolio_value):
         position_size_unit="SHARES",
         risk_amount=Decimal("1000.00"),
         notional_value=Decimal("50283.00"),
-        r_multiple=Decimal("2.0"),
+        r_multiple=Decimal("3.0"),  # (160-151)/(151-148) = 9/3 = 3.0
         confidence_score=82,
         confidence_components=ConfidenceComponents(
             pattern_confidence=85,
@@ -154,7 +266,7 @@ def lps_signal(portfolio_value):
         position_size_unit="SHARES",
         risk_amount=Decimal("600.00"),
         notional_value=Decimal("30600.00"),
-        r_multiple=Decimal("2.5"),
+        r_multiple=Decimal("3.0"),  # (162-153)/(153-150) = 9/3 = 3.0
         confidence_score=78,
         confidence_components=ConfidenceComponents(
             pattern_confidence=80,
@@ -318,7 +430,7 @@ async def test_100_percent_lps_sole_entry_75_percent_confidence_required(
         position_size_unit="SHARES",
         risk_amount=Decimal("600.00"),
         notional_value=Decimal("30600.00"),
-        r_multiple=Decimal("2.5"),
+        r_multiple=Decimal("3.0"),  # (162-153)/(153-150) = 9/3 = 3.0
         confidence_score=75,  # Meets 75% threshold
         confidence_components=ConfidenceComponents(
             pattern_confidence=78,
@@ -365,17 +477,129 @@ async def test_100_percent_lps_sole_entry_75_percent_confidence_required(
     )
 
     # Create new trading range for second test
+    from src.models.ohlcv import OHLCVBar
+    from src.models.pivot import Pivot, PivotType
+    from src.models.price_cluster import PriceCluster
+
+    # Create sample OHLCV bars for pivots
+    tsla_support_bar1 = OHLCVBar(
+        symbol="TSLA",
+        timeframe="1d",
+        open=Decimal("240.50"),
+        high=Decimal("241.00"),
+        low=Decimal("240.00"),
+        close=Decimal("240.50"),
+        volume=2000000,
+        spread=Decimal("1.00"),  # high - low
+        timestamp=datetime.now(UTC),
+    )
+    tsla_support_bar2 = OHLCVBar(
+        symbol="TSLA",
+        timeframe="1d",
+        open=Decimal("240.30"),
+        high=Decimal("240.80"),
+        low=Decimal("240.10"),
+        close=Decimal("240.40"),
+        volume=1900000,
+        spread=Decimal("0.70"),  # high - low
+        timestamp=datetime.now(UTC),
+    )
+    tsla_resistance_bar1 = OHLCVBar(
+        symbol="TSLA",
+        timeframe="1d",
+        open=Decimal("259.50"),
+        high=Decimal("260.00"),
+        low=Decimal("259.00"),
+        close=Decimal("259.50"),
+        volume=2100000,
+        spread=Decimal("1.00"),  # high - low
+        timestamp=datetime.now(UTC),
+    )
+    tsla_resistance_bar2 = OHLCVBar(
+        symbol="TSLA",
+        timeframe="1d",
+        open=Decimal("259.80"),
+        high=Decimal("259.90"),
+        low=Decimal("259.20"),
+        close=Decimal("259.60"),
+        volume=1950000,
+        spread=Decimal("0.70"),  # high - low
+        timestamp=datetime.now(UTC),
+    )
+
+    # Create pivots
+    tsla_support_pivot1 = Pivot(
+        bar=tsla_support_bar1,
+        price=Decimal("240.00"),
+        type=PivotType.LOW,
+        strength=5,
+        timestamp=tsla_support_bar1.timestamp,
+        index=10,
+    )
+    tsla_support_pivot2 = Pivot(
+        bar=tsla_support_bar2,
+        price=Decimal("240.10"),
+        type=PivotType.LOW,
+        strength=5,
+        timestamp=tsla_support_bar2.timestamp,
+        index=15,
+    )
+    tsla_resistance_pivot1 = Pivot(
+        bar=tsla_resistance_bar1,
+        price=Decimal("260.00"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=tsla_resistance_bar1.timestamp,
+        index=20,
+    )
+    tsla_resistance_pivot2 = Pivot(
+        bar=tsla_resistance_bar2,
+        price=Decimal("259.90"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=tsla_resistance_bar2.timestamp,
+        index=25,
+    )
+
+    # Create price clusters
+    tsla_support_cluster = PriceCluster(
+        pivots=[tsla_support_pivot1, tsla_support_pivot2],
+        average_price=Decimal("240.05"),
+        min_price=Decimal("240.00"),
+        max_price=Decimal("240.10"),
+        price_range=Decimal("0.10"),
+        touch_count=2,
+        cluster_type=PivotType.LOW,
+        std_deviation=Decimal("0.05"),
+        timestamp_range=(tsla_support_bar1.timestamp, tsla_support_bar2.timestamp),
+    )
+    tsla_resistance_cluster = PriceCluster(
+        pivots=[tsla_resistance_pivot1, tsla_resistance_pivot2],
+        average_price=Decimal("259.95"),
+        min_price=Decimal("259.90"),
+        max_price=Decimal("260.00"),
+        price_range=Decimal("0.10"),
+        touch_count=2,
+        cluster_type=PivotType.HIGH,
+        std_deviation=Decimal("0.05"),
+        timestamp_range=(tsla_resistance_bar1.timestamp, tsla_resistance_bar2.timestamp),
+    )
+
     trading_range_2 = TradingRange(
         id=uuid4(),
         symbol="TSLA",
         timeframe="1d",
-        range_low=Decimal("240.00"),
-        range_high=Decimal("260.00"),
-        creek=Decimal("250.00"),
-        phase="D",
-        is_active=True,
+        support_cluster=tsla_support_cluster,
+        resistance_cluster=tsla_resistance_cluster,
+        support=Decimal("240.00"),
+        resistance=Decimal("260.00"),
+        midpoint=Decimal("250.00"),
+        range_width=Decimal("20.00"),
+        range_width_pct=Decimal("0.0833"),  # 20/240 = 8.33%
+        start_index=10,
+        end_index=25,
+        duration=16,
         created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
     )
 
     campaign_rejected, lps_plan_rejected = await campaign_service.create_campaign(
