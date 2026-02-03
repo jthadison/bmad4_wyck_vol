@@ -358,10 +358,14 @@ jobs:
         working-directory: backend
         run: |
           poetry run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 &
-          sleep 5
         env:
           DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
           TESTING: true
+
+      - name: Wait for backend to be ready
+        run: |
+          chmod +x .github/scripts/wait-for-api.sh
+          .github/scripts/wait-for-api.sh 30 http://localhost:8000 /api/health
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
