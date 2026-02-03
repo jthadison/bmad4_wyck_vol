@@ -94,7 +94,7 @@ jobs:
         image: timescale/timescaledb:latest-pg15
         env:
           POSTGRES_USER: wyckoff_user
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           POSTGRES_DB: wyckoff_db_test
         ports:
           - 5432:5432
@@ -140,20 +140,20 @@ jobs:
 
       - name: Initialize database extensions
         run: |
-          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
-          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
 
       - name: Setup test database
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
         run: |
           poetry run alembic upgrade head
 
       - name: Run pytest with coverage
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
           ENVIRONMENT: test
         run: |
           poetry run pytest tests/ \
@@ -316,7 +316,7 @@ jobs:
         image: timescale/timescaledb:latest-pg15
         env:
           POSTGRES_USER: wyckoff_user
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           POSTGRES_DB: wyckoff_db_test
         ports:
           - 5432:5432
@@ -349,8 +349,8 @@ jobs:
 
       - name: Initialize database extensions
         run: |
-          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
-          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
 
       - name: Start backend server
         working-directory: backend
@@ -358,7 +358,7 @@ jobs:
           poetry run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 &
           sleep 5
         env:
-          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
           TESTING: true
 
       - name: Setup Node.js
@@ -423,7 +423,7 @@ jobs:
         image: timescale/timescaledb:latest-pg15
         env:
           POSTGRES_USER: wyckoff_user
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           POSTGRES_DB: wyckoff_db_test
         ports:
           - 5432:5432
@@ -469,13 +469,13 @@ jobs:
 
       - name: Initialize database extensions
         run: |
-          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
-          PGPASSWORD=test_password psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
 
       - name: Setup test database
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
         run: |
           poetry run alembic upgrade head
 
@@ -484,7 +484,7 @@ jobs:
         id: accuracy
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+psycopg://wyckoff_user:test_password@localhost:5432/wyckoff_db_test
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
           ENVIRONMENT: test
         run: |
           poetry run pytest tests/integration/test_detector_accuracy.py -v --tb=short || true
