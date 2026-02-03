@@ -293,6 +293,8 @@ jobs:
         working-directory: frontend
         run: npm run test:run
 
+      # Frontend coverage enforcement - Vitest config enforces 90% threshold
+      # This step will FAIL if coverage drops below thresholds (see vitest.config.ts)
       - name: Run Vitest with coverage
         working-directory: frontend
         run: npm run coverage
