@@ -297,7 +297,10 @@ def detect_spring(
         # CALCULATE PENETRATION PERCENTAGE (AC 3)
         # ============================================================
 
-        penetration_pct = (creek_level - bar.low) / creek_level
+        # Quantize to 4 decimal places to match Spring model constraint
+        penetration_pct = ((creek_level - bar.low) / creek_level).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
+        )
 
         # ============================================================
         # VALIDATE PENETRATION DEPTH (AC 4)
