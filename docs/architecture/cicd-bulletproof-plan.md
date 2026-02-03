@@ -99,46 +99,45 @@
 
 ## Phase 2: Coverage & Test Enforcement (Week 1-2)
 
-### 2.1 Add Coverage Enforcement to Main CI
+### 2.1 Add Coverage Enforcement to Main CI ✅ COMPLETED
 
-**Status**: ⏳ PENDING
+**Status**: ✅ **DONE** (2024-02-03)
 
-**File:** `.github/workflows/main-ci.yaml`
+**PR Merged**: PR #372: `ci(main): enforce 90% backend coverage threshold`
 
-```yaml
-# Find the backend-tests job and update pytest command
-- name: Run tests with coverage
-  run: |
-    poetry run pytest tests/ \
-      --cov=src \
-      --cov-fail-under=90 \  # ADD THIS LINE
-      --cov-report=xml \
-      --cov-report=term \
-      -v
-```
+**Commit**: `dbc326c`
 
-### 2.2 Add E2E Tests to Main CI
+**Changes made:**
+- Added `--cov-fail-under=90` to pytest command in main-ci.yaml backend-tests job
+- Main branch now fails CI if backend coverage drops below 90%
 
-**Status**: ⏳ PENDING
+### 2.2 Add E2E Tests to Main CI ✅ COMPLETED
 
-**File:** `.github/workflows/main-ci.yaml`
+**Status**: ✅ **DONE** (2024-02-03)
 
-Add new job (copy from pr-ci.yaml with modifications) - see full plan for details.
+**PR Merged**: PR #373: `ci(main): add E2E tests to main branch CI`
 
-### 2.3 Enforce Frontend Coverage
+**Commit**: `bcb6e50`
 
-**Status**: ⏳ PENDING
+**Changes made:**
+- Added complete e2e-tests job to main-ci.yaml (+100 lines)
+- Robust health check polling (30 attempts, 2s intervals)
+- Chromium-only for faster execution
+- Unique artifact naming (`e2e-failure-artifacts-main`)
+- Updated notify-on-failure to include e2e-tests
 
-**File:** `.github/workflows/pr-ci.yaml` (frontend-tests job)
+### 2.3 Enforce Frontend Coverage ✅ COMPLETED
 
-```yaml
-- name: Run Vitest with coverage
-  working-directory: frontend
-  run: |
-    npm run coverage
-    # Vitest config enforces 90% - verify it exits non-zero on failure
-  # Ensure this step has NO continue-on-error
-```
+**Status**: ✅ **DONE** (2024-02-03)
+
+**PR Merged**: PR #371: `ci(frontend): ensure 90% coverage threshold enforcement`
+
+**Commit**: `e23d579`
+
+**Changes made:**
+- Verified vitest.config.ts has 90% thresholds for statements, branches, functions, lines
+- Added documentation comments to pr-ci.yaml explaining enforcement mechanism
+- Confirmed npm run coverage step has NO continue-on-error
 
 ---
 
@@ -215,9 +214,9 @@ Add new job (copy from pr-ci.yaml with modifications) - see full plan for detail
 - [x] **1.2** Add `pip-audit` security scanning job
 - [x] **1.2** Add `gitleaks` secret detection
 - [x] **1.2** Make npm audit blocking (remove continue-on-error)
-- [ ] **2.1** Add `--cov-fail-under=90` to main-ci.yaml
-- [ ] **2.2** Add E2E tests job to main-ci.yaml
-- [ ] **2.3** Verify frontend coverage enforcement
+- [x] **2.1** Add `--cov-fail-under=90` to main-ci.yaml
+- [x] **2.2** Add E2E tests job to main-ci.yaml
+- [x] **2.3** Verify frontend coverage enforcement
 
 ### Week 2 (Reliability)
 
