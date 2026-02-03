@@ -1,0 +1,56 @@
+name: 'Setup PostgreSQL Test Database'
+description: 'Initialize PostgreSQL with TimescaleDB extensions and run migrations'
+
+inputs:
+  database-password:
+    description: 'PostgreSQL password'
+    required: true
+  database-user:
+    description: 'PostgreSQL username'
+    required: false
+    default: 'wyckoff_user'
+  database-name:
+    description: 'PostgreSQL database name'
+    required: false
+    default: 'wyckoff_db_test'
+  database-host:
+    description: 'PostgreSQL host'
+    required: false
+    default: 'localhost'
+  working-directory:
+    description: 'Working directory for backend (for migrations)'
+    required: false
+    default: 'backend'
+  run-migrations:
+    description: 'Whether to run Alembic migrations'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Initialize TimescaleDB extension
+      shell: bash
+      run: |
+        PGPASSWORD=${{ inputs.database-password }} psql \
+          -h ${{ inputs.database-host }} \
+          -U ${{ inputs.database-user }} \
+          -d ${{ inputs.database-name }} \
+          -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+
+    - name: Initialize UUID extension
+      shell: bash
+      run: |
+        PGPASSWORD=${{ inputs.database-password }} psql \
+          -h ${{ inputs.database-host }} \
+          -U ${{ inputs.database-user }} \
+          -d ${{ inputs.database-name }} \
+          -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
+    - name: Run database migrations
+      if: inputs.run-migrations == 'true'
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      env:
+        DATABASE_URL: postgresql+psycopg://${{ inputs.database-user }}:${{ inputs.database-password }}@${{ inputs.database-host }}:5432/${{ inputs.database-name }}
+      run: poetry run alembic upgrade head
