@@ -456,6 +456,7 @@ class TestTradeSignalGenerationFiltering:
             trading_range_id=trading_range.id,
             spread_ratio=Decimal("1.5"),
             close_position=Decimal("1.0"),
+            spread=Decimal("3.00"),  # Bar spread (high - low)
             session_quality=ForexSession.LONDON,
             session_confidence_penalty=0,
             is_tradeable=True,
@@ -482,6 +483,7 @@ class TestTradeSignalGenerationFiltering:
             trading_range_id=trading_range.id,
             spread_ratio=Decimal("1.5"),
             close_position=Decimal("1.0"),
+            spread=Decimal("3.00"),  # Bar spread (high - low)
             session_quality=ForexSession.ASIAN,
             session_confidence_penalty=-20,
             is_tradeable=False,
@@ -508,6 +510,7 @@ class TestTradeSignalGenerationFiltering:
             trading_range_id=trading_range.id,
             spread_ratio=Decimal("1.5"),
             close_position=Decimal("1.0"),
+            spread=Decimal("3.00"),  # Bar spread (high - low)
             session_quality=ForexSession.NY,
             session_confidence_penalty=-5,
             is_tradeable=True,
@@ -564,6 +567,7 @@ class TestTradeSignalGenerationFiltering:
             trading_range_id=trading_range.id,
             spread_ratio=Decimal("1.5"),
             close_position=Decimal("1.0"),
+            spread=Decimal("3.00"),  # Bar spread (high - low)
             session_quality=ForexSession.LONDON,
             session_confidence_penalty=0,
             is_tradeable=True,
