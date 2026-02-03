@@ -23,13 +23,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate required secrets
+      - name: Check optional secrets
+        id: secrets
         run: |
-          missing=""
-          if [ -z "$SLACK_WEBHOOK_URL" ]; then missing="$missing SLACK_WEBHOOK_URL"; fi
-          if [ -n "$missing" ]; then
-            echo "::error::Missing required secrets:$missing"
-            exit 1
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            echo "slack_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "slack_available=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Slack notifications disabled (no webhook configured)"
           fi
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
