@@ -62,11 +62,15 @@ async def sample_campaign_with_positions(test_db):
     # Create campaign
     campaign = CampaignModel(
         id=uuid4(),
+        campaign_id="EURUSD-2024-01-01",
         symbol="EURUSD",
+        timeframe="4h",
         trading_range_id=uuid4(),
+        phase="C",
         current_risk=Decimal("2.5"),
-        total_allocation=Decimal("15.0"),
+        total_allocation=Decimal("5.0"),  # Max allowed is 5.0
         status="ACTIVE",
+        start_date=datetime.now(UTC),
         version=1,
     )
     test_db.add(campaign)
@@ -188,11 +192,15 @@ class TestCampaignLifecycleIntegration:
         # 1. Create campaign
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="GBPUSD-2024-01-01",
             symbol="GBPUSD",
+            timeframe="1h",
             trading_range_id=uuid4(),
+            phase="C",
             current_risk=Decimal("0.0"),
             total_allocation=Decimal("0.0"),
             status="ACTIVE",
+            start_date=datetime.now(UTC),
             version=1,
         )
         test_db.add(campaign)
@@ -282,11 +290,15 @@ class TestQueryPerformance:
         # Create campaign with 150 positions
         campaign = CampaignModel(
             id=uuid4(),
+            campaign_id="EURUSD-2024-01-01",
             symbol="EURUSD",
+            timeframe="4h",
             trading_range_id=uuid4(),
-            current_risk=Decimal("5.0"),
-            total_allocation=Decimal("100.0"),
+            phase="C",
+            current_risk=Decimal("2.0"),
+            total_allocation=Decimal("5.0"),  # Max allowed is 5.0
             status="ACTIVE",
+            start_date=datetime.now(UTC),
             version=1,
         )
         test_db.add(campaign)

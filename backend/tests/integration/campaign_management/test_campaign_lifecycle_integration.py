@@ -26,7 +26,7 @@ import pytest
 
 from src.campaign_management.service import CampaignService
 from src.models.campaign_lifecycle import CampaignStatus
-from src.models.signal import ConfidenceComponents, TargetLevels, TradeSignal
+from src.models.signal import ConfidenceComponents, TargetLevels, TradeSignal, ValidationChain
 from src.models.trading_range import TradingRange
 from src.repositories.campaign_lifecycle_repository import CampaignLifecycleRepository
 
@@ -92,21 +92,149 @@ def mock_repository():
 @pytest.fixture
 def campaign_service(mock_repository):
     """Campaign service for integration testing."""
-    return CampaignService(campaign_repository=mock_repository)
+    from decimal import Decimal
+    from unittest.mock import AsyncMock
+
+    from src.campaign_management.allocator import CampaignAllocator
+    from src.repositories.allocation_repository import AllocationRepository
+
+    # Create mock allocation repository
+    mock_allocation_repo = AsyncMock(spec=AllocationRepository)
+    mock_allocation_repo.save_allocation_plan = AsyncMock()
+    mock_allocation_repo.get_allocation_plans_by_campaign = AsyncMock(return_value=[])
+
+    # Create allocator with portfolio value
+    allocator = CampaignAllocator(portfolio_value=Decimal("100000.00"))
+
+    return CampaignService(
+        campaign_repository=mock_repository,
+        allocation_repository=mock_allocation_repo,
+        allocator=allocator,
+    )
 
 
 @pytest.fixture
 def trading_range():
     """Trading range for AAPL accumulation."""
+    from src.models.ohlcv import OHLCVBar
+    from src.models.pivot import Pivot, PivotType
+    from src.models.price_cluster import PriceCluster
+
+    # Create sample OHLCV bars for pivots
+    support_bar1 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        open=Decimal("148.50"),
+        high=Decimal("149.00"),
+        low=Decimal("148.00"),
+        close=Decimal("148.50"),
+        volume=1000000,
+        spread=Decimal("1.00"),  # high - low
+        timestamp=datetime(2024, 10, 15, tzinfo=UTC),
+    )
+    support_bar2 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        open=Decimal("148.30"),
+        high=Decimal("148.80"),
+        low=Decimal("148.10"),
+        close=Decimal("148.40"),
+        volume=900000,
+        spread=Decimal("0.70"),  # high - low
+        timestamp=datetime(2024, 10, 15, tzinfo=UTC),
+    )
+    resistance_bar1 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        open=Decimal("155.50"),
+        high=Decimal("156.00"),
+        low=Decimal("155.00"),
+        close=Decimal("155.50"),
+        volume=1100000,
+        spread=Decimal("1.00"),  # high - low
+        timestamp=datetime(2024, 10, 15, tzinfo=UTC),
+    )
+    resistance_bar2 = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1d",
+        open=Decimal("155.80"),
+        high=Decimal("155.90"),
+        low=Decimal("155.20"),
+        close=Decimal("155.60"),
+        volume=950000,
+        spread=Decimal("0.70"),  # high - low
+        timestamp=datetime(2024, 10, 15, tzinfo=UTC),
+    )
+
+    # Create pivots
+    support_pivot1 = Pivot(
+        bar=support_bar1,
+        price=Decimal("148.00"),
+        type=PivotType.LOW,
+        strength=5,
+        timestamp=support_bar1.timestamp,
+        index=0,
+    )
+    support_pivot2 = Pivot(
+        bar=support_bar2,
+        price=Decimal("148.10"),
+        type=PivotType.LOW,
+        strength=5,
+        timestamp=support_bar2.timestamp,
+        index=5,
+    )
+    resistance_pivot1 = Pivot(
+        bar=resistance_bar1,
+        price=Decimal("156.00"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar1.timestamp,
+        index=10,
+    )
+    resistance_pivot2 = Pivot(
+        bar=resistance_bar2,
+        price=Decimal("155.90"),
+        type=PivotType.HIGH,
+        strength=5,
+        timestamp=resistance_bar2.timestamp,
+        index=15,
+    )
+
+    # Create price clusters
+    support_cluster = PriceCluster(
+        pivots=[support_pivot1, support_pivot2],
+        average_price=Decimal("148.05"),
+        min_price=Decimal("148.00"),
+        max_price=Decimal("148.10"),
+        price_range=Decimal("0.10"),
+        touch_count=2,
+        cluster_type=PivotType.LOW,
+        std_deviation=Decimal("0.05"),
+        timestamp_range=(support_bar1.timestamp, support_bar2.timestamp),
+    )
+    resistance_cluster = PriceCluster(
+        pivots=[resistance_pivot1, resistance_pivot2],
+        average_price=Decimal("155.95"),
+        min_price=Decimal("155.90"),
+        max_price=Decimal("156.00"),
+        price_range=Decimal("0.10"),
+        touch_count=2,
+        cluster_type=PivotType.HIGH,
+        std_deviation=Decimal("0.05"),
+        timestamp_range=(resistance_bar1.timestamp, resistance_bar2.timestamp),
+    )
+
     return TradingRange(
         id=uuid4(),
         symbol="AAPL",
         timeframe="1d",
+        support_cluster=support_cluster,
+        resistance_cluster=resistance_cluster,
         support=Decimal("148.00"),
         resistance=Decimal("156.00"),
         midpoint=Decimal("152.00"),
         range_width=Decimal("8.00"),
-        range_width_pct=Decimal("5.41"),
+        range_width_pct=Decimal("0.0541"),  # 8/148 = 5.41%
         start_index=0,
         end_index=20,
         duration=21,
@@ -126,8 +254,10 @@ def spring_signal():
         stop_loss=Decimal("148.00"),
         target_levels=TargetLevels(primary_target=Decimal("156.00")),
         position_size=Decimal("100"),
+        position_size_unit="SHARES",
         risk_amount=Decimal("225.00"),  # (150.25-148)*100
-        r_multiple=Decimal("3.0"),
+        notional_value=Decimal("15025.00"),  # 150.25 * 100
+        r_multiple=Decimal("2.56"),  # (156-150.25)/(150.25-148) = 5.75/2.25 = 2.56
         confidence_score=85,
         confidence_components=ConfidenceComponents(
             pattern_confidence=88,
@@ -135,6 +265,7 @@ def spring_signal():
             volume_confidence=85,
             overall_confidence=85,
         ),
+        validation_chain=ValidationChain(pattern_id=uuid4()),
         timestamp=datetime(2024, 10, 15, 10, 30, tzinfo=UTC),
     )
 
@@ -151,8 +282,10 @@ def sos_signal():
         stop_loss=Decimal("148.00"),
         target_levels=TargetLevels(primary_target=Decimal("156.00")),
         position_size=Decimal("50"),
+        position_size_unit="SHARES",
         risk_amount=Decimal("225.00"),  # (152.50-148)*50
-        r_multiple=Decimal("2.5"),
+        notional_value=Decimal("7625.00"),  # 152.50 * 50
+        r_multiple=Decimal("0.78"),  # (156-152.5)/(152.5-148) = 3.5/4.5 = 0.78
         confidence_score=82,
         confidence_components=ConfidenceComponents(
             pattern_confidence=85,
@@ -160,6 +293,7 @@ def sos_signal():
             volume_confidence=80,
             overall_confidence=82,
         ),
+        validation_chain=ValidationChain(pattern_id=uuid4()),
         timestamp=datetime(2024, 10, 18, 14, 0, tzinfo=UTC),
     )
 
@@ -176,8 +310,10 @@ def lps_signal():
         stop_loss=Decimal("148.00"),
         target_levels=TargetLevels(primary_target=Decimal("156.00")),
         position_size=Decimal("50"),
+        position_size_unit="SHARES",
         risk_amount=Decimal("150.00"),  # (151-148)*50
-        r_multiple=Decimal("3.3"),
+        notional_value=Decimal("7550.00"),  # 151 * 50
+        r_multiple=Decimal("1.67"),  # (156-151)/(151-148) = 5/3 = 1.67
         confidence_score=80,
         confidence_components=ConfidenceComponents(
             pattern_confidence=82,
@@ -185,6 +321,7 @@ def lps_signal():
             volume_confidence=80,
             overall_confidence=80,
         ),
+        validation_chain=ValidationChain(pattern_id=uuid4()),
         timestamp=datetime(2024, 10, 20, 11, 15, tzinfo=UTC),
     )
 
@@ -224,7 +361,9 @@ class TestFullCampaignLifecycle:
         # =====================================================================
         print("\n=== Step 1: Spring Signal (First Entry) ===")
 
-        campaign = await campaign_service.get_or_create_campaign(spring_signal, trading_range)
+        campaign, allocation_plan = await campaign_service.get_or_create_campaign(
+            spring_signal, trading_range
+        )
 
         # Verify campaign created (AC: 1, 5)
         assert campaign is not None
@@ -246,7 +385,7 @@ class TestFullCampaignLifecycle:
         # =====================================================================
         print("\n=== Step 2: SOS Signal (Second Entry) ===")
 
-        campaign2 = await campaign_service.get_or_create_campaign(sos_signal, trading_range)
+        campaign2, _ = await campaign_service.get_or_create_campaign(sos_signal, trading_range)
 
         # Verify same campaign returned (AC: 6)
         assert campaign2.id == campaign.id  # Same campaign instance
@@ -271,7 +410,7 @@ class TestFullCampaignLifecycle:
         # =====================================================================
         print("\n=== Step 3: LPS Signal (Third Entry) ===")
 
-        campaign3 = await campaign_service.get_or_create_campaign(lps_signal, trading_range)
+        campaign3, _ = await campaign_service.get_or_create_campaign(lps_signal, trading_range)
 
         # Verify same campaign returned
         assert campaign3.id == campaign.id
@@ -350,7 +489,7 @@ class TestFullCampaignLifecycle:
         """Test campaign invalidation when stop hit."""
 
         # Create campaign with Spring
-        campaign = await campaign_service.get_or_create_campaign(spring_signal, trading_range)
+        campaign, _ = await campaign_service.get_or_create_campaign(spring_signal, trading_range)
         assert campaign.status == CampaignStatus.ACTIVE
 
         # Invalidate campaign (e.g., Spring low break)
@@ -374,11 +513,11 @@ class TestFullCampaignLifecycle:
         """Test only one active campaign exists per trading range (AC: 6)."""
 
         # Create first campaign
-        campaign1 = await campaign_service.get_or_create_campaign(spring_signal, trading_range)
+        campaign1, _ = await campaign_service.get_or_create_campaign(spring_signal, trading_range)
         assert campaign1.status == CampaignStatus.ACTIVE
 
         # Try to get campaign again (should return same one)
-        campaign2 = await campaign_service.get_or_create_campaign(spring_signal, trading_range)
+        campaign2, _ = await campaign_service.get_or_create_campaign(spring_signal, trading_range)
 
         # Verify same campaign instance
         assert campaign1.id == campaign2.id
