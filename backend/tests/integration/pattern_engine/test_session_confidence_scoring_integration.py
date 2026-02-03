@@ -18,8 +18,10 @@ from uuid import uuid4
 from src.models.forex import ForexSession, get_forex_session
 from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
+from src.models.phase_classification import WyckoffPhase
 from src.models.sos_breakout import SOSBreakout
 from src.models.spring import Spring
+from src.models.test import Test
 from src.models.trading_range import RangeStatus, TradingRange
 from src.signal_generator.sos_signal_generator import (
     generate_lps_signal,
@@ -92,8 +94,9 @@ def create_trading_range_with_levels(
     range_mock.id = uuid4()
     range_mock.symbol = "EUR/USD"
     range_mock.timeframe = "15m"
-    range_mock.creek = creek_price
     range_mock.status = RangeStatus.ACTIVE
+    range_mock.start_timestamp = datetime(2025, 1, 1, 0, 0, tzinfo=UTC)
+    range_mock.duration = 50
 
     # Mock Ice level
     ice_mock = Mock()
@@ -105,7 +108,50 @@ def create_trading_range_with_levels(
     jump_mock.price = jump_price
     range_mock.jump = jump_mock
 
+    # Mock Creek level (same structure as Ice/Jump)
+    creek_mock = Mock()
+    creek_mock.price = creek_price
+    range_mock.creek = creek_mock
+
     return range_mock
+
+
+def create_test_for_spring(spring: Spring) -> Test:
+    """
+    Create a valid Test confirmation for a Spring pattern.
+
+    Creates a test bar 5 bars after the spring with lower volume,
+    confirming FR13 requirements.
+    """
+    from datetime import timedelta
+
+    # Create test bar 5 bars (75 minutes for 15m timeframe) after spring
+    test_timestamp = spring.bar.timestamp + timedelta(minutes=75)
+    test_bar = OHLCVBar(
+        symbol=spring.bar.symbol,
+        timeframe=spring.bar.timeframe,
+        timestamp=test_timestamp,
+        open=spring.spring_low + Decimal("0.50"),
+        high=spring.spring_low + Decimal("1.00"),
+        low=spring.spring_low + Decimal("0.10"),  # Tests near spring low
+        close=spring.spring_low + Decimal("0.80"),
+        volume=int(spring.bar.volume * 0.5),  # Lower volume
+        spread=spring.bar.spread,
+    )
+
+    return Test(
+        bar=test_bar,
+        spring_reference=spring,
+        distance_from_spring_low=Decimal("0.10"),
+        distance_pct=Decimal("0.001"),  # 0.1% above spring low
+        volume_ratio=Decimal("0.3"),  # Low volume on test
+        spring_volume_ratio=spring.volume_ratio,
+        volume_decrease_pct=Decimal("0.4"),  # 40% lower than spring
+        bars_after_spring=5,
+        holds_spring_low=True,
+        detection_timestamp=datetime.now(UTC),
+        spring_id=spring.id,
+    )
 
 
 # ============================================================================
@@ -344,18 +390,23 @@ class TestTradeSignalGenerationFiltering:
             is_tradeable=True,
         )
 
-        # Generate signal
+        # Create test confirmation (FR13 requirement)
+        test = create_test_for_spring(spring)
+
+        # Generate signal with all required parameters
         signal = generate_spring_signal(
             spring=spring,
+            test=test,
             range=trading_range,
             confidence=85,
-            urgency="STANDARD",
+            phase=WyckoffPhase.C,
+            account_size=Decimal("100000"),
         )
 
         # AC 2.3: Signal should be generated
         assert signal is not None, "Tradeable pattern should generate signal"
         assert signal.confidence == 85
-        assert signal.entry_type == "SPRING_ENTRY"
+        assert signal.pattern_type == "SPRING"
 
     def test_non_tradeable_pattern_no_signal(self):
         """
@@ -408,15 +459,20 @@ class TestTradeSignalGenerationFiltering:
         assert spring is not None, "Pattern should be detected and stored"
         assert spring.is_tradeable is False
 
-        # Attempt to generate signal
+        # Create test confirmation (FR13 requirement)
+        test = create_test_for_spring(spring)
+
+        # Attempt to generate signal with all required parameters
         signal = generate_spring_signal(
             spring=spring,
+            test=test,
             range=trading_range,
             confidence=65,
-            urgency="STANDARD",
+            phase=WyckoffPhase.C,
+            account_size=Decimal("100000"),
         )
 
-        # AC 2.3: No signal should be generated
+        # AC 2.3: No signal should be generated (pattern is not tradeable)
         assert signal is None, "Non-tradeable pattern should not generate signal"
 
     def test_mixed_patterns_selective_signals(self):
