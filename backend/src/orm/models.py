@@ -8,6 +8,7 @@ Note: OHLCVBar (OHLCVBarModel) exists in src/repositories/models.py.
 
 Models:
 -------
+- SectorMappingORM: Symbol-to-sector GICS classification
 - TradingRange: Wyckoff trading ranges (accumulation/distribution)
 - User: User accounts
 - UserSettingsDB: User settings
@@ -78,6 +79,61 @@ class StringListType(TypeDecorator):
         if value is None:
             return value
         return value  # Both dialects return lists directly
+
+
+class SectorMappingORM(Base):
+    """
+    Sector mapping for symbol-to-sector classification (Story 11.9 Task 3).
+
+    Maps stock symbols to GICS sectors for sector breakdown analytics.
+    Also tracks relative strength scores for sector leader identification.
+
+    Table: sector_mapping
+    Primary Key: symbol (String)
+    Indexes: idx_sector_mapping_sector (sector_name)
+
+    See Also:
+        Alembic migration 015_create_sector_mapping.py
+    """
+
+    __tablename__ = "sector_mapping"
+
+    # Primary key - stock ticker symbol
+    symbol: Mapped[str] = mapped_column(
+        String(10),
+        primary_key=True,
+    )
+
+    # GICS sector classification
+    sector_name: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    # GICS industry group
+    industry: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    # Relative strength score vs SPY (Task 7)
+    rs_score: Mapped[Decimal | None] = mapped_column(
+        NUMERIC(10, 4),
+        nullable=True,
+    )
+
+    # Top 20% RS within sector
+    is_sector_leader: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+    )
+
+    # When RS was last calculated
+    last_updated: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
 
 
 class TradingRange(Base):
