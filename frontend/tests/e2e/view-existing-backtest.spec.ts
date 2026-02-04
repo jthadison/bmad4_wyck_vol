@@ -1,9 +1,24 @@
+/**
+ * E2E test for viewing existing backtest reports without TypeScript errors.
+ *
+ * Uses Playwright route interception with mock fixtures to ensure tests run
+ * reliably without requiring a database with existing backtest data.
+ *
+ * Updated: Issue #277 - Add fixtures for backtest report E2E tests
+ */
 import { test, expect } from '@playwright/test'
+import {
+  TEST_BACKTEST_ID_1,
+  setupBacktestMocks,
+} from './fixtures/backtest-fixtures'
 
-const BASE_URL = 'http://localhost:5173'
-const API_BASE_URL = 'http://localhost:8000/api/v1'
+const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
 
 test.describe('View Existing Backtest Report', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupBacktestMocks(page)
+  })
+
   test('should view existing backtest report without TypeScript errors', async ({
     page,
   }) => {
@@ -21,32 +36,37 @@ test.describe('View Existing Backtest Report', () => {
       pageErrors.push(error.message)
     })
 
-    // Step 1: Get list of existing backtests
-    const listResponse = await fetch(`${API_BASE_URL}/backtest/results`)
-    expect(listResponse.ok).toBe(true)
-    const { results } = await listResponse.json()
-    expect(results.length).toBeGreaterThan(0)
-
-    const firstBacktestId = results[0].backtest_run_id
-    console.log(`Testing with existing backtest: ${firstBacktestId}`)
-
-    // Step 2: Navigate to backtest results list
+    // Step 1: Navigate to backtest results list
     await page.goto(`${BASE_URL}/backtest/results`)
     await page.waitForLoadState('domcontentloaded')
 
-    // Step 3: Find and click View Report button
+    // Wait for table to be visible
+    await expect(page.locator('table')).toBeVisible({ timeout: 10000 })
+
+    // Verify we have results from mocked data
+    const rows = page.locator('table tbody tr')
+    await expect(rows).toHaveCount(3)
+
+    console.log('Testing with mocked backtest data')
+
+    // Step 2: Find and click View Report button
     const viewReportLink = page.locator('a[href*="/backtest/results/"]').first()
     await expect(viewReportLink).toBeVisible({ timeout: 10000 })
     await viewReportLink.click()
 
-    // Step 4: Wait for report page to load
+    // Step 3: Wait for report page to load
     await page.waitForURL(/\/backtest\/results\/.+/)
     await page.waitForLoadState('domcontentloaded')
+
+    // Wait for content to load
+    await expect(page.locator('main h1').first()).toContainText('AAPL', {
+      timeout: 10000,
+    })
 
     // Wait a bit for any errors to appear
     await page.waitForTimeout(2000)
 
-    // Step 5: Verify no TypeScript errors about total_return_pct or big.js
+    // Step 4: Verify no TypeScript errors about total_return_pct or big.js
     const hasTotalReturnPctError = consoleErrors.some((err) =>
       err.includes('total_return_pct')
     )
@@ -66,11 +86,11 @@ test.describe('View Existing Backtest Report', () => {
 
     // Print all errors for debugging
     if (consoleErrors.length > 0) {
-      console.log('\n📋 Console errors:')
+      console.log('\nConsole errors:')
       consoleErrors.forEach((err, i) => console.log(`  ${i + 1}. ${err}`))
     }
     if (pageErrors.length > 0) {
-      console.log('\n❌ Page errors:')
+      console.log('\nPage errors:')
       pageErrors.forEach((err, i) => console.log(`  ${i + 1}. ${err}`))
     }
 
@@ -80,8 +100,32 @@ test.describe('View Existing Backtest Report', () => {
 
     if (!hasTotalReturnPctError && !hasUndefinedError) {
       console.log(
-        '\n✅ View Report test PASSED - No TypeScript errors related to total_return_pct or big.js!'
+        '\nView Report test PASSED - No TypeScript errors related to total_return_pct or big.js!'
       )
     }
+  })
+
+  test('should display all report sections correctly', async ({ page }) => {
+    // Navigate directly to detail page
+    await page.goto(`${BASE_URL}/backtest/results/${TEST_BACKTEST_ID_1}`)
+    await page.waitForLoadState('domcontentloaded')
+
+    // Wait for content to load
+    await expect(page.locator('main h1').first()).toContainText('AAPL', {
+      timeout: 10000,
+    })
+
+    // Verify breadcrumbs are present
+    await expect(page.locator('nav[aria-label="Breadcrumb"]')).toBeVisible()
+
+    // Verify download buttons are present and enabled
+    await expect(page.getByRole('button', { name: /HTML/i })).toBeEnabled()
+    await expect(page.getByRole('button', { name: /PDF/i })).toBeEnabled()
+    await expect(page.getByRole('button', { name: /CSV/i })).toBeEnabled()
+
+    // Verify Back to List link is present
+    await expect(page.getByRole('link', { name: /Back.*List/i })).toBeVisible()
+
+    console.log('All report sections displayed correctly!')
   })
 })
