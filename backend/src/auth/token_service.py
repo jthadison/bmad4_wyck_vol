@@ -5,10 +5,11 @@ Handles generation, validation, and refresh of JWT access and refresh tokens.
 """
 
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Optional
 from uuid import UUID
 
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 
 
 class TokenService:
@@ -19,7 +20,7 @@ class TokenService:
         secret_key: str,
         algorithm: str = "HS256",
         access_token_expire_minutes: int = 30,
-        refresh_token_expire_days: int = 7
+        refresh_token_expire_days: int = 7,
     ):
         """
         Initialize token service
@@ -100,7 +101,7 @@ class TokenService:
         token = jwt.encode(claims, self.secret_key, algorithm=self.algorithm)
         return token
 
-    def create_token_pair(self, user_id: UUID) -> Tuple[str, str]:
+    def create_token_pair(self, user_id: UUID) -> tuple[str, str]:
         """
         Create both access and refresh tokens
 
@@ -141,7 +142,7 @@ class TokenService:
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             return payload
-        except JWTError:
+        except PyJWTError:
             return None
 
     def verify_access_token(self, token: str) -> Optional[UUID]:
