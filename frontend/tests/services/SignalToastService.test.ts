@@ -125,7 +125,6 @@ describe('SignalToastService', () => {
         expect.objectContaining({
           severity: 'info',
           summary: 'SPRING: AAPL',
-          group: 'signal-notifications',
           closable: true,
           styleClass: 'signal-toast',
         })

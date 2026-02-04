@@ -150,6 +150,9 @@ export class SignalToastService {
     // Create custom toast content as HTML
     const toastContent = this.buildToastContent(signal, confidenceGrade)
 
+    // Note: Do not add 'group' property - PrimeVue requires matching group props
+    // on both toast.add() and <Toast> component. Since App.vue uses default Toast
+    // without a group, we must not specify a group here.
     this.toastService.add({
       severity: 'info',
       summary: `${signal.pattern_type}: ${signal.symbol}`,
