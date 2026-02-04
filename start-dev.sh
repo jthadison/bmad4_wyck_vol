@@ -61,10 +61,11 @@ until docker-compose exec -T redis redis-cli ping > /dev/null 2>&1; do
 done
 echo -e "${GREEN}Redis is ready!${NC}"
 
-# Start Backend
+# Start Backend (using run.py for proper asyncio event loop on all platforms)
 echo -e "\n${YELLOW}Starting Backend API server...${NC}"
 cd backend
-poetry run uvicorn src.api.main:app --reload --port 8000 &
+# IMPORTANT: Use run.py to ensure correct event loop policy (required for psycopg3 on Windows)
+poetry run python run.py --reload &
 BACKEND_PID=$!
 cd ..
 
