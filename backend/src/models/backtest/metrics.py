@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 __all__ = [
     "BacktestMetrics",
@@ -67,6 +67,20 @@ class BacktestMetrics(BaseModel):
     total_trades: int = Field(default=0, ge=0, description="Total completed trades")
     winning_trades: int = Field(default=0, ge=0, description="Winning trades")
     losing_trades: int = Field(default=0, ge=0, description="Losing trades")
+    # Optional fields for backward compatibility (used by walk-forward, report tests)
+    total_pnl: Decimal = Field(default=Decimal("0.0"), description="Total P&L")
+    total_commission: Decimal = Field(default=Decimal("0.0"), description="Total commission")
+    total_slippage: Decimal = Field(default=Decimal("0.0"), description="Total slippage")
+    final_equity: Decimal = Field(default=Decimal("0.0"), description="Final equity value")
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_aliases(cls, data):
+        """Accept alternate field names for backward compatibility."""
+        if isinstance(data, dict):
+            if "avg_r_multiple" in data and "average_r_multiple" not in data:
+                data["average_r_multiple"] = data.pop("avg_r_multiple")
+        return data
 
     # Alias for compatibility
     @property

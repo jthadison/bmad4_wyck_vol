@@ -17,7 +17,7 @@ from src.repositories.config_repository import OptimisticLockError
 from src.services.config_service import ConfigurationService
 from src.services.impact_analysis_service import ImpactAnalysisService
 
-router = APIRouter(prefix="/config", tags=["configuration"])
+router = APIRouter(prefix="/api/v1/config", tags=["configuration"])
 
 
 class ConfigUpdateRequest(BaseModel):
