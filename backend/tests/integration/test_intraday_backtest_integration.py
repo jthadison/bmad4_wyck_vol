@@ -25,9 +25,22 @@ Author: Developer Agent (Story 13.5)
 """
 
 
+import os
+
 import pytest
 
-from scripts.eurusd_multi_timeframe_backtest import EURUSDMultiTimeframeBacktest
+# These tests require POLYGON_API_KEY for market data download
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("POLYGON_API_KEY"),
+    reason="POLYGON_API_KEY environment variable not set",
+)
+
+# Guard import - only available when POLYGON_API_KEY is set
+if os.environ.get("POLYGON_API_KEY"):
+    from scripts.eurusd_multi_timeframe_backtest import EURUSDMultiTimeframeBacktest
+else:
+    EURUSDMultiTimeframeBacktest = None  # type: ignore[misc,assignment]
+
 from src.models.forex import ForexSession, get_forex_session
 from src.models.lps import LPS
 from src.models.sos_breakout import SOSBreakout
