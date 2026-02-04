@@ -4,11 +4,11 @@
 # This must be set before any asyncio code runs
 # NOTE: For best results, start the backend using `python run.py` which sets
 # the policy before uvicorn is imported
+import asyncio
 import sys
+from contextlib import asynccontextmanager
 
 if sys.platform == "win32":
-    import asyncio
-
     # Check if we need to set the policy (may already be set by run.py)
     current_policy = asyncio.get_event_loop_policy()
     if not isinstance(current_policy, asyncio.WindowsSelectorEventLoopPolicy):
@@ -65,10 +65,20 @@ from src.tasks.circuit_breaker_scheduler import (
 
 logger = structlog.get_logger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown logic."""
+    await startup_event()
+    yield
+    await shutdown_event()
+
+
 app = FastAPI(
     title="BMAD Wyckoff Volume Pattern Detection API",
     description="API for Wyckoff pattern detection and trade signal generation",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Setup Prometheus instrumentation (Story 19.20)
@@ -203,7 +213,6 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 _coordinator: MarketDataCoordinator | None = None
 
 
-@app.on_event("startup")
 async def startup_event() -> None:
     """
     FastAPI startup event handler.
@@ -308,6 +317,7 @@ async def _initialize_signal_scanner_service() -> None:
         from src.api.routes.scanner import set_scanner_service
         from src.api.websocket import manager as websocket_manager
         from src.database import async_session_maker
+        from src.orchestrator.service import get_orchestrator
         from src.repositories.scanner_repository import ScannerRepository
         from src.services.signal_scanner_service import SignalScannerService
 
@@ -324,6 +334,9 @@ async def _initialize_signal_scanner_service() -> None:
             session_factory=async_session_maker,
             websocket_manager=websocket_manager,
         )
+
+        # Wire up orchestrator for symbol analysis
+        scanner_service.set_orchestrator(get_orchestrator())
 
         # Register scanner service for API routes
         set_scanner_service(scanner_service)
@@ -385,7 +398,6 @@ async def _initialize_search_service() -> None:
         # Don't crash the app - search endpoint will return 503
 
 
-@app.on_event("shutdown")
 async def shutdown_event() -> None:
     """
     FastAPI shutdown event handler.

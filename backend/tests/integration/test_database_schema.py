@@ -14,26 +14,14 @@ These tests validate all acceptance criteria from Story 1.2:
 10. Query performance <50ms for 1-year lookups
 """
 
-import asyncio
-
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import async_session_maker, engine
 
-
-@pytest.fixture(scope="module")
-def event_loop():
-    """Create event loop for async tests (Windows compatibility)."""
-    import sys
-
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# Note: We rely on pytest-asyncio's built-in event loop management with asyncio_mode="auto".
+# The deprecated custom event_loop fixture was removed to avoid "Event loop is closed" errors.
 
 
 @pytest.fixture

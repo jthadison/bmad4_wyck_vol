@@ -3,7 +3,7 @@ Shared fixtures for refactoring test suite (Story 22.14).
 
 Provides common test data and fixtures for validating refactoring work.
 
-Note: Fixtures from tests/conftest.py (async_client, event_loop, etc.) are
+Note: Fixtures from tests/conftest.py (async_client, etc.) are
 automatically inherited via pytest's conftest discovery mechanism.
 """
 

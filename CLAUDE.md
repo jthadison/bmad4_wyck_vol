@@ -79,7 +79,7 @@ bmad4_wyck_vol/
 - **Validation**: Pydantic 2.5+
 - **Testing**: pytest 8.0+, pytest-asyncio
 - **Type Checking**: mypy 1.8+, ruff 0.1+
-- **Auth**: python-jose, passlib (JWT)
+- **Auth**: PyJWT, passlib (JWT)
 
 ### Frontend Stack
 
