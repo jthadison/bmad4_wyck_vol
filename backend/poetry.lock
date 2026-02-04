@@ -4201,6 +4201,22 @@ pytest = ">=7,<9"
 testing = ["pytest-asyncio (==0.23.*)", "pytest-cov (==4.*)"]
 
 [[package]]
+name = "pytest-json-report"
+version = "1.5.0"
+description = "A pytest plugin to report test results as JSON files"
+optional = false
+python-versions = "*"
+groups = ["dev"]
+files = [
+    {file = "pytest-json-report-1.5.0.tar.gz", hash = "sha256:2dde3c647851a19b5f3700729e8310a6e66efb2077d674f27ddea3d34dc615de"},
+    {file = "pytest_json_report-1.5.0-py3-none-any.whl", hash = "sha256:9897b68c910b12a2e48dd849f9a284b2c79a732a8a9cb398452ddd23d3c8c325"},
+]
+
+[package.dependencies]
+pytest = ">=3.8.0"
+pytest-metadata = "*"
+
+[[package]]
 name = "pytest-metadata"
 version = "3.1.1"
 description = "pytest plugin for test session metadata"
@@ -6048,4 +6064,4 @@ test = ["pytest"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "6e6710cfde547207fe42b51afc2e29e0dacb4781d0f91967245acdc8e8424896"
+content-hash = "41dab4b799292bb415c3ab4523d0466f44b4829d33ce200bf7f55e71aaa5252a"
