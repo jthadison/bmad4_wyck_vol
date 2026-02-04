@@ -155,7 +155,6 @@ export class SignalToastService {
       summary: `${signal.pattern_type}: ${signal.symbol}`,
       detail: toastContent,
       life: toastDuration * 1000,
-      group: 'signal-notifications',
       closable: true,
       styleClass: 'signal-toast',
     })

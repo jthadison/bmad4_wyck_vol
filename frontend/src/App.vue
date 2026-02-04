@@ -109,11 +109,33 @@ const signalHandler = (message: WebSocketMessage) => {
   }
 }
 
+// Expose a test helper on window for E2E tests (Story 19.8)
+// This allows tests to trigger signal toast notifications without WebSocket
+declare global {
+  interface Window {
+    __BMAD_TEST__?: {
+      triggerSignal: (signal: unknown) => void
+    }
+  }
+}
+
 onMounted(() => {
   console.log('[App.vue] Component mounted!')
 
   // Subscribe to signal:new events from WebSocket
   websocketService.subscribe('signal:new', signalHandler)
+
+  // Expose test helper for E2E tests - allows triggering signals without WebSocket
+  window.__BMAD_TEST__ = {
+    triggerSignal: (signal: unknown) => {
+      console.log('[App.vue] Test signal triggered:', signal)
+      signalToastService.handleSignalNotification(
+        signal as Parameters<
+          typeof signalToastService.handleSignalNotification
+        >[0]
+      )
+    },
+  }
 
   // Connect WebSocket
   websocketService.connect()
@@ -124,5 +146,8 @@ onUnmounted(() => {
 
   // Unsubscribe from WebSocket events using same handler reference
   websocketService.unsubscribe('signal:new', signalHandler)
+
+  // Clean up test helper
+  delete window.__BMAD_TEST__
 })
 </script>
