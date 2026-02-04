@@ -86,19 +86,14 @@ import { signalToastService } from '@/services/SignalToastService'
 import type { SignalNewMessage, WebSocketMessage } from '@/types/websocket'
 import { isSignalNewMessage } from '@/types/websocket'
 
-console.log('[App.vue] Script setup executing')
-
 // Initialize PrimeVue toast
 const toast = useToast()
 
 // Initialize SignalToastService with PrimeVue toast instance
 signalToastService.setToastService(toast)
 
-console.log('[App.vue] Toast initialized')
-
 // WebSocket signal handler
 function handleSignalNotification(message: SignalNewMessage): void {
-  console.log('[App.vue] New signal notification received:', message.data)
   signalToastService.handleSignalNotification(message.data)
 }
 
@@ -109,20 +104,45 @@ const signalHandler = (message: WebSocketMessage) => {
   }
 }
 
-onMounted(() => {
-  console.log('[App.vue] Component mounted!')
+// Expose a test helper on window for E2E tests (Story 19.8)
+// This allows tests to trigger signal toast notifications without WebSocket
+declare global {
+  interface Window {
+    __BMAD_TEST__?: {
+      triggerSignal: (signal: unknown) => void
+    }
+  }
+}
 
+onMounted(() => {
   // Subscribe to signal:new events from WebSocket
   websocketService.subscribe('signal:new', signalHandler)
+
+  // Expose test helper for E2E tests - allows triggering signals without WebSocket
+  // Only expose in development or test mode, never in production builds
+  if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+    window.__BMAD_TEST__ = {
+      triggerSignal: (signal: unknown) => {
+        signalToastService.handleSignalNotification(
+          signal as Parameters<
+            typeof signalToastService.handleSignalNotification
+          >[0]
+        )
+      },
+    }
+  }
 
   // Connect WebSocket
   websocketService.connect()
 })
 
 onUnmounted(() => {
-  console.log('[App.vue] Component unmounting')
-
   // Unsubscribe from WebSocket events using same handler reference
   websocketService.unsubscribe('signal:new', signalHandler)
+
+  // Clean up test helper (only exists in dev/test mode)
+  if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+    delete window.__BMAD_TEST__
+  }
 })
 </script>
