@@ -2,15 +2,20 @@
 
 # Fix for Windows: psycopg3 requires SelectorEventLoop on Windows
 # This must be set before any asyncio code runs
+# NOTE: For best results, start the backend using `python run.py` which sets
+# the policy before uvicorn is imported
 import sys
 
 if sys.platform == "win32":
     import asyncio
 
-    # Set the event loop policy to use SelectorEventLoop instead of ProactorEventLoop
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    print("[WINDOWS FIX] Set event loop policy to WindowsSelectorEventLoopPolicy", flush=True)
-    print(f"[WINDOWS FIX] Current policy: {asyncio.get_event_loop_policy()}", flush=True)
+    # Check if we need to set the policy (may already be set by run.py)
+    current_policy = asyncio.get_event_loop_policy()
+    if not isinstance(current_policy, asyncio.WindowsSelectorEventLoopPolicy):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        print("[WINDOWS FIX] Set event loop policy to WindowsSelectorEventLoopPolicy", flush=True)
+    else:
+        print("[WINDOWS FIX] SelectorEventLoop policy already set", flush=True)
 
 import structlog
 from fastapi import FastAPI, Request, WebSocket
@@ -501,10 +506,12 @@ async def detailed_health_check() -> dict[str, object]:
 
     # Check database connection
     try:
+        from sqlalchemy import text
+
         from src.database import async_session_maker
 
         async with async_session_maker() as session:
-            await session.execute("SELECT 1")
+            await session.execute(text("SELECT 1"))
         health_status["database"] = "connected"
     except Exception as e:
         health_status["database"] = f"error: {str(e)}"

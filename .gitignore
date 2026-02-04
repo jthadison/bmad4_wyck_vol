@@ -212,7 +212,6 @@ playwright-test-output.txt
 backtest-response.json
 
 # Development Scripts and Debug Files
-backend/run.py
 backend/test_response.json
 frontend/debug-screenshot.png
 restart-dev.ps1
