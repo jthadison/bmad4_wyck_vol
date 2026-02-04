@@ -49,12 +49,12 @@ class MockDetector(PatternDetector):
 backend_dir = Path(__file__).parent.parent.parent
 dataset_path = backend_dir / "tests" / "datasets" / "labeled_patterns_v1.parquet"
 
-pytestmark = pytest.mark.skipif(
-    not dataset_path.exists(), reason="Labeled dataset not available (Story 12.2 incomplete)"
-)
-
-# Mark all tests as slow (processes 200+ patterns)
-pytestmark = pytest.mark.slow
+pytestmark = [
+    pytest.mark.skipif(
+        not dataset_path.exists(), reason="Labeled dataset not available (Story 12.2 incomplete)"
+    ),
+    pytest.mark.slow,
+]
 
 
 # ============================================================================

@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
     "BacktestPreviewRequest",
@@ -256,3 +256,5 @@ class BacktestConfig(BaseModel):
         default_factory=lambda: {"max_portfolio_heat": 0.10, "max_campaign_risk": 0.05},
         description="Risk limit configuration",
     )
+
+    model_config = ConfigDict(extra="ignore")

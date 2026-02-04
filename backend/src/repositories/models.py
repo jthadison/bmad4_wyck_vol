@@ -201,7 +201,7 @@ class CampaignModel(Base):
         JSON,
         nullable=False,
         default=dict,
-        server_default="'{}'::jsonb",
+        server_default="'{}'",
         comment="Entry details by pattern type (SPRING/SOS/LPS mapping)",
     )
 

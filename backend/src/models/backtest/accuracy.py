@@ -250,8 +250,25 @@ class LabeledPattern(BaseModel):
     campaign_id: UUID | None = Field(None, description="Associated campaign ID")
     notes: str | None = Field(None, max_length=500, description="Additional context")
 
+    @field_validator("correctness", mode="before")
+    @classmethod
+    def coerce_correctness(cls, v) -> str:
+        """Coerce boolean correctness to string for backward compatibility."""
+        if isinstance(v, bool):
+            return "CORRECT" if v else "INCORRECT"
+        return v
+
+    @field_validator("pattern_date", mode="before")
+    @classmethod
+    def coerce_date(cls, v):
+        """Coerce datetime to date for backward compatibility."""
+        if isinstance(v, datetime):
+            return v.date()
+        return v
+
     model_config = ConfigDict(
         populate_by_name=True,  # Allow both 'pattern_date' and 'date' alias
+        extra="ignore",  # Ignore extra fields from tests (backward compat)
         json_schema_extra={
             "example": {
                 "symbol": "AAPL",

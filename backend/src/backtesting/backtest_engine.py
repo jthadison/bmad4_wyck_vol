@@ -30,5 +30,6 @@ warnings.warn(
 
 # Re-export for backward compatibility
 from src.backtesting.legacy.backtest_engine import BacktestEngine
+from src.models.backtest import BacktestConfig
 
-__all__ = ["BacktestEngine"]
+__all__ = ["BacktestEngine", "BacktestConfig"]

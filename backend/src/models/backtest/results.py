@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .config import BacktestConfig
 from .costs import (
@@ -420,3 +420,17 @@ class BacktestResult(BaseModel):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), description="When backtest was created"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_metrics_alias(cls, data):
+        """Accept 'metrics' as an alias for 'summary' for backward compatibility."""
+        if isinstance(data, dict):
+            if "metrics" in data and "summary" not in data:
+                data["summary"] = data.pop("metrics")
+        return data
+
+    @property
+    def metrics(self) -> BacktestMetrics:
+        """Backward-compatible alias for 'summary' field."""
+        return self.summary

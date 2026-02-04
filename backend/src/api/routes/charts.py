@@ -17,7 +17,7 @@ from src.repositories.chart_repository import ChartRepository
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/charts", tags=["charts"])
+router = APIRouter(prefix="/api/v1/charts", tags=["charts"])
 
 
 @router.get(
