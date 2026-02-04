@@ -21,20 +21,17 @@ export const mockTrade1 = {
   quantity: 100,
   entry_price: '150.00',
   exit_price: '165.00',
-  entry_timestamp: '2023-01-15T10:30:00Z',
-  exit_timestamp: '2023-02-01T14:00:00Z',
-  realized_pnl: '1500.00',
+  entry_date: '2023-01-15T10:30:00Z',
+  exit_date: '2023-02-01T14:00:00Z',
+  pnl: '1500.00',
   commission: '10.00',
   slippage: '5.00',
-  entry_commission: '5.00',
-  exit_commission: '5.00',
-  entry_slippage: '2.50',
-  exit_slippage: '2.50',
   gross_pnl: '1515.00',
-  gross_r_multiple: '1.5',
   r_multiple: '1.45',
   pattern_type: 'SPRING',
   exit_reason: 'JUMP_LEVEL_HIT',
+  campaign_id: null,
+  duration_hours: 412,
 }
 
 export const mockTrade2 = {
@@ -45,20 +42,17 @@ export const mockTrade2 = {
   quantity: 50,
   entry_price: '155.00',
   exit_price: '152.00',
-  entry_timestamp: '2023-02-10T09:30:00Z',
-  exit_timestamp: '2023-02-15T15:30:00Z',
-  realized_pnl: '-150.00',
+  entry_date: '2023-02-10T09:30:00Z',
+  exit_date: '2023-02-15T15:30:00Z',
+  pnl: '-150.00',
   commission: '8.00',
   slippage: '4.00',
-  entry_commission: '4.00',
-  exit_commission: '4.00',
-  entry_slippage: '2.00',
-  exit_slippage: '2.00',
   gross_pnl: '-138.00',
-  gross_r_multiple: '-0.3',
   r_multiple: '-0.35',
   pattern_type: 'LPS',
   exit_reason: 'STOP_LOSS',
+  campaign_id: null,
+  duration_hours: 126,
 }
 
 // Summary metrics fixture
@@ -249,6 +243,8 @@ export const mockBacktestResult1 = {
   timeframe: '1d',
   start_date: '2023-01-01',
   end_date: '2023-06-30',
+  initial_capital: '100000.00',
+  final_capital: '115500.00',
   config: mockConfig,
   equity_curve: mockEquityCurve,
   trades: [mockTrade1, mockTrade2],
@@ -283,6 +279,7 @@ export const mockBacktestResult1 = {
   longest_losing_streak: 2,
   look_ahead_bias_check: true,
   execution_time_seconds: 2.5,
+  total_bars_analyzed: 130,
   created_at: '2023-07-01T10:00:00Z',
 }
 
@@ -293,6 +290,8 @@ export const mockBacktestResult2 = {
   timeframe: '1d',
   start_date: '2023-01-01',
   end_date: '2023-06-30',
+  initial_capital: '100000.00',
+  final_capital: '108200.00',
   config: { ...mockConfig, symbol: 'MSFT' },
   equity_curve: mockEquityCurve,
   trades: [mockTrade1],
@@ -313,6 +312,7 @@ export const mockBacktestResult2 = {
   longest_losing_streak: 1,
   look_ahead_bias_check: true,
   execution_time_seconds: 1.8,
+  total_bars_analyzed: 130,
   created_at: '2023-07-02T14:30:00Z',
 }
 
@@ -323,6 +323,8 @@ export const mockBacktestResult3 = {
   timeframe: '1d',
   start_date: '2023-04-01',
   end_date: '2023-06-30',
+  initial_capital: '100000.00',
+  final_capital: '94800.00',
   config: mockConfig,
   equity_curve: mockEquityCurve,
   trades: [mockTrade2],
@@ -343,6 +345,7 @@ export const mockBacktestResult3 = {
   longest_losing_streak: 4,
   look_ahead_bias_check: true,
   execution_time_seconds: 1.2,
+  total_bars_analyzed: 65,
   created_at: '2023-07-03T09:15:00Z',
 }
 
@@ -354,6 +357,8 @@ export const mockBacktestListSummary = [
     timeframe: '1d',
     start_date: '2023-01-01',
     end_date: '2023-06-30',
+    initial_capital: '100000.00',
+    final_capital: '115500.00',
     total_return_pct: '15.5',
     cagr: '18.2',
     sharpe_ratio: '1.45',
@@ -369,6 +374,8 @@ export const mockBacktestListSummary = [
     timeframe: '1d',
     start_date: '2023-01-01',
     end_date: '2023-06-30',
+    initial_capital: '100000.00',
+    final_capital: '108200.00',
     total_return_pct: '8.2',
     cagr: '12.5',
     sharpe_ratio: '1.15',
@@ -384,6 +391,8 @@ export const mockBacktestListSummary = [
     timeframe: '1d',
     start_date: '2023-04-01',
     end_date: '2023-06-30',
+    initial_capital: '100000.00',
+    final_capital: '94800.00',
     total_return_pct: '-5.2',
     cagr: '-8.5',
     sharpe_ratio: '-0.35',
@@ -456,3 +465,103 @@ export const mockCsvContent = `trade_id,symbol,side,quantity,entry_price,exit_pr
 ${mockTrade1.trade_id},AAPL,LONG,100,150.00,165.00,1500.00,1.45,SPRING
 ${mockTrade2.trade_id},AAPL,LONG,50,155.00,152.00,-150.00,-0.35,LPS
 `
+
+// Import Playwright types for shared mock setup
+import type { Page, Route } from '@playwright/test'
+
+/**
+ * Setup route interception for backtest API endpoints.
+ * This mocks the backend responses so tests don't require a database.
+ *
+ * Note: The frontend makes API calls to http://localhost:8000/api/v1 (the backend),
+ * so we need to intercept requests to that URL, not the frontend URL.
+ *
+ * @param page - Playwright Page object
+ * @param options - Optional configuration for mock behavior
+ */
+export async function setupBacktestMocks(
+  page: Page,
+  options?: {
+    includeDownloads?: boolean
+  }
+) {
+  const includeDownloads = options?.includeDownloads ?? true
+
+  // Mock all backtest results endpoints - use a broad pattern to catch all variations
+  await page.route(/.*\/api\/v1\/backtest\/results.*/, async (route: Route) => {
+    const url = route.request().url()
+
+    if (includeDownloads) {
+      // HTML report download
+      if (url.includes('/report/html')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          headers: {
+            'Content-Disposition': 'attachment; filename=backtest_AAPL.html',
+          },
+          body: mockHtmlReport,
+        })
+        return
+      }
+
+      // PDF report download
+      if (url.includes('/report/pdf')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/pdf',
+          headers: {
+            'Content-Disposition': 'attachment; filename=backtest_AAPL.pdf',
+          },
+          body: Buffer.from(mockPdfContent),
+        })
+        return
+      }
+
+      // CSV trades download
+      if (url.includes('/trades/csv')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/csv',
+          headers: {
+            'Content-Disposition':
+              'attachment; filename=backtest_trades_AAPL.csv',
+          },
+          body: mockCsvContent,
+        })
+        return
+      }
+    }
+
+    // Check if this is a detail request (has UUID path)
+    const uuidMatch = url.match(
+      /\/api\/v1\/backtest\/results\/([a-f0-9-]{36})(?:\?|$)/i
+    )
+    if (uuidMatch) {
+      const id = uuidMatch[1]
+      const result = getMockBacktestById(id)
+
+      if (result) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(result),
+        })
+      } else {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: `Backtest run ${id} not found` }),
+        })
+      }
+      return
+    }
+
+    // List endpoint (no UUID, just /results or /results?format=summary)
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockBacktestListResponse),
+    })
+  })
+}

@@ -16,105 +16,14 @@
  * Updated: Issue #277 - Add fixtures for backtest report E2E tests
  */
 
-import { test, expect, type Page, type Route } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import {
   TEST_BACKTEST_ID_1,
-  TEST_BACKTEST_ID_3,
-  mockBacktestListResponse,
-  mockBacktestResult1,
-  getMockBacktestById,
-  mockHtmlReport,
-  mockPdfContent,
-  mockCsvContent,
+  setupBacktestMocks,
 } from './fixtures/backtest-fixtures'
 
 // Test configuration
 const BASE_URL = process.env.DEPLOYMENT_URL || 'http://localhost:4173'
-
-/**
- * Setup route interception for backtest API endpoints.
- * This mocks the backend responses so tests don't require a database.
- *
- * Note: The frontend makes API calls to http://localhost:8000/api/v1 (the backend),
- * so we need to intercept requests to that URL, not the frontend URL.
- */
-async function setupBacktestMocks(page: Page) {
-  // Mock all backtest results endpoints - use a broad pattern to catch all variations
-  await page.route(/.*\/api\/v1\/backtest\/results.*/, async (route: Route) => {
-    const url = route.request().url()
-
-    // HTML report download
-    if (url.includes('/report/html')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html',
-        headers: {
-          'Content-Disposition': 'attachment; filename=backtest_AAPL.html',
-        },
-        body: mockHtmlReport,
-      })
-      return
-    }
-
-    // PDF report download
-    if (url.includes('/report/pdf')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/pdf',
-        headers: {
-          'Content-Disposition': 'attachment; filename=backtest_AAPL.pdf',
-        },
-        body: Buffer.from(mockPdfContent),
-      })
-      return
-    }
-
-    // CSV trades download
-    if (url.includes('/trades/csv')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/csv',
-        headers: {
-          'Content-Disposition':
-            'attachment; filename=backtest_trades_AAPL.csv',
-        },
-        body: mockCsvContent,
-      })
-      return
-    }
-
-    // Check if this is a detail request (has UUID path)
-    const uuidMatch = url.match(
-      /\/api\/v1\/backtest\/results\/([a-f0-9-]{36})(?:\?|$)/i
-    )
-    if (uuidMatch) {
-      const id = uuidMatch[1]
-      const result = getMockBacktestById(id)
-
-      if (result) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify(result),
-        })
-      } else {
-        await route.fulfill({
-          status: 404,
-          contentType: 'application/json',
-          body: JSON.stringify({ detail: `Backtest run ${id} not found` }),
-        })
-      }
-      return
-    }
-
-    // List endpoint (no UUID, just /results or /results?format=summary)
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(mockBacktestListResponse),
-    })
-  })
-}
 
 test.describe('Backtest Report Workflow', () => {
   // Setup mocks before each test
