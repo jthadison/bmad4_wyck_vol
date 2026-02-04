@@ -25,8 +25,8 @@ class LoginResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "access_token": "<jwt-access-token>",
+                "refresh_token": "<jwt-refresh-token>",
                 "token_type": "bearer",
                 "expires_in": 1800,
             }
@@ -43,7 +43,7 @@ class RefreshTokenRequest(BaseModel):
     """Request to refresh access token"""
 
     model_config = ConfigDict(
-        json_schema_extra={"example": {"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}}
+        json_schema_extra={"example": {"refresh_token": "<jwt-refresh-token>"}}
     )
 
     refresh_token: str = Field(..., description="JWT refresh token")
@@ -55,7 +55,7 @@ class RefreshTokenResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "access_token": "<jwt-access-token>",
                 "token_type": "bearer",
                 "expires_in": 1800,
             }

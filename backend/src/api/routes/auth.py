@@ -96,7 +96,7 @@ async def refresh_token(request: RefreshTokenRequest):
         ```bash
         curl -X POST http://localhost:8000/api/v1/auth/refresh \\
           -H "Content-Type: application/json" \\
-          -d '{"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}'
+          -d '{"refresh_token": "<jwt-refresh-token>"}'
         ```
 
     Returns:

@@ -1,0 +1,25 @@
+# Gitleaks configuration for false positive suppression
+# See: https://github.com/gitleaks/gitleaks#configuration
+
+title = "BMAD Wyckoff Gitleaks Config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+  description = "Global allowlist for known false positives in examples, tests, and docs"
+
+  paths = [
+    # Test fixtures with fake push notification keys (p256dh_key, auth_key)
+    '''backend/tests/integration/test_notification_repository\.py''',
+    '''backend/tests/unit/notifications/conftest\.py''',
+    '''backend/tests/unit/notifications/test_push_client\.py''',
+    # Documentation with example API key placeholders
+    '''docs/stories/epic-11/11\.7\.user-settings-preferences\.md''',
+  ]
+
+  regexTarget = "line"
+  regexes = [
+    # Placeholder bearer tokens in docstring curl examples (settings.py, auth.py)
+    '''Bearer YOUR_JWT_TOKEN''',
+  ]
