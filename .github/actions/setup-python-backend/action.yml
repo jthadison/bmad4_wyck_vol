@@ -19,20 +19,20 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Python ${{ inputs.python-version }}
-      uses: actions/setup-python@f677139bbe732f74a09dfb398b0a54e3ea03947f  # v5.2.0
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
       with:
         python-version: ${{ inputs.python-version }}
         cache: 'pip'
 
     - name: Install Poetry
-      uses: snok/install-poetry@76e04ef03d97c41f76dcd0e3bdfe285917156664  # v1.3.5
+      uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a  # v1
       with:
         version: ${{ inputs.poetry-version }}
         virtualenvs-create: true
         virtualenvs-in-project: true
 
     - name: Cache Poetry dependencies
-      uses: actions/cache@704facf57c6b727bc533a60cbb73474fad876c91  # v4.1.1
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
       with:
         path: |
           ${{ inputs.working-directory }}/.venv

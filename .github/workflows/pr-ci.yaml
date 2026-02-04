@@ -488,7 +488,7 @@ jobs:
           pip-audit -r requirements.txt --strict
 
       - name: Run Gitleaks secret detection
-        uses: gitleaks/gitleaks-action@4de1ad2d3e726d81ba5b5dc9ef9e68d75269a29e  # v2.4.0
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
