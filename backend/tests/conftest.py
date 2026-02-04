@@ -4,7 +4,6 @@ Pytest configuration and fixtures for backend tests.
 Provides shared fixtures for database sessions, authentication, and test clients.
 """
 
-import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import UUID, uuid4
@@ -23,17 +22,9 @@ from src.database import Base, get_db
 # Database Fixtures
 # =============================
 
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """
-    Create event loop for async tests.
-
-    Uses session scope to avoid creating new loop for each test.
-    """
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# Note: We rely on pytest-asyncio's built-in event loop management with asyncio_mode="auto".
+# The deprecated custom event_loop fixture was removed to avoid "Event loop is closed" errors
+# that occurred when the session-scoped loop was closed after the first test module.
 
 
 @pytest_asyncio.fixture(scope="function")
