@@ -40,7 +40,7 @@ class TestHelpAPI:
             )
             VALUES (
                 :slug, 'API Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now
+                'FAQ', '[]', 'test', :now
             )
             ON CONFLICT (slug) DO NOTHING
             """
@@ -98,7 +98,7 @@ class TestHelpAPI:
             )
             VALUES (
                 :slug, 'Test Article', 'Markdown', '<p>HTML</p>',
-                'FAQ', '[]'::json, 'test', :now, 0
+                'FAQ', '[]', 'test', :now, 0
             )
             """
             ),
@@ -148,7 +148,7 @@ class TestHelpAPI:
             VALUES (
                 :slug, 'Searchable UniqueKeyword123', 'Content UniqueKeyword123',
                 '<p>Content UniqueKeyword123</p>',
-                'FAQ', '[]'::json, 'uniquekeyword123', :now
+                'FAQ', '[]', 'uniquekeyword123', :now
             )
             """
             ),
@@ -189,7 +189,7 @@ class TestHelpAPI:
             )
             VALUES (
                 'Test Term', :slug, 'Short def', '', '<p>Full def</p>',
-                'C', '[]'::json, '[]'::json, :now
+                'C', '[]', '[]', :now
             )
             """
             ),
@@ -223,7 +223,7 @@ class TestHelpAPI:
             )
             VALUES (
                 'Phase E Term', :slug, 'Def', '', '<p>Full</p>',
-                'E', '[]'::json, '[]'::json, :now
+                'E', '[]', '[]', :now
             )
             """
             ),
@@ -254,23 +254,22 @@ class TestHelpAPI:
     ):
         """Test POST /api/v1/help/feedback creates feedback."""
         # Insert test article
-        result = await db_session.execute(
+        article_id = str(uuid4())
+        await db_session.execute(
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
+                id, slug, title, content_markdown, content_html,
                 category, tags, keywords, last_updated
             )
             VALUES (
-                :slug, 'Feedback Article', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now
+                :id, :slug, 'Feedback Article', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now
             )
-            RETURNING id
             """
             ),
-            {"slug": f"feedback-article-{uuid4()}", "now": datetime.now(UTC)},
+            {"id": article_id, "slug": f"feedback-article-{uuid4()}", "now": datetime.now(UTC)},
         )
-        article_id = str(result.scalar())
         await db_session.commit()
 
         # Submit feedback

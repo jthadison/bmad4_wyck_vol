@@ -54,7 +54,7 @@ class TestHelpRepository:
             )
             VALUES (
                 'test-glossary', 'Test Glossary', 'Content', '<p>Content</p>',
-                'GLOSSARY', '[]'::json, 'test', :now
+                'GLOSSARY', '[]', 'test', :now
             )
             ON CONFLICT (slug) DO NOTHING
             """
@@ -85,7 +85,7 @@ class TestHelpRepository:
             )
             VALUES (
                 :slug, 'Test Article', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now
+                'FAQ', '[]', 'test', :now
             )
             """
             ),
@@ -113,23 +113,22 @@ class TestHelpRepository:
 
         # Insert test article
         test_slug = f"test-views-{uuid4()}"
-        result = await db_session.execute(
+        article_id = uuid4()
+        await db_session.execute(
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
+                id, slug, title, content_markdown, content_html,
                 category, tags, keywords, last_updated, view_count
             )
             VALUES (
-                :slug, 'Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now, 0
+                :id, :slug, 'Test', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now, 0
             )
-            RETURNING id
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(article_id), "slug": test_slug, "now": datetime.now(UTC)},
         )
-        article_id = result.scalar()
         await db_session.commit()
 
         # Increment view count
@@ -159,7 +158,7 @@ class TestHelpRepository:
             VALUES (
                 :slug, 'Unique Search Term XYZ', 'Content with XYZ',
                 '<p>Content with XYZ</p>',
-                'FAQ', '[]'::json, 'xyz unique', :now
+                'FAQ', '[]', 'xyz unique', :now
             )
             """
             ),
@@ -195,7 +194,7 @@ class TestHelpRepository:
             )
             VALUES (
                 'Test Term', :slug, 'Definition', '', '<p>Full</p>',
-                'C', '[]'::json, '[]'::json, :now
+                'C', '[]', '[]', :now
             )
             """
             ),
@@ -224,7 +223,7 @@ class TestHelpRepository:
             )
             VALUES (
                 'Phase Test', :slug, 'Def', '', '<p>Full</p>',
-                'D', '[]'::json, '[]'::json, :now
+                'D', '[]', '[]', :now
             )
             """
             ),
@@ -242,23 +241,22 @@ class TestHelpRepository:
         repo = HelpRepository(db_session)
 
         # Insert test article
-        result = await db_session.execute(
+        article_id = uuid4()
+        await db_session.execute(
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
+                id, slug, title, content_markdown, content_html,
                 category, tags, keywords, last_updated
             )
             VALUES (
-                :slug, 'Feedback Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now
+                :id, :slug, 'Feedback Test', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now
             )
-            RETURNING id
             """
             ),
-            {"slug": f"feedback-test-{uuid4()}", "now": datetime.now(UTC)},
+            {"id": str(article_id), "slug": f"feedback-test-{uuid4()}", "now": datetime.now(UTC)},
         )
-        article_id = result.scalar()
         await db_session.commit()
 
         # Create feedback
@@ -285,24 +283,23 @@ class TestHelpRepository:
         repo = HelpRepository(db_session)
 
         # Insert test article
-        result = await db_session.execute(
+        article_id = uuid4()
+        await db_session.execute(
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
+                id, slug, title, content_markdown, content_html,
                 category, tags, keywords, last_updated,
                 helpful_count, not_helpful_count
             )
             VALUES (
-                :slug, 'Count Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now, 0, 0
+                :id, :slug, 'Count Test', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now, 0, 0
             )
-            RETURNING id
             """
             ),
-            {"slug": f"count-test-{uuid4()}", "now": datetime.now(UTC)},
+            {"id": str(article_id), "slug": f"count-test-{uuid4()}", "now": datetime.now(UTC)},
         )
-        article_id = result.scalar()
         await db_session.commit()
 
         # Update helpful count
