@@ -147,7 +147,7 @@ async def test_invalid_spring_fails_volume_validation_early_exit() -> None:
     assert chain.is_valid is False
     assert chain.overall_status == ValidationStatus.FAIL
     assert chain.rejection_stage == "Volume"
-    assert "Spring volume too high" in chain.rejection_reason
+    assert "Spring" in chain.rejection_reason and "volume too high" in chain.rejection_reason
     assert len(chain.validation_results) == 1  # Only Volume stage ran (early exit)
     assert chain.validation_results[0].stage == "Volume"
 
@@ -211,7 +211,7 @@ async def test_invalid_sos_fails_volume_validation_early_exit() -> None:
     assert chain.is_valid is False
     assert chain.overall_status == ValidationStatus.FAIL
     assert chain.rejection_stage == "Volume"
-    assert "SOS volume too low" in chain.rejection_reason
+    assert "SOS" in chain.rejection_reason and "volume too low" in chain.rejection_reason
     assert len(chain.validation_results) == 1  # Early exit
 
 

@@ -486,7 +486,7 @@ async def test_risk_manager_position_sizing_integration():
     assert spring_result.metadata["risk_pct"] <= 2.0  # Under per-trade max
     assert spring_result.metadata["position_size"] >= 1  # Minimum 1 share
     assert (
-        spring_result.metadata["risk_amount"] <= spring_result.metadata["account_equity"] * 0.02
+        spring_result.metadata["risk_amount"] <= spring_result.metadata["account_equity"] * Decimal("0.02")
     )  # Never exceed 2%
 
     # Test SOS (1.0% risk allocation)

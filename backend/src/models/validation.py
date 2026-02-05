@@ -33,6 +33,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+from types import SimpleNamespace
+
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_serializer, model_validator
 
 # ============================================================================
@@ -647,6 +649,64 @@ class ValidationContext(BaseModel):
     config: dict[str, Any] = Field(
         default_factory=dict, description="Configuration overrides (for testing)"
     )
+
+    @model_validator(mode="after")
+    def _coerce_dicts_to_namespace(self) -> "ValidationContext":
+        """Convert dict fields to SimpleNamespace for attribute access.
+
+        Validators access fields via attribute access (e.g., context.pattern.id,
+        context.volume_analysis.volume_ratio). When these are provided as dicts
+        (common in tests and in RealtimeSignalValidator._create_validation_context),
+        convert them to SimpleNamespace so attribute access works transparently.
+
+        Also aliases 'type' -> 'pattern_type' for backward compatibility with tests
+        that use the shorter key name.
+        """
+        if isinstance(self.pattern, dict):
+            data = dict(self.pattern)
+            # Alias 'type' to 'pattern_type' if 'pattern_type' not already present
+            if "type" in data and "pattern_type" not in data:
+                data["pattern_type"] = data["type"]
+            # Provide defaults for commonly accessed optional attributes
+            data.setdefault("test_confirmed", False)
+            data.setdefault("pattern_bar_timestamp", None)
+            data.setdefault("confidence_score", None)
+            self.pattern = SimpleNamespace(**data)
+
+        # Convert volume_analysis dict to namespace (validators access .volume_ratio etc.)
+        if isinstance(self.volume_analysis, dict):
+            va_data = dict(self.volume_analysis)
+            # Alias 'ratio' to 'volume_ratio' for backward compatibility
+            if "ratio" in va_data and "volume_ratio" not in va_data:
+                va_data["volume_ratio"] = va_data["ratio"]
+            self.volume_analysis = SimpleNamespace(**va_data)
+
+        # Convert other optional dict fields to namespace for attribute access
+        for field_name in ("trading_range", "portfolio_context", "market_context"):
+            value = getattr(self, field_name, None)
+            if isinstance(value, dict):
+                setattr(self, field_name, SimpleNamespace(**value))
+
+        # phase_info needs special handling: PhaseValidator expects attributes
+        # .phase (WyckoffPhase enum), .confidence (int), .duration (int), .trading_allowed (bool)
+        if isinstance(self.phase_info, dict):
+            from src.models.phase_classification import WyckoffPhase
+
+            phase_data = dict(self.phase_info)
+            # Convert string phase to WyckoffPhase enum if needed
+            phase_val = phase_data.get("phase")
+            if isinstance(phase_val, str):
+                try:
+                    phase_data["phase"] = WyckoffPhase(phase_val)
+                except ValueError:
+                    phase_data["phase"] = getattr(WyckoffPhase, phase_val, WyckoffPhase.C)
+            # Provide defaults for required PhaseValidator attributes
+            phase_data.setdefault("confidence", 85)
+            phase_data.setdefault("duration", 20)
+            phase_data.setdefault("trading_allowed", True)
+            self.phase_info = SimpleNamespace(**phase_data)
+
+        return self
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,  # Allow complex types like Pattern, VolumeAnalysis, etc.

@@ -18,6 +18,7 @@ from src.models.validation import (
     ValidationStatus,
 )
 from src.models.volume_analysis import VolumeAnalysis
+from src.signal_generator.validators.volume.forex import ForexThresholdAdjuster
 from src.signal_generator.validators.volume_validator import VolumeValidator
 
 
@@ -110,7 +111,7 @@ class TestOVERLAPSessionOptimization:
         )
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
@@ -133,7 +134,7 @@ class TestOVERLAPSessionOptimization:
         )
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
@@ -163,7 +164,7 @@ class TestASIANSessionStricterThreshold:
         )
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
@@ -187,7 +188,7 @@ class TestASIANSessionStricterThreshold:
         )
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
@@ -217,7 +218,7 @@ class TestSessionSpecificPassRates:
         volume_ratio = Decimal("2.30")
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
@@ -275,7 +276,7 @@ class TestBacktestScenarioReplication:
         passed_count = 0
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
@@ -313,7 +314,7 @@ class TestBacktestScenarioReplication:
         passing_volumes = [Decimal("2.80"), Decimal("2.90"), Decimal("3.00")]
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
@@ -350,7 +351,7 @@ class TestNearMissLoggingWithOptimization:
         )
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
@@ -389,7 +390,7 @@ class TestRollbackScenario:
         )
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=rollback_config,
         ):
@@ -426,7 +427,7 @@ class TestStockPatternsUnaffected:
         context.config = {}
 
         with patch.object(
-            VolumeValidator,
+            ForexThresholdAdjuster,
             "_load_volume_thresholds_from_config",
             return_value=mock_yaml_config,
         ):
