@@ -700,10 +700,12 @@ class ValidationContext(BaseModel):
                     phase_data["phase"] = WyckoffPhase(phase_val)
                 except ValueError:
                     phase_data["phase"] = getattr(WyckoffPhase, phase_val, WyckoffPhase.C)
-            # Provide defaults for required PhaseValidator attributes
-            phase_data.setdefault("confidence", 85)
-            phase_data.setdefault("duration", 20)
-            phase_data.setdefault("trading_allowed", True)
+            # Use safe-reject defaults: incomplete phase data should NOT pass validation.
+            # confidence=0 fails FR3 (>=70%), duration=0 fails FR14 (Phase B <10 bars),
+            # trading_allowed=False prevents trades. This avoids fabricating passing values.
+            phase_data.setdefault("confidence", 0)
+            phase_data.setdefault("duration", 0)
+            phase_data.setdefault("trading_allowed", False)
             self.phase_info = SimpleNamespace(**phase_data)
 
         return self

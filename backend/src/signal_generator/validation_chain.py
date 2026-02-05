@@ -176,10 +176,11 @@ class ValidationChainOrchestrator:
 
             stage_start = datetime.now(UTC)
 
-            # Execute validation (catch unexpected errors gracefully)
+            # Execute validation (catch expected data-access errors only;
+            # let programming bugs like TypeError, ImportError, RecursionError propagate)
             try:
                 result: StageValidationResult = await validator.validate(context)
-            except Exception as exc:
+            except (AttributeError, KeyError, ValueError) as exc:
                 logger.error(
                     "validation_stage_exception",
                     stage=validator.stage_name,
