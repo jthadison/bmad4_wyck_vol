@@ -35,17 +35,17 @@ class TestHelpAPI:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                :slug, 'API Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]', 'test', :now
+                :id, :slug, 'API Test', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now, :now
             )
             ON CONFLICT (slug) DO NOTHING
             """
             ),
-            {"slug": "api-test-article", "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": "api-test-article", "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -93,16 +93,16 @@ class TestHelpAPI:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated, view_count
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at, view_count
             )
             VALUES (
-                :slug, 'Test Article', 'Markdown', '<p>HTML</p>',
-                'FAQ', '[]', 'test', :now, 0
+                :id, :slug, 'Test Article', 'Markdown', '<p>HTML</p>',
+                'FAQ', '[]', 'test', :now, :now, 0
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -142,17 +142,17 @@ class TestHelpAPI:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                :slug, 'Searchable UniqueKeyword123', 'Content UniqueKeyword123',
+                :id, :slug, 'Searchable UniqueKeyword123', 'Content UniqueKeyword123',
                 '<p>Content UniqueKeyword123</p>',
-                'FAQ', '[]', 'uniquekeyword123', :now
+                'FAQ', '[]', 'uniquekeyword123', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -184,16 +184,17 @@ class TestHelpAPI:
             text(
                 """
             INSERT INTO glossary_terms (
-                term, slug, short_definition, full_description,
-                full_description_html, wyckoff_phase, related_terms, tags, last_updated
+                id, term, slug, short_definition, full_description,
+                full_description_html, wyckoff_phase, related_terms, tags,
+                last_updated, created_at
             )
             VALUES (
-                'Test Term', :slug, 'Short def', '', '<p>Full def</p>',
-                'C', '[]', '[]', :now
+                :id, 'Test Term', :slug, 'Short def', '', '<p>Full def</p>',
+                'C', '[]', '[]', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -218,16 +219,17 @@ class TestHelpAPI:
             text(
                 """
             INSERT INTO glossary_terms (
-                term, slug, short_definition, full_description,
-                full_description_html, wyckoff_phase, related_terms, tags, last_updated
+                id, term, slug, short_definition, full_description,
+                full_description_html, wyckoff_phase, related_terms, tags,
+                last_updated, created_at
             )
             VALUES (
-                'Phase E Term', :slug, 'Def', '', '<p>Full</p>',
-                'E', '[]', '[]', :now
+                :id, 'Phase E Term', :slug, 'Def', '', '<p>Full</p>',
+                'E', '[]', '[]', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -260,11 +262,11 @@ class TestHelpAPI:
                 """
             INSERT INTO help_articles (
                 id, slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
                 :id, :slug, 'Feedback Article', 'Content', '<p>Content</p>',
-                'FAQ', '[]', 'test', :now
+                'FAQ', '[]', 'test', :now, :now
             )
             """
             ),

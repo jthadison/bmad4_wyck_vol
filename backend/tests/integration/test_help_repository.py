@@ -49,17 +49,17 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                'test-glossary', 'Test Glossary', 'Content', '<p>Content</p>',
-                'GLOSSARY', '[]', 'test', :now
+                :id, 'test-glossary', 'Test Glossary', 'Content', '<p>Content</p>',
+                'GLOSSARY', '[]', 'test', :now, :now
             )
             ON CONFLICT (slug) DO NOTHING
             """
             ),
-            {"now": datetime.now(UTC)},
+            {"id": str(uuid4()), "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -80,16 +80,16 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                :slug, 'Test Article', 'Content', '<p>Content</p>',
-                'FAQ', '[]', 'test', :now
+                :id, :slug, 'Test Article', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -119,11 +119,11 @@ class TestHelpRepository:
                 """
             INSERT INTO help_articles (
                 id, slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated, view_count
+                category, tags, keywords, last_updated, created_at, view_count
             )
             VALUES (
                 :id, :slug, 'Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]', 'test', :now, 0
+                'FAQ', '[]', 'test', :now, :now, 0
             )
             """
             ),
@@ -152,17 +152,17 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                :slug, 'Unique Search Term XYZ', 'Content with XYZ',
+                :id, :slug, 'Unique Search Term XYZ', 'Content with XYZ',
                 '<p>Content with XYZ</p>',
-                'FAQ', '[]', 'xyz unique', :now
+                'FAQ', '[]', 'xyz unique', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -189,16 +189,17 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO glossary_terms (
-                term, slug, short_definition, full_description,
-                full_description_html, wyckoff_phase, related_terms, tags, last_updated
+                id, term, slug, short_definition, full_description,
+                full_description_html, wyckoff_phase, related_terms, tags,
+                last_updated, created_at
             )
             VALUES (
-                'Test Term', :slug, 'Definition', '', '<p>Full</p>',
-                'C', '[]', '[]', :now
+                :id, 'Test Term', :slug, 'Definition', '', '<p>Full</p>',
+                'C', '[]', '[]', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -218,16 +219,17 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO glossary_terms (
-                term, slug, short_definition, full_description,
-                full_description_html, wyckoff_phase, related_terms, tags, last_updated
+                id, term, slug, short_definition, full_description,
+                full_description_html, wyckoff_phase, related_terms, tags,
+                last_updated, created_at
             )
             VALUES (
-                'Phase Test', :slug, 'Def', '', '<p>Full</p>',
-                'D', '[]', '[]', :now
+                :id, 'Phase Test', :slug, 'Def', '', '<p>Full</p>',
+                'D', '[]', '[]', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -247,11 +249,11 @@ class TestHelpRepository:
                 """
             INSERT INTO help_articles (
                 id, slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
                 :id, :slug, 'Feedback Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]', 'test', :now
+                'FAQ', '[]', 'test', :now, :now
             )
             """
             ),
@@ -289,12 +291,12 @@ class TestHelpRepository:
                 """
             INSERT INTO help_articles (
                 id, slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated,
+                category, tags, keywords, last_updated, created_at,
                 helpful_count, not_helpful_count
             )
             VALUES (
                 :id, :slug, 'Count Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]', 'test', :now, 0, 0
+                'FAQ', '[]', 'test', :now, :now, 0, 0
             )
             """
             ),
