@@ -30,10 +30,9 @@ Author: Story 7.8, Story 8.2
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
-
-from types import SimpleNamespace
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_serializer, model_validator
 
