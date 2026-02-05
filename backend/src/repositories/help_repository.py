@@ -451,7 +451,6 @@ class HelpRepository:
                 """
                 INSERT INTO help_feedback (id, article_id, helpful, user_comment, created_at)
                 VALUES (:id, :article_id, :helpful, :user_comment, :created_at)
-                RETURNING id
                 """
             )
 

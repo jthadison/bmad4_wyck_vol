@@ -49,17 +49,17 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                'test-glossary', 'Test Glossary', 'Content', '<p>Content</p>',
-                'GLOSSARY', '[]'::json, 'test', :now
+                :id, 'test-glossary', 'Test Glossary', 'Content', '<p>Content</p>',
+                'GLOSSARY', '[]', 'test', :now, :now
             )
             ON CONFLICT (slug) DO NOTHING
             """
             ),
-            {"now": datetime.now(UTC)},
+            {"id": str(uuid4()), "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -80,16 +80,16 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                :slug, 'Test Article', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now
+                :id, :slug, 'Test Article', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -113,23 +113,22 @@ class TestHelpRepository:
 
         # Insert test article
         test_slug = f"test-views-{uuid4()}"
-        result = await db_session.execute(
+        article_id = uuid4()
+        await db_session.execute(
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated, view_count
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at, view_count
             )
             VALUES (
-                :slug, 'Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now, 0
+                :id, :slug, 'Test', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now, :now, 0
             )
-            RETURNING id
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(article_id), "slug": test_slug, "now": datetime.now(UTC)},
         )
-        article_id = result.scalar()
         await db_session.commit()
 
         # Increment view count
@@ -153,17 +152,17 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                :slug, 'Unique Search Term XYZ', 'Content with XYZ',
+                :id, :slug, 'Unique Search Term XYZ', 'Content with XYZ',
                 '<p>Content with XYZ</p>',
-                'FAQ', '[]'::json, 'xyz unique', :now
+                'FAQ', '[]', 'xyz unique', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -190,16 +189,17 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO glossary_terms (
-                term, slug, short_definition, full_description,
-                full_description_html, wyckoff_phase, related_terms, tags, last_updated
+                id, term, slug, short_definition, full_description,
+                full_description_html, wyckoff_phase, related_terms, tags,
+                last_updated, created_at
             )
             VALUES (
-                'Test Term', :slug, 'Definition', '', '<p>Full</p>',
-                'C', '[]'::json, '[]'::json, :now
+                :id, 'Test Term', :slug, 'Definition', '', '<p>Full</p>',
+                'C', '[]', '[]', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -219,16 +219,17 @@ class TestHelpRepository:
             text(
                 """
             INSERT INTO glossary_terms (
-                term, slug, short_definition, full_description,
-                full_description_html, wyckoff_phase, related_terms, tags, last_updated
+                id, term, slug, short_definition, full_description,
+                full_description_html, wyckoff_phase, related_terms, tags,
+                last_updated, created_at
             )
             VALUES (
-                'Phase Test', :slug, 'Def', '', '<p>Full</p>',
-                'D', '[]'::json, '[]'::json, :now
+                :id, 'Phase Test', :slug, 'Def', '', '<p>Full</p>',
+                'D', '[]', '[]', :now, :now
             )
             """
             ),
-            {"slug": test_slug, "now": datetime.now(UTC)},
+            {"id": str(uuid4()), "slug": test_slug, "now": datetime.now(UTC)},
         )
         await db_session.commit()
 
@@ -242,23 +243,22 @@ class TestHelpRepository:
         repo = HelpRepository(db_session)
 
         # Insert test article
-        result = await db_session.execute(
+        article_id = uuid4()
+        await db_session.execute(
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at
             )
             VALUES (
-                :slug, 'Feedback Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now
+                :id, :slug, 'Feedback Test', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now, :now
             )
-            RETURNING id
             """
             ),
-            {"slug": f"feedback-test-{uuid4()}", "now": datetime.now(UTC)},
+            {"id": str(article_id), "slug": f"feedback-test-{uuid4()}", "now": datetime.now(UTC)},
         )
-        article_id = result.scalar()
         await db_session.commit()
 
         # Create feedback
@@ -285,24 +285,23 @@ class TestHelpRepository:
         repo = HelpRepository(db_session)
 
         # Insert test article
-        result = await db_session.execute(
+        article_id = uuid4()
+        await db_session.execute(
             text(
                 """
             INSERT INTO help_articles (
-                slug, title, content_markdown, content_html,
-                category, tags, keywords, last_updated,
+                id, slug, title, content_markdown, content_html,
+                category, tags, keywords, last_updated, created_at,
                 helpful_count, not_helpful_count
             )
             VALUES (
-                :slug, 'Count Test', 'Content', '<p>Content</p>',
-                'FAQ', '[]'::json, 'test', :now, 0, 0
+                :id, :slug, 'Count Test', 'Content', '<p>Content</p>',
+                'FAQ', '[]', 'test', :now, :now, 0, 0
             )
-            RETURNING id
             """
             ),
-            {"slug": f"count-test-{uuid4()}", "now": datetime.now(UTC)},
+            {"id": str(article_id), "slug": f"count-test-{uuid4()}", "now": datetime.now(UTC)},
         )
-        article_id = result.scalar()
         await db_session.commit()
 
         # Update helpful count
