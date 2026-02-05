@@ -93,7 +93,7 @@ class TestForexLotSizing:
         risk_result = await risk_validator.validate(context)
 
         # Assert validation passed
-        assert risk_result.status.value == "PASS"
+        assert risk_result.status == "PASS"
         assert risk_result.metadata is not None
 
         # Step 3: Verify lot sizing calculations
@@ -219,7 +219,7 @@ class TestForexLotSizing:
         risk_result = await risk_validator.validate(context)
 
         # Assert validation passed
-        assert risk_result.status.value == "PASS"
+        assert risk_result.status == "PASS"
         assert risk_result.metadata is not None
 
         # Step 3: Verify stock sizing

@@ -141,10 +141,11 @@ class ValidationChainOrchestrator:
         >>> print(chain.overall_status)  # PASS, FAIL, or WARN
         """
         # Create validation chain
-        # Extract pattern_id from pattern (could be object with .id or dict with "id" key)
+        # Extract pattern_id from pattern (object with .id attribute, or dict with "id" key)
         pattern_id = None
         if hasattr(context.pattern, "id"):
-            pattern_id = context.pattern.id
+            raw_id = context.pattern.id
+            pattern_id = UUID(raw_id) if isinstance(raw_id, str) else raw_id
         elif isinstance(context.pattern, dict) and "id" in context.pattern:
             pattern_id = (
                 UUID(context.pattern["id"])
@@ -175,8 +176,24 @@ class ValidationChainOrchestrator:
 
             stage_start = datetime.now(UTC)
 
-            # Execute validation
-            result: StageValidationResult = await validator.validate(context)
+            # Execute validation (catch expected data-access errors only;
+            # let programming bugs like TypeError, ImportError, RecursionError propagate)
+            try:
+                result: StageValidationResult = await validator.validate(context)
+            except (AttributeError, KeyError, ValueError) as exc:
+                logger.error(
+                    "validation_stage_exception",
+                    stage=validator.stage_name,
+                    validator_id=validator.validator_id,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+                result = StageValidationResult(
+                    stage=validator.stage_name,
+                    status=ValidationStatus.FAIL,
+                    reason=f"Validator error: {exc}",
+                    validator_id=validator.validator_id,
+                )
 
             # Add result to chain (updates overall_status automatically)
             chain.add_result(result)
