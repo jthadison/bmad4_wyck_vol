@@ -23,6 +23,8 @@ def mock_session():
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
     session.execute = AsyncMock()
+    # session.add is synchronous, not async
+    session.add = MagicMock()
     return session
 
 
@@ -57,41 +59,46 @@ class TestInsertBar:
     @pytest.mark.asyncio
     async def test_insert_bar_success(self, repository, mock_session, sample_bar):
         """Test successful insertion of single bar."""
-        # Mock successful insert (rowcount = 1)
-        mock_result = MagicMock()
-        mock_result.rowcount = 1
-        mock_session.execute.return_value = mock_result
+        # Mock bar_exists returning False (bar doesn't exist)
+        mock_exists_result = MagicMock()
+        mock_exists_result.scalar.return_value = False
+        mock_session.execute.return_value = mock_exists_result
 
         bar_id = await repository.insert_bar(sample_bar)
 
         # Verify bar_id returned
         assert bar_id == str(sample_bar.id)
 
-        # Verify session methods called
-        mock_session.execute.assert_called_once()
+        # Verify session.add was called (ORM-based insert)
+        mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_insert_bar_duplicate_skipped(self, repository, mock_session, sample_bar):
         """Test that duplicate bar returns None."""
-        # Mock duplicate (rowcount = 0)
-        mock_result = MagicMock()
-        mock_result.rowcount = 0
-        mock_session.execute.return_value = mock_result
+        # Mock bar_exists returning True (bar already exists)
+        mock_exists_result = MagicMock()
+        mock_exists_result.scalar.return_value = True
+        mock_session.execute.return_value = mock_exists_result
 
         bar_id = await repository.insert_bar(sample_bar)
 
         # Duplicate should return None
         assert bar_id is None
 
-        # Commit should still be called
-        mock_session.commit.assert_called_once()
+        # session.add should NOT be called for duplicates
+        mock_session.add.assert_not_called()
+        # Commit should NOT be called for duplicates (early return)
+        mock_session.commit.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_insert_bar_exception_rollback(self, repository, mock_session, sample_bar):
         """Test that exception triggers rollback."""
-        # Mock exception during execute
-        mock_session.execute.side_effect = IntegrityError("mock", "mock", "mock")
+        # Mock bar_exists check succeeds, but add/commit fails
+        mock_exists_result = MagicMock()
+        mock_exists_result.scalar.return_value = False
+        mock_session.execute.return_value = mock_exists_result
+        mock_session.commit.side_effect = IntegrityError("mock", "mock", "mock")
 
         with pytest.raises(IntegrityError):
             await repository.insert_bar(sample_bar)
@@ -114,32 +121,71 @@ class TestInsertBars:
     @pytest.mark.asyncio
     async def test_insert_bars_success(self, repository, mock_session, sample_bar):
         """Test bulk insert of multiple bars."""
-        bars = [sample_bar] * 3
+        # Create 3 bars with different timestamps
+        bars = []
+        for i in range(3):
+            bar = OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=datetime(2024, 1, i + 1, tzinfo=UTC),
+                open=Decimal("150.00"),
+                high=Decimal("155.00"),
+                low=Decimal("148.00"),
+                close=Decimal("153.00"),
+                volume=1000000,
+                spread=Decimal("7.00"),
+                spread_ratio=Decimal("1.2"),
+                volume_ratio=Decimal("0.9"),
+            )
+            bars.append(bar)
 
-        # Mock successful bulk insert
+        # Mock get_existing_timestamps returning empty set (no duplicates)
         mock_result = MagicMock()
-        mock_result.rowcount = 3
+        mock_result.scalars.return_value.all.return_value = []
         mock_session.execute.return_value = mock_result
 
         count = await repository.insert_bars(bars)
 
         assert count == 3
-        mock_session.execute.assert_called_once()
+        # session.add should be called 3 times (once per bar)
+        assert mock_session.add.call_count == 3
         mock_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_insert_bars_partial_duplicates(self, repository, mock_session, sample_bar):
         """Test bulk insert with some duplicates."""
-        bars = [sample_bar] * 5
+        # Create 5 bars with different timestamps
+        bars = []
+        for i in range(5):
+            bar = OHLCVBar(
+                id=uuid4(),
+                symbol="AAPL",
+                timeframe="1d",
+                timestamp=datetime(2024, 1, i + 1, tzinfo=UTC),
+                open=Decimal("150.00"),
+                high=Decimal("155.00"),
+                low=Decimal("148.00"),
+                close=Decimal("153.00"),
+                volume=1000000,
+                spread=Decimal("7.00"),
+                spread_ratio=Decimal("1.2"),
+                volume_ratio=Decimal("0.9"),
+            )
+            bars.append(bar)
 
-        # Mock 3 inserted, 2 duplicates skipped
+        # Mock get_existing_timestamps returning 2 existing timestamps
+        existing_timestamps = {
+            datetime(2024, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 3, tzinfo=UTC),
+        }
         mock_result = MagicMock()
-        mock_result.rowcount = 3
+        mock_result.scalars.return_value.all.return_value = list(existing_timestamps)
         mock_session.execute.return_value = mock_result
 
         count = await repository.insert_bars(bars)
 
-        assert count == 3  # Only 3 inserted
+        assert count == 3  # Only 3 inserted (2 duplicates skipped)
 
 
 class TestGetBars:
