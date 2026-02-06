@@ -134,9 +134,7 @@ class OHLCVRepository:
             # Group bars by symbol/timeframe for efficient lookup
             symbol = bars[0].symbol
             timeframe = bars[0].timeframe
-            existing_timestamps = await self.get_existing_timestamps(
-                symbol, timeframe, timestamps
-            )
+            existing_timestamps = await self.get_existing_timestamps(symbol, timeframe, timestamps)
 
             # Filter out duplicates and create models
             inserted_count = 0

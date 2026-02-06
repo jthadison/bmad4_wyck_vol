@@ -195,9 +195,7 @@ class NotificationRepository:
     # Preferences CRUD Operations
     # =============================
 
-    async def get_preferences(
-        self, user_id: Union[UUID, str]
-    ) -> Optional[NotificationPreferences]:
+    async def get_preferences(self, user_id: Union[UUID, str]) -> Optional[NotificationPreferences]:
         """
         Get notification preferences for a user.
 
@@ -352,9 +350,7 @@ class NotificationRepository:
 
         return self._orm_to_push_subscription(subscription)
 
-    async def get_push_subscriptions(
-        self, user_id: Union[UUID, str]
-    ) -> list[PushSubscription]:
+    async def get_push_subscriptions(self, user_id: Union[UUID, str]) -> list[PushSubscription]:
         """
         Get all push subscriptions for a user.
 
@@ -372,9 +368,7 @@ class NotificationRepository:
 
         return [self._orm_to_push_subscription(s) for s in subscriptions]
 
-    async def delete_push_subscription(
-        self, user_id: Union[UUID, str], endpoint: str
-    ) -> bool:
+    async def delete_push_subscription(self, user_id: Union[UUID, str], endpoint: str) -> bool:
         """
         Delete a push subscription (e.g., when it expires or is unsubscribed).
 
