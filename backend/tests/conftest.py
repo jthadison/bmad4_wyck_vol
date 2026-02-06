@@ -13,6 +13,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from src.api.dependencies import get_db_session
 from src.api.main import app
 from src.auth.token_service import TokenService
 from src.config import settings
@@ -83,11 +84,14 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
     Overrides the database dependency to use test database.
     """
 
-    # Override database dependency
+    # Override database dependencies
+    # Note: Both get_db and get_db_session must be overridden because
+    # different routes may use different dependencies
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_db_session] = override_get_db
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

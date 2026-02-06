@@ -118,7 +118,7 @@ class NotificationPreferences(BaseModel):
     min_confidence_threshold: int = Field(default=85, ge=70, le=95)
     quiet_hours: QuietHours = Field(default_factory=QuietHours)
     channel_preferences: ChannelPreferences = Field(default_factory=ChannelPreferences)
-    updated_at: datetime
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     @field_validator("sms_phone_number")
     @classmethod
