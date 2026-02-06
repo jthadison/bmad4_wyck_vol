@@ -225,14 +225,54 @@ async def startup_event() -> None:
     # Only start real-time feed if API keys are configured
     if settings.alpaca_api_key and settings.alpaca_secret_key:
         try:
+            # Read enabled symbols from scanner watchlist DB
+            from src.database import async_session_maker
+            from src.models.scanner_persistence import AssetClass
+            from src.repositories.scanner_repository import ScannerRepository
+
+            alpaca_symbols: list[str] = []
+            try:
+                async with async_session_maker() as session:
+                    repo = ScannerRepository(session)
+                    enabled = await repo.get_enabled_symbols()
+                    # Filter to only asset classes Alpaca supports (stock, crypto)
+                    alpaca_compatible = {AssetClass.STOCK, AssetClass.CRYPTO}
+                    alpaca_symbols = [
+                        s.symbol for s in enabled if s.asset_class in alpaca_compatible
+                    ]
+            except Exception as db_err:
+                logger.warning(
+                    "watchlist_db_read_failed",
+                    error=str(db_err),
+                    message="Falling back to settings.watchlist_symbols",
+                )
+
+            # Build a local settings copy with resolved symbols (never mutate global)
+            if alpaca_symbols:
+                feed_settings = settings.model_copy(update={"watchlist_symbols": alpaca_symbols})
+                logger.info(
+                    "watchlist_symbols_loaded_from_db",
+                    count=len(alpaca_symbols),
+                    symbols=alpaca_symbols,
+                )
+            else:
+                feed_settings = settings
+                logger.info(
+                    "watchlist_using_config_defaults",
+                    symbols=settings.watchlist_symbols,
+                )
+
             # Create Alpaca adapter
-            adapter = AlpacaAdapter(settings=settings, use_paper=False)
+            adapter = AlpacaAdapter(settings=feed_settings, use_paper=False)
 
             # Create coordinator
             _coordinator = MarketDataCoordinator(
                 adapter=adapter,
-                settings=settings,
+                settings=feed_settings,
             )
+
+            # Store on app.state for shutdown access
+            app.state.market_data_coordinator = _coordinator
 
             # Start real-time feed
             await _coordinator.start()
@@ -248,9 +288,9 @@ async def startup_event() -> None:
                 message="Application will continue without real-time market data",
             )
     else:
-        logger.warning(
+        logger.info(
             "alpaca_api_keys_not_configured",
-            message="Real-time feed disabled",
+            message="Real-time market data feed disabled - set ALPACA_API_KEY and ALPACA_SECRET_KEY to enable",
         )
 
     # Initialize paper trading signal routing (Story 12.8)
@@ -441,8 +481,13 @@ async def shutdown_event() -> None:
         # Scanner service was never initialized or already stopped
         pass
 
+    # Stop market data coordinator
     if _coordinator:
-        await _coordinator.stop()
+        try:
+            await _coordinator.stop()
+            logger.info("market_data_coordinator_stopped")
+        except Exception as e:
+            logger.error("market_data_coordinator_stop_failed", error=str(e))
 
     # Close Redis connection (Story 19.21)
     try:
