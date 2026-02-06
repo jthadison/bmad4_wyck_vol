@@ -59,6 +59,7 @@ class PolygonAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> list[OHLCVBar]:
         """
         Fetch historical OHLCV bars from Polygon.io.
@@ -89,8 +90,11 @@ class PolygonAdapter(MarketDataProvider):
         from_date = start_date.strftime("%Y-%m-%d")
         to_date = end_date.strftime("%Y-%m-%d")
 
+        # Format symbol for Polygon.io API (e.g. forex -> C:EURUSD)
+        api_symbol = self._format_symbol(symbol, asset_class)
+
         # Build request URL
-        url = f"/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
+        url = f"/aggs/ticker/{api_symbol}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
 
         log = logger.bind(
             symbol=symbol,
@@ -246,6 +250,22 @@ class PolygonAdapter(MarketDataProvider):
             raise ValueError(f"Unsupported timeframe: {timeframe}")
 
         return timeframe_map[timeframe]
+
+    def _format_symbol(self, symbol: str, asset_class: str | None) -> str:
+        """Format symbol for Polygon.io API based on asset class.
+
+        Polygon requires prefixes: C: for forex, I: for indices, X: for crypto.
+        Stocks use the bare symbol.
+        """
+        if asset_class is None or asset_class == "stock":
+            return symbol
+        prefix_map = {
+            "forex": "C:",
+            "index": "I:",
+            "crypto": "X:",
+        }
+        prefix = prefix_map.get(asset_class, "")
+        return f"{prefix}{symbol}" if prefix else symbol
 
     async def _rate_limit(self) -> None:
         """

@@ -591,6 +591,7 @@ class AlpacaAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> list[OHLCVBar]:
         """
         Fetch historical bars from Alpaca REST API.

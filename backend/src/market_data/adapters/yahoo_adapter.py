@@ -49,6 +49,7 @@ class YahooAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> list[OHLCVBar]:
         """
         Fetch historical OHLCV bars from Yahoo Finance.
@@ -80,8 +81,11 @@ class YahooAdapter(MarketDataProvider):
         )
 
         try:
+            # Format symbol for Yahoo Finance API (e.g. forex -> EURUSD=X)
+            api_symbol = self._format_symbol(symbol, asset_class)
+
             # Fetch data using yfinance (blocking I/O, run in executor)
-            ticker = yf.Ticker(symbol)
+            ticker = yf.Ticker(api_symbol)
 
             # Run in executor to avoid blocking event loop
             loop = asyncio.get_event_loop()
@@ -207,6 +211,26 @@ class YahooAdapter(MarketDataProvider):
             raise ValueError(f"Unsupported timeframe: {timeframe}")
 
         return timeframe
+
+    def _format_symbol(self, symbol: str, asset_class: str | None) -> str:
+        """Format symbol for Yahoo Finance API based on asset class.
+
+        Yahoo requires: =X suffix for forex, ^ prefix for indices,
+        dash-separated for crypto (e.g. BTC-USD).
+        Stocks use the bare symbol.
+        """
+        if asset_class is None or asset_class == "stock":
+            return symbol
+        if asset_class == "forex":
+            return f"{symbol}=X"
+        if asset_class == "index":
+            return f"^{symbol}"
+        if asset_class == "crypto":
+            # Convert e.g. BTCUSD -> BTC-USD (insert dash before last 3 chars)
+            if len(symbol) > 3 and "-" not in symbol:
+                return f"{symbol[:-3]}-{symbol[-3:]}"
+            return symbol
+        return symbol
 
     async def _rate_limit(self) -> None:
         """

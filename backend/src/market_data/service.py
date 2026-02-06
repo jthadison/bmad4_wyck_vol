@@ -74,6 +74,7 @@ class MarketDataService:
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> IngestionResult:
         """
         Ingest historical OHLCV data for a symbol.
@@ -124,6 +125,7 @@ class MarketDataService:
                 start_date=start_date,
                 end_date=end_date,
                 timeframe=timeframe,
+                asset_class=asset_class,
             )
 
             total_fetched = len(bars)
