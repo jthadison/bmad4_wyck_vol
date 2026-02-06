@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.summary import DailySummary
 from src.orm.models import Pattern, Signal
+from src.orm.scanner import ScannerWatchlistORM
 from src.repositories.models import OHLCVBarModel
 
 logger = structlog.get_logger()
@@ -88,6 +89,7 @@ class SummaryRepository:
 
             # Execute all queries sequentially (shared session doesn't support concurrent queries)
             symbols_scanned = await self._get_symbols_scanned(twenty_four_hours_ago, now)
+            symbols_in_watchlist = await self._get_watchlist_symbol_count()
             patterns_detected = await self._get_patterns_detected(twenty_four_hours_ago, now)
             signals_executed = await self._get_signals_executed(twenty_four_hours_ago, now)
             signals_rejected = await self._get_signals_rejected(twenty_four_hours_ago, now)
@@ -103,6 +105,7 @@ class SummaryRepository:
 
             summary = DailySummary(
                 symbols_scanned=symbols_scanned,
+                symbols_in_watchlist=symbols_in_watchlist,
                 patterns_detected=patterns_detected,
                 signals_executed=signals_executed,
                 signals_rejected=signals_rejected,
@@ -114,6 +117,7 @@ class SummaryRepository:
             logger.info(
                 "daily_summary_calculated",
                 symbols_scanned=symbols_scanned,
+                symbols_in_watchlist=symbols_in_watchlist,
                 patterns_detected=patterns_detected,
                 signals_executed=signals_executed,
                 signals_rejected=signals_rejected,
@@ -175,6 +179,41 @@ class SummaryRepository:
         except Exception as e:
             logger.error(
                 "symbols_scanned_query_error",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return 0
+
+    async def _get_watchlist_symbol_count(self) -> int:
+        """
+        Count enabled symbols in the scanner watchlist.
+
+        Returns:
+        --------
+        int
+            Count of enabled watchlist symbols (0 if no data or table missing)
+        """
+        try:
+            query_start = datetime.now(UTC)
+
+            result = await self.db_session.execute(
+                select(func.count(ScannerWatchlistORM.id)).where(
+                    ScannerWatchlistORM.enabled.is_(True)
+                )
+            )
+            count = result.scalar() or 0
+
+            query_duration = (datetime.now(UTC) - query_start).total_seconds() * 1000
+            logger.debug(
+                "watchlist_symbol_count_query",
+                count=count,
+                duration_ms=query_duration,
+            )
+
+            return count
+        except Exception as e:
+            logger.error(
+                "watchlist_symbol_count_query_error",
                 error=str(e),
                 error_type=type(e).__name__,
             )
