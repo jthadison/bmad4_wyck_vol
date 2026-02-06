@@ -506,7 +506,7 @@ class TestNotificationAPI:
     ):
         """Test updating preferences for different user returns 403."""
         user_uuid = test_user_id
-        other_user_uuid = test_user_id
+        other_user_uuid = uuid4()  # Generate a different user ID
 
         # Mock the get_current_user dependency
         from src.api.dependencies import get_current_user

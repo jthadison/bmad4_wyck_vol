@@ -8,11 +8,10 @@ Story: 11.6 - Notification & Alert System
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from uuid import UUID
 
 from sqlalchemy import and_, delete, desc, select, update
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.notification import (
@@ -22,6 +21,13 @@ from src.models.notification import (
     PushSubscription,
 )
 from src.orm.models import NotificationORM, NotificationPreferencesORM, PushSubscriptionORM
+
+
+def _to_uuid(value: Union[UUID, str]) -> UUID:
+    """Convert string or UUID to UUID."""
+    if isinstance(value, str):
+        return UUID(value)
+    return value
 
 
 class NotificationRepository:
@@ -42,7 +48,7 @@ class NotificationRepository:
 
     async def create_notification(
         self,
-        user_id: UUID,
+        user_id: Union[UUID, str],
         notification_type: NotificationType,
         priority: str,
         title: str,
@@ -53,7 +59,7 @@ class NotificationRepository:
         Create and persist a new notification.
 
         Args:
-            user_id: Target user UUID
+            user_id: Target user UUID (or string UUID)
             notification_type: Type of notification
             priority: Priority level (info/warning/critical)
             title: Notification title
@@ -63,13 +69,14 @@ class NotificationRepository:
         Returns:
             Created Notification model
         """
+        user_uuid = _to_uuid(user_id)
         notification = NotificationORM(
             notification_type=notification_type.value,
             priority=priority,
             title=title,
             message=message,
             notification_metadata=metadata,
-            user_id=user_id,
+            user_id=user_uuid,
             read=False,
         )
 
@@ -81,7 +88,7 @@ class NotificationRepository:
 
     async def get_notifications(
         self,
-        user_id: UUID,
+        user_id: Union[UUID, str],
         unread_only: bool = False,
         notification_type: Optional[NotificationType] = None,
         limit: int = 50,
@@ -91,7 +98,7 @@ class NotificationRepository:
         Get notifications for a user with optional filtering.
 
         Args:
-            user_id: User UUID
+            user_id: User UUID (or string UUID)
             unread_only: Only return unread notifications
             notification_type: Filter by notification type
             limit: Maximum number of results (default 50, max 100)
@@ -100,11 +107,12 @@ class NotificationRepository:
         Returns:
             Tuple of (notifications list, total count)
         """
+        user_uuid = _to_uuid(user_id)
         # Clamp limit to max 100
         limit = min(limit, 100)
 
         # Build query with filters
-        query = select(NotificationORM).where(NotificationORM.user_id == user_id)
+        query = select(NotificationORM).where(NotificationORM.user_id == user_uuid)
 
         if unread_only:
             query = query.where(NotificationORM.read == False)  # noqa: E712
@@ -113,7 +121,7 @@ class NotificationRepository:
             query = query.where(NotificationORM.notification_type == notification_type.value)
 
         # Get total count with same filters
-        count_query = select(NotificationORM.id).where(NotificationORM.user_id == user_id)
+        count_query = select(NotificationORM.id).where(NotificationORM.user_id == user_uuid)
         if unread_only:
             count_query = count_query.where(NotificationORM.read == False)  # noqa: E712
         if notification_type:
@@ -131,23 +139,27 @@ class NotificationRepository:
 
         return ([self._orm_to_notification(n) for n in notifications], total_count)
 
-    async def mark_as_read(self, notification_id: UUID, user_id: UUID) -> bool:
+    async def mark_as_read(
+        self, notification_id: Union[UUID, str], user_id: Union[UUID, str]
+    ) -> bool:
         """
         Mark a notification as read.
 
         Args:
-            notification_id: Notification UUID
-            user_id: User UUID (for authorization check)
+            notification_id: Notification UUID (or string UUID)
+            user_id: User UUID (or string UUID) for authorization check
 
         Returns:
             True if notification was found and marked, False otherwise
         """
+        notif_uuid = _to_uuid(notification_id)
+        user_uuid = _to_uuid(user_id)
         stmt = (
             update(NotificationORM)
             .where(
                 and_(
-                    NotificationORM.id == notification_id,
-                    NotificationORM.user_id == user_id,
+                    NotificationORM.id == notif_uuid,
+                    NotificationORM.user_id == user_uuid,
                 )
             )
             .values(read=True)
@@ -158,19 +170,20 @@ class NotificationRepository:
 
         return result.rowcount > 0
 
-    async def get_unread_count(self, user_id: UUID) -> int:
+    async def get_unread_count(self, user_id: Union[UUID, str]) -> int:
         """
         Get count of unread notifications for a user.
 
         Args:
-            user_id: User UUID
+            user_id: User UUID (or string UUID)
 
         Returns:
             Number of unread notifications
         """
+        user_uuid = _to_uuid(user_id)
         query = select(NotificationORM).where(
             and_(
-                NotificationORM.user_id == user_id,
+                NotificationORM.user_id == user_uuid,
                 NotificationORM.read == False,  # noqa: E712
             )
         )
@@ -182,18 +195,21 @@ class NotificationRepository:
     # Preferences CRUD Operations
     # =============================
 
-    async def get_preferences(self, user_id: UUID) -> Optional[NotificationPreferences]:
+    async def get_preferences(
+        self, user_id: Union[UUID, str]
+    ) -> Optional[NotificationPreferences]:
         """
         Get notification preferences for a user.
 
         Args:
-            user_id: User UUID
+            user_id: User UUID (or string UUID)
 
         Returns:
             NotificationPreferences model or None if not set
         """
+        user_uuid = _to_uuid(user_id)
         stmt = select(NotificationPreferencesORM).where(
-            NotificationPreferencesORM.user_id == user_id
+            NotificationPreferencesORM.user_id == user_uuid
         )
 
         result = await self.session.execute(stmt)
@@ -216,38 +232,48 @@ class NotificationRepository:
         Update or create notification preferences for a user.
 
         Args:
-            user_id: User UUID
             preferences: New preferences model
 
         Returns:
             Updated NotificationPreferences model
         """
+        user_uuid = _to_uuid(preferences.user_id)
+
         # Serialize Pydantic model to JSON (exclude user_id and updated_at)
         prefs_dict = preferences.model_dump(
             exclude={"user_id", "updated_at"},
             mode="json",
         )
 
-        # Upsert preferences
-        stmt = insert(NotificationPreferencesORM).values(
-            user_id=preferences.user_id,
-            preferences=prefs_dict,
-            updated_at=datetime.utcnow(),
+        # Check if preferences already exist
+        existing = await self.session.execute(
+            select(NotificationPreferencesORM).where(
+                NotificationPreferencesORM.user_id == user_uuid
+            )
         )
+        existing_prefs = existing.scalar_one_or_none()
 
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["user_id"],
-            set_={
-                "preferences": prefs_dict,
-                "updated_at": datetime.utcnow(),
-            },
-        )
+        if existing_prefs:
+            # Update existing preferences
+            stmt = (
+                update(NotificationPreferencesORM)
+                .where(NotificationPreferencesORM.user_id == user_uuid)
+                .values(preferences=prefs_dict, updated_at=datetime.utcnow())
+            )
+            await self.session.execute(stmt)
+        else:
+            # Insert new preferences
+            new_prefs = NotificationPreferencesORM(
+                user_id=user_uuid,
+                preferences=prefs_dict,
+                updated_at=datetime.utcnow(),
+            )
+            self.session.add(new_prefs)
 
-        await self.session.execute(stmt)
         await self.session.commit()
 
         # Return updated preferences
-        return await self.get_preferences(preferences.user_id)  # type: ignore
+        return await self.get_preferences(user_uuid)  # type: ignore
 
     # =============================
     # Push Subscription Operations
@@ -255,7 +281,7 @@ class NotificationRepository:
 
     async def create_push_subscription(
         self,
-        user_id: UUID,
+        user_id: Union[UUID, str],
         endpoint: str,
         p256dh_key: str,
         auth_key: str,
@@ -264,7 +290,7 @@ class NotificationRepository:
         Create or update a push subscription.
 
         Args:
-            user_id: User UUID
+            user_id: User UUID (or string UUID)
             endpoint: Push subscription endpoint URL
             p256dh_key: Public key for encryption
             auth_key: Authentication secret
@@ -272,30 +298,52 @@ class NotificationRepository:
         Returns:
             Created PushSubscription model
         """
-        # Upsert subscription (unique on user_id + endpoint)
-        stmt = insert(PushSubscriptionORM).values(
-            user_id=user_id,
-            endpoint=endpoint,
-            p256dh_key=p256dh_key,
-            auth_key=auth_key,
-        )
+        user_uuid = _to_uuid(user_id)
 
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["user_id", "endpoint"],
-            set_={
-                "p256dh_key": p256dh_key,
-                "auth_key": auth_key,
-                "created_at": datetime.utcnow(),
-            },
+        # Check if subscription already exists
+        existing = await self.session.execute(
+            select(PushSubscriptionORM).where(
+                and_(
+                    PushSubscriptionORM.user_id == user_uuid,
+                    PushSubscriptionORM.endpoint == endpoint,
+                )
+            )
         )
+        existing_sub = existing.scalar_one_or_none()
 
-        result = await self.session.execute(stmt)
+        if existing_sub:
+            # Update existing subscription
+            stmt = (
+                update(PushSubscriptionORM)
+                .where(
+                    and_(
+                        PushSubscriptionORM.user_id == user_uuid,
+                        PushSubscriptionORM.endpoint == endpoint,
+                    )
+                )
+                .values(
+                    p256dh_key=p256dh_key,
+                    auth_key=auth_key,
+                    created_at=datetime.utcnow(),
+                )
+            )
+            await self.session.execute(stmt)
+        else:
+            # Insert new subscription
+            new_sub = PushSubscriptionORM(
+                user_id=user_uuid,
+                endpoint=endpoint,
+                p256dh_key=p256dh_key,
+                auth_key=auth_key,
+            )
+            self.session.add(new_sub)
+
         await self.session.commit()
 
-        # Fetch created subscription
+        # Fetch the subscription
         query = select(PushSubscriptionORM).where(
             and_(
-                PushSubscriptionORM.user_id == user_id,
+                PushSubscriptionORM.user_id == user_uuid,
                 PushSubscriptionORM.endpoint == endpoint,
             )
         )
@@ -304,37 +352,43 @@ class NotificationRepository:
 
         return self._orm_to_push_subscription(subscription)
 
-    async def get_push_subscriptions(self, user_id: UUID) -> list[PushSubscription]:
+    async def get_push_subscriptions(
+        self, user_id: Union[UUID, str]
+    ) -> list[PushSubscription]:
         """
         Get all push subscriptions for a user.
 
         Args:
-            user_id: User UUID
+            user_id: User UUID (or string UUID)
 
         Returns:
             List of PushSubscription models
         """
-        stmt = select(PushSubscriptionORM).where(PushSubscriptionORM.user_id == user_id)
+        user_uuid = _to_uuid(user_id)
+        stmt = select(PushSubscriptionORM).where(PushSubscriptionORM.user_id == user_uuid)
 
         result = await self.session.execute(stmt)
         subscriptions = result.scalars().all()
 
         return [self._orm_to_push_subscription(s) for s in subscriptions]
 
-    async def delete_push_subscription(self, user_id: UUID, endpoint: str) -> bool:
+    async def delete_push_subscription(
+        self, user_id: Union[UUID, str], endpoint: str
+    ) -> bool:
         """
         Delete a push subscription (e.g., when it expires or is unsubscribed).
 
         Args:
-            user_id: User UUID
+            user_id: User UUID (or string UUID)
             endpoint: Push subscription endpoint URL
 
         Returns:
             True if subscription was deleted, False if not found
         """
+        user_uuid = _to_uuid(user_id)
         stmt = delete(PushSubscriptionORM).where(
             and_(
-                PushSubscriptionORM.user_id == user_id,
+                PushSubscriptionORM.user_id == user_uuid,
                 PushSubscriptionORM.endpoint == endpoint,
             )
         )
