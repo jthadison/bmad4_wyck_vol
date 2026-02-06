@@ -369,20 +369,28 @@ class RegressionTestEngine:
 
         return len(degraded_metrics) > 0, degraded_metrics
 
-    async def establish_baseline(self, test_id: UUID) -> RegressionBaseline:
+    async def establish_baseline(
+        self, test_result_or_id: RegressionTestResult | UUID
+    ) -> RegressionBaseline:
         """
         Establish a new baseline from a regression test result.
 
         Args:
-            test_id: ID of regression test to use as baseline
+            test_result_or_id: RegressionTestResult object or UUID of regression test
 
         Returns:
             RegressionBaseline created
         """
-        # Load test result
-        test_result = await self.test_repository.get_result(test_id)
-        if not test_result:
-            raise ValueError(f"Test result {test_id} not found")
+        # Handle both RegressionTestResult and UUID
+        if isinstance(test_result_or_id, RegressionTestResult):
+            test_result = test_result_or_id
+            test_id = test_result.test_id
+        else:
+            test_id = test_result_or_id
+            # Load test result
+            test_result = await self.test_repository.get_result(test_id)
+            if not test_result:
+                raise ValueError(f"Test result {test_id} not found")
 
         # Get codebase version
         version = test_result.codebase_version
