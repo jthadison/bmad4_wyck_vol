@@ -96,7 +96,7 @@ async def sample_analytics_data(db_session: AsyncSession):
                     :id, :pattern_type, :symbol, '1D', :detection_time,
                     :pattern_bar_timestamp, 85, :phase,
                     :entry_price, :stop_loss, :invalidation,
-                    1.5, 1.2, :test_confirmed, '{}'::jsonb
+                    1.5, 1.2, :test_confirmed, '{}'
                 )
             """
             ),
@@ -139,7 +139,7 @@ async def sample_analytics_data(db_session: AsyncSession):
                     gen_random_uuid(), :pattern_id, :symbol, '1D', :generated_at,
                     :entry_price, :stop_loss, :target_1, :target_2,
                     100, 500, :r_multiple,
-                    85, :status, '{}'::jsonb,
+                    85, :status, '{}',
                     :exit_date, :exit_price
                 )
             """
@@ -291,7 +291,7 @@ async def test_get_vsa_metrics(
         text(
             """
             UPDATE patterns
-            SET vsa_events = '{"no_demand": 3, "no_supply": 2, "stopping_volume": 1}'::jsonb
+            SET vsa_events = '{"no_demand": 3, "no_supply": 2, "stopping_volume": 1}'
             WHERE id = :pattern_id
         """
         ),
@@ -344,7 +344,7 @@ async def test_get_preliminary_events(
                         :id, :pattern_type, :symbol, '1D', :detection_time,
                         :pattern_bar_timestamp, 85, 'A',
                         100.00, 95.00, 93.00,
-                        1.5, 1.2, false, '{}'::jsonb
+                        1.5, 1.2, false, '{}'
                     )
                 """
                 ),
