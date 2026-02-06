@@ -237,6 +237,13 @@ class ScannerHistoryORM(Base):
         server_default="0",
     )
 
+    # Number of symbols with no OHLCV data
+    symbols_no_data: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+
     # Cycle status: COMPLETED, PARTIAL, FAILED, SKIPPED
     status: Mapped[str] = mapped_column(
         String(20),

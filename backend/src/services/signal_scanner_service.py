@@ -45,6 +45,7 @@ from src.models.scanner_persistence import (
     ScannerHistoryCreate,
     WatchlistSymbol,
 )
+from src.orchestrator.orchestrator_facade import NoDataError
 from src.services.session_filter import (
     get_current_session,
     should_skip_forex_symbol,
@@ -85,6 +86,7 @@ class ScanCycleResult:
     errors_count: int
     status: ScanCycleStatus
     signals: list[TradeSignal] = field(default_factory=list)
+    symbols_no_data: int = 0  # Symbols with no OHLCV data available
     symbols_skipped_session: int = 0  # Story 20.4: forex session filtering
     symbols_skipped_rate_limit: int = 0  # Story 20.4: rate limiting
     kill_switch_triggered: bool = False  # Story 20.4: kill switch was activated
@@ -553,6 +555,7 @@ class SignalScannerService:
         symbols_scanned = 0
         signals_generated = 0
         errors_count = 0
+        symbols_no_data = 0
         symbols_skipped_session = 0
         symbols_skipped_rate_limit = 0
         all_signals: list[TradeSignal] = []
@@ -723,7 +726,9 @@ class SignalScannerService:
 
                     symbols_scanned += 1
 
-                    if error:
+                    if error == "no_data":
+                        symbols_no_data += 1
+                    elif error:
                         errors_count += 1
                     else:
                         # Story 20.5b AC1/AC3: Broadcast each signal individually
@@ -769,6 +774,7 @@ class SignalScannerService:
                 symbols_scanned=symbols_scanned,
                 signals_generated=signals_generated,
                 errors_count=errors_count,
+                symbols_no_data=symbols_no_data,
                 symbols_skipped_session=symbols_skipped_session,
                 symbols_skipped_rate_limit=symbols_skipped_rate_limit,
                 duration_ms=cycle_duration_ms,
@@ -784,6 +790,7 @@ class SignalScannerService:
                 errors_count=errors_count,
                 status=status,
                 signals=all_signals,
+                symbols_no_data=symbols_no_data,
                 symbols_skipped_session=symbols_skipped_session,
                 symbols_skipped_rate_limit=symbols_skipped_rate_limit,
             )
@@ -843,6 +850,16 @@ class SignalScannerService:
             )
 
             return signals, None
+
+        except NoDataError:
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+            logger.warning(
+                "symbol_no_ohlcv_data",
+                symbol=symbol.symbol,
+                timeframe=symbol.timeframe.value,
+                duration_ms=duration_ms,
+            )
+            return [], "no_data"
 
         except Exception as e:
             duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -930,6 +947,7 @@ class SignalScannerService:
                 errors_count=result.errors_count,
                 status=result.status,
                 # Story 20.4 PR review: include skip counts in history
+                symbols_no_data=result.symbols_no_data,
                 symbols_skipped_session=result.symbols_skipped_session,
                 symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
             )
@@ -941,6 +959,7 @@ class SignalScannerService:
                     "scan_cycle_history_recorded",
                     status=result.status.value,
                     symbols_scanned=result.symbols_scanned,
+                    symbols_no_data=result.symbols_no_data,
                     symbols_skipped_session=result.symbols_skipped_session,
                     symbols_skipped_rate_limit=result.symbols_skipped_rate_limit,
                 )

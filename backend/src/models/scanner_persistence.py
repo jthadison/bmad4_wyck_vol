@@ -208,6 +208,9 @@ class ScannerHistory(BaseModel):
     signals_generated: Annotated[int, Field(ge=0, description="Signals created")] = 0
     errors_count: Annotated[int, Field(ge=0, description="Errors encountered")] = 0
     status: ScanCycleStatus = Field(description="Cycle outcome")
+    symbols_no_data: Annotated[
+        int, Field(ge=0, description="Symbols with no OHLCV data available")
+    ] = 0
     # Story 20.4: Skip tracking
     symbols_skipped_session: Annotated[
         int, Field(ge=0, description="Symbols skipped due to session filter")
@@ -230,6 +233,9 @@ class ScannerHistoryCreate(BaseModel):
     signals_generated: Annotated[int, Field(ge=0, description="Signals created")] = 0
     errors_count: Annotated[int, Field(ge=0, description="Errors encountered")] = 0
     status: ScanCycleStatus = Field(description="Cycle outcome")
+    symbols_no_data: Annotated[
+        int, Field(ge=0, description="Symbols with no OHLCV data available")
+    ] = 0
     # Story 20.4: Skip tracking
     symbols_skipped_session: Annotated[
         int, Field(ge=0, description="Symbols skipped due to session filter")

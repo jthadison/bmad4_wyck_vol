@@ -25,6 +25,15 @@ from src.orchestrator.services import PortfolioMonitor
 logger = structlog.get_logger(__name__)
 
 
+class NoDataError(Exception):
+    """Raised when no OHLCV bars are available for a symbol."""
+
+    def __init__(self, symbol: str, timeframe: str) -> None:
+        self.symbol = symbol
+        self.timeframe = timeframe
+        super().__init__(f"No OHLCV data for {symbol}/{timeframe}")
+
+
 class MasterOrchestratorFacade:
     """
     Backward-compatible facade for pipeline execution.
@@ -136,7 +145,8 @@ class MasterOrchestratorFacade:
             # Fetch bars
             bars = await self._fetch_bars(symbol, timeframe)
             if not bars:
-                return []
+                logger.warning("no_ohlcv_data", symbol=symbol, timeframe=timeframe)
+                raise NoDataError(symbol, timeframe)
 
             # Build context
             context = (
@@ -163,6 +173,8 @@ class MasterOrchestratorFacade:
 
             return signals
 
+        except NoDataError:
+            raise
         except Exception as e:
             async with self._lock:
                 self._error_count += 1
@@ -212,7 +224,11 @@ class MasterOrchestratorFacade:
 
         async def analyze_with_semaphore(symbol: str) -> tuple[str, list[TradeSignal]]:
             async with self._semaphore:
-                signals = await self.analyze_symbol(symbol, timeframe)
+                try:
+                    signals = await self.analyze_symbol(symbol, timeframe)
+                except NoDataError:
+                    logger.info("no_data_for_symbol", symbol=symbol, timeframe=timeframe)
+                    signals = []
                 return (symbol, signals)
 
         if self._config.enable_parallel_processing:
@@ -224,6 +240,9 @@ class MasterOrchestratorFacade:
                 try:
                     signals = await self.analyze_symbol(s, timeframe)
                     results.append((s, signals))
+                except NoDataError:
+                    logger.info("no_data_for_symbol", symbol=s, timeframe=timeframe)
+                    results.append((s, []))
                 except Exception as e:
                     results.append(e)
 
