@@ -457,6 +457,6 @@ class TestRegressionTestWorkflow:
         assert abs(result.aggregate_metrics.win_rate - Decimal("0.6500")) < Decimal("0.001")
 
         # Verify per-symbol results preserved
-        assert result.per_symbol_results["AAPL"]["win_rate"] == Decimal("0.6000")
-        assert result.per_symbol_results["MSFT"]["win_rate"] == Decimal("0.7000")
-        assert result.per_symbol_results["GOOGL"]["win_rate"] == Decimal("0.6500")
+        assert result.per_symbol_results["AAPL"].metrics.win_rate == Decimal("0.6000")
+        assert result.per_symbol_results["MSFT"].metrics.win_rate == Decimal("0.7000")
+        assert result.per_symbol_results["GOOGL"].metrics.win_rate == Decimal("0.6500")
