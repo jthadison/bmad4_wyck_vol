@@ -192,8 +192,8 @@ async def update_notification_preferences(
     """
     user_id = current_user["id"]
 
-    # Ensure user_id matches current user
-    if preferences.user_id != user_id:
+    # Ensure user_id matches current user (compare as strings for consistency)
+    if str(preferences.user_id) != str(user_id):
         raise HTTPException(
             status_code=403,
             detail="Cannot update preferences for another user",
