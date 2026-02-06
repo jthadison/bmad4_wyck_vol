@@ -51,15 +51,21 @@
       <div v-else-if="summary" class="space-y-6">
         <!-- Metrics Grid -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <!-- Symbols Scanned -->
+          <!-- Symbols with Data -->
           <div
             class="bg-gray-900 rounded-lg p-4 border border-gray-700"
             role="group"
-            aria-label="Symbols scanned metric"
+            aria-label="Symbols with data metric"
           >
-            <div class="text-sm text-gray-400 mb-1">Symbols Scanned</div>
+            <div class="text-sm text-gray-400 mb-1">Symbols with Data</div>
             <div class="text-2xl font-bold text-blue-400">
-              {{ formatNumber(summary.symbols_scanned) }}
+              {{ formatNumber(summary.symbols_scanned)
+              }}<span
+                v-if="summary.symbols_in_watchlist > 0"
+                class="text-lg text-gray-400"
+              >
+                / {{ formatNumber(summary.symbols_in_watchlist) }}</span
+              >
             </div>
           </div>
 

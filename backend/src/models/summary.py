@@ -36,7 +36,8 @@ class DailySummary(BaseModel):
 
     Fields:
     -------
-    - symbols_scanned: Total unique symbols analyzed in last 24 hours
+    - symbols_scanned: Total unique symbols with OHLCV data in last 24 hours
+    - symbols_in_watchlist: Total enabled symbols in scanner watchlist
     - patterns_detected: Total patterns detected (all types)
     - signals_executed: Count of signals with status EXECUTED
     - signals_rejected: Count of signals with rejection_reason not null
@@ -49,7 +50,8 @@ class DailySummary(BaseModel):
     >>> from decimal import Decimal
     >>> from datetime import datetime, UTC
     >>> summary = DailySummary(
-    ...     symbols_scanned=15,
+    ...     symbols_scanned=3,
+    ...     symbols_in_watchlist=7,
     ...     patterns_detected=23,
     ...     signals_executed=4,
     ...     signals_rejected=8,
@@ -63,7 +65,11 @@ class DailySummary(BaseModel):
     """
 
     symbols_scanned: int = Field(
-        ..., ge=0, description="Total unique symbols analyzed in last 24 hours"
+        ..., ge=0, description="Total unique symbols with OHLCV data in last 24 hours"
+    )
+
+    symbols_in_watchlist: int = Field(
+        default=0, ge=0, description="Total enabled symbols in scanner watchlist"
     )
 
     patterns_detected: int = Field(..., ge=0, description="Total patterns detected (all types)")
@@ -118,6 +124,7 @@ class DailySummary(BaseModel):
             "examples": [
                 {
                     "symbols_scanned": 15,
+                    "symbols_in_watchlist": 20,
                     "patterns_detected": 23,
                     "signals_executed": 4,
                     "signals_rejected": 8,
