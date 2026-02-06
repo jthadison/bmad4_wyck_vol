@@ -4,6 +4,7 @@ Configuration repository for database operations.
 Handles CRUD operations for system configuration with optimistic locking support.
 """
 
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -184,7 +185,8 @@ class ConfigurationRepository:
                 {
                     "id": str(config.id),
                     "version": new_version,
-                    "configuration_json": config_dict,
+                    # Serialize dict to JSON string for psycopg3 compatibility
+                    "configuration_json": json.dumps(config_dict),
                     "applied_at": config.applied_at,
                     "applied_by": config.applied_by,
                 },
