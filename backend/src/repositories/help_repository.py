@@ -702,8 +702,8 @@ class HelpRepository:
         await self.session.execute(
             query,
             {
-                "user_id": user_id,
-                "tutorial_id": tutorial_id,
+                "user_id": str(user_id),
+                "tutorial_id": str(tutorial_id),
                 "current_step": current_step,
                 "completed": completed,
                 "last_accessed": datetime.now(UTC),
@@ -833,7 +833,7 @@ class HelpRepository:
             difficulty=row.difficulty,
             estimated_time_minutes=row.estimated_time_minutes,
             steps=steps,
-            tags=row.tags or [],
+            tags=self._parse_json_list(row.tags),
             last_updated=row.last_updated,
             completion_count=row.completion_count,
         )
