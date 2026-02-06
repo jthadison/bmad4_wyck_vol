@@ -378,6 +378,7 @@ class ScannerRepository:
             symbols_scanned=cycle_data.symbols_scanned,
             signals_generated=cycle_data.signals_generated,
             errors_count=cycle_data.errors_count,
+            symbols_no_data=cycle_data.symbols_no_data,
             status=cycle_data.status.value,
         )
 

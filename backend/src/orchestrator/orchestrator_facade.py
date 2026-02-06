@@ -224,7 +224,11 @@ class MasterOrchestratorFacade:
 
         async def analyze_with_semaphore(symbol: str) -> tuple[str, list[TradeSignal]]:
             async with self._semaphore:
-                signals = await self.analyze_symbol(symbol, timeframe)
+                try:
+                    signals = await self.analyze_symbol(symbol, timeframe)
+                except NoDataError:
+                    logger.info("no_data_for_symbol", symbol=symbol, timeframe=timeframe)
+                    signals = []
                 return (symbol, signals)
 
         if self._config.enable_parallel_processing:
@@ -236,6 +240,9 @@ class MasterOrchestratorFacade:
                 try:
                     signals = await self.analyze_symbol(s, timeframe)
                     results.append((s, signals))
+                except NoDataError:
+                    logger.info("no_data_for_symbol", symbol=s, timeframe=timeframe)
+                    results.append((s, []))
                 except Exception as e:
                     results.append(e)
 

@@ -764,7 +764,6 @@ class SignalScannerService:
                 was_stopped=was_stopped,
                 symbols_skipped_session=symbols_skipped_session,
                 symbols_skipped_rate_limit=symbols_skipped_rate_limit,
-                symbols_no_data=symbols_no_data,
             )
 
             cycle_ended_at = datetime.now(UTC)
@@ -904,7 +903,6 @@ class SignalScannerService:
         was_stopped: bool,
         symbols_skipped_session: int = 0,
         symbols_skipped_rate_limit: int = 0,
-        symbols_no_data: int = 0,
     ) -> ScanCycleStatus:
         """
         Determine the status of a completed scan cycle.
@@ -916,7 +914,6 @@ class SignalScannerService:
             was_stopped: Whether cycle was interrupted by stop
             symbols_skipped_session: Symbols skipped due to session filtering
             symbols_skipped_rate_limit: Symbols skipped due to rate limiting
-            symbols_no_data: Symbols with no OHLCV data available
 
         Returns:
             ScanCycleStatus enum value
