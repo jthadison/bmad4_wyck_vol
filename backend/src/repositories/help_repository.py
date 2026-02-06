@@ -23,6 +23,7 @@ Integration:
 Author: Story 11.8a (Task 6), Story 11.8b (Task 4)
 """
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -219,7 +220,7 @@ class HelpRepository:
             """
         )
 
-        await self.session.execute(query, {"article_id": article_id})
+        await self.session.execute(query, {"article_id": str(article_id)})
         await self.session.commit()
 
         logger.debug("Incremented view count", article_id=str(article_id))
@@ -457,8 +458,8 @@ class HelpRepository:
             await self.session.execute(
                 insert_query,
                 {
-                    "id": feedback.id,
-                    "article_id": feedback.article_id,
+                    "id": str(feedback.id),
+                    "article_id": str(feedback.article_id),
                     "helpful": feedback.helpful,
                     "user_comment": feedback.user_comment,
                     "created_at": feedback.created_at,
@@ -521,7 +522,7 @@ class HelpRepository:
                 """
             )
 
-        await self.session.execute(query, {"article_id": article_id})
+        await self.session.execute(query, {"article_id": str(article_id)})
 
         logger.debug(
             "Updated feedback count",
@@ -701,8 +702,8 @@ class HelpRepository:
         await self.session.execute(
             query,
             {
-                "user_id": user_id,
-                "tutorial_id": tutorial_id,
+                "user_id": str(user_id),
+                "tutorial_id": str(tutorial_id),
                 "current_step": current_step,
                 "completed": completed,
                 "last_accessed": datetime.now(UTC),
@@ -763,6 +764,20 @@ class HelpRepository:
             "last_accessed": row.last_accessed,
         }
 
+    def _parse_json_list(self, value: Any) -> list[str]:
+        """Parse JSON list from database value (handles SQLite string vs PostgreSQL list)."""
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                return []
+        return []
+
     def _row_to_article(self, row: Any) -> HelpArticle:
         """Convert database row to HelpArticle model."""
         return HelpArticle(
@@ -772,7 +787,7 @@ class HelpRepository:
             content_markdown=row.content_markdown,
             content_html=row.content_html,
             category=row.category,
-            tags=row.tags or [],
+            tags=self._parse_json_list(row.tags),
             keywords=row.keywords or "",
             last_updated=row.last_updated,
             view_count=row.view_count,
@@ -794,8 +809,8 @@ class HelpRepository:
             full_description="",  # Not stored separately
             full_description_html=row.full_description_html,
             wyckoff_phase=row.wyckoff_phase,
-            related_terms=row.related_terms or [],
-            tags=row.tags or [],
+            related_terms=self._parse_json_list(row.related_terms),
+            tags=self._parse_json_list(row.tags),
             last_updated=row.last_updated,
         )
 
@@ -818,7 +833,7 @@ class HelpRepository:
             difficulty=row.difficulty,
             estimated_time_minutes=row.estimated_time_minutes,
             steps=steps,
-            tags=row.tags or [],
+            tags=self._parse_json_list(row.tags),
             last_updated=row.last_updated,
             completion_count=row.completion_count,
         )
