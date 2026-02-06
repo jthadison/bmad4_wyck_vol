@@ -42,10 +42,11 @@ Author: Story 19.4 (Multi-Symbol Concurrent Processing)
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, Response
 from fastapi import status as http_status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -622,6 +623,58 @@ async def reset_symbol_circuit_breaker(symbol: str):
 
 
 # =========================================
+# Background Ingestion Helper
+# =========================================
+
+
+async def _auto_ingest_symbol_data(symbol: str, timeframe: str = "1d") -> None:
+    """Background task to auto-ingest ~1 year of historical OHLCV data for a new watchlist symbol.
+
+    Uses Yahoo Finance adapter for widest symbol coverage (forex, indices, equities).
+    Errors are logged but never propagated - this must not affect the watchlist add response.
+    """
+    try:
+        from src.market_data.adapters.yahoo_adapter import YahooAdapter
+        from src.market_data.service import MarketDataService
+
+        end_date = date.today()
+        start_date = end_date - timedelta(days=365)
+
+        service = MarketDataService(YahooAdapter())
+        result = await service.ingest_historical_data(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+        )
+
+        if result.success:
+            logger.info(
+                "auto_ingest_complete",
+                symbol=symbol,
+                timeframe=timeframe,
+                fetched=result.total_fetched,
+                inserted=result.inserted,
+                duplicates=result.duplicates,
+            )
+        else:
+            logger.warning(
+                "auto_ingest_failed",
+                symbol=symbol,
+                timeframe=timeframe,
+                error=result.error_message,
+            )
+    except Exception as e:
+        logger.error(
+            "auto_ingest_exception",
+            symbol=symbol,
+            timeframe=timeframe,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+
+# =========================================
 # Watchlist Management Endpoints (Story 20.2)
 # =========================================
 
@@ -696,6 +749,7 @@ async def get_watchlist(
 async def add_watchlist_symbol(
     request: WatchlistSymbolCreate,
     response: Response,
+    background_tasks: BackgroundTasks,
     repository: ScannerRepository = Depends(get_scanner_repository),
 ) -> WatchlistSymbol:
     """
@@ -836,6 +890,12 @@ async def add_watchlist_symbol(
             symbol=symbol.symbol,
             timeframe=symbol.timeframe,
             asset_class=symbol.asset_class,
+        )
+
+        # Auto-ingest historical data in background (always daily regardless of scan timeframe)
+        background_tasks.add_task(
+            _auto_ingest_symbol_data,
+            symbol=symbol.symbol,
         )
 
         return symbol
