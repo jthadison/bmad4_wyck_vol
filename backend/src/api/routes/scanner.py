@@ -892,11 +892,10 @@ async def add_watchlist_symbol(
             asset_class=symbol.asset_class,
         )
 
-        # Auto-ingest historical data in background
+        # Auto-ingest historical data in background (always daily regardless of scan timeframe)
         background_tasks.add_task(
             _auto_ingest_symbol_data,
             symbol=symbol.symbol,
-            timeframe=symbol.timeframe,
         )
 
         return symbol
