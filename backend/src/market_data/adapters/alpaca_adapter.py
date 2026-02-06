@@ -610,6 +610,14 @@ class AlpacaAdapter(MarketDataProvider):
         """
         correlation_id = str(uuid4())
 
+        if asset_class and asset_class != "stock":
+            logger.warning(
+                "alpaca_unsupported_asset_class",
+                symbol=symbol,
+                asset_class=asset_class,
+                message="Alpaca adapter only supports stocks; asset_class ignored",
+            )
+
         # Alpaca REST API base URL for data
         base_url = "https://data.alpaca.markets"
         endpoint = f"/v2/stocks/{symbol}/bars"

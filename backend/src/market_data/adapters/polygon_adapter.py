@@ -259,6 +259,9 @@ class PolygonAdapter(MarketDataProvider):
         """
         if asset_class is None or asset_class == "stock":
             return symbol
+        # Guard: if symbol already carries a known Polygon prefix, return as-is
+        if symbol.startswith(("C:", "I:", "X:")):
+            return symbol
         prefix_map = {
             "forex": "C:",
             "index": "I:",

@@ -91,6 +91,8 @@ class MarketDataService:
             start_date: Start date (inclusive)
             end_date: End date (inclusive)
             timeframe: Bar timeframe (default "1d")
+            asset_class: Asset class for provider-specific symbol formatting
+                (e.g., "stock", "forex", "index", "crypto"). None defaults to stock.
 
         Returns:
             IngestionResult with statistics

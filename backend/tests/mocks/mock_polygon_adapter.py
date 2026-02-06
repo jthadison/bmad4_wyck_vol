@@ -41,6 +41,7 @@ class MockPolygonAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> list[OHLCVBar]:
         """
         Fetch fixture OHLCV bars for a symbol.

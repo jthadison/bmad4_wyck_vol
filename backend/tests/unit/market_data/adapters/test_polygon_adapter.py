@@ -262,3 +262,46 @@ class TestPolygonAdapter:
 
         # Assert - client should be closed (no exception)
         assert True
+
+
+class TestPolygonFormatSymbol:
+    """Tests for PolygonAdapter._format_symbol."""
+
+    def setup_method(self):
+        self.adapter = PolygonAdapter(api_key="test-key")
+
+    def test_none_asset_class_returns_bare_symbol(self):
+        """asset_class=None should return the symbol unchanged."""
+        assert self.adapter._format_symbol("AAPL", None) == "AAPL"
+
+    def test_stock_asset_class_returns_bare_symbol(self):
+        """asset_class='stock' should return the symbol unchanged."""
+        assert self.adapter._format_symbol("AAPL", "stock") == "AAPL"
+
+    def test_forex_adds_c_prefix(self):
+        """Forex symbols get the C: prefix for Polygon."""
+        assert self.adapter._format_symbol("EURUSD", "forex") == "C:EURUSD"
+
+    def test_index_adds_i_prefix(self):
+        """Index symbols get the I: prefix for Polygon."""
+        assert self.adapter._format_symbol("DJI", "index") == "I:DJI"
+
+    def test_crypto_adds_x_prefix(self):
+        """Crypto symbols get the X: prefix for Polygon."""
+        assert self.adapter._format_symbol("BTCUSD", "crypto") == "X:BTCUSD"
+
+    def test_unknown_asset_class_returns_bare_symbol(self):
+        """An unrecognised asset class should return the symbol unchanged."""
+        assert self.adapter._format_symbol("FOO", "futures") == "FOO"
+
+    def test_already_prefixed_forex_no_double_prefix(self):
+        """A symbol that already carries the C: prefix should not be doubled."""
+        assert self.adapter._format_symbol("C:EURUSD", "forex") == "C:EURUSD"
+
+    def test_already_prefixed_index_no_double_prefix(self):
+        """A symbol that already carries the I: prefix should not be doubled."""
+        assert self.adapter._format_symbol("I:DJI", "index") == "I:DJI"
+
+    def test_already_prefixed_crypto_no_double_prefix(self):
+        """A symbol that already carries the X: prefix should not be doubled."""
+        assert self.adapter._format_symbol("X:BTCUSD", "crypto") == "X:BTCUSD"

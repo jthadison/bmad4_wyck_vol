@@ -59,7 +59,13 @@ def cli():
     type=click.Choice(["polygon", "yahoo"]),
     help="Market data provider (default: from settings)",
 )
-def ingest(symbol, start, end, timeframe, provider):
+@click.option(
+    "--asset-class",
+    default=None,
+    type=click.Choice(["stock", "forex", "index", "crypto"]),
+    help="Asset class for provider-specific symbol formatting (default: stock)",
+)
+def ingest(symbol, start, end, timeframe, provider, asset_class):
     """
     Ingest historical OHLCV data for backtesting.
 
@@ -69,10 +75,10 @@ def ingest(symbol, start, end, timeframe, provider):
     Multiple symbols:
         wyckoff ingest -s AAPL -s MSFT -s TSLA --start 2020-01-01 --end 2024-12-31
     """
-    asyncio.run(ingest_async(symbol, start, end, timeframe, provider))
+    asyncio.run(ingest_async(symbol, start, end, timeframe, provider, asset_class))
 
 
-async def ingest_async(symbols, start, end, timeframe, provider):
+async def ingest_async(symbols, start, end, timeframe, provider, asset_class):
     """
     Async implementation of ingest command.
 
@@ -82,6 +88,7 @@ async def ingest_async(symbols, start, end, timeframe, provider):
         end: End datetime
         timeframe: Bar timeframe
         provider: Provider name (or None for default)
+        asset_class: Asset class for symbol formatting (or None for default)
     """
     # Generate correlation ID for this ingestion run
     correlation_id = str(uuid.uuid4())
@@ -155,6 +162,7 @@ async def ingest_async(symbols, start, end, timeframe, provider):
                     start_date=start_date,
                     end_date=end_date,
                     timeframe=timeframe,
+                    asset_class=asset_class,
                 )
 
                 # Update statistics

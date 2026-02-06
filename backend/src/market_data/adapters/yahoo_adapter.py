@@ -222,12 +222,21 @@ class YahooAdapter(MarketDataProvider):
         if asset_class is None or asset_class == "stock":
             return symbol
         if asset_class == "forex":
+            if symbol.endswith("=X"):
+                return symbol
             return f"{symbol}=X"
         if asset_class == "index":
+            if symbol.startswith("^"):
+                return symbol
             return f"^{symbol}"
         if asset_class == "crypto":
-            # Convert e.g. BTCUSD -> BTC-USD (insert dash before last 3 chars)
-            if len(symbol) > 3 and "-" not in symbol:
+            # Convert e.g. BTCUSD -> BTC-USD (insert dash before last 3 chars).
+            # Limitation: assumes the quote currency is always 3 characters
+            # (e.g. USD, EUR, GBP). Symbols with non-3-char quote currencies
+            # should be passed pre-formatted with a dash (e.g. "BTC-USDT").
+            if "-" in symbol:
+                return symbol
+            if len(symbol) > 3:
                 return f"{symbol[:-3]}-{symbol[-3:]}"
             return symbol
         return symbol

@@ -899,7 +899,7 @@ async def add_watchlist_symbol(
         background_tasks.add_task(
             _auto_ingest_symbol_data,
             symbol=symbol.symbol,
-            asset_class=symbol.asset_class,
+            asset_class=symbol.asset_class.value,
         )
 
         return symbol
