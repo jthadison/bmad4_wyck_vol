@@ -3,6 +3,9 @@ OHLCV Repository for database operations.
 
 This module provides database access methods for OHLCV bars,
 including bulk insert, duplicate detection, and data quality queries.
+
+Note: Uses database-agnostic patterns for compatibility with both
+PostgreSQL (production) and SQLite (testing).
 """
 
 from __future__ import annotations
@@ -11,7 +14,6 @@ from datetime import datetime
 
 import structlog
 from sqlalchemy import and_, exists, func, select
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.ohlcv import OHLCVBar
@@ -61,38 +63,8 @@ class OHLCVRepository:
             ```
         """
         try:
-            stmt = insert(OHLCVBarModel).values(
-                {
-                    "id": bar.id,
-                    "symbol": bar.symbol,
-                    "timeframe": bar.timeframe,
-                    "timestamp": bar.timestamp,
-                    "open": bar.open,
-                    "high": bar.high,
-                    "low": bar.low,
-                    "close": bar.close,
-                    "volume": bar.volume,
-                    "spread": bar.spread,
-                    "spread_ratio": bar.spread_ratio,
-                    "volume_ratio": bar.volume_ratio,
-                    "created_at": bar.created_at,
-                }
-            )
-            stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "timestamp"])
-
-            result = await self.session.execute(stmt)
-            await self.session.commit()
-
-            # Check if row was inserted
-            if result.rowcount and result.rowcount > 0:
-                logger.info(
-                    "bar_inserted",
-                    symbol=bar.symbol,
-                    timeframe=bar.timeframe,
-                    timestamp=bar.timestamp.isoformat(),
-                )
-                return str(bar.id)
-            else:
+            # Check if bar already exists (database-agnostic duplicate detection)
+            if await self.bar_exists(bar.symbol, bar.timeframe, bar.timestamp):
                 logger.debug(
                     "duplicate_bar_skipped",
                     symbol=bar.symbol,
@@ -100,6 +72,34 @@ class OHLCVRepository:
                     timestamp=bar.timestamp.isoformat(),
                 )
                 return None
+
+            # Create new model and add to session
+            model = OHLCVBarModel(
+                id=str(bar.id),  # Convert UUID to string for SQLite compatibility
+                symbol=bar.symbol,
+                timeframe=bar.timeframe,
+                timestamp=bar.timestamp,
+                open=bar.open,
+                high=bar.high,
+                low=bar.low,
+                close=bar.close,
+                volume=bar.volume,
+                spread=bar.spread,
+                spread_ratio=bar.spread_ratio,
+                volume_ratio=bar.volume_ratio,
+                created_at=bar.created_at,
+            )
+
+            self.session.add(model)
+            await self.session.commit()
+
+            logger.info(
+                "bar_inserted",
+                symbol=bar.symbol,
+                timeframe=bar.timeframe,
+                timestamp=bar.timestamp.isoformat(),
+            )
+            return str(bar.id)
 
         except Exception as e:
             await self.session.rollback()
@@ -110,8 +110,8 @@ class OHLCVRepository:
         """
         Bulk insert OHLCV bars into database.
 
-        Uses SQLAlchemy Core for performance. Handles unique constraint
-        violations gracefully (duplicate bars are skipped).
+        Uses check-then-insert pattern for database-agnostic duplicate handling.
+        Works with both PostgreSQL and SQLite.
 
         Args:
             bars: List of OHLCVBar objects to insert
@@ -128,37 +128,41 @@ class OHLCVRepository:
         if not bars:
             return 0
 
-        # Convert Pydantic models to dict for bulk insert
-        bars_dict = []
-        for bar in bars:
-            bars_dict.append(
-                {
-                    "id": bar.id,
-                    "symbol": bar.symbol,
-                    "timeframe": bar.timeframe,
-                    "timestamp": bar.timestamp,
-                    "open": bar.open,
-                    "high": bar.high,
-                    "low": bar.low,
-                    "close": bar.close,
-                    "volume": bar.volume,
-                    "spread": bar.spread,
-                    "spread_ratio": bar.spread_ratio,
-                    "volume_ratio": bar.volume_ratio,
-                    "created_at": bar.created_at,
-                }
+        try:
+            # Get existing timestamps in batch for efficiency
+            timestamps = [bar.timestamp for bar in bars]
+            # Group bars by symbol/timeframe for efficient lookup
+            symbol = bars[0].symbol
+            timeframe = bars[0].timeframe
+            existing_timestamps = await self.get_existing_timestamps(
+                symbol, timeframe, timestamps
             )
 
-        try:
-            # Use PostgreSQL INSERT ... ON CONFLICT DO NOTHING for idempotency
-            stmt = insert(OHLCVBarModel).values(bars_dict)
-            stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "timestamp"])
+            # Filter out duplicates and create models
+            inserted_count = 0
+            for bar in bars:
+                if bar.timestamp in existing_timestamps:
+                    continue
 
-            result = await self.session.execute(stmt)
+                model = OHLCVBarModel(
+                    id=str(bar.id),  # Convert UUID to string for SQLite compatibility
+                    symbol=bar.symbol,
+                    timeframe=bar.timeframe,
+                    timestamp=bar.timestamp,
+                    open=bar.open,
+                    high=bar.high,
+                    low=bar.low,
+                    close=bar.close,
+                    volume=bar.volume,
+                    spread=bar.spread,
+                    spread_ratio=bar.spread_ratio,
+                    volume_ratio=bar.volume_ratio,
+                    created_at=bar.created_at,
+                )
+                self.session.add(model)
+                inserted_count += 1
+
             await self.session.commit()
-
-            # Return number of inserted rows
-            inserted_count = result.rowcount if result.rowcount else 0
 
             logger.info(
                 "bars_inserted",
