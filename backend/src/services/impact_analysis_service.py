@@ -122,6 +122,9 @@ class ImpactAnalysisService:
             List of pattern dictionaries with detection data
         """
         # Query patterns table for historical data
+        # Note: cause_factor is stored in trading_ranges, not patterns table.
+        # For impact analysis, we use the default cause_factor from pattern metadata
+        # or assume the minimum (2.0) for patterns without range association.
         query = text(
             """
             SELECT
@@ -131,7 +134,6 @@ class ImpactAnalysisService:
                 detection_time,
                 volume_ratio,
                 confidence_score,
-                cause_factor,
                 metadata
             FROM patterns
             WHERE detection_time >= :start_date
@@ -144,6 +146,9 @@ class ImpactAnalysisService:
 
         patterns = []
         for row in result.fetchall():
+            # Extract cause_factor from metadata if available, otherwise use default 2.0
+            metadata = row.metadata or {}
+            cause_factor = metadata.get("cause_factor", 2.0) if isinstance(metadata, dict) else 2.0
             patterns.append(
                 {
                     "id": str(row.id),
@@ -152,8 +157,8 @@ class ImpactAnalysisService:
                     "detection_time": row.detection_time,
                     "volume_ratio": float(row.volume_ratio) if row.volume_ratio else 1.0,
                     "confidence_score": row.confidence_score,
-                    "cause_factor": float(row.cause_factor) if row.cause_factor else 2.0,
-                    "metadata": row.metadata or {},
+                    "cause_factor": float(cause_factor),
+                    "metadata": metadata,
                 }
             )
 

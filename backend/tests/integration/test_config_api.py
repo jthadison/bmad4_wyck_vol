@@ -4,6 +4,7 @@ Integration tests for configuration API endpoints.
 Tests complete API workflows including database operations.
 """
 
+import json
 
 import pytest
 from httpx import AsyncClient
@@ -62,7 +63,8 @@ async def setup_test_config():
                     "min_utad_confidence": 70,
                 },
             }
-            await session.execute(insert_query, {"config_json": config_dict})
+            # Serialize dict to JSON string for psycopg3 compatibility
+            await session.execute(insert_query, {"config_json": json.dumps(config_dict)})
             await session.commit()
 
     yield
