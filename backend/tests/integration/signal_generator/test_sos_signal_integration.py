@@ -492,9 +492,9 @@ def test_large_range_signal_generation():
     # Entry: $505, Stop: $485, Target: $600
     # Risk: $20, Reward: $95
     # R: 95/20 = 4.75R (excellent)
-    assert lps_signal.r_multiple >= Decimal(
-        "4.0"
-    ), "Large range should produce excellent R-multiple"
+    assert lps_signal.r_multiple >= Decimal("4.0"), (
+        "Large range should produce excellent R-multiple"
+    )
 
 
 # Test edge case: very small range

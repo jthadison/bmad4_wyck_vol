@@ -236,9 +236,9 @@ async def test_eur_usd_spring_low_tick_volume_integration() -> None:
     result = await validator.validate(context)
 
     # Assertions
-    assert (
-        result.status == ValidationStatus.PASS
-    ), f"Expected PASS, got {result.status}: {result.reason}"
+    assert result.status == ValidationStatus.PASS, (
+        f"Expected PASS, got {result.status}: {result.reason}"
+    )
 
     # Verify forex-specific metadata
     assert result.metadata is not None, "Metadata should be present for PASS result"
@@ -418,9 +418,9 @@ async def test_stock_aapl_spring_backward_compatibility() -> None:
     result = await validator.validate(context)
 
     # Assertions
-    assert (
-        result.status == ValidationStatus.FAIL
-    ), "Stock with 80% volume should fail (> 70% threshold)"
+    assert result.status == ValidationStatus.FAIL, (
+        "Stock with 80% volume should fail (> 70% threshold)"
+    )
 
     # Verify stock threshold used (0.7, not forex 0.85)
     assert result.reason is not None

@@ -44,7 +44,13 @@ class TestValidationChainIntegration:
             # REQUIRED: volume_analysis (Volume validator)
             volume_analysis={"volume_ratio": Decimal("0.45"), "pattern_type": "SPRING"},
             # Optional: phase_info (Phase validator)
-            phase_info={"phase": "C", "detected_phase": "PHASE_C", "confidence": 85, "duration": 20, "trading_allowed": True},
+            phase_info={
+                "phase": "C",
+                "detected_phase": "PHASE_C",
+                "confidence": 85,
+                "duration": 20,
+                "trading_allowed": True,
+            },
             # Optional: trading_range (Level validator) - dict lacks TradingRange structure
             trading_range={
                 "creek_level": Decimal("100.00"),
@@ -132,7 +138,12 @@ class TestValidationChainIntegration:
             symbol="AAPL",
             timeframe="1d",
             volume_analysis={"volume_ratio": Decimal("0.45")},
-            phase_info={"phase": "C", "confidence": 85, "duration": 20, "trading_allowed": True},  # Phase will PASS
+            phase_info={
+                "phase": "C",
+                "confidence": 85,
+                "duration": 20,
+                "trading_allowed": True,
+            },  # Phase will PASS
             # No trading_range - Levels will FAIL
             portfolio_context={"available_capital": Decimal("100000")},
             market_context={"market_condition": "BULL"},
@@ -148,7 +159,10 @@ class TestValidationChainIntegration:
         # Verify Levels FAIL
         assert chain.validation_results[2].stage == "Levels"
         assert chain.validation_results[2].status == ValidationStatus.FAIL
-        assert "Trading range" in chain.validation_results[2].reason and "not available" in chain.validation_results[2].reason
+        assert (
+            "Trading range" in chain.validation_results[2].reason
+            and "not available" in chain.validation_results[2].reason
+        )
 
         # Verify early exit (Risk and Strategy NOT executed)
         assert chain.overall_status == ValidationStatus.FAIL
@@ -180,7 +194,14 @@ class TestValidationChainIntegration:
                 "avg_volume": Decimal("1000000"),
                 "actual_volume": Decimal("450000"),
             },
-            phase_info={"phase": "C", "detected_phase": "PHASE_C", "phase_duration_bars": 30, "confidence": 85, "duration": 30, "trading_allowed": True},
+            phase_info={
+                "phase": "C",
+                "detected_phase": "PHASE_C",
+                "phase_duration_bars": 30,
+                "confidence": 85,
+                "duration": 30,
+                "trading_allowed": True,
+            },
             trading_range={
                 "creek_level": Decimal("100.00"),
                 "creek_strength": Decimal("85.0"),
