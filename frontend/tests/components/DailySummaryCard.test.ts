@@ -40,6 +40,7 @@ describe('DailySummaryCard.vue', () => {
   // Mock daily summary data
   const mockSummary: DailySummary = {
     symbols_scanned: 15,
+    symbols_in_watchlist: 20,
     patterns_detected: 23,
     signals_executed: 4,
     signals_rejected: 8,
@@ -289,7 +290,7 @@ describe('DailySummaryCard.vue', () => {
 
       // Metric groups
       expect(
-        wrapper.find('[aria-label="Symbols scanned metric"]').exists()
+        wrapper.find('[aria-label="Symbols with data metric"]').exists()
       ).toBe(true)
       expect(
         wrapper.find('[aria-label="Patterns detected metric"]').exists()
