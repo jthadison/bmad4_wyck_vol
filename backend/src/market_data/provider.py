@@ -45,6 +45,7 @@ class MarketDataProvider(ABC):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> list[OHLCVBar]:
         """
         Fetch historical OHLCV bars for a symbol within a date range.
@@ -54,6 +55,8 @@ class MarketDataProvider(ABC):
             start_date: Start date for historical data (inclusive)
             end_date: End date for historical data (inclusive)
             timeframe: Bar timeframe (e.g., "1d", "1h", "5m")
+            asset_class: Asset class for provider-specific symbol formatting
+                (e.g., "stock", "forex", "index", "crypto"). None defaults to stock.
 
         Returns:
             List of OHLCVBar objects with validated OHLCV data

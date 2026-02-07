@@ -49,6 +49,7 @@ class YahooAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> list[OHLCVBar]:
         """
         Fetch historical OHLCV bars from Yahoo Finance.
@@ -58,6 +59,8 @@ class YahooAdapter(MarketDataProvider):
             start_date: Start date (inclusive)
             end_date: End date (inclusive)
             timeframe: Bar timeframe (default "1d" for daily)
+            asset_class: Asset class for symbol formatting (e.g., "stock",
+                "forex", "index", "crypto"). None defaults to stock.
 
         Returns:
             List of OHLCVBar objects
@@ -80,8 +83,11 @@ class YahooAdapter(MarketDataProvider):
         )
 
         try:
+            # Format symbol for Yahoo Finance API (e.g. forex -> EURUSD=X)
+            api_symbol = self._format_symbol(symbol, asset_class)
+
             # Fetch data using yfinance (blocking I/O, run in executor)
-            ticker = yf.Ticker(symbol)
+            ticker = yf.Ticker(api_symbol)
 
             # Run in executor to avoid blocking event loop
             loop = asyncio.get_event_loop()
@@ -105,6 +111,7 @@ class YahooAdapter(MarketDataProvider):
             bars = []
             for timestamp, row in df.iterrows():
                 try:
+                    # Use original symbol (not api_symbol) so bars are stored with clean user-facing names
                     bar = self._parse_bar(symbol, timeframe, timestamp, row)
                     bars.append(bar)
                 except Exception as e:
@@ -207,6 +214,38 @@ class YahooAdapter(MarketDataProvider):
             raise ValueError(f"Unsupported timeframe: {timeframe}")
 
         return timeframe
+
+    def _format_symbol(self, symbol: str, asset_class: str | None) -> str:
+        """Format symbol for Yahoo Finance API based on asset class.
+
+        Yahoo requires: =X suffix for forex, ^ prefix for indices,
+        dash-separated for crypto (e.g. BTC-USD).
+        Stocks use the bare symbol.
+        """
+        if asset_class is None or asset_class == "stock":
+            return symbol
+        if asset_class == "forex":
+            if symbol.endswith("=X"):
+                logger.debug("symbol_already_formatted", symbol=symbol, asset_class=asset_class)
+                return symbol
+            return f"{symbol}=X"
+        if asset_class == "index":
+            if symbol.startswith("^"):
+                logger.debug("symbol_already_formatted", symbol=symbol, asset_class=asset_class)
+                return symbol
+            return f"^{symbol}"
+        if asset_class == "crypto":
+            # Convert e.g. BTCUSD -> BTC-USD (insert dash before last 3 chars).
+            # Limitation: assumes the quote currency is always 3 characters
+            # (e.g. USD, EUR, GBP). Symbols with non-3-char quote currencies
+            # should be passed pre-formatted with a dash (e.g. "BTC-USDT").
+            if "-" in symbol:
+                logger.debug("symbol_already_formatted", symbol=symbol, asset_class=asset_class)
+                return symbol
+            if len(symbol) > 3:
+                return f"{symbol[:-3]}-{symbol[-3:]}"
+            return symbol
+        return symbol
 
     async def _rate_limit(self) -> None:
         """

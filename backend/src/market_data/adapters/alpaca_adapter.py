@@ -591,6 +591,7 @@ class AlpacaAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> list[OHLCVBar]:
         """
         Fetch historical bars from Alpaca REST API.
@@ -600,6 +601,8 @@ class AlpacaAdapter(MarketDataProvider):
             start_date: Start date for historical data (inclusive)
             end_date: End date for historical data (inclusive)
             timeframe: Bar timeframe (default "1d")
+            asset_class: Asset class (ignored -- Alpaca only supports stocks).
+                A warning is logged if a non-stock value is passed.
 
         Returns:
             List of OHLCVBar objects, sorted oldest to newest
@@ -608,6 +611,14 @@ class AlpacaAdapter(MarketDataProvider):
             RuntimeError: If API request fails
         """
         correlation_id = str(uuid4())
+
+        if asset_class and asset_class != "stock":
+            logger.warning(
+                "alpaca_unsupported_asset_class",
+                symbol=symbol,
+                asset_class=asset_class,
+                message="Alpaca adapter only supports stocks; asset_class ignored",
+            )
 
         # Alpaca REST API base URL for data
         base_url = "https://data.alpaca.markets"

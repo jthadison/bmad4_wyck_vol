@@ -33,7 +33,7 @@ class MockPolygonAdapter(MarketDataProvider):
         self.fixture_data = fixture_data or {}
         self.connected = False
         self.subscribed_symbols: set[str] = set()
-        self.callbacks: dict[str, Callable[[OHLCVBar], None]] = {}
+        self._bar_callback: Callable[[OHLCVBar], None] | None = None
 
     async def fetch_historical_bars(
         self,
@@ -41,6 +41,7 @@ class MockPolygonAdapter(MarketDataProvider):
         start_date: date,
         end_date: date,
         timeframe: str = "1d",
+        asset_class: str | None = None,
     ) -> list[OHLCVBar]:
         """
         Fetch fixture OHLCV bars for a symbol.
@@ -62,23 +63,31 @@ class MockPolygonAdapter(MarketDataProvider):
         """Simulate WebSocket disconnection."""
         self.connected = False
         self.subscribed_symbols.clear()
-        self.callbacks.clear()
+        self._bar_callback = None
 
-    async def subscribe(
-        self,
-        symbol: str,
-        on_bar_received: Callable[[OHLCVBar], None],
-    ) -> None:
+    async def subscribe(self, symbols: list[str], timeframe: str = "1m") -> None:
         """
-        Subscribe to real-time bar updates for a symbol.
+        Subscribe to real-time bar updates for specified symbols.
 
-        Stores callback for later invocation (no actual WebSocket subscription).
+        Adds symbols to the subscribed set (no actual WebSocket subscription).
         """
         if not self.connected:
             raise RuntimeError("Must connect() before subscribe()")
 
-        self.subscribed_symbols.add(symbol)
-        self.callbacks[symbol] = on_bar_received
+        for symbol in symbols:
+            self.subscribed_symbols.add(symbol)
+
+    def on_bar_received(self, callback: Callable[[OHLCVBar], None]) -> None:
+        """Register a callback to be invoked when a new bar is received."""
+        self._bar_callback = callback
+
+    async def get_provider_name(self) -> str:
+        """Return the mock provider name."""
+        return "mock_polygon"
+
+    async def health_check(self) -> bool:
+        """Return True (mock is always healthy)."""
+        return True
 
     def simulate_bar_received(self, symbol: str, bar: OHLCVBar) -> None:
         """
@@ -86,13 +95,12 @@ class MockPolygonAdapter(MarketDataProvider):
 
         For testing purposes only. Invokes the registered callback.
         """
-        if symbol in self.callbacks:
-            self.callbacks[symbol](bar)
+        if self._bar_callback is not None and symbol in self.subscribed_symbols:
+            self._bar_callback(bar)
 
     async def unsubscribe(self, symbol: str) -> None:
         """Unsubscribe from real-time bar updates for a symbol."""
         self.subscribed_symbols.discard(symbol)
-        self.callbacks.pop(symbol, None)
 
 
 def create_mock_ohlcv_bar(

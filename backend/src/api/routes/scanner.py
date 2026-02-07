@@ -627,7 +627,9 @@ async def reset_symbol_circuit_breaker(symbol: str):
 # =========================================
 
 
-async def _auto_ingest_symbol_data(symbol: str, timeframe: str = "1d") -> None:
+async def _auto_ingest_symbol_data(
+    symbol: str, timeframe: str = "1d", asset_class: str | None = None
+) -> None:
     """Background task to auto-ingest ~1 year of historical OHLCV data for a new watchlist symbol.
 
     Uses Yahoo Finance adapter for widest symbol coverage (forex, indices, equities).
@@ -646,6 +648,7 @@ async def _auto_ingest_symbol_data(symbol: str, timeframe: str = "1d") -> None:
             start_date=start_date,
             end_date=end_date,
             timeframe=timeframe,
+            asset_class=asset_class,
         )
 
         if result.success:
@@ -896,6 +899,7 @@ async def add_watchlist_symbol(
         background_tasks.add_task(
             _auto_ingest_symbol_data,
             symbol=symbol.symbol,
+            asset_class=symbol.asset_class.value,
         )
 
         return symbol

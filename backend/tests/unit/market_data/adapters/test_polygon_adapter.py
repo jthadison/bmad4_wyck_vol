@@ -77,6 +77,52 @@ class TestPolygonAdapter:
         # Check second bar
         assert bars[1].volume == 130000000
 
+    async def test_fetch_historical_bars_forex_uses_formatted_symbol_in_url(
+        self, httpx_mock: HTTPXMock
+    ):
+        """Test that a non-stock asset_class formats the URL symbol but bars keep the clean symbol."""
+        # Arrange
+        adapter = PolygonAdapter(api_key="test_api_key")
+
+        mock_response = {
+            "ticker": "C:EURUSD",
+            "status": "OK",
+            "results": [
+                {
+                    "v": 50000,
+                    "o": 1.0850,
+                    "c": 1.0875,
+                    "h": 1.0900,
+                    "l": 1.0840,
+                    "t": 1609459200000,  # 2021-01-01 00:00:00 UTC
+                },
+            ],
+            "resultsCount": 1,
+        }
+
+        httpx_mock.add_response(
+            url="https://api.polygon.io/v2/aggs/ticker/C:EURUSD/range/1/day/2021-01-01/2021-01-02?apiKey=test_api_key&adjusted=true&sort=asc&limit=50000",
+            json=mock_response,
+        )
+
+        # Act
+        bars = await adapter.fetch_historical_bars(
+            symbol="EURUSD",
+            start_date=date(2021, 1, 1),
+            end_date=date(2021, 1, 2),
+            timeframe="1d",
+            asset_class="forex",
+        )
+
+        # Assert - URL contained C:EURUSD (verified by the mock matching)
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+        assert "C:EURUSD" in str(requests[0].url)
+
+        # Assert - returned bars use the clean original symbol
+        assert len(bars) == 1
+        assert bars[0].symbol == "EURUSD"
+
     async def test_fetch_historical_bars_rate_limit(self, httpx_mock: HTTPXMock):
         """Test rate limiting is respected."""
         # Arrange
@@ -262,3 +308,54 @@ class TestPolygonAdapter:
 
         # Assert - client should be closed (no exception)
         assert True
+
+
+class TestPolygonFormatSymbol:
+    """Tests for PolygonAdapter._format_symbol."""
+
+    def setup_method(self):
+        self.adapter = PolygonAdapter(api_key="test-key")
+
+    def test_none_asset_class_returns_bare_symbol(self):
+        """asset_class=None should return the symbol unchanged."""
+        assert self.adapter._format_symbol("AAPL", None) == "AAPL"
+
+    def test_stock_asset_class_returns_bare_symbol(self):
+        """asset_class='stock' should return the symbol unchanged."""
+        assert self.adapter._format_symbol("AAPL", "stock") == "AAPL"
+
+    def test_forex_adds_c_prefix(self):
+        """Forex symbols get the C: prefix for Polygon."""
+        assert self.adapter._format_symbol("EURUSD", "forex") == "C:EURUSD"
+
+    def test_index_adds_i_prefix(self):
+        """Index symbols get the I: prefix for Polygon."""
+        assert self.adapter._format_symbol("DJI", "index") == "I:DJI"
+
+    def test_crypto_adds_x_prefix(self):
+        """Crypto symbols get the X: prefix for Polygon."""
+        assert self.adapter._format_symbol("BTCUSD", "crypto") == "X:BTCUSD"
+
+    def test_unknown_asset_class_returns_bare_symbol(self):
+        """An unrecognised asset class should return the symbol unchanged."""
+        assert self.adapter._format_symbol("FOO", "futures") == "FOO"
+
+    def test_already_prefixed_forex_no_double_prefix(self):
+        """A symbol that already carries the C: prefix should not be doubled."""
+        assert self.adapter._format_symbol("C:EURUSD", "forex") == "C:EURUSD"
+
+    def test_already_prefixed_index_no_double_prefix(self):
+        """A symbol that already carries the I: prefix should not be doubled."""
+        assert self.adapter._format_symbol("I:DJI", "index") == "I:DJI"
+
+    def test_already_prefixed_crypto_no_double_prefix(self):
+        """A symbol that already carries the X: prefix should not be doubled."""
+        assert self.adapter._format_symbol("X:BTCUSD", "crypto") == "X:BTCUSD"
+
+    def test_cross_prefix_mismatch_guard_returns_unchanged(self):
+        """A symbol with a C: prefix passed as crypto should be returned as-is by the guard."""
+        assert self.adapter._format_symbol("C:EURUSD", "crypto") == "C:EURUSD"
+
+    def test_empty_string_forex_adds_bare_prefix(self):
+        """An empty symbol with forex asset class still receives the C: prefix."""
+        assert self.adapter._format_symbol("", "forex") == "C:"
