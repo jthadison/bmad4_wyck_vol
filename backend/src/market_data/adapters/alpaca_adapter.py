@@ -601,6 +601,8 @@ class AlpacaAdapter(MarketDataProvider):
             start_date: Start date for historical data (inclusive)
             end_date: End date for historical data (inclusive)
             timeframe: Bar timeframe (default "1d")
+            asset_class: Asset class (ignored -- Alpaca only supports stocks).
+                A warning is logged if a non-stock value is passed.
 
         Returns:
             List of OHLCVBar objects, sorted oldest to newest

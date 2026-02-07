@@ -33,7 +33,7 @@ class MockPolygonAdapter(MarketDataProvider):
         self.fixture_data = fixture_data or {}
         self.connected = False
         self.subscribed_symbols: set[str] = set()
-        self.callbacks: dict[str, Callable[[OHLCVBar], None]] = {}
+        self._bar_callback: Callable[[OHLCVBar], None] | None = None
 
     async def fetch_historical_bars(
         self,
@@ -63,7 +63,7 @@ class MockPolygonAdapter(MarketDataProvider):
         """Simulate WebSocket disconnection."""
         self.connected = False
         self.subscribed_symbols.clear()
-        self.callbacks.clear()
+        self._bar_callback = None
 
     async def subscribe(self, symbols: list[str], timeframe: str = "1m") -> None:
         """
@@ -95,13 +95,12 @@ class MockPolygonAdapter(MarketDataProvider):
 
         For testing purposes only. Invokes the registered callback.
         """
-        if symbol in self.callbacks:
-            self.callbacks[symbol](bar)
+        if self._bar_callback is not None and symbol in self.subscribed_symbols:
+            self._bar_callback(bar)
 
     async def unsubscribe(self, symbol: str) -> None:
         """Unsubscribe from real-time bar updates for a symbol."""
         self.subscribed_symbols.discard(symbol)
-        self.callbacks.pop(symbol, None)
 
 
 def create_mock_ohlcv_bar(

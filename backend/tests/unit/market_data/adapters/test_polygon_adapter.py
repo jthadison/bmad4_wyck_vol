@@ -77,6 +77,52 @@ class TestPolygonAdapter:
         # Check second bar
         assert bars[1].volume == 130000000
 
+    async def test_fetch_historical_bars_forex_uses_formatted_symbol_in_url(
+        self, httpx_mock: HTTPXMock
+    ):
+        """Test that a non-stock asset_class formats the URL symbol but bars keep the clean symbol."""
+        # Arrange
+        adapter = PolygonAdapter(api_key="test_api_key")
+
+        mock_response = {
+            "ticker": "C:EURUSD",
+            "status": "OK",
+            "results": [
+                {
+                    "v": 50000,
+                    "o": 1.0850,
+                    "c": 1.0875,
+                    "h": 1.0900,
+                    "l": 1.0840,
+                    "t": 1609459200000,  # 2021-01-01 00:00:00 UTC
+                },
+            ],
+            "resultsCount": 1,
+        }
+
+        httpx_mock.add_response(
+            url="https://api.polygon.io/v2/aggs/ticker/C:EURUSD/range/1/day/2021-01-01/2021-01-02?apiKey=test_api_key&adjusted=true&sort=asc&limit=50000",
+            json=mock_response,
+        )
+
+        # Act
+        bars = await adapter.fetch_historical_bars(
+            symbol="EURUSD",
+            start_date=date(2021, 1, 1),
+            end_date=date(2021, 1, 2),
+            timeframe="1d",
+            asset_class="forex",
+        )
+
+        # Assert - URL contained C:EURUSD (verified by the mock matching)
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+        assert "C:EURUSD" in str(requests[0].url)
+
+        # Assert - returned bars use the clean original symbol
+        assert len(bars) == 1
+        assert bars[0].symbol == "EURUSD"
+
     async def test_fetch_historical_bars_rate_limit(self, httpx_mock: HTTPXMock):
         """Test rate limiting is respected."""
         # Arrange
