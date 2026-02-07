@@ -29,7 +29,7 @@ Author: Story 13.9
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
-from typing import Optional
+from typing import Literal, Optional
 from uuid import uuid4
 
 import structlog
@@ -152,7 +152,7 @@ class PositionMetadata:
     risk_amount: Decimal
     risk_pct: Decimal
     entry_timestamp: datetime
-    side: str = "LONG"
+    side: Literal["LONG", "SHORT"] = "LONG"
     r_multiple: Decimal = Decimal("0")
 
     def calculate_current_pnl(self, current_price: Decimal) -> Decimal:
@@ -160,17 +160,6 @@ class PositionMetadata:
         if self.side == "SHORT":
             return (self.entry_price - current_price) * self.position_size
         return (current_price - self.entry_price) * self.position_size
-
-    def calculate_current_risk(self, current_price: Decimal) -> Decimal:
-        """
-        Return the original risk percentage for this position (conservative model).
-
-        This always returns the initial risk_pct regardless of current price or
-        direction. A future enhancement could reduce risk when the position is
-        in profit with a trailing stop, but for now we use the conservative
-        approach of assuming full original risk until the position is closed.
-        """
-        return self.risk_pct
 
 
 # =============================================================================
@@ -553,7 +542,7 @@ class BacktestRiskManager:
         stop_loss: Decimal,
         campaign_id: str,
         target_price: Optional[Decimal] = None,
-        side: str = "LONG",
+        side: Literal["LONG", "SHORT"] = "LONG",
     ) -> tuple[bool, Optional[Decimal], Optional[str]]:
         """
         Comprehensive risk validation pipeline for new position (FR9.6).
@@ -682,7 +671,7 @@ class BacktestRiskManager:
         stop_loss: Decimal,
         position_size: Decimal,
         timestamp: datetime,
-        side: str = "LONG",
+        side: Literal["LONG", "SHORT"] = "LONG",
     ) -> str:
         """
         Register a new position after successful entry.
@@ -760,20 +749,28 @@ class BacktestRiskManager:
         """
         if position_id not in self.open_positions:
             # Fallback: try matching by campaign_id or symbol
-            for pos_id, pos in list(self.open_positions.items()):
-                if pos.campaign_id == position_id or pos.symbol == position_id:
-                    logger.warning(
-                        "[RISK] close_position fallback: exact position_id not found, "
-                        "matched by campaign_id or symbol instead. "
-                        "This could close the wrong position if multiple exist.",
-                        original_position_id=position_id,
-                        matched_position_id=pos_id,
-                        matched_symbol=pos.symbol,
-                    )
-                    position_id = pos_id
-                    break
-            else:
+            matches = [
+                (pos_id, pos)
+                for pos_id, pos in self.open_positions.items()
+                if pos.campaign_id == position_id or pos.symbol == position_id
+            ]
+            if len(matches) == 0:
                 return None
+            if len(matches) > 1:
+                logger.warning(
+                    "[RISK] close_position fallback: multiple positions match, "
+                    "closing first found. Consider using exact position_id.",
+                    original_position_id=position_id,
+                    match_count=len(matches),
+                )
+            matched_pos_id, _ = matches[0]
+            logger.warning(
+                "[RISK] close_position fallback: exact position_id not found, "
+                "matched by campaign_id or symbol instead.",
+                original_position_id=position_id,
+                matched_position_id=matched_pos_id,
+            )
+            position_id = matched_pos_id
 
         position = self.open_positions.pop(position_id)
 

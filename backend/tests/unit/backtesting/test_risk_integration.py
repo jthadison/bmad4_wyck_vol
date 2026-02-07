@@ -491,11 +491,6 @@ class TestPositionMetadata:
         # (1.0540 - 1.0580) * 100000 = -400
         assert pnl == Decimal("-400")
 
-    def test_calculate_current_risk(self, position):
-        """Test current risk calculation."""
-        risk = position.calculate_current_risk(Decimal("1.0600"))
-        assert risk == Decimal("0.6")
-
     def test_short_position_pnl_profit(self):
         """Test SHORT P&L when price drops (profit)."""
         pos = PositionMetadata(

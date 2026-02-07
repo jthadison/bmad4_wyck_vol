@@ -1101,6 +1101,50 @@ class TestShortPositionSupport:
         assert trade.exit_price == Decimal("99.00")  # filled at bar 3 open
         assert trade.realized_pnl > Decimal("0")  # profitable (shorted 100, covered 99)
 
+    def test_short_position_with_risk_manager(self):
+        """SHORT signal processed through risk manager sizing and exit."""
+        from src.backtesting.risk_integration import BacktestRiskManager
+
+        # Bar 0: signal bar (close=100), Bar 1: fill bar (open=100),
+        # Bar 2: stop hit (high=103 > stop=105? No, keep it simple: stop at 102, high=103)
+        bars = self._make_bars(
+            [
+                ("100.00", "102.00", "99.00", "100.00"),  # bar 0: signal
+                ("100.00", "101.00", "99.00", "100.50"),  # bar 1: fill at open 100
+                ("101.00", "103.00", "100.00", "102.50"),  # bar 2: high 103 > stop 102
+            ]
+        )
+
+        # Create signal with stop_loss so risk manager path is used
+        short_signal = MockTradeSignal(direction="SHORT")
+        short_signal.stop_loss = Decimal("102.00")  # stop above entry
+        short_signal.target_levels = None
+        short_signal.campaign_id = "TEST-SHORT-RM"
+
+        detector = MockSignalDetector(signals={0: short_signal})
+        risk_mgr = BacktestRiskManager(initial_capital=Decimal("100000"))
+        config = EngineConfig(enable_cost_model=False)
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, MockCostModel(), position_manager, config, risk_manager=risk_mgr
+        )
+        result = engine.run(bars)
+
+        # Risk manager should have validated and sized the position
+        assert risk_mgr.violations.total_entry_attempts == 1
+        assert risk_mgr.violations.entries_allowed == 1
+
+        # Position should be closed by stop-loss on bar 2
+        assert not position_manager.has_position("AAPL")
+        assert len(position_manager.closed_trades) == 1
+
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "SHORT"
+        assert trade.entry_price == Decimal("100.00")
+        assert trade.exit_price == Decimal("102.00")  # stop price
+        assert trade.realized_pnl < Decimal("0")  # loss on SHORT when price rises
+
     def test_short_r_multiple_calculation(self):
         """R-multiple is calculated correctly for SHORT trades."""
         config = EngineConfig(risk_per_trade=Decimal("0.02"))

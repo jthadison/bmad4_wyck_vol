@@ -28,6 +28,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+from src.backtesting.engine.bar_processor import calculate_stop_fill_price
 from src.backtesting.engine.interfaces import CostModel, EngineConfig, SignalDetector
 from src.backtesting.metrics import calculate_equity_curve, calculate_metrics
 from src.backtesting.position_manager import PositionManager
@@ -456,6 +457,7 @@ class UnifiedBacktestEngine:
         if self._pending_orders:
             for order in self._pending_orders:
                 order.status = "REJECTED"
+                self._pending_order_stops.pop(order.order_id, None)
             self._pending_orders.clear()
 
         execution_time = time.time() - start_time
@@ -539,17 +541,13 @@ class UnifiedBacktestEngine:
                 stop_hit = bar.high >= stop_price
                 target_hit = bar.low <= target_price
             else:
+                logger.warning(
+                    f"Unknown position side '{position.side}' for {symbol}, skipping exit check"
+                )
                 continue
 
             if stop_hit:
-                # Gap-through logic: if bar opened past the stop, fill at the
-                # worse open price instead of the stop price (realistic slippage).
-                if position.side == "LONG" and bar.open <= stop_price:
-                    fill_price = bar.open
-                elif position.side == "SHORT" and bar.open >= stop_price:
-                    fill_price = bar.open
-                else:
-                    fill_price = stop_price
+                fill_price = calculate_stop_fill_price(position.side, bar.open, stop_price)
                 positions_to_close.append(
                     (symbol, fill_price, position.quantity, position.side, "stop_loss")
                 )

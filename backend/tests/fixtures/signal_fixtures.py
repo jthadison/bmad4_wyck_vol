@@ -38,6 +38,10 @@ def mock_validation_chain(
     overall_status: ValidationStatus = ValidationStatus.PASS,
     rejection_stage: str | None = None,
     rejection_reason: str | None = None,
+    volume_metadata: dict | None = None,
+    phase_metadata: dict | None = None,
+    levels_metadata: dict | None = None,
+    risk_metadata: dict | None = None,
 ) -> ValidationChain:
     """
     Create mock ValidationChain for testing.
@@ -52,6 +56,14 @@ def mock_validation_chain(
         Stage where validation failed (for FAIL status)
     rejection_reason : str | None
         Rejection reason (for FAIL status)
+    volume_metadata : dict | None
+        Override volume stage metadata (merged with SPRING defaults)
+    phase_metadata : dict | None
+        Override phase stage metadata (merged with defaults)
+    levels_metadata : dict | None
+        Override levels stage metadata (merged with defaults)
+    risk_metadata : dict | None
+        Override risk stage metadata (merged with defaults)
 
     Returns:
     --------
@@ -64,40 +76,46 @@ def mock_validation_chain(
     chain = ValidationChain(pattern_id=pattern_id)
 
     # Add Volume validation
+    default_volume_meta = {
+        "volume_ratio": "0.55",
+        "threshold": "0.70",
+        "pattern_type": "SPRING",
+    }
+    vol_meta = {**default_volume_meta, **(volume_metadata or {})}
     chain.add_result(
         StageValidationResult(
             stage="Volume",
             status=ValidationStatus.PASS,
             validator_id="VOLUME_VALIDATOR",
-            metadata={
-                "volume_ratio": "0.55",
-                "threshold": "0.70",
-                "pattern_type": "SPRING",
-            },
+            metadata=vol_meta,
         )
     )
 
     # Add Phase validation
+    default_phase_meta: dict = {"phase": "C", "confidence": 85}
+    ph_meta = {**default_phase_meta, **(phase_metadata or {})}
     chain.add_result(
         StageValidationResult(
             stage="Phase",
             status=ValidationStatus.PASS,
             validator_id="PHASE_VALIDATOR",
-            metadata={"phase": "C", "confidence": 85},
+            metadata=ph_meta,
         )
     )
 
     # Add Levels validation
+    default_levels_meta = {
+        "entry_price": "150.00",
+        "stop_loss": "148.00",
+        "target_price": "156.00",
+    }
+    lvl_meta = {**default_levels_meta, **(levels_metadata or {})}
     chain.add_result(
         StageValidationResult(
             stage="Levels",
             status=ValidationStatus.PASS,
             validator_id="LEVEL_VALIDATOR",
-            metadata={
-                "entry_price": "150.00",
-                "stop_loss": "148.00",
-                "target_price": "156.00",
-            },
+            metadata=lvl_meta,
         )
     )
 
@@ -113,131 +131,19 @@ def mock_validation_chain(
             )
         )
     else:
+        default_risk_meta = {
+            "position_size": "100",
+            "risk_amount": "200.00",
+            "r_multiple": "3.0",
+            "portfolio_heat": "5%",
+        }
+        rsk_meta = {**default_risk_meta, **(risk_metadata or {})}
         chain.add_result(
             StageValidationResult(
                 stage="Risk",
                 status=ValidationStatus.PASS,
                 validator_id="RISK_VALIDATOR",
-                metadata={
-                    "position_size": "100",
-                    "risk_amount": "200.00",
-                    "r_multiple": "3.0",
-                    "portfolio_heat": "5%",
-                },
-            )
-        )
-
-    # Add Strategy validation
-    if rejection_stage not in ["Risk"]:  # Only add if we haven't failed yet
-        chain.add_result(
-            StageValidationResult(
-                stage="Strategy",
-                status=ValidationStatus.PASS,
-                validator_id="STRATEGY_VALIDATOR",
-                metadata={"strategy_alignment": True},
-            )
-        )
-
-    chain.completed_at = datetime.now(UTC)
-    return chain
-
-
-def mock_utad_validation_chain(
-    pattern_id: UUID | None = None,
-    overall_status: ValidationStatus = ValidationStatus.PASS,
-    rejection_stage: str | None = None,
-    rejection_reason: str | None = None,
-) -> ValidationChain:
-    """
-    Create mock ValidationChain for UTAD pattern testing.
-
-    Uses UTAD-appropriate metadata:
-    - pattern_type: UTAD
-    - High volume ratio (1.80) confirming supply on upthrust
-    - Phase D (distribution markup phase where UTAD occurs)
-
-    Parameters:
-    -----------
-    pattern_id : UUID | None
-        Pattern ID (generates new UUID if None)
-    overall_status : ValidationStatus
-        Overall validation status (default PASS)
-    rejection_stage : str | None
-        Stage where validation failed (for FAIL status)
-    rejection_reason : str | None
-        Rejection reason (for FAIL status)
-
-    Returns:
-    --------
-    ValidationChain
-        Mock validation chain with all 5 stages using UTAD metadata
-    """
-    if pattern_id is None:
-        pattern_id = uuid4()
-
-    chain = ValidationChain(pattern_id=pattern_id)
-
-    # Add Volume validation - UTAD requires high volume (supply confirmation)
-    chain.add_result(
-        StageValidationResult(
-            stage="Volume",
-            status=ValidationStatus.PASS,
-            validator_id="VOLUME_VALIDATOR",
-            metadata={
-                "volume_ratio": "1.80",
-                "threshold": "1.50",
-                "pattern_type": "UTAD",
-            },
-        )
-    )
-
-    # Add Phase validation - UTAD in Distribution Phase D
-    chain.add_result(
-        StageValidationResult(
-            stage="Phase",
-            status=ValidationStatus.PASS,
-            validator_id="PHASE_VALIDATOR",
-            metadata={"phase": "D", "confidence": 85},
-        )
-    )
-
-    # Add Levels validation
-    chain.add_result(
-        StageValidationResult(
-            stage="Levels",
-            status=ValidationStatus.PASS,
-            validator_id="LEVEL_VALIDATOR",
-            metadata={
-                "entry_price": "450.00",
-                "stop_loss": "453.00",
-                "target_price": "441.00",
-            },
-        )
-    )
-
-    # Add Risk validation - may fail here
-    if rejection_stage == "Risk":
-        chain.add_result(
-            StageValidationResult(
-                stage="Risk",
-                status=ValidationStatus.FAIL,
-                reason=rejection_reason or "Risk validation failed",
-                validator_id="RISK_VALIDATOR",
-                metadata={"portfolio_heat": "12%", "max_heat": "10%"},
-            )
-        )
-    else:
-        chain.add_result(
-            StageValidationResult(
-                stage="Risk",
-                status=ValidationStatus.PASS,
-                validator_id="RISK_VALIDATOR",
-                metadata={
-                    "position_size": "100",
-                    "risk_amount": "300.00",
-                    "r_multiple": "3.0",
-                    "portfolio_heat": "5%",
-                },
+                metadata=rsk_meta,
             )
         )
 
@@ -447,7 +353,13 @@ def valid_utad_signal() -> TradeSignal:
         Complete UTAD signal for SHORT trade
     """
     pattern_id = uuid4()
-    validation_chain = mock_utad_validation_chain(pattern_id=pattern_id)
+    validation_chain = mock_validation_chain(
+        pattern_id=pattern_id,
+        volume_metadata={"volume_ratio": "1.80", "threshold": "1.50", "pattern_type": "UTAD"},
+        phase_metadata={"phase": "D", "confidence": 85},
+        levels_metadata={"entry_price": "450.00", "stop_loss": "453.00", "target_price": "441.00"},
+        risk_metadata={"risk_amount": "300.00"},
+    )
 
     return TradeSignal(
         id=uuid4(),

@@ -7,12 +7,15 @@ Integrates with OrderSimulator to execute order fills and update positions.
 Author: Story 12.1 Task 4
 """
 
+import logging
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 from uuid import uuid4
 
 from src.models.backtest import BacktestOrder, BacktestPosition, BacktestTrade
 from src.models.ohlcv import OHLCVBar
+
+logger = logging.getLogger(__name__)
 
 
 class PositionManager:
@@ -51,7 +54,9 @@ class PositionManager:
         self.positions: dict[str, BacktestPosition] = {}
         self.closed_trades: list[BacktestTrade] = []
 
-    def open_position(self, order: BacktestOrder, side: str = "LONG") -> BacktestPosition:
+    def open_position(
+        self, order: BacktestOrder, side: Literal["LONG", "SHORT"] = "LONG"
+    ) -> BacktestPosition:
         """Open a position from a filled order.
 
         AC2: BUY orders open LONG positions, SELL orders open SHORT positions.
@@ -199,9 +204,14 @@ class PositionManager:
             # LONG close: receive sale proceeds
             self.cash += net_proceeds
         else:
-            # SHORT close: return margin + profit (or margin - loss)
-            # We deducted entry_val + entry_commission at open, now return what's left
-            self.cash += Decimal("2") * shares_cost - shares_proceeds - order.commission
+            # SHORT close: restore entry margin (shares_cost + entry_commission) plus P&L
+            self.cash += shares_cost + allocated_entry_commission + realized_pnl
+
+        if position.side == "SHORT" and self.cash < Decimal("0"):
+            logger.warning(
+                f"Cash went negative ({self.cash}) after closing SHORT {position.symbol}. "
+                f"In live trading this would trigger a margin call."
+            )
 
         # Create trade record
         trade = BacktestTrade(
