@@ -197,13 +197,24 @@ class BarProcessor:
 
         # If both hit in same bar, assume stop was hit first (conservative)
         if stop_hit:
+            # Gap-through logic: if bar opened past the stop, fill at the
+            # worse open price instead of the stop price (realistic slippage).
+            if position.side == "LONG" and bar.open <= stop_price:
+                fill_price = bar.open
+            elif position.side == "SHORT" and bar.open >= stop_price:
+                fill_price = bar.open
+            else:
+                fill_price = stop_price
+
             return ExitSignal(
                 symbol=position.symbol,
                 reason="stop_loss",
-                exit_price=stop_price,
+                exit_price=fill_price,
             )
 
         if target_hit:
+            # Target fills remain at target price (conservative -- could get
+            # a better fill on gaps, but keeping target price is standard).
             return ExitSignal(
                 symbol=position.symbol,
                 reason="take_profit",

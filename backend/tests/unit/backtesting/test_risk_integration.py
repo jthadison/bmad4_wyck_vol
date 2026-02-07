@@ -367,7 +367,7 @@ class TestBacktestRiskManager:
         assert risk_manager.violations.entries_allowed == 1
 
     def test_validate_and_size_position_zero_stop(self, risk_manager):
-        """Test validation failure with zero stop distance."""
+        """Test validation failure with zero stop distance (caught by directional check)."""
         can_trade, position_size, reason = risk_manager.validate_and_size_position(
             symbol="C:EURUSD",
             entry_price=Decimal("1.0580"),
@@ -377,7 +377,7 @@ class TestBacktestRiskManager:
 
         assert can_trade is False
         assert position_size is None
-        assert "stop distance" in reason.lower()
+        assert "must be below" in reason.lower()
         assert risk_manager.violations.position_size_failures == 1
 
     def test_register_and_close_position(self, risk_manager):

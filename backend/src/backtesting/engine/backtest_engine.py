@@ -542,10 +542,19 @@ class UnifiedBacktestEngine:
                 continue
 
             if stop_hit:
+                # Gap-through logic: if bar opened past the stop, fill at the
+                # worse open price instead of the stop price (realistic slippage).
+                if position.side == "LONG" and bar.open <= stop_price:
+                    fill_price = bar.open
+                elif position.side == "SHORT" and bar.open >= stop_price:
+                    fill_price = bar.open
+                else:
+                    fill_price = stop_price
                 positions_to_close.append(
-                    (symbol, stop_price, position.quantity, position.side, "stop_loss")
+                    (symbol, fill_price, position.quantity, position.side, "stop_loss")
                 )
             elif target_hit:
+                # Target fills remain at target price (conservative).
                 positions_to_close.append(
                     (symbol, target_price, position.quantity, position.side, "take_profit")
                 )

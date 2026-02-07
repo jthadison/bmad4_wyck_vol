@@ -163,20 +163,14 @@ class PositionMetadata:
 
     def calculate_current_risk(self, current_price: Decimal) -> Decimal:
         """
-        Calculate current risk (may be less if in profit with trailing stop).
+        Return the original risk percentage for this position (conservative model).
 
-        If position is in profit, effective risk to entry is zero.
-        If position is at loss, risk is still the original risk amount.
-        Direction-aware: LONG profits when price rises, SHORT profits when price falls.
+        This always returns the initial risk_pct regardless of current price or
+        direction. A future enhancement could reduce risk when the position is
+        in profit with a trailing stop, but for now we use the conservative
+        approach of assuming full original risk until the position is closed.
         """
-        if self.side == "SHORT":
-            if current_price < self.entry_price:
-                return self.risk_pct  # In profit for SHORT
-            return self.risk_pct  # At loss for SHORT
-        else:
-            if current_price > self.entry_price:
-                return self.risk_pct  # In profit for LONG
-            return self.risk_pct  # At loss for LONG
+        return self.risk_pct
 
 
 # =============================================================================
@@ -280,7 +274,10 @@ class BacktestRiskManager:
             max_campaign_risk_pct: Maximum campaign risk (default 5.0%)
             max_portfolio_heat_pct: Maximum portfolio heat (default 10.0%)
             max_correlated_risk_pct: Maximum correlated risk (default 6.0%)
-            min_position_size: Minimum position size (default 1 unit; use 1000 for forex)
+            min_position_size: Minimum position size in tradeable units.
+                Default 1 for stocks/indices (1 share).
+                Use Decimal('1000') for forex (0.01 lot / mini-lot minimum).
+                Use Decimal('0.01') for crypto (fractional units).
         """
         self.initial_capital = initial_capital
         self.current_capital = initial_capital
@@ -556,11 +553,13 @@ class BacktestRiskManager:
         stop_loss: Decimal,
         campaign_id: str,
         target_price: Optional[Decimal] = None,
+        side: str = "LONG",
     ) -> tuple[bool, Optional[Decimal], Optional[str]]:
         """
         Comprehensive risk validation pipeline for new position (FR9.6).
 
         Validates all risk limits in order:
+        0. Directional validation (stop/entry relationship)
         1. Position size calculation (stop distance > 0)
         2. Campaign risk limit (< 5%)
         3. Portfolio heat limit (< 10%)
@@ -573,11 +572,30 @@ class BacktestRiskManager:
             stop_loss: Stop loss price (e.g., Creek/Spring low)
             campaign_id: Campaign identifier
             target_price: Optional target price for R-multiple
+            side: Position side ("LONG" or "SHORT")
 
         Returns:
             tuple: (can_trade, position_size, rejection_reason)
         """
         self.violations.total_entry_attempts += 1
+
+        # Step 0: Directional validation - stop must be on correct side of entry
+        if side == "SHORT" and stop_loss <= entry_price:
+            self.violations.position_size_failures += 1
+            return (
+                False,
+                None,
+                f"Invalid SHORT: stop_loss ({stop_loss}) must be above "
+                f"entry_price ({entry_price})",
+            )
+        if side == "LONG" and stop_loss >= entry_price:
+            self.violations.position_size_failures += 1
+            return (
+                False,
+                None,
+                f"Invalid LONG: stop_loss ({stop_loss}) must be below "
+                f"entry_price ({entry_price})",
+            )
 
         # Step 1: Calculate position size
         position_size, risk_amount, risk_pct = self.calculate_position_size(
@@ -625,7 +643,9 @@ class BacktestRiskManager:
             return (
                 False,
                 None,
-                f"Position size {position_size} below minimum {self.min_position_size}",
+                f"Position size {position_size} below minimum {self.min_position_size} "
+                f"for this asset class (adjust min_position_size if needed: "
+                f"stocks=1, forex=1000, crypto=0.01)",
             )
 
         # All checks passed
@@ -739,9 +759,17 @@ class BacktestRiskManager:
             Realized P&L or None if position not found
         """
         if position_id not in self.open_positions:
-            # May be closing by campaign_id instead
+            # Fallback: try matching by campaign_id or symbol
             for pos_id, pos in list(self.open_positions.items()):
                 if pos.campaign_id == position_id or pos.symbol == position_id:
+                    logger.warning(
+                        "[RISK] close_position fallback: exact position_id not found, "
+                        "matched by campaign_id or symbol instead. "
+                        "This could close the wrong position if multiple exist.",
+                        original_position_id=position_id,
+                        matched_position_id=pos_id,
+                        matched_symbol=pos.symbol,
+                    )
                     position_id = pos_id
                     break
             else:
