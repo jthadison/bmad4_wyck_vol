@@ -17,12 +17,12 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database import get_db
+from src.database import async_session_maker, get_db
 from src.models.backtest import RegressionTestConfig
 from src.repositories.regression_baseline_repository import RegressionBaselineRepository
 from src.repositories.regression_test_repository import RegressionTestRepository
 
-from .utils import regression_test_runs
+from .utils import cleanup_stale_entries, regression_test_runs
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 @router.post("/regression", status_code=status.HTTP_202_ACCEPTED)
 async def run_regression_test(
     config: RegressionTestConfig,
-    session: AsyncSession = Depends(get_db),
 ):
     """
     Run regression test across multiple symbols.
@@ -41,7 +40,6 @@ async def run_regression_test(
 
     Args:
         config: RegressionTestConfig with symbols, date range, thresholds
-        session: Database session
 
     Returns:
         test_id and status: RUNNING
@@ -93,18 +91,18 @@ async def run_regression_test(
     test_id = uuid4()
 
     # Initialize tracking
+    cleanup_stale_entries(regression_test_runs)
     regression_test_runs[test_id] = {
         "status": "RUNNING",
         "created_at": datetime.now(UTC),
         "error": None,
     }
 
-    # Queue background task
+    # Queue background task (uses its own DB session, not the request-scoped one)
     asyncio.create_task(
         run_regression_test_task(
             test_id,
             config,
-            session,
         )
     )
 
@@ -124,33 +122,36 @@ async def run_regression_test(
 async def run_regression_test_task(
     test_id: UUID,
     config: RegressionTestConfig,
-    session: AsyncSession,
 ) -> None:
     """
     Background task to execute regression test.
 
+    Creates its own database session rather than using the request-scoped
+    session, which is closed after the HTTP 202 response is sent.
+
     Args:
         test_id: Test identifier
         config: RegressionTestConfig
-        session: Database session
     """
     from src.backtesting.regression_test_engine import RegressionTestEngine
 
     try:
         logger.info("Starting regression test execution", extra={"test_id": str(test_id)})
 
-        # Create repositories
-        test_repo = RegressionTestRepository(session)
-        baseline_repo = RegressionBaselineRepository(session)
+        # Create a fresh session for the background task (not request-scoped)
+        async with async_session_maker() as session:
+            # Create repositories
+            test_repo = RegressionTestRepository(session)
+            baseline_repo = RegressionBaselineRepository(session)
 
-        # Create engine
-        engine = RegressionTestEngine(
-            test_repository=test_repo,
-            baseline_repository=baseline_repo,
-        )
+            # Create engine
+            engine = RegressionTestEngine(
+                test_repository=test_repo,
+                baseline_repository=baseline_repo,
+            )
 
-        # Run regression test
-        result = await engine.run_regression_test(config)
+            # Run regression test
+            result = await engine.run_regression_test(config)
 
         # Update status
         regression_test_runs[test_id]["status"] = result.status

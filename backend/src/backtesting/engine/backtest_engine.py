@@ -25,12 +25,13 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 from src.backtesting.engine.interfaces import CostModel, EngineConfig, SignalDetector
 from src.backtesting.metrics import calculate_equity_curve, calculate_metrics
 from src.backtesting.position_manager import PositionManager
+from src.backtesting.risk_integration import BacktestRiskManager
 from src.models.backtest import (
     BacktestComparison,
     BacktestConfig,
@@ -208,7 +209,7 @@ class BacktestEngine:
 
             signal = self._detect_signal(bar, config)
             if signal:
-                trade = self._execute_trade(bar, signal, historical_bars[idx:])
+                trade = self._execute_trade(bar, signal, config)
                 trades.append(trade)
 
             # Emit progress updates
@@ -268,18 +269,19 @@ class BacktestEngine:
         return None
 
     def _execute_trade(
-        self, entry_bar: dict[str, Any], signal: dict[str, Any], future_bars: list[dict[str, Any]]
+        self, entry_bar: dict[str, Any], signal: dict[str, Any], config: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Execute simulated trade and calculate results.
+        Execute simulated trade and calculate results using only current bar data.
 
-        This is a simplified placeholder for MVP. In production, this would
-        use actual position sizing, risk management, and exit logic.
+        Uses a fixed percentage-based exit to avoid look-ahead bias.
+        No future bars are accessed -- exit price is estimated from the entry
+        price using a configurable take-profit/stop-loss percentage.
 
         Args:
             entry_bar: Bar where trade was entered
             signal: Signal that triggered the trade
-            future_bars: Future bars for simulating exit
+            config: Configuration dict (may contain exit_pct override)
 
         Returns:
             Trade dictionary with results
@@ -288,21 +290,32 @@ class BacktestEngine:
         position_size = Decimal("100")  # Simplified: Fixed 100 shares
         direction = "long" if signal["type"] == "spring" else "short"
 
-        # Simplified exit logic: Hold for 5 bars or until 3% move
-        exit_bar = future_bars[min(5, len(future_bars) - 1)] if len(future_bars) > 1 else entry_bar
-        exit_price = Decimal(str(exit_bar["close"]))
+        # Use a configurable exit percentage (default 2%) to estimate exit.
+        # Positive for take-profit assumption based on signal confidence.
+        exit_pct = Decimal(str(config.get("preview_exit_pct", "0.02")))
+        confidence = Decimal(str(signal.get("confidence", "0.5")))
+
+        # Scale the exit move by confidence: higher confidence -> closer to
+        # full take-profit; lower confidence -> smaller estimated move.
+        estimated_move = entry_price * exit_pct * confidence
+
+        if direction == "long":
+            exit_price = entry_price + estimated_move
+        else:
+            exit_price = entry_price - estimated_move
 
         # Calculate P&L
+        risk_amount = entry_price * Decimal("0.02")  # 2% risk
         if direction == "long":
             profit = (exit_price - entry_price) * position_size
-            r_multiple = (exit_price - entry_price) / (entry_price * Decimal("0.02"))  # 2% risk
+            r_multiple = (exit_price - entry_price) / risk_amount if risk_amount else Decimal("0")
         else:
             profit = (entry_price - exit_price) * position_size
-            r_multiple = (entry_price - exit_price) / (entry_price * Decimal("0.02"))
+            r_multiple = (entry_price - exit_price) / risk_amount if risk_amount else Decimal("0")
 
         return {
             "entry_timestamp": entry_bar["timestamp"],
-            "exit_timestamp": exit_bar["timestamp"],
+            "exit_timestamp": entry_bar["timestamp"],  # Same bar (no future data)
             "entry_price": entry_price,
             "exit_price": exit_price,
             "position_size": position_size,
@@ -392,6 +405,7 @@ class UnifiedBacktestEngine:
         cost_model: CostModel,
         position_manager: PositionManager,
         config: EngineConfig,
+        risk_manager: BacktestRiskManager | None = None,
     ) -> None:
         """
         Initialize unified backtest engine with injectable dependencies.
@@ -401,13 +415,21 @@ class UnifiedBacktestEngine:
             cost_model: Strategy for calculating transaction costs
             position_manager: Delegate for position tracking
             config: Engine configuration parameters
+            risk_manager: Optional risk manager for position sizing and risk limits.
+                          When None, falls back to flat percentage sizing.
         """
         self._detector = signal_detector
         self._cost_model = cost_model
         self._positions = position_manager
         self._config = config
+        self._risk_manager = risk_manager
         self._equity_curve: list[EquityCurvePoint] = []
         self._bars: list[OHLCVBar] = []
+        self._pending_orders: list[BacktestOrder] = []
+        # Maps symbol -> (stop_price, target_price, risk_manager_position_id)
+        self._position_stops: dict[str, tuple[Decimal, Decimal, str | None]] = {}
+        # Temporary storage for signal stop/target keyed by order_id
+        self._pending_order_stops: dict[UUID, tuple[Decimal, Decimal | None]] = {}
 
     def run(self, bars: list[OHLCVBar]) -> BacktestResult:
         """
@@ -425,9 +447,16 @@ class UnifiedBacktestEngine:
         start_time = time.time()
         self._bars = bars
         self._equity_curve = []
+        self._pending_orders = []
 
         for index, bar in enumerate(bars):
             self._process_bar(bar, index)
+
+        # Cancel any pending orders that were never filled (no next bar available)
+        if self._pending_orders:
+            for order in self._pending_orders:
+                order.status = "REJECTED"
+            self._pending_orders.clear()
 
         execution_time = time.time() - start_time
         return self._generate_result(bars, execution_time)
@@ -436,23 +465,122 @@ class UnifiedBacktestEngine:
         """
         Process a single bar for signal detection and position management.
 
+        Order of operations per bar:
+        1. Fill any pending orders from previous bar at this bar's open price
+        2. Detect signals on this bar
+        3. Create new orders as PENDING (filled on the next bar)
+        4. Record equity curve point
+
         Args:
             bar: Current OHLCV bar
             index: Bar index in the sequence
         """
-        # Calculate portfolio value once per bar (avoid double calculation)
+        # Step 1: Fill pending orders from previous bar at current bar's open
+        self._fill_pending_orders(bar)
+
+        # Step 1b: Check stop-loss / take-profit exits for open positions
+        self._check_position_exits(bar)
+
+        # Calculate portfolio value once per bar (after fills and exits, before signal detection)
         portfolio_value = self._positions.calculate_portfolio_value(bar)
 
-        # Detect potential signal - pass only bars up to current index to prevent look-ahead
-        # This enforces that detectors cannot access future data
+        # Step 2: Detect potential signal - pass only bars up to current index
+        # to prevent look-ahead. This enforces that detectors cannot access future data.
         visible_bars = self._bars[: index + 1]
         signal = self._detector.detect(visible_bars, index)
 
+        # Step 3: Create order as PENDING (will be filled on next bar)
         if signal is not None:
             self._handle_signal(signal, bar, portfolio_value)
 
-        # Record equity curve point
+        # Step 4: Record equity curve point
         self._record_equity_point(bar, portfolio_value)
+
+    def _check_position_exits(self, bar: OHLCVBar) -> None:
+        """
+        Check open positions for stop-loss and take-profit exits.
+
+        For each open position matching the bar's symbol, checks if the bar's
+        high/low triggers the stop or target price. Uses stored signal-based
+        stop/target levels when available (Wyckoff level-based stops), falling
+        back to percentage-based stops from engine config.
+
+        If both stop and target are hit in the same bar, the stop is assumed
+        to have been hit first (conservative approach).
+
+        Args:
+            bar: Current OHLCV bar with high/low for exit checking
+        """
+        positions_to_close = []
+
+        for symbol, position in self._positions.positions.items():
+            if symbol != bar.symbol:
+                continue
+
+            entry_price = position.average_entry_price
+
+            # Use stored signal-based stops if available, otherwise fall back to percentage
+            if symbol in self._position_stops:
+                stop_price, target_price, _pos_id = self._position_stops[symbol]
+            else:
+                stop_pct = self._config.risk_per_trade
+                target_pct = stop_pct * Decimal("3")  # 3:1 reward-to-risk
+                if position.side == "LONG":
+                    stop_price = entry_price * (Decimal("1") - stop_pct)
+                    target_price = entry_price * (Decimal("1") + target_pct)
+                else:
+                    stop_price = entry_price * (Decimal("1") + stop_pct)
+                    target_price = entry_price * (Decimal("1") - target_pct)
+
+            if position.side == "LONG":
+                stop_hit = bar.low <= stop_price
+                target_hit = bar.high >= target_price
+            elif position.side == "SHORT":
+                stop_hit = bar.high >= stop_price
+                target_hit = bar.low <= target_price
+            else:
+                continue
+
+            if stop_hit:
+                positions_to_close.append((symbol, stop_price, position.quantity, "stop_loss"))
+            elif target_hit:
+                positions_to_close.append((symbol, target_price, position.quantity, "take_profit"))
+
+        # Execute exits via SELL orders
+        for symbol, exit_price, quantity, reason in positions_to_close:
+            exit_order = BacktestOrder(
+                order_id=uuid4(),
+                symbol=symbol,
+                side="SELL",
+                order_type="MARKET",
+                quantity=quantity,
+                status="FILLED",
+                created_bar_timestamp=bar.timestamp,
+                filled_bar_timestamp=bar.timestamp,
+                fill_price=exit_price,
+                commission=Decimal("0"),
+                slippage=Decimal("0"),
+            )
+            if self._config.enable_cost_model:
+                exit_order.commission = self._cost_model.calculate_commission(exit_order)
+
+            if self._positions.has_position(symbol):
+                self._positions.close_position(exit_order)
+
+                # Update risk manager if present (close_position handles capital tracking)
+                if self._risk_manager is not None:
+                    # Use stored position_id if available, fall back to symbol
+                    risk_position_id = symbol
+                    if symbol in self._position_stops:
+                        _, _, stored_pos_id = self._position_stops[symbol]
+                        if stored_pos_id is not None:
+                            risk_position_id = stored_pos_id
+                    self._risk_manager.close_position(risk_position_id, exit_price)
+
+                # Clean up stored stops
+                self._position_stops.pop(symbol, None)
+
+                logger.debug(f"Position exit for {symbol}: {reason} at {exit_price}")
 
     def _handle_signal(self, signal: TradeSignal, bar: OHLCVBar, portfolio_value: Decimal) -> None:
         """
@@ -476,9 +604,13 @@ class UnifiedBacktestEngine:
 
     def _create_order(
         self, signal: TradeSignal, bar: OHLCVBar, portfolio_value: Decimal
-    ) -> Optional[BacktestOrder]:
+    ) -> BacktestOrder | None:
         """
         Create a backtest order from a signal.
+
+        When a risk manager is provided and the signal has stop_loss info,
+        uses risk-based position sizing (risk_amount / stop_distance).
+        Otherwise falls back to flat percentage sizing.
 
         Args:
             signal: Trading signal
@@ -495,14 +627,40 @@ class UnifiedBacktestEngine:
             )
             return None
 
-        # Calculate position size based on current equity (passed in, not recalculated)
-        position_value = portfolio_value * self._config.max_position_size
-        quantity = int(position_value / bar.close)
+        # Risk-based sizing when risk manager is present and signal has stop_loss
+        signal_stop_loss = getattr(signal, "stop_loss", None)
+        if self._risk_manager is not None and signal_stop_loss is not None:
+            entry_price = bar.close
+            stop_loss = Decimal(str(signal_stop_loss))
+            campaign_id = getattr(signal, "campaign_id", None) or bar.symbol
+
+            # Validate through risk manager (checks all 4 risk limits + sizes position)
+            (
+                can_trade,
+                risk_position_size,
+                rejection_reason,
+            ) = self._risk_manager.validate_and_size_position(
+                symbol=bar.symbol,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                campaign_id=campaign_id,
+            )
+
+            if not can_trade:
+                logger.info(f"Risk manager rejected order for {bar.symbol}: {rejection_reason}")
+                return None
+
+            # risk_position_size is already in tradeable units (shares/lots)
+            quantity = int(risk_position_size)
+        else:
+            # Fallback: flat percentage sizing (original behavior)
+            position_value = portfolio_value * self._config.max_position_size
+            quantity = int(position_value / bar.close)
 
         if quantity <= 0:
             return None
 
-        return BacktestOrder(
+        order = BacktestOrder(
             order_id=uuid4(),
             symbol=bar.symbol,
             side="BUY" if signal.direction == "LONG" else "SELL",
@@ -512,37 +670,133 @@ class UnifiedBacktestEngine:
             created_bar_timestamp=bar.timestamp,
         )
 
+        # Store signal stop/target for use when filling the order
+        signal_stop = getattr(signal, "stop_loss", None)
+        signal_target = getattr(signal, "target_levels", None)
+        if signal_stop is not None:
+            stop_dec = Decimal(str(signal_stop))
+            target_dec: Decimal | None = None
+            if signal_target is not None:
+                primary = getattr(signal_target, "primary_target", None)
+                if primary is not None:
+                    target_dec = Decimal(str(primary))
+            self._pending_order_stops[order.order_id] = (stop_dec, target_dec)
+
+        return order
+
     def _execute_order(self, order: BacktestOrder, bar: OHLCVBar) -> None:
         """
-        Execute an order with cost model calculations.
+        Queue an order as PENDING for next-bar fill.
+
+        Orders are NOT filled on the signal bar. They are added to the
+        pending queue and will be filled at the next bar's open price,
+        mirroring realistic execution (signal at bar close -> fill at next open).
 
         Args:
-            order: Order to execute
-            bar: Current bar for fill price
+            order: Order to queue (already has status=PENDING)
+            bar: Current bar when signal was generated (used for timestamp only)
         """
-        # Calculate costs if enabled
-        commission = Decimal("0")
-        slippage = Decimal("0")
+        # Order is already created with status="PENDING" in _create_order
+        self._pending_orders.append(order)
 
-        if self._config.enable_cost_model:
-            commission = self._cost_model.calculate_commission(order)
-            slippage = self._cost_model.calculate_slippage(order, bar)
+    def _fill_pending_orders(self, bar: OHLCVBar) -> None:
+        """
+        Fill all pending orders at the current bar's open price.
 
-        # Update order with fill details
-        order.fill_price = bar.close + slippage
-        order.commission = commission
-        order.slippage = slippage
-        order.status = "FILLED"
-        order.filled_bar_timestamp = bar.timestamp
+        Called at the START of each bar's processing, before signal detection.
+        This ensures orders from the previous bar are filled at the next bar's
+        open price, preventing same-bar fill bias.
 
-        # Delegate position tracking
-        if order.side == "BUY":
-            self._positions.open_position(order)
-        else:
-            if self._positions.has_position(order.symbol):
-                self._positions.close_position(order)
+        Args:
+            bar: Current bar whose open price is used for fills
+        """
+        if not self._pending_orders:
+            return
+
+        filled_orders: list[BacktestOrder] = []
+        for order in self._pending_orders:
+            # Calculate costs if enabled
+            commission = Decimal("0")
+            slippage = Decimal("0")
+
+            if self._config.enable_cost_model:
+                commission = self._cost_model.calculate_commission(order)
+                slippage = self._cost_model.calculate_slippage(order, bar)
+
+            # Fill at next bar's OPEN price with directional slippage:
+            # BUY orders pay more (add slippage), SELL orders receive less (subtract slippage)
+            abs_slippage = abs(slippage)
+            if order.side == "BUY":
+                order.fill_price = bar.open + abs_slippage
             else:
+                order.fill_price = bar.open - abs_slippage
+            order.commission = commission
+            order.slippage = abs_slippage
+            order.status = "FILLED"
+            order.filled_bar_timestamp = bar.timestamp
+
+            # Delegate position tracking
+            if order.side == "BUY":
+                self._positions.open_position(order)
+
+                # Determine stop/target from signal or fall back to percentage
+                stored = self._pending_order_stops.pop(order.order_id, None)
+                if stored is not None:
+                    stop_loss_price = stored[0]
+                    signal_target = stored[1]
+                else:
+                    stop_pct = self._config.risk_per_trade
+                    stop_loss_price = order.fill_price * (Decimal("1") - stop_pct)
+                    signal_target = None
+
+                # Compute target price: use signal target, or default 3:1 R:R
+                if signal_target is not None:
+                    target_price = signal_target
+                elif order.fill_price is not None:
+                    stop_dist = abs(order.fill_price - stop_loss_price)
+                    target_price = order.fill_price + stop_dist * Decimal("3")
+                else:
+                    target_price = stop_loss_price  # Degenerate fallback
+
+                # Register position with risk manager for tracking
+                risk_pos_id: str | None = None
+                if self._risk_manager is not None and order.fill_price is not None:
+                    risk_pos_id = self._risk_manager.register_position(
+                        symbol=order.symbol,
+                        campaign_id=order.symbol,
+                        entry_price=order.fill_price,
+                        stop_loss=stop_loss_price,
+                        position_size=Decimal(str(order.quantity)),
+                        timestamp=bar.timestamp,
+                    )
+
+                # Store stop/target/position_id for exit checking
+                self._position_stops[order.symbol] = (
+                    stop_loss_price,
+                    target_price,
+                    risk_pos_id,
+                )
+
+            elif self._positions.has_position(order.symbol):
+                self._positions.close_position(order)
+
+                # Close position in risk manager using stored position_id
+                if self._risk_manager is not None and order.fill_price is not None:
+                    risk_position_id: str = order.symbol
+                    if order.symbol in self._position_stops:
+                        _, _, stored_pos_id = self._position_stops[order.symbol]
+                        if stored_pos_id is not None:
+                            risk_position_id = stored_pos_id
+                    self._risk_manager.close_position(risk_position_id, order.fill_price)
+                self._position_stops.pop(order.symbol, None)
+            else:
+                self._pending_order_stops.pop(order.order_id, None)
                 logger.debug(f"SELL order skipped for {order.symbol}: no open position to close")
+
+            filled_orders.append(order)
+
+        # Clear the pending queue
+        self._pending_orders.clear()
 
     def _record_equity_point(self, bar: OHLCVBar, portfolio_value: Decimal) -> None:
         """
@@ -659,10 +913,47 @@ class UnifiedBacktestEngine:
             winning_trades=len(winning),
             losing_trades=len(losing),
             win_rate=win_rate,
-            average_r_multiple=Decimal("0"),  # Simplified for now
+            average_r_multiple=self._calculate_avg_r_multiple(trades),
             max_drawdown=self._calculate_max_drawdown(),
             profit_factor=profit_factor,
         )
+
+    def _calculate_avg_r_multiple(self, trades: list) -> Decimal:
+        """
+        Calculate average R-multiple from completed trades.
+
+        R-multiple = profit per unit of risk, where risk is defined by
+        risk_per_trade percentage of entry price.
+
+        For LONG:  R = (exit_price - entry_price) / (entry_price * risk_per_trade)
+        For SHORT: R = (entry_price - exit_price) / (entry_price * risk_per_trade)
+
+        Args:
+            trades: List of completed BacktestTrade objects
+
+        Returns:
+            Average R-multiple across all trades, Decimal("0") if no trades
+        """
+        if not trades:
+            return Decimal("0")
+
+        risk_pct = self._config.risk_per_trade
+        r_multiples: list[Decimal] = []
+
+        for t in trades:
+            risk_amount = t.entry_price * risk_pct
+            if risk_amount <= 0:
+                continue
+            if t.side == "LONG":
+                r = (t.exit_price - t.entry_price) / risk_amount
+            else:
+                r = (t.entry_price - t.exit_price) / risk_amount
+            r_multiples.append(r)
+
+        if not r_multiples:
+            return Decimal("0")
+
+        return sum(r_multiples) / Decimal(len(r_multiples))
 
     def _calculate_max_drawdown(self) -> Decimal:
         """

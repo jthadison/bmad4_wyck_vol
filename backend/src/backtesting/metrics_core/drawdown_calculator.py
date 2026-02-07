@@ -42,7 +42,7 @@ class DrawdownCalculator:
             equity_curve: Sequence of equity points ordered by timestamp
 
         Returns:
-            MetricResult with max drawdown as percentage (0-100 scale)
+            MetricResult with max drawdown as decimal (0-1 scale, e.g. 0.10 = 10%)
         """
         if not equity_curve:
             return MetricResult(name="max_drawdown", value=Decimal("0"))
@@ -56,7 +56,7 @@ class DrawdownCalculator:
             if point.value > peak:
                 peak = point.value
             elif peak > 0:
-                dd = (peak - point.value) / peak * Decimal("100")
+                dd = (peak - point.value) / peak
                 if dd > max_dd:
                     max_dd = dd
                     max_dd_peak = peak
@@ -64,7 +64,7 @@ class DrawdownCalculator:
 
         return MetricResult(
             name="max_drawdown",
-            value=max_dd.quantize(Decimal("0.0001")),
+            value=max_dd.quantize(Decimal("0.000001")),
             metadata={
                 "peak_value": max_dd_peak,
                 "trough_value": max_dd_trough,
@@ -102,7 +102,7 @@ class DrawdownCalculator:
             if point.value >= peak_value:
                 # At or above peak - end any active drawdown
                 if in_drawdown and trough_value < peak_value:
-                    dd_pct = (peak_value - trough_value) / peak_value * Decimal("100")
+                    dd_pct = (peak_value - trough_value) / peak_value
                     if dd_pct >= min_drawdown_pct:
                         periods.append(
                             DrawdownPeriod(
@@ -111,7 +111,7 @@ class DrawdownCalculator:
                                 recovery_date=point.timestamp,
                                 peak_value=peak_value,
                                 trough_value=trough_value,
-                                drawdown_pct=dd_pct.quantize(Decimal("0.0001")),
+                                drawdown_pct=dd_pct.quantize(Decimal("0.000001")),
                                 duration_days=(trough_date - peak_date).days,
                                 recovery_days=(point.timestamp - trough_date).days,
                             )
@@ -131,7 +131,7 @@ class DrawdownCalculator:
 
         # Handle ongoing drawdown at end
         if in_drawdown and trough_value < peak_value:
-            dd_pct = (peak_value - trough_value) / peak_value * Decimal("100")
+            dd_pct = (peak_value - trough_value) / peak_value
             if dd_pct >= min_drawdown_pct:
                 periods.append(
                     DrawdownPeriod(
@@ -140,7 +140,7 @@ class DrawdownCalculator:
                         recovery_date=None,
                         peak_value=peak_value,
                         trough_value=trough_value,
-                        drawdown_pct=dd_pct.quantize(Decimal("0.0001")),
+                        drawdown_pct=dd_pct.quantize(Decimal("0.000001")),
                         duration_days=(trough_date - peak_date).days,
                         recovery_days=None,
                     )

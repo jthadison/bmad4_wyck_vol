@@ -218,8 +218,11 @@ class TestBarProcessorExitConditions:
         )
 
     def test_long_stop_loss_triggered(self, processor, long_position):
-        """AC4: Long position triggers stop-loss when price drops 2%+."""
-        # Price dropped to $97.50 (2.5% loss)
+        """AC4: Long position triggers stop-loss when bar.low breaches stop level.
+
+        Entry at $100, stop at $98 (2%). Bar low of $97 breaches the stop.
+        Exit price should be the stop price ($98), not bar.close.
+        """
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
@@ -243,11 +246,42 @@ class TestBarProcessorExitConditions:
         exit_signal = result.exit_signals[0]
         assert exit_signal.symbol == "AAPL"
         assert exit_signal.reason == "stop_loss"
-        assert exit_signal.exit_price == Decimal("97.50")
+        # Stop price = 100 * (1 - 0.02) = 98.00
+        assert exit_signal.exit_price == Decimal("98.00")
+
+    def test_long_stop_loss_not_triggered_when_low_above_stop(self, processor, long_position):
+        """AC4: Long stop-loss NOT triggered when bar.low stays above stop level.
+
+        Entry at $100, stop at $98 (2%). Bar low of $98.50 does not breach.
+        Even if close is below stop, stop should not trigger.
+        """
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+            open=Decimal("99.00"),
+            high=Decimal("99.50"),
+            low=Decimal("98.50"),
+            close=Decimal("98.50"),
+            volume=1000000,
+            spread=Decimal("1.00"),
+        )
+
+        result = processor.process(
+            bar=bar,
+            index=0,
+            positions={"AAPL": long_position},
+            cash=Decimal("90000"),
+        )
+
+        assert len(result.exit_signals) == 0
 
     def test_long_take_profit_triggered(self, processor, long_position):
-        """AC4: Long position triggers take-profit when price rises 6%+."""
-        # Price rose to $107 (7% gain)
+        """AC4: Long position triggers take-profit when bar.high reaches target.
+
+        Entry at $100, target at $106 (6%). Bar high of $108 reaches target.
+        Exit price should be the target price ($106), not bar.close.
+        """
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
@@ -271,11 +305,15 @@ class TestBarProcessorExitConditions:
         exit_signal = result.exit_signals[0]
         assert exit_signal.symbol == "AAPL"
         assert exit_signal.reason == "take_profit"
-        assert exit_signal.exit_price == Decimal("107.00")
+        # Target price = 100 * (1 + 0.06) = 106.00
+        assert exit_signal.exit_price == Decimal("106.00")
 
     def test_long_no_exit_within_range(self, processor, long_position):
-        """AC4: Long position has no exit when price within thresholds."""
-        # Price at $101 (1% gain - within range)
+        """AC4: Long position has no exit when bar range within thresholds.
+
+        Entry at $100, stop at $98, target at $106.
+        Bar low=$99 (above stop), bar high=$102 (below target).
+        """
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
@@ -297,9 +335,41 @@ class TestBarProcessorExitConditions:
 
         assert len(result.exit_signals) == 0
 
+    def test_long_both_hit_same_bar_stop_wins(self, processor, long_position):
+        """AC4: If both stop and target hit in same bar, stop wins (conservative).
+
+        Entry at $100, stop at $98, target at $106. Wide bar spans both.
+        """
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+            open=Decimal("100.00"),
+            high=Decimal("110.00"),
+            low=Decimal("95.00"),
+            close=Decimal("105.00"),
+            volume=2000000,
+            spread=Decimal("15.00"),
+        )
+
+        result = processor.process(
+            bar=bar,
+            index=0,
+            positions={"AAPL": long_position},
+            cash=Decimal("90000"),
+        )
+
+        assert len(result.exit_signals) == 1
+        exit_signal = result.exit_signals[0]
+        assert exit_signal.reason == "stop_loss"
+        assert exit_signal.exit_price == Decimal("98.00")
+
     def test_short_stop_loss_triggered(self, processor, short_position):
-        """AC4: Short position triggers stop-loss when price rises 2%+."""
-        # Price rose to $103 (3% against short)
+        """AC4: Short position triggers stop-loss when bar.high breaches stop level.
+
+        Entry at $100, stop at $102 (2%). Bar high of $104 breaches the stop.
+        Exit price should be the stop price ($102), not bar.close.
+        """
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
@@ -323,10 +393,15 @@ class TestBarProcessorExitConditions:
         exit_signal = result.exit_signals[0]
         assert exit_signal.symbol == "AAPL"
         assert exit_signal.reason == "stop_loss"
+        # Stop price = 100 * (1 + 0.02) = 102.00
+        assert exit_signal.exit_price == Decimal("102.00")
 
     def test_short_take_profit_triggered(self, processor, short_position):
-        """AC4: Short position triggers take-profit when price drops 6%+."""
-        # Price dropped to $93 (7% profit for short)
+        """AC4: Short position triggers take-profit when bar.low reaches target.
+
+        Entry at $100, target at $94 (6%). Bar low of $92 reaches target.
+        Exit price should be the target price ($94), not bar.close.
+        """
         bar = OHLCVBar(
             symbol="AAPL",
             timeframe="1d",
@@ -350,6 +425,37 @@ class TestBarProcessorExitConditions:
         exit_signal = result.exit_signals[0]
         assert exit_signal.symbol == "AAPL"
         assert exit_signal.reason == "take_profit"
+        # Target price = 100 * (1 - 0.06) = 94.00
+        assert exit_signal.exit_price == Decimal("94.00")
+
+    def test_short_both_hit_same_bar_stop_wins(self, processor, short_position):
+        """AC4: If both stop and target hit in same bar for SHORT, stop wins.
+
+        Entry at $100, stop at $102, target at $94. Wide bar spans both.
+        """
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+            open=Decimal("100.00"),
+            high=Decimal("105.00"),
+            low=Decimal("90.00"),
+            close=Decimal("97.00"),
+            volume=2000000,
+            spread=Decimal("15.00"),
+        )
+
+        result = processor.process(
+            bar=bar,
+            index=0,
+            positions={"AAPL": short_position},
+            cash=Decimal("90000"),
+        )
+
+        assert len(result.exit_signals) == 1
+        exit_signal = result.exit_signals[0]
+        assert exit_signal.reason == "stop_loss"
+        assert exit_signal.exit_price == Decimal("102.00")
 
     def test_different_symbol_position_no_update(self, processor, long_position):
         """AC4: Position for different symbol not updated or checked."""

@@ -8,9 +8,9 @@ Author: Story 12.4 Task 2
 """
 
 import time
-from datetime import date
+from collections.abc import Callable
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import uuid4
 
 import numpy as np
@@ -18,7 +18,7 @@ import structlog
 from dateutil.relativedelta import relativedelta  # type: ignore[import-untyped]
 from scipy import stats
 
-from src.backtesting.backtest_engine import BacktestEngine
+from src.backtesting.legacy.backtest_engine import BacktestEngine as LegacyBacktestEngine
 from src.models.backtest import (
     BacktestConfig,
     BacktestMetrics,
@@ -28,8 +28,12 @@ from src.models.backtest import (
     WalkForwardConfig,
     WalkForwardResult,
 )
+from src.models.ohlcv import OHLCVBar
 
 logger = structlog.get_logger()
+
+# Minimum number of bars required to run a meaningful backtest for a window
+MIN_BARS_PER_WINDOW = 10
 
 
 class WalkForwardEngine:
@@ -58,13 +62,26 @@ class WalkForwardEngine:
         result = engine.walk_forward_test(["AAPL"], config)
     """
 
-    def __init__(self, backtest_engine: Optional[BacktestEngine] = None):
+    def __init__(
+        self,
+        backtest_engine: LegacyBacktestEngine | None = None,
+        strategy_func: Callable[[OHLCVBar, dict], str | None] | None = None,
+        market_data: list[OHLCVBar] | None = None,
+    ):
         """Initialize walk-forward engine.
 
         Args:
-            backtest_engine: BacktestEngine instance for running backtests
+            backtest_engine: Legacy BacktestEngine instance (unused, kept for compat)
+            strategy_func: Strategy function for the backtest engine. Takes
+                (bar, context) and returns "BUY", "SELL", or None.
+                If not provided, a simple buy-and-hold strategy is used.
+            market_data: Pre-fetched OHLCV bars covering the full date range.
+                When provided, bars are sliced per window to avoid re-fetching.
+                When None, the engine falls back to mock/placeholder results.
         """
         self.backtest_engine = backtest_engine
+        self.strategy_func = strategy_func
+        self.market_data = market_data
         self.logger = logger.bind(component="walk_forward_engine")
 
     def walk_forward_test(self, symbols: list[str], config: WalkForwardConfig) -> WalkForwardResult:
@@ -326,6 +343,10 @@ class WalkForwardEngine:
     ) -> BacktestResult:
         """Run backtest for a specific window period.
 
+        When market_data was provided at init time, slices the bars for this
+        window and runs the Legacy BacktestEngine with the configured strategy.
+        Otherwise falls back to a placeholder result for backward compatibility.
+
         Args:
             symbol: Trading symbol
             start_date: Window start date
@@ -335,18 +356,130 @@ class WalkForwardEngine:
         Returns:
             BacktestResult for this window period
 
-        Note:
-            This is a placeholder. In production, this would:
-            1. Load OHLCV data for symbol and date range
-            2. Create BacktestConfig with window dates
-            3. Call BacktestEngine.run() with strategy
-            4. Return BacktestResult
+        Raises:
+            ValueError: If window has insufficient bars (< MIN_BARS_PER_WINDOW)
         """
-        # For now, return a mock result
-        # In production, this would integrate with actual BacktestEngine
-        from datetime import datetime
+        if self.market_data is not None:
+            return self._run_real_backtest(symbol, start_date, end_date, base_config)
 
-        mock_metrics = BacktestMetrics(
+        # Fallback: return placeholder result when no market data provided
+        return self._create_placeholder_result(symbol, start_date, end_date, base_config)
+
+    def _run_real_backtest(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+        base_config: BacktestConfig,
+    ) -> BacktestResult:
+        """Run a real backtest using the Legacy BacktestEngine.
+
+        Args:
+            symbol: Trading symbol
+            start_date: Window start date
+            end_date: Window end date
+            base_config: Base backtest configuration
+
+        Returns:
+            BacktestResult with real metrics from the engine
+        """
+        # Slice bars for this window period
+        window_bars = self._slice_bars_for_period(start_date, end_date)
+
+        if len(window_bars) < MIN_BARS_PER_WINDOW:
+            self.logger.warning(
+                "insufficient_bars_for_window",
+                symbol=symbol,
+                start_date=str(start_date),
+                end_date=str(end_date),
+                bar_count=len(window_bars),
+                min_required=MIN_BARS_PER_WINDOW,
+            )
+            raise ValueError(
+                f"Insufficient bars for window {start_date} to {end_date}: "
+                f"got {len(window_bars)}, need >= {MIN_BARS_PER_WINDOW}"
+            )
+
+        # Create a window-specific config with the correct dates
+        window_config = BacktestConfig(
+            symbol=symbol,
+            timeframe=base_config.timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            initial_capital=base_config.initial_capital,
+            max_position_size=base_config.max_position_size,
+            commission_per_share=base_config.commission_per_share,
+            slippage_model=base_config.slippage_model,
+            slippage_percentage=base_config.slippage_percentage,
+            commission_config=base_config.commission_config,
+            slippage_config=base_config.slippage_config,
+            risk_limits=base_config.risk_limits,
+        )
+
+        # Use provided strategy or default buy-and-hold
+        strategy = self.strategy_func or self._default_strategy
+
+        # Create a fresh engine instance per window (engine has internal state)
+        engine = LegacyBacktestEngine(window_config)
+        result = engine.run(window_bars, strategy_func=strategy)
+
+        return result
+
+    def _slice_bars_for_period(self, start_date: date, end_date: date) -> list[OHLCVBar]:
+        """Slice pre-fetched market data for a specific date range.
+
+        Args:
+            start_date: Period start date (inclusive)
+            end_date: Period end date (inclusive)
+
+        Returns:
+            List of OHLCVBar within the date range
+        """
+        if not self.market_data:
+            return []
+
+        return [bar for bar in self.market_data if start_date <= bar.timestamp.date() <= end_date]
+
+    @staticmethod
+    def _default_strategy(bar: OHLCVBar, context: dict) -> str | None:
+        """Simple buy-and-hold strategy used when no strategy_func is provided.
+
+        Buys on the first bar and holds until the end.
+
+        Args:
+            bar: Current OHLCV bar
+            context: Strategy context dict
+
+        Returns:
+            "BUY" on the first bar, None otherwise
+        """
+        bar_count = context.get("bar_count", 0)
+        if bar_count == 1:
+            return "BUY"
+        return None
+
+    @staticmethod
+    def _create_placeholder_result(
+        symbol: str,
+        start_date: date,
+        end_date: date,
+        base_config: BacktestConfig,
+    ) -> BacktestResult:
+        """Create a placeholder BacktestResult for backward compatibility.
+
+        Used when no market_data is provided (e.g., in tests that mock
+        _run_backtest_for_window or when running without real data).
+
+        Args:
+            symbol: Trading symbol
+            start_date: Window start date
+            end_date: Window end date
+            base_config: Base backtest configuration
+
+        Returns:
+            BacktestResult with placeholder metrics
+        """
+        placeholder_metrics = BacktestMetrics(
             total_signals=10,
             win_rate=Decimal("0.60"),
             average_r_multiple=Decimal("2.5"),
@@ -367,8 +500,8 @@ class WalkForwardEngine:
             start_date=start_date,
             end_date=end_date,
             config=base_config,
-            summary=mock_metrics,
-            created_at=datetime.utcnow(),
+            summary=placeholder_metrics,
+            created_at=datetime.now(UTC),
         )
 
     def _calculate_performance_ratio(

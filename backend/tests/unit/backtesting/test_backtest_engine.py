@@ -444,7 +444,7 @@ class TestMetricsCalculation:
         assert result.summary.winning_trades == 1
         assert result.summary.losing_trades == 0
         assert result.summary.win_rate == Decimal("1.0")
-        assert result.summary.profit_factor == Decimal("0")  # No losses
+        assert result.summary.profit_factor == Decimal("999.99")  # No losses, capped
         assert result.summary.total_return_pct > Decimal("0")
 
 

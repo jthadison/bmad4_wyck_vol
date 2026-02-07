@@ -18,12 +18,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.backtesting.backtest_engine import BacktestEngine
-from src.database import get_db
+from src.database import async_session_maker, get_db
 from src.models.backtest import BacktestConfig
 from src.models.ohlcv import OHLCVBar
 from src.repositories.backtest_repository import BacktestRepository
 
-from .utils import backtest_runs, fetch_historical_bars
+from .utils import backtest_runs, cleanup_stale_entries, fetch_historical_bars
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 @router.post("/run", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
 async def run_backtest(
     config: BacktestConfig,
-    session: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Run a full backtest with the provided configuration.
@@ -41,7 +40,6 @@ async def run_backtest(
 
     Args:
         config: Backtest configuration (symbol, date range, initial capital)
-        session: Database session
 
     Returns:
         Response with backtest_run_id and status: RUNNING
@@ -83,18 +81,18 @@ async def run_backtest(
         )
 
     # Initialize tracking (in-memory for now)
+    cleanup_stale_entries(backtest_runs)
     backtest_runs[run_id] = {
         "status": "RUNNING",
         "created_at": datetime.now(UTC),
         "error": None,
     }
 
-    # Queue background task
+    # Queue background task (uses its own DB session, not the request-scoped one)
     asyncio.create_task(
         run_backtest_task(
             run_id,
             config,
-            session,
         )
     )
 
@@ -275,17 +273,18 @@ async def list_backtest_results(
 async def run_backtest_task(
     run_id: UUID,
     config: BacktestConfig,
-    session: AsyncSession,
 ) -> None:
     """
     Background task to execute full backtest.
 
     AC7 Subtask 8.4-8.10: Execute engine, save to database via repository.
 
+    Creates its own database session rather than using the request-scoped
+    session, which is closed after the HTTP 202 response is sent.
+
     Args:
         run_id: Backtest run identifier
         config: Backtest configuration
-        session: Database session
     """
     try:
         logger.info("Starting backtest execution", extra={"backtest_run_id": str(run_id)})
@@ -313,9 +312,10 @@ async def run_backtest_task(
         # Update result with correct run_id
         result.backtest_run_id = run_id
 
-        # Save to database
-        repository = BacktestRepository(session)
-        await repository.save_result(result)
+        # Save to database using a fresh session (not request-scoped)
+        async with async_session_maker() as session:
+            repository = BacktestRepository(session)
+            await repository.save_result(result)
 
         # Update in-memory tracking
         backtest_runs[run_id]["status"] = "COMPLETED"

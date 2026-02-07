@@ -407,8 +407,8 @@ class TestProfitFactorCalculation:
         ]
 
         profit_factor = calculator._calculate_profit_factor(trades)
-        # No losses = undefined, return 0
-        assert profit_factor == Decimal("0")
+        # No losses but has wins - return 999.99 (capped infinity)
+        assert profit_factor == Decimal("999.99")
 
 
 class TestFullMetricsCalculation:

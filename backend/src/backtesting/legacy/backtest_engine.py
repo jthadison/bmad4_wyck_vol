@@ -14,6 +14,9 @@ from typing import Optional
 from uuid import uuid4
 
 from src.backtesting.bias_detector import LookAheadBiasDetector
+from src.backtesting.metrics_core.base import EquityPoint
+from src.backtesting.metrics_core.return_calculator import ReturnCalculator
+from src.backtesting.metrics_core.risk_calculator import RiskCalculator
 from src.backtesting.order_simulator import OrderSimulator
 from src.backtesting.position_manager import PositionManager
 from src.backtesting.slippage_calculator import CommissionCalculator, SlippageCalculator
@@ -432,7 +435,12 @@ class BacktestEngine:
         # Profit factor
         total_wins = sum(t.realized_pnl for t in trades if t.realized_pnl > 0)
         total_losses = abs(sum(t.realized_pnl for t in trades if t.realized_pnl < 0))
-        profit_factor = total_wins / total_losses if total_losses > 0 else Decimal("0")
+        if total_losses > 0:
+            profit_factor = total_wins / total_losses
+        elif total_wins > 0:
+            profit_factor = Decimal("999.99")  # Cap for "infinite" profit factor
+        else:
+            profit_factor = Decimal("0")
 
         # Average R-multiple
         avg_r_multiple = (
@@ -441,9 +449,22 @@ class BacktestEngine:
             else Decimal("0")
         )
 
-        # CAGR and Sharpe (simplified for now)
-        cagr = total_return_pct  # Simplified - should annualize
-        sharpe_ratio = Decimal("0")  # TODO: Implement in Task 7
+        # CAGR: Use ReturnCalculator for proper annualized calculation
+        equity_points = [
+            EquityPoint(timestamp=p.timestamp, value=p.portfolio_value) for p in self.equity_curve
+        ]
+        return_calc = ReturnCalculator()
+        cagr_result = return_calc.calculate_cagr(equity_points)
+        cagr = cagr_result.value
+
+        # Sharpe ratio: Use RiskCalculator with daily returns from equity curve
+        risk_calc = RiskCalculator()
+        daily_returns = risk_calc.calculate_returns_from_equity(equity_points)
+        sharpe_ratio = (
+            risk_calc.calculate_sharpe_ratio(daily_returns).value
+            if len(daily_returns) >= 2
+            else Decimal("0")
+        )
 
         return BacktestMetrics(
             total_signals=total_trades,

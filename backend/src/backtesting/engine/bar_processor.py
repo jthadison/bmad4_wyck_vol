@@ -177,49 +177,70 @@ class BarProcessor:
             ExitSignal if exit condition triggered, None otherwise
         """
         entry_price = position.average_entry_price
-        current_price = bar.close
 
-        # Calculate price change percentage based on position side
+        # Calculate stop and target price levels
+        stop_price = self._get_stop_price(entry_price, position.side)
+        target_price = self._get_target_price(entry_price, position.side)
+
         if position.side == "LONG":
-            price_change_pct = (current_price - entry_price) / entry_price
-
-            # Check stop-loss (price dropped below threshold)
-            if price_change_pct <= -self._stop_loss_pct:
-                return ExitSignal(
-                    symbol=position.symbol,
-                    reason="stop_loss",
-                    exit_price=current_price,
-                )
-
-            # Check take-profit (price rose above threshold)
-            if price_change_pct >= self._take_profit_pct:
-                return ExitSignal(
-                    symbol=position.symbol,
-                    reason="take_profit",
-                    exit_price=current_price,
-                )
-
+            # Check stop-loss against bar.low (intra-bar adverse move)
+            stop_hit = bar.low <= stop_price
+            # Check take-profit against bar.high (intra-bar favorable move)
+            target_hit = bar.high >= target_price
         elif position.side == "SHORT":
-            # For short positions, profit is when price drops
-            price_change_pct = (entry_price - current_price) / entry_price
+            # Check stop-loss against bar.high (intra-bar adverse move)
+            stop_hit = bar.high >= stop_price
+            # Check take-profit against bar.low (intra-bar favorable move)
+            target_hit = bar.low <= target_price
+        else:
+            return None
 
-            # Check stop-loss (price rose above threshold for shorts)
-            if price_change_pct <= -self._stop_loss_pct:
-                return ExitSignal(
-                    symbol=position.symbol,
-                    reason="stop_loss",
-                    exit_price=current_price,
-                )
+        # If both hit in same bar, assume stop was hit first (conservative)
+        if stop_hit:
+            return ExitSignal(
+                symbol=position.symbol,
+                reason="stop_loss",
+                exit_price=stop_price,
+            )
 
-            # Check take-profit (price dropped below threshold for shorts)
-            if price_change_pct >= self._take_profit_pct:
-                return ExitSignal(
-                    symbol=position.symbol,
-                    reason="take_profit",
-                    exit_price=current_price,
-                )
+        if target_hit:
+            return ExitSignal(
+                symbol=position.symbol,
+                reason="take_profit",
+                exit_price=target_price,
+            )
 
         return None
+
+    def _get_stop_price(self, entry_price: Decimal, side: str) -> Decimal:
+        """Calculate stop-loss price level.
+
+        Args:
+            entry_price: Position entry price
+            side: Position side ("LONG" or "SHORT")
+
+        Returns:
+            Stop-loss price level
+        """
+        if side == "LONG":
+            return entry_price * (Decimal("1") - self._stop_loss_pct)
+        else:  # SHORT
+            return entry_price * (Decimal("1") + self._stop_loss_pct)
+
+    def _get_target_price(self, entry_price: Decimal, side: str) -> Decimal:
+        """Calculate take-profit price level.
+
+        Args:
+            entry_price: Position entry price
+            side: Position side ("LONG" or "SHORT")
+
+        Returns:
+            Take-profit price level
+        """
+        if side == "LONG":
+            return entry_price * (Decimal("1") + self._take_profit_pct)
+        else:  # SHORT
+            return entry_price * (Decimal("1") - self._take_profit_pct)
 
     @property
     def stop_loss_pct(self) -> Decimal:

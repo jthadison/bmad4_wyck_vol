@@ -68,12 +68,12 @@ class TestCalculateProfitFactor:
 
     def test_profit_factor_empty_trades(self, calculator):
         """Test profit factor with no trades."""
-        assert calculator.calculate_profit_factor([]) is None
+        assert calculator.calculate_profit_factor([]) == Decimal("0")
 
     def test_profit_factor_no_losses(self, calculator):
-        """Test profit factor with no losing trades."""
+        """Test profit factor with no losing trades (capped at 999.99)."""
         trades = [MockTrade(realized_pnl=Decimal("100"))]
-        assert calculator.calculate_profit_factor(trades) is None
+        assert calculator.calculate_profit_factor(trades) == Decimal("999.99")
 
     def test_profit_factor_no_wins(self, calculator):
         """Test profit factor with no winning trades."""
@@ -206,7 +206,7 @@ class TestCalculateStatistics:
         assert stats.losing_trades == 0
         assert stats.breakeven_trades == 0
         assert stats.win_rate == Decimal("0")
-        assert stats.profit_factor is None
+        assert stats.profit_factor == Decimal("0")
         assert stats.avg_r_multiple is None
         assert stats.expectancy is None
         assert stats.gross_profit == Decimal("0")
@@ -223,7 +223,7 @@ class TestCalculateStatistics:
         assert stats.losing_trades == 0
         assert stats.breakeven_trades == 0
         assert stats.win_rate == Decimal("1.0")
-        assert stats.profit_factor is None  # No losses
+        assert stats.profit_factor == Decimal("999.99")  # No losses, capped
         assert stats.avg_r_multiple == Decimal("2.0")
         assert stats.expectancy == Decimal("2.0")  # 100% win rate * 2R
         assert stats.gross_profit == Decimal("500")

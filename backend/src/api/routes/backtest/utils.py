@@ -2,7 +2,7 @@
 Shared utilities for backtest routes.
 
 This module provides common functionality used across backtest route modules:
-- In-memory run tracking dictionaries
+- In-memory run tracking dictionaries with TTL-based eviction
 - Historical data fetching
 - Configuration retrieval
 - Synthetic data generation
@@ -19,6 +19,12 @@ from src.models.ohlcv import OHLCVBar
 
 logger = logging.getLogger(__name__)
 
+# --- In-memory run tracking with TTL-based eviction ---
+# Entries older than ENTRY_TTL_SECONDS are eligible for cleanup.
+# Cleanup runs before each new insertion to keep dictionaries bounded.
+MAX_ENTRIES = 1000
+ENTRY_TTL_SECONDS = 3600  # 1 hour
+
 # In-memory storage for backtest runs (MVP - replace with database in production)
 backtest_runs: dict[UUID, dict] = {}
 
@@ -27,6 +33,38 @@ walk_forward_runs: dict[UUID, dict] = {}
 
 # In-memory storage for regression test runs
 regression_test_runs: dict[UUID, dict] = {}
+
+
+def cleanup_stale_entries(store: dict[UUID, dict]) -> None:
+    """Remove entries older than ENTRY_TTL_SECONDS from *store*.
+
+    Called before inserting a new entry so the dictionaries stay bounded.
+    Only entries whose status is terminal (not RUNNING) and whose
+    ``created_at`` timestamp is older than the TTL are removed.
+    If the store still exceeds MAX_ENTRIES after TTL eviction, the oldest
+    non-running entries are dropped until the size is within the limit.
+    """
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(seconds=ENTRY_TTL_SECONDS)
+
+    # Phase 1: remove expired non-running entries
+    expired_keys = [
+        key
+        for key, value in store.items()
+        if value.get("status") != "RUNNING" and value.get("created_at", now) < cutoff
+    ]
+    for key in expired_keys:
+        del store[key]
+
+    # Phase 2: if still over limit, drop oldest non-running entries
+    if len(store) >= MAX_ENTRIES:
+        non_running = sorted(
+            ((k, v) for k, v in store.items() if v.get("status") != "RUNNING"),
+            key=lambda item: item[1].get("created_at", now),
+        )
+        to_remove = len(store) - MAX_ENTRIES + 1  # make room for the new entry
+        for key, _ in non_running[:to_remove]:
+            del store[key]
 
 
 async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = "1d") -> list[dict]:

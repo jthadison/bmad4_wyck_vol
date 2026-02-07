@@ -225,8 +225,8 @@ class TestDelegatedMethods:
         ]
         max_dd, duration = facade.calculate_max_drawdown(equity_curve)
 
-        # Drawdown: (110000 - 99000) / 110000 = 10%
-        assert max_dd == Decimal("10")
+        # Drawdown: (110000 - 99000) / 110000 = 0.10 (10%)
+        assert max_dd == Decimal("0.1000")
         assert duration == 16  # Days from Jan 15 to Jan 31
 
     def test_calculate_max_drawdown_empty(self, facade):
@@ -303,7 +303,7 @@ class TestEdgeCases:
         )
 
         assert metrics.win_rate == Decimal("1.0")
-        assert metrics.profit_factor == Decimal("0")  # No losses -> converted to 0
+        assert metrics.profit_factor == Decimal("999.99")  # No losses -> capped at 999.99
 
     def test_all_losing_trades(self, facade, sample_equity_curve):
         """Test with all losing trades."""

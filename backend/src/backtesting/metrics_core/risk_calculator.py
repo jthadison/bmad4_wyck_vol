@@ -91,7 +91,8 @@ class RiskCalculator:
         mean_return = total / n
 
         # Pass 2: Calculate variance - O(n)
-        variance = sum((r - mean_return) ** 2 for r in returns) / n
+        # Use Bessel's correction (n-1) for sample variance
+        variance = sum((r - mean_return) ** 2 for r in returns) / (n - Decimal("1"))
 
         # Standard deviation
         if variance <= 0:
@@ -261,17 +262,17 @@ class RiskCalculator:
         if annualized_return is None:
             annualized_return = self._calculate_cagr(equity_curve)
 
-        # Calmar = CAGR / Max Drawdown (both as percentages)
-        # Convert CAGR from decimal to percentage for consistency
-        cagr_pct = annualized_return * Decimal("100")
-        calmar = cagr_pct / max_dd
+        # Calmar = CAGR / Max Drawdown (both as decimals on 0-1 scale)
+        calmar = annualized_return / max_dd
 
         return MetricResult(
             name="calmar_ratio",
             value=calmar.quantize(Decimal("0.0001")),
             metadata={
-                "annualized_return_pct": cagr_pct.quantize(Decimal("0.0001")),
-                "max_drawdown_pct": max_dd.quantize(Decimal("0.0001")),
+                "annualized_return_pct": (annualized_return * Decimal("100")).quantize(
+                    Decimal("0.0001")
+                ),
+                "max_drawdown_pct": (max_dd * Decimal("100")).quantize(Decimal("0.0001")),
             },
         )
 

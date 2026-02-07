@@ -117,21 +117,22 @@ class LookAheadBiasDetector:
                 # Can't validate without matching bar - assume valid
                 continue
 
-            # Check if entry price is suspiciously at bar extremes
+            # Check if entry price is suspiciously at the favorable bar extreme
             if trade.side == "LONG":
                 # BUY trades should not enter at bar.low (would need future knowledge)
-                # Allow small tolerance for slippage
-                if self._is_price_at_extreme(trade.entry_price, entry_bar.low, entry_bar.high):
+                if self._is_price_at_low_extreme(trade.entry_price, entry_bar.low, entry_bar.high):
                     return False
             elif trade.side == "SHORT":
-                # SELL trades should not enter at bar.high
-                if self._is_price_at_extreme(trade.entry_price, entry_bar.low, entry_bar.high):
+                # SELL trades should not enter at bar.high (would need future knowledge)
+                if self._is_price_at_high_extreme(trade.entry_price, entry_bar.low, entry_bar.high):
                     return False
 
         return True
 
-    def _is_price_at_extreme(self, price: Decimal, bar_low: Decimal, bar_high: Decimal) -> bool:
-        """Check if price is suspiciously at bar extreme (low or high).
+    def _is_price_at_low_extreme(self, price: Decimal, bar_low: Decimal, bar_high: Decimal) -> bool:
+        """Check if price is suspiciously close to bar low.
+
+        Used for LONG entries: buying at the absolute bottom is unrealistic.
 
         Args:
             price: Entry price to check
@@ -139,17 +140,33 @@ class LookAheadBiasDetector:
             bar_high: Bar's high price
 
         Returns:
-            True if price is at extreme (within tolerance)
+            True if price is within tolerance of bar low
         """
         price_range = bar_high - bar_low
         if price_range == 0:
-            # No range = can't determine extremes
             return False
 
-        # Calculate distance from extremes as fraction of range
         distance_from_low = abs(price - bar_low) / price_range
-        distance_from_high = abs(price - bar_high) / price_range
+        return distance_from_low < self.tolerance
 
-        # If price is within tolerance of either extreme, flag it
-        # tolerance is already a decimal ratio (e.g., 0.01 = 1%)
-        return distance_from_low < self.tolerance or distance_from_high < self.tolerance
+    def _is_price_at_high_extreme(
+        self, price: Decimal, bar_low: Decimal, bar_high: Decimal
+    ) -> bool:
+        """Check if price is suspiciously close to bar high.
+
+        Used for SHORT entries: selling at the absolute top is unrealistic.
+
+        Args:
+            price: Entry price to check
+            bar_low: Bar's low price
+            bar_high: Bar's high price
+
+        Returns:
+            True if price is within tolerance of bar high
+        """
+        price_range = bar_high - bar_low
+        if price_range == 0:
+            return False
+
+        distance_from_high = abs(price - bar_high) / price_range
+        return distance_from_high < self.tolerance

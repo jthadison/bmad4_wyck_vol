@@ -257,6 +257,59 @@ class TestRealisticEntryPriceValidation:
         result = detector._verify_realistic_entry_prices(trades, sample_bars)
         assert result is False
 
+    def test_short_entry_near_bar_low_not_flagged(self, detector, sample_bars):
+        """Test SHORT entry near bar low is NOT flagged (normal for bearish signals).
+
+        This is the key regression test for issue M-5: previously, both LONG
+        and SHORT trades checked both extremes, so a SHORT entry near bar low
+        was incorrectly flagged as biased.
+        """
+        trades = [
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="SHORT",
+                quantity=100,
+                entry_price=Decimal("149.00"),  # Near bar.low - normal for SHORT
+                exit_price=Decimal("145.00"),
+                entry_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 15, 16, 0, tzinfo=UTC),
+                realized_pnl=Decimal("400.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+            )
+        ]
+
+        result = detector._verify_realistic_entry_prices(trades, sample_bars)
+        assert result is True  # Should NOT be flagged
+
+    def test_long_entry_near_bar_high_not_flagged(self, detector, sample_bars):
+        """Test LONG entry near bar high is NOT flagged (normal for bullish breakouts).
+
+        A LONG entry near bar high is not biased - it just means the trader
+        bought on strength. Only entry near bar LOW is suspicious for LONG.
+        """
+        trades = [
+            BacktestTrade(
+                trade_id=uuid4(),
+                position_id=uuid4(),
+                symbol="AAPL",
+                side="LONG",
+                quantity=100,
+                entry_price=Decimal("152.00"),  # Near bar.high - normal for LONG breakout
+                exit_price=Decimal("160.00"),
+                entry_timestamp=datetime(2024, 1, 10, 9, 30, tzinfo=UTC),
+                exit_timestamp=datetime(2024, 1, 15, 16, 0, tzinfo=UTC),
+                realized_pnl=Decimal("800.00"),
+                commission=Decimal("1.00"),
+                slippage=Decimal("0.50"),
+            )
+        ]
+
+        result = detector._verify_realistic_entry_prices(trades, sample_bars)
+        assert result is True  # Should NOT be flagged
+
     def test_no_matching_bar(self, detector, sample_bars):
         """Test trade with no matching bar (assumes valid)."""
         trades = [
@@ -282,30 +335,30 @@ class TestRealisticEntryPriceValidation:
         assert result is True
 
 
-class TestIsAtExtremeDetection:
-    """Test extreme price detection."""
+class TestIsAtLowExtremeDetection:
+    """Test low extreme price detection (for LONG entries)."""
 
     def test_price_at_low_extreme(self, detector):
         """Test price exactly at bar low."""
-        is_extreme = detector._is_price_at_extreme(
+        is_extreme = detector._is_price_at_low_extreme(
             price=Decimal("149.00"),
             bar_low=Decimal("149.00"),
             bar_high=Decimal("152.00"),
         )
         assert is_extreme is True
 
-    def test_price_at_high_extreme(self, detector):
-        """Test price exactly at bar high."""
-        is_extreme = detector._is_price_at_extreme(
+    def test_price_at_high_not_flagged(self, detector):
+        """Test price at bar high is NOT flagged by low extreme check."""
+        is_extreme = detector._is_price_at_low_extreme(
             price=Decimal("152.00"),
             bar_low=Decimal("149.00"),
             bar_high=Decimal("152.00"),
         )
-        assert is_extreme is True
+        assert is_extreme is False
 
     def test_price_in_middle(self, detector):
         """Test price in middle of bar range (not extreme)."""
-        is_extreme = detector._is_price_at_extreme(
+        is_extreme = detector._is_price_at_low_extreme(
             price=Decimal("150.50"),
             bar_low=Decimal("149.00"),
             bar_high=Decimal("152.00"),
@@ -313,16 +366,12 @@ class TestIsAtExtremeDetection:
         assert is_extreme is False
 
     def test_price_near_low_within_tolerance(self, detector):
-        """Test price near low but within tolerance SHOULD be flagged.
+        """Test price near low within tolerance SHOULD be flagged.
 
         With tolerance 0.01 (1%), price at 149.02 is 0.67% from low.
         Since 0.67% < 1%, it SHOULD be flagged as extreme (within tolerance).
         """
-        # Bar range: 149-152 (3 points)
-        # 1% tolerance = 0.01 = 1% of range = 0.03 points
-        # Price at 149.02 is 0.02 from low = 0.67% of range
-        # 0.67% < 1%, so should be flagged (within tolerance)
-        is_extreme = detector._is_price_at_extreme(
+        is_extreme = detector._is_price_at_low_extreme(
             price=Decimal("149.02"),
             bar_low=Decimal("149.00"),
             bar_high=Decimal("152.00"),
@@ -331,10 +380,7 @@ class TestIsAtExtremeDetection:
 
     def test_price_near_low_outside_tolerance(self, detector):
         """Test price near low but outside tolerance."""
-        # Bar range: 149-152 (3 points)
-        # 1% tolerance = 0.03 points
-        # Price at 149.10 is outside tolerance of low (3.3% of range)
-        is_extreme = detector._is_price_at_extreme(
+        is_extreme = detector._is_price_at_low_extreme(
             price=Decimal("149.10"),
             bar_low=Decimal("149.00"),
             bar_high=Decimal("152.00"),
@@ -343,12 +389,72 @@ class TestIsAtExtremeDetection:
 
     def test_zero_range_bar(self, detector):
         """Test bar with zero range (high == low)."""
-        is_extreme = detector._is_price_at_extreme(
+        is_extreme = detector._is_price_at_low_extreme(
             price=Decimal("150.00"),
             bar_low=Decimal("150.00"),
             bar_high=Decimal("150.00"),
         )
-        # Should return False (can't determine extremes with zero range)
+        assert is_extreme is False
+
+
+class TestIsAtHighExtremeDetection:
+    """Test high extreme price detection (for SHORT entries)."""
+
+    def test_price_at_high_extreme(self, detector):
+        """Test price exactly at bar high."""
+        is_extreme = detector._is_price_at_high_extreme(
+            price=Decimal("152.00"),
+            bar_low=Decimal("149.00"),
+            bar_high=Decimal("152.00"),
+        )
+        assert is_extreme is True
+
+    def test_price_at_low_not_flagged(self, detector):
+        """Test price at bar low is NOT flagged by high extreme check."""
+        is_extreme = detector._is_price_at_high_extreme(
+            price=Decimal("149.00"),
+            bar_low=Decimal("149.00"),
+            bar_high=Decimal("152.00"),
+        )
+        assert is_extreme is False
+
+    def test_price_in_middle(self, detector):
+        """Test price in middle of bar range (not extreme)."""
+        is_extreme = detector._is_price_at_high_extreme(
+            price=Decimal("150.50"),
+            bar_low=Decimal("149.00"),
+            bar_high=Decimal("152.00"),
+        )
+        assert is_extreme is False
+
+    def test_price_near_high_within_tolerance(self, detector):
+        """Test price near high within tolerance SHOULD be flagged."""
+        # Bar range: 149-152 (3 points)
+        # Price at 151.98 is 0.02 from high = 0.67% of range < 1% tolerance
+        is_extreme = detector._is_price_at_high_extreme(
+            price=Decimal("151.98"),
+            bar_low=Decimal("149.00"),
+            bar_high=Decimal("152.00"),
+        )
+        assert is_extreme is True
+
+    def test_price_near_high_outside_tolerance(self, detector):
+        """Test price near high but outside tolerance."""
+        # Price at 151.90 is 0.10 from high = 3.3% of range > 1% tolerance
+        is_extreme = detector._is_price_at_high_extreme(
+            price=Decimal("151.90"),
+            bar_low=Decimal("149.00"),
+            bar_high=Decimal("152.00"),
+        )
+        assert is_extreme is False
+
+    def test_zero_range_bar(self, detector):
+        """Test bar with zero range (high == low)."""
+        is_extreme = detector._is_price_at_high_extreme(
+            price=Decimal("150.00"),
+            bar_low=Decimal("150.00"),
+            bar_high=Decimal("150.00"),
+        )
         assert is_extreme is False
 
 

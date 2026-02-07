@@ -54,7 +54,7 @@ class TradeStatistics:
     losing_trades: int
     breakeven_trades: int
     win_rate: Decimal
-    profit_factor: Optional[Decimal]
+    profit_factor: Decimal
     avg_r_multiple: Optional[Decimal]
     expectancy: Optional[Decimal]
     gross_profit: Decimal
@@ -95,7 +95,7 @@ class TradeStatisticsCalculator:
                 losing_trades=0,
                 breakeven_trades=0,
                 win_rate=Decimal("0"),
-                profit_factor=None,
+                profit_factor=Decimal("0"),
                 avg_r_multiple=None,
                 expectancy=None,
                 gross_profit=Decimal("0"),
@@ -154,16 +154,18 @@ class TradeStatisticsCalculator:
 
         return Decimal(winning_trades) / Decimal(total_trades)
 
-    def calculate_profit_factor(self, trades: Sequence[TradeProtocol]) -> Optional[Decimal]:
+    def calculate_profit_factor(self, trades: Sequence[TradeProtocol]) -> Decimal:
         """Calculate profit factor from trades.
 
         Profit factor = sum(winning P&L) / abs(sum(losing P&L))
+        Capped at 999.99 when there are wins but no losses.
+        Returns 0 when there are no trades or no wins.
 
         Args:
             trades: Sequence of trade objects with realized_pnl
 
         Returns:
-            Profit factor (>1.0 means profitable), None if no losses
+            Profit factor (>1.0 means profitable), capped at 999.99
 
         Example:
             Total wins: $15,000
@@ -177,18 +179,23 @@ class TradeStatisticsCalculator:
 
     def calculate_profit_factor_from_pnl(
         self, gross_profit: Decimal, gross_loss: Decimal
-    ) -> Optional[Decimal]:
+    ) -> Decimal:
         """Calculate profit factor from pre-computed P&L values.
+
+        Returns 999.99 (capped) when there are wins but no losses.
+        Returns 0 when there are no wins (and no losses).
 
         Args:
             gross_profit: Sum of all winning trades' P&L
             gross_loss: Absolute sum of all losing trades' P&L
 
         Returns:
-            Profit factor, None if no losses (undefined)
+            Profit factor, capped at 999.99 for zero-loss cases
         """
         if gross_loss == 0:
-            return None  # Undefined when no losses
+            if gross_profit > 0:
+                return Decimal("999.99")  # Cap for "infinite" profit factor
+            return Decimal("0")
 
         return gross_profit / gross_loss
 

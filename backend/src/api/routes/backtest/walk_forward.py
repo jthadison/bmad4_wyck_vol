@@ -15,11 +15,11 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database import get_db
+from src.database import async_session_maker, get_db
 from src.models.backtest import WalkForwardConfig
 from src.repositories.walk_forward_repository import WalkForwardRepository
 
-from .utils import walk_forward_runs
+from .utils import cleanup_stale_entries, walk_forward_runs
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 )
 async def start_walk_forward_test(
     config: WalkForwardConfig,
-    session: AsyncSession = Depends(get_db),
 ):
     """
     Run walk-forward validation test.
@@ -43,7 +42,6 @@ async def start_walk_forward_test(
 
     Args:
         config: Walk-forward configuration
-        session: Database session
 
     Returns:
         Response with walk_forward_id and status
@@ -73,22 +71,24 @@ async def start_walk_forward_test(
     walk_forward_id = uuid4()
 
     # Initialize walk-forward run tracking
+    cleanup_stale_entries(walk_forward_runs)
     walk_forward_runs[walk_forward_id] = {
         "status": "RUNNING",
         "config": config,
         "created_at": datetime.now(UTC),
     }
 
-    # Queue background task
+    # Queue background task (uses its own DB session, not the request-scoped one)
     async def run_walk_forward():
         """Background task to execute walk-forward test."""
         try:
             engine = WalkForwardEngine()
             result = engine.walk_forward_test(config.symbols, config)
 
-            # Save to database
-            repository = WalkForwardRepository(session)
-            await repository.save_result(result)
+            # Save to database using a fresh session (not request-scoped)
+            async with async_session_maker() as bg_session:
+                repository = WalkForwardRepository(bg_session)
+                await repository.save_result(result)
 
             # Update run tracking
             walk_forward_runs[walk_forward_id]["status"] = "COMPLETED"

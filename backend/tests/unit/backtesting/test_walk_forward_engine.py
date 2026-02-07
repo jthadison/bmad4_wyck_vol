@@ -413,6 +413,280 @@ class TestSummaryStatistics:
         assert stats["avg_validate_win_rate"] == pytest.approx(0.60, rel=0.01)
 
 
+class TestRealBacktestExecution:
+    """Test real backtest execution via _run_backtest_for_window with market data."""
+
+    def _make_bars(self, symbol: str, start_date: date, num_days: int) -> list:
+        """Generate synthetic OHLCV bars for testing.
+
+        Creates bars with a slight uptrend so the buy-and-hold default
+        strategy produces measurable returns and metrics.
+        """
+        from src.models.ohlcv import OHLCVBar
+
+        bars = []
+        base_price = Decimal("100.00")
+        for i in range(num_days):
+            bar_date = start_date + __import__("datetime").timedelta(days=i)
+            # Skip weekends (simplified)
+            if bar_date.weekday() >= 5:
+                continue
+            price = base_price + Decimal(str(i)) * Decimal("0.10")
+            bars.append(
+                OHLCVBar(
+                    symbol=symbol,
+                    timeframe="1d",
+                    timestamp=datetime(bar_date.year, bar_date.month, bar_date.day, tzinfo=UTC),
+                    open=price,
+                    high=price + Decimal("1.00"),
+                    low=price - Decimal("0.50"),
+                    close=price + Decimal("0.50"),
+                    volume=1000000,
+                    spread=Decimal("1.50"),
+                )
+            )
+        return bars
+
+    def test_run_backtest_for_window_with_real_data(self):
+        """When market_data is provided, _run_backtest_for_window runs the Legacy engine."""
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 200)
+
+        engine = WalkForwardEngine(market_data=bars)
+
+        config = BacktestConfig(
+            symbol="AAPL",
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 6, 30),
+        )
+
+        result = engine._run_backtest_for_window(
+            "AAPL",
+            date(2020, 1, 1),
+            date(2020, 3, 31),
+            config,
+        )
+
+        # Result should come from real engine, not placeholder
+        assert result.symbol == "AAPL"
+        assert result.summary is not None
+        # Real engine produces a backtest_run_id
+        assert result.backtest_run_id is not None
+
+    def test_run_backtest_for_window_without_market_data_uses_placeholder(self):
+        """When no market_data is provided, placeholder metrics are returned."""
+        engine = WalkForwardEngine()
+
+        config = BacktestConfig(
+            symbol="AAPL",
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 6, 30),
+        )
+
+        result = engine._run_backtest_for_window(
+            "AAPL",
+            date(2020, 1, 1),
+            date(2020, 3, 31),
+            config,
+        )
+
+        # Placeholder always returns these values
+        assert result.summary.win_rate == Decimal("0.60")
+        assert result.summary.profit_factor == Decimal("2.0")
+        assert result.summary.total_trades == 10
+
+    def test_insufficient_bars_raises_error(self):
+        """Windows with fewer than MIN_BARS_PER_WINDOW bars raise ValueError."""
+
+        # Create only 5 bars (below the minimum)
+        bars = self._make_bars("AAPL", date(2020, 1, 6), 7)  # ~5 weekday bars
+
+        engine = WalkForwardEngine(market_data=bars)
+
+        config = BacktestConfig(
+            symbol="AAPL",
+            start_date=date(2020, 1, 6),
+            end_date=date(2020, 1, 12),
+        )
+
+        with pytest.raises(ValueError, match="Insufficient bars"):
+            engine._run_backtest_for_window(
+                "AAPL",
+                date(2020, 1, 6),
+                date(2020, 1, 12),
+                config,
+            )
+
+    def test_slice_bars_for_period(self):
+        """Test that _slice_bars_for_period correctly filters by date range."""
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 120)
+
+        engine = WalkForwardEngine(market_data=bars)
+
+        sliced = engine._slice_bars_for_period(date(2020, 2, 1), date(2020, 2, 29))
+
+        # All returned bars should be within the date range
+        for bar in sliced:
+            assert date(2020, 2, 1) <= bar.timestamp.date() <= date(2020, 2, 29)
+
+        # Should have some bars (February has ~20 weekdays)
+        assert len(sliced) > 0
+
+    def test_slice_bars_empty_range(self):
+        """Slicing for a range with no bars returns empty list."""
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 30)
+
+        engine = WalkForwardEngine(market_data=bars)
+
+        sliced = engine._slice_bars_for_period(date(2021, 1, 1), date(2021, 3, 31))
+
+        assert sliced == []
+
+    def test_custom_strategy_func(self):
+        """Test that a custom strategy_func is used instead of the default."""
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 100)
+
+        # Strategy that never trades
+        def no_trade_strategy(bar, context):
+            return None
+
+        engine = WalkForwardEngine(
+            market_data=bars,
+            strategy_func=no_trade_strategy,
+        )
+
+        config = BacktestConfig(
+            symbol="AAPL",
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 3, 31),
+        )
+
+        result = engine._run_backtest_for_window(
+            "AAPL",
+            date(2020, 1, 1),
+            date(2020, 3, 31),
+            config,
+        )
+
+        # No-trade strategy should yield 0 trades
+        assert result.summary.total_trades == 0
+
+    def test_full_walk_forward_with_real_data(self):
+        """Full walk-forward test with real market data and backtest execution."""
+        # Generate ~15 months of data: enough for 1 window (6mo train + 3mo validate)
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 450)
+
+        # Use a strategy that buys and sells to produce completed trades
+        def buy_sell_strategy(bar, context):
+            bar_count = context.get("bar_count", 0)
+            if bar_count == 1:
+                return "BUY"
+            elif bar_count == 10:
+                return "SELL"
+            return None
+
+        engine = WalkForwardEngine(
+            market_data=bars,
+            strategy_func=buy_sell_strategy,
+        )
+
+        config = WalkForwardConfig(
+            symbols=["AAPL"],
+            overall_start_date=date(2020, 1, 1),
+            overall_end_date=date(2020, 12, 31),
+            train_period_months=6,
+            validate_period_months=3,
+            backtest_config=BacktestConfig(
+                symbol="AAPL",
+                start_date=date(2020, 1, 1),
+                end_date=date(2020, 12, 31),
+            ),
+        )
+
+        result = engine.walk_forward_test(["AAPL"], config)
+
+        # Should have at least one completed window with real metrics
+        assert len(result.windows) >= 1
+        assert result.walk_forward_id is not None
+        assert result.total_execution_time_seconds > 0
+
+        # Metrics should come from the real engine -- the buy/sell strategy
+        # produces completed trades, so we get real metrics
+        first_window = result.windows[0]
+        assert first_window.train_metrics is not None
+        assert first_window.validate_metrics is not None
+        # With 1 completed trade (buy bar 1, sell bar 10), win_rate is either 0 or 1
+        assert first_window.train_metrics.total_trades >= 1
+
+    def test_window_with_no_bars_skipped_gracefully(self):
+        """Windows that have insufficient data are skipped (not crash)."""
+        # Only provide bars for January 2020
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 31)
+
+        engine = WalkForwardEngine(market_data=bars)
+
+        config = WalkForwardConfig(
+            symbols=["AAPL"],
+            overall_start_date=date(2020, 1, 1),
+            overall_end_date=date(2021, 6, 30),
+            train_period_months=3,
+            validate_period_months=3,
+            backtest_config=BacktestConfig(
+                symbol="AAPL",
+                start_date=date(2020, 1, 1),
+                end_date=date(2021, 6, 30),
+            ),
+        )
+
+        # Should not raise -- windows with insufficient data are caught and skipped
+        result = engine.walk_forward_test(["AAPL"], config)
+
+        # Most windows will fail due to insufficient data, but the engine should
+        # still return a result
+        assert result is not None
+
+
+class TestDefaultStrategy:
+    """Test the default buy-and-hold strategy."""
+
+    def test_default_strategy_buys_on_first_bar(self):
+        """Default strategy returns BUY when bar_count is 1."""
+        from src.models.ohlcv import OHLCVBar
+
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2020, 1, 2, tzinfo=UTC),
+            open=Decimal("100"),
+            high=Decimal("101"),
+            low=Decimal("99"),
+            close=Decimal("100.50"),
+            volume=1000000,
+            spread=Decimal("2.00"),
+        )
+
+        result = WalkForwardEngine._default_strategy(bar, {"bar_count": 1})
+        assert result == "BUY"
+
+    def test_default_strategy_holds_after_first_bar(self):
+        """Default strategy returns None after the first bar."""
+        from src.models.ohlcv import OHLCVBar
+
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2020, 1, 3, tzinfo=UTC),
+            open=Decimal("100"),
+            high=Decimal("101"),
+            low=Decimal("99"),
+            close=Decimal("100.50"),
+            volume=1000000,
+            spread=Decimal("2.00"),
+        )
+
+        result = WalkForwardEngine._default_strategy(bar, {"bar_count": 5})
+        assert result is None
+
+
 # Helper functions
 
 

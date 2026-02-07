@@ -33,7 +33,7 @@ class BacktestMetrics(BaseModel):
         win_rate: Winning percentage (0.0 - 1.0)
         average_r_multiple: Average R-multiple of trades (avg_r_multiple is alias)
         profit_factor: Total wins / total losses
-        max_drawdown: Maximum drawdown percentage (0.0 - 1.0)
+        max_drawdown: Maximum drawdown as decimal fraction (0.0 - 1.0, e.g. 0.10 = 10%)
         total_return_pct: Total return percentage
         cagr: Compound Annual Growth Rate
         sharpe_ratio: Risk-adjusted return metric
@@ -55,7 +55,7 @@ class BacktestMetrics(BaseModel):
         default=Decimal("0.0"),
         ge=Decimal("0.0"),
         le=Decimal("1.0"),
-        description="Max drawdown 0-1",
+        description="Max drawdown as decimal fraction (0-1 scale, e.g. 0.10 = 10%)",
     )
     # Story 12.1 extensions
     total_return_pct: Decimal = Field(default=Decimal("0.0"), description="Total return %")

@@ -36,7 +36,7 @@ class DrawdownPeriod:
         recovery_date: Date portfolio recovered to peak (None if ongoing)
         peak_value: Portfolio value at peak
         trough_value: Portfolio value at trough
-        drawdown_pct: Drawdown percentage from peak (0-100)
+        drawdown_pct: Drawdown as decimal fraction from peak (0-1 scale, e.g. 0.10 = 10%)
         duration_days: Days from peak to trough
         recovery_days: Days from trough to recovery (None if ongoing)
     """

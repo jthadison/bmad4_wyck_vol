@@ -664,6 +664,7 @@ class TestUnifiedBacktestEngineEdgeCases:
         position_manager.calculate_portfolio_value.return_value = Decimal("100000")
         position_manager.cash = Decimal("98000")
         position_manager.closed_trades = []
+        position_manager.positions = {}  # Required for _check_position_exits iteration
         position_manager.has_position.return_value = True  # Has position to close
 
         engine = UnifiedBacktestEngine(detector, mock_cost_model, position_manager, config)
@@ -816,3 +817,138 @@ class TestUnifiedBacktestEngineEdgeCases:
         assert metrics.profit_factor == Decimal("999.99")
         assert metrics.winning_trades == 1
         assert metrics.losing_trades == 0
+
+
+class TestDirectionalSlippage:
+    """Tests for directional slippage application in _fill_pending_orders.
+
+    BUY orders should have slippage added to fill price (buyer pays more).
+    SELL orders should have slippage subtracted from fill price (seller receives less).
+    """
+
+    def _make_bar(self, open_price: str = "150.00") -> OHLCVBar:
+        """Create a bar with a specific open price."""
+        return OHLCVBar(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 16, 9, 30, tzinfo=UTC),
+            open=Decimal(open_price),
+            high=Decimal("155.00"),
+            low=Decimal("148.00"),
+            close=Decimal("153.00"),
+            volume=1000000,
+            spread=Decimal("7.00"),
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+
+    def _make_order(self, side: str, symbol: str = "AAPL") -> BacktestOrder:
+        """Create a pending order with the given side."""
+        return BacktestOrder(
+            order_id=uuid4(),
+            symbol=symbol,
+            side=side,
+            order_type="MARKET",
+            quantity=100,
+            status="PENDING",
+            created_bar_timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+        )
+
+    def test_buy_order_adds_slippage(self):
+        """BUY order fill price = bar.open + slippage."""
+        slippage_amount = Decimal("0.05")
+        cost_model = MockCostModel(slippage=slippage_amount)
+        config = EngineConfig(enable_cost_model=True)
+        position_manager = PositionManager(config.initial_capital)
+        detector = MockSignalDetector()
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        bar = self._make_bar("150.00")
+        buy_order = self._make_order("BUY")
+        engine._pending_orders.append(buy_order)
+        engine._fill_pending_orders(bar)
+
+        assert buy_order.fill_price == Decimal("150.00") + slippage_amount
+        assert buy_order.slippage == slippage_amount
+
+    def test_sell_order_subtracts_slippage(self):
+        """SELL order fill price = bar.open - slippage."""
+        slippage_amount = Decimal("0.05")
+        cost_model = MockCostModel(slippage=slippage_amount)
+        config = EngineConfig(enable_cost_model=True)
+        position_manager = PositionManager(config.initial_capital)
+        detector = MockSignalDetector()
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Must have an open position for SELL to close
+        bar = self._make_bar("150.00")
+        sell_order = self._make_order("SELL")
+        engine._pending_orders.append(sell_order)
+        engine._fill_pending_orders(bar)
+
+        assert sell_order.fill_price == Decimal("150.00") - slippage_amount
+        assert sell_order.slippage == slippage_amount
+
+    def test_slippage_stored_as_absolute_value(self):
+        """order.slippage is always stored as a positive (absolute) cost value."""
+        # Cost model that returns negative slippage (signed convention for SELL)
+        negative_slippage = Decimal("-0.03")
+        cost_model = MockCostModel(slippage=negative_slippage)
+        config = EngineConfig(enable_cost_model=True)
+        position_manager = PositionManager(config.initial_capital)
+        detector = MockSignalDetector()
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        bar = self._make_bar("150.00")
+        buy_order = self._make_order("BUY")
+        engine._pending_orders.append(buy_order)
+        engine._fill_pending_orders(bar)
+
+        # Even though cost model returned negative, stored slippage should be positive
+        assert buy_order.slippage == Decimal("0.03")
+        # BUY adds the absolute slippage
+        assert buy_order.fill_price == Decimal("150.00") + Decimal("0.03")
+
+    def test_sell_slippage_with_signed_cost_model(self):
+        """SELL order correctly subtracts slippage even when cost model returns negative."""
+        negative_slippage = Decimal("-0.03")
+        cost_model = MockCostModel(slippage=negative_slippage)
+        config = EngineConfig(enable_cost_model=True)
+        position_manager = PositionManager(config.initial_capital)
+        detector = MockSignalDetector()
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        bar = self._make_bar("150.00")
+        sell_order = self._make_order("SELL")
+        engine._pending_orders.append(sell_order)
+        engine._fill_pending_orders(bar)
+
+        # SELL subtracts the absolute slippage
+        assert sell_order.fill_price == Decimal("150.00") - Decimal("0.03")
+        assert sell_order.slippage == Decimal("0.03")
+
+    def test_zero_slippage_no_impact(self):
+        """Zero slippage has no impact on fill price for either side."""
+        cost_model = MockCostModel(slippage=Decimal("0"))
+        config = EngineConfig(enable_cost_model=True)
+        position_manager = PositionManager(config.initial_capital)
+        detector = MockSignalDetector()
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        bar = self._make_bar("150.00")
+
+        buy_order = self._make_order("BUY")
+        engine._pending_orders.append(buy_order)
+        engine._fill_pending_orders(bar)
+        assert buy_order.fill_price == Decimal("150.00")
+
+        sell_order = self._make_order("SELL")
+        engine._pending_orders.append(sell_order)
+        engine._fill_pending_orders(bar)
+        assert sell_order.fill_price == Decimal("150.00")

@@ -264,15 +264,16 @@ class MetricsCalculator:
                 daily_return = (curr_value - prev_value) / prev_value
                 daily_returns.append(daily_return)
 
-        if not daily_returns:
+        if len(daily_returns) < 2:
             return Decimal("0")
 
         # Calculate average daily return
         avg_daily_return = sum(daily_returns, Decimal("0")) / Decimal(len(daily_returns))
 
         # Calculate standard deviation of daily returns
+        # Use Bessel's correction (n-1) for sample variance
         variance = sum((r - avg_daily_return) ** 2 for r in daily_returns) / Decimal(
-            len(daily_returns)
+            len(daily_returns) - 1
         )
 
         # Convert to float for sqrt calculation
@@ -400,7 +401,8 @@ class MetricsCalculator:
         total_losses = abs(sum(t.realized_pnl for t in trades if t.realized_pnl < 0))
 
         if total_losses == 0:
-            # No losses - return 0 (undefined)
+            if total_wins > 0:
+                return Decimal("999.99")
             return Decimal("0")
 
         return total_wins / total_losses

@@ -64,7 +64,7 @@ class TestCalculateMaxDrawdown:
 
         result = calculator.calculate_max_drawdown(curve)
 
-        assert result.value == Decimal("10.0000")
+        assert result.value == Decimal("0.1000")
 
     def test_multiple_drawdowns(self, calculator):
         """Test with multiple drawdowns returns maximum."""
@@ -80,7 +80,7 @@ class TestCalculateMaxDrawdown:
 
         result = calculator.calculate_max_drawdown(curve)
 
-        assert result.value == Decimal("20.0000")
+        assert result.value == Decimal("0.2000")
 
     def test_drawdown_metadata(self, calculator):
         """Test metadata contains peak and trough values."""
@@ -155,7 +155,7 @@ class TestFindDrawdownPeriods:
         period = periods[0]
         assert period.peak_value == Decimal("100000")
         assert period.trough_value == Decimal("90000")
-        assert period.drawdown_pct == Decimal("10.0000")
+        assert period.drawdown_pct == Decimal("0.1000")
         assert period.duration_days == 5
         assert period.recovery_days == 5
         assert period.recovery_date == base + timedelta(days=10)
@@ -175,7 +175,7 @@ class TestFindDrawdownPeriods:
         period = periods[0]
         assert period.recovery_date is None
         assert period.recovery_days is None
-        assert period.drawdown_pct == Decimal("10.0000")
+        assert period.drawdown_pct == Decimal("0.1000")
         assert period.duration_days == 10
 
     def test_multiple_drawdowns(self, calculator):
@@ -193,9 +193,9 @@ class TestFindDrawdownPeriods:
 
         assert len(periods) == 2
         # First drawdown: 5% from 100k to 95k
-        assert periods[0].drawdown_pct == Decimal("5.0000")
+        assert periods[0].drawdown_pct == Decimal("0.0500")
         # Second drawdown: 10% from 110k to 99k
-        assert periods[1].drawdown_pct == Decimal("10.0000")
+        assert periods[1].drawdown_pct == Decimal("0.1000")
 
     def test_min_drawdown_filter(self, calculator):
         """Test filtering by minimum drawdown percentage."""
@@ -208,10 +208,10 @@ class TestFindDrawdownPeriods:
             EquityPoint(base + timedelta(days=20), Decimal("115000")),
         ]
 
-        periods = calculator.find_drawdown_periods(curve, min_drawdown_pct=Decimal("5"))
+        periods = calculator.find_drawdown_periods(curve, min_drawdown_pct=Decimal("0.05"))
 
         assert len(periods) == 1
-        assert periods[0].drawdown_pct == Decimal("20.0000")
+        assert periods[0].drawdown_pct == Decimal("0.2000")
 
 
 class TestGetTopDrawdowns:
@@ -257,9 +257,9 @@ class TestGetTopDrawdowns:
         result = calculator.get_top_drawdowns(curve, top_n=3)
 
         assert len(result) == 3
-        assert result[0].drawdown_pct == Decimal("20.0000")  # Largest
-        assert result[1].drawdown_pct == Decimal("10.0000")  # Second
-        assert result[2].drawdown_pct == Decimal("5.0000")  # Third
+        assert result[0].drawdown_pct == Decimal("0.2000")  # Largest
+        assert result[1].drawdown_pct == Decimal("0.1000")  # Second
+        assert result[2].drawdown_pct == Decimal("0.0500")  # Third
 
 
 class TestPerformanceBenchmark:
@@ -393,7 +393,7 @@ class TestEdgeCases:
 
         result = calculator.calculate_max_drawdown(curve)
 
-        assert result.value == Decimal("90.0000")
+        assert result.value == Decimal("0.9000")
 
     def test_zero_peak_value(self, calculator):
         """Test handling of zero peak value."""
@@ -433,5 +433,5 @@ class TestEdgeCases:
 
         result = calculator.calculate_max_drawdown(curve)
 
-        # Verify precision (should be close to 9.9996%)
-        assert Decimal("9.9") < result.value < Decimal("10.1")
+        # Verify precision (should be close to 0.099996 = ~10%)
+        assert Decimal("0.099") < result.value < Decimal("0.101")

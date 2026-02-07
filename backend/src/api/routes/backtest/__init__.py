@@ -35,6 +35,12 @@ router.include_router(regression_router)
 router.include_router(baseline_router)
 
 # Export in-memory tracking dicts for backwards compatibility
-from .utils import backtest_runs, regression_test_runs, walk_forward_runs
+from .utils import backtest_runs, cleanup_stale_entries, regression_test_runs, walk_forward_runs
 
-__all__ = ["router", "backtest_runs", "walk_forward_runs", "regression_test_runs"]
+__all__ = [
+    "router",
+    "backtest_runs",
+    "walk_forward_runs",
+    "regression_test_runs",
+    "cleanup_stale_entries",
+]

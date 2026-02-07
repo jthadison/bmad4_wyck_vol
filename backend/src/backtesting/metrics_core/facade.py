@@ -98,11 +98,10 @@ class MetricsFacade:
         returns = self._risk.calculate_returns_from_equity(equity_points)
         sharpe_ratio = self._risk.calculate_sharpe_ratio(returns).value if returns else Decimal("0")
 
-        # Calculate drawdown using DrawdownCalculator
+        # Calculate drawdown using DrawdownCalculator (returns 0-1 scale directly)
         max_drawdown_result = self._drawdown.calculate_max_drawdown(equity_points)
         if max_drawdown_result and max_drawdown_result.value > 0:
-            # Convert from percentage (10%) to decimal (0.10)
-            max_drawdown = max_drawdown_result.value / Decimal("100")
+            max_drawdown = max_drawdown_result.value
             max_drawdown_duration = self._get_max_drawdown_duration(equity_points)
         else:
             max_drawdown = Decimal("0")
@@ -138,7 +137,7 @@ class MetricsFacade:
             sharpe_ratio=sharpe_ratio,
             cagr=cagr,
             average_r_multiple=trade_stats.avg_r_multiple or Decimal("0"),
-            profit_factor=trade_stats.profit_factor or Decimal("0"),
+            profit_factor=trade_stats.profit_factor,
         )
 
     def _calculate_metrics_without_equity(
@@ -181,7 +180,7 @@ class MetricsFacade:
             sharpe_ratio=Decimal("0"),
             cagr=Decimal("0"),
             average_r_multiple=trade_stats.avg_r_multiple or Decimal("0"),
-            profit_factor=trade_stats.profit_factor or Decimal("0"),
+            profit_factor=trade_stats.profit_factor,
         )
 
     def _convert_equity_curve(self, equity_curve: list[EquityCurvePoint]) -> list[EquityPoint]:
@@ -221,7 +220,7 @@ class MetricsFacade:
         """Delegate to TradeStatisticsCalculator."""
         return self._trades.calculate_win_rate(winning_trades, total_trades)
 
-    def calculate_profit_factor(self, trades: list[BacktestTrade]) -> Optional[Decimal]:
+    def calculate_profit_factor(self, trades: list[BacktestTrade]) -> Decimal:
         """Delegate to TradeStatisticsCalculator."""
         return self._trades.calculate_profit_factor(trades)
 
