@@ -16,6 +16,7 @@ Author: Story 8.8
 import json
 from datetime import UTC
 from decimal import Decimal
+from uuid import uuid4
 
 import msgpack
 import pytest
@@ -27,10 +28,12 @@ from src.models.signal import (
     TradeSignal,
 )
 from tests.fixtures.signal_fixtures import (
+    mock_validation_chain,
     rejected_signal_low_r_multiple,
     rejected_signal_portfolio_heat,
     valid_forex_signal,
     valid_spring_signal,
+    valid_utad_signal,
 )
 
 # ============================================================================
@@ -397,7 +400,7 @@ def test_signal_pretty_print_format():
     assert "Confidence:      85%" in output
 
     # Entry details
-    assert "ENTRY DETAILS:" in output
+    assert "ENTRY DETAILS (LONG):" in output
     assert "Entry Price:   $150.00" in output
     assert "Stop Loss:     $148.00" in output
     assert "Risk/Share:    $2.00" in output
@@ -572,3 +575,169 @@ def test_signal_with_rejection_reasons():
     assert "REJECTION REASONS:" in output
     assert "Portfolio heat exceeded" in output
     assert "Campaign limit reached" in output
+
+
+# ============================================================================
+# SHORT / UTAD Direction Tests
+# ============================================================================
+
+
+def test_direction_property_long_patterns():
+    """Test direction returns LONG for SPRING, SOS, LPS patterns."""
+    signal = valid_spring_signal()
+    assert signal.direction == "LONG"
+    assert signal.pattern_type == "SPRING"
+
+
+def test_direction_property_short_utad():
+    """Test direction returns SHORT for UTAD pattern."""
+    signal = valid_utad_signal()
+    assert signal.direction == "SHORT"
+    assert signal.pattern_type == "UTAD"
+
+
+def test_utad_signal_creation():
+    """Test UTAD signal creation with SHORT direction prices."""
+    signal = valid_utad_signal()
+
+    assert signal.symbol == "SPY"
+    assert signal.pattern_type == "UTAD"
+    assert signal.direction == "SHORT"
+    assert signal.phase == "D"
+
+    # SHORT: stop above entry, target below entry
+    assert signal.stop_loss > signal.entry_price
+    assert signal.target_levels.primary_target < signal.entry_price
+
+    # R-multiple should still be positive
+    assert signal.r_multiple == Decimal("3.0")
+
+
+def test_utad_stop_above_entry():
+    """Test UTAD validates that stop is above entry price."""
+    signal = valid_utad_signal()
+    assert signal.stop_loss == Decimal("453.00")
+    assert signal.entry_price == Decimal("450.00")
+    assert signal.stop_loss > signal.entry_price
+
+
+def test_utad_target_below_entry():
+    """Test UTAD validates that target is below entry price."""
+    signal = valid_utad_signal()
+    assert signal.target_levels.primary_target == Decimal("441.00")
+    assert signal.target_levels.primary_target < signal.entry_price
+
+
+def test_utad_rejects_stop_below_entry():
+    """Test UTAD rejects stop loss below entry (wrong direction)."""
+    pattern_id = uuid4()
+    with pytest.raises(ValidationError) as exc_info:
+        TradeSignal(
+            asset_class="STOCK",
+            symbol="SPY",
+            pattern_type="UTAD",
+            phase="D",
+            timeframe="1h",
+            entry_price=Decimal("450.00"),
+            stop_loss=Decimal("447.00"),  # Below entry - wrong for SHORT
+            target_levels=TargetLevels(primary_target=Decimal("441.00")),
+            position_size=Decimal("100"),
+            position_size_unit="SHARES",
+            notional_value=Decimal("45000.00"),
+            risk_amount=Decimal("300.00"),
+            r_multiple=Decimal("3.0"),
+            confidence_score=85,
+            confidence_components=ConfidenceComponents(
+                pattern_confidence=88,
+                phase_confidence=82,
+                volume_confidence=80,
+                overall_confidence=85,
+            ),
+            validation_chain=mock_validation_chain(pattern_id=pattern_id),
+            timestamp="2024-03-13T14:30:00Z",
+        )
+
+    assert "must be above entry price" in str(exc_info.value)
+
+
+def test_utad_rejects_target_above_entry():
+    """Test UTAD rejects target above entry (wrong direction)."""
+    pattern_id = uuid4()
+    with pytest.raises(ValidationError) as exc_info:
+        TradeSignal(
+            asset_class="STOCK",
+            symbol="SPY",
+            pattern_type="UTAD",
+            phase="D",
+            timeframe="1h",
+            entry_price=Decimal("450.00"),
+            stop_loss=Decimal("453.00"),
+            target_levels=TargetLevels(primary_target=Decimal("460.00")),  # Above entry - wrong
+            position_size=Decimal("100"),
+            position_size_unit="SHARES",
+            notional_value=Decimal("45000.00"),
+            risk_amount=Decimal("300.00"),
+            r_multiple=Decimal("3.0"),
+            confidence_score=85,
+            confidence_components=ConfidenceComponents(
+                pattern_confidence=88,
+                phase_confidence=82,
+                volume_confidence=80,
+                overall_confidence=85,
+            ),
+            validation_chain=mock_validation_chain(pattern_id=pattern_id),
+            timestamp="2024-03-13T14:30:00Z",
+        )
+
+    assert "must be below entry" in str(exc_info.value)
+
+
+def test_utad_r_multiple_calculation():
+    """Test R-multiple formula works correctly for SHORT/UTAD.
+
+    Entry=450, Stop=453, Target=441
+    R = abs(441-450) / abs(450-453) = 9/3 = 3.0
+    """
+    signal = valid_utad_signal()
+    assert signal.r_multiple == Decimal("3.0")
+
+
+def test_utad_pretty_print_shows_short():
+    """Test UTAD pretty print shows SHORT direction."""
+    signal = valid_utad_signal()
+    output = signal.to_pretty_string()
+
+    assert "TRADE SIGNAL: UTAD on SPY" in output
+    assert "ENTRY DETAILS (SHORT):" in output
+    assert "Risk/Share:    $3.00" in output  # abs(450-453)
+
+
+def test_long_pretty_print_shows_long():
+    """Test SPRING pretty print shows LONG direction."""
+    signal = valid_spring_signal()
+    output = signal.to_pretty_string()
+
+    assert "ENTRY DETAILS (LONG):" in output
+
+
+def test_utad_json_round_trip():
+    """Test UTAD signal survives JSON serialization round-trip."""
+    signal = valid_utad_signal()
+    json_str = signal.model_dump_json()
+    restored = TradeSignal.model_validate_json(json_str)
+
+    assert restored.pattern_type == "UTAD"
+    assert restored.direction == "SHORT"
+    assert restored.stop_loss > restored.entry_price
+    assert restored.target_levels.primary_target < restored.entry_price
+
+
+def test_utad_msgpack_round_trip():
+    """Test UTAD signal survives MessagePack serialization round-trip."""
+    signal = valid_utad_signal()
+    msgpack_data = signal.to_msgpack()
+    restored = TradeSignal.from_msgpack(msgpack_data)
+
+    assert restored.pattern_type == "UTAD"
+    assert restored.direction == "SHORT"
+    assert restored.stop_loss > restored.entry_price

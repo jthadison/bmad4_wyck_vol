@@ -496,6 +496,206 @@ class TestPositionMetadata:
         risk = position.calculate_current_risk(Decimal("1.0600"))
         assert risk == Decimal("0.6")
 
+    def test_short_position_pnl_profit(self):
+        """Test SHORT P&L when price drops (profit)."""
+        pos = PositionMetadata(
+            position_id="pos_short",
+            campaign_id="camp_001",
+            symbol="AAPL",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),
+            position_size=Decimal("100"),
+            risk_amount=Decimal("500"),
+            risk_pct=Decimal("0.5"),
+            entry_timestamp=datetime.now(),
+            side="SHORT",
+        )
+        # Price dropped to 140 -> profit for SHORT
+        pnl = pos.calculate_current_pnl(Decimal("140.00"))
+        # (150 - 140) * 100 = 1000
+        assert pnl == Decimal("1000.00")
+
+    def test_short_position_pnl_loss(self):
+        """Test SHORT P&L when price rises (loss)."""
+        pos = PositionMetadata(
+            position_id="pos_short",
+            campaign_id="camp_001",
+            symbol="AAPL",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),
+            position_size=Decimal("100"),
+            risk_amount=Decimal("500"),
+            risk_pct=Decimal("0.5"),
+            entry_timestamp=datetime.now(),
+            side="SHORT",
+        )
+        # Price rose to 160 -> loss for SHORT
+        pnl = pos.calculate_current_pnl(Decimal("160.00"))
+        # (150 - 160) * 100 = -1000
+        assert pnl == Decimal("-1000.00")
+
+    def test_long_position_side_default(self):
+        """Test that side defaults to LONG."""
+        pos = PositionMetadata(
+            position_id="pos_001",
+            campaign_id="camp_001",
+            symbol="AAPL",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+            position_size=Decimal("100"),
+            risk_amount=Decimal("500"),
+            risk_pct=Decimal("0.5"),
+            entry_timestamp=datetime.now(),
+        )
+        assert pos.side == "LONG"
+
+
+class TestShortPositionClosePnl:
+    """Test close_position PnL for SHORT positions."""
+
+    def test_close_short_position_profit(self):
+        """Test closing a SHORT position at a profit (price dropped)."""
+        rm = BacktestRiskManager(initial_capital=Decimal("100000"))
+        position_id = rm.register_position(
+            symbol="AAPL",
+            campaign_id="camp_001",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),
+            position_size=Decimal("100"),
+            timestamp=datetime.now(),
+            side="SHORT",
+        )
+        # Price dropped to 140 -> profit for SHORT
+        pnl = rm.close_position(position_id, exit_price=Decimal("140.00"))
+        # (150 - 140) * 100 = 1000
+        assert pnl == Decimal("1000.00")
+
+    def test_close_short_position_loss(self):
+        """Test closing a SHORT position at a loss (price rose)."""
+        rm = BacktestRiskManager(initial_capital=Decimal("100000"))
+        position_id = rm.register_position(
+            symbol="AAPL",
+            campaign_id="camp_001",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),
+            position_size=Decimal("100"),
+            timestamp=datetime.now(),
+            side="SHORT",
+        )
+        # Price rose to 155 (hit stop) -> loss for SHORT
+        pnl = rm.close_position(position_id, exit_price=Decimal("155.00"))
+        # (150 - 155) * 100 = -500
+        assert pnl == Decimal("-500.00")
+
+    def test_close_long_position_still_works(self):
+        """Test that LONG position PnL is unchanged."""
+        rm = BacktestRiskManager(initial_capital=Decimal("100000"))
+        position_id = rm.register_position(
+            symbol="AAPL",
+            campaign_id="camp_001",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+            position_size=Decimal("100"),
+            timestamp=datetime.now(),
+            side="LONG",
+        )
+        # Price rose to 160 -> profit for LONG
+        pnl = rm.close_position(position_id, exit_price=Decimal("160.00"))
+        # (160 - 150) * 100 = 1000
+        assert pnl == Decimal("1000.00")
+
+    def test_register_position_stores_side(self):
+        """Test that register_position stores the side correctly."""
+        rm = BacktestRiskManager(initial_capital=Decimal("100000"))
+        position_id = rm.register_position(
+            symbol="AAPL",
+            campaign_id="camp_001",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("155.00"),
+            position_size=Decimal("100"),
+            timestamp=datetime.now(),
+            side="SHORT",
+        )
+        assert rm.open_positions[position_id].side == "SHORT"
+
+    def test_register_position_default_side_long(self):
+        """Test that register_position defaults to LONG."""
+        rm = BacktestRiskManager(initial_capital=Decimal("100000"))
+        position_id = rm.register_position(
+            symbol="AAPL",
+            campaign_id="camp_001",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("145.00"),
+            position_size=Decimal("100"),
+            timestamp=datetime.now(),
+        )
+        assert rm.open_positions[position_id].side == "LONG"
+
+
+class TestConfigurableMinPositionSize:
+    """Test configurable minimum position size."""
+
+    def test_default_min_position_size(self):
+        """Test that default min_position_size is 1."""
+        rm = BacktestRiskManager(initial_capital=Decimal("100000"))
+        assert rm.min_position_size == Decimal("1")
+
+    def test_custom_min_position_size_forex(self):
+        """Test setting min_position_size for forex (1000 units)."""
+        rm = BacktestRiskManager(
+            initial_capital=Decimal("100000"),
+            min_position_size=Decimal("1000"),
+        )
+        assert rm.min_position_size == Decimal("1000")
+
+    def test_stock_position_accepted_with_default_min(self):
+        """Test that a stock position of e.g. 666 shares is accepted with default min=1."""
+        rm = BacktestRiskManager(initial_capital=Decimal("100000"))
+        # $150 stock, 2% risk on $100k = $2000 risk
+        # Stop at $147 -> $3 stop distance -> 666 shares
+        can_trade, size, reason = rm.validate_and_size_position(
+            symbol="AAPL",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("147.00"),
+            campaign_id="camp_aapl",
+        )
+        assert can_trade is True
+        assert size is not None
+        assert size == Decimal("666")
+        assert reason is None
+
+    def test_stock_position_rejected_with_forex_min(self):
+        """Test that a stock position of 666 shares is rejected when min is 1000."""
+        rm = BacktestRiskManager(
+            initial_capital=Decimal("100000"),
+            min_position_size=Decimal("1000"),
+        )
+        can_trade, size, reason = rm.validate_and_size_position(
+            symbol="AAPL",
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("147.00"),
+            campaign_id="camp_aapl",
+        )
+        assert can_trade is False
+        assert size is None
+        assert "minimum" in reason.lower()
+
+    def test_forex_position_accepted_with_forex_min(self):
+        """Test that a forex position above 1000 units passes with forex min."""
+        rm = BacktestRiskManager(
+            initial_capital=Decimal("100000"),
+            min_position_size=Decimal("1000"),
+        )
+        can_trade, size, reason = rm.validate_and_size_position(
+            symbol="C:EURUSD",
+            entry_price=Decimal("1.0580"),
+            stop_loss=Decimal("1.0520"),
+            campaign_id="camp_eurusd",
+        )
+        assert can_trade is True
+        assert size is not None
+        assert size >= Decimal("1000")
+
 
 class TestDynamicPositionSizing:
     """Test dynamic position sizing based on stop distance (FR9.2)."""

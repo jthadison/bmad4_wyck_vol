@@ -51,20 +51,22 @@ class PositionManager:
         self.positions: dict[str, BacktestPosition] = {}
         self.closed_trades: list[BacktestTrade] = []
 
-    def open_position(self, order: BacktestOrder) -> BacktestPosition:
-        """Open a position from a filled BUY order.
+    def open_position(self, order: BacktestOrder, side: str = "LONG") -> BacktestPosition:
+        """Open a position from a filled order.
 
-        AC2: BUY orders open new positions or increase existing ones.
+        AC2: BUY orders open LONG positions, SELL orders open SHORT positions.
         Deducts cash for (quantity * fill_price) + commission.
 
         Args:
-            order: Filled BUY order (status must be FILLED, side must be BUY)
+            order: Filled order (status must be FILLED)
+            side: Position side - "LONG" (default) or "SHORT"
 
         Returns:
             Updated or new BacktestPosition
 
         Raises:
-            ValueError: If order is not filled or not a BUY order
+            ValueError: If order is not filled
+            ValueError: If order side doesn't match position side
             ValueError: If insufficient cash to open position
 
         Example:
@@ -74,8 +76,12 @@ class PositionManager:
         """
         if order.status != "FILLED":
             raise ValueError(f"Cannot open position from non-filled order: {order.status}")
-        if order.side != "BUY":
-            raise ValueError(f"Cannot open position from {order.side} order")
+
+        # Validate order side matches position side
+        expected_order_side = "BUY" if side == "LONG" else "SELL"
+        if order.side != expected_order_side:
+            raise ValueError(f"Cannot open {side} position from {order.side} order")
+
         if order.fill_price is None:
             raise ValueError("Fill price is required for filled order")
 
@@ -92,7 +98,7 @@ class PositionManager:
 
         # Update or create position
         if order.symbol in self.positions:
-            # Add to existing position (average up)
+            # Add to existing position (average up/down)
             position = self.positions[order.symbol]
             old_cost = position.quantity * position.average_entry_price
             new_quantity = position.quantity + order.quantity
@@ -107,7 +113,7 @@ class PositionManager:
             position = BacktestPosition(
                 position_id=uuid4(),
                 symbol=order.symbol,
-                side="LONG",
+                side=side,
                 quantity=order.quantity,
                 average_entry_price=order.fill_price,
                 current_price=order.fill_price,
@@ -123,32 +129,28 @@ class PositionManager:
     def close_position(
         self, order: BacktestOrder, entry_timestamp: Optional[object] = None
     ) -> BacktestTrade:
-        """Close a position from a filled SELL order.
+        """Close a position from a filled order.
 
-        AC3: SELL orders close positions and generate BacktestTrade records.
+        AC3: SELL orders close LONG positions, BUY orders close SHORT positions.
         Adds cash for (quantity * fill_price) - commission.
 
+        For LONG positions: close with SELL order, P&L = exit - entry
+        For SHORT positions: close with BUY order, P&L = entry - exit
+
         Args:
-            order: Filled SELL order (status must be FILLED, side must be SELL)
+            order: Filled order (status must be FILLED)
             entry_timestamp: Optional entry timestamp for the trade (auto-detected if None)
 
         Returns:
             BacktestTrade record with realized P&L
 
         Raises:
-            ValueError: If order is not filled or not a SELL order
+            ValueError: If order is not filled
+            ValueError: If order side doesn't match position side (SELL for LONG, BUY for SHORT)
             ValueError: If position doesn't exist or insufficient quantity
-
-        Example:
-            Sell 100 shares at $155.47 with $0.50 commission:
-            - Proceeds: (100 * $155.47) - $0.50 = $15,546.50
-            - Cash: $84,996.50 -> $100,543.00
-            - P&L: $15,546.50 - $15,003.50 = $543.00
         """
         if order.status != "FILLED":
             raise ValueError(f"Cannot close position from non-filled order: {order.status}")
-        if order.side != "SELL":
-            raise ValueError(f"Cannot close position from {order.side} order")
         if order.fill_price is None:
             raise ValueError("Fill price is required for filled order")
 
@@ -157,6 +159,11 @@ class PositionManager:
             raise ValueError(f"No open position for symbol: {order.symbol}")
 
         position = self.positions[order.symbol]
+
+        # Validate order side matches position close direction
+        expected_close_side = "SELL" if position.side == "LONG" else "BUY"
+        if order.side != expected_close_side:
+            raise ValueError(f"Cannot close {position.side} position from {order.side} order")
 
         # Check sufficient quantity
         if position.quantity < order.quantity:
@@ -176,19 +183,32 @@ class PositionManager:
         commission_ratio = Decimal(order.quantity) / Decimal(position.quantity)
         allocated_entry_commission = position.total_commission * commission_ratio
 
-        # Calculate realized P&L
-        total_cost = shares_cost + allocated_entry_commission
-        realized_pnl = net_proceeds - total_cost
+        # Calculate realized P&L based on position side
+        if position.side == "LONG":
+            # LONG: profit = sell proceeds - buy cost - commissions
+            realized_pnl = net_proceeds - shares_cost - allocated_entry_commission
+        else:
+            # SHORT: profit = short sale proceeds - buy-to-cover cost - commissions
+            # (entry_price - exit_price) * quantity - entry_commission - exit_commission
+            realized_pnl = (
+                shares_cost - shares_proceeds - allocated_entry_commission - order.commission
+            )
 
-        # Add cash from sale
-        self.cash += net_proceeds
+        # Add cash from closing
+        if position.side == "LONG":
+            # LONG close: receive sale proceeds
+            self.cash += net_proceeds
+        else:
+            # SHORT close: return margin + profit (or margin - loss)
+            # We deducted entry_val + entry_commission at open, now return what's left
+            self.cash += Decimal("2") * shares_cost - shares_proceeds - order.commission
 
         # Create trade record
         trade = BacktestTrade(
             trade_id=uuid4(),
             position_id=position.position_id,
             symbol=order.symbol,
-            side="LONG",
+            side=position.side,
             quantity=order.quantity,
             entry_price=position.average_entry_price,
             exit_price=order.fill_price,
@@ -239,7 +259,14 @@ class PositionManager:
                 position.current_price = current_bar.close
                 position.last_updated = current_bar.timestamp
 
-            position_value = Decimal(position.quantity) * position.current_price
+            if position.side == "LONG":
+                position_value = Decimal(position.quantity) * position.current_price
+            else:
+                # SHORT: value = entry_proceeds + unrealized_pnl
+                # = qty * entry - qty * (current - entry) = qty * (2*entry - current)
+                entry_val = Decimal(position.quantity) * position.average_entry_price
+                current_val = Decimal(position.quantity) * position.current_price
+                position_value = entry_val + (entry_val - current_val)
             total_value += position_value
 
         return total_value
@@ -268,6 +295,8 @@ class PositionManager:
 
             # Calculate unrealized P&L for this position
             price_diff = position.current_price - position.average_entry_price
+            if position.side == "SHORT":
+                price_diff = -price_diff  # SHORT profits when price goes down
             unrealized = price_diff * Decimal(position.quantity)
 
             # Update position's unrealized P&L

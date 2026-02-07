@@ -152,10 +152,13 @@ class PositionMetadata:
     risk_amount: Decimal
     risk_pct: Decimal
     entry_timestamp: datetime
+    side: str = "LONG"
     r_multiple: Decimal = Decimal("0")
 
     def calculate_current_pnl(self, current_price: Decimal) -> Decimal:
-        """Calculate current unrealized P&L."""
+        """Calculate current unrealized P&L (direction-aware)."""
+        if self.side == "SHORT":
+            return (self.entry_price - current_price) * self.position_size
         return (current_price - self.entry_price) * self.position_size
 
     def calculate_current_risk(self, current_price: Decimal) -> Decimal:
@@ -164,13 +167,16 @@ class PositionMetadata:
 
         If position is in profit, effective risk to entry is zero.
         If position is at loss, risk is still the original risk amount.
+        Direction-aware: LONG profits when price rises, SHORT profits when price falls.
         """
-        if current_price > self.entry_price:
-            # In profit - could use trailing stop, but still have original risk
-            return self.risk_pct
+        if self.side == "SHORT":
+            if current_price < self.entry_price:
+                return self.risk_pct  # In profit for SHORT
+            return self.risk_pct  # At loss for SHORT
         else:
-            # At loss - still at risk
-            return self.risk_pct
+            if current_price > self.entry_price:
+                return self.risk_pct  # In profit for LONG
+            return self.risk_pct  # At loss for LONG
 
 
 # =============================================================================
@@ -263,6 +269,7 @@ class BacktestRiskManager:
         max_campaign_risk_pct: Decimal = Decimal("5.0"),
         max_portfolio_heat_pct: Decimal = Decimal("10.0"),
         max_correlated_risk_pct: Decimal = Decimal("6.0"),
+        min_position_size: Decimal = Decimal("1"),
     ):
         """
         Initialize BacktestRiskManager (FR9.1).
@@ -273,6 +280,7 @@ class BacktestRiskManager:
             max_campaign_risk_pct: Maximum campaign risk (default 5.0%)
             max_portfolio_heat_pct: Maximum portfolio heat (default 10.0%)
             max_correlated_risk_pct: Maximum correlated risk (default 6.0%)
+            min_position_size: Minimum position size (default 1 unit; use 1000 for forex)
         """
         self.initial_capital = initial_capital
         self.current_capital = initial_capital
@@ -282,6 +290,7 @@ class BacktestRiskManager:
         self.max_campaign_risk_pct = max_campaign_risk_pct
         self.max_portfolio_heat_pct = max_portfolio_heat_pct
         self.max_correlated_risk_pct = max_correlated_risk_pct
+        self.min_position_size = min_position_size
 
         # Tracking state
         self.open_positions: dict[str, PositionMetadata] = {}
@@ -611,10 +620,13 @@ class BacktestRiskManager:
             return False, None, f"CORRELATED_RISK: {correlated_reason}"
 
         # Step 5: Minimum position size check (broker minimum)
-        min_position = Decimal("1000")  # 1000 units = 0.01 mini lots for forex
-        if position_size < min_position:
+        if position_size < self.min_position_size:
             self.violations.position_size_failures += 1
-            return False, None, f"Position size {position_size} below broker minimum {min_position}"
+            return (
+                False,
+                None,
+                f"Position size {position_size} below minimum {self.min_position_size}",
+            )
 
         # All checks passed
         self.violations.entries_allowed += 1
@@ -650,6 +662,7 @@ class BacktestRiskManager:
         stop_loss: Decimal,
         position_size: Decimal,
         timestamp: datetime,
+        side: str = "LONG",
     ) -> str:
         """
         Register a new position after successful entry.
@@ -661,6 +674,7 @@ class BacktestRiskManager:
             stop_loss: Stop loss price
             position_size: Position size
             timestamp: Entry timestamp
+            side: Position side ("LONG" or "SHORT")
 
         Returns:
             Position ID
@@ -685,6 +699,7 @@ class BacktestRiskManager:
             risk_amount=risk_amount,
             risk_pct=risk_pct,
             entry_timestamp=timestamp,
+            side=side,
         )
 
         # Register position
@@ -734,8 +749,11 @@ class BacktestRiskManager:
 
         position = self.open_positions.pop(position_id)
 
-        # Calculate P&L
-        pnl = (exit_price - position.entry_price) * position.position_size
+        # Calculate P&L (direction-aware)
+        if position.side == "SHORT":
+            pnl = (position.entry_price - exit_price) * position.position_size
+        else:
+            pnl = (exit_price - position.entry_price) * position.position_size
 
         # Update campaign profile
         if position.campaign_id in self.campaign_profiles:

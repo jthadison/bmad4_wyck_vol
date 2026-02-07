@@ -199,8 +199,8 @@ class TestOpenPosition:
         with pytest.raises(ValueError, match="Cannot open position from non-filled order"):
             position_manager.open_position(pending_order)
 
-    def test_open_position_requires_buy_order(self, position_manager):
-        """Test opening position fails with SELL order."""
+    def test_open_long_position_requires_buy_order(self, position_manager):
+        """Test opening LONG position fails with SELL order."""
         sell_order = BacktestOrder(
             order_id=uuid4(),
             symbol="AAPL",
@@ -216,7 +216,7 @@ class TestOpenPosition:
             slippage=Decimal("0.03"),
         )
 
-        with pytest.raises(ValueError, match="Cannot open position from SELL order"):
+        with pytest.raises(ValueError, match="Cannot open LONG position from SELL order"):
             position_manager.open_position(sell_order)
 
 
@@ -350,11 +350,11 @@ class TestClosePosition:
         with pytest.raises(ValueError, match="Cannot close position from non-filled order"):
             position_manager.close_position(pending_sell)
 
-    def test_close_position_requires_sell_order(self, position_manager, filled_buy_order):
-        """Test closing position fails with BUY order."""
+    def test_close_long_position_requires_sell_order(self, position_manager, filled_buy_order):
+        """Test closing LONG position fails with BUY order."""
         position_manager.open_position(filled_buy_order)
 
-        with pytest.raises(ValueError, match="Cannot close position from BUY order"):
+        with pytest.raises(ValueError, match="Cannot close LONG position from BUY order"):
             position_manager.close_position(filled_buy_order)
 
 
@@ -623,3 +623,202 @@ class TestRealisticScenarios:
         # Check final P&L
         realized_pnl = position_manager.get_realized_pnl()
         assert realized_pnl == Decimal("543.00")
+
+
+class TestShortPositions:
+    """Test SHORT position support."""
+
+    @pytest.fixture
+    def filled_sell_entry_order(self):
+        """Fixture for a filled SELL order to open a SHORT position."""
+        return BacktestOrder(
+            order_id=uuid4(),
+            symbol="AAPL",
+            order_type="MARKET",
+            side="SELL",
+            quantity=100,
+            limit_price=None,
+            created_bar_timestamp=datetime(2024, 1, 10, 9, 30),
+            filled_bar_timestamp=datetime(2024, 1, 11, 9, 30),
+            status="FILLED",
+            fill_price=Decimal("150.00"),
+            commission=Decimal("0.50"),
+            slippage=Decimal("0.03"),
+        )
+
+    @pytest.fixture
+    def filled_buy_cover_order(self):
+        """Fixture for a filled BUY order to close a SHORT position (buy to cover)."""
+        return BacktestOrder(
+            order_id=uuid4(),
+            symbol="AAPL",
+            order_type="MARKET",
+            side="BUY",
+            quantity=100,
+            limit_price=None,
+            created_bar_timestamp=datetime(2024, 1, 15, 9, 30),
+            filled_bar_timestamp=datetime(2024, 1, 16, 9, 30),
+            status="FILLED",
+            fill_price=Decimal("140.00"),
+            commission=Decimal("0.50"),
+            slippage=Decimal("0.03"),
+        )
+
+    def test_open_short_position(self, position_manager, filled_sell_entry_order):
+        """Test opening a SHORT position from a filled SELL order."""
+        position = position_manager.open_position(filled_sell_entry_order, side="SHORT")
+
+        assert position.symbol == "AAPL"
+        assert position.side == "SHORT"
+        assert position.quantity == 100
+        assert position.average_entry_price == Decimal("150.00")
+        assert position.total_commission == Decimal("0.50")
+
+        # Cash deducted: (100 * $150.00) + $0.50 = $15,000.50
+        expected_cash = Decimal("100000") - Decimal("15000.50")
+        assert position_manager.cash == expected_cash
+        assert position_manager.has_position("AAPL")
+
+    def test_open_short_requires_sell_order(self, position_manager):
+        """Test opening SHORT position fails with BUY order."""
+        buy_order = BacktestOrder(
+            order_id=uuid4(),
+            symbol="AAPL",
+            order_type="MARKET",
+            side="BUY",
+            quantity=100,
+            limit_price=None,
+            created_bar_timestamp=datetime(2024, 1, 10, 9, 30),
+            filled_bar_timestamp=datetime(2024, 1, 11, 9, 30),
+            status="FILLED",
+            fill_price=Decimal("150.00"),
+            commission=Decimal("0.50"),
+            slippage=Decimal("0.03"),
+        )
+
+        with pytest.raises(ValueError, match="Cannot open SHORT position from BUY order"):
+            position_manager.open_position(buy_order, side="SHORT")
+
+    def test_close_short_position_profit(
+        self, position_manager, filled_sell_entry_order, filled_buy_cover_order
+    ):
+        """Test closing SHORT position at a profit (price went down)."""
+        position_manager.open_position(filled_sell_entry_order, side="SHORT")
+        initial_cash = position_manager.cash
+
+        trade = position_manager.close_position(filled_buy_cover_order)
+
+        assert trade.symbol == "AAPL"
+        assert trade.side == "SHORT"
+        assert trade.quantity == 100
+        assert trade.entry_price == Decimal("150.00")
+        assert trade.exit_price == Decimal("140.00")
+
+        # P&L: (150 - 140) * 100 - 0.50 (entry comm) - 0.50 (exit comm) = $999.00
+        assert trade.realized_pnl == Decimal("999.00")
+
+        # Position removed
+        assert not position_manager.has_position("AAPL")
+
+        # Cash: after open = 100000 - 15000.50 = 84999.50
+        # After close = 84999.50 + (2*15000 - 14000 - 0.50) = 84999.50 + 15999.50 = 100999.00
+        # Which equals initial_capital + profit = 100000 + 999 = 100999
+        assert position_manager.cash == Decimal("100999.00")
+
+    def test_close_short_position_loss(self, position_manager, filled_sell_entry_order):
+        """Test closing SHORT position at a loss (price went up)."""
+        position_manager.open_position(filled_sell_entry_order, side="SHORT")
+
+        buy_cover_loss = BacktestOrder(
+            order_id=uuid4(),
+            symbol="AAPL",
+            order_type="MARKET",
+            side="BUY",
+            quantity=100,
+            limit_price=None,
+            created_bar_timestamp=datetime(2024, 1, 15, 9, 30),
+            filled_bar_timestamp=datetime(2024, 1, 16, 9, 30),
+            status="FILLED",
+            fill_price=Decimal("160.00"),
+            commission=Decimal("0.50"),
+            slippage=Decimal("0.03"),
+        )
+
+        trade = position_manager.close_position(buy_cover_loss)
+
+        # P&L: (150 - 160) * 100 - 0.50 - 0.50 = -$1001.00
+        assert trade.realized_pnl == Decimal("-1001.00")
+        assert trade.side == "SHORT"
+
+        # Cash: initial - entry_cost + close_credit
+        # = 100000 - 15000.50 + (2*15000 - 16000 - 0.50) = 84999.50 + 13999.50 = 98999.00
+        # = initial + P&L = 100000 - 1001 = 98999
+        assert position_manager.cash == Decimal("98999.00")
+
+    def test_close_short_requires_buy_order(self, position_manager, filled_sell_entry_order):
+        """Test closing SHORT position fails with SELL order."""
+        position_manager.open_position(filled_sell_entry_order, side="SHORT")
+
+        sell_order = BacktestOrder(
+            order_id=uuid4(),
+            symbol="AAPL",
+            order_type="MARKET",
+            side="SELL",
+            quantity=100,
+            limit_price=None,
+            created_bar_timestamp=datetime(2024, 1, 15, 9, 30),
+            filled_bar_timestamp=datetime(2024, 1, 16, 9, 30),
+            status="FILLED",
+            fill_price=Decimal("140.00"),
+            commission=Decimal("0.50"),
+            slippage=Decimal("0.03"),
+        )
+
+        with pytest.raises(ValueError, match="Cannot close SHORT position from SELL order"):
+            position_manager.close_position(sell_order)
+
+    def test_short_unrealized_pnl(self, position_manager, filled_sell_entry_order):
+        """Test unrealized P&L calculation for SHORT positions."""
+        position_manager.open_position(filled_sell_entry_order, side="SHORT")
+
+        # Price dropped to $145 - profitable for SHORT
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            open=Decimal("148.00"),
+            high=Decimal("149.00"),
+            low=Decimal("144.00"),
+            close=Decimal("145.00"),
+            volume=50000,
+            spread=Decimal("5.00"),
+            timestamp=datetime(2024, 1, 12, 9, 30),
+        )
+
+        unrealized = position_manager.calculate_unrealized_pnl(bar)
+
+        # Unrealized: (150 - 145) * 100 = $500 (positive for SHORT)
+        assert unrealized == Decimal("500.00")
+
+    def test_short_portfolio_value(self, position_manager, filled_sell_entry_order):
+        """Test portfolio value calculation with SHORT position."""
+        position_manager.open_position(filled_sell_entry_order, side="SHORT")
+
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            open=Decimal("148.00"),
+            high=Decimal("149.00"),
+            low=Decimal("144.00"),
+            close=Decimal("145.00"),
+            volume=50000,
+            spread=Decimal("5.00"),
+            timestamp=datetime(2024, 1, 12, 9, 30),
+        )
+
+        portfolio_value = position_manager.calculate_portfolio_value(bar)
+
+        # Cash after open: 100000 - 15000.50 = 84999.50
+        # Position value for SHORT: 2 * entry_val - current_val = 2*15000 - 14500 = 15500
+        # Portfolio: 84999.50 + 15500 = 100499.50
+        # = initial_capital + unrealized_profit - commission = 100000 + 500 - 0.50
+        assert portfolio_value == Decimal("100499.50")
