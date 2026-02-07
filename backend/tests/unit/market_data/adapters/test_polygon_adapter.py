@@ -305,3 +305,11 @@ class TestPolygonFormatSymbol:
     def test_already_prefixed_crypto_no_double_prefix(self):
         """A symbol that already carries the X: prefix should not be doubled."""
         assert self.adapter._format_symbol("X:BTCUSD", "crypto") == "X:BTCUSD"
+
+    def test_cross_prefix_mismatch_guard_returns_unchanged(self):
+        """A symbol with a C: prefix passed as crypto should be returned as-is by the guard."""
+        assert self.adapter._format_symbol("C:EURUSD", "crypto") == "C:EURUSD"
+
+    def test_empty_string_forex_adds_bare_prefix(self):
+        """An empty symbol with forex asset class still receives the C: prefix."""
+        assert self.adapter._format_symbol("", "forex") == "C:"

@@ -59,6 +59,8 @@ class YahooAdapter(MarketDataProvider):
             start_date: Start date (inclusive)
             end_date: End date (inclusive)
             timeframe: Bar timeframe (default "1d" for daily)
+            asset_class: Asset class for symbol formatting (e.g., "stock",
+                "forex", "index", "crypto"). None defaults to stock.
 
         Returns:
             List of OHLCVBar objects
@@ -109,6 +111,7 @@ class YahooAdapter(MarketDataProvider):
             bars = []
             for timestamp, row in df.iterrows():
                 try:
+                    # Use original symbol (not api_symbol) so bars are stored with clean user-facing names
                     bar = self._parse_bar(symbol, timeframe, timestamp, row)
                     bars.append(bar)
                 except Exception as e:
@@ -223,10 +226,12 @@ class YahooAdapter(MarketDataProvider):
             return symbol
         if asset_class == "forex":
             if symbol.endswith("=X"):
+                logger.debug("symbol_already_formatted", symbol=symbol, asset_class=asset_class)
                 return symbol
             return f"{symbol}=X"
         if asset_class == "index":
             if symbol.startswith("^"):
+                logger.debug("symbol_already_formatted", symbol=symbol, asset_class=asset_class)
                 return symbol
             return f"^{symbol}"
         if asset_class == "crypto":
@@ -235,6 +240,7 @@ class YahooAdapter(MarketDataProvider):
             # (e.g. USD, EUR, GBP). Symbols with non-3-char quote currencies
             # should be passed pre-formatted with a dash (e.g. "BTC-USDT").
             if "-" in symbol:
+                logger.debug("symbol_already_formatted", symbol=symbol, asset_class=asset_class)
                 return symbol
             if len(symbol) > 3:
                 return f"{symbol[:-3]}-{symbol[-3:]}"

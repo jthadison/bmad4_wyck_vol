@@ -48,3 +48,15 @@ class TestYahooFormatSymbol:
     def test_already_formatted_index_no_double_prefix(self):
         """A symbol that already carries the ^ prefix should not be doubled."""
         assert self.adapter._format_symbol("^DJI", "index") == "^DJI"
+
+    def test_crypto_exactly_three_chars_returns_unchanged(self):
+        """A crypto symbol with exactly 3 characters cannot be split and is returned unchanged."""
+        assert self.adapter._format_symbol("BTC", "crypto") == "BTC"
+
+    def test_crypto_fewer_than_three_chars_returns_unchanged(self):
+        """A crypto symbol shorter than 3 characters cannot be split and is returned unchanged."""
+        assert self.adapter._format_symbol("AB", "crypto") == "AB"
+
+    def test_empty_string_forex_appends_suffix(self):
+        """An empty symbol with forex asset class still receives the =X suffix."""
+        assert self.adapter._format_symbol("", "forex") == "=X"

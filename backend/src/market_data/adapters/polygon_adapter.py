@@ -71,6 +71,8 @@ class PolygonAdapter(MarketDataProvider):
             start_date: Start date (inclusive)
             end_date: End date (inclusive)
             timeframe: Bar timeframe (default "1d" for daily)
+            asset_class: Asset class for symbol formatting (e.g., "stock",
+                "forex", "index", "crypto"). None defaults to stock.
 
         Returns:
             List of OHLCVBar objects
@@ -147,6 +149,7 @@ class PolygonAdapter(MarketDataProvider):
             bars = []
             for bar_data in results:
                 try:
+                    # Use original symbol (not api_symbol) so bars are stored with clean user-facing names
                     bar = self._parse_bar(symbol, timeframe, bar_data)
                     bars.append(bar)
                 except Exception as e:
@@ -261,6 +264,7 @@ class PolygonAdapter(MarketDataProvider):
             return symbol
         # Guard: if symbol already carries a known Polygon prefix, return as-is
         if symbol.startswith(("C:", "I:", "X:")):
+            logger.debug("symbol_already_formatted", symbol=symbol, asset_class=asset_class)
             return symbol
         prefix_map = {
             "forex": "C:",

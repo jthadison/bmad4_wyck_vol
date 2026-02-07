@@ -65,21 +65,29 @@ class MockPolygonAdapter(MarketDataProvider):
         self.subscribed_symbols.clear()
         self.callbacks.clear()
 
-    async def subscribe(
-        self,
-        symbol: str,
-        on_bar_received: Callable[[OHLCVBar], None],
-    ) -> None:
+    async def subscribe(self, symbols: list[str], timeframe: str = "1m") -> None:
         """
-        Subscribe to real-time bar updates for a symbol.
+        Subscribe to real-time bar updates for specified symbols.
 
-        Stores callback for later invocation (no actual WebSocket subscription).
+        Adds symbols to the subscribed set (no actual WebSocket subscription).
         """
         if not self.connected:
             raise RuntimeError("Must connect() before subscribe()")
 
-        self.subscribed_symbols.add(symbol)
-        self.callbacks[symbol] = on_bar_received
+        for symbol in symbols:
+            self.subscribed_symbols.add(symbol)
+
+    def on_bar_received(self, callback: Callable[[OHLCVBar], None]) -> None:
+        """Register a callback to be invoked when a new bar is received."""
+        self._bar_callback = callback
+
+    async def get_provider_name(self) -> str:
+        """Return the mock provider name."""
+        return "mock_polygon"
+
+    async def health_check(self) -> bool:
+        """Return True (mock is always healthy)."""
+        return True
 
     def simulate_bar_received(self, symbol: str, bar: OHLCVBar) -> None:
         """
