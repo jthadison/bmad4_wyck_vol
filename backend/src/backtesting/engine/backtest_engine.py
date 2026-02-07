@@ -658,6 +658,7 @@ class UnifiedBacktestEngine:
                 entry_price=entry_price,
                 stop_loss=stop_loss,
                 campaign_id=campaign_id,
+                side=signal.direction,
             )
 
             if not can_trade:
