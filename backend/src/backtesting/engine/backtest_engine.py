@@ -28,6 +28,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+from src.backtesting.engine.bar_processor import calculate_stop_fill_price
 from src.backtesting.engine.interfaces import CostModel, EngineConfig, SignalDetector
 from src.backtesting.metrics import calculate_equity_curve, calculate_metrics
 from src.backtesting.position_manager import PositionManager
@@ -456,6 +457,7 @@ class UnifiedBacktestEngine:
         if self._pending_orders:
             for order in self._pending_orders:
                 order.status = "REJECTED"
+                self._pending_order_stops.pop(order.order_id, None)
             self._pending_orders.clear()
 
         execution_time = time.time() - start_time
@@ -539,19 +541,29 @@ class UnifiedBacktestEngine:
                 stop_hit = bar.high >= stop_price
                 target_hit = bar.low <= target_price
             else:
+                logger.warning(
+                    f"Unknown position side '{position.side}' for {symbol}, skipping exit check"
+                )
                 continue
 
             if stop_hit:
-                positions_to_close.append((symbol, stop_price, position.quantity, "stop_loss"))
+                fill_price = calculate_stop_fill_price(position.side, bar.open, stop_price)
+                positions_to_close.append(
+                    (symbol, fill_price, position.quantity, position.side, "stop_loss")
+                )
             elif target_hit:
-                positions_to_close.append((symbol, target_price, position.quantity, "take_profit"))
+                # Target fills remain at target price (conservative).
+                positions_to_close.append(
+                    (symbol, target_price, position.quantity, position.side, "take_profit")
+                )
 
-        # Execute exits via SELL orders
-        for symbol, exit_price, quantity, reason in positions_to_close:
+        # Execute exits: SELL closes LONG, BUY closes SHORT
+        for symbol, exit_price, quantity, pos_side, reason in positions_to_close:
+            exit_order_side = "SELL" if pos_side == "LONG" else "BUY"
             exit_order = BacktestOrder(
                 order_id=uuid4(),
                 symbol=symbol,
-                side="SELL",
+                side=exit_order_side,
                 order_type="MARKET",
                 quantity=quantity,
                 status="FILLED",
@@ -644,6 +656,7 @@ class UnifiedBacktestEngine:
                 entry_price=entry_price,
                 stop_loss=stop_loss,
                 campaign_id=campaign_id,
+                side=signal.direction,
             )
 
             if not can_trade:
@@ -736,48 +749,18 @@ class UnifiedBacktestEngine:
             order.filled_bar_timestamp = bar.timestamp
 
             # Delegate position tracking
-            if order.side == "BUY":
-                self._positions.open_position(order)
+            if order.side == "BUY" and not self._positions.has_position(order.symbol):
+                # BUY with no position: open LONG
+                self._positions.open_position(order, side="LONG")
+                self._setup_position_stops(order, bar, side="LONG")
 
-                # Determine stop/target from signal or fall back to percentage
-                stored = self._pending_order_stops.pop(order.order_id, None)
-                if stored is not None:
-                    stop_loss_price = stored[0]
-                    signal_target = stored[1]
-                else:
-                    stop_pct = self._config.risk_per_trade
-                    stop_loss_price = order.fill_price * (Decimal("1") - stop_pct)
-                    signal_target = None
-
-                # Compute target price: use signal target, or default 3:1 R:R
-                if signal_target is not None:
-                    target_price = signal_target
-                elif order.fill_price is not None:
-                    stop_dist = abs(order.fill_price - stop_loss_price)
-                    target_price = order.fill_price + stop_dist * Decimal("3")
-                else:
-                    target_price = stop_loss_price  # Degenerate fallback
-
-                # Register position with risk manager for tracking
-                risk_pos_id: str | None = None
-                if self._risk_manager is not None and order.fill_price is not None:
-                    risk_pos_id = self._risk_manager.register_position(
-                        symbol=order.symbol,
-                        campaign_id=order.symbol,
-                        entry_price=order.fill_price,
-                        stop_loss=stop_loss_price,
-                        position_size=Decimal(str(order.quantity)),
-                        timestamp=bar.timestamp,
-                    )
-
-                # Store stop/target/position_id for exit checking
-                self._position_stops[order.symbol] = (
-                    stop_loss_price,
-                    target_price,
-                    risk_pos_id,
-                )
+            elif order.side == "SELL" and not self._positions.has_position(order.symbol):
+                # SELL with no position: open SHORT
+                self._positions.open_position(order, side="SHORT")
+                self._setup_position_stops(order, bar, side="SHORT")
 
             elif self._positions.has_position(order.symbol):
+                # Close existing position (SELL closes LONG, BUY closes SHORT)
                 self._positions.close_position(order)
 
                 # Close position in risk manager using stored position_id
@@ -791,12 +774,66 @@ class UnifiedBacktestEngine:
                 self._position_stops.pop(order.symbol, None)
             else:
                 self._pending_order_stops.pop(order.order_id, None)
-                logger.debug(f"SELL order skipped for {order.symbol}: no open position to close")
+                logger.debug(f"Order skipped for {order.symbol}: cannot process")
 
             filled_orders.append(order)
 
         # Clear the pending queue
         self._pending_orders.clear()
+
+    def _setup_position_stops(self, order: BacktestOrder, bar: OHLCVBar, side: str) -> None:
+        """
+        Set up stop-loss, take-profit, and risk manager tracking for a newly opened position.
+
+        Args:
+            order: The filled order that opened the position
+            bar: The current bar when the order was filled
+            side: Position side ("LONG" or "SHORT")
+        """
+        # Determine stop/target from signal or fall back to percentage
+        stored = self._pending_order_stops.pop(order.order_id, None)
+        if stored is not None:
+            stop_loss_price = stored[0]
+            signal_target = stored[1]
+        else:
+            stop_pct = self._config.risk_per_trade
+            if side == "LONG":
+                stop_loss_price = order.fill_price * (Decimal("1") - stop_pct)
+            else:
+                stop_loss_price = order.fill_price * (Decimal("1") + stop_pct)
+            signal_target = None
+
+        # Compute target price: use signal target, or default 3:1 R:R
+        if signal_target is not None:
+            target_price = signal_target
+        elif order.fill_price is not None:
+            stop_dist = abs(order.fill_price - stop_loss_price)
+            if side == "LONG":
+                target_price = order.fill_price + stop_dist * Decimal("3")
+            else:
+                target_price = order.fill_price - stop_dist * Decimal("3")
+        else:
+            target_price = stop_loss_price  # Degenerate fallback
+
+        # Register position with risk manager for tracking
+        risk_pos_id: str | None = None
+        if self._risk_manager is not None and order.fill_price is not None:
+            risk_pos_id = self._risk_manager.register_position(
+                symbol=order.symbol,
+                campaign_id=order.symbol,
+                entry_price=order.fill_price,
+                stop_loss=stop_loss_price,
+                position_size=Decimal(str(order.quantity)),
+                timestamp=bar.timestamp,
+                side=side,
+            )
+
+        # Store stop/target/position_id for exit checking
+        self._position_stops[order.symbol] = (
+            stop_loss_price,
+            target_price,
+            risk_pos_id,
+        )
 
     def _record_equity_point(self, bar: OHLCVBar, portfolio_value: Decimal) -> None:
         """

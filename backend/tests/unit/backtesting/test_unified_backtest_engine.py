@@ -952,3 +952,226 @@ class TestDirectionalSlippage:
         engine._pending_orders.append(sell_order)
         engine._fill_pending_orders(bar)
         assert sell_order.fill_price == Decimal("150.00")
+
+
+class TestShortPositionSupport:
+    """Tests for SHORT/UTAD position opening, stop-loss, and take-profit."""
+
+    def _make_bars(
+        self, prices: list[tuple[str, str, str, str]], symbol: str = "AAPL"
+    ) -> list[OHLCVBar]:
+        """Create bars from (open, high, low, close) tuples."""
+        bars = []
+        for i, (op, hi, lo, cl) in enumerate(prices):
+            bars.append(
+                OHLCVBar(
+                    id=uuid4(),
+                    symbol=symbol,
+                    timeframe="1d",
+                    timestamp=datetime(2024, 1, 15 + i, 9, 30, tzinfo=UTC),
+                    open=Decimal(op),
+                    high=Decimal(hi),
+                    low=Decimal(lo),
+                    close=Decimal(cl),
+                    volume=1000000,
+                    spread=Decimal("3.00"),
+                    spread_ratio=Decimal("1.0"),
+                    volume_ratio=Decimal("1.0"),
+                )
+            )
+        return bars
+
+    def test_short_signal_opens_short_position(self):
+        """SHORT signal creates SELL order that opens a SHORT position."""
+        # Bar 0: signal bar, Bar 1: fill bar, Bar 2+: holding
+        bars = self._make_bars(
+            [
+                ("100.00", "102.00", "99.00", "101.00"),  # bar 0: signal
+                ("101.00", "103.00", "100.00", "102.00"),  # bar 1: fill at open 101
+                ("102.00", "103.00", "100.00", "101.50"),  # bar 2: hold
+            ]
+        )
+
+        short_signal = MockTradeSignal(direction="SHORT")
+        detector = MockSignalDetector(signals={0: short_signal})
+        config = EngineConfig(enable_cost_model=False, risk_per_trade=Decimal("0.02"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, MockCostModel(), position_manager, config)
+        result = engine.run(bars)
+
+        # After bar 1, position should be SHORT
+        assert position_manager.has_position("AAPL")
+        pos = position_manager.get_position("AAPL")
+        assert pos is not None
+        assert pos.side == "SHORT"
+        assert pos.average_entry_price == Decimal("101.00")  # filled at bar 1 open
+
+    def test_short_stop_loss_exit(self):
+        """SHORT position exits on stop-loss when price rises above stop."""
+        # Bar 0: signal, Bar 1: fill, Bar 2: stop hit (high goes above stop)
+        # With 2% risk_per_trade and fill at 100.00, stop = 100 * 1.02 = 102.00
+        bars = self._make_bars(
+            [
+                ("100.00", "102.00", "99.00", "100.00"),  # bar 0: signal
+                ("100.00", "101.00", "99.00", "100.50"),  # bar 1: fill at 100
+                ("101.00", "103.00", "100.00", "102.50"),  # bar 2: high 103 > stop 102
+            ]
+        )
+
+        short_signal = MockTradeSignal(direction="SHORT")
+        detector = MockSignalDetector(signals={0: short_signal})
+        config = EngineConfig(enable_cost_model=False, risk_per_trade=Decimal("0.02"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, MockCostModel(), position_manager, config)
+        result = engine.run(bars)
+
+        # Position should be closed by stop-loss
+        assert not position_manager.has_position("AAPL")
+        assert len(position_manager.closed_trades) == 1
+
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "SHORT"
+        assert trade.entry_price == Decimal("100.00")
+        assert trade.exit_price == Decimal("102.00")  # stop price
+        assert trade.realized_pnl < Decimal("0")  # loss
+
+    def test_short_take_profit_exit(self):
+        """SHORT position exits on take-profit when price drops below target."""
+        # With 2% risk_per_trade and fill at 100.00:
+        # stop = 100 * 1.02 = 102, target = 100 - 2*3 = 94 (3:1 R:R)
+        bars = self._make_bars(
+            [
+                ("100.00", "102.00", "99.00", "100.00"),  # bar 0: signal
+                ("100.00", "101.00", "99.00", "100.00"),  # bar 1: fill at 100
+                ("99.00", "100.00", "93.00", "93.50"),  # bar 2: low 93 < target 94
+            ]
+        )
+
+        short_signal = MockTradeSignal(direction="SHORT")
+        detector = MockSignalDetector(signals={0: short_signal})
+        config = EngineConfig(enable_cost_model=False, risk_per_trade=Decimal("0.02"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, MockCostModel(), position_manager, config)
+        result = engine.run(bars)
+
+        # Position should be closed by take-profit
+        assert not position_manager.has_position("AAPL")
+        assert len(position_manager.closed_trades) == 1
+
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "SHORT"
+        assert trade.entry_price == Decimal("100.00")
+        assert trade.exit_price == Decimal("94.00")  # target price
+        assert trade.realized_pnl > Decimal("0")  # profit
+
+    def test_short_closed_by_buy_signal(self):
+        """SHORT position is closed when a LONG (BUY) signal fills."""
+        # Bar 0: SHORT signal, Bar 1: fill SHORT, Bar 2: LONG signal, Bar 3: fill BUY (closes SHORT)
+        bars = self._make_bars(
+            [
+                ("100.00", "102.00", "99.00", "100.00"),  # bar 0: SHORT signal
+                ("100.00", "101.00", "99.00", "100.00"),  # bar 1: fill SHORT at 100
+                ("99.00", "100.50", "98.00", "99.00"),  # bar 2: LONG signal
+                ("99.00", "100.00", "98.00", "99.50"),  # bar 3: fill BUY (closes SHORT at 99)
+            ]
+        )
+
+        signals = {
+            0: MockTradeSignal(direction="SHORT"),
+            2: MockTradeSignal(direction="LONG"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(enable_cost_model=False, risk_per_trade=Decimal("0.02"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, MockCostModel(), position_manager, config)
+        result = engine.run(bars)
+
+        # SHORT should be closed (BUY order closed it)
+        assert not position_manager.has_position("AAPL")
+
+        # There should be 1 closed SHORT trade with profit
+        assert len(position_manager.closed_trades) == 1
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "SHORT"
+        assert trade.entry_price == Decimal("100.00")
+        assert trade.exit_price == Decimal("99.00")  # filled at bar 3 open
+        assert trade.realized_pnl > Decimal("0")  # profitable (shorted 100, covered 99)
+
+    def test_short_position_with_risk_manager(self):
+        """SHORT signal processed through risk manager sizing and exit."""
+        from src.backtesting.risk_integration import BacktestRiskManager
+
+        # Bar 0: signal bar (close=100), Bar 1: fill bar (open=100),
+        # Bar 2: stop hit (high=103 > stop=105? No, keep it simple: stop at 102, high=103)
+        bars = self._make_bars(
+            [
+                ("100.00", "102.00", "99.00", "100.00"),  # bar 0: signal
+                ("100.00", "101.00", "99.00", "100.50"),  # bar 1: fill at open 100
+                ("101.00", "103.00", "100.00", "102.50"),  # bar 2: high 103 > stop 102
+            ]
+        )
+
+        # Create signal with stop_loss so risk manager path is used
+        short_signal = MockTradeSignal(direction="SHORT")
+        short_signal.stop_loss = Decimal("102.00")  # stop above entry
+        short_signal.target_levels = None
+        short_signal.campaign_id = "TEST-SHORT-RM"
+
+        detector = MockSignalDetector(signals={0: short_signal})
+        risk_mgr = BacktestRiskManager(initial_capital=Decimal("100000"))
+        config = EngineConfig(enable_cost_model=False)
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, MockCostModel(), position_manager, config, risk_manager=risk_mgr
+        )
+        result = engine.run(bars)
+
+        # Risk manager should have validated and sized the position
+        assert risk_mgr.violations.total_entry_attempts == 1
+        assert risk_mgr.violations.entries_allowed == 1
+
+        # Position should be closed by stop-loss on bar 2
+        assert not position_manager.has_position("AAPL")
+        assert len(position_manager.closed_trades) == 1
+
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "SHORT"
+        assert trade.entry_price == Decimal("100.00")
+        assert trade.exit_price == Decimal("102.00")  # stop price
+        assert trade.realized_pnl < Decimal("0")  # loss on SHORT when price rises
+
+    def test_short_r_multiple_calculation(self):
+        """R-multiple is calculated correctly for SHORT trades."""
+        config = EngineConfig(risk_per_trade=Decimal("0.02"))
+        detector = MockSignalDetector()
+        cost_model = MockCostModel()
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        from src.models.backtest import BacktestTrade
+
+        short_trade = BacktestTrade(
+            trade_id=uuid4(),
+            position_id=uuid4(),
+            symbol="AAPL",
+            side="SHORT",
+            quantity=100,
+            entry_price=Decimal("100.00"),
+            exit_price=Decimal("94.00"),
+            entry_timestamp=datetime(2024, 1, 15, tzinfo=UTC),
+            exit_timestamp=datetime(2024, 1, 20, tzinfo=UTC),
+            realized_pnl=Decimal("600.00"),
+            commission=Decimal("2.00"),
+            slippage=Decimal("0.02"),
+        )
+
+        avg_r = engine._calculate_avg_r_multiple([short_trade])
+
+        # R = (entry - exit) / (entry * risk_pct) = (100 - 94) / (100 * 0.02) = 6/2 = 3.0
+        assert avg_r == Decimal("3")

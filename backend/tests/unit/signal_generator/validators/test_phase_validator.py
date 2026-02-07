@@ -4,7 +4,7 @@ Unit tests for PhaseValidator (Story 8.4).
 Tests FR3, FR14, and FR15 enforcement:
 - FR3: Phase confidence ≥70%
 - FR14: Early phase rejection (Phase A, Phase B <10 bars)
-- FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→C)
+- FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→C/D)
 """
 
 from datetime import UTC, datetime
@@ -629,12 +629,41 @@ async def test_utad_in_distribution_phase_c_passes(mock_pattern, phase_events):
 
 
 @pytest.mark.asyncio
+async def test_utad_in_distribution_phase_d_passes(mock_pattern, phase_events):
+    """Test UTAD in Distribution Phase D passes FR15."""
+    phase_info = PhaseClassification(
+        phase=WyckoffPhase.D,
+        confidence=85,
+        duration=20,
+        events_detected=phase_events,
+        trading_allowed=True,
+        phase_start_index=70,
+        phase_start_timestamp=datetime.now(UTC),
+    )
+
+    context = ValidationContext(
+        pattern=mock_pattern("UTAD"),
+        symbol="AAPL",
+        timeframe="1d",
+        volume_analysis={},
+        phase_info=phase_info,
+    )
+
+    validator = PhaseValidator()
+    result = await validator.validate(context)
+
+    assert result.status == ValidationStatus.PASS
+    assert result.metadata["phase"] == "D"
+    assert result.metadata["pattern_type"] == "UTAD"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "phase",
-    [WyckoffPhase.A, WyckoffPhase.B, WyckoffPhase.D, WyckoffPhase.E],
+    [WyckoffPhase.A, WyckoffPhase.B, WyckoffPhase.E],
 )
 async def test_utad_in_other_phases_fails(mock_pattern, phase_events, phase):
-    """Test UTAD in phases other than C fails (FR14 for Phase A, FR15 for others)."""
+    """Test UTAD in phases other than C or D fails (FR14 for Phase A, FR15 for others)."""
     phase_info = PhaseClassification(
         phase=phase,
         confidence=85,
@@ -661,7 +690,7 @@ async def test_utad_in_other_phases_fails(mock_pattern, phase_events, phase):
     if phase == WyckoffPhase.A:
         assert "Phase A" in result.reason
     else:
-        assert "only valid in Distribution Phase C" in result.reason
+        assert "only valid in Distribution Phase C or D" in result.reason
 
 
 # ============================================================================
@@ -692,7 +721,7 @@ async def test_utad_in_other_phases_fails(mock_pattern, phase_events, phase):
         ("LPS", WyckoffPhase.E, 88, 30, ValidationStatus.PASS, None),
         # UTAD combinations
         ("UTAD", WyckoffPhase.C, 85, 15, ValidationStatus.PASS, None),
-        ("UTAD", WyckoffPhase.D, 85, 20, ValidationStatus.FAIL, "Distribution Phase C"),
+        ("UTAD", WyckoffPhase.D, 85, 20, ValidationStatus.PASS, None),
     ],
 )
 async def test_phase_pattern_combinations(

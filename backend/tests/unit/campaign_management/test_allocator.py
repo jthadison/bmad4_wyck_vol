@@ -680,8 +680,8 @@ def test_invalid_pattern_type_raises_error(allocator, empty_campaign):
         phase="E",
         timeframe="1d",
         entry_price=Decimal("150.00"),
-        stop_loss=Decimal("148.00"),
-        target_levels=TargetLevels(primary_target=Decimal("156.00")),
+        stop_loss=Decimal("152.00"),  # Above entry for SHORT/UTAD
+        target_levels=TargetLevels(primary_target=Decimal("144.00")),  # Below entry for SHORT/UTAD
         position_size=Decimal("100"),
         position_size_unit="SHARES",
         risk_amount=Decimal("500.00"),

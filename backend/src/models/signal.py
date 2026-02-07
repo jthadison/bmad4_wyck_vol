@@ -304,6 +304,17 @@ class TradeSignal(BaseModel):
         default=1, description="TradeSignal schema version for backwards compatibility"
     )
 
+    @property
+    def direction(self) -> Literal["LONG", "SHORT"]:
+        """Derive trade direction from pattern_type.
+
+        SPRING, SOS, LPS are accumulation (LONG) patterns.
+        UTAD is a distribution (SHORT) pattern.
+        """
+        if self.pattern_type == "UTAD":
+            return "SHORT"
+        return "LONG"
+
     @field_validator("timestamp", "created_at", mode="before")
     @classmethod
     def ensure_utc(cls, v: datetime | str) -> datetime:
@@ -322,29 +333,59 @@ class TradeSignal(BaseModel):
 
     @field_validator("stop_loss")
     @classmethod
-    def validate_stop_below_entry(cls, v: Decimal, info) -> Decimal:
-        """Ensure stop loss < entry price for long positions."""
+    def validate_stop_vs_entry(cls, v: Decimal, info) -> Decimal:
+        """Ensure stop loss is on the correct side of entry for the direction.
+
+        LONG (SPRING/SOS/LPS): stop must be below entry.
+        SHORT (UTAD): stop must be above entry.
+        """
         values = info.data
-        if "entry_price" in values and v >= values["entry_price"]:
-            raise ValueError(f"Stop loss {v} must be below entry price {values['entry_price']}")
+        if "entry_price" not in values or "pattern_type" not in values:
+            return v
+        entry = values["entry_price"]
+        is_short = values["pattern_type"] == "UTAD"
+        if is_short:
+            if v <= entry:
+                raise ValueError(f"Stop loss {v} must be above entry price {entry} for SHORT/UTAD")
+        else:
+            if v >= entry:
+                raise ValueError(f"Stop loss {v} must be below entry price {entry}")
         return v
 
     @model_validator(mode="after")
-    def validate_targets_above_entry(self) -> "TradeSignal":
-        """Ensure primary target > entry price."""
-        if self.target_levels.primary_target <= self.entry_price:
-            raise ValueError(
-                f"Primary target {self.target_levels.primary_target} must be above entry {self.entry_price}"
-            )
+    def validate_targets_vs_entry(self) -> "TradeSignal":
+        """Ensure primary target is on the correct side of entry for the direction.
+
+        LONG: target must be above entry.
+        SHORT (UTAD): target must be below entry.
+        """
+        target = self.target_levels.primary_target
+        entry = self.entry_price
+        if self.direction == "SHORT":
+            if target >= entry:
+                raise ValueError(
+                    f"Primary target {target} must be below entry {entry} for SHORT/UTAD"
+                )
+        else:
+            if target <= entry:
+                raise ValueError(f"Primary target {target} must be above entry {entry}")
         return self
 
     @model_validator(mode="after")
     def validate_r_multiple_calculation(self) -> "TradeSignal":
-        """Verify R-multiple matches calculated value."""
+        """Verify R-multiple matches calculated value.
+
+        LONG:  R = (target - entry) / (entry - stop)
+        SHORT: R = (entry - target) / (stop - entry)
+        Both formulas yield the same result: abs(target - entry) / abs(entry - stop).
+        """
         entry = self.entry_price
         stop = self.stop_loss
         target = self.target_levels.primary_target
-        expected_r = (target - entry) / (entry - stop)
+        risk = abs(entry - stop)
+        if risk == 0:
+            raise ValueError("Entry and stop loss cannot be the same price")
+        expected_r = abs(target - entry) / risk
         if abs(self.r_multiple - expected_r) > Decimal("0.1"):  # Allow small rounding
             raise ValueError(f"R-multiple {self.r_multiple} doesn't match calculation {expected_r}")
         return self
@@ -457,10 +498,10 @@ class TradeSignal(BaseModel):
             f"Phase:           {self.phase}",
             f"Confidence:      {self.confidence_score}% (Pattern: {self.confidence_components.pattern_confidence}%, Phase: {self.confidence_components.phase_confidence}%, Volume: {self.confidence_components.volume_confidence}%)",
             "",
-            "ENTRY DETAILS:",
+            f"ENTRY DETAILS ({self.direction}):",
             f"  Entry Price:   ${self.entry_price:.2f}",
             f"  Stop Loss:     ${self.stop_loss:.2f}",
-            f"  Risk/Share:    ${self.entry_price - self.stop_loss:.2f}",
+            f"  Risk/Share:    ${abs(self.entry_price - self.stop_loss):.2f}",
             "",
             "TARGETS:",
             f"  Primary:       ${self.target_levels.primary_target:.2f} (Jump level)",
@@ -488,7 +529,7 @@ class TradeSignal(BaseModel):
                 f"  Notional Value: ${self.notional_value:.2f}",
                 f"  Risk Amount:   ${self.risk_amount:.2f}",
                 f"  R-Multiple:    {self.r_multiple:.2f}R",
-                f"  Potential Gain: ${(self.target_levels.primary_target - self.entry_price) * self.position_size:.2f}",
+                f"  Potential Gain: ${abs(self.target_levels.primary_target - self.entry_price) * self.position_size:.2f}",
             ]
         )
 

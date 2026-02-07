@@ -16,7 +16,7 @@ FR15: Phase-pattern alignment rules:
     - Spring: Only Phase C allowed
     - SOS: Phase D primary, late Phase C if confidence ≥85%
     - LPS: Phase D or E only
-    - UTAD: Distribution Phase C only
+    - UTAD: Distribution Phase C or D
 
 Integration:
 ------------
@@ -43,7 +43,7 @@ class PhaseValidator(BaseValidator):
     Validates pattern-phase alignment per FR14 and FR15:
     - FR3: Phase confidence ≥70%
     - FR14: No trading in Phase A or early Phase B (<10 bars)
-    - FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→Distribution C)
+    - FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→Distribution C/D)
 
     Properties:
     -----------
@@ -272,7 +272,7 @@ class PhaseValidator(BaseValidator):
         - SPRING: Only Phase C allowed
         - SOS: Phase D primary, late Phase C if confidence ≥85%
         - LPS: Phase D or E only
-        - UTAD: Distribution Phase C only
+        - UTAD: Distribution Phase C or D
 
         Parameters:
         -----------
@@ -354,17 +354,17 @@ class PhaseValidator(BaseValidator):
 
         # UTAD Pattern Rules
         elif pattern_type == "UTAD":
-            if phase != WyckoffPhase.C:
+            if phase not in [WyckoffPhase.C, WyckoffPhase.D]:
                 logger.debug(
                     "fr15_alignment_check",
                     pattern_type=pattern_type,
-                    required_phase="C (Distribution)",
+                    required_phase="C or D (Distribution)",
                     actual_phase=phase.value if phase else "None",
                     valid=False,
                 )
                 return (
                     False,
-                    f"UTAD pattern detected in Phase {phase.value if phase else 'None'} - UTAD only valid in Distribution Phase C (FR15)",
+                    f"UTAD pattern detected in Phase {phase.value if phase else 'None'} - UTAD only valid in Distribution Phase C or D (FR15)",
                 )
 
         # Unknown pattern type - log warning but don't block

@@ -38,6 +38,10 @@ def mock_validation_chain(
     overall_status: ValidationStatus = ValidationStatus.PASS,
     rejection_stage: str | None = None,
     rejection_reason: str | None = None,
+    volume_metadata: dict | None = None,
+    phase_metadata: dict | None = None,
+    levels_metadata: dict | None = None,
+    risk_metadata: dict | None = None,
 ) -> ValidationChain:
     """
     Create mock ValidationChain for testing.
@@ -52,6 +56,14 @@ def mock_validation_chain(
         Stage where validation failed (for FAIL status)
     rejection_reason : str | None
         Rejection reason (for FAIL status)
+    volume_metadata : dict | None
+        Override volume stage metadata (merged with SPRING defaults)
+    phase_metadata : dict | None
+        Override phase stage metadata (merged with defaults)
+    levels_metadata : dict | None
+        Override levels stage metadata (merged with defaults)
+    risk_metadata : dict | None
+        Override risk stage metadata (merged with defaults)
 
     Returns:
     --------
@@ -64,40 +76,46 @@ def mock_validation_chain(
     chain = ValidationChain(pattern_id=pattern_id)
 
     # Add Volume validation
+    default_volume_meta = {
+        "volume_ratio": "0.55",
+        "threshold": "0.70",
+        "pattern_type": "SPRING",
+    }
+    vol_meta = {**default_volume_meta, **(volume_metadata or {})}
     chain.add_result(
         StageValidationResult(
             stage="Volume",
             status=ValidationStatus.PASS,
             validator_id="VOLUME_VALIDATOR",
-            metadata={
-                "volume_ratio": "0.55",
-                "threshold": "0.70",
-                "pattern_type": "SPRING",
-            },
+            metadata=vol_meta,
         )
     )
 
     # Add Phase validation
+    default_phase_meta: dict = {"phase": "C", "confidence": 85}
+    ph_meta = {**default_phase_meta, **(phase_metadata or {})}
     chain.add_result(
         StageValidationResult(
             stage="Phase",
             status=ValidationStatus.PASS,
             validator_id="PHASE_VALIDATOR",
-            metadata={"phase": "C", "confidence": 85},
+            metadata=ph_meta,
         )
     )
 
     # Add Levels validation
+    default_levels_meta = {
+        "entry_price": "150.00",
+        "stop_loss": "148.00",
+        "target_price": "156.00",
+    }
+    lvl_meta = {**default_levels_meta, **(levels_metadata or {})}
     chain.add_result(
         StageValidationResult(
             stage="Levels",
             status=ValidationStatus.PASS,
             validator_id="LEVEL_VALIDATOR",
-            metadata={
-                "entry_price": "150.00",
-                "stop_loss": "148.00",
-                "target_price": "156.00",
-            },
+            metadata=lvl_meta,
         )
     )
 
@@ -113,17 +131,19 @@ def mock_validation_chain(
             )
         )
     else:
+        default_risk_meta = {
+            "position_size": "100",
+            "risk_amount": "200.00",
+            "r_multiple": "3.0",
+            "portfolio_heat": "5%",
+        }
+        rsk_meta = {**default_risk_meta, **(risk_metadata or {})}
         chain.add_result(
             StageValidationResult(
                 stage="Risk",
                 status=ValidationStatus.PASS,
                 validator_id="RISK_VALIDATOR",
-                metadata={
-                    "position_size": "100",
-                    "risk_amount": "200.00",
-                    "r_multiple": "3.0",
-                    "portfolio_heat": "5%",
-                },
+                metadata=rsk_meta,
             )
         )
 
@@ -312,6 +332,74 @@ def valid_forex_signal() -> TradeSignal:
             "session": "LONDON",
         },
         timestamp=datetime(2024, 3, 15, 12, 30, 0, tzinfo=UTC),
+        schema_version=1,
+    )
+
+
+def valid_utad_signal() -> TradeSignal:
+    """
+    Valid UTAD signal on SPY (STOCK) - SHORT direction.
+
+    UTAD (Upthrust After Distribution) is a SHORT pattern where
+    price breaks above Ice, fails, and reverses down.
+    Stop is above entry, target is below entry.
+
+    Entry=450.00, Stop=453.00 (above), Target=441.00 (below)
+    R = (450-441)/(453-450) = 9/3 = 3.0
+
+    Returns:
+    --------
+    TradeSignal
+        Complete UTAD signal for SHORT trade
+    """
+    pattern_id = uuid4()
+    validation_chain = mock_validation_chain(
+        pattern_id=pattern_id,
+        volume_metadata={"volume_ratio": "1.80", "threshold": "1.50", "pattern_type": "UTAD"},
+        phase_metadata={"phase": "D", "confidence": 85},
+        levels_metadata={"entry_price": "450.00", "stop_loss": "453.00", "target_price": "441.00"},
+        risk_metadata={"risk_amount": "300.00"},
+    )
+
+    return TradeSignal(
+        id=uuid4(),
+        asset_class="STOCK",
+        symbol="SPY",
+        pattern_type="UTAD",
+        phase="D",
+        timeframe="1h",
+        entry_price=Decimal("450.00"),
+        stop_loss=Decimal("453.00"),  # Above entry for SHORT
+        target_levels=TargetLevels(
+            primary_target=Decimal("441.00"),  # Below entry for SHORT
+            secondary_targets=[Decimal("447.00"), Decimal("444.00")],
+            trailing_stop_activation=Decimal("444.00"),
+            trailing_stop_offset=Decimal("1.00"),
+        ),
+        position_size=Decimal("100"),
+        position_size_unit="SHARES",
+        leverage=None,
+        margin_requirement=None,
+        notional_value=Decimal("45000.00"),  # 100 shares x $450
+        risk_amount=Decimal("300.00"),  # 100 shares x $3 risk
+        r_multiple=Decimal("3.0"),  # (450-441) / (453-450) = 3.0
+        confidence_score=85,
+        confidence_components=ConfidenceComponents(
+            pattern_confidence=88, phase_confidence=82, volume_confidence=80, overall_confidence=85
+        ),
+        campaign_id="SPY-2024-03-13-D",
+        validation_chain=validation_chain,
+        status="APPROVED",
+        pattern_data={
+            "pattern_bar_timestamp": "2024-03-13T10:30:00Z",
+            "test_bar_timestamp": "2024-03-13T11:30:00Z",
+            "trading_range_id": str(uuid4()),
+        },
+        volume_analysis={
+            "volume_ratio": "1.80",
+            "average_volume": 80000000,
+        },
+        timestamp=datetime(2024, 3, 13, 14, 30, 0, tzinfo=UTC),
         schema_version=1,
     )
 

@@ -14,6 +14,7 @@ Reference: CF-002 from Critical Foundation Refactoring document.
 Author: Story 18.9.3
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -21,6 +22,29 @@ from typing import Optional
 
 from src.models.backtest import BacktestPosition, EquityCurvePoint
 from src.models.ohlcv import OHLCVBar
+
+logger = logging.getLogger(__name__)
+
+
+def calculate_stop_fill_price(side: str, bar_open: Decimal, stop_price: Decimal) -> Decimal:
+    """Calculate stop fill price accounting for gap-through scenarios.
+
+    When a bar opens past the stop level (gap), fills at the worse
+    bar.open price instead of the stop price for realistic slippage.
+
+    Args:
+        side: Position side ("LONG" or "SHORT")
+        bar_open: The bar's open price
+        stop_price: The stop-loss price level
+
+    Returns:
+        The fill price (bar.open if gap-through, otherwise stop_price)
+    """
+    if side == "LONG" and bar_open <= stop_price:
+        return bar_open  # Gap-down through stop
+    if side == "SHORT" and bar_open >= stop_price:
+        return bar_open  # Gap-up through stop
+    return stop_price
 
 
 @dataclass
@@ -193,17 +217,22 @@ class BarProcessor:
             # Check take-profit against bar.low (intra-bar favorable move)
             target_hit = bar.low <= target_price
         else:
+            logger.warning(f"Unknown position side '{position.side}' for {position.symbol}")
             return None
 
         # If both hit in same bar, assume stop was hit first (conservative)
         if stop_hit:
+            fill_price = calculate_stop_fill_price(position.side, bar.open, stop_price)
+
             return ExitSignal(
                 symbol=position.symbol,
                 reason="stop_loss",
-                exit_price=stop_price,
+                exit_price=fill_price,
             )
 
         if target_hit:
+            # Target fills remain at target price (conservative -- could get
+            # a better fill on gaps, but keeping target price is standard).
             return ExitSignal(
                 symbol=position.symbol,
                 reason="take_profit",

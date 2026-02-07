@@ -249,6 +249,37 @@ class TestBarProcessorExitConditions:
         # Stop price = 100 * (1 - 0.02) = 98.00
         assert exit_signal.exit_price == Decimal("98.00")
 
+    def test_long_stop_loss_gap_through_fills_at_open(self, processor, long_position):
+        """Gap-through: bar opens below stop, fill at bar.open (worse price).
+
+        Entry at $100, stop at $98. Bar opens at $96 (gap-down through stop).
+        Fill should be at $96 (bar.open), not $98 (stop price).
+        """
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+            open=Decimal("96.00"),
+            high=Decimal("97.00"),
+            low=Decimal("95.00"),
+            close=Decimal("96.50"),
+            volume=1000000,
+            spread=Decimal("2.00"),
+        )
+
+        result = processor.process(
+            bar=bar,
+            index=0,
+            positions={"AAPL": long_position},
+            cash=Decimal("90000"),
+        )
+
+        assert len(result.exit_signals) == 1
+        exit_signal = result.exit_signals[0]
+        assert exit_signal.reason == "stop_loss"
+        # Gap-through: fill at bar.open ($96), not stop ($98)
+        assert exit_signal.exit_price == Decimal("96.00")
+
     def test_long_stop_loss_not_triggered_when_low_above_stop(self, processor, long_position):
         """AC4: Long stop-loss NOT triggered when bar.low stays above stop level.
 
@@ -395,6 +426,37 @@ class TestBarProcessorExitConditions:
         assert exit_signal.reason == "stop_loss"
         # Stop price = 100 * (1 + 0.02) = 102.00
         assert exit_signal.exit_price == Decimal("102.00")
+
+    def test_short_stop_loss_gap_through_fills_at_open(self, processor, short_position):
+        """Gap-through: bar opens above stop, fill at bar.open (worse price).
+
+        Entry at $100, stop at $102. Bar opens at $105 (gap-up through stop).
+        Fill should be at $105 (bar.open), not $102 (stop price).
+        """
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 15, 9, 30, tzinfo=UTC),
+            open=Decimal("105.00"),
+            high=Decimal("106.00"),
+            low=Decimal("104.00"),
+            close=Decimal("105.50"),
+            volume=1000000,
+            spread=Decimal("2.00"),
+        )
+
+        result = processor.process(
+            bar=bar,
+            index=0,
+            positions={"AAPL": short_position},
+            cash=Decimal("90000"),
+        )
+
+        assert len(result.exit_signals) == 1
+        exit_signal = result.exit_signals[0]
+        assert exit_signal.reason == "stop_loss"
+        # Gap-through: fill at bar.open ($105), not stop ($102)
+        assert exit_signal.exit_price == Decimal("105.00")
 
     def test_short_take_profit_triggered(self, processor, short_position):
         """AC4: Short position triggers take-profit when bar.low reaches target.
