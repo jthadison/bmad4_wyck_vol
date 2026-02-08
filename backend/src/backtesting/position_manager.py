@@ -132,7 +132,10 @@ class PositionManager:
         return position
 
     def close_position(
-        self, order: BacktestOrder, entry_timestamp: Optional[object] = None
+        self,
+        order: BacktestOrder,
+        entry_timestamp: Optional[object] = None,
+        stop_price: Optional[Decimal] = None,
     ) -> BacktestTrade:
         """Close a position from a filled order.
 
@@ -227,6 +230,7 @@ class PositionManager:
             realized_pnl=realized_pnl,
             commission=allocated_entry_commission + order.commission,
             slippage=order.slippage,  # Only exit slippage recorded
+            stop_price=stop_price,
         )
 
         self.closed_trades.append(trade)

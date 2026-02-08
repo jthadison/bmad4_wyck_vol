@@ -35,9 +35,9 @@ class FillPriceCalculator:
         - Realistic lag (signal on bar N, fill at bar N+1 open)
 
     Limit orders (AC6):
-        - BUY limit: Triggered if bar.low <= limit_price, fill at bar.high (worst case)
-        - SELL limit: Triggered if bar.high >= limit_price, fill at bar.low (worst case)
-        - Conservative fills prevent over-optimistic results
+        - BUY limit: Triggered if bar.low <= limit_price, fill at limit_price
+        - SELL limit: Triggered if bar.high >= limit_price, fill at limit_price
+        - Standard practice: fill at the limit price when bar range encompasses it
 
     Methods:
         calculate_fill_price: Main entry point for fill price calculation
@@ -176,16 +176,14 @@ class FillPriceCalculator:
         Calculate limit order fill price (conservative).
 
         Subtask 7.5: Limit order fill logic
-        - BUY limit: Fill if next_bar.low <= order.limit_price
-          → Conservative fill at next_bar.high (worst case for buyer)
-        - SELL limit: Fill if next_bar.high >= order.limit_price
-          → Conservative fill at next_bar.low (worst case for seller)
+        - BUY limit: Fill if next_bar.low <= order.limit_price → fill at limit_price
+        - SELL limit: Fill if next_bar.high >= order.limit_price → fill at limit_price
         - If not triggered: return None (order not filled this bar)
 
-        Subtask 7.6: Conservative limit order fills
-        - BUY: Triggered at bar.low, fill at bar.high (worst case)
-        - SELL: Triggered at bar.high, fill at bar.low (worst case)
-        - Prevents over-optimistic backtest results
+        Subtask 7.6: Standard limit order fills
+        - BUY: Triggered at bar.low, fill at limit_price
+        - SELL: Triggered at bar.high, fill at limit_price
+        - Standard practice: fill at the requested price when bar range encompasses it
 
         Args:
             order: Limit order
@@ -221,10 +219,10 @@ class FillPriceCalculator:
         if order.side == "BUY":
             # BUY limit: Triggered if bar.low <= limit_price
             if next_bar.low <= order.limit_price:
-                # Conservative fill: Use bar.high (worst case for buyer)
-                fill_price = next_bar.high
+                # Fill at limit price (the price the trader requested)
+                fill_price = order.limit_price
                 logger.info(
-                    "BUY limit order filled (conservative)",
+                    "BUY limit order filled",
                     order_id=str(order.order_id),
                     limit_price=float(order.limit_price),
                     bar_low=float(next_bar.low),
@@ -244,10 +242,10 @@ class FillPriceCalculator:
         else:  # SELL
             # SELL limit: Triggered if bar.high >= limit_price
             if next_bar.high >= order.limit_price:
-                # Conservative fill: Use bar.low (worst case for seller)
-                fill_price = next_bar.low
+                # Fill at limit price (the price the trader requested)
+                fill_price = order.limit_price
                 logger.info(
-                    "SELL limit order filled (conservative)",
+                    "SELL limit order filled",
                     order_id=str(order.order_id),
                     limit_price=float(order.limit_price),
                     bar_high=float(next_bar.high),

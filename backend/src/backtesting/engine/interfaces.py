@@ -169,6 +169,7 @@ class EngineConfig:
     enable_cost_model: bool = True
     risk_per_trade: Decimal = field(default_factory=lambda: Decimal("0.02"))
     max_open_positions: int = 5
+    enable_trailing_stop: bool = False
 
     def __post_init__(self) -> None:
         """Validate configuration values after initialization."""

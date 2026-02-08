@@ -134,7 +134,7 @@ class TestFillPriceCalculator:
 
     # Subtask 15.3.3: Test BUY limit order triggered (conservative fill at high)
     def test_buy_limit_order_triggered(self, calculator, backtest_config, high_liquidity_bars):
-        """Test BUY limit order triggered and filled at bar high (conservative)."""
+        """Test BUY limit order triggered and filled at limit price."""
         order = BacktestOrder(
             symbol="AAPL",
             created_bar_timestamp=datetime.now(UTC),
@@ -163,8 +163,8 @@ class TestFillPriceCalculator:
         )
 
         # BUY limit triggered (low <= limit)
-        # Conservative fill at bar high
-        assert fill_price == Decimal("101.00")
+        # Fill at limit price
+        assert fill_price == Decimal("100.00")
 
     # Subtask 15.3.4: Test BUY limit order NOT triggered
     def test_buy_limit_order_not_triggered(self, calculator, backtest_config, high_liquidity_bars):
@@ -201,7 +201,7 @@ class TestFillPriceCalculator:
 
     # Subtask 15.3.5: Test SELL limit order triggered (conservative fill at low)
     def test_sell_limit_order_triggered(self, calculator, backtest_config, high_liquidity_bars):
-        """Test SELL limit order triggered and filled at bar low (conservative)."""
+        """Test SELL limit order triggered and filled at limit price."""
         order = BacktestOrder(
             symbol="AAPL",
             created_bar_timestamp=datetime.now(UTC),
@@ -230,8 +230,8 @@ class TestFillPriceCalculator:
         )
 
         # SELL limit triggered (high >= limit)
-        # Conservative fill at bar low
-        assert fill_price == Decimal("99.00")
+        # Fill at limit price
+        assert fill_price == Decimal("100.00")
 
     # Subtask 15.3.6: Test SELL limit order NOT triggered
     def test_sell_limit_order_not_triggered(self, calculator, backtest_config, high_liquidity_bars):
@@ -296,8 +296,8 @@ class TestFillPriceCalculator:
             order, next_bar, high_liquidity_bars, backtest_config
         )
 
-        # Should trigger (low <= limit)
-        assert fill_price == Decimal("101.00")
+        # Should trigger (low <= limit), fill at limit price
+        assert fill_price == Decimal("100.00")
 
     # Subtask 15.3.8: Test missing limit price
     def test_limit_order_missing_limit_price(

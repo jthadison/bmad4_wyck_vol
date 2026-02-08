@@ -1146,7 +1146,7 @@ class TestShortPositionSupport:
         assert trade.realized_pnl < Decimal("0")  # loss on SHORT when price rises
 
     def test_short_r_multiple_calculation(self):
-        """R-multiple is calculated correctly for SHORT trades."""
+        """R-multiple is calculated correctly for SHORT trades using actual stop distance."""
         config = EngineConfig(risk_per_trade=Decimal("0.02"))
         detector = MockSignalDetector()
         cost_model = MockCostModel()
@@ -1169,9 +1169,12 @@ class TestShortPositionSupport:
             realized_pnl=Decimal("600.00"),
             commission=Decimal("2.00"),
             slippage=Decimal("0.02"),
+            stop_price=Decimal("102.00"),
         )
 
+        # Compute R-multiple from actual stop distance (new behavior)
+        engine._compute_r_multiple(short_trade)
         avg_r = engine._calculate_avg_r_multiple([short_trade])
 
-        # R = (entry - exit) / (entry * risk_pct) = (100 - 94) / (100 * 0.02) = 6/2 = 3.0
+        # R = (entry - exit) / |entry - stop| = (100 - 94) / |100 - 102| = 6/2 = 3.0
         assert avg_r == Decimal("3")
