@@ -835,6 +835,40 @@ class UnifiedBacktestEngine:
                         )
                         order.quantity = safe_quantity
 
+            # Also validate risk for ADD orders (same-direction with existing position)
+            elif self._positions.has_position(order.symbol) and order.order_id in self._pending_order_stops:
+                position = self._positions.get_position(order.symbol)
+                if position is not None:
+                    is_add = (order.side == "BUY" and position.side == "LONG") or (
+                        order.side == "SELL" and position.side == "SHORT"
+                    )
+                    if is_add:
+                        stop_loss_price = self._pending_order_stops[order.order_id][0]
+                        actual_risk_per_share = abs(order.fill_price - stop_loss_price)
+                        actual_risk = actual_risk_per_share * Decimal(str(order.quantity))
+                        portfolio_value = self._positions.calculate_portfolio_value(bar)
+                        if portfolio_value > Decimal("0"):
+                            actual_risk_pct = actual_risk / portfolio_value
+                            if actual_risk_pct > self.MAX_RISK_PER_TRADE_PCT:
+                                safe_quantity = int(
+                                    order.quantity * (self.MAX_RISK_PER_TRADE_PCT / actual_risk_pct)
+                                )
+                                if safe_quantity <= 0:
+                                    order.status = "REJECTED"
+                                    self._pending_order_stops.pop(order.order_id, None)
+                                    logger.info(
+                                        f"ADD order cancelled for {order.symbol}: fill gap "
+                                        f"caused risk {float(actual_risk_pct) * 100:.2f}% > 2% limit"
+                                    )
+                                    filled_orders.append(order)
+                                    continue
+                                logger.info(
+                                    f"Reducing ADD quantity for {order.symbol} from {order.quantity} "
+                                    f"to {safe_quantity}: fill gap caused risk "
+                                    f"{float(actual_risk_pct) * 100:.2f}% > 2% limit"
+                                )
+                                order.quantity = safe_quantity
+
             # Delegate position tracking
             if order.status == "REJECTED":
                 # Order was cancelled during risk check above
@@ -900,14 +934,12 @@ class UnifiedBacktestEngine:
                     trade = self._positions.close_position(order, stop_price=stop_for_trade)
                     self._compute_r_multiple(trade)
 
-                    # Close position in risk manager using stored position_id
+                    # Close ALL risk manager entries for this symbol to prevent
+                    # phantom risk from multi-tranche ADD positions
                     if self._risk_manager is not None and order.fill_price is not None:
-                        risk_position_id: str = order.symbol
-                        if order.symbol in self._position_stops:
-                            _, _, stored_pos_id = self._position_stops[order.symbol]
-                            if stored_pos_id is not None:
-                                risk_position_id = stored_pos_id
-                        self._risk_manager.close_position(risk_position_id, order.fill_price)
+                        self._risk_manager.close_all_positions_for_symbol(
+                            order.symbol, order.fill_price
+                        )
                         # Sync capital between risk manager and position manager
                         self._risk_manager.current_capital = self._positions.cash
                     self._position_stops.pop(order.symbol, None)

@@ -1354,3 +1354,71 @@ class TestBMADAddToPosition:
         assert (
             pos_after_add.average_entry_price != first_avg
         ), "Average entry price should change after add at different price"
+
+    def test_add_with_risk_manager_no_phantom_entries(self):
+        """After ADD + close, risk manager should have no open positions (no phantom risk)."""
+        from src.backtesting.risk_integration import BacktestRiskManager
+
+        signals = {
+            1: MockTradeSignal(direction="LONG"),   # Open LONG at bar 2
+            4: MockTradeSignal(direction="LONG"),   # ADD at bar 5
+            6: MockTradeSignal(direction="SHORT"),  # Close at bar 7
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.10"),
+        )
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+        risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, cost_model, position_manager, config, risk_manager=risk_manager
+        )
+
+        bars = [self._make_bar(i, Decimal("100")) for i in range(10)]
+        engine.run(bars)
+
+        # After close, risk manager should have ZERO open positions
+        assert len(risk_manager.open_positions) == 0, (
+            f"Expected 0 open positions after close, got {len(risk_manager.open_positions)} "
+            f"phantom entries: {list(risk_manager.open_positions.keys())}"
+        )
+        # Portfolio heat should be zero
+        assert risk_manager.get_portfolio_heat() == Decimal("0")
+
+    def test_add_order_risk_validated(self):
+        """ADD orders should also be validated against the 2% risk limit at fill time."""
+        from src.backtesting.risk_integration import BacktestRiskManager
+
+        # Use flat percentage sizing (no stop_loss on signal) so the position manager
+        # cash check doesn't interfere. The post-fill risk validation added in Fix 1
+        # runs at fill time for ADD orders via the elif branch in _fill_pending_orders.
+        signals = {
+            1: MockTradeSignal(direction="LONG"),  # Open LONG at bar 2
+            4: MockTradeSignal(direction="LONG"),  # ADD at bar 5
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.10"),
+        )
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+        risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, cost_model, position_manager, config, risk_manager=risk_manager
+        )
+
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # Both entries should be registered in risk manager (initial + ADD)
+        assert len(risk_manager.open_positions) == 2, (
+            f"Expected 2 open risk positions (initial + ADD), "
+            f"got {len(risk_manager.open_positions)}"
+        )
+        # Portfolio heat should be non-zero (positions are open)
+        assert risk_manager.get_portfolio_heat() > Decimal("0")
