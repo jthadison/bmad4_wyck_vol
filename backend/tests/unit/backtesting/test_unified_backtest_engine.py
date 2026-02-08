@@ -1178,3 +1178,179 @@ class TestShortPositionSupport:
 
         # R = (entry - exit) / |entry - stop| = (100 - 94) / |100 - 102| = 6/2 = 3.0
         assert avg_r == Decimal("3")
+
+
+class TestBMADAddToPosition:
+    """Tests for BMAD Add workflow: adding to an existing position with same-direction orders."""
+
+    def _make_bar(
+        self, day: int, price: Decimal, symbol: str = "AAPL", tight: bool = True
+    ) -> OHLCVBar:
+        """Helper to create a bar at a given day and price.
+
+        Args:
+            tight: If True, use narrow high/low range to avoid triggering stop/target exits.
+        """
+        spread = Decimal("0.10") if tight else Decimal("3.00")
+        return OHLCVBar(
+            id=uuid4(),
+            symbol=symbol,
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 15 + day, 9, 30, tzinfo=UTC),
+            open=price,
+            high=price + Decimal("0.05") if tight else price + Decimal("2"),
+            low=price - Decimal("0.05") if tight else price - Decimal("1"),
+            close=price,
+            volume=1000000,
+            spread=spread,
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+
+    def test_buy_with_existing_long_adds_to_position(self):
+        """BUY signal when already LONG should add to the position, not close it."""
+        # Signal at bar 1 (LONG) -> fills at bar 2
+        # Signal at bar 4 (LONG) -> fills at bar 5 (should ADD, not close)
+        signals = {
+            1: MockTradeSignal(direction="LONG"),
+            4: MockTradeSignal(direction="LONG"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use flat prices to avoid triggering stop/target exits
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # After both fills, there should be NO closed trades (no close happened)
+        # Since both signals are BUY/LONG, neither should have triggered a close
+        assert len(position_manager.closed_trades) == 0
+        assert position_manager.has_position("AAPL")
+
+        position = position_manager.get_position("AAPL")
+        assert position is not None
+        assert position.side == "LONG"
+        # Position should have shares from both fills
+        assert position.quantity > 0
+
+    def test_sell_with_existing_short_adds_to_position(self):
+        """SELL signal when already SHORT should add to the position, not close it."""
+        signals = {
+            1: MockTradeSignal(direction="SHORT"),
+            4: MockTradeSignal(direction="SHORT"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use flat prices to avoid triggering stop/target exits
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # No trades should have been closed - both SELL orders add to the SHORT
+        assert len(position_manager.closed_trades) == 0
+        assert position_manager.has_position("AAPL")
+
+        position = position_manager.get_position("AAPL")
+        assert position is not None
+        assert position.side == "SHORT"
+
+    def test_sell_with_existing_long_closes_position(self):
+        """SELL signal when already LONG should close the position (existing behavior preserved)."""
+        signals = {
+            1: MockTradeSignal(direction="LONG"),
+            4: MockTradeSignal(direction="SHORT"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use flat prices to avoid stop/target exits before the close signal
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # The SHORT signal at bar 4 creates a SELL order, which closes the LONG at bar 5
+        assert len(position_manager.closed_trades) >= 1
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "LONG"
+
+    def test_buy_with_existing_short_closes_position(self):
+        """BUY signal when already SHORT should close the position."""
+        signals = {
+            1: MockTradeSignal(direction="SHORT"),
+            4: MockTradeSignal(direction="LONG"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use flat prices to avoid stop/target exits before the close signal
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # The LONG signal at bar 4 creates a BUY order, which closes the SHORT at bar 5
+        assert len(position_manager.closed_trades) >= 1
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "SHORT"
+
+    def test_add_increases_quantity_and_averages_price(self):
+        """Adding to a LONG position should increase quantity and update average entry price."""
+        signals = {
+            1: MockTradeSignal(direction="LONG"),
+            4: MockTradeSignal(direction="LONG"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use slightly different prices for each bar so fill prices differ,
+        # but keep the range narrow to avoid triggering stop/target exits.
+        # Bar open prices: 100.00, 100.10, 100.20, 100.30, 100.40, 100.50, 100.60, 100.70
+        bars = [
+            self._make_bar(i, Decimal("100") + Decimal(str(i)) / Decimal("10")) for i in range(8)
+        ]
+
+        # Process bars one by one to capture intermediate state
+        engine._bars = bars
+        engine._equity_curve = []
+        engine._pending_orders = []
+
+        # Process bars 0-2 (signal at bar 1, fill at bar 2)
+        for i in range(3):
+            engine._process_bar(bars[i], i)
+
+        # Capture state after first fill
+        assert position_manager.has_position("AAPL")
+        pos_after_first = position_manager.get_position("AAPL")
+        assert pos_after_first is not None
+        first_qty = pos_after_first.quantity
+        first_avg = pos_after_first.average_entry_price
+
+        # Process bars 3-5 (signal at bar 4, fill at bar 5)
+        for i in range(3, 6):
+            engine._process_bar(bars[i], i)
+
+        # Capture state after second fill (the add)
+        pos_after_add = position_manager.get_position("AAPL")
+        assert pos_after_add is not None
+        assert pos_after_add.quantity > first_qty, "Quantity should increase after add"
+        # Average price should have shifted (second fill is at a higher price)
+        assert (
+            pos_after_add.average_entry_price != first_avg
+        ), "Average entry price should change after add at different price"
