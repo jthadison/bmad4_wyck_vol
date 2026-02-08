@@ -73,6 +73,12 @@ class WyckoffSignalDetector:
         max_penetration_pct: Maximum penetration below support for Spring (>5% = break, not spring).
     """
 
+    # Phase ordering for high-water-mark comparison
+    _phase_order: dict[str, int] = {"B": 0, "C": 1, "D": 2, "E": 3}
+
+    # Reset threshold: if price breaks more than 5% below support, reset phase state
+    _PHASE_RESET_THRESHOLD = Decimal("0.05")
+
     def __init__(
         self,
         min_range_bars: int = 30,
@@ -88,6 +94,7 @@ class WyckoffSignalDetector:
         # Internal state across bars
         self._last_signal_index: dict[str, int] = {}
         self._detected_sos: dict[str, int] = {}  # symbol -> bar index of SOS
+        self._phase_state: dict[str, str] = {}  # symbol -> highest phase reached
 
     def detect(self, bars: list[OHLCVBar], index: int) -> Optional[TradeSignal]:
         """Detect Wyckoff patterns at the given bar index.
@@ -196,12 +203,48 @@ class WyckoffSignalDetector:
     ) -> str:
         """Classify current Wyckoff phase from price position and history.
 
+        Uses a high-water-mark state machine to prevent backward phase
+        transitions (e.g. D -> C).  The state resets only when price breaks
+        more than 5% below support, indicating a new accumulation structure.
+
         Returns single-character phase: "B", "C", "D", or "E".
         """
         bar = bars[index]
+        symbol = bar.symbol
 
-        # Below support = Phase C territory (Spring zone)
-        if bar.close < tr.support:
+        # --- Reset check: price breaks well below support -> new structure ---
+        if tr.support > 0:
+            depth_below = (tr.support - bar.low) / tr.support
+            if depth_below > self._PHASE_RESET_THRESHOLD:
+                self._phase_state.pop(symbol, None)
+
+        # --- Raw phase classification ---
+        raw_phase = self._raw_classify_phase(bars, index, tr)
+
+        # --- Apply high-water-mark state machine ---
+        prev_phase = self._phase_state.get(symbol, "B")
+        if self._phase_order.get(raw_phase, 0) >= self._phase_order.get(prev_phase, 0):
+            self._phase_state[symbol] = raw_phase
+            return raw_phase
+        else:
+            # Backward transition blocked: return the high-water mark
+            return prev_phase
+
+    def _raw_classify_phase(
+        self,
+        bars: list[OHLCVBar],
+        index: int,
+        tr: _TradingRange,
+    ) -> str:
+        """Classify raw Wyckoff phase without state-machine adjustment.
+
+        Returns single-character phase: "B", "C", "D", or "E".
+        """
+        bar = bars[index]
+        symbol = bar.symbol
+
+        # Below support (close OR low penetration) = Phase C territory (Spring zone)
+        if bar.close < tr.support or bar.low < tr.support:
             return "C"
 
         # Above resistance = Phase E (markup)
@@ -214,12 +257,15 @@ class WyckoffSignalDetector:
         if had_break_above:
             return "D"
 
-        # Upper half of range after sufficient duration -> D
+        # Upper half of range -> D, but ONLY if symbol has already been through Phase C.
+        # This prevents premature Phase D classification during Phase B accumulation.
         range_width = tr.resistance - tr.support
         position_in_range = (
             (bar.close - tr.support) / range_width if range_width > 0 else Decimal("0.5")
         )
-        if position_in_range > Decimal("0.5"):
+        prev_phase = self._phase_state.get(symbol, "B")
+        has_seen_c = self._phase_order.get(prev_phase, 0) >= self._phase_order["C"]
+        if position_in_range > Decimal("0.5") and has_seen_c:
             return "D"
 
         # Been in range long enough for Phase C (min 10 bars)
