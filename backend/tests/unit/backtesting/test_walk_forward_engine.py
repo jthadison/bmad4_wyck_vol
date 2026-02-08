@@ -294,14 +294,15 @@ class TestCalculateStatisticalSignificance:
         assert sig["win_rate_pvalue"] >= 0.05
 
     def test_insufficient_windows(self):
-        """Test with < 2 windows returns empty dict."""
+        """Test with < 2 real windows returns not_applicable."""
         engine = WalkForwardEngine()
 
         windows = [_create_validation_window(1)]
 
         sig = engine._calculate_statistical_significance(windows)
 
-        assert sig == {}
+        assert sig["method"] == "not_applicable"
+        assert sig["reason"] == "insufficient_real_windows"
 
 
 class TestWalkForwardTest:
@@ -673,6 +674,180 @@ class TestRealBacktestExecution:
         assert result is not None
 
 
+class TestPlaceholderWindowTracking:
+    """Test placeholder window tracking and exclusion from calculations."""
+
+    @patch.object(WalkForwardEngine, "_run_backtest_for_window")
+    def test_placeholder_windows_tracked_in_summary_statistics(self, mock_run_backtest):
+        """Placeholder windows are recorded in summary_statistics with correct indices and count."""
+
+        def create_result(win_rate, is_placeholder=False):
+            return BacktestResult(
+                backtest_run_id=uuid4(),
+                symbol="AAPL",
+                start_date=date(2020, 1, 1),
+                end_date=date(2020, 6, 30),
+                config=BacktestConfig(
+                    symbol="AAPL",
+                    start_date=date(2020, 1, 1),
+                    end_date=date(2020, 6, 30),
+                ),
+                summary=BacktestMetrics(
+                    win_rate=Decimal(str(win_rate)),
+                    average_r_multiple=Decimal("2.0"),
+                    profit_factor=Decimal("1.8"),
+                    sharpe_ratio=Decimal("1.5"),
+                ),
+                is_placeholder=is_placeholder,
+                created_at=datetime.now(UTC),
+            )
+
+        # Window 1: real results, Window 2: placeholder, Window 3: real results
+        mock_run_backtest.side_effect = [
+            create_result("0.65"),                        # Window 1 train (real)
+            create_result("0.58"),                        # Window 1 validate (real)
+            create_result("0.60", is_placeholder=True),   # Window 2 train (placeholder)
+            create_result("0.60", is_placeholder=True),   # Window 2 validate (placeholder)
+            create_result("0.70"),                        # Window 3 train (real)
+            create_result("0.62"),                        # Window 3 validate (real)
+        ]
+
+        config = WalkForwardConfig(
+            symbols=["AAPL"],
+            overall_start_date=date(2020, 1, 1),
+            overall_end_date=date(2021, 6, 30),
+            train_period_months=6,
+            validate_period_months=3,
+            backtest_config=BacktestConfig(
+                symbol="AAPL",
+                start_date=date(2020, 1, 1),
+                end_date=date(2021, 6, 30),
+            ),
+        )
+
+        engine = WalkForwardEngine()
+        result = engine.walk_forward_test(["AAPL"], config)
+
+        # Should have 3 windows total
+        assert len(result.windows) == 3
+
+        # Placeholder tracking: window 2 should be flagged
+        assert result.summary_statistics["placeholder_windows"] == [2]
+        assert result.summary_statistics["placeholder_window_count"] == 1
+
+        # ValidationWindow.is_placeholder should be set correctly
+        assert result.windows[0].is_placeholder is False
+        assert result.windows[1].is_placeholder is True
+        assert result.windows[2].is_placeholder is False
+
+        # Stability score should be calculated from only 2 real windows,
+        # not inflated by the placeholder's identical metrics.
+        # With 2 real windows having different validate win rates (0.58 vs 0.62),
+        # the CV should be non-zero.
+        assert result.stability_score > Decimal("0")
+
+        # Statistical significance should exclude placeholder windows
+        # With only 2 real windows, the t-test should still run (2 is the minimum)
+        assert "method" not in result.statistical_significance or \
+            result.statistical_significance.get("method") != "not_applicable"
+
+    @patch.object(WalkForwardEngine, "_run_backtest_for_window")
+    def test_all_placeholder_windows_produce_zero_stability(self, mock_run_backtest):
+        """When all windows are placeholders, stability score is 0."""
+
+        def create_placeholder(win_rate="0.60"):
+            return BacktestResult(
+                backtest_run_id=uuid4(),
+                symbol="AAPL",
+                start_date=date(2020, 1, 1),
+                end_date=date(2020, 6, 30),
+                config=BacktestConfig(
+                    symbol="AAPL",
+                    start_date=date(2020, 1, 1),
+                    end_date=date(2020, 6, 30),
+                ),
+                summary=BacktestMetrics(
+                    win_rate=Decimal(win_rate),
+                    average_r_multiple=Decimal("2.5"),
+                    profit_factor=Decimal("2.0"),
+                    sharpe_ratio=Decimal("1.8"),
+                ),
+                is_placeholder=True,
+                created_at=datetime.now(UTC),
+            )
+
+        mock_run_backtest.side_effect = [
+            create_placeholder(),  # Window 1 train
+            create_placeholder(),  # Window 1 validate
+            create_placeholder(),  # Window 2 train
+            create_placeholder(),  # Window 2 validate
+        ]
+
+        config = WalkForwardConfig(
+            symbols=["AAPL"],
+            overall_start_date=date(2020, 1, 1),
+            overall_end_date=date(2020, 12, 31),
+            train_period_months=6,
+            validate_period_months=3,
+            backtest_config=BacktestConfig(
+                symbol="AAPL",
+                start_date=date(2020, 1, 1),
+                end_date=date(2020, 12, 31),
+            ),
+        )
+
+        engine = WalkForwardEngine()
+        result = engine.walk_forward_test(["AAPL"], config)
+
+        # All windows are placeholders
+        assert result.summary_statistics["placeholder_window_count"] == len(result.windows)
+
+        # Stability score should be 0 (no real windows to compute from)
+        assert result.stability_score == Decimal("0")
+
+        # Statistical significance should indicate not applicable
+        assert result.statistical_significance["method"] == "not_applicable"
+        assert result.statistical_significance["reason"] == "insufficient_real_windows"
+
+    def test_stability_score_excludes_placeholder_windows_directly(self):
+        """Directly test that _calculate_stability_score filters placeholders."""
+        engine = WalkForwardEngine()
+
+        # 2 real windows with different win rates + 2 placeholder windows with identical rates
+        windows = [
+            _create_validation_window(1, val_win_rate=Decimal("0.60"), is_placeholder=False),
+            _create_validation_window(2, val_win_rate=Decimal("0.60"), is_placeholder=True),
+            _create_validation_window(3, val_win_rate=Decimal("0.60"), is_placeholder=True),
+            _create_validation_window(4, val_win_rate=Decimal("0.45"), is_placeholder=False),
+        ]
+
+        cv = engine._calculate_stability_score(windows, "win_rate")
+
+        # Without filtering, all 4 windows would give a lower CV due to the
+        # 3 identical 0.60 values. With filtering, only 0.60 and 0.45 are used,
+        # giving a higher CV reflecting the real variability.
+        # CV of [0.60, 0.45] = std/mean = ~0.143
+        assert cv > Decimal("0.10")
+
+    def test_statistical_significance_excludes_placeholder_windows_directly(self):
+        """Directly test that _calculate_statistical_significance filters placeholders."""
+        engine = WalkForwardEngine()
+
+        # 1 real window + 3 placeholder windows = insufficient real windows
+        windows = [
+            _create_validation_window(1, is_placeholder=False),
+            _create_validation_window(2, is_placeholder=True),
+            _create_validation_window(3, is_placeholder=True),
+            _create_validation_window(4, is_placeholder=True),
+        ]
+
+        sig = engine._calculate_statistical_significance(windows)
+
+        # Only 1 real window, so insufficient for t-test
+        assert sig["method"] == "not_applicable"
+        assert sig["reason"] == "insufficient_real_windows"
+
+
 # Helper functions
 
 
@@ -681,6 +856,7 @@ def _create_validation_window(
     train_win_rate: Decimal = Decimal("0.60"),
     val_win_rate: Decimal = Decimal("0.55"),
     degradation: bool = False,
+    is_placeholder: bool = False,
 ) -> ValidationWindow:
     """Create a mock ValidationWindow for testing."""
     train_metrics = BacktestMetrics(
@@ -713,4 +889,5 @@ def _create_validation_window(
         validate_backtest_id=uuid4(),
         performance_ratio=performance_ratio.quantize(Decimal("0.0001")),
         degradation_detected=degradation,
+        is_placeholder=is_placeholder,
     )

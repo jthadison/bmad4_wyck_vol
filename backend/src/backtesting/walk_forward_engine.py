@@ -180,6 +180,9 @@ class WalkForwardEngine:
                     performance_ratio, config.degradation_threshold
                 )
 
+                # Determine if this window used placeholder results
+                window_is_placeholder = train_result.is_placeholder or validate_result.is_placeholder
+
                 # Create validation window
                 window = ValidationWindow(
                     window_number=window_num,
@@ -193,6 +196,7 @@ class WalkForwardEngine:
                     validate_backtest_id=validate_result.backtest_run_id,
                     performance_ratio=performance_ratio,
                     degradation_detected=degradation_detected,
+                    is_placeholder=window_is_placeholder,
                 )
 
                 windows.append(window)
@@ -235,8 +239,8 @@ class WalkForwardEngine:
         summary_stats = self._calculate_summary_statistics(windows)
 
         # Record which windows used placeholder results
-        if placeholder_windows:
-            summary_stats["placeholder_windows"] = placeholder_windows
+        summary_stats["placeholder_windows"] = placeholder_windows
+        summary_stats["placeholder_window_count"] = len(placeholder_windows)
 
         # Calculate stability score
         stability_score = self._calculate_stability_score(windows, config.primary_metric)
@@ -591,6 +595,10 @@ class WalkForwardEngine:
 
         AC3: Stability check via CV
 
+        Placeholder windows are excluded because their fabricated identical
+        metrics would artificially lower the coefficient of variation,
+        producing a false sense of stability.
+
         Args:
             windows: All validation windows
             primary_metric: Metric to analyze
@@ -598,11 +606,15 @@ class WalkForwardEngine:
         Returns:
             Coefficient of variation (lower = more stable)
         """
-        if not windows:
+        # Filter out placeholder windows -- their fabricated metrics would
+        # artificially reduce variance and produce a misleading stability score.
+        real_windows = [w for w in windows if not w.is_placeholder]
+
+        if not real_windows:
             return Decimal("0")
 
-        # Need at least 2 windows to calculate meaningful CV
-        if len(windows) < 2:
+        # Need at least 2 real windows to calculate meaningful CV
+        if len(real_windows) < 2:
             return Decimal("0")
 
         # Extract metric values
@@ -613,7 +625,7 @@ class WalkForwardEngine:
             "sharpe_ratio": lambda w: float(w.validate_metrics.sharpe_ratio),
         }
 
-        values = [metric_map[primary_metric](w) for w in windows]
+        values = [metric_map[primary_metric](w) for w in real_windows]
 
         # Calculate coefficient of variation: std / mean
         mean_val = np.mean(values)
@@ -627,32 +639,41 @@ class WalkForwardEngine:
 
     def _calculate_statistical_significance(
         self, windows: list[ValidationWindow]
-    ) -> dict[str, float]:
+    ) -> dict:
         """Calculate statistical significance of train vs validate differences.
 
         AC6: Statistical significance testing (paired t-test)
+
+        Placeholder windows are excluded because their identical fabricated
+        train/validate metrics produce meaningless t-test p-values.
 
         Args:
             windows: All validation windows
 
         Returns:
-            Dictionary with p-values for each metric
+            Dictionary with p-values for each metric, or a dict indicating
+            insufficient real windows when fewer than 2 non-placeholder
+            windows are available.
         """
-        if len(windows) < 2:
-            return {}
+        # Filter out placeholder windows -- their identical fabricated metrics
+        # produce meaningless t-test p-values.
+        real_windows = [w for w in windows if not w.is_placeholder]
+
+        if len(real_windows) < 2:
+            return {"method": "not_applicable", "reason": "insufficient_real_windows"}
 
         # Extract paired values for each metric
-        train_win_rates = [float(w.train_metrics.win_rate) for w in windows]
-        validate_win_rates = [float(w.validate_metrics.win_rate) for w in windows]
+        train_win_rates = [float(w.train_metrics.win_rate) for w in real_windows]
+        validate_win_rates = [float(w.validate_metrics.win_rate) for w in real_windows]
 
-        train_avg_r = [float(w.train_metrics.average_r_multiple) for w in windows]
-        validate_avg_r = [float(w.validate_metrics.average_r_multiple) for w in windows]
+        train_avg_r = [float(w.train_metrics.average_r_multiple) for w in real_windows]
+        validate_avg_r = [float(w.validate_metrics.average_r_multiple) for w in real_windows]
 
-        train_pf = [float(w.train_metrics.profit_factor) for w in windows]
-        validate_pf = [float(w.validate_metrics.profit_factor) for w in windows]
+        train_pf = [float(w.train_metrics.profit_factor) for w in real_windows]
+        validate_pf = [float(w.validate_metrics.profit_factor) for w in real_windows]
 
-        train_sharpe = [float(w.train_metrics.sharpe_ratio) for w in windows]
-        validate_sharpe = [float(w.validate_metrics.sharpe_ratio) for w in windows]
+        train_sharpe = [float(w.train_metrics.sharpe_ratio) for w in real_windows]
+        validate_sharpe = [float(w.validate_metrics.sharpe_ratio) for w in real_windows]
 
         # Perform paired t-tests
         results = {}

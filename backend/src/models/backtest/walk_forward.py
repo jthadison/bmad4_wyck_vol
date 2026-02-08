@@ -63,6 +63,9 @@ class ValidationWindow(BaseModel):
         max_digits=6,
     )
     degradation_detected: bool = Field(description="True if performance degraded")
+    is_placeholder: bool = Field(
+        default=False, description="True if this window used placeholder (fabricated) results"
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), description="Window creation timestamp (UTC)"
     )
@@ -181,7 +184,7 @@ class WalkForwardResult(BaseModel):
     degradation_windows: list[int] = Field(
         default_factory=list, description="Window numbers with degradation"
     )
-    statistical_significance: dict[str, float] = Field(
+    statistical_significance: dict[str, Any] = Field(
         default_factory=dict, description="P-values for statistical tests"
     )
     chart_data: WalkForwardChartData | None = Field(
