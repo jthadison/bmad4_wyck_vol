@@ -442,6 +442,8 @@ class UnifiedBacktestEngine:
         self._pending_order_stops: dict[UUID, tuple[Decimal, Decimal | None]] = {}
         # Peak prices for trailing stop (symbol -> highest high for LONG / lowest low for SHORT)
         self._position_peaks: dict[str, Decimal] = {}
+        # Original risk distance for trailing stop (symbol -> abs(entry - initial_stop))
+        self._position_initial_risk: dict[str, Decimal] = {}
 
     def run(self, bars: list[OHLCVBar]) -> BacktestResult:
         """
@@ -545,9 +547,9 @@ class UnifiedBacktestEngine:
                     stop_price = entry_price * (Decimal("1") + stop_pct)
                     target_price = entry_price * (Decimal("1") - target_pct)
 
-            # Trailing stop: ratchet stop using original risk distance
-            if self._config.enable_trailing_stop:
-                original_risk = abs(entry_price - stop_price)
+            # Trailing stop: ratchet stop using initial risk distance (stored at entry)
+            if self._config.enable_trailing_stop and symbol in self._position_initial_risk:
+                original_risk = self._position_initial_risk[symbol]
                 if position.side == "LONG":
                     peak = self._position_peaks.get(symbol, entry_price)
                     peak = max(peak, bar.high)
@@ -630,9 +632,10 @@ class UnifiedBacktestEngine:
                     # Sync capital between risk manager and position manager
                     self._risk_manager.current_capital = self._positions.cash
 
-                # Clean up stored stops and peaks
+                # Clean up stored stops, peaks, and initial risk
                 self._position_stops.pop(symbol, None)
                 self._position_peaks.pop(symbol, None)
+                self._position_initial_risk.pop(symbol, None)
 
                 logger.debug(f"Position exit for {symbol}: {reason} at {exit_price}")
 
@@ -866,6 +869,7 @@ class UnifiedBacktestEngine:
                     self._risk_manager.current_capital = self._positions.cash
                 self._position_stops.pop(order.symbol, None)
                 self._position_peaks.pop(order.symbol, None)
+                self._position_initial_risk.pop(order.symbol, None)
             else:
                 self._pending_order_stops.pop(order.order_id, None)
                 logger.debug(f"Order skipped for {order.symbol}: cannot process")
@@ -928,6 +932,10 @@ class UnifiedBacktestEngine:
             target_price,
             risk_pos_id,
         )
+
+        # Store initial risk distance for trailing stop (never changes)
+        if order.fill_price is not None:
+            self._position_initial_risk[order.symbol] = abs(order.fill_price - stop_loss_price)
 
     def _record_equity_point(self, bar: OHLCVBar, portfolio_value: Decimal) -> None:
         """

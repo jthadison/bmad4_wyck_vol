@@ -502,6 +502,17 @@ class TestPhase6PatternRisk:
         assert risk_mgr.get_risk_pct_for_pattern("LPS") == Decimal("2.0")
         assert risk_mgr.get_risk_pct_for_pattern(None) == Decimal("2.0")
 
+    def test_pattern_risk_capped_at_max(self):
+        """Pattern risk values exceeding max_risk_per_trade_pct are capped."""
+        risk_mgr = BacktestRiskManager(
+            initial_capital=Decimal("100000"),
+            max_risk_per_trade_pct=Decimal("2.0"),
+            pattern_risk_map={"SPRING": Decimal("5.0")},
+        )
+
+        # Should be capped at 2.0%, not 5.0%
+        assert risk_mgr.get_risk_pct_for_pattern("SPRING") == Decimal("2.0")
+
     def test_validate_and_size_with_pattern_type(self):
         """validate_and_size_position passes pattern_type through."""
         risk_mgr = BacktestRiskManager(
@@ -605,11 +616,11 @@ class TestPhase7TrailingStop:
 
         result = engine.run(bars)
 
-        # Should have a trade that exited above original stop price of 95
-        if result.trades:
-            trade = result.trades[0]
-            # With trailing stop, exit should be at ratcheted stop level
-            assert trade.exit_price > Decimal("95")
+        # Must have at least one trade
+        assert len(result.trades) >= 1, "Trailing stop test produced no trades"
+        trade = result.trades[0]
+        # With trailing stop, exit should be at ratcheted stop level (above original stop of 95)
+        assert trade.exit_price > Decimal("95")
 
     def test_trailing_stop_disabled_stays_fixed(self):
         """With enable_trailing_stop=False, stop stays at original level."""

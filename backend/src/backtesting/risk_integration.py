@@ -306,9 +306,10 @@ class BacktestRiskManager:
         """Get risk percentage for a specific pattern type.
 
         Falls back to max_risk_per_trade_pct if pattern not in map.
+        Result is always capped at max_risk_per_trade_pct to enforce hard limits.
         """
         if pattern_type and pattern_type in self.pattern_risk_map:
-            return self.pattern_risk_map[pattern_type]
+            return min(self.pattern_risk_map[pattern_type], self.max_risk_per_trade_pct)
         return self.max_risk_per_trade_pct
 
     def get_portfolio_heat(self) -> Decimal:
