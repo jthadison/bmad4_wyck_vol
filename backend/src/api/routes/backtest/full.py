@@ -17,10 +17,15 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.backtesting.backtest_engine import BacktestEngine
+from src.backtesting.engine.backtest_engine import UnifiedBacktestEngine
+from src.backtesting.engine.cost_model import ZeroCostModel
+from src.backtesting.engine.interfaces import EngineConfig
+from src.backtesting.engine.validated_detector import ValidatedSignalDetector
+from src.backtesting.engine.wyckoff_detector import WyckoffSignalDetector
+from src.backtesting.position_manager import PositionManager
+from src.backtesting.risk_integration import BacktestRiskManager
 from src.database import async_session_maker, get_db
 from src.models.backtest import BacktestConfig
-from src.models.ohlcv import OHLCVBar
 from src.repositories.backtest_repository import BacktestRepository
 
 from .utils import backtest_runs, cleanup_stale_entries, fetch_historical_bars
@@ -275,7 +280,7 @@ async def run_backtest_task(
     config: BacktestConfig,
 ) -> None:
     """
-    Background task to execute full backtest.
+    Background task to execute full backtest using Wyckoff pattern detection.
 
     AC7 Subtask 8.4-8.10: Execute engine, save to database via repository.
 
@@ -289,25 +294,34 @@ async def run_backtest_task(
     try:
         logger.info("Starting backtest execution", extra={"backtest_run_id": str(run_id)})
 
-        # Fetch historical data (simplified - in production, query from OHLCV repository)
+        # Fetch historical data
         bars = await fetch_historical_bars(config.symbol, config.start_date, config.end_date)
 
         if not bars:
             raise ValueError(f"No historical data found for {config.symbol}")
 
-        # Initialize backtest engine
-        engine = BacktestEngine(config)
+        # Build Wyckoff signal detection pipeline
+        wyckoff_detector = WyckoffSignalDetector()
+        validated_detector = ValidatedSignalDetector(wyckoff_detector)
 
-        # Define simple buy-and-hold strategy for MVP
-        def simple_strategy(bar: OHLCVBar, context: dict) -> str | None:
-            """Simple buy-and-hold strategy: buy on first bar, hold until end."""
-            bar_count = context.get("bar_count", 0)
-            if bar_count == 1:  # First bar
-                return "BUY"
-            return None
+        # Build engine dependencies
+        cost_model = ZeroCostModel()
+        position_manager = PositionManager(config.initial_capital)
+        engine_config = EngineConfig(
+            initial_capital=config.initial_capital,
+            max_position_size=config.max_position_size,
+        )
+        risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
 
-        # Run backtest
-        result = engine.run(bars, strategy_func=simple_strategy)
+        # Create and run unified backtest engine
+        engine = UnifiedBacktestEngine(
+            signal_detector=validated_detector,
+            cost_model=cost_model,
+            position_manager=position_manager,
+            config=engine_config,
+            risk_manager=risk_manager,
+        )
+        result = engine.run(bars)
 
         # Update result with correct run_id
         result.backtest_run_id = run_id

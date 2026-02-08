@@ -82,7 +82,14 @@ async def start_walk_forward_test(
     async def run_walk_forward():
         """Background task to execute walk-forward test."""
         try:
-            engine = WalkForwardEngine()
+            from .utils import fetch_historical_bars
+
+            bars = await fetch_historical_bars(
+                config.symbols[0],
+                config.overall_start_date,
+                config.overall_end_date,
+            )
+            engine = WalkForwardEngine(market_data=bars)
             result = engine.walk_forward_test(config.symbols, config)
 
             # Save to database using a fresh session (not request-scoped)
