@@ -359,3 +359,144 @@ class TestRMultipleFilter:
                 "2.0"
             ), f"Signal with R={signal.r_multiple} should have been filtered (min 2.0R)"
         # If None, the R-multiple filter (or range filter) correctly rejected it
+
+
+class TestPhaseProgressionTracking:
+    """Tests for the phase progression state machine."""
+
+    def test_phase_no_backward_regression(self) -> None:
+        """Once a symbol reaches Phase D, it must not regress to Phase C.
+
+        Build bars that progress through B -> C -> D, then add bars that
+        would normally classify as Phase C (close within range after having
+        been in the upper half). The detector should still report D.
+        """
+        base_volume = 1000
+        detector = WyckoffSignalDetector(min_range_bars=30, volume_lookback=20, cooldown_bars=5)
+
+        # Phase B: initial range bars
+        bars = make_range_bars(count=35, support=100.0, resistance=110.0, base_volume=base_volume)
+
+        # Phase C: bar with low penetrating below support (spring zone)
+        spring_bar = make_bar(
+            open_price=100.5,
+            high=101.0,
+            low=98.5,  # Low penetrates below support=100
+            close=100.2,  # Recovers above support
+            volume=400,
+            day_offset=35,
+        )
+        bars.append(spring_bar)
+
+        # Detect at spring bar to advance state to C
+        sig = detector.detect(bars, index=35)
+        # Verify we got Phase C (the spring should fire here)
+        assert sig is not None
+        assert sig.phase == "C"
+
+        # Phase D: add bars in upper half of range with a break above resistance
+        for i in range(11):
+            bars.append(
+                make_bar(
+                    open_price=108.0,
+                    high=111.0,  # Above resistance ~109.75 -> triggers "had_break_above"
+                    low=107.0,
+                    close=109.0,
+                    volume=base_volume,
+                    day_offset=36 + i,
+                )
+            )
+
+        # Detect in the upper range -- should be Phase D (break above resistance)
+        detector.detect(bars, index=46)
+        # Signal may or may not fire, but phase state should be D now.
+        # We verify by adding a bar that would raw-classify as C.
+
+        # Now add bars that would normally classify as lower phases:
+        # bar close within range, no break above resistance recently, lower half
+        for i in range(12):
+            bars.append(
+                make_bar(
+                    open_price=102.0,
+                    high=103.0,
+                    low=101.0,
+                    close=102.0,  # Lower half of range
+                    volume=base_volume,
+                    day_offset=47 + i,
+                )
+            )
+
+        # The raw classification would be C (10+ bars in range, lower half).
+        # But the state machine should keep it at D.
+        range_slice = bars[max(0, len(bars) - 61) :]
+        tr = detector._identify_trading_range(range_slice)  # noqa: SLF001
+        phase = detector._classify_phase(bars, len(bars) - 1, tr)  # noqa: SLF001
+        assert phase in {"D", "E"}, f"Phase regressed to {phase}, expected D or E"
+
+    def test_phase_d_requires_prior_c(self) -> None:
+        """Upper-half-of-range heuristic should NOT produce Phase D without prior Phase C.
+
+        Build bars that stay in the upper half of the range but never penetrate
+        below support. The position-in-range > 0.5 heuristic should be blocked
+        because the symbol has never visited Phase C.
+        """
+        detector = WyckoffSignalDetector(min_range_bars=30, volume_lookback=20, cooldown_bars=5)
+
+        # Build range bars that stay in the upper half (no low penetration)
+        bars: list[OHLCVBar] = []
+        for i in range(35):
+            bars.append(
+                make_bar(
+                    open_price=106.0,
+                    high=108.0,
+                    low=104.0,
+                    close=107.0,  # Upper half of 100-110 range
+                    volume=1000,
+                    day_offset=i,
+                )
+            )
+
+        # Manually identify the trading range to check the phase
+        tr = detector._identify_trading_range(bars)  # noqa: SLF001
+        assert tr is not None
+
+        # Classify phase -- should NOT be D because no prior Phase C
+        # (No break above resistance either, and close is in upper half)
+        # The position_in_range > 0.5 path should be blocked.
+        phase = detector._classify_phase(bars, len(bars) - 1, tr)  # noqa: SLF001
+
+        # Without Phase C visit, position-in-range heuristic should not yield D.
+        # Phase should be B or C (C if 10+ bars in range criterion is met).
+        assert (
+            phase != "D"
+        ), f"Phase was {phase}; position-in-range should not produce D without prior C visit"
+
+    def test_phase_c_on_low_penetration(self) -> None:
+        """Phase C should be classified when bar.low penetrates support even if close is above.
+
+        This is important for Spring detection where the bar dips below support
+        but closes back above it.
+        """
+        detector = WyckoffSignalDetector(min_range_bars=30, volume_lookback=20, cooldown_bars=5)
+
+        # Build range bars
+        bars = make_range_bars(count=35, support=100.0, resistance=110.0, base_volume=1000)
+
+        # Add a bar where low penetrates support but close is above
+        penetration_bar = make_bar(
+            open_price=101.0,
+            high=102.0,
+            low=99.0,  # Below support of ~100.25
+            close=101.5,  # Above support
+            volume=1000,
+            day_offset=35,
+        )
+        bars.append(penetration_bar)
+
+        tr = detector._identify_trading_range(bars[max(0, len(bars) - 61) :])  # noqa: SLF001
+        assert tr is not None
+
+        phase = detector._classify_phase(bars, len(bars) - 1, tr)  # noqa: SLF001
+        assert (
+            phase == "C"
+        ), f"Phase was {phase}; low penetration below support should yield Phase C"
