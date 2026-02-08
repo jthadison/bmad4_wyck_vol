@@ -360,7 +360,7 @@ class BacktestEngine:
         ):
             return (
                 "improvement",
-                f"Performance improved - Win rate +{float(win_rate_delta)*100:.1f}%, "
+                f"Performance improved - Win rate +{float(win_rate_delta) * 100:.1f}%, "
                 f"Avg R-multiple +{float(r_multiple_delta):.2f}",
             )
 
@@ -369,14 +369,14 @@ class BacktestEngine:
             return (
                 "degraded",
                 f"Performance degraded - not recommended. "
-                f"Win rate {float(win_rate_delta)*100:+.1f}%, "
-                f"Max drawdown {float(drawdown_delta)*100:+.1f}%",
+                f"Win rate {float(win_rate_delta) * 100:+.1f}%, "
+                f"Max drawdown {float(drawdown_delta) * 100:+.1f}%",
             )
 
         # Neutral
         return (
             "neutral",
-            f"Marginal changes detected. Win rate {float(win_rate_delta)*100:+.1f}%, "
+            f"Marginal changes detected. Win rate {float(win_rate_delta) * 100:+.1f}%, "
             f"Profit factor {float(pf_delta):+.2f}",
         )
 
@@ -972,10 +972,10 @@ class UnifiedBacktestEngine:
             total_days = (last_ts - first_ts).total_seconds() / 86400.0
             if total_days > 0:
                 ratio = float(final_equity) / float(initial_capital)
-                exponent = 365.0 / total_days
+                exponent = 365.25 / total_days
                 cagr = Decimal(str(ratio**exponent - 1.0))
 
-        # Sharpe ratio: mean(daily_returns) / std(daily_returns) * sqrt(252)
+        # Sharpe ratio: (mean(daily_returns) - daily_rf) / std(daily_returns) * sqrt(252)
         sharpe_ratio = Decimal("0")
         if len(self._equity_curve) >= 2:
             daily_returns: list[float] = []
@@ -986,12 +986,13 @@ class UnifiedBacktestEngine:
                     daily_returns.append((curr_val - prev_val) / prev_val)
             if len(daily_returns) >= 2:
                 mean_ret = sum(daily_returns) / len(daily_returns)
+                daily_rf = 0.02 / 252  # Annual risk-free rate (2%) / trading days
                 variance = sum((r - mean_ret) ** 2 for r in daily_returns) / (
                     len(daily_returns) - 1
                 )
                 std_ret = math.sqrt(variance)
                 if std_ret > 0:
-                    sharpe_ratio = Decimal(str(mean_ret / std_ret * math.sqrt(252)))
+                    sharpe_ratio = Decimal(str((mean_ret - daily_rf) / std_ret * math.sqrt(252)))
 
         return BacktestMetrics(
             total_signals=len(trades),
