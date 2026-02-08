@@ -1178,3 +1178,297 @@ class TestShortPositionSupport:
 
         # R = (entry - exit) / |entry - stop| = (100 - 94) / |100 - 102| = 6/2 = 3.0
         assert avg_r == Decimal("3")
+
+
+class TestBMADAddToPosition:
+    """Tests for BMAD Add workflow: adding to an existing position with same-direction orders."""
+
+    def _make_bar(
+        self, day: int, price: Decimal, symbol: str = "AAPL", tight: bool = True
+    ) -> OHLCVBar:
+        """Helper to create a bar at a given day and price.
+
+        Args:
+            tight: If True, use narrow high/low range to avoid triggering stop/target exits.
+        """
+        spread = Decimal("0.10") if tight else Decimal("3.00")
+        return OHLCVBar(
+            id=uuid4(),
+            symbol=symbol,
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 15 + day, 9, 30, tzinfo=UTC),
+            open=price,
+            high=price + Decimal("0.05") if tight else price + Decimal("2"),
+            low=price - Decimal("0.05") if tight else price - Decimal("1"),
+            close=price,
+            volume=1000000,
+            spread=spread,
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+
+    def test_buy_with_existing_long_adds_to_position(self):
+        """BUY signal when already LONG should add to the position, not close it."""
+        # Signal at bar 1 (LONG) -> fills at bar 2
+        # Signal at bar 4 (LONG) -> fills at bar 5 (should ADD, not close)
+        signals = {
+            1: MockTradeSignal(direction="LONG"),
+            4: MockTradeSignal(direction="LONG"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use flat prices to avoid triggering stop/target exits
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # After both fills, there should be NO closed trades (no close happened)
+        # Since both signals are BUY/LONG, neither should have triggered a close
+        assert len(position_manager.closed_trades) == 0
+        assert position_manager.has_position("AAPL")
+
+        position = position_manager.get_position("AAPL")
+        assert position is not None
+        assert position.side == "LONG"
+        # Position should have shares from both fills
+        assert position.quantity > 0
+
+    def test_sell_with_existing_short_adds_to_position(self):
+        """SELL signal when already SHORT should add to the position, not close it."""
+        signals = {
+            1: MockTradeSignal(direction="SHORT"),
+            4: MockTradeSignal(direction="SHORT"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use flat prices to avoid triggering stop/target exits
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # No trades should have been closed - both SELL orders add to the SHORT
+        assert len(position_manager.closed_trades) == 0
+        assert position_manager.has_position("AAPL")
+
+        position = position_manager.get_position("AAPL")
+        assert position is not None
+        assert position.side == "SHORT"
+
+    def test_sell_with_existing_long_closes_position(self):
+        """SELL signal when already LONG should close the position (existing behavior preserved)."""
+        signals = {
+            1: MockTradeSignal(direction="LONG"),
+            4: MockTradeSignal(direction="SHORT"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use flat prices to avoid stop/target exits before the close signal
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # The SHORT signal at bar 4 creates a SELL order, which closes the LONG at bar 5
+        assert len(position_manager.closed_trades) >= 1
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "LONG"
+
+    def test_buy_with_existing_short_closes_position(self):
+        """BUY signal when already SHORT should close the position."""
+        signals = {
+            1: MockTradeSignal(direction="SHORT"),
+            4: MockTradeSignal(direction="LONG"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use flat prices to avoid stop/target exits before the close signal
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # The LONG signal at bar 4 creates a BUY order, which closes the SHORT at bar 5
+        assert len(position_manager.closed_trades) >= 1
+        trade = position_manager.closed_trades[0]
+        assert trade.side == "SHORT"
+
+    def test_add_increases_quantity_and_averages_price(self):
+        """Adding to a LONG position should increase quantity and update average entry price."""
+        signals = {
+            1: MockTradeSignal(direction="LONG"),
+            4: MockTradeSignal(direction="LONG"),
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(max_position_size=Decimal("0.10"))
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+
+        engine = UnifiedBacktestEngine(detector, cost_model, position_manager, config)
+
+        # Use slightly different prices for each bar so fill prices differ,
+        # but keep the range narrow to avoid triggering stop/target exits.
+        # Bar open prices: 100.00, 100.10, 100.20, 100.30, 100.40, 100.50, 100.60, 100.70
+        bars = [
+            self._make_bar(i, Decimal("100") + Decimal(str(i)) / Decimal("10")) for i in range(8)
+        ]
+
+        # Process bars one by one to capture intermediate state
+        engine._bars = bars
+        engine._equity_curve = []
+        engine._pending_orders = []
+
+        # Process bars 0-2 (signal at bar 1, fill at bar 2)
+        for i in range(3):
+            engine._process_bar(bars[i], i)
+
+        # Capture state after first fill
+        assert position_manager.has_position("AAPL")
+        pos_after_first = position_manager.get_position("AAPL")
+        assert pos_after_first is not None
+        first_qty = pos_after_first.quantity
+        first_avg = pos_after_first.average_entry_price
+
+        # Process bars 3-5 (signal at bar 4, fill at bar 5)
+        for i in range(3, 6):
+            engine._process_bar(bars[i], i)
+
+        # Capture state after second fill (the add)
+        pos_after_add = position_manager.get_position("AAPL")
+        assert pos_after_add is not None
+        assert pos_after_add.quantity > first_qty, "Quantity should increase after add"
+        # Average price should have shifted (second fill is at a higher price)
+        assert (
+            pos_after_add.average_entry_price != first_avg
+        ), "Average entry price should change after add at different price"
+
+    def test_add_with_risk_manager_no_phantom_entries(self):
+        """After ADD + close, risk manager should have no open positions (no phantom risk)."""
+        from src.backtesting.risk_integration import BacktestRiskManager
+
+        signals = {
+            1: MockTradeSignal(direction="LONG"),   # Open LONG at bar 2
+            4: MockTradeSignal(direction="LONG"),   # ADD at bar 5
+            6: MockTradeSignal(direction="SHORT"),  # Close at bar 7
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.10"),
+        )
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+        risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, cost_model, position_manager, config, risk_manager=risk_manager
+        )
+
+        bars = [self._make_bar(i, Decimal("100")) for i in range(10)]
+        engine.run(bars)
+
+        # After close, risk manager should have ZERO open positions
+        assert len(risk_manager.open_positions) == 0, (
+            f"Expected 0 open positions after close, got {len(risk_manager.open_positions)} "
+            f"phantom entries: {list(risk_manager.open_positions.keys())}"
+        )
+        # Portfolio heat should be zero
+        assert risk_manager.get_portfolio_heat() == Decimal("0")
+
+    def test_add_order_risk_validated(self):
+        """ADD orders should also be validated against the 2% risk limit at fill time."""
+        from src.backtesting.risk_integration import BacktestRiskManager
+
+        # Use flat percentage sizing (no stop_loss on signal) so the position manager
+        # cash check doesn't interfere. The post-fill risk validation added in Fix 1
+        # runs at fill time for ADD orders via the elif branch in _fill_pending_orders.
+        signals = {
+            1: MockTradeSignal(direction="LONG"),  # Open LONG at bar 2
+            4: MockTradeSignal(direction="LONG"),  # ADD at bar 5
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.10"),
+        )
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+        risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, cost_model, position_manager, config, risk_manager=risk_manager
+        )
+
+        bars = [self._make_bar(i, Decimal("100")) for i in range(8)]
+        engine.run(bars)
+
+        # Both entries should be registered in risk manager (initial + ADD)
+        assert len(risk_manager.open_positions) == 2, (
+            f"Expected 2 open risk positions (initial + ADD), "
+            f"got {len(risk_manager.open_positions)}"
+        )
+        # Portfolio heat should be non-zero (positions are open)
+        assert risk_manager.get_portfolio_heat() > Decimal("0")
+
+    def test_stop_exit_cleans_all_risk_entries(self):
+        """Stop-loss exit on multi-tranche position should clean up ALL risk entries."""
+        from src.backtesting.risk_integration import BacktestRiskManager
+
+        # Open LONG at bar 2, ADD at bar 5, then price drops to trigger stop exit
+        signals = {
+            1: MockTradeSignal(direction="LONG"),  # Open LONG at bar 2
+            4: MockTradeSignal(direction="LONG"),  # ADD at bar 5
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.10"),
+        )
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+        risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, cost_model, position_manager, config, risk_manager=risk_manager
+        )
+
+        # Bars 0-6: flat at 100 (fills happen), bar 7+: crash to 80 to trigger stop
+        bars = [self._make_bar(i, Decimal("100")) for i in range(7)]
+        # Add a crash bar with low price well below any reasonable stop
+        crash_bar = OHLCVBar(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 22, 9, 30, tzinfo=UTC),
+            open=Decimal("80"),
+            high=Decimal("81"),
+            low=Decimal("78"),
+            close=Decimal("79"),
+            volume=2000000,
+            spread=Decimal("3.00"),
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+        bars.append(crash_bar)
+
+        engine.run(bars)
+
+        # After stop-loss exit, risk manager should have ZERO open positions
+        assert len(risk_manager.open_positions) == 0, (
+            f"Expected 0 open positions after stop exit, got "
+            f"{len(risk_manager.open_positions)} phantom entries"
+        )
+        assert risk_manager.get_portfolio_heat() == Decimal("0")

@@ -620,15 +620,10 @@ class UnifiedBacktestEngine:
                 trade = self._positions.close_position(exit_order, stop_price=stop_for_trade)
                 self._compute_r_multiple(trade)
 
-                # Update risk manager if present (close_position handles capital tracking)
+                # Update risk manager if present -- close ALL entries for this symbol
+                # to prevent phantom risk from multi-tranche ADD positions
                 if self._risk_manager is not None:
-                    # Use stored position_id if available, fall back to symbol
-                    risk_position_id = symbol
-                    if symbol in self._position_stops:
-                        _, _, stored_pos_id = self._position_stops[symbol]
-                        if stored_pos_id is not None:
-                            risk_position_id = stored_pos_id
-                    self._risk_manager.close_position(risk_position_id, exit_price)
+                    self._risk_manager.close_all_positions_for_symbol(symbol, exit_price)
                     # Sync capital between risk manager and position manager
                     self._risk_manager.current_capital = self._positions.cash
 
@@ -835,6 +830,40 @@ class UnifiedBacktestEngine:
                         )
                         order.quantity = safe_quantity
 
+            # Also validate risk for ADD orders (same-direction with existing position)
+            elif self._positions.has_position(order.symbol) and order.order_id in self._pending_order_stops:
+                position = self._positions.get_position(order.symbol)
+                if position is not None:
+                    is_add = (order.side == "BUY" and position.side == "LONG") or (
+                        order.side == "SELL" and position.side == "SHORT"
+                    )
+                    if is_add:
+                        stop_loss_price = self._pending_order_stops[order.order_id][0]
+                        actual_risk_per_share = abs(order.fill_price - stop_loss_price)
+                        actual_risk = actual_risk_per_share * Decimal(str(order.quantity))
+                        portfolio_value = self._positions.calculate_portfolio_value(bar)
+                        if portfolio_value > Decimal("0"):
+                            actual_risk_pct = actual_risk / portfolio_value
+                            if actual_risk_pct > self.MAX_RISK_PER_TRADE_PCT:
+                                safe_quantity = int(
+                                    order.quantity * (self.MAX_RISK_PER_TRADE_PCT / actual_risk_pct)
+                                )
+                                if safe_quantity <= 0:
+                                    order.status = "REJECTED"
+                                    self._pending_order_stops.pop(order.order_id, None)
+                                    logger.info(
+                                        f"ADD order cancelled for {order.symbol}: fill gap "
+                                        f"caused risk {float(actual_risk_pct) * 100:.2f}% > 2% limit"
+                                    )
+                                    filled_orders.append(order)
+                                    continue
+                                logger.info(
+                                    f"Reducing ADD quantity for {order.symbol} from {order.quantity} "
+                                    f"to {safe_quantity}: fill gap caused risk "
+                                    f"{float(actual_risk_pct) * 100:.2f}% > 2% limit"
+                                )
+                                order.quantity = safe_quantity
+
             # Delegate position tracking
             if order.status == "REJECTED":
                 # Order was cancelled during risk check above
@@ -851,25 +880,66 @@ class UnifiedBacktestEngine:
                 self._setup_position_stops(order, bar, side="SHORT")
 
             elif self._positions.has_position(order.symbol):
-                # Close existing position (SELL closes LONG, BUY closes SHORT)
-                stored = self._position_stops.get(order.symbol)
-                stop_for_trade = stored[0] if stored else None
-                trade = self._positions.close_position(order, stop_price=stop_for_trade)
-                self._compute_r_multiple(trade)
+                position = self._positions.get_position(order.symbol)
+                assert position is not None  # guaranteed by has_position
 
-                # Close position in risk manager using stored position_id
-                if self._risk_manager is not None and order.fill_price is not None:
-                    risk_position_id: str = order.symbol
-                    if order.symbol in self._position_stops:
-                        _, _, stored_pos_id = self._position_stops[order.symbol]
-                        if stored_pos_id is not None:
-                            risk_position_id = stored_pos_id
-                    self._risk_manager.close_position(risk_position_id, order.fill_price)
-                    # Sync capital between risk manager and position manager
-                    self._risk_manager.current_capital = self._positions.cash
-                self._position_stops.pop(order.symbol, None)
-                self._position_peaks.pop(order.symbol, None)
-                self._position_initial_risk.pop(order.symbol, None)
+                # Check if this is an ADD (same direction) or CLOSE (opposite direction)
+                is_add = (order.side == "BUY" and position.side == "LONG") or (
+                    order.side == "SELL" and position.side == "SHORT"
+                )
+
+                if is_add:
+                    # BMAD Add workflow: add to existing position (average entry)
+                    self._positions.open_position(order, side=position.side)
+
+                    # Register with risk manager if present
+                    if self._risk_manager is not None and order.fill_price is not None:
+                        self._risk_manager.register_position(
+                            symbol=order.symbol,
+                            campaign_id=order.symbol,
+                            entry_price=order.fill_price,
+                            stop_loss=self._position_stops.get(order.symbol, (order.fill_price,))[
+                                0
+                            ],
+                            position_size=Decimal(str(order.quantity)),
+                            timestamp=bar.timestamp,
+                            side=position.side,
+                        )
+
+                    # Update stop if new signal has a tighter (more protective) stop
+                    new_stop_info = self._pending_order_stops.pop(order.order_id, None)
+                    if new_stop_info is not None and order.symbol in self._position_stops:
+                        new_stop = new_stop_info[0]
+                        old_stop, old_target, old_pos_id = self._position_stops[order.symbol]
+                        # Tighter = higher stop for LONG, lower stop for SHORT
+                        if position.side == "LONG" and new_stop > old_stop:
+                            self._position_stops[order.symbol] = (new_stop, old_target, old_pos_id)
+                        elif position.side == "SHORT" and new_stop < old_stop:
+                            self._position_stops[order.symbol] = (new_stop, old_target, old_pos_id)
+
+                    logger.info(
+                        f"Added to {position.side} position for {order.symbol}: "
+                        f"+{order.quantity} shares at {order.fill_price}, "
+                        f"new total {position.quantity} shares"
+                    )
+                else:
+                    # Close existing position (opposite direction)
+                    stored = self._position_stops.get(order.symbol)
+                    stop_for_trade = stored[0] if stored else None
+                    trade = self._positions.close_position(order, stop_price=stop_for_trade)
+                    self._compute_r_multiple(trade)
+
+                    # Close ALL risk manager entries for this symbol to prevent
+                    # phantom risk from multi-tranche ADD positions
+                    if self._risk_manager is not None and order.fill_price is not None:
+                        self._risk_manager.close_all_positions_for_symbol(
+                            order.symbol, order.fill_price
+                        )
+                        # Sync capital between risk manager and position manager
+                        self._risk_manager.current_capital = self._positions.cash
+                    self._position_stops.pop(order.symbol, None)
+                    self._position_peaks.pop(order.symbol, None)
+                    self._position_initial_risk.pop(order.symbol, None)
             else:
                 self._pending_order_stops.pop(order.order_id, None)
                 logger.debug(f"Order skipped for {order.symbol}: cannot process")
