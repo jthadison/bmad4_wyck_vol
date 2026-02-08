@@ -416,6 +416,10 @@ class BacktestResult(BaseModel):
     longest_losing_streak: int = Field(
         default=0, ge=0, description="Consecutive losing trades (Story 12.6A AC6)"
     )
+    is_placeholder: bool = Field(
+        default=False,
+        description="True if this result contains placeholder/synthetic metrics, not from real backtesting",
+    )
     look_ahead_bias_check: bool = Field(
         default=False, description="Look-ahead bias validation result"
     )

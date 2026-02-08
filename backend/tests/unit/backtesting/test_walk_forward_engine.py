@@ -493,6 +493,47 @@ class TestRealBacktestExecution:
         assert result.summary.win_rate == Decimal("0.60")
         assert result.summary.profit_factor == Decimal("2.0")
         assert result.summary.total_trades == 10
+        # Placeholder must be flagged
+        assert result.is_placeholder is True
+
+    def test_real_backtest_result_not_placeholder(self):
+        """Real backtest results should have is_placeholder=False."""
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 365)
+
+        engine = WalkForwardEngine(market_data=bars)
+
+        config = BacktestConfig(
+            symbol="AAPL",
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 12, 31),
+        )
+
+        result = engine._run_backtest_for_window(
+            "AAPL",
+            date(2020, 1, 1),
+            date(2020, 12, 31),
+            config,
+        )
+
+        assert result.is_placeholder is False
+
+    def test_backtest_result_defaults_is_placeholder_false(self):
+        """BacktestResult should default is_placeholder to False."""
+        result = BacktestResult(
+            backtest_run_id=uuid4(),
+            symbol="TEST",
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 6, 30),
+            config=BacktestConfig(
+                symbol="TEST",
+                start_date=date(2020, 1, 1),
+                end_date=date(2020, 6, 30),
+            ),
+            summary=BacktestMetrics(),
+            created_at=datetime.now(UTC),
+        )
+
+        assert result.is_placeholder is False
 
     def test_insufficient_bars_raises_error(self):
         """Windows with fewer than MIN_BARS_PER_WINDOW bars raise ValueError."""

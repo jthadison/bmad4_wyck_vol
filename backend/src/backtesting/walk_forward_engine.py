@@ -141,6 +141,7 @@ class WalkForwardEngine:
         # Run backtests for each window
         windows: list[ValidationWindow] = []
         window_execution_times: list[float] = []
+        placeholder_windows: list[int] = []
 
         for window_num, (train_start, train_end, validate_start, validate_end) in enumerate(
             window_periods, start=1
@@ -163,6 +164,10 @@ class WalkForwardEngine:
                     validate_end,
                     config.backtest_config,
                 )
+
+                # Track windows that used placeholder results
+                if train_result.is_placeholder or validate_result.is_placeholder:
+                    placeholder_windows.append(window_num)
 
                 # Calculate performance ratio and degradation
                 performance_ratio = self._calculate_performance_ratio(
@@ -228,6 +233,10 @@ class WalkForwardEngine:
 
         # Calculate summary statistics
         summary_stats = self._calculate_summary_statistics(windows)
+
+        # Record which windows used placeholder results
+        if placeholder_windows:
+            summary_stats["placeholder_windows"] = placeholder_windows
 
         # Calculate stability score
         stability_score = self._calculate_stability_score(windows, config.primary_metric)
@@ -369,6 +378,11 @@ class WalkForwardEngine:
             return self._run_real_backtest(symbol, start_date, end_date, base_config)
 
         # Fallback: return placeholder result when no market data provided
+        self.logger.warning(
+            "using_placeholder_result",
+            symbol=symbol,
+            reason="no market_data provided",
+        )
         return self._create_placeholder_result(symbol, start_date, end_date, base_config)
 
     def _run_real_backtest(
@@ -483,6 +497,7 @@ class WalkForwardEngine:
             end_date=end_date,
             config=base_config,
             summary=placeholder_metrics,
+            is_placeholder=True,
             created_at=datetime.now(UTC),
         )
 
