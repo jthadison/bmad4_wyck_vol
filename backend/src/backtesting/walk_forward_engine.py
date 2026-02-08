@@ -18,7 +18,13 @@ import structlog
 from dateutil.relativedelta import relativedelta  # type: ignore[import-untyped]
 from scipy import stats
 
-from src.backtesting.legacy.backtest_engine import BacktestEngine as LegacyBacktestEngine
+from src.backtesting.engine.backtest_engine import UnifiedBacktestEngine
+from src.backtesting.engine.cost_model import ZeroCostModel
+from src.backtesting.engine.interfaces import EngineConfig
+from src.backtesting.engine.validated_detector import ValidatedSignalDetector
+from src.backtesting.engine.wyckoff_detector import WyckoffSignalDetector
+from src.backtesting.position_manager import PositionManager
+from src.backtesting.risk_integration import BacktestRiskManager
 from src.models.backtest import (
     BacktestConfig,
     BacktestMetrics,
@@ -32,8 +38,9 @@ from src.models.ohlcv import OHLCVBar
 
 logger = structlog.get_logger()
 
-# Minimum number of bars required to run a meaningful backtest for a window
-MIN_BARS_PER_WINDOW = 10
+# Minimum bars per window: must exceed WyckoffSignalDetector's min_range_bars (30)
+# plus enough bars for signal generation. 60 bars ~ 3 months daily data.
+MIN_BARS_PER_WINDOW = 60
 
 
 class WalkForwardEngine:
@@ -64,19 +71,18 @@ class WalkForwardEngine:
 
     def __init__(
         self,
-        backtest_engine: LegacyBacktestEngine | None = None,
+        backtest_engine: object | None = None,
         strategy_func: Callable[[OHLCVBar, dict], str | None] | None = None,
         market_data: list[OHLCVBar] | None = None,
     ):
         """Initialize walk-forward engine.
 
         Args:
-            backtest_engine: Legacy BacktestEngine instance (unused, kept for compat)
-            strategy_func: Strategy function for the backtest engine. Takes
-                (bar, context) and returns "BUY", "SELL", or None.
-                If not provided, a simple buy-and-hold strategy is used.
+            backtest_engine: Legacy parameter (unused, kept for compat).
+            strategy_func: Legacy parameter (unused, kept for compat).
             market_data: Pre-fetched OHLCV bars covering the full date range.
-                When provided, bars are sliced per window to avoid re-fetching.
+                When provided, bars are sliced per window and run through
+                UnifiedBacktestEngine with Wyckoff detection.
                 When None, the engine falls back to mock/placeholder results.
         """
         self.backtest_engine = backtest_engine
@@ -372,7 +378,7 @@ class WalkForwardEngine:
         end_date: date,
         base_config: BacktestConfig,
     ) -> BacktestResult:
-        """Run a real backtest using the Legacy BacktestEngine.
+        """Run a real backtest using UnifiedBacktestEngine with Wyckoff detection.
 
         Args:
             symbol: Trading symbol
@@ -381,7 +387,7 @@ class WalkForwardEngine:
             base_config: Base backtest configuration
 
         Returns:
-            BacktestResult with real metrics from the engine
+            BacktestResult with real Wyckoff-based metrics from the engine
         """
         # Slice bars for this window period
         window_bars = self._slice_bars_for_period(start_date, end_date)
@@ -400,29 +406,23 @@ class WalkForwardEngine:
                 f"got {len(window_bars)}, need >= {MIN_BARS_PER_WINDOW}"
             )
 
-        # Create a window-specific config with the correct dates
-        window_config = BacktestConfig(
-            symbol=symbol,
-            timeframe=base_config.timeframe,
-            start_date=start_date,
-            end_date=end_date,
-            initial_capital=base_config.initial_capital,
-            max_position_size=base_config.max_position_size,
-            commission_per_share=base_config.commission_per_share,
-            slippage_model=base_config.slippage_model,
-            slippage_percentage=base_config.slippage_percentage,
-            commission_config=base_config.commission_config,
-            slippage_config=base_config.slippage_config,
-            risk_limits=base_config.risk_limits,
+        # Build UnifiedBacktestEngine components with Wyckoff detection
+        detector = WyckoffSignalDetector()
+        validated_detector = ValidatedSignalDetector(detector)
+        cost_model = ZeroCostModel()
+        position_manager = PositionManager(base_config.initial_capital)
+        engine_config = EngineConfig(initial_capital=base_config.initial_capital)
+        risk_manager = BacktestRiskManager(initial_capital=base_config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            signal_detector=validated_detector,
+            cost_model=cost_model,
+            position_manager=position_manager,
+            config=engine_config,
+            risk_manager=risk_manager,
         )
 
-        # Use provided strategy or default buy-and-hold
-        strategy = self.strategy_func or self._default_strategy
-
-        # Create a fresh engine instance per window (engine has internal state)
-        engine = LegacyBacktestEngine(window_config)
-        result = engine.run(window_bars, strategy_func=strategy)
-
+        result = engine.run(window_bars)
         return result
 
     def _slice_bars_for_period(self, start_date: date, end_date: date) -> list[OHLCVBar]:
@@ -439,24 +439,6 @@ class WalkForwardEngine:
             return []
 
         return [bar for bar in self.market_data if start_date <= bar.timestamp.date() <= end_date]
-
-    @staticmethod
-    def _default_strategy(bar: OHLCVBar, context: dict) -> str | None:
-        """Simple buy-and-hold strategy used when no strategy_func is provided.
-
-        Buys on the first bar and holds until the end.
-
-        Args:
-            bar: Current OHLCV bar
-            context: Strategy context dict
-
-        Returns:
-            "BUY" on the first bar, None otherwise
-        """
-        bar_count = context.get("bar_count", 0)
-        if bar_count == 1:
-            return "BUY"
-        return None
 
     @staticmethod
     def _create_placeholder_result(

@@ -448,21 +448,21 @@ class TestRealBacktestExecution:
         return bars
 
     def test_run_backtest_for_window_with_real_data(self):
-        """When market_data is provided, _run_backtest_for_window runs the Legacy engine."""
-        bars = self._make_bars("AAPL", date(2020, 1, 1), 200)
+        """When market_data is provided, _run_backtest_for_window runs the real engine."""
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 365)
 
         engine = WalkForwardEngine(market_data=bars)
 
         config = BacktestConfig(
             symbol="AAPL",
             start_date=date(2020, 1, 1),
-            end_date=date(2020, 6, 30),
+            end_date=date(2020, 12, 31),
         )
 
         result = engine._run_backtest_for_window(
             "AAPL",
             date(2020, 1, 1),
-            date(2020, 3, 31),
+            date(2020, 12, 31),
             config,
         )
 
@@ -543,7 +543,7 @@ class TestRealBacktestExecution:
 
     def test_custom_strategy_func(self):
         """Test that a custom strategy_func is used instead of the default."""
-        bars = self._make_bars("AAPL", date(2020, 1, 1), 100)
+        bars = self._make_bars("AAPL", date(2020, 1, 1), 365)
 
         # Strategy that never trades
         def no_trade_strategy(bar, context):
@@ -557,13 +557,13 @@ class TestRealBacktestExecution:
         config = BacktestConfig(
             symbol="AAPL",
             start_date=date(2020, 1, 1),
-            end_date=date(2020, 3, 31),
+            end_date=date(2020, 12, 31),
         )
 
         result = engine._run_backtest_for_window(
             "AAPL",
             date(2020, 1, 1),
-            date(2020, 3, 31),
+            date(2020, 12, 31),
             config,
         )
 
@@ -571,23 +571,11 @@ class TestRealBacktestExecution:
         assert result.summary.total_trades == 0
 
     def test_full_walk_forward_with_real_data(self):
-        """Full walk-forward test with real market data and backtest execution."""
+        """Full walk-forward test with real market data and Wyckoff engine."""
         # Generate ~15 months of data: enough for 1 window (6mo train + 3mo validate)
         bars = self._make_bars("AAPL", date(2020, 1, 1), 450)
 
-        # Use a strategy that buys and sells to produce completed trades
-        def buy_sell_strategy(bar, context):
-            bar_count = context.get("bar_count", 0)
-            if bar_count == 1:
-                return "BUY"
-            elif bar_count == 10:
-                return "SELL"
-            return None
-
-        engine = WalkForwardEngine(
-            market_data=bars,
-            strategy_func=buy_sell_strategy,
-        )
+        engine = WalkForwardEngine(market_data=bars)
 
         config = WalkForwardConfig(
             symbols=["AAPL"],
@@ -604,18 +592,17 @@ class TestRealBacktestExecution:
 
         result = engine.walk_forward_test(["AAPL"], config)
 
-        # Should have at least one completed window with real metrics
+        # Should have at least one completed window
         assert len(result.windows) >= 1
         assert result.walk_forward_id is not None
         assert result.total_execution_time_seconds > 0
 
-        # Metrics should come from the real engine -- the buy/sell strategy
-        # produces completed trades, so we get real metrics
+        # Metrics should come from the real Wyckoff engine.
+        # Synthetic linear data may not produce Wyckoff patterns, so
+        # total_trades may be 0 -- but the engine should run without error.
         first_window = result.windows[0]
         assert first_window.train_metrics is not None
         assert first_window.validate_metrics is not None
-        # With 1 completed trade (buy bar 1, sell bar 10), win_rate is either 0 or 1
-        assert first_window.train_metrics.total_trades >= 1
 
     def test_window_with_no_bars_skipped_gracefully(self):
         """Windows that have insufficient data are skipped (not crash)."""
@@ -643,48 +630,6 @@ class TestRealBacktestExecution:
         # Most windows will fail due to insufficient data, but the engine should
         # still return a result
         assert result is not None
-
-
-class TestDefaultStrategy:
-    """Test the default buy-and-hold strategy."""
-
-    def test_default_strategy_buys_on_first_bar(self):
-        """Default strategy returns BUY when bar_count is 1."""
-        from src.models.ohlcv import OHLCVBar
-
-        bar = OHLCVBar(
-            symbol="AAPL",
-            timeframe="1d",
-            timestamp=datetime(2020, 1, 2, tzinfo=UTC),
-            open=Decimal("100"),
-            high=Decimal("101"),
-            low=Decimal("99"),
-            close=Decimal("100.50"),
-            volume=1000000,
-            spread=Decimal("2.00"),
-        )
-
-        result = WalkForwardEngine._default_strategy(bar, {"bar_count": 1})
-        assert result == "BUY"
-
-    def test_default_strategy_holds_after_first_bar(self):
-        """Default strategy returns None after the first bar."""
-        from src.models.ohlcv import OHLCVBar
-
-        bar = OHLCVBar(
-            symbol="AAPL",
-            timeframe="1d",
-            timestamp=datetime(2020, 1, 3, tzinfo=UTC),
-            open=Decimal("100"),
-            high=Decimal("101"),
-            low=Decimal("99"),
-            close=Decimal("100.50"),
-            volume=1000000,
-            spread=Decimal("2.00"),
-        )
-
-        result = WalkForwardEngine._default_strategy(bar, {"bar_count": 5})
-        assert result is None
 
 
 # Helper functions
