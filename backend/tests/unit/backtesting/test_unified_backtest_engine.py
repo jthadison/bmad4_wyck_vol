@@ -1422,3 +1422,53 @@ class TestBMADAddToPosition:
         )
         # Portfolio heat should be non-zero (positions are open)
         assert risk_manager.get_portfolio_heat() > Decimal("0")
+
+    def test_stop_exit_cleans_all_risk_entries(self):
+        """Stop-loss exit on multi-tranche position should clean up ALL risk entries."""
+        from src.backtesting.risk_integration import BacktestRiskManager
+
+        # Open LONG at bar 2, ADD at bar 5, then price drops to trigger stop exit
+        signals = {
+            1: MockTradeSignal(direction="LONG"),  # Open LONG at bar 2
+            4: MockTradeSignal(direction="LONG"),  # ADD at bar 5
+        }
+        detector = MockSignalDetector(signals=signals)
+        config = EngineConfig(
+            initial_capital=Decimal("100000"),
+            max_position_size=Decimal("0.10"),
+        )
+        cost_model = MockCostModel(commission=Decimal("0"), slippage=Decimal("0"))
+        position_manager = PositionManager(config.initial_capital)
+        risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
+
+        engine = UnifiedBacktestEngine(
+            detector, cost_model, position_manager, config, risk_manager=risk_manager
+        )
+
+        # Bars 0-6: flat at 100 (fills happen), bar 7+: crash to 80 to trigger stop
+        bars = [self._make_bar(i, Decimal("100")) for i in range(7)]
+        # Add a crash bar with low price well below any reasonable stop
+        crash_bar = OHLCVBar(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            timestamp=datetime(2024, 1, 22, 9, 30, tzinfo=UTC),
+            open=Decimal("80"),
+            high=Decimal("81"),
+            low=Decimal("78"),
+            close=Decimal("79"),
+            volume=2000000,
+            spread=Decimal("3.00"),
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+        bars.append(crash_bar)
+
+        engine.run(bars)
+
+        # After stop-loss exit, risk manager should have ZERO open positions
+        assert len(risk_manager.open_positions) == 0, (
+            f"Expected 0 open positions after stop exit, got "
+            f"{len(risk_manager.open_positions)} phantom entries"
+        )
+        assert risk_manager.get_portfolio_heat() == Decimal("0")

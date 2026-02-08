@@ -620,15 +620,10 @@ class UnifiedBacktestEngine:
                 trade = self._positions.close_position(exit_order, stop_price=stop_for_trade)
                 self._compute_r_multiple(trade)
 
-                # Update risk manager if present (close_position handles capital tracking)
+                # Update risk manager if present -- close ALL entries for this symbol
+                # to prevent phantom risk from multi-tranche ADD positions
                 if self._risk_manager is not None:
-                    # Use stored position_id if available, fall back to symbol
-                    risk_position_id = symbol
-                    if symbol in self._position_stops:
-                        _, _, stored_pos_id = self._position_stops[symbol]
-                        if stored_pos_id is not None:
-                            risk_position_id = stored_pos_id
-                    self._risk_manager.close_position(risk_position_id, exit_price)
+                    self._risk_manager.close_all_positions_for_symbol(symbol, exit_price)
                     # Sync capital between risk manager and position manager
                     self._risk_manager.current_capital = self._positions.cash
 
