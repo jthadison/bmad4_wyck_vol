@@ -359,7 +359,7 @@ class BacktestEngine:
         ):
             return (
                 "improvement",
-                f"Performance improved - Win rate +{float(win_rate_delta)*100:.1f}%, "
+                f"Performance improved - Win rate +{float(win_rate_delta) * 100:.1f}%, "
                 f"Avg R-multiple +{float(r_multiple_delta):.2f}",
             )
 
@@ -368,14 +368,14 @@ class BacktestEngine:
             return (
                 "degraded",
                 f"Performance degraded - not recommended. "
-                f"Win rate {float(win_rate_delta)*100:+.1f}%, "
-                f"Max drawdown {float(drawdown_delta)*100:+.1f}%",
+                f"Win rate {float(win_rate_delta) * 100:+.1f}%, "
+                f"Max drawdown {float(drawdown_delta) * 100:+.1f}%",
             )
 
         # Neutral
         return (
             "neutral",
-            f"Marginal changes detected. Win rate {float(win_rate_delta)*100:+.1f}%, "
+            f"Marginal changes detected. Win rate {float(win_rate_delta) * 100:+.1f}%, "
             f"Profit factor {float(pf_delta):+.2f}",
         )
 
@@ -399,6 +399,14 @@ class UnifiedBacktestEngine:
 
     Reference: CF-002 from Critical Foundation Refactoring document.
     """
+
+    # Conservative gap buffer for risk sizing (0.5% = accounts for overnight/session gaps).
+    # Applied when estimating entry price at order creation time so that position size
+    # is conservative relative to the actual next-bar fill price.
+    GAP_BUFFER = Decimal("0.005")
+
+    # Hard per-trade risk limit (non-negotiable, see CLAUDE.md)
+    MAX_RISK_PER_TRADE_PCT = Decimal("0.02")
 
     def __init__(
         self,
@@ -646,6 +654,14 @@ class UnifiedBacktestEngine:
             stop_loss = Decimal(str(signal_stop_loss))
             campaign_id = getattr(signal, "campaign_id", None) or bar.symbol
 
+            # Apply gap buffer: assume fill will be worse than bar.close by GAP_BUFFER %.
+            # This makes position sizing conservative, building in a cushion for the
+            # signal-bar-close to next-bar-open gap.
+            if signal.direction == "LONG":
+                adjusted_entry = entry_price * (Decimal("1") + self.GAP_BUFFER)
+            else:
+                adjusted_entry = entry_price * (Decimal("1") - self.GAP_BUFFER)
+
             # Validate through risk manager (checks all 4 risk limits + sizes position)
             (
                 can_trade,
@@ -653,7 +669,7 @@ class UnifiedBacktestEngine:
                 rejection_reason,
             ) = self._risk_manager.validate_and_size_position(
                 symbol=bar.symbol,
-                entry_price=entry_price,
+                entry_price=adjusted_entry,
                 stop_loss=stop_loss,
                 campaign_id=campaign_id,
                 side=signal.direction,
@@ -748,8 +764,45 @@ class UnifiedBacktestEngine:
             order.status = "FILLED"
             order.filled_bar_timestamp = bar.timestamp
 
+            # Post-fill risk validation: check if actual risk exceeds the 2% hard limit.
+            # The gap buffer in _create_order should handle most cases, but this catches
+            # extreme gaps (e.g. overnight gaps larger than the buffer).
+            is_opening = not self._positions.has_position(order.symbol)
+            if is_opening and order.order_id in self._pending_order_stops:
+                stop_loss_price = self._pending_order_stops[order.order_id][0]
+                actual_risk_per_share = abs(order.fill_price - stop_loss_price)
+                actual_risk = actual_risk_per_share * Decimal(str(order.quantity))
+                portfolio_value = self._positions.calculate_portfolio_value(bar)
+                if portfolio_value > Decimal("0"):
+                    actual_risk_pct = actual_risk / portfolio_value
+                    if actual_risk_pct > self.MAX_RISK_PER_TRADE_PCT:
+                        safe_quantity = int(
+                            order.quantity * (self.MAX_RISK_PER_TRADE_PCT / actual_risk_pct)
+                        )
+                        if safe_quantity <= 0:
+                            # Risk too high even for 1 share -- cancel the order
+                            order.status = "REJECTED"
+                            self._pending_order_stops.pop(order.order_id, None)
+                            logger.info(
+                                f"Order cancelled for {order.symbol}: fill gap "
+                                f"caused risk {float(actual_risk_pct) * 100:.2f}% > 2% limit, "
+                                f"quantity reduced to 0"
+                            )
+                            filled_orders.append(order)
+                            continue
+                        logger.info(
+                            f"Reducing quantity for {order.symbol} from {order.quantity} "
+                            f"to {safe_quantity}: fill gap caused risk "
+                            f"{float(actual_risk_pct) * 100:.2f}% > 2% limit"
+                        )
+                        order.quantity = safe_quantity
+
             # Delegate position tracking
-            if order.side == "BUY" and not self._positions.has_position(order.symbol):
+            if order.status == "REJECTED":
+                # Order was cancelled during risk check above
+                self._pending_order_stops.pop(order.order_id, None)
+
+            elif order.side == "BUY" and not self._positions.has_position(order.symbol):
                 # BUY with no position: open LONG
                 self._positions.open_position(order, side="LONG")
                 self._setup_position_stops(order, bar, side="LONG")
