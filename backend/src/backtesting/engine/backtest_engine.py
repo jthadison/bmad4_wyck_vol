@@ -21,6 +21,7 @@ Author: Story 11.2, Story 18.9.2
 
 import asyncio
 import logging
+import math
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -968,6 +969,11 @@ class UnifiedBacktestEngine:
         Returns:
             BacktestMetrics with performance statistics
         """
+        initial_capital = self._config.initial_capital
+        final_equity = (
+            self._equity_curve[-1].portfolio_value if self._equity_curve else initial_capital
+        )
+
         if not trades:
             return BacktestMetrics(
                 total_signals=0,
@@ -978,6 +984,11 @@ class UnifiedBacktestEngine:
                 average_r_multiple=Decimal("0"),
                 max_drawdown=Decimal("0"),
                 profit_factor=Decimal("0"),
+                total_pnl=Decimal("0"),
+                final_equity=final_equity,
+                total_return_pct=Decimal("0"),
+                cagr=Decimal("0"),
+                sharpe_ratio=Decimal("0"),
             )
 
         # Calculate basic metrics
@@ -997,6 +1008,45 @@ class UnifiedBacktestEngine:
         else:
             profit_factor = Decimal("0")
 
+        # Total P&L: sum of realized P&L from all trades
+        total_pnl = sum(t.realized_pnl for t in trades)
+
+        # Total return percentage: (final - initial) / initial * 100
+        if initial_capital > 0:
+            total_return_pct = (final_equity - initial_capital) / initial_capital * Decimal("100")
+        else:
+            total_return_pct = Decimal("0")
+
+        # CAGR: ((final / initial) ^ (365 / total_days)) - 1
+        cagr = Decimal("0")
+        if initial_capital > 0 and final_equity > 0 and len(self._equity_curve) >= 2:
+            first_ts = self._equity_curve[0].timestamp
+            last_ts = self._equity_curve[-1].timestamp
+            total_days = (last_ts - first_ts).total_seconds() / 86400.0
+            if total_days > 0:
+                ratio = float(final_equity) / float(initial_capital)
+                exponent = 365.25 / total_days
+                cagr = Decimal(str(ratio**exponent - 1.0))
+
+        # Sharpe ratio: (mean(daily_returns) - daily_rf) / std(daily_returns) * sqrt(252)
+        sharpe_ratio = Decimal("0")
+        if len(self._equity_curve) >= 2:
+            daily_returns: list[float] = []
+            for i in range(1, len(self._equity_curve)):
+                prev_val = float(self._equity_curve[i - 1].portfolio_value)
+                curr_val = float(self._equity_curve[i].portfolio_value)
+                if prev_val > 0:
+                    daily_returns.append((curr_val - prev_val) / prev_val)
+            if len(daily_returns) >= 2:
+                mean_ret = sum(daily_returns) / len(daily_returns)
+                daily_rf = 0.02 / 252  # Annual risk-free rate (2%) / trading days
+                variance = sum((r - mean_ret) ** 2 for r in daily_returns) / (
+                    len(daily_returns) - 1
+                )
+                std_ret = math.sqrt(variance)
+                if std_ret > 0:
+                    sharpe_ratio = Decimal(str((mean_ret - daily_rf) / std_ret * math.sqrt(252)))
+
         return BacktestMetrics(
             total_signals=len(trades),
             total_trades=len(trades),
@@ -1006,6 +1056,11 @@ class UnifiedBacktestEngine:
             average_r_multiple=self._calculate_avg_r_multiple(trades),
             max_drawdown=self._calculate_max_drawdown(),
             profit_factor=profit_factor,
+            total_pnl=total_pnl,
+            final_equity=final_equity,
+            total_return_pct=total_return_pct,
+            cagr=cagr,
+            sharpe_ratio=sharpe_ratio,
         )
 
     def _calculate_avg_r_multiple(self, trades: list) -> Decimal:
