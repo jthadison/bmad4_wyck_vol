@@ -440,6 +440,10 @@ class UnifiedBacktestEngine:
         self._position_stops: dict[str, tuple[Decimal, Decimal, str | None]] = {}
         # Temporary storage for signal stop/target keyed by order_id
         self._pending_order_stops: dict[UUID, tuple[Decimal, Decimal | None]] = {}
+        # Peak prices for trailing stop (symbol -> highest high for LONG / lowest low for SHORT)
+        self._position_peaks: dict[str, Decimal] = {}
+        # Original risk distance for trailing stop (symbol -> abs(entry - initial_stop))
+        self._position_initial_risk: dict[str, Decimal] = {}
 
     def run(self, bars: list[OHLCVBar]) -> BacktestResult:
         """
@@ -543,6 +547,30 @@ class UnifiedBacktestEngine:
                     stop_price = entry_price * (Decimal("1") + stop_pct)
                     target_price = entry_price * (Decimal("1") - target_pct)
 
+            # Trailing stop: ratchet stop using initial risk distance (stored at entry)
+            if self._config.enable_trailing_stop and symbol in self._position_initial_risk:
+                original_risk = self._position_initial_risk[symbol]
+                if position.side == "LONG":
+                    peak = self._position_peaks.get(symbol, entry_price)
+                    peak = max(peak, bar.high)
+                    self._position_peaks[symbol] = peak
+                    new_stop = peak - original_risk
+                    if new_stop > stop_price:
+                        stop_price = new_stop
+                        if symbol in self._position_stops:
+                            _, tp, pid = self._position_stops[symbol]
+                            self._position_stops[symbol] = (stop_price, tp, pid)
+                else:  # SHORT
+                    trough = self._position_peaks.get(symbol, entry_price)
+                    trough = min(trough, bar.low)
+                    self._position_peaks[symbol] = trough
+                    new_stop = trough + original_risk
+                    if new_stop < stop_price:
+                        stop_price = new_stop
+                        if symbol in self._position_stops:
+                            _, tp, pid = self._position_stops[symbol]
+                            self._position_stops[symbol] = (stop_price, tp, pid)
+
             if position.side == "LONG":
                 stop_hit = bar.low <= stop_price
                 target_hit = bar.high >= target_price
@@ -584,9 +612,13 @@ class UnifiedBacktestEngine:
             )
             if self._config.enable_cost_model:
                 exit_order.commission = self._cost_model.calculate_commission(exit_order)
+                exit_order.slippage = self._cost_model.calculate_slippage(exit_order, bar)
 
             if self._positions.has_position(symbol):
-                self._positions.close_position(exit_order)
+                stored = self._position_stops.get(symbol)
+                stop_for_trade = stored[0] if stored else None
+                trade = self._positions.close_position(exit_order, stop_price=stop_for_trade)
+                self._compute_r_multiple(trade)
 
                 # Update risk manager if present (close_position handles capital tracking)
                 if self._risk_manager is not None:
@@ -597,9 +629,13 @@ class UnifiedBacktestEngine:
                         if stored_pos_id is not None:
                             risk_position_id = stored_pos_id
                     self._risk_manager.close_position(risk_position_id, exit_price)
+                    # Sync capital between risk manager and position manager
+                    self._risk_manager.current_capital = self._positions.cash
 
-                # Clean up stored stops
+                # Clean up stored stops, peaks, and initial risk
                 self._position_stops.pop(symbol, None)
+                self._position_peaks.pop(symbol, None)
+                self._position_initial_risk.pop(symbol, None)
 
                 logger.debug(f"Position exit for {symbol}: {reason} at {exit_price}")
 
@@ -674,6 +710,7 @@ class UnifiedBacktestEngine:
                 stop_loss=stop_loss,
                 campaign_id=campaign_id,
                 side=signal.direction,
+                pattern_type=getattr(signal, "pattern_type", None),
             )
 
             if not can_trade:
@@ -815,7 +852,10 @@ class UnifiedBacktestEngine:
 
             elif self._positions.has_position(order.symbol):
                 # Close existing position (SELL closes LONG, BUY closes SHORT)
-                self._positions.close_position(order)
+                stored = self._position_stops.get(order.symbol)
+                stop_for_trade = stored[0] if stored else None
+                trade = self._positions.close_position(order, stop_price=stop_for_trade)
+                self._compute_r_multiple(trade)
 
                 # Close position in risk manager using stored position_id
                 if self._risk_manager is not None and order.fill_price is not None:
@@ -825,7 +865,11 @@ class UnifiedBacktestEngine:
                         if stored_pos_id is not None:
                             risk_position_id = stored_pos_id
                     self._risk_manager.close_position(risk_position_id, order.fill_price)
+                    # Sync capital between risk manager and position manager
+                    self._risk_manager.current_capital = self._positions.cash
                 self._position_stops.pop(order.symbol, None)
+                self._position_peaks.pop(order.symbol, None)
+                self._position_initial_risk.pop(order.symbol, None)
             else:
                 self._pending_order_stops.pop(order.order_id, None)
                 logger.debug(f"Order skipped for {order.symbol}: cannot process")
@@ -888,6 +932,10 @@ class UnifiedBacktestEngine:
             target_price,
             risk_pos_id,
         )
+
+        # Store initial risk distance for trailing stop (never changes)
+        if order.fill_price is not None:
+            self._position_initial_risk[order.symbol] = abs(order.fill_price - stop_loss_price)
 
     def _record_equity_point(self, bar: OHLCVBar, portfolio_value: Decimal) -> None:
         """
@@ -993,7 +1041,7 @@ class UnifiedBacktestEngine:
 
         # Calculate basic metrics
         winning = [t for t in trades if t.realized_pnl > 0]
-        losing = [t for t in trades if t.realized_pnl <= 0]
+        losing = [t for t in trades if t.realized_pnl < 0]
 
         win_rate = Decimal(len(winning)) / Decimal(len(trades)) if trades else Decimal("0")
 
@@ -1067,11 +1115,8 @@ class UnifiedBacktestEngine:
         """
         Calculate average R-multiple from completed trades.
 
-        R-multiple = profit per unit of risk, where risk is defined by
-        risk_per_trade percentage of entry price.
-
-        For LONG:  R = (exit_price - entry_price) / (entry_price * risk_per_trade)
-        For SHORT: R = (entry_price - exit_price) / (entry_price * risk_per_trade)
+        Uses actual stop distance (entry - stop_price) when available,
+        falling back to percentage-based risk for trades without stop_price.
 
         Args:
             trades: List of completed BacktestTrade objects
@@ -1082,23 +1127,31 @@ class UnifiedBacktestEngine:
         if not trades:
             return Decimal("0")
 
-        risk_pct = self._config.risk_per_trade
-        r_multiples: list[Decimal] = []
-
-        for t in trades:
-            risk_amount = t.entry_price * risk_pct
-            if risk_amount <= 0:
-                continue
-            if t.side == "LONG":
-                r = (t.exit_price - t.entry_price) / risk_amount
-            else:
-                r = (t.entry_price - t.exit_price) / risk_amount
-            r_multiples.append(r)
+        # Prefer pre-computed r_multiple on each trade (set at close time)
+        r_multiples = [t.r_multiple for t in trades if t.r_multiple != Decimal("0")]
 
         if not r_multiples:
             return Decimal("0")
 
         return sum(r_multiples) / Decimal(len(r_multiples))
+
+    @staticmethod
+    def _compute_r_multiple(trade) -> None:
+        """Compute and set r_multiple on a trade using actual stop distance.
+
+        If stop_price is available, R = pnl_per_share / stop_distance.
+        Otherwise leaves r_multiple at its default (0).
+        """
+        if not isinstance(getattr(trade, "stop_price", None), Decimal):
+            return
+        stop_distance = abs(trade.entry_price - trade.stop_price)
+        if stop_distance <= Decimal("0"):
+            return
+        if trade.side == "LONG":
+            pnl_per_share = trade.exit_price - trade.entry_price
+        else:
+            pnl_per_share = trade.entry_price - trade.exit_price
+        trade.r_multiple = pnl_per_share / stop_distance
 
     def _calculate_max_drawdown(self) -> Decimal:
         """

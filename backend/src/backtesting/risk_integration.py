@@ -253,6 +253,7 @@ class BacktestRiskManager:
         max_portfolio_heat_pct: Decimal = Decimal("10.0"),
         max_correlated_risk_pct: Decimal = Decimal("6.0"),
         min_position_size: Decimal = Decimal("1"),
+        pattern_risk_map: Optional[dict[str, Decimal]] = None,
     ):
         """
         Initialize BacktestRiskManager (FR9.1).
@@ -267,6 +268,9 @@ class BacktestRiskManager:
                 Default 1 for stocks/indices (1 share).
                 Use Decimal('1000') for forex (0.01 lot / mini-lot minimum).
                 Use Decimal('0.01') for crypto (fractional units).
+            pattern_risk_map: Optional mapping of pattern_type to risk percentage.
+                E.g. {"SPRING": Decimal("0.5"), "SOS": Decimal("0.8")}.
+                When a pattern is not in the map, falls back to max_risk_per_trade_pct.
         """
         self.initial_capital = initial_capital
         self.current_capital = initial_capital
@@ -277,6 +281,7 @@ class BacktestRiskManager:
         self.max_portfolio_heat_pct = max_portfolio_heat_pct
         self.max_correlated_risk_pct = max_correlated_risk_pct
         self.min_position_size = min_position_size
+        self.pattern_risk_map = pattern_risk_map or {}
 
         # Tracking state
         self.open_positions: dict[str, PositionMetadata] = {}
@@ -296,6 +301,16 @@ class BacktestRiskManager:
     def update_capital(self, new_capital: Decimal) -> None:
         """Update current capital (after trade P&L)."""
         self.current_capital = new_capital
+
+    def get_risk_pct_for_pattern(self, pattern_type: Optional[str] = None) -> Decimal:
+        """Get risk percentage for a specific pattern type.
+
+        Falls back to max_risk_per_trade_pct if pattern not in map.
+        Result is always capped at max_risk_per_trade_pct to enforce hard limits.
+        """
+        if pattern_type and pattern_type in self.pattern_risk_map:
+            return min(self.pattern_risk_map[pattern_type], self.max_risk_per_trade_pct)
+        return self.max_risk_per_trade_pct
 
     def get_portfolio_heat(self) -> Decimal:
         """
@@ -354,6 +369,7 @@ class BacktestRiskManager:
         entry_price: Decimal,
         stop_loss: Decimal,
         account_balance: Optional[Decimal] = None,
+        pattern_type: Optional[str] = None,
     ) -> tuple[Decimal, Decimal, Decimal]:
         """
         Calculate dynamic position size based on stop distance (FR9.2).
@@ -391,8 +407,9 @@ class BacktestRiskManager:
             )
             return Decimal("0"), Decimal("0"), Decimal("0")
 
-        # Calculate max risk amount (2% of account)
-        risk_amount = (account_balance * self.max_risk_per_trade_pct / Decimal("100")).quantize(
+        # Calculate max risk amount using pattern-specific or default risk pct
+        risk_pct = self.get_risk_pct_for_pattern(pattern_type)
+        risk_amount = (account_balance * risk_pct / Decimal("100")).quantize(
             Decimal("0.01"), rounding=ROUND_DOWN
         )
 
@@ -543,6 +560,7 @@ class BacktestRiskManager:
         campaign_id: str,
         target_price: Optional[Decimal] = None,
         side: Literal["LONG", "SHORT"] = "LONG",
+        pattern_type: Optional[str] = None,
     ) -> tuple[bool, Optional[Decimal], Optional[str]]:
         """
         Comprehensive risk validation pipeline for new position (FR9.6).
@@ -590,6 +608,7 @@ class BacktestRiskManager:
         position_size, risk_amount, risk_pct = self.calculate_position_size(
             entry_price=entry_price,
             stop_loss=stop_loss,
+            pattern_type=pattern_type,
         )
 
         if position_size <= Decimal("0"):

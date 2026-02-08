@@ -290,6 +290,9 @@ class BacktestTrade(BaseModel):
         default=Decimal("0"), description="R-multiple before costs (Story 12.5)"
     )
     r_multiple: Decimal = Field(default=Decimal("0"), description="Risk-adjusted return")
+    stop_price: Decimal | None = Field(
+        default=None, description="Initial stop-loss price for R-multiple calculation"
+    )
     pattern_type: str | None = Field(default=None, description="Pattern type that triggered trade")
     # Story 13.6: Wyckoff exit reason tracking (FR6.7)
     exit_reason: str | None = Field(

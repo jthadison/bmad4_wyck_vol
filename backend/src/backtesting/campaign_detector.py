@@ -98,7 +98,7 @@ class WyckoffCampaignDetector:
         # Distribution phases
         "PSY": "PHASE_A",
         "BC": "PHASE_A",
-        "UTAD": "PHASE_C",
+        "UTAD": "PHASE_D",
         "SOW": "PHASE_D",
         "LPSY": "PHASE_D",
         "DECLINE": "PHASE_D",

@@ -91,7 +91,14 @@ class ValidatedSignalDetector:
             # Cannot validate volume without a baseline; reject signal
             self._record_failure(signal, "Volume", "No volume baseline available")
             return None
-        volume_ratio = Decimal(str(bar.volume)) / Decimal(str(avg_vol))
+
+        # UTAD: validate volume on the previous bar (the upthrust bar),
+        # not the current confirmation bar.
+        if signal.pattern_type == "UTAD" and index >= 1:
+            volume_bar = bars[index - 1]
+        else:
+            volume_bar = bar
+        volume_ratio = Decimal(str(volume_bar.volume)) / Decimal(str(avg_vol))
 
         vol_ok, vol_reason = self._validate_volume(signal.pattern_type, volume_ratio)
         if not vol_ok:
