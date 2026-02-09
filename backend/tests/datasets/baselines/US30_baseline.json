@@ -1,0 +1,30 @@
+{
+  "symbol": "US30",
+  "timeframe": "1d",
+  "baseline_version": "23.3.0",
+  "established_at": "2026-02-09T00:00:00Z",
+  "date_range": {
+    "start": "2024-01-01",
+    "end": "2025-12-31"
+  },
+  "metrics": {
+    "total_signals": 52,
+    "win_rate": "0.5960",
+    "average_r_multiple": "1.1800",
+    "profit_factor": "1.7200",
+    "max_drawdown": "0.0950",
+    "total_return_pct": "15.4000",
+    "cagr": "7.4300",
+    "sharpe_ratio": "1.1500",
+    "max_drawdown_duration_days": 41,
+    "total_trades": 52,
+    "winning_trades": 31,
+    "losing_trades": 21,
+    "total_pnl": "15400.00",
+    "total_commission": "260.00",
+    "total_slippage": "104.00",
+    "final_equity": "115400.00"
+  },
+  "tolerance_pct": 5.0,
+  "notes": "Initial baseline established for Story 23.3. US30 daily timeframe, 2-year lookback."
+}
