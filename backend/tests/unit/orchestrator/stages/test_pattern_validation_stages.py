@@ -13,7 +13,7 @@ import pytest
 
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_classification import WyckoffPhase
+from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.models.validation import ValidationChain, ValidationStatus
 from src.models.volume_analysis import VolumeAnalysis
 from src.orchestrator.pipeline.context import PipelineContextBuilder
@@ -122,6 +122,8 @@ def mock_sos_detector():
     mock_result.sos_detected = True
     mock_result.sos = MagicMock(volume_ratio=Decimal("1.8"))
     detector.detect.return_value = mock_result
+    # Prevent PhaseDCompositeDetector UTAD check from triggering
+    del detector.utad_detector
     return detector
 
 
@@ -378,6 +380,11 @@ class TestPatternDetectionStage:
         """Test SOS detection in Phase D."""
         mock_phase_info = MagicMock()
         mock_phase_info.phase = WyckoffPhase.D
+        mock_phase_info.confidence = 80
+        mock_phase_info.duration = 15
+        mock_phase_info.events = PhaseEvents()
+        mock_phase_info.phase_start_bar_index = 0
+        mock_phase_info.last_updated = datetime(2024, 1, 15, 9, 30, tzinfo=UTC)
         mock_phase_info.is_trading_allowed.return_value = True
 
         registry = DetectorRegistry()

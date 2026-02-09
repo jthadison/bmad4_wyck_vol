@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from src.campaign_management.campaign_manager import CampaignManager
+from src.models.phase_classification import WyckoffPhase
 from src.orchestrator.cache import OrchestratorCache, get_orchestrator_cache
 from src.orchestrator.config import OrchestratorConfig
 from src.orchestrator.container import OrchestratorContainer, get_orchestrator_container
@@ -105,7 +106,34 @@ class MasterOrchestratorFacade:
         stages.append(PhaseDetectionStage())
 
         # Stage 4: Pattern Detection
-        stages.append(PatternDetectionStage())
+        from src.orchestrator.stages.pattern_detection_stage import (
+            DetectorRegistry,
+            PhaseDCompositeDetector,
+        )
+
+        registry = DetectorRegistry()
+
+        # Register Spring detector for Phase C
+        spring_det = self._container.spring_detector
+        if spring_det is not None:
+            registry.register(WyckoffPhase.C, spring_det)
+
+        # Register composite SOS+UTAD detector for Phase D
+        sos_det = self._container.sos_detector
+        utad_det = self._container.utad_detector
+        if sos_det is not None or utad_det is not None:
+            composite_d = PhaseDCompositeDetector(
+                sos_detector=sos_det,
+                utad_detector=utad_det,
+            )
+            registry.register(WyckoffPhase.D, composite_d)
+
+        # Register LPS detector for Phase E
+        lps_det = self._container.lps_detector
+        if lps_det is not None:
+            registry.register(WyckoffPhase.E, lps_det)
+
+        stages.append(PatternDetectionStage(registry))
 
         # Stage 5: Validation
         stages.append(ValidationStage())

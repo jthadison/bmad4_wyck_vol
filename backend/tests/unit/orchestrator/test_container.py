@@ -102,8 +102,10 @@ class TestOrchestratorContainerHealthCheck:
             "range_quality_scorer",
             "level_calculator",
             "zone_mapper",
+            "spring_detector",
             "sos_detector",
             "lps_detector",
+            "utad_detector",
             "risk_manager",
         ]:
             container.set_mock(name, MagicMock())
@@ -128,8 +130,10 @@ class TestOrchestratorContainerHealthCheck:
             "range_quality_scorer",
             "level_calculator",
             "zone_mapper",
+            "spring_detector",
             "sos_detector",
             "lps_detector",
+            "utad_detector",
             "risk_manager",
         ]:
             container.set_mock(name, MagicMock())
@@ -137,7 +141,7 @@ class TestOrchestratorContainerHealthCheck:
         result = container.health_check()
 
         assert result.healthy is True
-        assert result.detectors_loaded == 9
+        assert result.detectors_loaded == 11
         assert result.detectors_failed == 0
         assert len(result.failures) == 0
 
@@ -159,8 +163,10 @@ class TestOrchestratorContainerHealthCheck:
             "range_quality_scorer",
             "level_calculator",
             "zone_mapper",
+            "spring_detector",
             "sos_detector",
             "lps_detector",
+            "utad_detector",
             "risk_manager",
         ]:
             container.set_mock(name, MagicMock())
@@ -186,8 +192,10 @@ class TestOrchestratorContainerHealthCheck:
             "range_quality_scorer",
             "level_calculator",
             "zone_mapper",
+            "spring_detector",
             "sos_detector",
             "lps_detector",
+            "utad_detector",
             "risk_manager",
         ]:
             container.set_mock(name, MagicMock())
@@ -214,8 +222,10 @@ class TestOrchestratorContainerHealthCheck:
             "range_quality_scorer",
             "level_calculator",
             "zone_mapper",
+            "spring_detector",
             "sos_detector",
             "lps_detector",
+            "utad_detector",
             "risk_manager",
         ]:
             container.set_mock(name, MagicMock())
@@ -237,8 +247,10 @@ class TestOrchestratorContainerHealthCheck:
             "range_quality_scorer",
             "level_calculator",
             "zone_mapper",
+            "spring_detector",
             "sos_detector",
             "lps_detector",
+            "utad_detector",
             "risk_manager",
         ]:
             container.set_mock(name, MagicMock())
