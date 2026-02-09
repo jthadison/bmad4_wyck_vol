@@ -229,6 +229,7 @@ class PaperTradingService:
                 "total_trades": 0,
                 "win_rate": 0.0,
                 "average_r_multiple": 0.0,
+                "profit_factor": 0.0,
                 "total_realized_pnl": 0.0,
                 "max_drawdown": 0.0,
             }
@@ -245,12 +246,21 @@ class PaperTradingService:
 
         total_pnl = sum(t.realized_pnl for t in trades)
 
+        # Calculate profit factor
+        if losing_trades:
+            total_wins = sum(t.realized_pnl for t in winning_trades)
+            total_losses = abs(sum(t.realized_pnl for t in losing_trades))
+            profit_factor = float(total_wins / total_losses) if total_losses > 0 else 0.0
+        else:
+            profit_factor = float("inf") if winning_trades else 0.0
+
         return {
             "total_trades": len(trades),
             "winning_trades": len(winning_trades),
             "losing_trades": len(losing_trades),
             "win_rate": float(win_rate),
             "average_r_multiple": float(avg_r_multiple),
+            "profit_factor": profit_factor,
             "total_realized_pnl": float(total_pnl),
             "max_drawdown": float(account.max_drawdown),
             "current_equity": float(account.equity),
@@ -274,11 +284,14 @@ class PaperTradingService:
         """
         paper_metrics = await self.calculate_performance_metrics()
 
-        # Extract backtest metrics
+        # Extract backtest metrics, normalizing to paper trading scales:
+        # - BacktestMetrics.win_rate is 0-1, paper metrics use 0-100
+        # - BacktestMetrics.max_drawdown is 0-1, paper metrics use 0-100
         backtest_metrics = {
-            "win_rate": float(backtest_result.summary.get("win_rate", 0)),
-            "average_r_multiple": float(backtest_result.summary.get("average_r_multiple", 0)),
-            "max_drawdown": float(backtest_result.risk_metrics.get("max_drawdown", 0)),
+            "win_rate": float(backtest_result.summary.win_rate) * 100,
+            "average_r_multiple": float(backtest_result.summary.average_r_multiple),
+            "max_drawdown": float(backtest_result.summary.max_drawdown) * 100,
+            "profit_factor": float(backtest_result.summary.profit_factor),
         }
 
         # Calculate deltas
@@ -286,7 +299,7 @@ class PaperTradingService:
         warnings = []
         errors = []
 
-        for metric in ["win_rate", "average_r_multiple", "max_drawdown"]:
+        for metric in ["win_rate", "average_r_multiple", "max_drawdown", "profit_factor"]:
             paper_value = paper_metrics.get(metric, 0)
             backtest_value = backtest_metrics.get(metric, 0)
 

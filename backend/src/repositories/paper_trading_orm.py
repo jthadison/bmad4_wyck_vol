@@ -13,6 +13,8 @@ from uuid import uuid4
 
 from sqlalchemy import (
     DECIMAL,
+    JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -349,4 +351,100 @@ class PaperTradeDB(Base):
         return (
             f"<PaperTradeDB(id={self.id}, symbol={self.symbol}, "
             f"realized_pnl={self.realized_pnl}, exit_reason={self.exit_reason})>"
+        )
+
+
+class PaperTradingSessionDB(Base):
+    """
+    Archived paper trading session (Story 23.8a).
+
+    Preserves historical data when a paper trading account is reset.
+    """
+
+    __tablename__ = "paper_trading_sessions"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    account_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    trades_snapshot: Mapped[list] = mapped_column(JSON, nullable=False)
+    final_metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+    session_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    session_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    archived_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"<PaperTradingSessionDB(id={self.id}, "
+            f"session_start={self.session_start}, session_end={self.session_end})>"
+        )
+
+
+class PaperTradingConfigDB(Base):
+    """
+    Paper Trading Config database model (Story 23.8a).
+
+    Singleton configuration for paper trading mode.
+    Stores user-customizable settings for simulation parameters.
+    """
+
+    __tablename__ = "paper_trading_configs"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="true",
+    )
+    starting_capital: Mapped[Decimal] = mapped_column(
+        DECIMAL(precision=20, scale=8),
+        nullable=False,
+    )
+    commission_per_share: Mapped[Decimal] = mapped_column(
+        DECIMAL(precision=20, scale=8),
+        nullable=False,
+    )
+    slippage_percentage: Mapped[Decimal] = mapped_column(
+        DECIMAL(precision=20, scale=8),
+        nullable=False,
+    )
+    use_realistic_fills: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="true",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"<PaperTradingConfigDB(id={self.id}, enabled={self.enabled}, "
+            f"starting_capital={self.starting_capital})>"
         )

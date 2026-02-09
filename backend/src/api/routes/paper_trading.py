@@ -21,7 +21,9 @@ from src.api.dependencies import get_db_session
 from src.brokers.paper_broker_adapter import PaperBrokerAdapter
 from src.models.paper_trading import PaperAccount, PaperPosition, PaperTrade, PaperTradingConfig
 from src.repositories.paper_account_repository import PaperAccountRepository
+from src.repositories.paper_config_repository import PaperConfigRepository
 from src.repositories.paper_position_repository import PaperPositionRepository
+from src.repositories.paper_session_repository import PaperSessionRepository
 from src.repositories.paper_trade_repository import PaperTradeRepository
 from src.trading.paper_trading_service import PaperTradingService
 
@@ -35,6 +37,23 @@ router = APIRouter(prefix="/api/v1/paper-trading", tags=["Paper Trading"])
 
 class EnablePaperTradingRequest(BaseModel):
     """Request to enable paper trading mode."""
+
+    starting_capital: Decimal = Field(
+        default=Decimal("100000.00"), ge=Decimal("1000.00"), description="Initial virtual capital"
+    )
+    commission_per_share: Decimal = Field(
+        default=Decimal("0.005"), ge=Decimal("0"), description="Commission cost per share"
+    )
+    slippage_percentage: Decimal = Field(
+        default=Decimal("0.02"), ge=Decimal("0"), description="Slippage as percentage"
+    )
+    use_realistic_fills: bool = Field(
+        default=True, description="Apply slippage and commission to fills"
+    )
+
+
+class PaperTradingSettingsRequest(BaseModel):
+    """Request to update paper trading settings."""
 
     starting_capital: Decimal = Field(
         default=Decimal("100000.00"), ge=Decimal("1000.00"), description="Initial virtual capital"
@@ -95,15 +114,11 @@ async def get_paper_trading_service(
     position_repo = PaperPositionRepository(db)
     trade_repo = PaperTradeRepository(db)
 
-    # Get or create default config
-    # TODO: Load from user settings/database
-    config = PaperTradingConfig(
-        enabled=True,
-        starting_capital=Decimal("100000.00"),
-        commission_per_share=Decimal("0.005"),
-        slippage_percentage=Decimal("0.02"),
-        use_realistic_fills=True,
-    )
+    # Load config from database, fall back to defaults
+    config_repo = PaperConfigRepository(db)
+    config = await config_repo.get_config()
+    if not config:
+        config = PaperTradingConfig(enabled=True)
 
     broker = PaperBrokerAdapter(config)
     service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
@@ -267,6 +282,51 @@ async def get_account(db: AsyncSession = Depends(get_db_session)) -> Optional[Pa
     return account
 
 
+@router.get("/settings", response_model=PaperTradingConfig)
+async def get_settings(
+    db: AsyncSession = Depends(get_db_session),
+) -> PaperTradingConfig:
+    """
+    Get current paper trading settings.
+
+    Returns the saved config or defaults if none saved yet.
+    """
+    config_repo = PaperConfigRepository(db)
+    config = await config_repo.get_config()
+    if not config:
+        config = PaperTradingConfig(enabled=True)
+    return config
+
+
+@router.put("/settings", response_model=PaperTradingConfig)
+async def update_settings(
+    request: PaperTradingSettingsRequest,
+    db: AsyncSession = Depends(get_db_session),
+) -> PaperTradingConfig:
+    """
+    Save or update paper trading settings.
+
+    Creates the config row if it does not exist, otherwise updates it.
+    """
+    try:
+        config_repo = PaperConfigRepository(db)
+        config = PaperTradingConfig(
+            enabled=True,
+            starting_capital=request.starting_capital,
+            commission_per_share=request.commission_per_share,
+            slippage_percentage=request.slippage_percentage,
+            use_realistic_fills=request.use_realistic_fills,
+        )
+        saved = await config_repo.save_config(config)
+        return saved
+    except Exception as e:
+        logger.error("update_settings_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update settings: {str(e)}",
+        ) from e
+
+
 @router.get("/positions", response_model=PositionsResponse)
 async def list_positions(
     service: PaperTradingService = Depends(get_paper_trading_service),
@@ -347,6 +407,7 @@ async def list_trades(
 @router.get("/report", response_model=ReportResponse)
 async def get_report(
     backtest_id: Optional[UUID] = Query(default=None, description="Backtest ID to compare against"),
+    db: AsyncSession = Depends(get_db_session),
     service: PaperTradingService = Depends(get_paper_trading_service),
 ) -> ReportResponse:
     """
@@ -381,12 +442,14 @@ async def get_report(
         # Get backtest comparison if backtest_id provided
         backtest_comparison = None
         if backtest_id:
-            # TODO: Fetch backtest result by ID and compare
-            # from src.repositories.backtest_repository import BacktestRepository
-            # backtest_repo = BacktestRepository(db)
-            # backtest_result = await backtest_repo.get_by_id(backtest_id)
-            # backtest_comparison = await service.compare_to_backtest(backtest_result)
-            logger.warning("backtest_comparison_not_implemented", backtest_id=str(backtest_id))
+            from src.repositories.backtest_repository import BacktestRepository
+
+            backtest_repo = BacktestRepository(db)
+            backtest_result = await backtest_repo.get_result(backtest_id)
+            if backtest_result:
+                backtest_comparison = await service.compare_to_backtest(backtest_result)
+            else:
+                logger.warning("backtest_not_found", backtest_id=str(backtest_id))
 
         return ReportResponse(
             account=account,
@@ -402,6 +465,43 @@ async def get_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate report: {str(e)}",
+        ) from e
+
+
+@router.get("/compare/{backtest_id}", response_model=dict)
+async def compare_to_backtest(
+    backtest_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+    service: PaperTradingService = Depends(get_paper_trading_service),
+) -> dict:
+    """Compare paper trading results to a specific backtest run."""
+    try:
+        account = await service.account_repo.get_account()
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Paper trading not enabled"
+            )
+
+        from src.repositories.backtest_repository import BacktestRepository
+
+        backtest_repo = BacktestRepository(db)
+        backtest_result = await backtest_repo.get_result(backtest_id)
+        if not backtest_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Backtest {backtest_id} not found",
+            )
+
+        comparison = await service.compare_to_backtest(backtest_result)
+        return comparison
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("compare_to_backtest_failed", backtest_id=str(backtest_id), error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to compare to backtest: {str(e)}",
         ) from e
 
 
@@ -424,6 +524,8 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
     """
     try:
         account_repo = PaperAccountRepository(db)
+        trade_repo = PaperTradeRepository(db)
+        session_repo = PaperSessionRepository(db)
 
         # Get existing account
         account = await account_repo.get_account()
@@ -433,9 +535,20 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
                 detail="Paper trading not enabled. Enable first before resetting.",
             )
 
-        # Archive current account (soft delete)
-        # TODO: Implement archiving logic to preserve historical data
-        # For now, just delete and recreate
+        # Archive current session before deleting
+        trades, _ = await trade_repo.list_trades(limit=100000, offset=0)
+
+        metrics = {
+            "total_trades": account.total_trades,
+            "win_rate": float(account.win_rate),
+            "average_r_multiple": float(account.average_r_multiple),
+            "max_drawdown": float(account.max_drawdown),
+            "total_realized_pnl": float(account.total_realized_pnl),
+            "equity": float(account.equity),
+            "starting_capital": float(account.starting_capital),
+        }
+
+        session_id = await session_repo.archive_session(account, trades, metrics)
 
         await account_repo.delete_account(account.id)
 
@@ -455,12 +568,13 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
             "paper_account_reset",
             old_account_id=str(account.id),
             new_account_id=str(saved_account.id),
+            archived_session_id=str(session_id),
         )
 
         return PaperTradingResponse(
             success=True,
-            message="Paper trading account reset successfully",
-            data={"account": saved_account.model_dump()},
+            message="Paper trading account reset successfully. Previous session archived.",
+            data={"account": saved_account.model_dump(), "archived_session_id": str(session_id)},
         )
 
     except HTTPException:
@@ -505,4 +619,48 @@ async def check_live_eligibility(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to check live eligibility: {str(e)}",
+        ) from e
+
+
+@router.get("/sessions", response_model=dict)
+async def list_sessions(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """List archived paper trading sessions."""
+    try:
+        session_repo = PaperSessionRepository(db)
+        sessions, total = await session_repo.list_sessions(limit=limit, offset=offset)
+        return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
+    except Exception as e:
+        logger.error("list_sessions_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list sessions: {str(e)}",
+        ) from e
+
+
+@router.get("/sessions/{session_id}", response_model=dict)
+async def get_session(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Get details of an archived paper trading session."""
+    try:
+        session_repo = PaperSessionRepository(db)
+        session_data = await session_repo.get_session(session_id)
+        if not session_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session {session_id} not found",
+            )
+        return session_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_session_failed", session_id=str(session_id), error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get session: {str(e)}",
         ) from e
