@@ -4,7 +4,8 @@ Phase detection confidence scoring module.
 This module provides confidence scoring for phase classifications,
 considering volume, timing, and structural factors.
 
-TODO (Story 22.7b): Migrate implementation from phase_detector_v2.py
+Wired to real implementations (Story 23.1):
+- calculate_phase_confidence from pattern_engine._phase_detector_impl
 """
 
 from dataclasses import dataclass
@@ -12,7 +13,65 @@ from typing import Optional
 
 import pandas as pd
 
-from .types import DetectionConfig, PhaseEvent, PhaseType
+from src.models.phase_classification import PhaseEvents, WyckoffPhase
+
+from .types import DetectionConfig, EventType, PhaseEvent, PhaseType
+
+# ============================================================================
+# Type mapping: Facade PhaseType <-> Real WyckoffPhase
+# ============================================================================
+
+_PHASE_TYPE_TO_WYCKOFF: dict[PhaseType, WyckoffPhase] = {
+    PhaseType.A: WyckoffPhase.A,
+    PhaseType.B: WyckoffPhase.B,
+    PhaseType.C: WyckoffPhase.C,
+    PhaseType.D: WyckoffPhase.D,
+    PhaseType.E: WyckoffPhase.E,
+}
+
+
+def _events_to_phase_events(events: list[PhaseEvent]) -> PhaseEvents:
+    """Convert facade PhaseEvent list to real PhaseEvents model."""
+    sc = None
+    ar = None
+    sts: list[dict] = []
+    spring = None
+    sos = None
+    lps = None
+
+    for event in events:
+        event_dict: dict = {
+            "bar_index": event.bar_index,
+            "confidence": int(event.confidence * 100),  # Convert 0.0-1.0 to 0-100
+            "bar": {
+                "timestamp": event.timestamp.isoformat(),
+                "close": event.price,
+                "volume": event.volume,
+            },
+            **event.metadata,
+        }
+
+        if event.event_type == EventType.SELLING_CLIMAX:
+            sc = event_dict
+        elif event.event_type == EventType.AUTOMATIC_RALLY:
+            ar = event_dict
+        elif event.event_type == EventType.SECONDARY_TEST:
+            sts.append(event_dict)
+        elif event.event_type == EventType.SPRING:
+            spring = event_dict
+        elif event.event_type == EventType.SIGN_OF_STRENGTH:
+            sos = event_dict
+        elif event.event_type == EventType.LAST_POINT_OF_SUPPORT:
+            lps = event_dict
+
+    return PhaseEvents(
+        selling_climax=sc,
+        automatic_rally=ar,
+        secondary_tests=sts,
+        spring=spring,
+        sos_breakout=sos,
+        last_point_of_support=lps,
+    )
 
 
 @dataclass
@@ -118,12 +177,13 @@ class PhaseConfidenceScorer:
 
         Returns:
             Confidence score between 0 and 1
-
-        Raises:
-            NotImplementedError: Implementation pending Story 22.7b
         """
-        # TODO (Story 22.7b): Implement full scoring logic
-        raise NotImplementedError("Implementation pending Story 22.7b")
+        from src.pattern_engine._phase_detector_impl import calculate_phase_confidence
+
+        wyckoff_phase = _PHASE_TYPE_TO_WYCKOFF[phase]
+        phase_events = _events_to_phase_events(events)
+        confidence_int = calculate_phase_confidence(wyckoff_phase, phase_events)
+        return confidence_int / 100.0  # Convert 0-100 to 0.0-1.0
 
     def calculate_factors(
         self,
@@ -143,11 +203,19 @@ class PhaseConfidenceScorer:
 
         Returns:
             ScoringFactors with individual scores
-
-        Raises:
-            NotImplementedError: Implementation pending Story 22.7b
         """
-        raise NotImplementedError("Implementation pending Story 22.7b")
+        duration_bars = len(ohlcv) - phase_start_bar
+        timing_score = self._score_timing(phase, duration_bars)
+        event_score = self._score_event_sequence(phase, events)
+        volume_score = self._score_volume_confirmation(phase, events, ohlcv)
+        structure_score = self._score_structure(phase, ohlcv, phase_start_bar)
+
+        return ScoringFactors(
+            volume_score=volume_score,
+            timing_score=timing_score,
+            structure_score=structure_score,
+            event_score=event_score,
+        )
 
     def _score_volume_confirmation(
         self,
@@ -171,11 +239,31 @@ class PhaseConfidenceScorer:
 
         Returns:
             Volume score (0-1)
-
-        Raises:
-            NotImplementedError: Implementation pending Story 22.7b
         """
-        raise NotImplementedError("Implementation pending Story 22.7b")
+        if ohlcv.empty or "volume" not in ohlcv.columns:
+            return 0.5  # Neutral if no volume data
+
+        avg_volume = ohlcv["volume"].mean()
+        if avg_volume <= 0:
+            return 0.5
+
+        # Score based on volume pattern alignment with phase
+        event_volumes = [e.volume for e in events if e.volume > 0]
+        if not event_volumes:
+            return 0.5
+
+        avg_event_volume = sum(event_volumes) / len(event_volumes)
+        volume_ratio = avg_event_volume / avg_volume if avg_volume > 0 else 1.0
+
+        # Phase-specific volume expectations
+        if phase == PhaseType.A:  # SC phase - expect high volume
+            return min(1.0, volume_ratio / 2.0)  # 2x volume = 1.0 score
+        elif phase == PhaseType.C:  # Spring phase - expect low volume
+            return min(1.0, max(0.0, 1.0 - volume_ratio))  # Low volume = high score
+        elif phase in (PhaseType.D, PhaseType.E):  # SOS/LPS - expect high volume
+            return min(1.0, volume_ratio / 1.5)  # 1.5x volume = 1.0 score
+        else:
+            return 0.5  # Neutral for Phase B
 
     def _score_timing(
         self,
@@ -232,11 +320,38 @@ class PhaseConfidenceScorer:
 
         Returns:
             Structure score (0-1)
-
-        Raises:
-            NotImplementedError: Implementation pending Story 22.7b
         """
-        raise NotImplementedError("Implementation pending Story 22.7b")
+        if ohlcv.empty or len(ohlcv) < 2:
+            return 0.5
+
+        phase_data = ohlcv.iloc[phase_start_bar:]
+        if phase_data.empty or len(phase_data) < 2:
+            return 0.5
+
+        # Calculate range tightening (accumulation indicator)
+        first_half = phase_data.iloc[: len(phase_data) // 2]
+        second_half = phase_data.iloc[len(phase_data) // 2 :]
+
+        if first_half.empty or second_half.empty:
+            return 0.5
+
+        first_range = first_half["high"].max() - first_half["low"].min()
+        second_range = second_half["high"].max() - second_half["low"].min()
+
+        if first_range <= 0:
+            return 0.5
+
+        # Tightening range is positive for accumulation (Phase B/C)
+        tightening = 1.0 - (second_range / first_range)
+
+        if phase in (PhaseType.B, PhaseType.C):
+            # Tightening range is good for accumulation
+            return max(0.0, min(1.0, 0.5 + tightening))
+        elif phase in (PhaseType.D, PhaseType.E):
+            # Expanding range is good for markup
+            return max(0.0, min(1.0, 0.5 - tightening))
+        else:
+            return 0.5
 
     def _score_event_sequence(
         self,
