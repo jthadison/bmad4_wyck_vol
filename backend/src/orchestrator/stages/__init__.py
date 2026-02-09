@@ -13,6 +13,7 @@ from src.orchestrator.stages.base import PipelineStage
 from src.orchestrator.stages.pattern_detection_stage import (
     DetectorRegistry,
     PatternDetectionStage,
+    PhaseDCompositeDetector,
 )
 from src.orchestrator.stages.phase_detection_stage import PhaseDetectionStage
 from src.orchestrator.stages.range_detection_stage import RangeDetectionStage
@@ -24,6 +25,7 @@ from src.orchestrator.stages.volume_analysis_stage import VolumeAnalysisStage
 __all__ = [
     "PipelineStage",
     "DetectorRegistry",
+    "PhaseDCompositeDetector",
     "PatternDetectionStage",
     "PhaseDetectionStage",
     "RangeDetectionStage",

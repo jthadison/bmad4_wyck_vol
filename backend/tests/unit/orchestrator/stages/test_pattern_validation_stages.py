@@ -122,6 +122,8 @@ def mock_sos_detector():
     mock_result.sos_detected = True
     mock_result.sos = MagicMock(volume_ratio=Decimal("1.8"))
     detector.detect.return_value = mock_result
+    # Prevent PhaseDCompositeDetector UTAD check from triggering
+    del detector.utad_detector
     return detector
 
 

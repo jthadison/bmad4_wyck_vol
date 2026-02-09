@@ -243,6 +243,22 @@ class OrchestratorContainer:
     # Pattern Detection (Epics 5-6)
 
     @property
+    def spring_detector(self) -> Any | None:
+        """
+        Get SpringDetector orchestrator instance (Stories 5.1-5.6).
+
+        Returns:
+            SpringDetector for Spring detection in Phase C (has detect_all_springs),
+            or None if not available.
+        """
+        return self._load_detector(
+            "spring_detector",
+            "src.pattern_engine.detectors.spring_detector",
+            "SpringDetector",
+            critical=False,
+        )
+
+    @property
     def sos_detector(self) -> Any | None:
         """
         Get SOS Detector Orchestrator instance (Stories 6.1-6.5).
@@ -271,6 +287,22 @@ class OrchestratorContainer:
             "lps_detector",
             "src.pattern_engine.detectors.lps_detector_orchestrator",
             "LPSDetector",
+            critical=False,
+        )
+
+    @property
+    def utad_detector(self) -> Any | None:
+        """
+        Get UTADDetector instance (Story 5.4).
+
+        Returns:
+            UTADDetector for Upthrust After Distribution detection in Phase D,
+            or None if not available.
+        """
+        return self._load_detector(
+            "utad_detector",
+            "src.pattern_engine.detectors.utad_detector",
+            "UTADDetector",
             critical=False,
         )
 
@@ -341,8 +373,10 @@ class OrchestratorContainer:
             ("range_quality_scorer", lambda: self.range_quality_scorer, False),
             ("level_calculator", lambda: self.level_calculator, False),
             ("zone_mapper", lambda: self.zone_mapper, False),
+            ("spring_detector", lambda: self.spring_detector, False),
             ("sos_detector", lambda: self.sos_detector, False),
             ("lps_detector", lambda: self.lps_detector, False),
+            ("utad_detector", lambda: self.utad_detector, False),
             ("risk_manager", lambda: self.risk_manager, True),
         ]
 

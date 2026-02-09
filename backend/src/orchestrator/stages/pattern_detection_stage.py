@@ -79,6 +79,29 @@ class DetectorRegistry:
         return list(self._detectors.keys())
 
 
+class PhaseDCompositeDetector:
+    """
+    Composite detector for Phase D that runs both SOS and UTAD detection.
+
+    Phase D can produce either SOS breakouts or UTAD failures,
+    so both detectors must be checked.
+    """
+
+    def __init__(
+        self,
+        sos_detector: PatternDetector | None = None,
+        utad_detector: Any | None = None,
+    ) -> None:
+        self.sos_detector = sos_detector
+        self.utad_detector = utad_detector
+
+    def detect(self, *args: Any, **kwargs: Any) -> Any:
+        """Satisfy PatternDetector protocol - delegates to SOS detector."""
+        if self.sos_detector is not None:
+            return self.sos_detector.detect(*args, **kwargs)
+        return None
+
+
 class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
     """
     Pipeline stage for Wyckoff pattern detection.
@@ -112,14 +135,15 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
     VOLUME_CONTEXT_KEY = "volume_analysis"
     RANGE_CONTEXT_KEY = "current_trading_range"
 
-    def __init__(self, detector_registry: DetectorRegistry) -> None:
+    def __init__(self, detector_registry: DetectorRegistry | None = None) -> None:
         """
         Initialize the pattern detection stage.
 
         Args:
-            detector_registry: Registry with phase-specific detectors
+            detector_registry: Registry with phase-specific detectors.
+                If None, creates an empty registry (no patterns detected).
         """
-        self._registry = detector_registry
+        self._registry = detector_registry or DetectorRegistry()
 
     @property
     def name(self) -> str:
@@ -321,6 +345,24 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                         patterns.extend(result)
                     else:
                         patterns.append(result)
+
+            # Also check for UTAD in Phase D via composite detector
+            if phase == WyckoffPhase.D and hasattr(detector, "utad_detector"):
+                utad_det = detector.utad_detector
+                if utad_det is not None and trading_range is not None:
+                    ice_level = getattr(trading_range, "ice_level", None)
+                    if ice_level is not None:
+                        try:
+                            utad = utad_det.detect_utad(trading_range, bars, ice_level)
+                            if utad is not None:
+                                patterns.append(utad)
+                        except (ValueError, RuntimeError) as e:
+                            logger.warning(
+                                "utad_detection_error",
+                                error=str(e),
+                                symbol=context.symbol,
+                                correlation_id=str(context.correlation_id),
+                            )
 
         else:
             # Phase A/B - no patterns expected
