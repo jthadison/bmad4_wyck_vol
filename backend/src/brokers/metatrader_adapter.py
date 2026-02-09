@@ -12,6 +12,7 @@ Requires:
 Author: Story 16.4a, Story 23.4
 """
 
+import asyncio
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import uuid4
@@ -78,6 +79,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         self.magic_number = magic_number
         self.max_reconnect_attempts = max_reconnect_attempts
         self._mt5: Optional[Any] = None  # Will hold MetaTrader5 module reference
+        self._reconnect_lock = asyncio.Lock()
 
         # Mask account number in logs for security
         masked_account = f"***{str(account)[-4:]}" if account else None
@@ -111,14 +113,17 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                     "MetaTrader5 package not installed. " "Install with: pip install MetaTrader5"
                 ) from e
 
-            # Initialize connection
-            if not self._mt5.initialize():
+            # Initialize connection (run in thread to avoid blocking event loop)
+            if not await asyncio.to_thread(self._mt5.initialize):
                 error_code = self._mt5.last_error()
                 raise ConnectionError(f"MT5 initialization failed: {error_code}")
 
             # Login if credentials provided
             if self.account and self.password and self.server:
-                if not self._mt5.login(self.account, password=self.password, server=self.server):
+                login_ok = await asyncio.to_thread(
+                    self._mt5.login, self.account, password=self.password, server=self.server
+                )
+                if not login_ok:
                     error_code = self._mt5.last_error()
                     raise ConnectionError(f"MT5 login failed: {error_code}")
 
@@ -143,7 +148,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             True if disconnection successful
         """
         if self._mt5:
-            self._mt5.shutdown()
+            await asyncio.to_thread(self._mt5.shutdown)
             self._set_connected(False)
             logger.info("metatrader_disconnected")
         return True
@@ -151,6 +156,8 @@ class MetaTraderAdapter(TradingPlatformAdapter):
     async def _ensure_connected(self) -> None:
         """
         Ensure the adapter is connected, attempting reconnection if needed.
+
+        Uses an asyncio.Lock to prevent concurrent reconnection attempts.
 
         Raises:
             ConnectionError: If reconnection fails after max attempts
@@ -161,43 +168,56 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         if self._mt5 is None:
             raise ConnectionError("Not connected to MetaTrader. Call connect() first.")
 
-        logger.warning("metatrader_disconnected_detected", message="Attempting reconnection")
+        async with self._reconnect_lock:
+            # Double-check after acquiring lock (another coroutine may have reconnected)
+            if self.is_connected():
+                return
 
-        for attempt in range(1, self.max_reconnect_attempts + 1):
-            try:
-                # Try to reinitialize the terminal
-                if self._mt5.initialize():
-                    # Re-login if credentials were provided
-                    if self.account and self.password and self.server:
-                        if not self._mt5.login(
-                            self.account, password=self.password, server=self.server
-                        ):
-                            logger.warning(
-                                "metatrader_reconnect_login_failed",
-                                attempt=attempt,
+            logger.warning("metatrader_disconnected_detected", message="Attempting reconnection")
+
+            for attempt in range(1, self.max_reconnect_attempts + 1):
+                try:
+                    # Try to reinitialize the terminal (run in thread to avoid blocking)
+                    init_ok = await asyncio.to_thread(self._mt5.initialize)
+                    if init_ok:
+                        # Re-login if credentials were provided
+                        if self.account and self.password and self.server:
+                            login_ok = await asyncio.to_thread(
+                                self._mt5.login,
+                                self.account,
+                                password=self.password,
+                                server=self.server,
                             )
-                            continue
+                            if not login_ok:
+                                logger.warning(
+                                    "metatrader_reconnect_login_failed",
+                                    attempt=attempt,
+                                )
+                                await asyncio.sleep(min(2**attempt, 10))
+                                continue
 
-                    self._set_connected(True)
-                    logger.info("metatrader_reconnected", attempt=attempt)
-                    return
-                else:
+                        self._set_connected(True)
+                        logger.info("metatrader_reconnected", attempt=attempt)
+                        return
+                    else:
+                        logger.warning(
+                            "metatrader_reconnect_init_failed",
+                            attempt=attempt,
+                        )
+                except Exception as e:
                     logger.warning(
-                        "metatrader_reconnect_init_failed",
+                        "metatrader_reconnect_error",
                         attempt=attempt,
+                        error=str(e),
                     )
-            except Exception as e:
-                logger.warning(
-                    "metatrader_reconnect_error",
-                    attempt=attempt,
-                    error=str(e),
-                )
 
-        raise ConnectionError(
-            f"Failed to reconnect to MetaTrader after {self.max_reconnect_attempts} attempts"
-        )
+                await asyncio.sleep(min(2**attempt, 10))
 
-    def _query_deal_commission(self, deal_ticket: int) -> Optional[Decimal]:
+            raise ConnectionError(
+                f"Failed to reconnect to MetaTrader after {self.max_reconnect_attempts} attempts"
+            )
+
+    async def _query_deal_commission(self, deal_ticket: int) -> Optional[Decimal]:
         """
         Query MT5 deal history for commission, swap, and fee data.
 
@@ -208,7 +228,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             Total commission (commission + swap + fee) as Decimal, or None if unavailable
         """
         try:
-            deals = self._mt5.history_deals_get(ticket=deal_ticket)
+            deals = await asyncio.to_thread(self._mt5.history_deals_get, ticket=deal_ticket)
             if not deals or len(deals) == 0:
                 logger.debug(
                     "metatrader_no_deal_history",
@@ -268,8 +288,10 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             symbol = order.symbol
             lot = float(order.quantity)  # MT5 uses lots
 
-            # For STOP orders, use stop_price as the price
-            if order.order_type == OrderType.STOP:
+            # Determine price based on order type
+            if order.order_type == OrderType.MARKET:
+                price = 0.0  # MT5 uses current market price for TRADE_ACTION_DEAL
+            elif order.order_type == OrderType.STOP:
                 price = float(order.stop_price) if order.stop_price else 0.0
             else:
                 price = float(order.limit_price) if order.limit_price else 0.0
@@ -295,8 +317,8 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 "type_filling": self._mt5.ORDER_FILLING_IOC,
             }
 
-            # Send order
-            result = self._mt5.order_send(request)
+            # Send order (run in thread to avoid blocking event loop)
+            result = await asyncio.to_thread(self._mt5.order_send, request)
 
             if result is None:
                 # Terminal may have disconnected
@@ -331,7 +353,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             # Query deal history for commission data
             commission = None
             if hasattr(result, "deal") and result.deal:
-                commission = self._query_deal_commission(result.deal)
+                commission = await self._query_deal_commission(result.deal)
 
             # Success - create execution report
             execution_report = ExecutionReport(
@@ -425,7 +447,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         # For cases where SL/TP need to be modified on an existing position,
         # we verify by attempting a position modification.
         if sl_price or tp_price:
-            modify_success = self._modify_position_sltp(
+            modify_success = await self._modify_position_sltp(
                 symbol=primary.symbol,
                 sl_price=float(sl_price) if sl_price else 0.0,
                 tp_price=float(tp_price) if tp_price else 0.0,
@@ -435,8 +457,10 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 logger.error(
                     "metatrader_oco_sltp_modification_failed",
                     symbol=primary.symbol,
-                    message="SL/TP may not be set correctly on position",
+                    message="SL/TP failed - attempting to close unprotected position",
                 )
+                # Attempt to close the unprotected position for safety
+                await self._emergency_close_position(primary.symbol)
                 # Create error reports for the failed SL/TP legs
                 if oco_order.stop_loss_order:
                     reports.append(
@@ -495,7 +519,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
 
         return reports
 
-    def _modify_position_sltp(self, symbol: str, sl_price: float, tp_price: float) -> bool:
+    async def _modify_position_sltp(self, symbol: str, sl_price: float, tp_price: float) -> bool:
         """
         Modify SL/TP on an existing position.
 
@@ -508,13 +532,19 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             True if modification succeeded
         """
         try:
-            # Get current position for the symbol
-            positions = self._mt5.positions_get(symbol=symbol)
-            if not positions or len(positions) == 0:
+            # Get current positions for the symbol
+            positions = await asyncio.to_thread(self._mt5.positions_get, symbol=symbol)
+            if not positions:
                 logger.warning("metatrader_no_position_for_sltp", symbol=symbol)
                 return False
 
-            position = positions[0]
+            # Filter by magic number to find positions created by this adapter
+            matching = [p for p in positions if getattr(p, "magic", 0) == self.magic_number]
+            if not matching:
+                # Fall back to first position if no magic match (netting accounts)
+                matching = list(positions)
+
+            position = matching[0]
 
             request = {
                 "action": self._mt5.TRADE_ACTION_SLTP,
@@ -524,7 +554,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 "tp": tp_price,
             }
 
-            result = self._mt5.order_send(request)
+            result = await asyncio.to_thread(self._mt5.order_send, request)
 
             if result is None or result.retcode != self._mt5.TRADE_RETCODE_DONE:
                 comment = result.comment if result else "No result"
@@ -542,6 +572,76 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 "metatrader_sltp_modify_error",
                 symbol=symbol,
                 error=str(e),
+            )
+            return False
+
+    async def _emergency_close_position(self, symbol: str) -> bool:
+        """
+        Emergency close an unprotected position (no SL/TP set).
+
+        Called when OCO SL/TP modification fails after entry fill.
+
+        Args:
+            symbol: Symbol of the position to close
+
+        Returns:
+            True if position was closed successfully
+        """
+        try:
+            positions = await asyncio.to_thread(self._mt5.positions_get, symbol=symbol)
+            if not positions:
+                return True  # No position to close
+
+            matching = [p for p in positions if getattr(p, "magic", 0) == self.magic_number]
+            if not matching:
+                matching = list(positions)
+
+            position = matching[0]
+
+            # Determine close direction (opposite of position type)
+            close_type = (
+                self._mt5.ORDER_TYPE_SELL
+                if getattr(position, "type", 0) == 0  # 0 = BUY position
+                else self._mt5.ORDER_TYPE_BUY
+            )
+
+            request = {
+                "action": self._mt5.TRADE_ACTION_DEAL,
+                "symbol": symbol,
+                "volume": position.volume,
+                "type": close_type,
+                "position": position.ticket,
+                "magic": self.magic_number,
+                "comment": "BMAD_emergency_close_no_sltp",
+                "type_filling": self._mt5.ORDER_FILLING_IOC,
+            }
+
+            result = await asyncio.to_thread(self._mt5.order_send, request)
+
+            if result and result.retcode == self._mt5.TRADE_RETCODE_DONE:
+                logger.warning(
+                    "metatrader_emergency_close_success",
+                    symbol=symbol,
+                    ticket=position.ticket,
+                )
+                return True
+
+            comment = result.comment if result else "No result"
+            logger.critical(
+                "metatrader_emergency_close_failed",
+                symbol=symbol,
+                ticket=position.ticket,
+                comment=comment,
+                message="UNPROTECTED POSITION REMAINS OPEN - MANUAL INTERVENTION REQUIRED",
+            )
+            return False
+
+        except Exception as e:
+            logger.critical(
+                "metatrader_emergency_close_error",
+                symbol=symbol,
+                error=str(e),
+                message="UNPROTECTED POSITION REMAINS OPEN - MANUAL INTERVENTION REQUIRED",
             )
             return False
 
@@ -567,7 +667,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 "order": int(order_id),
             }
 
-            result = self._mt5.order_send(request)
+            result = await asyncio.to_thread(self._mt5.order_send, request)
 
             if result is None:
                 self._set_connected(False)
@@ -611,8 +711,8 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         """
         await self._ensure_connected()
 
-        # Query order from MT5
-        orders = self._mt5.orders_get(ticket=int(order_id))
+        # Query order from MT5 (run in thread to avoid blocking event loop)
+        orders = await asyncio.to_thread(self._mt5.orders_get, ticket=int(order_id))
 
         if not orders:
             raise ValueError(f"Order {order_id} not found")
@@ -643,7 +743,10 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         """
         await self._ensure_connected()
 
-        orders = self._mt5.orders_get(symbol=symbol) if symbol else self._mt5.orders_get()
+        if symbol:
+            orders = await asyncio.to_thread(self._mt5.orders_get, symbol=symbol)
+        else:
+            orders = await asyncio.to_thread(self._mt5.orders_get)
 
         if not orders:
             return []

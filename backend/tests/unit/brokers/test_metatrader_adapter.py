@@ -106,9 +106,9 @@ def _make_order_info(ticket=12345, volume_current=0.0, volume_initial=1.0, price
     )
 
 
-def _make_position(ticket=99999):
+def _make_position(ticket=99999, magic=234000, volume=1.0, type=0):
     """Create a mock position entry."""
-    return SimpleNamespace(ticket=ticket)
+    return SimpleNamespace(ticket=ticket, magic=magic, volume=volume, type=type)
 
 
 def _make_market_buy_order(**kwargs):
@@ -155,6 +155,16 @@ def _make_stop_buy_order(**kwargs):
 # =============================
 # Fixtures
 # =============================
+
+
+@pytest.fixture(autouse=True)
+def _bypass_to_thread(monkeypatch):
+    """Bypass asyncio.to_thread so mocked MT5 calls run synchronously in tests."""
+
+    async def _direct_call(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("asyncio.to_thread", _direct_call)
 
 
 @pytest.fixture
@@ -648,16 +658,16 @@ class TestCommissionTracking:
 
         assert report.commission is None
 
-    def test_query_deal_commission_directly(self, adapter, mt5_mock):
+    async def test_query_deal_commission_directly(self, adapter, mt5_mock):
         mt5_mock.history_deals_get.return_value = [_make_deal(commission=-1.0, swap=-0.5, fee=-0.1)]
-        result = adapter._query_deal_commission(67890)
+        result = await adapter._query_deal_commission(67890)
         assert result == Decimal("-1.6")
 
-    def test_query_deal_commission_missing_attrs(self, adapter, mt5_mock):
+    async def test_query_deal_commission_missing_attrs(self, adapter, mt5_mock):
         """Deal object missing some attributes should use 0.0 defaults."""
         deal = SimpleNamespace()  # No commission/swap/fee attributes
         mt5_mock.history_deals_get.return_value = [deal]
-        result = adapter._query_deal_commission(67890)
+        result = await adapter._query_deal_commission(67890)
         assert result == Decimal("0.0")
 
 
@@ -1017,11 +1027,11 @@ class TestDisconnectionHandling:
 class TestModifyPositionSLTP:
     """Tests for the SL/TP position modification helper."""
 
-    def test_modify_success(self, adapter, mt5_mock):
+    async def test_modify_success(self, adapter, mt5_mock):
         mt5_mock.positions_get.return_value = [_make_position(ticket=99999)]
         mt5_mock.order_send.return_value = _make_send_result()
 
-        result = adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
+        result = await adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
 
         assert result is True
         call_args = mt5_mock.order_send.call_args[0][0]
@@ -1030,35 +1040,35 @@ class TestModifyPositionSLTP:
         assert call_args["sl"] == 1.08
         assert call_args["tp"] == 1.15
 
-    def test_modify_no_position(self, adapter, mt5_mock):
+    async def test_modify_no_position(self, adapter, mt5_mock):
         mt5_mock.positions_get.return_value = []
 
-        result = adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
+        result = await adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
 
         assert result is False
 
-    def test_modify_send_fails(self, adapter, mt5_mock):
+    async def test_modify_send_fails(self, adapter, mt5_mock):
         mt5_mock.positions_get.return_value = [_make_position()]
         mt5_mock.order_send.return_value = _make_send_result(
             retcode=TRADE_RETCODE_ERROR, comment="Failed"
         )
 
-        result = adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
+        result = await adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
 
         assert result is False
 
-    def test_modify_send_returns_none(self, adapter, mt5_mock):
+    async def test_modify_send_returns_none(self, adapter, mt5_mock):
         mt5_mock.positions_get.return_value = [_make_position()]
         mt5_mock.order_send.return_value = None
 
-        result = adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
+        result = await adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
 
         assert result is False
 
-    def test_modify_exception(self, adapter, mt5_mock):
+    async def test_modify_exception(self, adapter, mt5_mock):
         mt5_mock.positions_get.side_effect = RuntimeError("Terminal crash")
 
-        result = adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
+        result = await adapter._modify_position_sltp("EURUSD", 1.08, 1.15)
 
         assert result is False
 
