@@ -1,5 +1,5 @@
 """
-MetaTrader Platform Adapter (Story 16.4a)
+MetaTrader Platform Adapter (Story 16.4a / 23.4)
 
 Adapter for MetaTrader 4/5 platform using the MetaTrader5 Python API.
 Supports order placement, cancellation, and status queries.
@@ -9,9 +9,10 @@ Requires:
 - MetaTrader5 Python package (pip install MetaTrader5)
 - Terminal running with API enabled
 
-Author: Story 16.4a
+Author: Story 16.4a, Story 23.4
 """
 
+import asyncio
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import uuid4
@@ -41,12 +42,13 @@ class MetaTraderAdapter(TradingPlatformAdapter):
     Connection:
     - Requires MT5 terminal running locally
     - Uses account credentials for authentication
-    - Maintains persistent connection
+    - Maintains persistent connection with automatic reconnection
 
     Order Types Supported:
     - Market orders (immediate execution)
     - Limit orders (pending at specified price)
     - Stop orders (pending at stop price)
+    - STOP_LIMIT is not supported (raises ValueError)
     """
 
     def __init__(
@@ -56,6 +58,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         server: Optional[str] = None,
         timeout: int = 60000,
         magic_number: int = 234000,
+        max_reconnect_attempts: int = 3,
     ):
         """
         Initialize MetaTrader adapter.
@@ -66,6 +69,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             server: MT5 server name (e.g., "MetaQuotes-Demo")
             timeout: Connection timeout in milliseconds
             magic_number: Expert Advisor magic number for order identification (default: 234000)
+            max_reconnect_attempts: Maximum reconnection attempts on disconnect (default: 3)
         """
         super().__init__(platform_name="MetaTrader5")
         self.account = account
@@ -73,7 +77,9 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         self.server = server
         self.timeout = timeout
         self.magic_number = magic_number
+        self.max_reconnect_attempts = max_reconnect_attempts
         self._mt5: Optional[Any] = None  # Will hold MetaTrader5 module reference
+        self._reconnect_lock = asyncio.Lock()
 
         # Mask account number in logs for security
         masked_account = f"***{str(account)[-4:]}" if account else None
@@ -107,21 +113,29 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                     "MetaTrader5 package not installed. " "Install with: pip install MetaTrader5"
                 ) from e
 
-            # Initialize connection
-            if not self._mt5.initialize():
+            # Initialize connection (run in thread to avoid blocking event loop)
+            if not await asyncio.to_thread(self._mt5.initialize):
                 error_code = self._mt5.last_error()
                 raise ConnectionError(f"MT5 initialization failed: {error_code}")
 
             # Login if credentials provided
             if self.account and self.password and self.server:
-                if not self._mt5.login(self.account, password=self.password, server=self.server):
+                login_ok = await asyncio.to_thread(
+                    self._mt5.login, self.account, password=self.password, server=self.server
+                )
+                if not login_ok:
                     error_code = self._mt5.last_error()
                     raise ConnectionError(f"MT5 login failed: {error_code}")
 
             self._set_connected(True)
-            logger.info("metatrader_connected", account=self.account, server=self.server)
+            masked_account = f"***{str(self.account)[-4:]}" if self.account else "none"
+            logger.info("metatrader_connected", account=masked_account, server=self.server)
             return True
 
+        except ImportError:
+            raise
+        except ConnectionError:
+            raise
         except Exception as e:
             logger.error("metatrader_connection_failed", error=str(e))
             raise ConnectionError(f"Failed to connect to MetaTrader: {e}") from e
@@ -134,10 +148,118 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             True if disconnection successful
         """
         if self._mt5:
-            self._mt5.shutdown()
+            await asyncio.to_thread(self._mt5.shutdown)
             self._set_connected(False)
             logger.info("metatrader_disconnected")
         return True
+
+    async def _ensure_connected(self) -> None:
+        """
+        Ensure the adapter is connected, attempting reconnection if needed.
+
+        Uses an asyncio.Lock to prevent concurrent reconnection attempts.
+
+        Raises:
+            ConnectionError: If reconnection fails after max attempts
+        """
+        if self.is_connected():
+            return
+
+        if self._mt5 is None:
+            raise ConnectionError("Not connected to MetaTrader. Call connect() first.")
+
+        async with self._reconnect_lock:
+            # Double-check after acquiring lock (another coroutine may have reconnected)
+            if self.is_connected():
+                return
+
+            logger.warning("metatrader_disconnected_detected", message="Attempting reconnection")
+
+            for attempt in range(1, self.max_reconnect_attempts + 1):
+                try:
+                    # Try to reinitialize the terminal (run in thread to avoid blocking)
+                    init_ok = await asyncio.to_thread(self._mt5.initialize)
+                    if init_ok:
+                        # Re-login if credentials were provided
+                        if self.account and self.password and self.server:
+                            login_ok = await asyncio.to_thread(
+                                self._mt5.login,
+                                self.account,
+                                password=self.password,
+                                server=self.server,
+                            )
+                            if not login_ok:
+                                logger.warning(
+                                    "metatrader_reconnect_login_failed",
+                                    attempt=attempt,
+                                )
+                                await asyncio.sleep(min(2**attempt, 10))
+                                continue
+
+                        self._set_connected(True)
+                        logger.info("metatrader_reconnected", attempt=attempt)
+                        return
+                    else:
+                        logger.warning(
+                            "metatrader_reconnect_init_failed",
+                            attempt=attempt,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "metatrader_reconnect_error",
+                        attempt=attempt,
+                        error=str(e),
+                    )
+
+                await asyncio.sleep(min(2**attempt, 10))
+
+            raise ConnectionError(
+                f"Failed to reconnect to MetaTrader after {self.max_reconnect_attempts} attempts"
+            )
+
+    async def _query_deal_commission(self, deal_ticket: int) -> Optional[Decimal]:
+        """
+        Query MT5 deal history for commission, swap, and fee data.
+
+        Args:
+            deal_ticket: The deal ticket number from order execution
+
+        Returns:
+            Total commission (commission + swap + fee) as Decimal, or None if unavailable
+        """
+        try:
+            deals = await asyncio.to_thread(self._mt5.history_deals_get, ticket=deal_ticket)
+            if not deals or len(deals) == 0:
+                logger.debug(
+                    "metatrader_no_deal_history",
+                    deal_ticket=deal_ticket,
+                )
+                return None
+
+            deal = deals[0]
+            commission = getattr(deal, "commission", 0.0) or 0.0
+            swap = getattr(deal, "swap", 0.0) or 0.0
+            fee = getattr(deal, "fee", 0.0) or 0.0
+            total = Decimal(str(commission)) + Decimal(str(swap)) + Decimal(str(fee))
+
+            logger.debug(
+                "metatrader_deal_commission",
+                deal_ticket=deal_ticket,
+                commission=commission,
+                swap=swap,
+                fee=fee,
+                total=str(total),
+            )
+
+            return total
+
+        except Exception as e:
+            logger.warning(
+                "metatrader_commission_query_failed",
+                deal_ticket=deal_ticket,
+                error=str(e),
+            )
+            return None
 
     async def place_order(self, order: Order) -> ExecutionReport:
         """
@@ -151,10 +273,9 @@ class MetaTraderAdapter(TradingPlatformAdapter):
 
         Raises:
             ValueError: If order validation fails
-            ConnectionError: If not connected to MT5
+            ConnectionError: If not connected to MT5 and reconnection fails
         """
-        if not self.is_connected():
-            raise ConnectionError("Not connected to MetaTrader. Call connect() first.")
+        await self._ensure_connected()
 
         # Validate order
         self.validate_order(order)
@@ -166,7 +287,15 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             # Prepare order request
             symbol = order.symbol
             lot = float(order.quantity)  # MT5 uses lots
-            price = float(order.limit_price) if order.limit_price else 0.0
+
+            # Determine price based on order type
+            if order.order_type == OrderType.MARKET:
+                price = 0.0  # MT5 uses current market price for TRADE_ACTION_DEAL
+            elif order.order_type == OrderType.STOP:
+                price = float(order.stop_price) if order.stop_price else 0.0
+            else:
+                price = float(order.limit_price) if order.limit_price else 0.0
+
             stop_loss = float(order.stop_loss) if order.stop_loss else 0.0
             take_profit = float(order.take_profit) if order.take_profit else 0.0
 
@@ -188,8 +317,21 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 "type_filling": self._mt5.ORDER_FILLING_IOC,
             }
 
-            # Send order
-            result = self._mt5.order_send(request)
+            # Send order (run in thread to avoid blocking event loop)
+            result = await asyncio.to_thread(self._mt5.order_send, request)
+
+            if result is None:
+                # Terminal may have disconnected
+                self._set_connected(False)
+                return ExecutionReport(
+                    order_id=order.id,
+                    platform_order_id="",
+                    platform="MetaTrader5",
+                    status=OrderStatus.REJECTED,
+                    filled_quantity=Decimal("0"),
+                    remaining_quantity=order.quantity,
+                    error_message="MT5 order_send returned None - terminal may be disconnected",
+                )
 
             if result.retcode != self._mt5.TRADE_RETCODE_DONE:
                 logger.error(
@@ -208,9 +350,12 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                     error_message=f"MT5 error {result.retcode}: {result.comment}",
                 )
 
+            # Query deal history for commission data
+            commission = None
+            if hasattr(result, "deal") and result.deal:
+                commission = await self._query_deal_commission(result.deal)
+
             # Success - create execution report
-            # Note: MT5 commission retrieval requires querying deal history after execution
-            # result.comment is a text string, not numeric commission value
             execution_report = ExecutionReport(
                 order_id=order.id,
                 platform_order_id=str(result.order),
@@ -219,7 +364,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 filled_quantity=Decimal(str(result.volume)),
                 remaining_quantity=Decimal(str(lot - result.volume)),
                 average_fill_price=Decimal(str(result.price)),
-                commission=None,  # TODO: Query deal history for actual commission
+                commission=commission,
             )
 
             logger.info(
@@ -228,10 +373,13 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 platform_order_id=result.order,
                 symbol=symbol,
                 status=execution_report.status,
+                commission=str(commission) if commission else None,
             )
 
             return execution_report
 
+        except (ValueError, ConnectionError):
+            raise
         except Exception as e:
             logger.error("metatrader_order_placement_error", error=str(e), symbol=order.symbol)
             return ExecutionReport(
@@ -248,23 +396,254 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         """
         Place OCO order pair on MetaTrader.
 
-        MT5 supports OCO through linked stop loss and take profit orders.
+        MT5 handles OCO through SL/TP on the position. The workflow:
+        1. Place primary (entry) order with SL/TP from the OCO sub-orders
+        2. If entry fills, the position automatically has SL/TP attached
+        3. If SL/TP setting fails, attempt to close the position for safety
 
         Args:
             oco_order: OCO order to place
 
         Returns:
-            List of ExecutionReports
+            List of ExecutionReports for each leg
 
         Raises:
-            NotImplementedError: If OCO not fully supported
+            ConnectionError: If not connected
         """
-        logger.warning("metatrader_oco_limited_support", message="OCO via SL/TP only")
+        await self._ensure_connected()
 
-        # Place primary order with SL/TP attached
-        primary_report = await self.place_order(oco_order.primary_order)
+        reports: list[ExecutionReport] = []
 
-        return [primary_report]
+        # Extract SL/TP prices from the OCO sub-orders
+        primary = oco_order.primary_order
+
+        # Attach SL/TP from sub-orders to the primary order if not already set
+        sl_price = primary.stop_loss
+        tp_price = primary.take_profit
+
+        if oco_order.stop_loss_order and oco_order.stop_loss_order.stop_price:
+            sl_price = oco_order.stop_loss_order.stop_price
+        if oco_order.take_profit_order and oco_order.take_profit_order.limit_price:
+            tp_price = oco_order.take_profit_order.limit_price
+
+        # Create a modified primary order with SL/TP attached
+        primary_with_sltp = primary.model_copy(
+            update={"stop_loss": sl_price, "take_profit": tp_price}
+        )
+
+        # Place the primary order
+        primary_report = await self.place_order(primary_with_sltp)
+        reports.append(primary_report)
+
+        if primary_report.status not in (OrderStatus.FILLED, OrderStatus.PARTIAL_FILL):
+            logger.warning(
+                "metatrader_oco_primary_not_filled",
+                status=primary_report.status,
+                error=primary_report.error_message,
+            )
+            return reports
+
+        # For market orders, SL/TP should already be set via the request.
+        # For cases where SL/TP need to be modified on an existing position,
+        # we verify by attempting a position modification.
+        if sl_price or tp_price:
+            modify_success = await self._modify_position_sltp(
+                symbol=primary.symbol,
+                sl_price=float(sl_price) if sl_price else 0.0,
+                tp_price=float(tp_price) if tp_price else 0.0,
+            )
+
+            if not modify_success:
+                logger.error(
+                    "metatrader_oco_sltp_modification_failed",
+                    symbol=primary.symbol,
+                    message="SL/TP failed - attempting to close unprotected position",
+                )
+                # Attempt to close the unprotected position for safety
+                await self._emergency_close_position(primary.symbol)
+                # Create error reports for the failed SL/TP legs
+                if oco_order.stop_loss_order:
+                    reports.append(
+                        ExecutionReport(
+                            order_id=oco_order.stop_loss_order.id,
+                            platform_order_id="",
+                            platform="MetaTrader5",
+                            status=OrderStatus.REJECTED,
+                            filled_quantity=Decimal("0"),
+                            remaining_quantity=oco_order.stop_loss_order.quantity,
+                            error_message="Failed to set stop loss on position",
+                        )
+                    )
+                if oco_order.take_profit_order:
+                    reports.append(
+                        ExecutionReport(
+                            order_id=oco_order.take_profit_order.id,
+                            platform_order_id="",
+                            platform="MetaTrader5",
+                            status=OrderStatus.REJECTED,
+                            filled_quantity=Decimal("0"),
+                            remaining_quantity=oco_order.take_profit_order.quantity,
+                            error_message="Failed to set take profit on position",
+                        )
+                    )
+            else:
+                # SL/TP set successfully - report them as submitted
+                if oco_order.stop_loss_order:
+                    reports.append(
+                        ExecutionReport(
+                            order_id=oco_order.stop_loss_order.id,
+                            platform_order_id=primary_report.platform_order_id,
+                            platform="MetaTrader5",
+                            status=OrderStatus.SUBMITTED,
+                            filled_quantity=Decimal("0"),
+                            remaining_quantity=oco_order.stop_loss_order.quantity,
+                        )
+                    )
+                if oco_order.take_profit_order:
+                    reports.append(
+                        ExecutionReport(
+                            order_id=oco_order.take_profit_order.id,
+                            platform_order_id=primary_report.platform_order_id,
+                            platform="MetaTrader5",
+                            status=OrderStatus.SUBMITTED,
+                            filled_quantity=Decimal("0"),
+                            remaining_quantity=oco_order.take_profit_order.quantity,
+                        )
+                    )
+
+        logger.info(
+            "metatrader_oco_placed",
+            oco_id=str(oco_order.id),
+            reports_count=len(reports),
+        )
+
+        return reports
+
+    async def _modify_position_sltp(self, symbol: str, sl_price: float, tp_price: float) -> bool:
+        """
+        Modify SL/TP on an existing position.
+
+        Args:
+            symbol: Symbol to modify
+            sl_price: New stop loss price (0.0 for none)
+            tp_price: New take profit price (0.0 for none)
+
+        Returns:
+            True if modification succeeded
+        """
+        try:
+            # Get current positions for the symbol
+            positions = await asyncio.to_thread(self._mt5.positions_get, symbol=symbol)
+            if not positions:
+                logger.warning("metatrader_no_position_for_sltp", symbol=symbol)
+                return False
+
+            # Filter by magic number to find positions created by this adapter
+            matching = [p for p in positions if getattr(p, "magic", 0) == self.magic_number]
+            if not matching:
+                # Fall back to first position if no magic match (netting accounts)
+                matching = list(positions)
+
+            position = matching[0]
+
+            request = {
+                "action": self._mt5.TRADE_ACTION_SLTP,
+                "symbol": symbol,
+                "position": position.ticket,
+                "sl": sl_price,
+                "tp": tp_price,
+            }
+
+            result = await asyncio.to_thread(self._mt5.order_send, request)
+
+            if result is None or result.retcode != self._mt5.TRADE_RETCODE_DONE:
+                comment = result.comment if result else "No result"
+                logger.error(
+                    "metatrader_sltp_modify_failed",
+                    symbol=symbol,
+                    comment=comment,
+                )
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.error(
+                "metatrader_sltp_modify_error",
+                symbol=symbol,
+                error=str(e),
+            )
+            return False
+
+    async def _emergency_close_position(self, symbol: str) -> bool:
+        """
+        Emergency close an unprotected position (no SL/TP set).
+
+        Called when OCO SL/TP modification fails after entry fill.
+
+        Args:
+            symbol: Symbol of the position to close
+
+        Returns:
+            True if position was closed successfully
+        """
+        try:
+            positions = await asyncio.to_thread(self._mt5.positions_get, symbol=symbol)
+            if not positions:
+                return True  # No position to close
+
+            matching = [p for p in positions if getattr(p, "magic", 0) == self.magic_number]
+            if not matching:
+                matching = list(positions)
+
+            position = matching[0]
+
+            # Determine close direction (opposite of position type)
+            close_type = (
+                self._mt5.ORDER_TYPE_SELL
+                if getattr(position, "type", 0) == 0  # 0 = BUY position
+                else self._mt5.ORDER_TYPE_BUY
+            )
+
+            request = {
+                "action": self._mt5.TRADE_ACTION_DEAL,
+                "symbol": symbol,
+                "volume": position.volume,
+                "type": close_type,
+                "position": position.ticket,
+                "magic": self.magic_number,
+                "comment": "BMAD_emergency_close_no_sltp",
+                "type_filling": self._mt5.ORDER_FILLING_IOC,
+            }
+
+            result = await asyncio.to_thread(self._mt5.order_send, request)
+
+            if result and result.retcode == self._mt5.TRADE_RETCODE_DONE:
+                logger.warning(
+                    "metatrader_emergency_close_success",
+                    symbol=symbol,
+                    ticket=position.ticket,
+                )
+                return True
+
+            comment = result.comment if result else "No result"
+            logger.critical(
+                "metatrader_emergency_close_failed",
+                symbol=symbol,
+                ticket=position.ticket,
+                comment=comment,
+                message="UNPROTECTED POSITION REMAINS OPEN - MANUAL INTERVENTION REQUIRED",
+            )
+            return False
+
+        except Exception as e:
+            logger.critical(
+                "metatrader_emergency_close_error",
+                symbol=symbol,
+                error=str(e),
+                message="UNPROTECTED POSITION REMAINS OPEN - MANUAL INTERVENTION REQUIRED",
+            )
+            return False
 
     async def cancel_order(self, order_id: str) -> ExecutionReport:
         """
@@ -280,8 +659,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             ValueError: If order not found
             ConnectionError: If not connected
         """
-        if not self.is_connected():
-            raise ConnectionError("Not connected to MetaTrader")
+        await self._ensure_connected()
 
         try:
             request = {
@@ -289,7 +667,11 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 "order": int(order_id),
             }
 
-            result = self._mt5.order_send(request)
+            result = await asyncio.to_thread(self._mt5.order_send, request)
+
+            if result is None:
+                self._set_connected(False)
+                raise ConnectionError("MT5 terminal disconnected during cancel")
 
             if result.retcode != self._mt5.TRADE_RETCODE_DONE:
                 raise ValueError(f"Cancel failed: {result.comment}")
@@ -308,6 +690,8 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 remaining_quantity=Decimal("0"),
             )
 
+        except (ValueError, ConnectionError):
+            raise
         except Exception as e:
             logger.error("metatrader_cancel_failed", error=str(e), order_id=order_id)
             raise
@@ -325,11 +709,10 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         Raises:
             ValueError: If order not found
         """
-        if not self.is_connected():
-            raise ConnectionError("Not connected to MetaTrader")
+        await self._ensure_connected()
 
-        # Query order from MT5
-        orders = self._mt5.orders_get(ticket=int(order_id))
+        # Query order from MT5 (run in thread to avoid blocking event loop)
+        orders = await asyncio.to_thread(self._mt5.orders_get, ticket=int(order_id))
 
         if not orders:
             raise ValueError(f"Order {order_id} not found")
@@ -358,10 +741,15 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         Returns:
             List of ExecutionReports for open orders
         """
-        if not self.is_connected():
-            raise ConnectionError("Not connected to MetaTrader")
+        await self._ensure_connected()
 
-        orders = self._mt5.orders_get(symbol=symbol) if symbol else self._mt5.orders_get()
+        if symbol:
+            orders = await asyncio.to_thread(self._mt5.orders_get, symbol=symbol)
+        else:
+            orders = await asyncio.to_thread(self._mt5.orders_get)
+
+        if not orders:
+            return []
 
         # Note: Generating new UUIDs since we don't have access to original Order.id values
         # Callers should use platform_order_id (MT5 ticket) for order tracking
@@ -406,6 +794,12 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         if order.order_type == OrderType.STOP and order.stop_price is None:
             raise ValueError("Stop price required for STOP orders")
 
+        if order.order_type == OrderType.STOP_LIMIT:
+            raise ValueError(
+                "STOP_LIMIT orders are not supported by MetaTrader adapter. "
+                "Use STOP or LIMIT order types instead."
+            )
+
         return True
 
     def _map_order_type(self, order_type: OrderType, side: OrderSide) -> int:
@@ -437,4 +831,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 else self._mt5.ORDER_TYPE_SELL_STOP
             )
         else:
-            raise ValueError(f"Unsupported order type: {order_type}")
+            raise ValueError(
+                f"Unsupported order type: {order_type}. "
+                "MetaTrader adapter supports MARKET, LIMIT, and STOP orders only."
+            )
