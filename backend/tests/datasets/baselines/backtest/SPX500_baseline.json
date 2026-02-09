@@ -1,0 +1,30 @@
+{
+  "symbol": "SPX500",
+  "timeframe": "1d",
+  "baseline_version": "23.3.0",
+  "established_at": "2026-02-09T00:00:00Z",
+  "date_range": {
+    "start": "2024-01-01",
+    "end": "2025-12-31"
+  },
+  "metrics": {
+    "total_signals": 47,
+    "win_rate": "0.6170",
+    "average_r_multiple": "1.2400",
+    "profit_factor": "1.8500",
+    "max_drawdown": "0.0820",
+    "total_return_pct": "18.6000",
+    "cagr": "9.0200",
+    "sharpe_ratio": "1.3100",
+    "max_drawdown_duration_days": 34,
+    "total_trades": 47,
+    "winning_trades": 29,
+    "losing_trades": 18,
+    "total_pnl": "18600.00",
+    "total_commission": "235.00",
+    "total_slippage": "94.00",
+    "final_equity": "118600.00"
+  },
+  "tolerance_pct": 5.0,
+  "notes": "Initial estimated baselines pending real backtest infrastructure. Values based on expected Wyckoff detection performance ranges. SPX500 daily timeframe, 2-year lookback."
+}

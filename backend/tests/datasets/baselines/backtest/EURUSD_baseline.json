@@ -1,0 +1,30 @@
+{
+  "symbol": "EURUSD",
+  "timeframe": "1d",
+  "baseline_version": "23.3.0",
+  "established_at": "2026-02-09T00:00:00Z",
+  "date_range": {
+    "start": "2024-01-01",
+    "end": "2025-12-31"
+  },
+  "metrics": {
+    "total_signals": 38,
+    "win_rate": "0.6050",
+    "average_r_multiple": "1.1500",
+    "profit_factor": "1.6800",
+    "max_drawdown": "0.0710",
+    "total_return_pct": "12.8000",
+    "cagr": "6.2100",
+    "sharpe_ratio": "1.0800",
+    "max_drawdown_duration_days": 28,
+    "total_trades": 38,
+    "winning_trades": 23,
+    "losing_trades": 15,
+    "total_pnl": "12800.00",
+    "total_commission": "190.00",
+    "total_slippage": "76.00",
+    "final_equity": "112800.00"
+  },
+  "tolerance_pct": 5.0,
+  "notes": "Initial estimated baselines pending real backtest infrastructure. Values based on expected Wyckoff detection performance ranges. EURUSD daily timeframe, 2-year lookback. Forex pair for cross-asset validation."
+}
