@@ -189,7 +189,10 @@ class AlpacaAdapter(TradingPlatformAdapter):
 
             logger.warning("alpaca_disconnected_detected", message="Attempting reconnection")
 
-            await self._close_client()
+            try:
+                await self._close_client()
+            except Exception:
+                logger.debug("alpaca_close_client_error_during_reconnect", exc_info=True)
 
             delay = 1.0
             for attempt in range(1, self.max_reconnect_attempts + 1):
@@ -227,6 +230,9 @@ class AlpacaAdapter(TradingPlatformAdapter):
         await self._ensure_connected()
         self.validate_order(order)
 
+        # NOTE: If a network error occurs after Alpaca receives the POST but before
+        # we read the response, the order may exist on Alpaca while we return REJECTED
+        # locally. Future improvement: use client_order_id=str(order.id) for idempotency.
         try:
             payload = self._build_order_payload(order)
 
