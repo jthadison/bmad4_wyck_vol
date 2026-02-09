@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useSignalQueueStore } from '@/stores/signalQueueStore'
-import type { PendingSignal, Signal } from '@/types'
+import type { PendingSignal } from '@/types'
 
 // Mock API client
 vi.mock('@/services/api', () => ({
@@ -33,42 +33,20 @@ vi.mock('@/composables/useWebSocket', () => ({
   }),
 }))
 
-// Helper to create mock signal
-const createMockSignal = (overrides?: Partial<Signal>): Signal => ({
-  id: 'signal-123',
-  symbol: 'AAPL',
-  pattern_type: 'SPRING',
-  phase: 'C',
-  entry_price: '150.25',
-  stop_loss: '149.50',
-  target_levels: {
-    primary_target: '152.75',
-    secondary_targets: [],
-  },
-  position_size: 100,
-  risk_amount: '75.00',
-  r_multiple: '3.33',
-  confidence_score: 92,
-  confidence_components: {
-    pattern_confidence: 90,
-    phase_confidence: 95,
-    volume_confidence: 91,
-    overall_confidence: 92,
-  },
-  campaign_id: null,
-  status: 'PENDING',
-  timestamp: new Date().toISOString(),
-  timeframe: '1D',
-  ...overrides,
-})
-
-// Helper to create mock pending signal
+// Helper to create mock pending signal (flat structure matching backend)
 const createMockPendingSignal = (
   overrides?: Partial<PendingSignal>
 ): PendingSignal => ({
   queue_id: `queue-${Math.random().toString(36).substr(2, 9)}`,
-  signal: createMockSignal(),
-  queued_at: new Date().toISOString(),
+  signal_id: 'signal-123',
+  symbol: 'AAPL',
+  pattern_type: 'SPRING',
+  confidence_score: 92,
+  confidence_grade: 'A+',
+  entry_price: '150.25',
+  stop_loss: '149.50',
+  target_price: '152.75',
+  submitted_at: new Date().toISOString(),
   expires_at: new Date(Date.now() + 300000).toISOString(),
   time_remaining_seconds: 272,
   is_expired: false,
@@ -125,14 +103,14 @@ describe('signalQueueStore', () => {
       expect(store.hasSignals).toBe(false)
     })
 
-    it('sortedSignals should sort by queued_at descending', () => {
+    it('sortedSignals should sort by submitted_at descending', () => {
       const older = createMockPendingSignal({
         queue_id: 'older',
-        queued_at: '2024-01-01T10:00:00Z',
+        submitted_at: '2024-01-01T10:00:00Z',
       })
       const newer = createMockPendingSignal({
         queue_id: 'newer',
-        queued_at: '2024-01-01T12:00:00Z',
+        submitted_at: '2024-01-01T12:00:00Z',
       })
       store.pendingSignals = [older, newer]
 
@@ -224,7 +202,7 @@ describe('signalQueueStore', () => {
       const { apiClient } = await import('@/services/api')
       vi.mocked(apiClient.get).mockImplementation(() => {
         expect(store.isLoading).toBe(true)
-        return Promise.resolve({ data: [] })
+        return Promise.resolve({ signals: [], total_count: 0 })
       })
 
       await store.fetchPendingSignals()
@@ -233,7 +211,10 @@ describe('signalQueueStore', () => {
     it('should populate pendingSignals on success', async () => {
       const { apiClient } = await import('@/services/api')
       const mockSignals = [createMockPendingSignal(), createMockPendingSignal()]
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockSignals })
+      vi.mocked(apiClient.get).mockResolvedValue({
+        signals: mockSignals,
+        total_count: mockSignals.length,
+      })
 
       await store.fetchPendingSignals()
 
@@ -262,9 +243,7 @@ describe('signalQueueStore', () => {
 
       const result = await store.approveSignal('approve-me')
 
-      expect(apiClient.post).toHaveBeenCalledWith(
-        '/approval-queue/approve-me/approve'
-      )
+      expect(apiClient.post).toHaveBeenCalledWith('/signals/approve-me/approve')
       expect(result).toBe(true)
       expect(store.pendingSignals.length).toBe(0)
     })
@@ -292,10 +271,9 @@ describe('signalQueueStore', () => {
         reason: 'Entry too far',
       })
 
-      expect(apiClient.post).toHaveBeenCalledWith(
-        '/approval-queue/reject-me/reject',
-        { reason: 'Entry too far' }
-      )
+      expect(apiClient.post).toHaveBeenCalledWith('/signals/reject-me/reject', {
+        reason: 'Entry too far',
+      })
       expect(result).toBe(true)
       expect(store.pendingSignals.length).toBe(0)
     })

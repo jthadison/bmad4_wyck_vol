@@ -135,14 +135,14 @@ watch(
         <div class="flex justify-between items-center">
           <div>
             <span class="font-bold text-gray-900 dark:text-white">
-              {{ signal.signal.symbol }}
+              {{ signal.symbol }}
             </span>
             <span class="ml-2 text-sm text-gray-600 dark:text-gray-400">
-              {{ signal.signal.pattern_type }}
+              {{ signal.pattern_type }}
             </span>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            {{ signal.signal.confidence_score }}% confidence
+            {{ signal.confidence_score }}% confidence
           </div>
         </div>
       </div>

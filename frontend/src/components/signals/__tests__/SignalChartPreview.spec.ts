@@ -12,7 +12,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import SignalChartPreview from '@/components/signals/SignalChartPreview.vue'
-import type { PendingSignal, Signal, OHLCVBar } from '@/types'
+import type { PendingSignal, OHLCVBar } from '@/types'
 import PrimeVue from 'primevue/config'
 import Big from 'big.js'
 
@@ -36,35 +36,6 @@ vi.mock('lightweight-charts', () => ({
   LineStyle: { Solid: 0, Dashed: 1, Dotted: 2 },
 }))
 
-// Helper to create mock signal
-const createMockSignal = (overrides?: Partial<Signal>): Signal => ({
-  id: 'signal-123',
-  symbol: 'AAPL',
-  pattern_type: 'SPRING',
-  phase: 'C',
-  entry_price: '150.25',
-  stop_loss: '149.50',
-  target_levels: {
-    primary_target: '152.75',
-    secondary_targets: [],
-  },
-  position_size: 100,
-  risk_amount: '75.00',
-  r_multiple: '3.33',
-  confidence_score: 92,
-  confidence_components: {
-    pattern_confidence: 90,
-    phase_confidence: 95,
-    volume_confidence: 91,
-    overall_confidence: 92,
-  },
-  campaign_id: null,
-  status: 'PENDING',
-  timestamp: new Date().toISOString(),
-  timeframe: '1D',
-  ...overrides,
-})
-
 // Helper to create mock OHLCV bar
 const createMockBar = (overrides?: Partial<OHLCVBar>): OHLCVBar => ({
   id: 'bar-1',
@@ -79,13 +50,20 @@ const createMockBar = (overrides?: Partial<OHLCVBar>): OHLCVBar => ({
   ...overrides,
 })
 
-// Helper to create mock pending signal
+// Helper to create mock pending signal (flat structure matching backend)
 const createMockPendingSignal = (
   overrides?: Partial<PendingSignal>
 ): PendingSignal => ({
   queue_id: 'queue-123',
-  signal: createMockSignal(),
-  queued_at: new Date().toISOString(),
+  signal_id: 'signal-123',
+  symbol: 'AAPL',
+  pattern_type: 'SPRING',
+  confidence_score: 92,
+  confidence_grade: 'A+',
+  entry_price: '150.25',
+  stop_loss: '149.50',
+  target_price: '152.75',
+  submitted_at: new Date().toISOString(),
   expires_at: new Date(Date.now() + 300000).toISOString(),
   time_remaining_seconds: 272,
   is_expired: false,
@@ -141,7 +119,7 @@ describe('SignalChartPreview.vue', () => {
   describe('Chart Header', () => {
     it('should display signal symbol in header', () => {
       const signal = createMockPendingSignal({
-        signal: createMockSignal({ symbol: 'MSFT' }),
+        symbol: 'MSFT',
         chart_data: {
           bars: [createMockBar()],
           pattern_annotation: null,
@@ -153,23 +131,9 @@ describe('SignalChartPreview.vue', () => {
       expect(wrapper.find('.chart-header').text()).toContain('MSFT')
     })
 
-    it('should display timeframe in header', () => {
-      const signal = createMockPendingSignal({
-        signal: createMockSignal({ timeframe: '4H' }),
-        chart_data: {
-          bars: [createMockBar()],
-          pattern_annotation: null,
-          level_lines: [],
-        },
-      })
-      wrapper = mountComponent({ signal })
-
-      expect(wrapper.find('.chart-header').text()).toContain('4H')
-    })
-
     it('should display pattern type in header', () => {
       const signal = createMockPendingSignal({
-        signal: createMockSignal({ pattern_type: 'SOS' }),
+        pattern_type: 'SOS',
         chart_data: {
           bars: [createMockBar()],
           pattern_annotation: null,
