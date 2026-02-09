@@ -224,7 +224,7 @@ describe('signalQueueStore', () => {
       const { apiClient } = await import('@/services/api')
       vi.mocked(apiClient.get).mockImplementation(() => {
         expect(store.isLoading).toBe(true)
-        return Promise.resolve({ data: [] })
+        return Promise.resolve({ signals: [], total_count: 0 })
       })
 
       await store.fetchPendingSignals()
@@ -233,7 +233,10 @@ describe('signalQueueStore', () => {
     it('should populate pendingSignals on success', async () => {
       const { apiClient } = await import('@/services/api')
       const mockSignals = [createMockPendingSignal(), createMockPendingSignal()]
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockSignals })
+      vi.mocked(apiClient.get).mockResolvedValue({
+        signals: mockSignals,
+        total_count: mockSignals.length,
+      })
 
       await store.fetchPendingSignals()
 
@@ -262,9 +265,7 @@ describe('signalQueueStore', () => {
 
       const result = await store.approveSignal('approve-me')
 
-      expect(apiClient.post).toHaveBeenCalledWith(
-        '/approval-queue/approve-me/approve'
-      )
+      expect(apiClient.post).toHaveBeenCalledWith('/signals/approve-me/approve')
       expect(result).toBe(true)
       expect(store.pendingSignals.length).toBe(0)
     })
@@ -292,10 +293,9 @@ describe('signalQueueStore', () => {
         reason: 'Entry too far',
       })
 
-      expect(apiClient.post).toHaveBeenCalledWith(
-        '/approval-queue/reject-me/reject',
-        { reason: 'Entry too far' }
-      )
+      expect(apiClient.post).toHaveBeenCalledWith('/signals/reject-me/reject', {
+        reason: 'Entry too far',
+      })
       expect(result).toBe(true)
       expect(store.pendingSignals.length).toBe(0)
     })

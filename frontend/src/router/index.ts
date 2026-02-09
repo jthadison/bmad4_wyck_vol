@@ -74,6 +74,16 @@ const routes: RouteRecordRaw[] = [
       breadcrumb: [{ label: 'Scanner' }],
     },
   },
+  // Signal Approval Queue (Story 23.10)
+  {
+    path: '/signals/queue',
+    name: 'signal-queue',
+    component: () => import('@/views/signals/SignalApprovalView.vue'),
+    meta: {
+      title: 'Signal Approval Queue',
+      breadcrumb: [{ label: 'Signal Queue' }],
+    },
+  },
   // Signal Performance Dashboard (Story 19.18)
   {
     path: '/signals/performance',

@@ -244,9 +244,10 @@ export interface LevelLine {
 
 /**
  * Approval queue API response
+ * Matches backend PendingSignalsResponse (signals field)
  */
 export interface ApprovalQueueResponse {
-  data: PendingSignal[]
+  signals: PendingSignal[]
   total_count: number
 }
 

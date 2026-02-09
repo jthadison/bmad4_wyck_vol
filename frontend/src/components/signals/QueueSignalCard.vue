@@ -121,6 +121,31 @@ const cardClasses = computed(() => {
   return baseClasses
 })
 
+// Risk percentage calculation
+const riskPercentage = computed(() => {
+  try {
+    const entry = parseFloat(props.signal.signal.entry_price)
+    const stop = parseFloat(props.signal.signal.stop_loss)
+    if (entry === 0) return '0.0%'
+    const risk = Math.abs((entry - stop) / entry) * 100
+    return `${risk.toFixed(1)}%`
+  } catch {
+    return '0.0%'
+  }
+})
+
+// Asset class derived from symbol
+const assetClass = computed(() => {
+  const symbol = props.signal.signal.symbol
+  // Forex pairs typically have 6 chars (e.g., EURUSD) or contain /
+  if (symbol.includes('/') || /^[A-Z]{6}$/.test(symbol)) return 'Forex'
+  // Index futures/CFDs
+  if (['US30', 'SPX500', 'NAS100', 'US500', 'DJI'].includes(symbol))
+    return 'Index'
+  // Default to Stock
+  return 'Stock'
+})
+
 // Format price helper
 const formatPrice = (priceStr: string): string => {
   try {
@@ -249,6 +274,37 @@ const handleKeyPress = (event: KeyboardEvent) => {
             data-testid="r-multiple"
           >
             {{ formatRMultiple(signal.signal.r_multiple) }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Phase, Risk, Asset Class -->
+      <div class="grid grid-cols-3 gap-2 mb-3 text-sm">
+        <div>
+          <span class="text-gray-600 dark:text-gray-400">Phase:</span>
+          <span
+            class="ml-2 font-semibold text-blue-600 dark:text-blue-400"
+            data-testid="wyckoff-phase"
+          >
+            {{ signal.signal.phase }}
+          </span>
+        </div>
+        <div>
+          <span class="text-gray-600 dark:text-gray-400">Risk:</span>
+          <span
+            class="ml-2 font-semibold text-orange-600 dark:text-orange-400"
+            data-testid="risk-percent"
+          >
+            {{ riskPercentage }}
+          </span>
+        </div>
+        <div>
+          <span class="text-gray-600 dark:text-gray-400">Asset:</span>
+          <span
+            class="ml-2 font-semibold text-gray-900 dark:text-white"
+            data-testid="asset-class"
+          >
+            {{ assetClass }}
           </span>
         </div>
       </div>

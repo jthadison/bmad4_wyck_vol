@@ -176,6 +176,58 @@ describe('QueueSignalCard.vue', () => {
     })
   })
 
+  describe('Signal Detail Fields (Story 23.10)', () => {
+    it('should render Wyckoff phase', () => {
+      const signal = createMockPendingSignal({
+        signal: createMockSignal({ phase: 'C' }),
+      })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="wyckoff-phase"]').text()).toBe('C')
+    })
+
+    it('should render risk percentage', () => {
+      const signal = createMockPendingSignal({
+        signal: createMockSignal({
+          entry_price: '150.25',
+          stop_loss: '149.50',
+        }),
+      })
+      wrapper = mountComponent({ signal })
+
+      const riskEl = wrapper.find('[data-testid="risk-percent"]')
+      expect(riskEl.exists()).toBe(true)
+      expect(riskEl.text()).toContain('0.5%')
+    })
+
+    it('should render asset class', () => {
+      const signal = createMockPendingSignal({
+        signal: createMockSignal({ symbol: 'AAPL' }),
+      })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Stock')
+    })
+
+    it('should show Forex for currency pair symbols', () => {
+      const signal = createMockPendingSignal({
+        signal: createMockSignal({ symbol: 'EURUSD' }),
+      })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Forex')
+    })
+
+    it('should show Index for index symbols', () => {
+      const signal = createMockPendingSignal({
+        signal: createMockSignal({ symbol: 'US30' }),
+      })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Index')
+    })
+  })
+
   describe('Confidence Grade Calculation', () => {
     it('should show A+ for confidence >= 90', () => {
       const signal = createMockPendingSignal({

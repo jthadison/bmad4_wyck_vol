@@ -87,8 +87,8 @@ export const useSignalQueueStore = defineStore('signalQueue', () => {
 
     try {
       const response =
-        await apiClient.get<ApprovalQueueResponse>('/approval-queue')
-      pendingSignals.value = response.data
+        await apiClient.get<ApprovalQueueResponse>('/signals/pending')
+      pendingSignals.value = response.signals
       startCountdownTimer()
     } catch (err) {
       error.value = 'Failed to fetch pending signals'
@@ -100,7 +100,7 @@ export const useSignalQueueStore = defineStore('signalQueue', () => {
 
   async function approveSignal(queueId: string): Promise<boolean> {
     try {
-      await apiClient.post(`/approval-queue/${queueId}/approve`)
+      await apiClient.post(`/signals/${queueId}/approve`)
 
       // Remove from local state immediately (optimistic update)
       removeSignalFromQueue(queueId)
@@ -118,7 +118,7 @@ export const useSignalQueueStore = defineStore('signalQueue', () => {
     request: RejectSignalRequest
   ): Promise<boolean> {
     try {
-      await apiClient.post(`/approval-queue/${queueId}/reject`, request)
+      await apiClient.post(`/signals/${queueId}/reject`, request)
 
       // Remove from local state immediately (optimistic update)
       removeSignalFromQueue(queueId)
