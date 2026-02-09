@@ -13,8 +13,8 @@ Author: Story 23.5
 
 import asyncio
 from decimal import Decimal
-from typing import Optional
-from uuid import uuid4
+from typing import Any, Optional
+from uuid import UUID, uuid4
 
 import httpx
 import structlog
@@ -164,8 +164,10 @@ class AlpacaAdapter(TradingPlatformAdapter):
     async def _close_client(self) -> None:
         """Close the httpx client if open."""
         if self._client:
-            await self._client.aclose()
-            self._client = None
+            try:
+                await self._client.aclose()
+            finally:
+                self._client = None
 
     async def _ensure_connected(self) -> None:
         """
@@ -186,6 +188,8 @@ class AlpacaAdapter(TradingPlatformAdapter):
                 return
 
             logger.warning("alpaca_disconnected_detected", message="Attempting reconnection")
+
+            await self._close_client()
 
             delay = 1.0
             for attempt in range(1, self.max_reconnect_attempts + 1):
@@ -296,29 +300,37 @@ class AlpacaAdapter(TradingPlatformAdapter):
         reports: list[ExecutionReport] = []
 
         try:
-            # Build bracket order payload
+            # Build order payload
             payload = self._build_order_payload(primary)
-            payload["order_class"] = "bracket"
 
-            # Add take profit leg
+            # Determine take profit price
+            tp_price: Optional[Decimal] = None
             if oco_order.take_profit_order and oco_order.take_profit_order.limit_price:
-                payload["take_profit"] = {
-                    "limit_price": str(oco_order.take_profit_order.limit_price),
-                }
+                tp_price = oco_order.take_profit_order.limit_price
             elif primary.take_profit:
-                payload["take_profit"] = {
-                    "limit_price": str(primary.take_profit),
-                }
+                tp_price = primary.take_profit
 
-            # Add stop loss leg
+            # Determine stop loss price
+            sl_price: Optional[Decimal] = None
             if oco_order.stop_loss_order and oco_order.stop_loss_order.stop_price:
-                payload["stop_loss"] = {
-                    "stop_price": str(oco_order.stop_loss_order.stop_price),
-                }
+                sl_price = oco_order.stop_loss_order.stop_price
             elif primary.stop_loss:
-                payload["stop_loss"] = {
-                    "stop_price": str(primary.stop_loss),
-                }
+                sl_price = primary.stop_loss
+
+            # Set order_class based on which legs are present
+            has_tp = tp_price is not None
+            has_sl = sl_price is not None
+
+            if has_tp and has_sl:
+                payload["order_class"] = "bracket"
+                payload["take_profit"] = {"limit_price": str(tp_price)}
+                payload["stop_loss"] = {"stop_price": str(sl_price)}
+            elif has_tp or has_sl:
+                payload["order_class"] = "oto"
+                if has_tp:
+                    payload["take_profit"] = {"limit_price": str(tp_price)}
+                if has_sl:
+                    payload["stop_loss"] = {"stop_price": str(sl_price)}
 
             response = await self._client.post("/v2/orders", json=payload)  # type: ignore[union-attr]
             response.raise_for_status()
@@ -332,11 +344,13 @@ class AlpacaAdapter(TradingPlatformAdapter):
             # Parse leg orders from response if present
             legs = data.get("legs", [])
             for leg in legs:
-                leg_order_id = (
-                    oco_order.take_profit_order.id
-                    if oco_order.take_profit_order and leg.get("type") == "limit"
-                    else (oco_order.stop_loss_order.id if oco_order.stop_loss_order else uuid4())
-                )
+                leg_type = leg.get("type", "")
+                if leg_type in ("stop", "stop_limit") and oco_order.stop_loss_order:
+                    leg_order_id = oco_order.stop_loss_order.id
+                elif leg_type == "limit" and oco_order.take_profit_order:
+                    leg_order_id = oco_order.take_profit_order.id
+                else:
+                    leg_order_id = uuid4()
                 leg_report = self._parse_order_response(data=leg, order_id=leg_order_id)
                 reports.append(leg_report)
 
@@ -493,16 +507,29 @@ class AlpacaAdapter(TradingPlatformAdapter):
         if symbol:
             params["symbols"] = symbol
 
-        response = await self._client.get("/v2/orders", params=params)  # type: ignore[union-attr]
-        response.raise_for_status()
+        try:
+            response = await self._client.get("/v2/orders", params=params)  # type: ignore[union-attr]
+            response.raise_for_status()
 
-        orders_data = response.json()
-        reports = []
-        for data in orders_data:
-            report = self._parse_order_response(data, order_id=uuid4())
-            reports.append(report)
+            orders_data = response.json()
+            reports = []
+            for data in orders_data:
+                report = self._parse_order_response(data, order_id=uuid4())
+                reports.append(report)
 
-        return reports
+            return reports
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "alpaca_get_open_orders_failed",
+                status_code=e.response.status_code,
+                error=e.response.text,
+            )
+            raise ValueError(f"Failed to get open orders: HTTP {e.response.status_code}") from e
+        except ConnectionError:
+            raise
+        except Exception as e:
+            logger.error("alpaca_get_open_orders_error", error=str(e))
+            raise
 
     def validate_order(self, order: Order) -> bool:
         """
@@ -535,9 +562,15 @@ class AlpacaAdapter(TradingPlatformAdapter):
             if order.limit_price is None:
                 raise ValueError("Limit price required for STOP_LIMIT orders")
 
+        if order.limit_price is not None and order.limit_price <= 0:
+            raise ValueError(f"Limit price must be positive, got {order.limit_price}")
+
+        if order.stop_price is not None and order.stop_price <= 0:
+            raise ValueError(f"Stop price must be positive, got {order.stop_price}")
+
         return True
 
-    def _build_order_payload(self, order: Order) -> dict:
+    def _build_order_payload(self, order: Order) -> dict[str, Any]:
         """
         Build Alpaca API order payload from an Order object.
 
@@ -569,7 +602,7 @@ class AlpacaAdapter(TradingPlatformAdapter):
             TimeInForce.FOK: "fok",
         }
 
-        payload: dict = {
+        payload: dict[str, Any] = {
             "symbol": order.symbol,
             "qty": str(order.quantity),
             "side": side_map[order.side],
@@ -591,7 +624,9 @@ class AlpacaAdapter(TradingPlatformAdapter):
 
         return payload
 
-    def _parse_order_response(self, data: dict, order_id=None) -> ExecutionReport:
+    def _parse_order_response(
+        self, data: dict[str, Any], order_id: Optional[UUID] = None
+    ) -> ExecutionReport:
         """
         Parse an Alpaca order response into an ExecutionReport.
 

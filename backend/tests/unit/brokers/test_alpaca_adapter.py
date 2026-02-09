@@ -21,6 +21,7 @@ from src.models.order import (
     OrderSide,
     OrderStatus,
     OrderType,
+    TimeInForce,
 )
 
 # =============================
@@ -268,9 +269,17 @@ class TestReconnection:
         # Should not raise
 
     async def test_ensure_connected_no_client(self, adapter):
-        """Raises when client is None."""
-        with pytest.raises(ConnectionError, match="[Cc]onnect"):
-            await adapter._ensure_connected()
+        """Raises when not connected and reconnection fails."""
+        adapter.max_reconnect_attempts = 2
+
+        mock_new_client = AsyncMock()
+        mock_new_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        mock_new_client.aclose = AsyncMock()
+
+        with patch("src.brokers.alpaca_adapter.httpx.AsyncClient", return_value=mock_new_client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                with pytest.raises(ConnectionError, match="[Rr]econnect|[Ff]ailed"):
+                    await adapter._ensure_connected()
 
     async def test_reconnect_succeeds_first_attempt(self, adapter):
         """Reconnects successfully on first try."""
@@ -331,6 +340,32 @@ class TestReconnection:
         with patch("src.brokers.alpaca_adapter.httpx.AsyncClient", side_effect=clients):
             with patch("asyncio.sleep", new_callable=AsyncMock):
                 await adapter._ensure_connected()
+        assert adapter.is_connected()
+
+    async def test_reconnect_closes_old_client(self, adapter):
+        """Old client is closed before reconnection attempts."""
+        old_client = AsyncMock()
+        old_client.aclose = AsyncMock()
+        adapter._client = old_client
+        adapter._set_connected(False)
+
+        account_response = _make_mock_response(
+            200,
+            {"id": "account-123", "status": "ACTIVE", "buying_power": "100000.00"},
+        )
+        mock_new_client = AsyncMock()
+        mock_new_client.get = AsyncMock(return_value=account_response)
+        mock_new_client.aclose = AsyncMock()
+
+        with patch(
+            "src.brokers.alpaca_adapter.httpx.AsyncClient",
+            return_value=mock_new_client,
+        ):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await adapter._ensure_connected()
+
+        # Old client should have been closed
+        old_client.aclose.assert_awaited_once()
         assert adapter.is_connected()
 
     async def test_place_order_triggers_reconnect(self, adapter):
@@ -478,6 +513,32 @@ class TestValidation:
             quantity=Decimal("0"),
         )
         with pytest.raises(ValueError, match="[Qq]uantity"):
+            connected_adapter.validate_order(o)
+
+    def test_negative_limit_price_rejected(self, connected_adapter):
+        o = Order.model_construct(
+            id=uuid4(),
+            platform="Alpaca",
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("100"),
+            limit_price=Decimal("-10.00"),
+        )
+        with pytest.raises(ValueError, match="[Ll]imit price.*positive"):
+            connected_adapter.validate_order(o)
+
+    def test_negative_stop_price_rejected(self, connected_adapter):
+        o = Order.model_construct(
+            id=uuid4(),
+            platform="Alpaca",
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            order_type=OrderType.STOP,
+            quantity=Decimal("100"),
+            stop_price=Decimal("-5.00"),
+        )
+        with pytest.raises(ValueError, match="[Ss]top price.*positive"):
             connected_adapter.validate_order(o)
 
 
@@ -648,6 +709,22 @@ class TestPlaceMarketOrder:
         assert json_body["side"] == "buy"
         assert json_body["type"] == "market"
         assert json_body["qty"] == "100"
+
+    async def test_day_time_in_force(self, connected_adapter, mock_client):
+        """Verify DAY time-in-force is sent correctly."""
+        response = _make_mock_response(
+            200,
+            _make_alpaca_order_response(status="new", time_in_force="day"),
+        )
+        mock_client.post = AsyncMock(return_value=response)
+
+        order = _make_market_buy_order(time_in_force=TimeInForce.DAY)
+        await connected_adapter.place_order(order)
+
+        json_body = mock_client.post.call_args[1].get(
+            "json"
+        ) or mock_client.post.call_args.kwargs.get("json")
+        assert json_body["time_in_force"] == "day"
 
     async def test_expired_order(self, connected_adapter, mock_client):
         """Expired order status is mapped correctly."""
@@ -987,6 +1064,12 @@ class TestOCOBracketOrder:
         assert reports[0].status == OrderStatus.FILLED
         assert reports[1].status == OrderStatus.SUBMITTED
 
+        # C-2: single-leg bracket should use OTO order class
+        json_body = mock_client.post.call_args[1].get(
+            "json"
+        ) or mock_client.post.call_args.kwargs.get("json")
+        assert json_body["order_class"] == "oto"
+
     async def test_bracket_only_tp(self, connected_adapter, mock_client):
         """Bracket order with only take profit, no stop loss."""
         primary_resp = _make_mock_response(
@@ -1015,6 +1098,12 @@ class TestOCOBracketOrder:
         assert len(reports) == 2
         assert reports[0].status == OrderStatus.FILLED
         assert reports[1].status == OrderStatus.SUBMITTED
+
+        # C-2: single-leg bracket should use OTO order class
+        json_body = mock_client.post.call_args[1].get(
+            "json"
+        ) or mock_client.post.call_args.kwargs.get("json")
+        assert json_body["order_class"] == "oto"
 
     async def test_bracket_primary_rejected(self, connected_adapter, mock_client):
         """If primary fails, only primary report returned."""
@@ -1059,6 +1148,73 @@ class TestOCOBracketOrder:
 
         assert len(reports) == 1
         assert reports[0].status == OrderStatus.FILLED
+
+        # C-2: no SL/TP means no order_class in payload
+        json_body = mock_client.post.call_args[1].get(
+            "json"
+        ) or mock_client.post.call_args.kwargs.get("json")
+        assert "order_class" not in json_body
+
+    async def test_bracket_with_legs_in_response(self, connected_adapter, mock_client):
+        """Bracket order response containing leg details is parsed correctly."""
+        response_data = _make_alpaca_order_response(
+            order_id="entry-order",
+            status="filled",
+            filled_qty="100",
+            filled_avg_price="150.50",
+        )
+        # Add legs array like real Alpaca response
+        response_data["legs"] = [
+            {
+                "id": "sl-leg-id",
+                "status": "new",
+                "type": "stop",
+                "filled_qty": "0",
+                "qty": "100",
+                "filled_avg_price": None,
+            },
+            {
+                "id": "tp-leg-id",
+                "status": "new",
+                "type": "limit",
+                "filled_qty": "0",
+                "qty": "100",
+                "filled_avg_price": None,
+            },
+        ]
+        primary_resp = _make_mock_response(200, response_data)
+        mock_client.post = AsyncMock(return_value=primary_resp)
+
+        primary = _make_market_buy_order()
+        sl_order = Order(
+            platform="Alpaca",
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            order_type=OrderType.STOP,
+            quantity=Decimal("100"),
+            stop_price=Decimal("145.00"),
+        )
+        tp_order = Order(
+            platform="Alpaca",
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("100"),
+            limit_price=Decimal("160.00"),
+        )
+        oco = self._make_oco(primary, sl_order, tp_order)
+
+        reports = await connected_adapter.place_oco_order(oco)
+
+        # Primary + 2 legs = 3 reports (legs from response, not synthetic SUBMITTED)
+        assert len(reports) == 3
+        assert reports[0].status == OrderStatus.FILLED  # Primary
+        assert reports[0].platform_order_id == "entry-order"
+        # Leg reports parsed from response
+        assert reports[1].platform_order_id == "sl-leg-id"
+        assert reports[1].order_id == sl_order.id  # Matched by type="stop"
+        assert reports[2].platform_order_id == "tp-leg-id"
+        assert reports[2].order_id == tp_order.id  # Matched by type="limit"
 
     async def test_bracket_primary_api_error(self, connected_adapter, mock_client):
         """API error during primary order."""
@@ -1248,6 +1404,14 @@ class TestGetOpenOrders:
 
         assert reports == []
 
+    async def test_get_open_orders_server_error(self, connected_adapter, mock_client):
+        """Server error raises ValueError."""
+        response = _make_mock_response(500, text="Internal Server Error")
+        mock_client.get = AsyncMock(return_value=response)
+
+        with pytest.raises(ValueError, match="[Ff]ailed|500"):
+            await connected_adapter.get_open_orders()
+
     async def test_get_open_orders_not_connected(self, adapter):
         with pytest.raises(ConnectionError):
             await adapter.get_open_orders()
@@ -1291,6 +1455,17 @@ class TestDisconnectionHandling:
         report = await connected_adapter.place_order(order)
 
         assert report.status == OrderStatus.REJECTED
+
+    async def test_close_client_resilient_to_aclose_error(self, adapter):
+        """_client set to None even if aclose() raises."""
+        bad_client = AsyncMock()
+        bad_client.aclose = AsyncMock(side_effect=Exception("aclose failed"))
+        adapter._client = bad_client
+
+        with pytest.raises(Exception, match="aclose failed"):
+            await adapter._close_client()
+
+        assert adapter._client is None
 
 
 # =============================
