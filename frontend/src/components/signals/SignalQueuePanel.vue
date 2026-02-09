@@ -82,7 +82,7 @@ const handleRejectConfirm = async (request: RejectSignalRequest) => {
     toast.add({
       severity: 'info',
       summary: 'Signal Rejected',
-      detail: `${signalToReject.value.signal.symbol} signal rejected`,
+      detail: `${signalToReject.value.symbol} signal rejected`,
       life: 3000,
     })
   } else {

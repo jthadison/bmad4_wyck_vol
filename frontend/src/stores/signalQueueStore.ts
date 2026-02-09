@@ -43,7 +43,7 @@ function isPendingSignal(data: unknown): data is PendingSignal {
     typeof data === 'object' &&
     data !== null &&
     'queue_id' in data &&
-    'signal' in data &&
+    'symbol' in data &&
     'time_remaining_seconds' in data
   )
 }
