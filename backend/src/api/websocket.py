@@ -518,6 +518,36 @@ class ConnectionManager:
 
         await self.broadcast(message)
 
+    async def emit_order_event(
+        self,
+        event_type: str,
+        order_data: dict[str, Any],
+    ) -> None:
+        """
+        Emit order event to all connected clients (Story 23.7).
+
+        Broadcasts order lifecycle events (submitted, filled, rejected, etc.)
+        for real-time display in the frontend.
+
+        Args:
+            event_type: One of "order:submitted", "order:filled", "order:rejected"
+            order_data: Order details as dictionary
+
+        Message Format:
+            {
+                "type": "<event_type>",
+                "sequence_number": <seq>,
+                "timestamp": "<ISO8601>",
+                "data": <order_data>
+            }
+        """
+        message: dict[str, Any] = {
+            "type": event_type,
+            "data": order_data,
+        }
+
+        await self.broadcast(message)
+
     async def emit_batch_update(
         self,
         patterns_detected: list[dict[str, Any]],

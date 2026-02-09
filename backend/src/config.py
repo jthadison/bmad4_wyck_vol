@@ -291,6 +291,12 @@ class Settings(BaseSettings):
         description="Refresh token expiration time in days (default: 7 days)",
     )
 
+    # Broker Router Configuration (Story 23.7)
+    auto_execute_orders: bool = Field(
+        default=False,
+        description="Automatically execute orders via broker after webhook receipt (default: off)",
+    )
+
     # Email Notification Configuration (Story 19.25)
     email_provider: Literal["smtp", "sendgrid", "ses"] = Field(
         default="smtp",

@@ -1,10 +1,11 @@
 """
-TradingView Webhook API Routes (Story 16.4a)
+TradingView Webhook API Routes (Story 16.4a, 23.7)
 
 API endpoints for receiving TradingView alert webhooks.
-Handles webhook signature verification and order creation from alerts.
+Handles webhook signature verification, order creation, broker routing,
+and WebSocket broadcast of order events.
 
-Author: Story 16.4a
+Author: Story 16.4a, Story 23.7
 """
 
 import json
@@ -13,6 +14,8 @@ from typing import Optional
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
+from src.api.websocket import manager as ws_manager
+from src.brokers.broker_router import BrokerRouter
 from src.brokers.order_builder import OrderBuilder
 from src.brokers.tradingview_adapter import TradingViewAdapter
 from src.config import settings
@@ -29,6 +32,27 @@ tradingview_adapter = TradingViewAdapter(
 )
 
 order_builder = OrderBuilder(default_platform="TradingView")
+
+# In-memory order audit log (Story 23.7)
+# Stores order records for audit trail. In production, this should be backed by the database.
+order_audit_log: list[dict] = []
+
+# Broker router instance (adapters are None by default; set via configure_broker_router)
+broker_router = BrokerRouter()
+
+
+def configure_broker_router(router_instance: BrokerRouter) -> None:
+    """
+    Configure the module-level broker router with live adapters.
+
+    Called during application startup to inject configured broker adapters.
+
+    Args:
+        router_instance: Configured BrokerRouter with adapters
+    """
+    global broker_router
+    broker_router = router_instance
+    logger.info("tradingview_broker_router_configured")
 
 
 @router.post("/webhook", status_code=status.HTTP_200_OK)
@@ -96,9 +120,66 @@ async def receive_webhook(
             quantity=float(order.quantity),
         )
 
-        # TODO: Store order in database
-        # TODO: Execute order on broker if auto-execution enabled
-        # TODO: Emit WebSocket event for frontend
+        # Store order in audit trail
+        order_record = {
+            "id": str(order.id),
+            "symbol": order.symbol,
+            "side": order.side,
+            "order_type": order.order_type,
+            "quantity": float(order.quantity),
+            "limit_price": float(order.limit_price) if order.limit_price else None,
+            "stop_loss": float(order.stop_loss) if order.stop_loss else None,
+            "take_profit": float(order.take_profit) if order.take_profit else None,
+            "status": order.status,
+            "created_at": order.created_at.isoformat(),
+            "source": "tradingview_webhook",
+        }
+        order_audit_log.append(order_record)
+
+        logger.info(
+            "tradingview_order_persisted",
+            order_id=str(order.id),
+            audit_log_size=len(order_audit_log),
+        )
+
+        # Execute order on broker if auto-execution is enabled
+        execution_report = None
+        if settings.auto_execute_orders:
+            try:
+                execution_report = await broker_router.route_order(order)
+                order_record["status"] = execution_report.status
+                order_record["platform_order_id"] = execution_report.platform_order_id
+                order_record["platform"] = execution_report.platform
+
+                if execution_report.error_message:
+                    order_record["error_message"] = execution_report.error_message
+
+                logger.info(
+                    "tradingview_order_executed",
+                    order_id=str(order.id),
+                    platform=execution_report.platform,
+                    status=execution_report.status,
+                )
+            except Exception as exec_err:
+                logger.error(
+                    "tradingview_order_execution_failed",
+                    order_id=str(order.id),
+                    error=str(exec_err),
+                )
+                order_record["status"] = "EXECUTION_ERROR"
+                order_record["error_message"] = str(exec_err)
+
+        # Emit WebSocket event for frontend
+        ws_event_type = "order:submitted"
+        if execution_report is not None:
+            from src.models.order import OrderStatus as OS
+
+            if execution_report.status in (OS.FILLED, OS.PARTIAL_FILL):
+                ws_event_type = "order:filled"
+            elif execution_report.status == OS.REJECTED:
+                ws_event_type = "order:rejected"
+
+        await ws_manager.emit_order_event(ws_event_type, order_record)
 
         return {
             "status": "success",
@@ -109,7 +190,7 @@ async def receive_webhook(
                 "side": order.side,
                 "order_type": order.order_type,
                 "quantity": float(order.quantity),
-                "status": order.status,
+                "status": order_record["status"],
             },
         }
 
