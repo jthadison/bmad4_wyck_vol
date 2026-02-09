@@ -70,9 +70,8 @@ class OrderBuilder:
         if signal.position_size <= 0:
             raise ValueError(f"Invalid position size: {signal.position_size}")
 
-        # Determine order side (always BUY for Wyckoff long signals)
-        # TODO: Add SHORT support for UTAD patterns
-        side = OrderSide.BUY
+        # Determine order side from signal direction
+        side = OrderSide.SELL if signal.direction == "SHORT" else OrderSide.BUY
 
         # Build order
         order = Order(
@@ -123,12 +122,15 @@ class OrderBuilder:
         if not signal.stop_loss:
             raise ValueError("Signal must have stop_loss for stop loss order")
 
+        # Exit side is opposite of entry: SELL exits LONG, BUY exits SHORT
+        exit_side = OrderSide.BUY if signal.direction == "SHORT" else OrderSide.SELL
+
         order = Order(
             signal_id=signal.id,
             campaign_id=signal.campaign_id,
             platform=platform or self.default_platform,
             symbol=signal.symbol,
-            side=OrderSide.SELL,  # Exit long position
+            side=exit_side,
             order_type=OrderType.STOP,
             quantity=signal.position_size,
             stop_price=signal.stop_loss,
@@ -172,12 +174,15 @@ class OrderBuilder:
         # Use specified target or default to primary target
         price = target_price or signal.target_levels.primary_target
 
+        # Exit side is opposite of entry: SELL exits LONG, BUY exits SHORT
+        exit_side = OrderSide.BUY if signal.direction == "SHORT" else OrderSide.SELL
+
         order = Order(
             signal_id=signal.id,
             campaign_id=signal.campaign_id,
             platform=platform or self.default_platform,
             symbol=signal.symbol,
-            side=OrderSide.SELL,  # Exit long position
+            side=exit_side,
             order_type=OrderType.LIMIT,
             quantity=signal.position_size,
             limit_price=price,
@@ -277,12 +282,15 @@ class OrderBuilder:
                 f"Must be 0 < quantity <= {signal.position_size}"
             )
 
+        # Exit side is opposite of entry: SELL exits LONG, BUY exits SHORT
+        exit_side = OrderSide.BUY if signal.direction == "SHORT" else OrderSide.SELL
+
         order = Order(
             signal_id=signal.id,
             campaign_id=signal.campaign_id,
             platform=platform or self.default_platform,
             symbol=signal.symbol,
-            side=OrderSide.SELL,
+            side=exit_side,
             order_type=OrderType.LIMIT,
             quantity=exit_quantity,
             limit_price=exit_price,
@@ -329,10 +337,16 @@ class OrderBuilder:
         if not signal.target_levels or not signal.target_levels.primary_target:
             errors.append("Missing target_levels")
 
-        if signal.stop_loss >= signal.entry_price:
-            errors.append(
-                f"Stop loss ({signal.stop_loss}) must be below entry ({signal.entry_price})"
-            )
+        if signal.direction == "SHORT":
+            if signal.stop_loss <= signal.entry_price:
+                errors.append(
+                    f"Stop loss ({signal.stop_loss}) must be above entry ({signal.entry_price}) for SHORT"
+                )
+        else:
+            if signal.stop_loss >= signal.entry_price:
+                errors.append(
+                    f"Stop loss ({signal.stop_loss}) must be below entry ({signal.entry_price})"
+                )
 
         if errors:
             raise ValueError(f"Signal validation failed: {', '.join(errors)}")
