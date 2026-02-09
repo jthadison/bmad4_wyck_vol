@@ -486,7 +486,7 @@ class TestPaperTradingServiceProfitFactor:
         service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
         metrics = await service.calculate_performance_metrics()
 
-        assert metrics["profit_factor"] == float("inf")
+        assert metrics["profit_factor"] == 999.99
 
     @pytest.mark.asyncio
     async def test_profit_factor_no_trades(self):

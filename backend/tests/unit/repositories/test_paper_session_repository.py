@@ -92,13 +92,14 @@ class TestPaperSessionRepository:
         added = []
         session.add = MagicMock(side_effect=lambda obj: added.append(obj))
 
-        # Simulate DB flush assigning the id (ORM default only runs on insert)
-        async def mock_flush():
+        # Simulate DB commit assigning the id (ORM default only runs on insert)
+        async def mock_commit():
             for obj in added:
                 if obj.id is None:
                     obj.id = uuid4()
 
-        session.flush = AsyncMock(side_effect=mock_flush)
+        session.commit = AsyncMock(side_effect=mock_commit)
+        session.refresh = AsyncMock()
 
         repo = PaperSessionRepository(session)
         account = _make_account()

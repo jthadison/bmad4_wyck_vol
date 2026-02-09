@@ -168,7 +168,7 @@ class PaperTradingService:
         account = await self.account_repo.get_account()
         if not account:
             logger.error("paper_account_not_found_during_update")
-            return
+            return 0
 
         for position in positions:
             # TODO: Fetch current market price from MarketDataService
@@ -252,7 +252,7 @@ class PaperTradingService:
             total_losses = abs(sum(t.realized_pnl for t in losing_trades))
             profit_factor = float(total_wins / total_losses) if total_losses > 0 else 0.0
         else:
-            profit_factor = float("inf") if winning_trades else 0.0
+            profit_factor = 999.99 if winning_trades else 0.0
 
         return {
             "total_trades": len(trades),
@@ -305,8 +305,10 @@ class PaperTradingService:
 
             if backtest_value > 0:
                 delta_pct = abs((paper_value - backtest_value) / backtest_value * 100)
+            elif paper_value > 0:
+                delta_pct = 100.0
             else:
-                delta_pct = 0
+                delta_pct = 0.0
 
             deltas[metric] = {
                 "paper": paper_value,

@@ -42,7 +42,8 @@ class PaperSessionRepository:
         )
 
         self.session.add(session_db)
-        await self.session.flush()
+        await self.session.commit()
+        await self.session.refresh(session_db)
 
         logger.info(
             "paper_session_archived",

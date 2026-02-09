@@ -39,13 +39,22 @@ class EnablePaperTradingRequest(BaseModel):
     """Request to enable paper trading mode."""
 
     starting_capital: Decimal = Field(
-        default=Decimal("100000.00"), ge=Decimal("1000.00"), description="Initial virtual capital"
+        default=Decimal("100000.00"),
+        ge=Decimal("1000.00"),
+        le=Decimal("100000000.00"),
+        description="Initial virtual capital",
     )
     commission_per_share: Decimal = Field(
-        default=Decimal("0.005"), ge=Decimal("0"), description="Commission cost per share"
+        default=Decimal("0.005"),
+        ge=Decimal("0"),
+        le=Decimal("1.00"),
+        description="Commission cost per share",
     )
     slippage_percentage: Decimal = Field(
-        default=Decimal("0.02"), ge=Decimal("0"), description="Slippage as percentage"
+        default=Decimal("0.02"),
+        ge=Decimal("0"),
+        le=Decimal("10.0"),
+        description="Slippage as percentage",
     )
     use_realistic_fills: bool = Field(
         default=True, description="Apply slippage and commission to fills"
@@ -56,13 +65,22 @@ class PaperTradingSettingsRequest(BaseModel):
     """Request to update paper trading settings."""
 
     starting_capital: Decimal = Field(
-        default=Decimal("100000.00"), ge=Decimal("1000.00"), description="Initial virtual capital"
+        default=Decimal("100000.00"),
+        ge=Decimal("1000.00"),
+        le=Decimal("100000000.00"),
+        description="Initial virtual capital",
     )
     commission_per_share: Decimal = Field(
-        default=Decimal("0.005"), ge=Decimal("0"), description="Commission cost per share"
+        default=Decimal("0.005"),
+        ge=Decimal("0"),
+        le=Decimal("1.00"),
+        description="Commission cost per share",
     )
     slippage_percentage: Decimal = Field(
-        default=Decimal("0.02"), ge=Decimal("0"), description="Slippage as percentage"
+        default=Decimal("0.02"),
+        ge=Decimal("0"),
+        le=Decimal("10.0"),
+        description="Slippage as percentage",
     )
     use_realistic_fills: bool = Field(
         default=True, description="Apply slippage and commission to fills"
@@ -190,7 +208,7 @@ async def enable_paper_trading(
         logger.error("paper_trading_enable_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to enable paper trading: {str(e)}",
+            detail="Failed to enable paper trading",
         ) from e
 
 
@@ -255,7 +273,7 @@ async def disable_paper_trading(
         logger.error("paper_trading_disable_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disable paper trading: {str(e)}",
+            detail="Failed to disable paper trading",
         ) from e
 
 
@@ -323,7 +341,7 @@ async def update_settings(
         logger.error("update_settings_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update settings: {str(e)}",
+            detail="Failed to update settings",
         ) from e
 
 
@@ -365,7 +383,7 @@ async def list_positions(
         logger.error("list_positions_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list positions: {str(e)}",
+            detail="Failed to list positions",
         ) from e
 
 
@@ -400,7 +418,7 @@ async def list_trades(
         logger.error("list_trades_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list trades: {str(e)}",
+            detail="Failed to list trades",
         ) from e
 
 
@@ -464,7 +482,7 @@ async def get_report(
         logger.error("get_report_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate report: {str(e)}",
+            detail="Failed to generate report",
         ) from e
 
 
@@ -501,7 +519,7 @@ async def compare_to_backtest(
         logger.error("compare_to_backtest_failed", backtest_id=str(backtest_id), error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to compare to backtest: {str(e)}",
+            detail="Failed to compare to backtest",
         ) from e
 
 
@@ -583,7 +601,7 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
         logger.error("reset_account_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to reset account: {str(e)}",
+            detail="Failed to reset account",
         ) from e
 
 
@@ -618,7 +636,7 @@ async def check_live_eligibility(
         logger.error("check_live_eligibility_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to check live eligibility: {str(e)}",
+            detail="Failed to check live eligibility",
         ) from e
 
 
@@ -637,7 +655,7 @@ async def list_sessions(
         logger.error("list_sessions_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list sessions: {str(e)}",
+            detail="Failed to list sessions",
         ) from e
 
 
@@ -662,5 +680,5 @@ async def get_session(
         logger.error("get_session_failed", session_id=str(session_id), error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get session: {str(e)}",
+            detail="Failed to get session",
         ) from e
