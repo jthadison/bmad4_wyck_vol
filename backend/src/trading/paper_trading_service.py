@@ -498,3 +498,132 @@ class PaperTradingService:
 
         account.updated_at = datetime.now(UTC)
         await self.account_repo.update_account(account)
+
+    async def close_all_positions_atomic(
+        self,
+        positions: list[PaperPosition],
+        account: PaperAccount,
+    ) -> int:
+        """
+        Close all positions in a single atomic transaction.
+
+        Unlike _close_position (which commits per-position), this method
+        batches all operations and commits once at the end.
+
+        Returns:
+            Number of positions closed
+        """
+        if not positions:
+            return 0
+
+        from sqlalchemy import update
+
+        from src.repositories.paper_trading_orm import PaperAccountDB, PaperPositionDB, PaperTradeDB
+
+        closed_count = 0
+        session = self.account_repo.session  # All repos share this session
+
+        for position in positions:
+            try:
+                # Create trade via broker (pure computation, no DB)
+                trade = self.broker.close_position(position, position.current_price, "MANUAL")
+
+                # Add trade to session (no commit)
+                trade_db = PaperTradeDB(
+                    id=trade.id,
+                    position_id=trade.position_id,
+                    signal_id=trade.signal_id,
+                    symbol=trade.symbol,
+                    entry_time=trade.entry_time,
+                    entry_price=trade.entry_price,
+                    exit_time=trade.exit_time,
+                    exit_price=trade.exit_price,
+                    quantity=trade.quantity,
+                    realized_pnl=trade.realized_pnl,
+                    r_multiple_achieved=trade.r_multiple_achieved,
+                    commission_total=trade.commission_total,
+                    slippage_total=trade.slippage_total,
+                    exit_reason=trade.exit_reason,
+                    created_at=trade.created_at,
+                )
+                session.add(trade_db)
+
+                # Update position status (no commit)
+                stmt = (
+                    update(PaperPositionDB)
+                    .where(PaperPositionDB.id == position.id)
+                    .values(
+                        status="MANUAL",
+                        current_price=position.current_price,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
+                await session.execute(stmt)
+
+                # Update account metrics in-memory
+                account.current_capital += (
+                    trade.exit_price * trade.quantity - trade.commission_total
+                )
+                account.total_realized_pnl += trade.realized_pnl
+                account.total_commission_paid += trade.commission_total
+                account.total_slippage_cost += trade.slippage_total
+                account.total_trades += 1
+
+                if trade.realized_pnl > Decimal("0"):
+                    account.winning_trades += 1
+                else:
+                    account.losing_trades += 1
+
+                closed_count += 1
+
+            except Exception:
+                logger.error(
+                    "failed_to_close_position_in_batch",
+                    position_id=str(position.id),
+                )
+                raise  # Fail the whole batch - don't partial commit
+
+        # Update account metrics once (after all positions)
+        if account.total_trades > 0:
+            account.win_rate = (
+                Decimal(str(account.winning_trades)) / Decimal(str(account.total_trades))
+            ) * Decimal("100")
+
+        # Calculate average R-multiple from all trades
+        trades, _ = await self.trade_repo.list_trades(limit=10000, offset=0)
+        if trades:
+            total_r = sum(t.r_multiple_achieved for t in trades)
+            account.average_r_multiple = total_r / len(trades)
+
+        positions_list = await self.position_repo.list_open_positions()
+        account.total_unrealized_pnl = sum(p.unrealized_pnl for p in positions_list)
+        account.equity = account.current_capital + account.total_unrealized_pnl
+        account.current_heat = await self._calculate_current_heat(account)
+        account.updated_at = datetime.now(UTC)
+
+        # Update account in DB (no commit yet)
+        await session.execute(
+            update(PaperAccountDB)
+            .where(PaperAccountDB.id == account.id)
+            .values(
+                current_capital=account.current_capital,
+                equity=account.equity,
+                total_realized_pnl=account.total_realized_pnl,
+                total_unrealized_pnl=account.total_unrealized_pnl,
+                total_commission_paid=account.total_commission_paid,
+                total_slippage_cost=account.total_slippage_cost,
+                total_trades=account.total_trades,
+                winning_trades=account.winning_trades,
+                losing_trades=account.losing_trades,
+                win_rate=account.win_rate,
+                average_r_multiple=account.average_r_multiple,
+                max_drawdown=account.max_drawdown,
+                current_heat=account.current_heat,
+                updated_at=account.updated_at,
+            )
+        )
+
+        # Single commit for everything
+        await session.commit()
+
+        return closed_count
