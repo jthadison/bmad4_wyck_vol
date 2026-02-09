@@ -76,7 +76,7 @@ export const useSignalQueueStore = defineStore('signalQueue', () => {
   const sortedSignals = computed(() =>
     [...pendingSignals.value].sort(
       (a, b) =>
-        new Date(b.queued_at).getTime() - new Date(a.queued_at).getTime()
+        new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
     )
   )
 

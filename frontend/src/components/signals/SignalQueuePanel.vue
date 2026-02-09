@@ -52,7 +52,7 @@ const handleApproveSignal = async (signal: PendingSignal) => {
     toast.add({
       severity: 'success',
       summary: 'Signal Approved',
-      detail: `Position opened: ${signal.signal.symbol} ${signal.signal.pattern_type}`,
+      detail: `Position opened: ${signal.symbol} ${signal.pattern_type}`,
       life: 3000,
     })
   } else {

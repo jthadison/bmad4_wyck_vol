@@ -14,7 +14,7 @@ import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest'
 import { mount, VueWrapper, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import SignalQueuePanel from '@/components/signals/SignalQueuePanel.vue'
-import type { PendingSignal, Signal } from '@/types'
+import type { PendingSignal } from '@/types'
 import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
 import type { useSignalQueueStore } from '@/stores/signalQueueStore'
@@ -48,42 +48,20 @@ vi.mock('@/stores/signalQueueStore', () => ({
   useSignalQueueStore: vi.fn(() => createMockStore()),
 }))
 
-// Helper to create mock signal
-const createMockSignal = (overrides?: Partial<Signal>): Signal => ({
-  id: 'signal-123',
-  symbol: 'AAPL',
-  pattern_type: 'SPRING',
-  phase: 'C',
-  entry_price: '150.25',
-  stop_loss: '149.50',
-  target_levels: {
-    primary_target: '152.75',
-    secondary_targets: [],
-  },
-  position_size: 100,
-  risk_amount: '75.00',
-  r_multiple: '3.33',
-  confidence_score: 92,
-  confidence_components: {
-    pattern_confidence: 90,
-    phase_confidence: 95,
-    volume_confidence: 91,
-    overall_confidence: 92,
-  },
-  campaign_id: null,
-  status: 'PENDING',
-  timestamp: new Date().toISOString(),
-  timeframe: '1D',
-  ...overrides,
-})
-
-// Helper to create mock pending signal
+// Helper to create mock pending signal (flat structure matching backend)
 const createMockPendingSignal = (
   overrides?: Partial<PendingSignal>
 ): PendingSignal => ({
   queue_id: `queue-${Math.random().toString(36).substr(2, 9)}`,
-  signal: createMockSignal(),
-  queued_at: new Date().toISOString(),
+  signal_id: 'signal-123',
+  symbol: 'AAPL',
+  pattern_type: 'SPRING',
+  confidence_score: 92,
+  confidence_grade: 'A+',
+  entry_price: '150.25',
+  stop_loss: '149.50',
+  target_price: '152.75',
+  submitted_at: new Date().toISOString(),
   expires_at: new Date(Date.now() + 300000).toISOString(),
   time_remaining_seconds: 272,
   is_expired: false,

@@ -9,7 +9,7 @@ import SignalQueuePanel from '@/components/signals/SignalQueuePanel.vue'
 </script>
 
 <template>
-  <div class="signal-approval-view min-h-screen bg-gray-950 p-6">
+  <div class="signal-approval-view p-6">
     <SignalQueuePanel />
   </div>
 </template>

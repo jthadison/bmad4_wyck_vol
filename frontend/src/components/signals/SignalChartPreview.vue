@@ -245,11 +245,11 @@ function addLevelLines(levelLines: LevelLine[]) {
 function addSignalLevels() {
   if (!candlestickSeries.value) return
 
-  const signal = props.signal.signal
+  const sig = props.signal
 
   // Entry price line (blue)
   candlestickSeries.value.createPriceLine({
-    price: parseFloat(signal.entry_price),
+    price: parseFloat(sig.entry_price),
     color: '#3B82F6',
     lineWidth: 2 as LineWidth,
     lineStyle: LineStyle.Solid,
@@ -259,7 +259,7 @@ function addSignalLevels() {
 
   // Stop loss line (red)
   candlestickSeries.value.createPriceLine({
-    price: parseFloat(signal.stop_loss),
+    price: parseFloat(sig.stop_loss),
     color: '#EF4444',
     lineWidth: 2 as LineWidth,
     lineStyle: LineStyle.Dashed,
@@ -269,7 +269,7 @@ function addSignalLevels() {
 
   // Target line (green)
   candlestickSeries.value.createPriceLine({
-    price: parseFloat(signal.target_levels.primary_target),
+    price: parseFloat(sig.target_price),
     color: '#10B981',
     lineWidth: 2 as LineWidth,
     lineStyle: LineStyle.Dotted,
@@ -313,14 +313,11 @@ watch(
     <div class="chart-header flex items-center justify-between mb-2">
       <div class="flex items-center gap-2">
         <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
-          {{ signal.signal.symbol }}
-        </span>
-        <span class="text-xs text-gray-500 dark:text-gray-400">
-          {{ signal.signal.timeframe }}
+          {{ signal.symbol }}
         </span>
       </div>
       <span class="text-xs text-gray-500 dark:text-gray-400">
-        {{ signal.signal.pattern_type }} Pattern
+        {{ signal.pattern_type }} Pattern
       </span>
     </div>
 

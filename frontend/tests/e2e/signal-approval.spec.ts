@@ -8,39 +8,20 @@
  */
 import { test, expect } from '@playwright/test'
 
-// Mock API response data
+// Mock API response data (flat structure matching backend PendingSignalView)
 const mockPendingSignal = {
   queue_id: 'queue-e2e-001',
-  signal: {
-    id: 'signal-e2e-001',
-    symbol: 'AAPL',
-    pattern_type: 'SPRING',
-    phase: 'C',
-    entry_price: '150.25',
-    stop_loss: '149.50',
-    target_levels: {
-      primary_target: '152.75',
-      secondary_targets: [],
-    },
-    position_size: 100,
-    risk_amount: '75.00',
-    r_multiple: '3.33',
-    confidence_score: 92,
-    confidence_components: {
-      pattern_confidence: 90,
-      phase_confidence: 95,
-      volume_confidence: 91,
-      overall_confidence: 92,
-    },
-    campaign_id: null,
-    status: 'PENDING',
-    timestamp: new Date().toISOString(),
-    timeframe: '1D',
-  },
-  queued_at: new Date().toISOString(),
+  signal_id: 'signal-e2e-001',
+  symbol: 'AAPL',
+  pattern_type: 'SPRING',
+  confidence_score: 92,
+  confidence_grade: 'A+',
+  entry_price: '150.25',
+  stop_loss: '149.50',
+  target_price: '152.75',
+  submitted_at: new Date().toISOString(),
   expires_at: new Date(Date.now() + 300000).toISOString(),
   time_remaining_seconds: 272,
-  is_expired: false,
 }
 
 const mockApprovalResult = {
@@ -111,10 +92,10 @@ test.describe('Signal Approval Queue', () => {
     await expect(page.locator('[data-testid="target-price"]')).toContainText(
       '152.75'
     )
-    await expect(page.locator('[data-testid="wyckoff-phase"]')).toContainText(
-      'C'
-    )
-    await expect(page.locator('[data-testid="risk-percent"]')).toBeVisible()
+    await expect(
+      page.locator('[data-testid="confidence-grade-row"]')
+    ).toContainText('A+')
+    await expect(page.locator('[data-testid="stop-distance"]')).toBeVisible()
     await expect(page.locator('[data-testid="asset-class"]')).toContainText(
       'Stock'
     )

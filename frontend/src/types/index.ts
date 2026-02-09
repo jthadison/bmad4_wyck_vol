@@ -197,15 +197,23 @@ export interface SignalRejectedEvent {
 // ============================================================================
 
 /**
- * Pending signal in the approval queue
+ * Pending signal in the approval queue.
+ * Matches backend PendingSignalView flat structure.
  */
 export interface PendingSignal {
   queue_id: string
-  signal: Signal
-  queued_at: string
+  signal_id: string
+  symbol: string
+  pattern_type: string
+  confidence_score: number
+  confidence_grade: string
+  entry_price: string
+  stop_loss: string
+  target_price: string
+  submitted_at: string
   expires_at: string
   time_remaining_seconds: number
-  is_expired: boolean
+  is_expired?: boolean
   chart_data?: ChartData
 }
 

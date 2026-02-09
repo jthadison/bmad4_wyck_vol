@@ -45,12 +45,12 @@ const patternBadgeColor = computed(() => {
     SC: 'bg-purple-500',
     AR: 'bg-orange-500',
   }
-  return colorMap[props.signal.signal.pattern_type] || 'bg-gray-500'
+  return colorMap[props.signal.pattern_type] || 'bg-gray-500'
 })
 
 // Confidence grade calculation
 const confidenceGrade = computed(() => {
-  const score = props.signal.signal.confidence_score
+  const score = props.signal.confidence_score
   if (score >= 90) return 'A+'
   if (score >= 85) return 'A'
   if (score >= 80) return 'B+'
@@ -121,22 +121,22 @@ const cardClasses = computed(() => {
   return baseClasses
 })
 
-// Risk percentage calculation
-const riskPercentage = computed(() => {
+// Stop distance as percentage of entry price
+const stopDistance = computed(() => {
   try {
-    const entry = parseFloat(props.signal.signal.entry_price)
-    const stop = parseFloat(props.signal.signal.stop_loss)
+    const entry = parseFloat(props.signal.entry_price)
+    const stop = parseFloat(props.signal.stop_loss)
     if (entry === 0) return '0.0%'
-    const risk = Math.abs((entry - stop) / entry) * 100
-    return `${risk.toFixed(1)}%`
+    const dist = Math.abs((entry - stop) / entry) * 100
+    return `${dist.toFixed(1)}%`
   } catch {
     return '0.0%'
   }
 })
 
-// Asset class derived from symbol
+// TODO: Temporary heuristic - replace with backend asset_class field when available
 const assetClass = computed(() => {
-  const symbol = props.signal.signal.symbol
+  const symbol = props.signal.symbol
   // Forex pairs typically have 6 chars (e.g., EURUSD) or contain /
   if (symbol.includes('/') || /^[A-Z]{6}$/.test(symbol)) return 'Forex'
   // Index futures/CFDs
@@ -155,14 +155,20 @@ const formatPrice = (priceStr: string): string => {
   }
 }
 
-// Format R-multiple
-const formatRMultiple = (rStr: string): string => {
+// Computed R-multiple from entry/stop/target prices
+const rMultiple = computed(() => {
   try {
-    return `${formatDecimal(rStr, 2)}R`
+    const entry = parseFloat(props.signal.entry_price)
+    const stop = parseFloat(props.signal.stop_loss)
+    const target = parseFloat(props.signal.target_price)
+    const risk = Math.abs(entry - stop)
+    if (risk === 0) return '0.00R'
+    const r = Math.abs(target - entry) / risk
+    return `${r.toFixed(2)}R`
   } catch {
     return '0.00R'
   }
-}
+})
 
 // Event handlers
 const handleCardClick = () => {
@@ -171,12 +177,16 @@ const handleCardClick = () => {
   }
 }
 
-const handleApprove = async (event: Event) => {
+const handleApprove = (event: Event) => {
   event.stopPropagation()
   if (props.signal.is_expired || isApproving.value) return
 
   isApproving.value = true
   emit('approve')
+  // Reset after short delay so button re-enables if parent action fails
+  setTimeout(() => {
+    isApproving.value = false
+  }, 2000)
 }
 
 const handleReject = (event: Event) => {
@@ -199,7 +209,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
   <Card
     :class="cardClasses"
     role="button"
-    :aria-label="`${signal.signal.pattern_type} signal on ${signal.signal.symbol} with ${signal.signal.confidence_score}% confidence`"
+    :aria-label="`${signal.pattern_type} signal on ${signal.symbol} with ${signal.confidence_score}% confidence`"
     :aria-disabled="signal.is_expired"
     tabindex="0"
     data-testid="queue-signal-card"
@@ -214,10 +224,10 @@ const handleKeyPress = (event: KeyboardEvent) => {
             class="text-xl font-bold text-gray-900 dark:text-white"
             data-testid="signal-symbol"
           >
-            {{ signal.signal.symbol }}
+            {{ signal.symbol }}
           </span>
           <Badge
-            :value="signal.signal.pattern_type"
+            :value="signal.pattern_type"
             :class="[patternBadgeColor, 'text-white text-xs px-2 py-1']"
             data-testid="pattern-badge"
           />
@@ -230,7 +240,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
             {{ confidenceGrade }}
           </span>
           <span class="text-sm text-gray-600 dark:text-gray-400 ml-1">
-            ({{ signal.signal.confidence_score }}%)
+            ({{ signal.confidence_score }}%)
           </span>
         </div>
       </div>
@@ -246,7 +256,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
             class="ml-2 font-semibold text-gray-900 dark:text-white"
             data-testid="entry-price"
           >
-            ${{ formatPrice(signal.signal.entry_price) }}
+            ${{ formatPrice(signal.entry_price) }}
           </span>
         </div>
         <div>
@@ -255,7 +265,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
             class="ml-2 font-semibold text-red-600 dark:text-red-400"
             data-testid="stop-price"
           >
-            ${{ formatPrice(signal.signal.stop_loss) }}
+            ${{ formatPrice(signal.stop_loss) }}
           </span>
         </div>
         <div>
@@ -264,7 +274,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
             class="ml-2 font-semibold text-green-600 dark:text-green-400"
             data-testid="target-price"
           >
-            ${{ formatPrice(signal.signal.target_levels.primary_target) }}
+            ${{ formatPrice(signal.target_price) }}
           </span>
         </div>
         <div>
@@ -273,29 +283,29 @@ const handleKeyPress = (event: KeyboardEvent) => {
             class="ml-2 font-bold text-blue-600 dark:text-blue-400"
             data-testid="r-multiple"
           >
-            {{ formatRMultiple(signal.signal.r_multiple) }}
+            {{ rMultiple }}
           </span>
         </div>
       </div>
 
-      <!-- Phase, Risk, Asset Class -->
+      <!-- Grade, Stop Distance, Asset Class -->
       <div class="grid grid-cols-3 gap-2 mb-3 text-sm">
         <div>
-          <span class="text-gray-600 dark:text-gray-400">Phase:</span>
+          <span class="text-gray-600 dark:text-gray-400">Grade:</span>
           <span
             class="ml-2 font-semibold text-blue-600 dark:text-blue-400"
-            data-testid="wyckoff-phase"
+            data-testid="confidence-grade-row"
           >
-            {{ signal.signal.phase }}
+            {{ signal.confidence_grade || confidenceGrade }}
           </span>
         </div>
         <div>
-          <span class="text-gray-600 dark:text-gray-400">Risk:</span>
+          <span class="text-gray-600 dark:text-gray-400">Stop Dist.:</span>
           <span
             class="ml-2 font-semibold text-orange-600 dark:text-orange-400"
-            data-testid="risk-percent"
+            data-testid="stop-distance"
           >
-            {{ riskPercentage }}
+            {{ stopDistance }}
           </span>
         </div>
         <div>
