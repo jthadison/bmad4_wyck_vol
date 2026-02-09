@@ -529,7 +529,9 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
     Reset paper trading account and archive data.
 
     Closes all positions, archives trade history, and creates
-    a fresh paper trading account.
+    a fresh paper trading account.  All mutations happen in a
+    single transaction so a partial failure cannot leave
+    orphaned data.
 
     Args:
         db: Database session
@@ -541,9 +543,15 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
         HTTPException: If reset fails
     """
     try:
+        from datetime import datetime
+
+        from sqlalchemy import delete as sa_delete
+
+        from src.repositories.paper_trading_orm import PaperAccountDB, PaperTradingSessionDB
+
         account_repo = PaperAccountRepository(db)
         trade_repo = PaperTradeRepository(db)
-        session_repo = PaperSessionRepository(db)
+        position_repo = PaperPositionRepository(db)
 
         # Get existing account
         account = await account_repo.get_account()
@@ -553,11 +561,13 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
                 detail="Paper trading not enabled. Enable first before resetting.",
             )
 
-        # Archive current session before deleting
-        trades, _ = await trade_repo.list_trades(limit=100000, offset=0)
+        # Fetch trades for archive (capped at 10000)
+        trades, total_trade_count = await trade_repo.list_trades(limit=10000, offset=0)
 
         metrics = {
             "total_trades": account.total_trades,
+            "archived_trade_count": len(trades),
+            "total_trade_count": total_trade_count,
             "win_rate": float(account.win_rate),
             "average_r_multiple": float(account.average_r_multiple),
             "max_drawdown": float(account.max_drawdown),
@@ -566,38 +576,73 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
             "starting_capital": float(account.starting_capital),
         }
 
-        session_id = await session_repo.archive_session(account, trades, metrics)
+        # --- All mutations in a single transaction ---
+        now = datetime.now(UTC)
 
-        await account_repo.delete_account(account.id)
+        # 1. Create archive session
+        session_db = PaperTradingSessionDB(
+            account_snapshot=account.model_dump(mode="json"),
+            trades_snapshot=[t.model_dump(mode="json") for t in trades],
+            final_metrics=metrics,
+            session_start=account.paper_trading_start_date or account.created_at,
+            session_end=now,
+            archived_at=now,
+        )
+        db.add(session_db)
 
-        # Create fresh account
-        from datetime import datetime
+        # 2. Delete all positions and trades (no commit)
+        await position_repo.delete_all_positions()
+        await trade_repo.delete_all_trades()
 
-        new_account = PaperAccount(
-            starting_capital=account.starting_capital,  # Keep same starting capital
+        # 3. Delete old account
+        await db.execute(sa_delete(PaperAccountDB).where(PaperAccountDB.id == account.id))
+
+        # 4. Create new account
+        new_account_db = PaperAccountDB(
+            starting_capital=account.starting_capital,
             current_capital=account.starting_capital,
             equity=account.starting_capital,
-            paper_trading_start_date=datetime.now(UTC),
+            paper_trading_start_date=now,
+            created_at=now,
+            updated_at=now,
         )
+        db.add(new_account_db)
 
-        saved_account = await account_repo.create_account(new_account)
+        # 5. Flush to get IDs, then commit
+        await db.flush()
+        session_id = session_db.id
+        new_account_id = new_account_db.id
+
+        await db.commit()
 
         logger.info(
             "paper_account_reset",
             old_account_id=str(account.id),
-            new_account_id=str(saved_account.id),
+            new_account_id=str(new_account_id),
             archived_session_id=str(session_id),
+        )
+
+        # Build response from the ORM object
+        new_account = PaperAccount(
+            id=new_account_db.id,
+            starting_capital=Decimal(str(new_account_db.starting_capital)),
+            current_capital=Decimal(str(new_account_db.current_capital)),
+            equity=Decimal(str(new_account_db.equity)),
+            paper_trading_start_date=new_account_db.paper_trading_start_date,
+            created_at=new_account_db.created_at,
+            updated_at=new_account_db.updated_at,
         )
 
         return PaperTradingResponse(
             success=True,
             message="Paper trading account reset successfully. Previous session archived.",
-            data={"account": saved_account.model_dump(), "archived_session_id": str(session_id)},
+            data={"account": new_account.model_dump(), "archived_session_id": str(session_id)},
         )
 
     except HTTPException:
         raise
     except Exception as e:
+        await db.rollback()
         logger.error("reset_account_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

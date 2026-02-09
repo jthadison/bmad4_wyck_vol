@@ -11,7 +11,7 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.paper_trading import PaperPosition
@@ -192,6 +192,12 @@ class PaperPositionRepository:
             await self.session.delete(position_db)
             await self.session.commit()
             logger.info("paper_position_deleted", position_id=str(position_id))
+
+    async def delete_all_positions(self) -> int:
+        """Delete all paper positions. Does NOT commit. Returns count deleted."""
+        stmt = delete(PaperPositionDB)
+        result = await self.session.execute(stmt)
+        return result.rowcount
 
     def _to_model(self, position_db: PaperPositionDB) -> PaperPosition:
         """
