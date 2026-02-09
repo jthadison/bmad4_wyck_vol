@@ -8,6 +8,7 @@ and WebSocket broadcast of order events.
 Author: Story 16.4a, Story 23.7
 """
 
+import asyncio
 import json
 import time
 from collections import deque
@@ -46,16 +47,20 @@ order_audit_log: deque[dict[str, Any]] = deque(maxlen=10000)
 # Broker router instance (adapters are None by default; set via configure_broker_router)
 broker_router = BrokerRouter()
 
-# Simple per-symbol rate limiter: tracks (symbol -> list of timestamps)
+# Async-safe per-symbol rate limiter: tracks (symbol -> list of timestamps)
+# Uses asyncio.Lock to prevent race conditions under concurrent async requests.
 # Max 10 orders per minute per symbol
 _RATE_LIMIT_MAX = 10
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _rate_limit_tracker: dict[str, list[float]] = {}
+_rate_limit_lock = asyncio.Lock()
 
 
-def _check_rate_limit(symbol: str) -> bool:
+async def _check_rate_limit(symbol: str) -> bool:
     """
     Check if a symbol has exceeded the per-symbol rate limit.
+
+    Thread-safe for async contexts using asyncio.Lock.
 
     Args:
         symbol: Trading symbol
@@ -63,20 +68,25 @@ def _check_rate_limit(symbol: str) -> bool:
     Returns:
         True if within limit, False if rate limit exceeded
     """
-    now = time.monotonic()
-    timestamps = _rate_limit_tracker.get(symbol, [])
+    async with _rate_limit_lock:
+        now = time.monotonic()
+        timestamps = _rate_limit_tracker.get(symbol, [])
 
-    # Remove timestamps outside the window
-    cutoff = now - _RATE_LIMIT_WINDOW_SECONDS
-    timestamps = [t for t in timestamps if t > cutoff]
+        # Remove timestamps outside the window
+        cutoff = now - _RATE_LIMIT_WINDOW_SECONDS
+        timestamps = [t for t in timestamps if t > cutoff]
 
-    if len(timestamps) >= _RATE_LIMIT_MAX:
+        # Prune empty symbol keys to prevent slow memory leak
+        if not timestamps and symbol in _rate_limit_tracker:
+            del _rate_limit_tracker[symbol]
+
+        if len(timestamps) >= _RATE_LIMIT_MAX:
+            _rate_limit_tracker[symbol] = timestamps
+            return False
+
+        timestamps.append(now)
         _rate_limit_tracker[symbol] = timestamps
-        return False
-
-    timestamps.append(now)
-    _rate_limit_tracker[symbol] = timestamps
-    return True
+        return True
 
 
 def configure_broker_router(router_instance: BrokerRouter) -> None:
@@ -133,15 +143,26 @@ async def receive_webhook(
         body_str = body.decode("utf-8")
 
         # Security (C-3): When auto-execution is enabled, ALWAYS require signature
-        if settings.auto_execute_orders and not x_tradingview_signature:
-            logger.warning(
-                "tradingview_webhook_signature_required",
-                message="Signature required when auto-execution is enabled",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Webhook signature required when auto-execution is enabled",
-            )
+        # and verify that a webhook secret is actually configured
+        if settings.auto_execute_orders:
+            if not tradingview_adapter.webhook_secret:
+                logger.error(
+                    "tradingview_webhook_secret_not_configured",
+                    message="Cannot auto-execute without webhook secret configured",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Auto-execution requires TRADINGVIEW_WEBHOOK_SECRET to be configured",
+                )
+            if not x_tradingview_signature:
+                logger.warning(
+                    "tradingview_webhook_signature_required",
+                    message="Signature required when auto-execution is enabled",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Webhook signature required when auto-execution is enabled",
+                )
 
         # Verify webhook signature if provided
         if x_tradingview_signature:
@@ -162,7 +183,7 @@ async def receive_webhook(
         order = tradingview_adapter.parse_webhook(payload)
 
         # Rate limit check (M-1): max 10 orders per minute per symbol
-        if not _check_rate_limit(order.symbol):
+        if not await _check_rate_limit(order.symbol):
             logger.warning(
                 "tradingview_webhook_rate_limited",
                 symbol=order.symbol,
