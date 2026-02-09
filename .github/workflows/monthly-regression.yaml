@@ -133,9 +133,12 @@ jobs:
                   f.write('false')
           "
 
-      # Story 23.3: Backtest baseline regression check (NFR21)
-      - name: Run backtest baseline regression check
-        id: backtest_regression_check
+      # Story 23.3: Validate backtest baselines exist and are loadable (NFR21)
+      # Note: Actual regression comparison requires running backtests against
+      # current code, which depends on backtest runner infrastructure (future work).
+      # This step validates that baseline files are present and well-formed.
+      - name: Validate backtest baselines exist
+        id: backtest_baseline_check
         working-directory: backend
         continue-on-error: true
         run: |
@@ -144,7 +147,7 @@ jobs:
           from src.backtesting.backtest_baseline_loader import load_all_backtest_baselines
           import sys
 
-          baselines_dir = Path('tests/datasets/baselines')
+          baselines_dir = Path('tests/datasets/baselines/backtest')
           baselines = load_all_backtest_baselines(baselines_dir)
 
           if not baselines:

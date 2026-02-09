@@ -26,5 +26,5 @@
     "final_equity": "115400.00"
   },
   "tolerance_pct": 5.0,
-  "notes": "Initial baseline established for Story 23.3. US30 daily timeframe, 2-year lookback."
+  "notes": "Initial estimated baselines pending real backtest infrastructure. Values based on expected Wyckoff detection performance ranges. US30 daily timeframe, 2-year lookback."
 }

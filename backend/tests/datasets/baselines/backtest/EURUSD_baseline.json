@@ -26,5 +26,5 @@
     "final_equity": "112800.00"
   },
   "tolerance_pct": 5.0,
-  "notes": "Initial baseline established for Story 23.3. EURUSD daily timeframe, 2-year lookback. Forex pair for cross-asset validation."
+  "notes": "Initial estimated baselines pending real backtest infrastructure. Values based on expected Wyckoff detection performance ranges. EURUSD daily timeframe, 2-year lookback. Forex pair for cross-asset validation."
 }

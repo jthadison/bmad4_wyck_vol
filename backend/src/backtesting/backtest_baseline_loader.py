@@ -15,13 +15,16 @@ from decimal import Decimal
 from pathlib import Path
 
 import structlog
+from pydantic import ValidationError
 
 from src.models.backtest import BacktestMetrics
 
 logger = structlog.get_logger(__name__)
 
-# Default baselines directory
-DEFAULT_BASELINES_DIR = Path(__file__).parent.parent.parent / "tests" / "datasets" / "baselines"
+# Default baselines directory (separate from detector accuracy baselines to avoid schema collision)
+DEFAULT_BASELINES_DIR = (
+    Path(__file__).parent.parent.parent / "tests" / "datasets" / "baselines" / "backtest"
+)
 
 # Default tolerance for regression detection (5% = NFR21)
 DEFAULT_TOLERANCE_PCT = Decimal("5.0")
@@ -75,20 +78,29 @@ def load_backtest_baseline(
         logger.info("no_backtest_baseline_found", symbol=symbol, path=str(baseline_file))
         return None
 
-    with open(baseline_file) as f:
-        data = json.load(f)
+    try:
+        with open(baseline_file) as f:
+            data = json.load(f)
 
-    metrics = BacktestMetrics(**data["metrics"])
-    tolerance_pct = Decimal(str(data.get("tolerance_pct", DEFAULT_TOLERANCE_PCT)))
+        metrics = BacktestMetrics(**data["metrics"])
+        tolerance_pct = Decimal(str(data.get("tolerance_pct", DEFAULT_TOLERANCE_PCT)))
 
-    baseline = BacktestBaseline(
-        symbol=data["symbol"],
-        metrics=metrics,
-        tolerance_pct=tolerance_pct,
-        baseline_version=data.get("baseline_version", "unknown"),
-        established_at=data.get("established_at", ""),
-        date_range=data.get("date_range", {}),
-    )
+        baseline = BacktestBaseline(
+            symbol=data["symbol"],
+            metrics=metrics,
+            tolerance_pct=tolerance_pct,
+            baseline_version=data.get("baseline_version", "unknown"),
+            established_at=data.get("established_at", ""),
+            date_range=data.get("date_range", {}),
+        )
+    except (json.JSONDecodeError, KeyError, ValidationError) as e:
+        logger.error(
+            "backtest_baseline_load_failed",
+            symbol=symbol,
+            path=str(baseline_file),
+            error=str(e),
+        )
+        return None
 
     logger.info(
         "backtest_baseline_loaded",

@@ -26,8 +26,8 @@ from src.models.backtest import BacktestMetrics
 
 @pytest.fixture
 def baselines_dir():
-    """Return the real baselines directory."""
-    return Path(__file__).parent.parent.parent / "datasets" / "baselines"
+    """Return the real backtest baselines directory."""
+    return Path(__file__).parent.parent.parent / "datasets" / "baselines" / "backtest"
 
 
 @pytest.fixture
@@ -130,6 +130,41 @@ class TestLoadBacktestBaseline:
         assert baseline.symbol == "EURUSD"
         assert baseline.metrics.win_rate == Decimal("0.6050")
         assert baseline.metrics.total_trades == 38
+
+    def test_load_corrupt_json_returns_none(self, tmp_path):
+        """Return None for corrupt/malformed JSON file (C-2)."""
+        baselines = tmp_path / "baselines"
+        baselines.mkdir()
+        corrupt_file = baselines / "CORRUPT_baseline.json"
+        corrupt_file.write_text("{invalid json content!!!")
+        baseline = load_backtest_baseline("CORRUPT", baselines)
+        assert baseline is None
+
+    def test_load_missing_metrics_key_returns_none(self, tmp_path):
+        """Return None for JSON missing required 'metrics' key (C-2)."""
+        baselines = tmp_path / "baselines"
+        baselines.mkdir()
+        bad_file = baselines / "BAD_baseline.json"
+        bad_file.write_text(json.dumps({"symbol": "BAD", "tolerance_pct": 5.0}))
+        baseline = load_backtest_baseline("BAD", baselines)
+        assert baseline is None
+
+    def test_load_invalid_metrics_returns_none(self, tmp_path):
+        """Return None for JSON with invalid metric values (C-2)."""
+        baselines = tmp_path / "baselines"
+        baselines.mkdir()
+        bad_file = baselines / "INVALID_baseline.json"
+        bad_file.write_text(
+            json.dumps(
+                {
+                    "symbol": "INVALID",
+                    "metrics": {"win_rate": "not_a_number"},
+                    "tolerance_pct": 5.0,
+                }
+            )
+        )
+        baseline = load_backtest_baseline("INVALID", baselines)
+        assert baseline is None
 
 
 class TestLoadAllBacktestBaselines:
@@ -336,25 +371,25 @@ class TestBaselineDataIntegrity:
         """Win rates are between 0 and 1."""
         baselines = load_all_backtest_baselines(baselines_dir)
         for b in baselines:
-            assert (
-                Decimal("0") <= b.metrics.win_rate <= Decimal("1")
-            ), f"{b.symbol} win_rate {b.metrics.win_rate} out of range"
+            assert Decimal("0") <= b.metrics.win_rate <= Decimal("1"), (
+                f"{b.symbol} win_rate {b.metrics.win_rate} out of range"
+            )
 
     def test_baselines_drawdown_in_valid_range(self, baselines_dir):
         """Max drawdown is between 0 and 1."""
         baselines = load_all_backtest_baselines(baselines_dir)
         for b in baselines:
-            assert (
-                Decimal("0") <= b.metrics.max_drawdown <= Decimal("1")
-            ), f"{b.symbol} max_drawdown {b.metrics.max_drawdown} out of range"
+            assert Decimal("0") <= b.metrics.max_drawdown <= Decimal("1"), (
+                f"{b.symbol} max_drawdown {b.metrics.max_drawdown} out of range"
+            )
 
     def test_baselines_profit_factor_positive(self, baselines_dir):
         """Profit factor is positive."""
         baselines = load_all_backtest_baselines(baselines_dir)
         for b in baselines:
-            assert b.metrics.profit_factor > Decimal(
-                "0"
-            ), f"{b.symbol} profit_factor should be positive"
+            assert b.metrics.profit_factor > Decimal("0"), (
+                f"{b.symbol} profit_factor should be positive"
+            )
 
     def test_baselines_trade_counts_consistent(self, baselines_dir):
         """Winning + losing trades = total trades."""
