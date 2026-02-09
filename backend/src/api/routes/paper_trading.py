@@ -553,11 +553,13 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
                 detail="Paper trading not enabled. Enable first before resetting.",
             )
 
-        # Archive current session before deleting
-        trades, _ = await trade_repo.list_trades(limit=100000, offset=0)
+        # Archive current session before deleting (cap snapshot to avoid memory bomb)
+        trades, total_trade_count = await trade_repo.list_trades(limit=10000, offset=0)
 
         metrics = {
             "total_trades": account.total_trades,
+            "archived_trade_count": len(trades),
+            "total_trade_count": total_trade_count,
             "win_rate": float(account.win_rate),
             "average_r_multiple": float(account.average_r_multiple),
             "max_drawdown": float(account.max_drawdown),
