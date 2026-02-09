@@ -10,7 +10,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import structlog
 
-from src.models.phase_classification import WyckoffPhase
+from src.models.phase_classification import PhaseClassification, WyckoffPhase
 from src.models.phase_info import PhaseInfo
 from src.orchestrator.pipeline.context import PipelineContext
 from src.orchestrator.stages.base import PipelineStage
@@ -134,6 +134,7 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
     BARS_CONTEXT_KEY = "bars"
     VOLUME_CONTEXT_KEY = "volume_analysis"
     RANGE_CONTEXT_KEY = "current_trading_range"
+    LAST_SOS_CONTEXT_KEY = "last_sos_pattern"
 
     def __init__(self, detector_registry: DetectorRegistry | None = None) -> None:
         """
@@ -257,6 +258,7 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
             volume_analysis=volume_analysis,
             trading_range=trading_range,
             context=context,
+            phase_info=phase_info,
         )
 
         context.set(self.CONTEXT_KEY, patterns)
@@ -271,6 +273,56 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
 
         return patterns
 
+    def _build_volume_dict(self, volume_analysis: list) -> dict:
+        """
+        Convert list[VolumeAnalysis] to dict keyed by timestamp for detectors.
+
+        SOSDetector and LPSDetector expect volume_analysis as a dict keyed by
+        bar.timestamp with values containing volume_ratio, spread_ratio,
+        close_position, and effort_result. The pipeline stores volume_analysis
+        as list[VolumeAnalysis], so this conversion is needed.
+
+        Args:
+            volume_analysis: List of VolumeAnalysis objects from VolumeAnalysisStage
+
+        Returns:
+            Dict keyed by bar timestamp with volume metrics
+        """
+        result: dict = {}
+        for va in volume_analysis:
+            if hasattr(va, "bar") and hasattr(va.bar, "timestamp"):
+                result[va.bar.timestamp] = {
+                    "volume_ratio": va.volume_ratio,
+                    "spread_ratio": va.spread_ratio,
+                    "close_position": va.close_position,
+                    "effort_result": va.effort_result,
+                }
+        return result
+
+    def _build_phase_classification(self, phase_info: PhaseInfo) -> PhaseClassification:
+        """
+        Construct PhaseClassification from PhaseInfo for detector compatibility.
+
+        SOSDetector.detect() expects a PhaseClassification Pydantic model (which
+        has fields like phase, confidence, duration, events_detected, etc.) rather
+        than a PhaseInfo instance. This converts PhaseInfo to PhaseClassification.
+
+        Args:
+            phase_info: PhaseInfo from PhaseDetectionStage
+
+        Returns:
+            PhaseClassification compatible with detector signatures
+        """
+        return PhaseClassification(
+            phase=phase_info.phase,
+            confidence=phase_info.confidence,
+            duration=phase_info.duration,
+            events_detected=phase_info.events,
+            trading_allowed=phase_info.is_trading_allowed(),
+            phase_start_index=phase_info.phase_start_bar_index,
+            phase_start_timestamp=phase_info.last_updated,
+        )
+
     async def _detect_patterns(
         self,
         detector: PatternDetector,
@@ -279,6 +331,7 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
         volume_analysis: list,
         trading_range: Any | None,
         context: PipelineContext,
+        phase_info: PhaseInfo | None = None,
     ) -> list[Any]:
         """
         Detect patterns using the appropriate detector.
@@ -292,6 +345,7 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
             volume_analysis: Volume analysis results
             trading_range: Current trading range (may be None)
             context: Pipeline context for symbol/timeframe
+            phase_info: Full phase info for constructing PhaseClassification
 
         Returns:
             List of detected patterns
@@ -301,7 +355,7 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
         # Different detectors have different signatures
         # SpringDetector: detect_all_springs(range, bars, phase) -> SpringHistory
         # SOSDetector: detect(symbol, range, bars, volume_analysis, phase) -> SOSDetectionResult
-        # LPSDetector: detect(symbol, range, bars, volume_analysis, phase) -> LPSDetectionResult
+        # LPSDetector: detect(range, sos, bars, volume_analysis) -> LPSDetectionResult
 
         if phase == WyckoffPhase.C:
             # Spring detection
@@ -318,23 +372,30 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                     else:
                         patterns.append(result)
 
-        elif phase in (WyckoffPhase.D, WyckoffPhase.E):
-            # SOS/LPS detection
+        elif phase == WyckoffPhase.D:
+            # Phase D: SOS detection (and UTAD via composite)
+            # C-2 fix: Convert list[VolumeAnalysis] to dict for SOSDetector
+            volume_dict = self._build_volume_dict(volume_analysis)
+
+            # C-3 fix: Construct PhaseClassification from PhaseInfo
+            phase_classification = (
+                self._build_phase_classification(phase_info) if phase_info is not None else None
+            )
+
             if hasattr(detector, "detect"):
                 result = detector.detect(
                     symbol=context.symbol,
                     range=trading_range,
                     bars=bars,
-                    volume_analysis=volume_analysis,
-                    phase=phase,
+                    volume_analysis=volume_dict,
+                    phase=phase_classification,
                 )
-                # Handle result object with pattern attribute
+                # Handle SOS detection result
                 if hasattr(result, "sos_detected") and result.sos_detected:
                     if hasattr(result, "sos"):
                         patterns.append(result.sos)
-                elif hasattr(result, "lps_detected") and result.lps_detected:
-                    if hasattr(result, "lps"):
-                        patterns.append(result.lps)
+                        # Store SOS in context for Phase E LPS detection (C-1 fix)
+                        context.set(self.LAST_SOS_CONTEXT_KEY, result.sos)
                 elif (
                     result
                     and not hasattr(result, "sos_detected")
@@ -347,7 +408,7 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                         patterns.append(result)
 
             # Also check for UTAD in Phase D via composite detector
-            if phase == WyckoffPhase.D and hasattr(detector, "utad_detector"):
+            if hasattr(detector, "utad_detector"):
                 utad_det = detector.utad_detector
                 if utad_det is not None and trading_range is not None:
                     ice_level = getattr(trading_range, "ice_level", None)
@@ -363,6 +424,44 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                                 symbol=context.symbol,
                                 correlation_id=str(context.correlation_id),
                             )
+
+        elif phase == WyckoffPhase.E:
+            # Phase E: LPS detection (requires prior SOS from Phase D)
+            # C-1 fix: LPSDetector.detect() requires a mandatory `sos` parameter
+            last_sos = context.get(self.LAST_SOS_CONTEXT_KEY)
+
+            if last_sos is None:
+                logger.warning(
+                    "lps_detection_skipped",
+                    reason="No prior SOS pattern available for LPS detection",
+                    phase=phase.value,
+                    symbol=context.symbol,
+                    correlation_id=str(context.correlation_id),
+                )
+            elif hasattr(detector, "detect") and trading_range is not None:
+                # C-2 fix: Convert list[VolumeAnalysis] to dict for LPSDetector
+                volume_dict = self._build_volume_dict(volume_analysis)
+
+                # LPSDetector.detect(range, sos, bars, volume_analysis)
+                result = detector.detect(
+                    range=trading_range,
+                    sos=last_sos,
+                    bars=bars,
+                    volume_analysis=volume_dict,
+                )
+                if hasattr(result, "lps_detected") and result.lps_detected:
+                    if hasattr(result, "lps"):
+                        patterns.append(result.lps)
+                elif (
+                    result
+                    and not hasattr(result, "sos_detected")
+                    and not hasattr(result, "lps_detected")
+                ):
+                    # Generic result
+                    if isinstance(result, list):
+                        patterns.extend(result)
+                    else:
+                        patterns.append(result)
 
         else:
             # Phase A/B - no patterns expected

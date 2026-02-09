@@ -18,7 +18,7 @@ import pytest
 
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_classification import WyckoffPhase
+from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.models.volume_analysis import VolumeAnalysis
 from src.orchestrator.container import OrchestratorContainer
 from src.orchestrator.pipeline.context import PipelineContextBuilder
@@ -100,6 +100,9 @@ def mock_phase_info_d():
     mock.phase = WyckoffPhase.D
     mock.confidence = 85
     mock.duration = 10
+    mock.events = PhaseEvents()
+    mock.phase_start_bar_index = 0
+    mock.last_updated = datetime(2024, 1, 15, 9, 30, tzinfo=UTC)
     mock.is_trading_allowed.return_value = True
     return mock
 
@@ -111,6 +114,9 @@ def mock_phase_info_e():
     mock.phase = WyckoffPhase.E
     mock.confidence = 90
     mock.duration = 20
+    mock.events = PhaseEvents()
+    mock.phase_start_bar_index = 0
+    mock.last_updated = datetime(2024, 1, 20, 9, 30, tzinfo=UTC)
     mock.is_trading_allowed.return_value = True
     return mock
 
@@ -461,10 +467,13 @@ class TestPatternDetectionStageWiring:
         sample_volume_analysis,
         mock_trading_range,
     ):
-        """Phase E with LPS detector produces LPS patterns."""
+        """Phase E with LPS detector produces LPS patterns when prior SOS exists."""
         registry = DetectorRegistry()
         registry.register(WyckoffPhase.E, mock_lps_detector)
         stage = PatternDetectionStage(registry)
+
+        # Phase E LPS detection requires a prior SOS in context
+        mock_sos = MagicMock(volume_ratio=Decimal("1.8"))
 
         context = (
             PipelineContextBuilder()
@@ -473,6 +482,7 @@ class TestPatternDetectionStageWiring:
             .with_data("bars", sample_bars)
             .with_data("volume_analysis", sample_volume_analysis)
             .with_data("current_trading_range", mock_trading_range)
+            .with_data("last_sos_pattern", mock_sos)
             .build()
         )
 
