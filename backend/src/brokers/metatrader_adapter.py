@@ -123,7 +123,8 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                     raise ConnectionError(f"MT5 login failed: {error_code}")
 
             self._set_connected(True)
-            logger.info("metatrader_connected", account=self.account, server=self.server)
+            masked_account = f"***{str(self.account)[-4:]}" if self.account else "none"
+            logger.info("metatrader_connected", account=masked_account, server=self.server)
             return True
 
         except ImportError:
@@ -219,7 +220,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             commission = getattr(deal, "commission", 0.0) or 0.0
             swap = getattr(deal, "swap", 0.0) or 0.0
             fee = getattr(deal, "fee", 0.0) or 0.0
-            total = commission + swap + fee
+            total = Decimal(str(commission)) + Decimal(str(swap)) + Decimal(str(fee))
 
             logger.debug(
                 "metatrader_deal_commission",
@@ -227,10 +228,10 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 commission=commission,
                 swap=swap,
                 fee=fee,
-                total=total,
+                total=str(total),
             )
 
-            return Decimal(str(total))
+            return total
 
         except Exception as e:
             logger.warning(
@@ -643,6 +644,9 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         await self._ensure_connected()
 
         orders = self._mt5.orders_get(symbol=symbol) if symbol else self._mt5.orders_get()
+
+        if not orders:
+            return []
 
         # Note: Generating new UUIDs since we don't have access to original Order.id values
         # Callers should use platform_order_id (MT5 ticket) for order tracking

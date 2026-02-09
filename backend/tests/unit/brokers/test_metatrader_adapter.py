@@ -963,6 +963,14 @@ class TestGetOpenOrders:
 
         assert reports == []
 
+    async def test_get_open_orders_none_result(self, adapter, mt5_mock):
+        """MT5 returns None when no orders found or terminal disconnected."""
+        mt5_mock.orders_get.return_value = None
+
+        reports = await adapter.get_open_orders()
+
+        assert reports == []
+
 
 # =============================
 # Test: Disconnection Handling
