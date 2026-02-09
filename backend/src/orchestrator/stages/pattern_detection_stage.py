@@ -90,6 +90,8 @@ class PhaseDCompositeDetector:
     def __init__(
         self,
         sos_detector: PatternDetector | None = None,
+        # UTADDetector uses detect_utad() not detect(), so it cannot
+        # satisfy the PatternDetector protocol
         utad_detector: Any | None = None,
     ) -> None:
         self.sos_detector = sos_detector
@@ -383,6 +385,9 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
             )
 
             if hasattr(detector, "detect"):
+                # Note: For PhaseDCompositeDetector with no SOS detector (UTAD-only),
+                # detect() returns None. This is expected — the hasattr/truthy checks
+                # below safely skip it, and UTAD detection is handled separately below.
                 result = detector.detect(
                     symbol=context.symbol,
                     range=trading_range,
@@ -411,12 +416,14 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
             if hasattr(detector, "utad_detector"):
                 utad_det = detector.utad_detector
                 if utad_det is not None and trading_range is not None:
-                    ice_level = getattr(trading_range, "ice_level", None)
+                    ice_level = trading_range.ice_level
                     if ice_level is not None:
                         try:
                             utad = utad_det.detect_utad(trading_range, bars, ice_level)
                             if utad is not None:
                                 patterns.append(utad)
+                        # Catch domain-level errors only; let programming errors
+                        # (TypeError, AttributeError) propagate for debugging
                         except (ValueError, RuntimeError) as e:
                             logger.warning(
                                 "utad_detection_error",
