@@ -241,7 +241,15 @@ The system uses specialized validation agents:
 - Decomposed large model files into subpackages
 - Added deprecation facades for gradual migration
 
-**Epic 13** (Active) - Intraday Wyckoff Integration:
+**Epic 23** (Active) - Production Readiness:
+- Wire phase detection facades to real implementations (23.1)
+- Wire orchestrator pipeline with real detectors (23.2)
+- Establish backtest baselines (23.3)
+- Complete MetaTrader + Alpaca execution adapters (23.4-23.5)
+- Broker router, security enforcement, production deployment (23.7-23.13)
+- Stories tracked in `docs/stories/epic-23/README.md`
+
+**Epic 13** (Paused) - Intraday Wyckoff Integration:
 - Timeframe-adaptive thresholds
 - Session-relative volume analysis
 - Confidence scoring refinement

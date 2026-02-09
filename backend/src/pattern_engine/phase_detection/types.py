@@ -8,7 +8,7 @@ system, including phase classifications, events, and configuration.
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 
 class PhaseType(Enum):
@@ -91,7 +91,7 @@ class PhaseResult:
         metadata: Additional classification data
     """
 
-    phase: PhaseType
+    phase: Optional[PhaseType]
     confidence: float
     events: list[PhaseEvent] = field(default_factory=list)
     start_bar: int = 0
