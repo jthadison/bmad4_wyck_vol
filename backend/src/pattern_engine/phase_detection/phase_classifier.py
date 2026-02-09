@@ -13,70 +13,18 @@ Wired to real implementations (Story 23.1):
 from typing import Optional
 
 import pandas as pd
+import structlog
 
-from src.models.phase_classification import PhaseClassification, PhaseEvents, WyckoffPhase
+from src.models.phase_classification import PhaseClassification, PhaseEvents
 
-from .types import DetectionConfig, EventType, PhaseEvent, PhaseResult, PhaseType
+from ._converters import (
+    PHASE_TYPE_TO_WYCKOFF,
+    WYCKOFF_TO_PHASE_TYPE,
+    events_to_phase_events,
+)
+from .types import DetectionConfig, PhaseEvent, PhaseResult, PhaseType
 
-# ============================================================================
-# Type mapping: Facade PhaseType <-> Real WyckoffPhase
-# ============================================================================
-
-_PHASE_TYPE_TO_WYCKOFF: dict[PhaseType, WyckoffPhase] = {
-    PhaseType.A: WyckoffPhase.A,
-    PhaseType.B: WyckoffPhase.B,
-    PhaseType.C: WyckoffPhase.C,
-    PhaseType.D: WyckoffPhase.D,
-    PhaseType.E: WyckoffPhase.E,
-}
-
-_WYCKOFF_TO_PHASE_TYPE: dict[WyckoffPhase, PhaseType] = {
-    v: k for k, v in _PHASE_TYPE_TO_WYCKOFF.items()
-}
-
-
-def _events_to_phase_events(events: list[PhaseEvent]) -> PhaseEvents:
-    """Convert facade PhaseEvent list to real PhaseEvents model."""
-    sc = None
-    ar = None
-    sts: list[dict] = []
-    spring = None
-    sos = None
-    lps = None
-
-    for event in events:
-        event_dict: dict = {
-            "bar_index": event.bar_index,
-            "confidence": int(event.confidence * 100),  # Convert 0.0-1.0 to 0-100
-            "bar": {
-                "timestamp": event.timestamp.isoformat(),
-                "close": event.price,
-                "volume": event.volume,
-            },
-            **event.metadata,
-        }
-
-        if event.event_type == EventType.SELLING_CLIMAX:
-            sc = event_dict
-        elif event.event_type == EventType.AUTOMATIC_RALLY:
-            ar = event_dict
-        elif event.event_type == EventType.SECONDARY_TEST:
-            sts.append(event_dict)
-        elif event.event_type == EventType.SPRING:
-            spring = event_dict
-        elif event.event_type == EventType.SIGN_OF_STRENGTH:
-            sos = event_dict
-        elif event.event_type == EventType.LAST_POINT_OF_SUPPORT:
-            lps = event_dict
-
-    return PhaseEvents(
-        selling_climax=sc,
-        automatic_rally=ar,
-        secondary_tests=sts,
-        spring=spring,
-        sos_breakout=sos,
-        last_point_of_support=lps,
-    )
+logger = structlog.get_logger(__name__)
 
 
 def _classification_to_phase_result(
@@ -85,7 +33,7 @@ def _classification_to_phase_result(
 ) -> PhaseResult:
     """Convert a real PhaseClassification to facade PhaseResult."""
     phase_type = (
-        _WYCKOFF_TO_PHASE_TYPE.get(classification.phase)
+        WYCKOFF_TO_PHASE_TYPE.get(classification.phase)
         if classification.phase is not None
         else None
     )
@@ -175,12 +123,20 @@ class PhaseClassifier:
         from src.pattern_engine.phase_classifier import classify_phase as real_classify_phase
 
         if events:
-            phase_events = _events_to_phase_events(events)
+            phase_events = events_to_phase_events(events)
         else:
             phase_events = PhaseEvents()
 
-        # Call real classify_phase
-        classification = real_classify_phase(phase_events)
+        try:
+            classification = real_classify_phase(phase_events)
+        except (ValueError, TypeError) as e:
+            logger.error("phase_classifier.classify_error", error=str(e))
+            return PhaseResult(
+                phase=None,
+                confidence=0.0,
+                events=events or [],
+                metadata={"error": str(e)},
+            )
 
         return _classification_to_phase_result(classification, events or [])
 
@@ -201,12 +157,12 @@ class PhaseClassifier:
         """
         from src.pattern_engine.phase_classifier import classify_phase as real_classify_phase
 
-        phase_events = _events_to_phase_events(events)
+        phase_events = events_to_phase_events(events)
         classification = real_classify_phase(phase_events, current_bar_index=current_bar)
 
         if classification.phase is None:
             return None
-        return _WYCKOFF_TO_PHASE_TYPE.get(classification.phase)
+        return WYCKOFF_TO_PHASE_TYPE.get(classification.phase)
 
     def _check_phase_transition(
         self,
@@ -240,8 +196,8 @@ class PhaseClassifier:
             return None
 
         # Validate the transition using the real validator
-        current_wyckoff = _PHASE_TYPE_TO_WYCKOFF[current_phase]
-        proposed_wyckoff = _PHASE_TYPE_TO_WYCKOFF[proposed]
+        current_wyckoff = PHASE_TYPE_TO_WYCKOFF[current_phase]
+        proposed_wyckoff = PHASE_TYPE_TO_WYCKOFF[proposed]
 
         if is_valid_phase_transition(current_wyckoff, proposed_wyckoff):
             return proposed
@@ -289,8 +245,8 @@ class PhaseClassifier:
         """
         from src.pattern_engine._phase_detector_impl import calculate_phase_confidence
 
-        wyckoff_phase = _PHASE_TYPE_TO_WYCKOFF[phase]
-        phase_events = _events_to_phase_events(events)
+        wyckoff_phase = PHASE_TYPE_TO_WYCKOFF[phase]
+        phase_events = events_to_phase_events(events)
         confidence_int = calculate_phase_confidence(wyckoff_phase, phase_events)
         return confidence_int / 100.0  # Convert 0-100 to 0.0-1.0
 

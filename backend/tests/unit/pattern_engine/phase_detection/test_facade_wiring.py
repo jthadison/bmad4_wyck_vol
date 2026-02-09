@@ -579,8 +579,8 @@ class TestEventsToPhaseEventsConversion:
     """Test the _events_to_phase_events helper with all event types."""
 
     def test_converts_spring_event(self) -> None:
-        from src.pattern_engine.phase_detection.phase_classifier import (
-            _events_to_phase_events,
+        from src.pattern_engine.phase_detection._converters import (
+            events_to_phase_events as _events_to_phase_events,
         )
 
         events = [
@@ -599,8 +599,8 @@ class TestEventsToPhaseEventsConversion:
         assert result.spring["bar_index"] == 25
 
     def test_converts_sos_event(self) -> None:
-        from src.pattern_engine.phase_detection.phase_classifier import (
-            _events_to_phase_events,
+        from src.pattern_engine.phase_detection._converters import (
+            events_to_phase_events as _events_to_phase_events,
         )
 
         events = [
@@ -619,8 +619,8 @@ class TestEventsToPhaseEventsConversion:
         assert result.sos_breakout["bar_index"] == 30
 
     def test_converts_lps_event(self) -> None:
-        from src.pattern_engine.phase_detection.phase_classifier import (
-            _events_to_phase_events,
+        from src.pattern_engine.phase_detection._converters import (
+            events_to_phase_events as _events_to_phase_events,
         )
 
         events = [
@@ -639,8 +639,8 @@ class TestEventsToPhaseEventsConversion:
         assert result.last_point_of_support["bar_index"] == 35
 
     def test_converts_st_event_to_list(self) -> None:
-        from src.pattern_engine.phase_detection.phase_classifier import (
-            _events_to_phase_events,
+        from src.pattern_engine.phase_detection._converters import (
+            events_to_phase_events as _events_to_phase_events,
         )
 
         events = [
@@ -671,8 +671,8 @@ class TestConfidenceScorerEventsToPhaseEvents:
     """Test the _events_to_phase_events in confidence_scorer module too."""
 
     def test_converts_spring_event(self) -> None:
-        from src.pattern_engine.phase_detection.confidence_scorer import (
-            _events_to_phase_events,
+        from src.pattern_engine.phase_detection._converters import (
+            events_to_phase_events as _events_to_phase_events,
         )
 
         events = [
@@ -689,8 +689,8 @@ class TestConfidenceScorerEventsToPhaseEvents:
         assert result.spring is not None
 
     def test_converts_sos_event(self) -> None:
-        from src.pattern_engine.phase_detection.confidence_scorer import (
-            _events_to_phase_events,
+        from src.pattern_engine.phase_detection._converters import (
+            events_to_phase_events as _events_to_phase_events,
         )
 
         events = [
@@ -707,8 +707,8 @@ class TestConfidenceScorerEventsToPhaseEvents:
         assert result.sos_breakout is not None
 
     def test_converts_lps_event(self) -> None:
-        from src.pattern_engine.phase_detection.confidence_scorer import (
-            _events_to_phase_events,
+        from src.pattern_engine.phase_detection._converters import (
+            events_to_phase_events as _events_to_phase_events,
         )
 
         events = [

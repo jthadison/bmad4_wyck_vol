@@ -211,7 +211,11 @@ class SellingClimaxDetector(BaseEventDetector):
             raise ValueError("Invalid DataFrame: missing required columns")
         bars = _dataframe_to_ohlcv_bars(ohlcv)
         volume_analysis = _create_volume_analysis(bars)
-        sc = detect_selling_climax(bars, volume_analysis)
+        try:
+            sc = detect_selling_climax(bars, volume_analysis)
+        except (ValueError, TypeError) as e:
+            logger.error("sc_detection_error", error=str(e))
+            return []
         if sc is None:
             return []
         return [_selling_climax_to_event(sc)]
@@ -247,10 +251,14 @@ class AutomaticRallyDetector(BaseEventDetector):
         bars = _dataframe_to_ohlcv_bars(ohlcv)
         volume_analysis = _create_volume_analysis(bars)
         # AR requires SC to be detected first (sequential dependency)
-        sc = detect_selling_climax(bars, volume_analysis)
-        if sc is None:
+        try:
+            sc = detect_selling_climax(bars, volume_analysis)
+            if sc is None:
+                return []
+            ar = detect_automatic_rally(bars, sc, volume_analysis)
+        except (ValueError, TypeError) as e:
+            logger.error("ar_detection_error", error=str(e))
             return []
-        ar = detect_automatic_rally(bars, sc, volume_analysis)
         if ar is None:
             return []
         return [_automatic_rally_to_event(ar)]
@@ -287,21 +295,25 @@ class SecondaryTestDetector(BaseEventDetector):
         bars = _dataframe_to_ohlcv_bars(ohlcv)
         volume_analysis = _create_volume_analysis(bars)
         # ST requires SC + AR first (sequential dependency)
-        sc = detect_selling_climax(bars, volume_analysis)
-        if sc is None:
+        try:
+            sc = detect_selling_climax(bars, volume_analysis)
+            if sc is None:
+                return []
+            ar = detect_automatic_rally(bars, sc, volume_analysis)
+            if ar is None:
+                return []
+            # Detect multiple STs
+            events: list[PhaseEvent] = []
+            existing_sts: list[SecondaryTest] = []
+            for _ in range(10):  # Max 10 STs (safety limit per v2 impl)
+                st = detect_secondary_test(bars, sc, ar, volume_analysis, existing_sts)
+                if st is None:
+                    break
+                events.append(_secondary_test_to_event(st))
+                existing_sts.append(st)
+        except (ValueError, TypeError) as e:
+            logger.error("st_detection_error", error=str(e))
             return []
-        ar = detect_automatic_rally(bars, sc, volume_analysis)
-        if ar is None:
-            return []
-        # Detect multiple STs
-        events: list[PhaseEvent] = []
-        existing_sts: list[SecondaryTest] = []
-        for _ in range(10):  # Max 10 STs (safety limit per v2 impl)
-            st = detect_secondary_test(bars, sc, ar, volume_analysis, existing_sts)
-            if st is None:
-                break
-            events.append(_secondary_test_to_event(st))
-            existing_sts.append(st)
         return events
 
 

@@ -12,66 +12,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 import pandas as pd
+import structlog
 
-from src.models.phase_classification import PhaseEvents, WyckoffPhase
+from ._converters import PHASE_TYPE_TO_WYCKOFF, events_to_phase_events
+from .types import DetectionConfig, PhaseEvent, PhaseType
 
-from .types import DetectionConfig, EventType, PhaseEvent, PhaseType
-
-# ============================================================================
-# Type mapping: Facade PhaseType <-> Real WyckoffPhase
-# ============================================================================
-
-_PHASE_TYPE_TO_WYCKOFF: dict[PhaseType, WyckoffPhase] = {
-    PhaseType.A: WyckoffPhase.A,
-    PhaseType.B: WyckoffPhase.B,
-    PhaseType.C: WyckoffPhase.C,
-    PhaseType.D: WyckoffPhase.D,
-    PhaseType.E: WyckoffPhase.E,
-}
-
-
-def _events_to_phase_events(events: list[PhaseEvent]) -> PhaseEvents:
-    """Convert facade PhaseEvent list to real PhaseEvents model."""
-    sc = None
-    ar = None
-    sts: list[dict] = []
-    spring = None
-    sos = None
-    lps = None
-
-    for event in events:
-        event_dict: dict = {
-            "bar_index": event.bar_index,
-            "confidence": int(event.confidence * 100),  # Convert 0.0-1.0 to 0-100
-            "bar": {
-                "timestamp": event.timestamp.isoformat(),
-                "close": event.price,
-                "volume": event.volume,
-            },
-            **event.metadata,
-        }
-
-        if event.event_type == EventType.SELLING_CLIMAX:
-            sc = event_dict
-        elif event.event_type == EventType.AUTOMATIC_RALLY:
-            ar = event_dict
-        elif event.event_type == EventType.SECONDARY_TEST:
-            sts.append(event_dict)
-        elif event.event_type == EventType.SPRING:
-            spring = event_dict
-        elif event.event_type == EventType.SIGN_OF_STRENGTH:
-            sos = event_dict
-        elif event.event_type == EventType.LAST_POINT_OF_SUPPORT:
-            lps = event_dict
-
-    return PhaseEvents(
-        selling_climax=sc,
-        automatic_rally=ar,
-        secondary_tests=sts,
-        spring=spring,
-        sos_breakout=sos,
-        last_point_of_support=lps,
-    )
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -180,9 +126,13 @@ class PhaseConfidenceScorer:
         """
         from src.pattern_engine._phase_detector_impl import calculate_phase_confidence
 
-        wyckoff_phase = _PHASE_TYPE_TO_WYCKOFF[phase]
-        phase_events = _events_to_phase_events(events)
-        confidence_int = calculate_phase_confidence(wyckoff_phase, phase_events)
+        wyckoff_phase = PHASE_TYPE_TO_WYCKOFF[phase]
+        phase_events = events_to_phase_events(events)
+        try:
+            confidence_int = calculate_phase_confidence(wyckoff_phase, phase_events)
+        except (ValueError, TypeError) as e:
+            logger.error("confidence_scorer.calculate_error", error=str(e))
+            return 0.0
         return confidence_int / 100.0  # Convert 0-100 to 0.0-1.0
 
     def calculate_factors(
