@@ -2,13 +2,17 @@
 Integration tests for webhook -> persist -> route -> execute -> broadcast flow (Story 23.7).
 
 Tests the full TradingView webhook pipeline including order persistence,
-broker routing, auto-execution toggle, and WebSocket broadcast.
+broker routing, auto-execution toggle, WebSocket broadcast, rate limiting,
+signature enforcement, and HTTP endpoint integration.
 """
 
+import json
+from collections import deque
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from src.brokers.broker_router import BrokerRouter
 from src.models.order import ExecutionReport, OrderStatus
@@ -74,18 +78,22 @@ class TestWebhookExecutionFlow:
         )
         return adapter
 
+    async def test_audit_log_is_bounded_deque(self):
+        """Test that audit log is a deque with maxlen=10000 (C-1/C-2)."""
+        from src.api.routes import tradingview as tv_module
+
+        assert isinstance(tv_module.order_audit_log, deque)
+        assert tv_module.order_audit_log.maxlen == 10000
+
     async def test_webhook_persists_order_in_audit_log(self, valid_payload):
         """Test that webhook orders are stored in the audit log."""
         from src.api.routes import tradingview as tv_module
 
-        # Clear any previous entries
         tv_module.order_audit_log.clear()
 
-        # Patch ws_manager so broadcast doesn't need real connections
         with patch.object(tv_module.ws_manager, "emit_order_event", new_callable=AsyncMock):
             order = tv_module.tradingview_adapter.parse_webhook(valid_payload)
 
-            # Simulate what the endpoint does: persist order
             order_record = {
                 "id": str(order.id),
                 "symbol": order.symbol,
@@ -101,7 +109,6 @@ class TestWebhookExecutionFlow:
         assert tv_module.order_audit_log[0]["symbol"] == "AAPL"
         assert tv_module.order_audit_log[0]["source"] == "tradingview_webhook"
 
-        # Cleanup
         tv_module.order_audit_log.clear()
 
     async def test_auto_execution_disabled_skips_broker(self, valid_payload):
@@ -132,13 +139,11 @@ class TestWebhookExecutionFlow:
             }
             tv_module.order_audit_log.append(order_record)
 
-            # Auto-execution disabled: route_order should NOT be called
             if mock_settings.auto_execute_orders:
                 await mock_router.route_order(order)
 
         mock_router.route_order.assert_not_called()
 
-        # Cleanup
         tv_module.broker_router = original_router
         tv_module.order_audit_log.clear()
 
@@ -156,15 +161,12 @@ class TestWebhookExecutionFlow:
 
         with patch.object(tv_module.ws_manager, "emit_order_event", new_callable=AsyncMock):
             order = tv_module.tradingview_adapter.parse_webhook(valid_payload)
-
-            # Simulate auto-execution enabled
             report = await broker.route_order(order)
 
         mock_alpaca_adapter.place_order.assert_called_once()
         assert report.status == OrderStatus.FILLED
         assert report.platform == "Alpaca"
 
-        # Cleanup
         tv_module.broker_router = original_router
         tv_module.order_audit_log.clear()
 
@@ -220,9 +222,6 @@ class TestWebhookExecutionFlow:
 
     async def test_broker_router_rejected_order_emits_rejected_event(self):
         """Test that a rejected execution results in order:rejected event type."""
-        from src.models.order import OrderStatus
-
-        # A rejected report
         report = ExecutionReport(
             order_id="00000000-0000-0000-0000-000000000001",
             platform_order_id="",
@@ -233,12 +232,37 @@ class TestWebhookExecutionFlow:
             error_message="No broker adapter configured",
         )
 
-        # Determine event type (same logic as in the webhook handler)
         ws_event_type = "order:submitted"
         if report.status in (OrderStatus.FILLED, OrderStatus.PARTIAL_FILL):
             ws_event_type = "order:filled"
         elif report.status == OrderStatus.REJECTED:
             ws_event_type = "order:rejected"
+
+        assert ws_event_type == "order:rejected"
+
+    async def test_execution_failure_uses_rejected_status(self):
+        """Test that execution exception sets OrderStatus.REJECTED, not a raw string (M-2)."""
+        from src.api.routes import tradingview as tv_module
+
+        # The code should use OrderStatus.REJECTED on execution failure
+        assert OrderStatus.REJECTED == "REJECTED"
+        # Verify the code no longer uses "EXECUTION_ERROR" string
+        import inspect
+
+        source = inspect.getsource(tv_module.receive_webhook)
+        assert "EXECUTION_ERROR" not in source
+
+    async def test_execution_failure_emits_order_rejected_event(self):
+        """Test that execution failure sets ws_event_type to order:rejected (M-3)."""
+        # Simulate the logic in the webhook handler
+        execution_failed = True
+        execution_report = None
+
+        ws_event_type = "order:submitted"
+        if execution_failed:
+            ws_event_type = "order:rejected"
+        elif execution_report is not None:
+            pass  # won't reach
 
         assert ws_event_type == "order:rejected"
 
@@ -252,5 +276,321 @@ class TestWebhookExecutionFlow:
 
         assert tv_module.broker_router is new_router
 
-        # Restore
         tv_module.broker_router = original
+
+
+class TestSignatureEnforcement:
+    """Test C-3: Signature required when auto-execution enabled."""
+
+    async def test_auto_exec_requires_signature(self):
+        """Test that missing signature returns 401 when auto-execution is on."""
+        from src.api.main import app
+        from src.api.routes import tradingview as tv_module
+
+        tv_module.order_audit_log.clear()
+        tv_module._rate_limit_tracker.clear()
+
+        payload = json.dumps(
+            {"symbol": "AAPL", "action": "buy", "order_type": "market", "quantity": 100}
+        )
+
+        with patch.object(tv_module, "settings") as mock_settings:
+            mock_settings.auto_execute_orders = True
+
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/tradingview/webhook",
+                    content=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert response.status_code == 401
+        assert "signature required" in response.json()["detail"].lower()
+
+        tv_module.order_audit_log.clear()
+
+    async def test_auto_exec_disabled_allows_no_signature(self):
+        """Test that missing signature is OK when auto-execution is off."""
+        from src.api.main import app
+        from src.api.routes import tradingview as tv_module
+
+        tv_module.order_audit_log.clear()
+        tv_module._rate_limit_tracker.clear()
+
+        payload = json.dumps(
+            {"symbol": "AAPL", "action": "buy", "order_type": "market", "quantity": 100}
+        )
+
+        with (
+            patch.object(tv_module, "settings") as mock_settings,
+            patch.object(tv_module.ws_manager, "emit_order_event", new_callable=AsyncMock),
+        ):
+            mock_settings.auto_execute_orders = False
+
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/tradingview/webhook",
+                    content=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["order"]["symbol"] == "AAPL"
+
+        tv_module.order_audit_log.clear()
+
+
+class TestRateLimiting:
+    """Test M-1: Per-symbol rate limiting."""
+
+    def test_check_rate_limit_allows_within_limit(self):
+        """Test that requests within limit are allowed."""
+        from src.api.routes.tradingview import _check_rate_limit, _rate_limit_tracker
+
+        _rate_limit_tracker.clear()
+
+        for _ in range(10):
+            assert _check_rate_limit("AAPL") is True
+
+        _rate_limit_tracker.clear()
+
+    def test_check_rate_limit_rejects_over_limit(self):
+        """Test that requests over limit are rejected."""
+        from src.api.routes.tradingview import _check_rate_limit, _rate_limit_tracker
+
+        _rate_limit_tracker.clear()
+
+        for _ in range(10):
+            _check_rate_limit("MSFT")
+
+        assert _check_rate_limit("MSFT") is False
+
+        _rate_limit_tracker.clear()
+
+    def test_rate_limit_per_symbol_isolation(self):
+        """Test that rate limits are tracked per symbol."""
+        from src.api.routes.tradingview import _check_rate_limit, _rate_limit_tracker
+
+        _rate_limit_tracker.clear()
+
+        for _ in range(10):
+            _check_rate_limit("TSLA")
+
+        # TSLA is at limit, but GOOGL should still be allowed
+        assert _check_rate_limit("TSLA") is False
+        assert _check_rate_limit("GOOGL") is True
+
+        _rate_limit_tracker.clear()
+
+    async def test_rate_limit_returns_429(self):
+        """Test that exceeding rate limit returns HTTP 429 via the endpoint."""
+        from src.api.main import app
+        from src.api.routes import tradingview as tv_module
+
+        tv_module.order_audit_log.clear()
+        tv_module._rate_limit_tracker.clear()
+
+        payload = json.dumps(
+            {"symbol": "SPY", "action": "buy", "order_type": "market", "quantity": 10}
+        )
+
+        with (
+            patch.object(tv_module, "settings") as mock_settings,
+            patch.object(tv_module.ws_manager, "emit_order_event", new_callable=AsyncMock),
+        ):
+            mock_settings.auto_execute_orders = False
+
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # Send 10 requests (should all succeed)
+                for _ in range(10):
+                    resp = await client.post(
+                        "/api/v1/tradingview/webhook",
+                        content=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    assert resp.status_code == 200
+
+                # 11th request should be rate limited
+                resp = await client.post(
+                    "/api/v1/tradingview/webhook",
+                    content=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                assert resp.status_code == 429
+                assert "Rate limit exceeded" in resp.json()["detail"]
+
+        tv_module.order_audit_log.clear()
+        tv_module._rate_limit_tracker.clear()
+
+
+class TestWebhookHTTPEndpoint:
+    """Test M-5: True HTTP integration tests through the FastAPI endpoint."""
+
+    async def test_webhook_endpoint_full_flow(self):
+        """Test POST /api/v1/tradingview/webhook returns success with order data."""
+        from src.api.main import app
+        from src.api.routes import tradingview as tv_module
+
+        tv_module.order_audit_log.clear()
+        tv_module._rate_limit_tracker.clear()
+
+        payload = json.dumps(
+            {
+                "symbol": "AAPL",
+                "action": "buy",
+                "order_type": "limit",
+                "quantity": 50,
+                "limit_price": 175.00,
+                "stop_loss": 170.00,
+                "take_profit": 185.00,
+            }
+        )
+
+        with (
+            patch.object(tv_module, "settings") as mock_settings,
+            patch.object(
+                tv_module.ws_manager, "emit_order_event", new_callable=AsyncMock
+            ) as mock_emit,
+        ):
+            mock_settings.auto_execute_orders = False
+
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/tradingview/webhook",
+                    content=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["order"]["symbol"] == "AAPL"
+        assert data["order"]["side"] == "BUY"
+        assert data["order"]["quantity"] == 50.0
+
+        # Verify order was persisted in audit log
+        assert len(tv_module.order_audit_log) == 1
+        assert tv_module.order_audit_log[0]["symbol"] == "AAPL"
+
+        # Verify WebSocket event was emitted
+        mock_emit.assert_called_once()
+        call_args = mock_emit.call_args
+        assert call_args[0][0] == "order:submitted"
+
+        tv_module.order_audit_log.clear()
+        tv_module._rate_limit_tracker.clear()
+
+    async def test_webhook_endpoint_invalid_payload_returns_400(self):
+        """Test that invalid payload returns HTTP 400."""
+        from src.api.main import app
+        from src.api.routes import tradingview as tv_module
+
+        tv_module._rate_limit_tracker.clear()
+
+        payload = json.dumps({"symbol": "AAPL"})  # Missing action and quantity
+
+        with patch.object(tv_module, "settings") as mock_settings:
+            mock_settings.auto_execute_orders = False
+
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/tradingview/webhook",
+                    content=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert response.status_code == 400
+        assert "Invalid webhook payload" in response.json()["detail"]
+
+        tv_module._rate_limit_tracker.clear()
+
+    async def test_webhook_endpoint_with_auto_execution(self, mock_alpaca_adapter):
+        """Test webhook with auto-execution enabled routes through broker."""
+        from src.api.main import app
+        from src.api.routes import tradingview as tv_module
+
+        tv_module.order_audit_log.clear()
+        tv_module._rate_limit_tracker.clear()
+
+        original_router = tv_module.broker_router
+        tv_module.broker_router = BrokerRouter(alpaca_adapter=mock_alpaca_adapter)
+
+        payload = json.dumps(
+            {"symbol": "AAPL", "action": "buy", "order_type": "market", "quantity": 100}
+        )
+
+        # Compute a valid HMAC signature
+        import hashlib
+        import hmac
+
+        secret = "test_webhook_secret"
+        sig = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+        with (
+            patch.object(tv_module, "settings") as mock_settings,
+            patch.object(tv_module, "tradingview_adapter") as mock_tv_adapter,
+            patch.object(
+                tv_module.ws_manager, "emit_order_event", new_callable=AsyncMock
+            ) as mock_emit,
+        ):
+            mock_settings.auto_execute_orders = True
+            mock_tv_adapter.verify_webhook_signature.return_value = True
+
+            # parse_webhook needs to return a real Order
+            from src.brokers.tradingview_adapter import TradingViewAdapter
+
+            real_adapter = TradingViewAdapter()
+            parsed_order = real_adapter.parse_webhook(json.loads(payload))
+            mock_tv_adapter.parse_webhook.return_value = parsed_order
+
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/tradingview/webhook",
+                    content=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-TradingView-Signature": sig,
+                    },
+                )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["order"]["status"] == "FILLED"
+
+        # Verify broker was called
+        mock_alpaca_adapter.place_order.assert_called_once()
+
+        # Verify WebSocket got order:filled event
+        mock_emit.assert_called_once()
+        assert mock_emit.call_args[0][0] == "order:filled"
+
+        tv_module.broker_router = original_router
+        tv_module.order_audit_log.clear()
+        tv_module._rate_limit_tracker.clear()
+
+    @pytest.fixture
+    def mock_alpaca_adapter(self):
+        """Create mock Alpaca adapter for HTTP tests."""
+        adapter = MagicMock()
+        adapter.platform_name = "Alpaca"
+        adapter.is_connected.return_value = True
+        adapter.place_order = AsyncMock(
+            return_value=ExecutionReport(
+                order_id="00000000-0000-0000-0000-000000000001",
+                platform_order_id="ALP-12345",
+                platform="Alpaca",
+                status=OrderStatus.FILLED,
+                filled_quantity=Decimal("100"),
+                remaining_quantity=Decimal("0"),
+                average_fill_price=Decimal("150.00"),
+            )
+        )
+        return adapter

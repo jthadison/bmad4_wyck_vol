@@ -7,6 +7,7 @@ Forex symbols route to MetaTrader, US stock symbols route to Alpaca.
 Author: Story 23.7
 """
 
+from decimal import Decimal
 from typing import Optional
 
 import structlog
@@ -17,6 +18,9 @@ from src.models.order import ExecutionReport, Order, OrderStatus
 logger = structlog.get_logger(__name__)
 
 # Common forex pair symbols (6-character codes without separator)
+# NOTE: Index symbols (US30, SPX500, NAS100, etc.) are currently classified as "stock"
+# and route to Alpaca. If your broker setup routes indices to MT5, add them to this set
+# or create a separate _INDEX_SYMBOLS set with MT5 routing.
 _FOREX_PAIRS = frozenset(
     {
         "EURUSD",
@@ -137,8 +141,6 @@ class BrokerRouter:
                 symbol=order.symbol,
                 asset_class=asset_class,
             )
-            from decimal import Decimal
-
             return ExecutionReport(
                 order_id=order.id,
                 platform_order_id="",

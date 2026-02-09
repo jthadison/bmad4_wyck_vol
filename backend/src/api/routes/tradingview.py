@@ -9,7 +9,9 @@ Author: Story 16.4a, Story 23.7
 """
 
 import json
-from typing import Optional
+import time
+from collections import deque
+from typing import Any, Optional
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request, status
@@ -19,6 +21,7 @@ from src.brokers.broker_router import BrokerRouter
 from src.brokers.order_builder import OrderBuilder
 from src.brokers.tradingview_adapter import TradingViewAdapter
 from src.config import settings
+from src.models.order import OrderStatus
 
 logger = structlog.get_logger(__name__)
 
@@ -33,12 +36,47 @@ tradingview_adapter = TradingViewAdapter(
 
 order_builder = OrderBuilder(default_platform="TradingView")
 
-# In-memory order audit log (Story 23.7)
-# Stores order records for audit trail. In production, this should be backed by the database.
-order_audit_log: list[dict] = []
+# In-memory order audit log with bounded size (Story 23.7)
+# Uses deque(maxlen=10000) to prevent unbounded memory growth.
+# TODO(Story 23.8+): Replace with database persistence using the Order ORM model
+# before enabling auto_execute_orders in production. In-memory buffer is acceptable
+# only for development/testing. Orders will be lost on restart.
+order_audit_log: deque[dict[str, Any]] = deque(maxlen=10000)
 
 # Broker router instance (adapters are None by default; set via configure_broker_router)
 broker_router = BrokerRouter()
+
+# Simple per-symbol rate limiter: tracks (symbol -> list of timestamps)
+# Max 10 orders per minute per symbol
+_RATE_LIMIT_MAX = 10
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_rate_limit_tracker: dict[str, list[float]] = {}
+
+
+def _check_rate_limit(symbol: str) -> bool:
+    """
+    Check if a symbol has exceeded the per-symbol rate limit.
+
+    Args:
+        symbol: Trading symbol
+
+    Returns:
+        True if within limit, False if rate limit exceeded
+    """
+    now = time.monotonic()
+    timestamps = _rate_limit_tracker.get(symbol, [])
+
+    # Remove timestamps outside the window
+    cutoff = now - _RATE_LIMIT_WINDOW_SECONDS
+    timestamps = [t for t in timestamps if t > cutoff]
+
+    if len(timestamps) >= _RATE_LIMIT_MAX:
+        _rate_limit_tracker[symbol] = timestamps
+        return False
+
+    timestamps.append(now)
+    _rate_limit_tracker[symbol] = timestamps
+    return True
 
 
 def configure_broker_router(router_instance: BrokerRouter) -> None:
@@ -94,6 +132,17 @@ async def receive_webhook(
         body = await request.body()
         body_str = body.decode("utf-8")
 
+        # Security (C-3): When auto-execution is enabled, ALWAYS require signature
+        if settings.auto_execute_orders and not x_tradingview_signature:
+            logger.warning(
+                "tradingview_webhook_signature_required",
+                message="Signature required when auto-execution is enabled",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Webhook signature required when auto-execution is enabled",
+            )
+
         # Verify webhook signature if provided
         if x_tradingview_signature:
             is_valid = tradingview_adapter.verify_webhook_signature(
@@ -112,6 +161,18 @@ async def receive_webhook(
         # Parse webhook into Order
         order = tradingview_adapter.parse_webhook(payload)
 
+        # Rate limit check (M-1): max 10 orders per minute per symbol
+        if not _check_rate_limit(order.symbol):
+            logger.warning(
+                "tradingview_webhook_rate_limited",
+                symbol=order.symbol,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Rate limit exceeded for symbol {order.symbol}: "
+                f"max {_RATE_LIMIT_MAX} orders per {_RATE_LIMIT_WINDOW_SECONDS}s",
+            )
+
         logger.info(
             "tradingview_webhook_received",
             symbol=order.symbol,
@@ -121,7 +182,7 @@ async def receive_webhook(
         )
 
         # Store order in audit trail
-        order_record = {
+        order_record: dict[str, Any] = {
             "id": str(order.id),
             "symbol": order.symbol,
             "side": order.side,
@@ -144,6 +205,7 @@ async def receive_webhook(
 
         # Execute order on broker if auto-execution is enabled
         execution_report = None
+        execution_failed = False
         if settings.auto_execute_orders:
             try:
                 execution_report = await broker_router.route_order(order)
@@ -161,22 +223,23 @@ async def receive_webhook(
                     status=execution_report.status,
                 )
             except Exception as exec_err:
+                execution_failed = True
                 logger.error(
                     "tradingview_order_execution_failed",
                     order_id=str(order.id),
                     error=str(exec_err),
                 )
-                order_record["status"] = "EXECUTION_ERROR"
+                order_record["status"] = OrderStatus.REJECTED
                 order_record["error_message"] = str(exec_err)
 
-        # Emit WebSocket event for frontend
+        # Determine WebSocket event type
         ws_event_type = "order:submitted"
-        if execution_report is not None:
-            from src.models.order import OrderStatus as OS
-
-            if execution_report.status in (OS.FILLED, OS.PARTIAL_FILL):
+        if execution_failed:
+            ws_event_type = "order:rejected"
+        elif execution_report is not None:
+            if execution_report.status in (OrderStatus.FILLED, OrderStatus.PARTIAL_FILL):
                 ws_event_type = "order:filled"
-            elif execution_report.status == OS.REJECTED:
+            elif execution_report.status == OrderStatus.REJECTED:
                 ws_event_type = "order:rejected"
 
         await ws_manager.emit_order_event(ws_event_type, order_record)
@@ -194,6 +257,8 @@ async def receive_webhook(
             },
         }
 
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.error("tradingview_webhook_parse_error", error=str(e))
         raise HTTPException(

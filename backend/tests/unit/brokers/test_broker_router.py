@@ -58,6 +58,10 @@ class TestClassifySymbol:
         """Test that unknown symbols default to stock classification."""
         assert classify_symbol("UNKNOWN123") == "stock"
 
+    def test_empty_string_defaults_to_stock(self):
+        """Test that empty string is classified as stock (no crash)."""
+        assert classify_symbol("") == "stock"
+
 
 class TestBrokerRouter:
     """Test BrokerRouter order routing."""
