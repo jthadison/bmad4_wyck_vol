@@ -22,6 +22,9 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# All tests in this file require a PostgreSQL database (JSONB columns).
+pytestmark = pytest.mark.database
+
 from src.analysis.campaign_success_analyzer import CampaignSuccessAnalyzer
 from src.models.campaign import SequencePerformance
 from src.repositories.models import CampaignMetricsModel, CampaignModel, PositionModel

@@ -16,6 +16,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
+# All tests in this file require a PostgreSQL database (JSONB columns).
+pytestmark = pytest.mark.database
+
 from src.models.scanner_persistence import (
     AssetClass,
     ScanCycleStatus,

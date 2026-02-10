@@ -575,18 +575,59 @@ class AutomatedExecutionService:
 
             try:
                 # Final risk gate enforcement (Story 23.11)
-                # Query current risk values from adapter and run hard-limit check
+                # Compute actual trade risk from position size and stop loss,
+                # then query portfolio state from adapter for heat/campaign/correlated.
                 try:
                     current_heat = await self._adapter.get_portfolio_heat()
                 except AttributeError:
-                    current_heat = Decimal("0")
+                    # Fail-closed: can't determine heat, block the order
+                    current_heat = Decimal("100")
+                    logger.warning(
+                        "portfolio_heat_unknown_fail_closed",
+                        order_id=str(order.id),
+                        reason="Adapter does not support get_portfolio_heat",
+                    )
+
+                # Compute actual trade risk from order details
+                if order.stop_loss and entry_price > 0:
+                    try:
+                        acct_balance = await self._adapter.get_account_balance()
+                    except Exception:
+                        acct_balance = Decimal("0")
+                    risk_per_unit = abs(entry_price - order.stop_loss)
+                    if acct_balance > 0:
+                        actual_trade_risk = (
+                            order.quantity * risk_per_unit / acct_balance
+                        ) * Decimal("100")
+                    else:
+                        # Fail-closed: no balance info
+                        actual_trade_risk = Decimal("100")
+                else:
+                    # Fail-closed: can't compute risk without stop loss
+                    actual_trade_risk = Decimal("100")
+
+                # Query campaign risk if available
+                campaign_risk: Decimal | None = None
+                try:
+                    if order.campaign_id:
+                        campaign_risk = await self._adapter.get_campaign_risk(order.campaign_id)
+                except AttributeError:
+                    pass
+
+                # Query correlated risk if available
+                correlated_risk: Decimal | None = None
+                try:
+                    correlated_risk = await self._adapter.get_correlated_risk(order.symbol)
+                except AttributeError:
+                    pass
+
                 preflight = self._risk_gate.check_risk_values(
                     order_id=str(order.id),
                     symbol=order.symbol,
-                    trade_risk_pct=self._config.max_risk_per_trade_pct,
+                    trade_risk_pct=actual_trade_risk,
                     portfolio_heat_pct=current_heat,
-                    campaign_risk_pct=None,
-                    correlated_risk_pct=None,
+                    campaign_risk_pct=campaign_risk,
+                    correlated_risk_pct=correlated_risk,
                 )
                 if preflight.blocked:
                     violation_msgs = "; ".join(v.message for v in preflight.violations)
