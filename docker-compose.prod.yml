@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Production Docker Compose for BMAD Wyckoff Trading System
 # Usage: docker compose -f docker-compose.prod.yml up -d
 # Requires: .env file with production secrets
@@ -16,6 +14,12 @@ services:
     image: timescale/timescaledb:latest-pg15
     container_name: bmad-prod-postgres
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bmad}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -47,7 +51,14 @@ services:
     image: redis:7-alpine
     container_name: bmad-prod-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 200mb --maxmemory-policy allkeys-lru
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    command: redis-server --appendonly yes --maxmemory 200mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     deploy:
@@ -59,7 +70,7 @@ services:
           cpus: '0.25'
           memory: 128M
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -73,11 +84,16 @@ services:
     image: ${DOCKER_USERNAME:-bmad}/bmad-wyckoff-backend:${VERSION:-latest}
     container_name: bmad-prod-backend
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-bmad}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bmad_wyckoff}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       ENVIRONMENT: production
       DEBUG: "false"
       API_HOST: 0.0.0.0
@@ -85,6 +101,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
+      ENABLE_BAR_CACHE: ${ENABLE_BAR_CACHE:-true}
+      BAR_CACHE_TTL: ${BAR_CACHE_TTL:-120}
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +131,13 @@ services:
     image: ${DOCKER_USERNAME:-bmad}/bmad-wyckoff-frontend:${VERSION:-latest}
     container_name: bmad-prod-frontend
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /run
     ports:
       - "80:80"
       - "443:443"
