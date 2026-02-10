@@ -1,0 +1,13 @@
+{
+  "symbol": "EURUSD",
+  "asset_class": "forex",
+  "suite_id": "initial-baseline-23.9",
+  "window_count": 17,
+  "avg_validate_win_rate": "0.6000",
+  "avg_validate_profit_factor": "1.6500",
+  "avg_validate_sharpe": "1.0500",
+  "avg_validate_max_drawdown": "0.0700",
+  "stability_score": "0.1200",
+  "degradation_count": 2,
+  "notes": "Initial estimated walk-forward baselines. Values based on expected Wyckoff detection performance ranges. EURUSD daily, 2-year lookback, 6mo train / 2mo validate."
+}

@@ -5,6 +5,10 @@ Story 12.4 Endpoints:
 - POST /walk-forward: Run walk-forward validation test
 - GET /walk-forward/{walk_forward_id}: Get walk-forward result
 - GET /walk-forward: List walk-forward results (paginated)
+
+Story 23.9 Endpoints:
+- POST /walk-forward/suite: Run full walk-forward validation suite
+- GET /walk-forward/suite/results: Get latest suite results
 """
 
 import asyncio
@@ -225,3 +229,102 @@ async def list_walk_forward_results(
     results = await repository.list_results(limit=limit, offset=offset)
 
     return results
+
+
+# --- Story 23.9: Walk-Forward Validation Suite Endpoints ---
+
+# In-memory storage for suite runs (analogous to walk_forward_runs)
+_suite_runs: dict[str, dict] = {}
+
+
+@router.post(
+    "/walk-forward/suite",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_walk_forward_suite():
+    """
+    Run the full walk-forward validation suite (Story 23.9).
+
+    Runs walk-forward tests on all configured symbols (EURUSD, GBPUSD, SPX500, US30),
+    compares results against stored baselines, and flags regressions.
+
+    Returns:
+        Response with suite_id and status
+    """
+    from src.backtesting.walk_forward_config import get_default_suite_config
+    from src.backtesting.walk_forward_suite import WalkForwardSuite
+
+    # Check concurrent suite limit (max 1 concurrent)
+    running = sum(1 for run in _suite_runs.values() if run["status"] == "RUNNING")
+    if running >= 1:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Walk-forward suite already running. Please wait for completion.",
+        )
+
+    config = get_default_suite_config()
+    suite = WalkForwardSuite(config)
+    suite_id = str(uuid4())
+
+    _suite_runs[suite_id] = {
+        "status": "RUNNING",
+        "created_at": datetime.now(UTC),
+    }
+
+    async def run_suite():
+        try:
+            result = suite.run()
+            _suite_runs[suite_id]["status"] = "COMPLETED"
+            _suite_runs[suite_id]["result"] = result
+        except Exception as e:
+            logger.error(f"Walk-forward suite failed: {e}")
+            _suite_runs[suite_id]["status"] = "FAILED"
+            _suite_runs[suite_id]["error"] = str(e)
+
+    asyncio.create_task(run_suite())
+
+    return {
+        "suite_id": suite_id,
+        "status": "RUNNING",
+        "symbols": [s.symbol for s in config.symbols],
+    }
+
+
+@router.get(
+    "/walk-forward/suite/results",
+)
+async def get_walk_forward_suite_results(
+    suite_id: str | None = None,
+):
+    """
+    Get walk-forward suite results (Story 23.9).
+
+    Args:
+        suite_id: Optional suite ID. If not provided, returns the latest result.
+
+    Returns:
+        Suite results or status if still running
+    """
+    if suite_id:
+        if suite_id not in _suite_runs:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Suite run {suite_id} not found",
+            )
+        run = _suite_runs[suite_id]
+    else:
+        # Return the latest result
+        if not _suite_runs:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No suite runs found",
+            )
+        suite_id = max(_suite_runs.keys(), key=lambda k: _suite_runs[k]["created_at"])
+        run = _suite_runs[suite_id]
+
+    if run["status"] == "RUNNING":
+        return {"suite_id": suite_id, "status": "RUNNING"}
+    elif run["status"] == "FAILED":
+        return {"suite_id": suite_id, "status": "FAILED", "error": run.get("error")}
+    else:
+        return {"suite_id": suite_id, "status": "COMPLETED", "result": run.get("result")}
