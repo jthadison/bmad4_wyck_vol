@@ -9,6 +9,7 @@ from typing import Optional
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.paper_trading import PaperTradingConfig
@@ -55,12 +56,12 @@ class PaperConfigRepository:
         Returns:
             Saved PaperTradingConfig
         """
-        stmt = select(PaperTradingConfigDB).limit(1)
+        stmt = select(PaperTradingConfigDB).limit(1).with_for_update()
         result = await self.session.execute(stmt)
         config_db = result.scalars().first()
 
         if config_db:
-            # Update existing
+            # Update existing (row is locked via FOR UPDATE)
             config_db.enabled = config.enabled
             config_db.starting_capital = config.starting_capital
             config_db.commission_per_share = config.commission_per_share
@@ -71,7 +72,23 @@ class PaperConfigRepository:
             config_db = self._from_model(config)
             self.session.add(config_db)
 
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            # Another concurrent request inserted first on empty table;
+            # rollback and retry as an update.
+            await self.session.rollback()
+            stmt = select(PaperTradingConfigDB).limit(1).with_for_update()
+            result = await self.session.execute(stmt)
+            config_db = result.scalars().first()
+            if config_db:
+                config_db.enabled = config.enabled
+                config_db.starting_capital = config.starting_capital
+                config_db.commission_per_share = config.commission_per_share
+                config_db.slippage_percentage = config.slippage_percentage
+                config_db.use_realistic_fills = config.use_realistic_fills
+                await self.session.commit()
+
         await self.session.refresh(config_db)
 
         logger.info(
