@@ -239,17 +239,16 @@ async def disable_paper_trading(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Paper trading not enabled"
             )
 
-        # Close all open positions
+        # Close all open positions atomically
         positions = await service.position_repo.list_open_positions()
-        closed_count = 0
-
-        for position in positions:
-            try:
-                # Use current price to close (or entry price as fallback)
-                await service._close_position(position, position.current_price, "MANUAL", account)
-                closed_count += 1
-            except Exception as e:
-                logger.error("failed_to_close_position", position_id=str(position.id), error=str(e))
+        try:
+            closed_count = await service.close_all_positions_atomic(positions, account)
+        except Exception as e:
+            logger.error("failed_to_close_positions_atomically", error=str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to close positions during disable",
+            ) from e
 
         # Get final performance metrics
         metrics = await service.calculate_performance_metrics()

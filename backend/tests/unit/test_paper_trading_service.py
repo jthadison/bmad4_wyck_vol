@@ -646,3 +646,143 @@ class TestPaperTradingServiceBacktestComparison:
         assert comparison["status"] == "OK"
         assert len(comparison["warnings"]) == 0
         assert len(comparison["errors"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Story B-3: close_all_positions_atomic tests
+# ---------------------------------------------------------------------------
+
+from unittest.mock import AsyncMock, MagicMock
+
+from src.models.paper_trading import PaperPosition
+
+
+def _create_test_position(
+    symbol: str = "AAPL",
+    entry_price: Decimal = Decimal("150.00"),
+    current_price: Decimal = Decimal("152.00"),
+    quantity: Decimal = Decimal("100"),
+    stop_loss: Decimal = Decimal("148.00"),
+) -> PaperPosition:
+    """Create a PaperPosition for testing close_all_positions_atomic."""
+    now = datetime.now(UTC)
+    return PaperPosition(
+        id=uuid4(),
+        signal_id=uuid4(),
+        symbol=symbol,
+        entry_time=now,
+        entry_price=entry_price,
+        quantity=quantity,
+        stop_loss=stop_loss,
+        target_1=Decimal("154.00"),
+        target_2=Decimal("156.00"),
+        current_price=current_price,
+        unrealized_pnl=(current_price - entry_price) * quantity,
+        status="OPEN",
+        commission_paid=Decimal("0.50"),
+        slippage_cost=Decimal("3.00"),
+    )
+
+
+class TestCloseAllPositionsAtomic:
+    """Tests for close_all_positions_atomic (B-3 fix)."""
+
+    @pytest.mark.asyncio
+    async def test_close_all_positions_atomic_empty_list(self):
+        """No positions means return 0 with no commit called."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        account = account_repo.account
+        result = await service.close_all_positions_atomic([], account)
+
+        assert result == 0
+        mock_session.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_close_all_positions_atomic_closes_multiple(self):
+        """3 positions should all close with a single commit and correct account metrics."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        positions = [
+            _create_test_position(symbol="AAPL"),
+            _create_test_position(symbol="MSFT"),
+            _create_test_position(symbol="GOOG"),
+        ]
+
+        account = account_repo.account
+        initial_trades = account.total_trades
+
+        result = await service.close_all_positions_atomic(positions, account)
+
+        assert result == 3
+        # commit called exactly once
+        mock_session.commit.assert_awaited_once()
+        # session.add called 3 times (one trade DB object per position)
+        assert mock_session.add.call_count == 3
+        # session.execute called 3 (position updates) + 1 (account update) = 4 times
+        assert mock_session.execute.await_count == 4
+        # Account trade count incremented by 3
+        assert account.total_trades == initial_trades + 3
+
+    @pytest.mark.asyncio
+    async def test_close_all_positions_atomic_rolls_back_on_error(self):
+        """If broker.close_position raises for position 2 of 3, error propagates (no partial commit)."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        positions = [
+            _create_test_position(symbol="AAPL"),
+            _create_test_position(symbol="MSFT"),
+            _create_test_position(symbol="GOOG"),
+        ]
+
+        # Make broker.close_position fail on the second call
+        original_close = broker.close_position
+        call_count = 0
+
+        def failing_close(position, price, reason):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RuntimeError("Simulated broker failure")
+            return original_close(position, price, reason)
+
+        broker.close_position = failing_close
+
+        account = account_repo.account
+
+        with pytest.raises(RuntimeError, match="Simulated broker failure"):
+            await service.close_all_positions_atomic(positions, account)
+
+        # commit should NOT have been called (error before reaching it)
+        mock_session.commit.assert_not_awaited()
