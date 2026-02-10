@@ -590,9 +590,9 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
         )
         db.add(session_db)
 
-        # 2. Delete all positions and trades (no commit)
-        await position_repo.delete_all_positions()
+        # 2. Delete all trades then positions (trades FK → positions)
         await trade_repo.delete_all_trades()
+        await position_repo.delete_all_positions()
 
         # 3. Delete old account
         await db.execute(sa_delete(PaperAccountDB).where(PaperAccountDB.id == account.id))
