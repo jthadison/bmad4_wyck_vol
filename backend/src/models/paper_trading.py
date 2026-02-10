@@ -102,7 +102,7 @@ class PaperPosition(BaseModel):
     target_2: Decimal = Field(description="Second profit target", gt=Decimal("0"))
     current_price: Decimal = Field(description="Latest market price", gt=Decimal("0"))
     unrealized_pnl: Decimal = Field(description="Mark-to-market P&L (not yet realized)")
-    status: Literal["OPEN", "STOPPED", "TARGET_1_HIT", "TARGET_2_HIT", "CLOSED"] = Field(
+    status: Literal["OPEN", "STOPPED", "TARGET_1_HIT", "TARGET_2_HIT", "CLOSED", "MANUAL"] = Field(
         default="OPEN", description="Position status"
     )
     commission_paid: Decimal = Field(description="Total commissions for entry", ge=Decimal("0"))

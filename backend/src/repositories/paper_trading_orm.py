@@ -13,14 +13,13 @@ from uuid import uuid4
 
 from sqlalchemy import (
     DECIMAL,
-    JSON,
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
     String,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
@@ -368,9 +367,9 @@ class PaperTradingSessionDB(Base):
         primary_key=True,
         default=uuid4,
     )
-    account_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
-    trades_snapshot: Mapped[list] = mapped_column(JSON, nullable=False)
-    final_metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+    account_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    trades_snapshot: Mapped[list] = mapped_column(JSONB, nullable=False)
+    final_metrics: Mapped[dict] = mapped_column(JSONB, nullable=False)
     session_start: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
