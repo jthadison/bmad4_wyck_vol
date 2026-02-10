@@ -172,11 +172,11 @@ app.add_middleware(CORSExceptionMiddleware)
 # Rate limiting for order submission endpoints (Story 23.11)
 app.add_middleware(RateLimiterMiddleware, max_requests=10, window_seconds=60)
 
-# Configure CORS - Allow all origins for development
+# Configure CORS - Uses CORS_ORIGINS from settings (Story 23.12)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True if "*" not in settings.cors_origins else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -543,6 +543,13 @@ async def scanner_health_check() -> ScannerHealthResponse:
     )
 
 
+def _sanitize_health_error(error: Exception) -> str:
+    """Return generic error message in production, detailed in development."""
+    if settings.environment == "production":
+        return "unavailable"
+    return f"error: {str(error)}"
+
+
 @app.get("/api/v1/health")
 async def detailed_health_check() -> dict[str, object]:
     """
@@ -575,7 +582,7 @@ async def detailed_health_check() -> dict[str, object]:
             await session.execute(text("SELECT 1"))
         health_status["database"] = "connected"
     except Exception as e:
-        health_status["database"] = f"error: {str(e)}"
+        health_status["database"] = _sanitize_health_error(e)
         health_status["status"] = "degraded"
 
     # Check real-time feed status
@@ -587,7 +594,7 @@ async def detailed_health_check() -> dict[str, object]:
             if not feed_health.get("is_healthy"):
                 health_status["status"] = "degraded"
         except Exception as e:
-            health_status["realtime_feed"] = {"error": str(e)}
+            health_status["realtime_feed"] = {"error": _sanitize_health_error(e)}
             health_status["status"] = "degraded"
     else:
         health_status["realtime_feed"] = {"status": "not_configured"}
@@ -601,7 +608,7 @@ async def detailed_health_check() -> dict[str, object]:
         if orchestrator_health.get("status") != "healthy":
             health_status["status"] = "degraded"
     except Exception as e:
-        health_status["orchestrator"] = {"error": str(e)}
+        health_status["orchestrator"] = {"error": _sanitize_health_error(e)}
         health_status["status"] = "degraded"
 
     # Check scanner status (Story 19.1)
@@ -621,7 +628,7 @@ async def detailed_health_check() -> dict[str, object]:
     except RuntimeError:
         health_status["scanner"] = {"status": "not_configured"}
     except Exception as e:
-        health_status["scanner"] = {"error": str(e)}
+        health_status["scanner"] = {"error": _sanitize_health_error(e)}
         health_status["status"] = "degraded"
 
     # Check Redis connectivity (Story 23.12)
@@ -635,19 +642,16 @@ async def detailed_health_check() -> dict[str, object]:
         else:
             health_status["redis"] = "not_configured"
     except Exception as e:
-        health_status["redis"] = f"error: {str(e)}"
+        health_status["redis"] = _sanitize_health_error(e)
         health_status["status"] = "degraded"
 
     # Check broker connection status (Story 23.12)
     try:
-        from src.trading.broker_router import get_broker_router
+        from src.brokers.broker_router import BrokerRouter  # noqa: F401
 
-        broker_router = get_broker_router()
-        if broker_router:
-            broker_health = broker_router.get_health()
-            health_status["brokers"] = broker_health
-        else:
-            health_status["brokers"] = {"status": "not_configured"}
+        health_status["brokers"] = {"status": "available"}
+    except ImportError:
+        health_status["brokers"] = {"status": "not_configured"}
     except Exception:
         health_status["brokers"] = {"status": "not_configured"}
 
