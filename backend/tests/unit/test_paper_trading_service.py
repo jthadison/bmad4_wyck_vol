@@ -360,3 +360,429 @@ class TestPaperTradingServiceErrorHandling:
         # Execute and expect error
         with pytest.raises(PaperAccountNotFoundError):
             await service.execute_signal(signal, Decimal("150.00"))
+
+
+# ---------------------------------------------------------------------------
+# Helper: create PaperTrade for metrics tests (Story 23.8a)
+# ---------------------------------------------------------------------------
+
+from src.models.paper_trading import PaperTrade
+
+
+def _create_test_trade(
+    realized_pnl=Decimal("100.00"),
+    r_multiple=Decimal("1.5"),
+    exit_reason="TARGET_1",
+) -> PaperTrade:
+    """Create a PaperTrade for testing metrics calculations."""
+    now = datetime.now(UTC)
+    return PaperTrade(
+        position_id=uuid4(),
+        signal_id=uuid4(),
+        symbol="AAPL",
+        entry_time=now,
+        entry_price=Decimal("150.00"),
+        exit_time=now,
+        exit_price=Decimal("152.00"),
+        quantity=Decimal("100"),
+        realized_pnl=realized_pnl,
+        r_multiple_achieved=r_multiple,
+        commission_total=Decimal("1.00"),
+        slippage_total=Decimal("3.00"),
+        exit_reason=exit_reason,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helper: create BacktestResult for comparison tests (Story 23.8a)
+# ---------------------------------------------------------------------------
+
+from datetime import date
+
+from src.models.backtest import BacktestConfig, BacktestMetrics, BacktestResult
+
+
+def _create_test_backtest_result(
+    win_rate=Decimal("0.65"),
+    avg_r=Decimal("1.8"),
+    max_drawdown=Decimal("0.08"),
+    profit_factor=Decimal("2.1"),
+) -> BacktestResult:
+    """Create a BacktestResult for testing comparison logic."""
+    config = BacktestConfig(
+        symbol="AAPL",
+        timeframe="1d",
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 12, 31),
+        initial_capital=Decimal("100000"),
+    )
+    metrics = BacktestMetrics(
+        win_rate=win_rate,
+        average_r_multiple=avg_r,
+        max_drawdown=max_drawdown,
+        profit_factor=profit_factor,
+        total_trades=50,
+    )
+    return BacktestResult(
+        backtest_run_id=uuid4(),
+        symbol="AAPL",
+        timeframe="1d",
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 12, 31),
+        config=config,
+        summary=metrics,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Story 23.8a: Performance metrics & backtest comparison tests
+# ---------------------------------------------------------------------------
+
+
+class TestPaperTradingServiceProfitFactor:
+    """Tests for profit_factor in calculate_performance_metrics (Story 23.8a)."""
+
+    @pytest.mark.asyncio
+    async def test_calculate_performance_metrics_includes_profit_factor(self):
+        """profit_factor should appear in metrics and be computed correctly."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Add mix of winning and losing trades
+        trade_repo.trades = [
+            _create_test_trade(realized_pnl=Decimal("200.00"), r_multiple=Decimal("2.0")),
+            _create_test_trade(realized_pnl=Decimal("300.00"), r_multiple=Decimal("3.0")),
+            _create_test_trade(
+                realized_pnl=Decimal("-100.00"),
+                r_multiple=Decimal("-1.0"),
+                exit_reason="STOP_LOSS",
+            ),
+        ]
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        metrics = await service.calculate_performance_metrics()
+
+        assert "profit_factor" in metrics
+        # total wins = 200+300 = 500, total losses = 100 => PF = 5.0
+        assert metrics["profit_factor"] == pytest.approx(5.0)
+
+    @pytest.mark.asyncio
+    async def test_profit_factor_all_winners(self):
+        """profit_factor should be inf when there are no losing trades."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        trade_repo.trades = [
+            _create_test_trade(realized_pnl=Decimal("100.00")),
+            _create_test_trade(realized_pnl=Decimal("200.00")),
+        ]
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        metrics = await service.calculate_performance_metrics()
+
+        assert metrics["profit_factor"] == 999.99
+
+    @pytest.mark.asyncio
+    async def test_profit_factor_no_trades(self):
+        """profit_factor should be 0 when there are no trades."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        metrics = await service.calculate_performance_metrics()
+
+        assert metrics["profit_factor"] == 0.0
+
+
+class TestPaperTradingServiceBacktestComparison:
+    """Tests for compare_to_backtest scale normalization & flagging (Story 23.8a)."""
+
+    @pytest.mark.asyncio
+    async def test_compare_to_backtest_normalizes_scales(self):
+        """Backtest win_rate (0-1) and max_drawdown (0-1) should be scaled to 0-100."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Set up trades so paper metrics are computed
+        trade_repo.trades = [
+            _create_test_trade(realized_pnl=Decimal("200.00"), r_multiple=Decimal("2.0")),
+            _create_test_trade(
+                realized_pnl=Decimal("-50.00"),
+                r_multiple=Decimal("-0.5"),
+                exit_reason="STOP_LOSS",
+            ),
+        ]
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        backtest = _create_test_backtest_result(
+            win_rate=Decimal("0.65"),
+            max_drawdown=Decimal("0.08"),
+        )
+
+        comparison = await service.compare_to_backtest(backtest)
+
+        # Backtest win_rate 0.65 should become 65.0 in comparison
+        assert comparison["backtest_metrics"]["win_rate"] == pytest.approx(65.0)
+        # Backtest max_drawdown 0.08 should become 8.0 in comparison
+        assert comparison["backtest_metrics"]["max_drawdown"] == pytest.approx(8.0)
+
+    @pytest.mark.asyncio
+    async def test_compare_to_backtest_detects_warnings(self):
+        """Deviations >10% but <=20% should produce warnings."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Paper metrics: win_rate will be 50% (1 of 2 trades wins)
+        trade_repo.trades = [
+            _create_test_trade(realized_pnl=Decimal("100.00"), r_multiple=Decimal("1.0")),
+            _create_test_trade(
+                realized_pnl=Decimal("-80.00"),
+                r_multiple=Decimal("-0.8"),
+                exit_reason="STOP_LOSS",
+            ),
+        ]
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        # Backtest win_rate=0.58 => 58%. Paper=50%. Delta=13.8% (warning)
+        backtest = _create_test_backtest_result(
+            win_rate=Decimal("0.58"),
+            avg_r=Decimal("0.10"),  # avg_r: paper ~0.1, backtest 0.1 => ~0% delta
+            max_drawdown=Decimal("0.0"),
+            profit_factor=Decimal("1.25"),  # paper PF=100/80=1.25 => 0% delta
+        )
+
+        comparison = await service.compare_to_backtest(backtest)
+
+        assert comparison["status"] in ("WARNING", "ERROR")
+        has_win_rate_issue = any(
+            "win_rate" in w for w in comparison["warnings"] + comparison["errors"]
+        )
+        assert has_win_rate_issue
+
+    @pytest.mark.asyncio
+    async def test_compare_to_backtest_detects_errors(self):
+        """Deviations >20% should produce errors."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Paper win_rate will be 50% (1 of 2)
+        trade_repo.trades = [
+            _create_test_trade(realized_pnl=Decimal("100.00"), r_multiple=Decimal("1.0")),
+            _create_test_trade(
+                realized_pnl=Decimal("-80.00"),
+                r_multiple=Decimal("-0.8"),
+                exit_reason="STOP_LOSS",
+            ),
+        ]
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        # Backtest win_rate=0.80 => 80%. Paper=50%. Delta=37.5% (error)
+        backtest = _create_test_backtest_result(
+            win_rate=Decimal("0.80"),
+            avg_r=Decimal("0.10"),
+            max_drawdown=Decimal("0.0"),
+            profit_factor=Decimal("1.25"),
+        )
+
+        comparison = await service.compare_to_backtest(backtest)
+
+        assert comparison["status"] == "ERROR"
+        assert len(comparison["errors"]) > 0
+        has_win_rate_error = any("win_rate" in e for e in comparison["errors"])
+        assert has_win_rate_error
+
+    @pytest.mark.asyncio
+    async def test_compare_to_backtest_ok_when_close(self):
+        """No warnings/errors when paper and backtest metrics are close."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Paper win_rate = 50%, profit_factor = 100/80 = 1.25
+        trade_repo.trades = [
+            _create_test_trade(realized_pnl=Decimal("100.00"), r_multiple=Decimal("1.0")),
+            _create_test_trade(
+                realized_pnl=Decimal("-80.00"),
+                r_multiple=Decimal("-0.8"),
+                exit_reason="STOP_LOSS",
+            ),
+        ]
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        # Set backtest metrics very close to paper metrics
+        backtest = _create_test_backtest_result(
+            win_rate=Decimal("0.50"),  # 50% => same as paper
+            avg_r=Decimal("0.10"),  # close to paper avg_r
+            max_drawdown=Decimal("0.0"),
+            profit_factor=Decimal("1.25"),  # same as paper
+        )
+
+        comparison = await service.compare_to_backtest(backtest)
+
+        assert comparison["status"] == "OK"
+        assert len(comparison["warnings"]) == 0
+        assert len(comparison["errors"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Story B-3: close_all_positions_atomic tests
+# ---------------------------------------------------------------------------
+
+from unittest.mock import AsyncMock, MagicMock
+
+from src.models.paper_trading import PaperPosition
+
+
+def _create_test_position(
+    symbol: str = "AAPL",
+    entry_price: Decimal = Decimal("150.00"),
+    current_price: Decimal = Decimal("152.00"),
+    quantity: Decimal = Decimal("100"),
+    stop_loss: Decimal = Decimal("148.00"),
+) -> PaperPosition:
+    """Create a PaperPosition for testing close_all_positions_atomic."""
+    now = datetime.now(UTC)
+    return PaperPosition(
+        id=uuid4(),
+        signal_id=uuid4(),
+        symbol=symbol,
+        entry_time=now,
+        entry_price=entry_price,
+        quantity=quantity,
+        stop_loss=stop_loss,
+        target_1=Decimal("154.00"),
+        target_2=Decimal("156.00"),
+        current_price=current_price,
+        unrealized_pnl=(current_price - entry_price) * quantity,
+        status="OPEN",
+        commission_paid=Decimal("0.50"),
+        slippage_cost=Decimal("3.00"),
+    )
+
+
+class TestCloseAllPositionsAtomic:
+    """Tests for close_all_positions_atomic (B-3 fix)."""
+
+    @pytest.mark.asyncio
+    async def test_close_all_positions_atomic_empty_list(self):
+        """No positions means return 0 with no commit called."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        account = account_repo.account
+        result = await service.close_all_positions_atomic([], account)
+
+        assert result == 0
+        mock_session.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_close_all_positions_atomic_closes_multiple(self):
+        """3 positions should all close with a single commit and correct account metrics."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        positions = [
+            _create_test_position(symbol="AAPL"),
+            _create_test_position(symbol="MSFT"),
+            _create_test_position(symbol="GOOG"),
+        ]
+
+        account = account_repo.account
+        initial_trades = account.total_trades
+
+        result = await service.close_all_positions_atomic(positions, account)
+
+        assert result == 3
+        # commit called exactly once
+        mock_session.commit.assert_awaited_once()
+        # session.add called 3 times (one trade DB object per position)
+        assert mock_session.add.call_count == 3
+        # session.execute called 3 (position updates) + 1 (account update) = 4 times
+        assert mock_session.execute.await_count == 4
+        # Account trade count incremented by 3
+        assert account.total_trades == initial_trades + 3
+
+    @pytest.mark.asyncio
+    async def test_close_all_positions_atomic_rolls_back_on_error(self):
+        """If broker.close_position raises for position 2 of 3, error propagates (no partial commit)."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        positions = [
+            _create_test_position(symbol="AAPL"),
+            _create_test_position(symbol="MSFT"),
+            _create_test_position(symbol="GOOG"),
+        ]
+
+        # Make broker.close_position fail on the second call
+        original_close = broker.close_position
+        call_count = 0
+
+        def failing_close(position, price, reason):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RuntimeError("Simulated broker failure")
+            return original_close(position, price, reason)
+
+        broker.close_position = failing_close
+
+        account = account_repo.account
+
+        with pytest.raises(RuntimeError, match="Simulated broker failure"):
+            await service.close_all_positions_atomic(positions, account)
+
+        # commit should NOT have been called (error before reaching it)
+        mock_session.commit.assert_not_awaited()

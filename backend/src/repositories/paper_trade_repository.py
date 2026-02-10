@@ -11,7 +11,7 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.paper_trading import PaperTrade
@@ -181,6 +181,12 @@ class PaperTradeRepository:
         trades_db = result.scalars().all()
 
         return [self._to_model(trade) for trade in trades_db]
+
+    async def delete_all_trades(self) -> int:
+        """Delete all paper trades. Does NOT commit. Returns count deleted."""
+        stmt = delete(PaperTradeDB)
+        result = await self.session.execute(stmt)
+        return result.rowcount
 
     def _to_model(self, trade_db: PaperTradeDB) -> PaperTrade:
         """

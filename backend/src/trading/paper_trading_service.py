@@ -15,7 +15,7 @@ import structlog
 
 from src.brokers.paper_broker_adapter import PaperBrokerAdapter
 from src.models.backtest import BacktestResult
-from src.models.paper_trading import PaperAccount, PaperPosition
+from src.models.paper_trading import PaperAccount, PaperPosition, PaperTrade
 from src.models.signal import TradeSignal
 from src.repositories.paper_account_repository import PaperAccountRepository
 from src.repositories.paper_position_repository import PaperPositionRepository
@@ -168,7 +168,7 @@ class PaperTradingService:
         account = await self.account_repo.get_account()
         if not account:
             logger.error("paper_account_not_found_during_update")
-            return
+            return 0
 
         for position in positions:
             # TODO: Fetch current market price from MarketDataService
@@ -229,6 +229,7 @@ class PaperTradingService:
                 "total_trades": 0,
                 "win_rate": 0.0,
                 "average_r_multiple": 0.0,
+                "profit_factor": 0.0,
                 "total_realized_pnl": 0.0,
                 "max_drawdown": 0.0,
             }
@@ -245,12 +246,21 @@ class PaperTradingService:
 
         total_pnl = sum(t.realized_pnl for t in trades)
 
+        # Calculate profit factor
+        if losing_trades:
+            total_wins = sum(t.realized_pnl for t in winning_trades)
+            total_losses = abs(sum(t.realized_pnl for t in losing_trades))
+            profit_factor = float(total_wins / total_losses) if total_losses > 0 else 0.0
+        else:
+            profit_factor = 999.99 if winning_trades else 0.0
+
         return {
             "total_trades": len(trades),
             "winning_trades": len(winning_trades),
             "losing_trades": len(losing_trades),
             "win_rate": float(win_rate),
             "average_r_multiple": float(avg_r_multiple),
+            "profit_factor": profit_factor,
             "total_realized_pnl": float(total_pnl),
             "max_drawdown": float(account.max_drawdown),
             "current_equity": float(account.equity),
@@ -274,11 +284,14 @@ class PaperTradingService:
         """
         paper_metrics = await self.calculate_performance_metrics()
 
-        # Extract backtest metrics
+        # Extract backtest metrics, normalizing to paper trading scales:
+        # - BacktestMetrics.win_rate is 0-1, paper metrics use 0-100
+        # - BacktestMetrics.max_drawdown is 0-1, paper metrics use 0-100
         backtest_metrics = {
-            "win_rate": float(backtest_result.summary.get("win_rate", 0)),
-            "average_r_multiple": float(backtest_result.summary.get("average_r_multiple", 0)),
-            "max_drawdown": float(backtest_result.risk_metrics.get("max_drawdown", 0)),
+            "win_rate": float(backtest_result.summary.win_rate) * 100,
+            "average_r_multiple": float(backtest_result.summary.average_r_multiple),
+            "max_drawdown": float(backtest_result.summary.max_drawdown) * 100,
+            "profit_factor": float(backtest_result.summary.profit_factor),
         }
 
         # Calculate deltas
@@ -286,14 +299,16 @@ class PaperTradingService:
         warnings = []
         errors = []
 
-        for metric in ["win_rate", "average_r_multiple", "max_drawdown"]:
+        for metric in ["win_rate", "average_r_multiple", "max_drawdown", "profit_factor"]:
             paper_value = paper_metrics.get(metric, 0)
             backtest_value = backtest_metrics.get(metric, 0)
 
             if backtest_value > 0:
                 delta_pct = abs((paper_value - backtest_value) / backtest_value * 100)
+            elif paper_value > 0:
+                delta_pct = 100.0
             else:
-                delta_pct = 0
+                delta_pct = 0.0
 
             deltas[metric] = {
                 "paper": paper_value,
@@ -483,3 +498,139 @@ class PaperTradingService:
 
         account.updated_at = datetime.now(UTC)
         await self.account_repo.update_account(account)
+
+    async def close_all_positions_atomic(
+        self,
+        positions: list[PaperPosition],
+        account: PaperAccount,
+    ) -> int:
+        """
+        Close all positions in a single atomic transaction.
+
+        Unlike _close_position (which commits per-position), this method
+        batches all operations and commits once at the end.
+
+        Returns:
+            Number of positions closed
+        """
+        if not positions:
+            return 0
+
+        from sqlalchemy import update
+
+        from src.repositories.paper_trading_orm import PaperAccountDB, PaperPositionDB, PaperTradeDB
+
+        closed_count = 0
+        batch_trades: list[PaperTrade] = []
+        session = self.account_repo.session  # All repos share this session
+
+        for position in positions:
+            try:
+                # Create trade via broker (pure computation, no DB)
+                trade = self.broker.close_position(position, position.current_price, "MANUAL")
+
+                # Add trade to session (no commit)
+                trade_db = PaperTradeDB(
+                    id=trade.id,
+                    position_id=trade.position_id,
+                    signal_id=trade.signal_id,
+                    symbol=trade.symbol,
+                    entry_time=trade.entry_time,
+                    entry_price=trade.entry_price,
+                    exit_time=trade.exit_time,
+                    exit_price=trade.exit_price,
+                    quantity=trade.quantity,
+                    realized_pnl=trade.realized_pnl,
+                    r_multiple_achieved=trade.r_multiple_achieved,
+                    commission_total=trade.commission_total,
+                    slippage_total=trade.slippage_total,
+                    exit_reason=trade.exit_reason,
+                    created_at=trade.created_at,
+                )
+                session.add(trade_db)
+                batch_trades.append(trade)
+
+                # Update position status (no commit)
+                stmt = (
+                    update(PaperPositionDB)
+                    .where(PaperPositionDB.id == position.id)
+                    .values(
+                        status="MANUAL",
+                        current_price=position.current_price,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
+                await session.execute(stmt)
+
+                # Update account metrics in-memory
+                account.current_capital += (
+                    trade.exit_price * trade.quantity - trade.commission_total
+                )
+                account.total_realized_pnl += trade.realized_pnl
+                account.total_commission_paid += trade.commission_total
+                account.total_slippage_cost += trade.slippage_total
+                account.total_trades += 1
+
+                if trade.realized_pnl > Decimal("0"):
+                    account.winning_trades += 1
+                else:
+                    account.losing_trades += 1
+
+                closed_count += 1
+
+            except Exception:
+                logger.error(
+                    "failed_to_close_position_in_batch",
+                    position_id=str(position.id),
+                )
+                raise  # Fail the whole batch - don't partial commit
+
+        # Update account metrics once (after all positions)
+        if account.total_trades > 0:
+            account.win_rate = (
+                Decimal(str(account.winning_trades)) / Decimal(str(account.total_trades))
+            ) * Decimal("100")
+
+        # Calculate average R-multiple in-memory (avoids stale read with autoflush=False)
+        batch_r_total = sum(t.r_multiple_achieved for t in batch_trades)
+        original_trade_count = account.total_trades - len(batch_trades)
+        if original_trade_count > 0:
+            old_r_total = account.average_r_multiple * Decimal(str(original_trade_count))
+        else:
+            old_r_total = Decimal("0")
+        total_r = old_r_total + batch_r_total
+        if account.total_trades > 0:
+            account.average_r_multiple = total_r / Decimal(str(account.total_trades))
+
+        # All positions are now closed, so unrealized PnL and heat are 0
+        account.total_unrealized_pnl = Decimal("0")
+        account.equity = account.current_capital + account.total_unrealized_pnl
+        account.current_heat = Decimal("0")
+        account.updated_at = datetime.now(UTC)
+
+        # Update account in DB (no commit yet)
+        await session.execute(
+            update(PaperAccountDB)
+            .where(PaperAccountDB.id == account.id)
+            .values(
+                current_capital=account.current_capital,
+                equity=account.equity,
+                total_realized_pnl=account.total_realized_pnl,
+                total_unrealized_pnl=account.total_unrealized_pnl,
+                total_commission_paid=account.total_commission_paid,
+                total_slippage_cost=account.total_slippage_cost,
+                total_trades=account.total_trades,
+                winning_trades=account.winning_trades,
+                losing_trades=account.losing_trades,
+                win_rate=account.win_rate,
+                average_r_multiple=account.average_r_multiple,
+                max_drawdown=account.max_drawdown,
+                current_heat=account.current_heat,
+                updated_at=account.updated_at,
+            )
+        )
+
+        # Single commit for everything
+        await session.commit()
+
+        return closed_count
