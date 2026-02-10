@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.api.middleware.rate_limiter import RateLimiterMiddleware
 from src.api.routes import (
     audit,
     auth,
@@ -167,6 +168,9 @@ class CORSExceptionMiddleware(BaseHTTPMiddleware):
 
 # Add CORS exception middleware first (innermost layer)
 app.add_middleware(CORSExceptionMiddleware)
+
+# Rate limiting for order submission endpoints (Story 23.11)
+app.add_middleware(RateLimiterMiddleware, max_requests=10, window_seconds=60)
 
 # Configure CORS - Allow all origins for development
 app.add_middleware(
