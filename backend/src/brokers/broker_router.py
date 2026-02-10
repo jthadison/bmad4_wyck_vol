@@ -165,54 +165,53 @@ class BrokerRouter:
     async def route_order(
         self,
         order: Order,
-        portfolio_state: Optional[PortfolioState] = None,
-        trade_risk_pct: Optional[Decimal] = None,
+        portfolio_state: PortfolioState,
+        trade_risk_pct: Decimal,
         campaign_risk_pct: Optional[Decimal] = None,
         correlated_risk_pct: Optional[Decimal] = None,
     ) -> ExecutionReport:
         """
         Route an order to the appropriate broker and execute it.
 
-        If portfolio_state and trade_risk_pct are provided, runs a pre-flight
-        risk check first. If the check fails, the order is rejected without
-        being sent to any broker.
+        Runs a pre-flight risk check first. If the check fails, the order is
+        rejected without being sent to any broker. Risk parameters are required
+        to enforce fail-closed behavior (Story 23.11).
 
         Args:
             order: Order to execute.
-            portfolio_state: Current portfolio state (optional, enables risk check).
-            trade_risk_pct: Risk percentage this trade represents (optional).
+            portfolio_state: Current portfolio state (required).
+            trade_risk_pct: Risk percentage this trade represents (required).
             campaign_risk_pct: Projected campaign risk (optional).
             correlated_risk_pct: Projected correlated risk (optional).
 
         Returns:
             ExecutionReport with execution result.
         """
-        # Pre-flight risk check (Story 23.11)
-        if portfolio_state is not None and trade_risk_pct is not None:
-            preflight = self._risk_gate.check_order(
-                order=order,
-                portfolio_state=portfolio_state,
-                trade_risk_pct=trade_risk_pct,
-                campaign_risk_pct=campaign_risk_pct,
-                correlated_risk_pct=correlated_risk_pct,
+        # Pre-flight risk check - fail-closed (Story 23.11)
+        preflight = self._risk_gate.check_order(
+            order=order,
+            portfolio_state=portfolio_state,
+            trade_risk_pct=trade_risk_pct,
+            campaign_risk_pct=campaign_risk_pct,
+            correlated_risk_pct=correlated_risk_pct,
+        )
+        if preflight.blocked:
+            violation_msgs = "; ".join(v.message for v in preflight.violations)
+            logger.warning(
+                "broker_router_order_blocked_by_risk_gate",
+                order_id=str(order.id),
+                symbol=order.symbol,
+                violations=violation_msgs,
             )
-            if preflight.blocked:
-                violation_msgs = "; ".join(v.message for v in preflight.violations)
-                logger.warning(
-                    "broker_router_order_blocked_by_risk_gate",
-                    order_id=str(order.id),
-                    symbol=order.symbol,
-                    violations=violation_msgs,
-                )
-                return ExecutionReport(
-                    order_id=order.id,
-                    platform_order_id="",
-                    platform="risk_gate",
-                    status=OrderStatus.REJECTED,
-                    filled_quantity=Decimal("0"),
-                    remaining_quantity=order.quantity,
-                    error_message=f"Risk gate blocked: {violation_msgs}",
-                )
+            return ExecutionReport(
+                order_id=order.id,
+                platform_order_id="",
+                platform="risk_gate",
+                status=OrderStatus.REJECTED,
+                filled_quantity=Decimal("0"),
+                remaining_quantity=order.quantity,
+                error_message=f"Risk gate blocked: {violation_msgs}",
+            )
 
         asset_class = classify_symbol(order.symbol)
         adapter = self.get_adapter(order.symbol)

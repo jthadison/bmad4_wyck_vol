@@ -20,6 +20,7 @@ import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp
 
 logger = structlog.get_logger(__name__)
 
@@ -34,7 +35,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
 
     def __init__(
         self,
-        app: object,
+        app: ASGIApp,
         max_requests: int = 10,
         window_seconds: int = 60,
         rate_limited_prefixes: list[str] | None = None,
@@ -71,7 +72,14 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         return any(path.startswith(prefix) for prefix in self.rate_limited_prefixes)
 
     def _get_client_key(self, request: Request) -> str:
-        """Get a rate-limiting key for the client (IP-based)."""
+        """
+        Get a rate-limiting key for the client (IP-based).
+
+        NOTE: Behind a reverse proxy, request.client.host is the proxy IP,
+        not the real client. For production deployments, configure
+        ProxyHeadersMiddleware (uvicorn --proxy-headers) so that
+        request.client.host reflects the real client via X-Forwarded-For.
+        """
         client_ip = request.client.host if request.client else "unknown"
         return client_ip
 
@@ -106,5 +114,10 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
 
         timestamps.append(now)
         self._requests[client_key] = timestamps
+
+        # Prune empty client entries to prevent memory leak
+        stale_keys = [k for k, v in self._requests.items() if not v]
+        for k in stale_keys:
+            del self._requests[k]
 
         return await call_next(request)

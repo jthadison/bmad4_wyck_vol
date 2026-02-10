@@ -74,10 +74,10 @@ class TestExecutionRiskGatePassCases:
         assert len(result.violations) == 0
         assert result.symbol == "AAPL"
 
-    def test_order_at_exact_trade_limit_passes(
+    def test_order_just_below_trade_limit_passes(
         self, gate: ExecutionRiskGate, sample_order: Order
     ) -> None:
-        """Order at exactly 2.0% trade risk should pass (limit is >2.0% to block)."""
+        """Order just below 2.0% trade risk should pass."""
         portfolio = PortfolioState(
             account_equity=Decimal("100000"),
             current_heat_pct=Decimal("0"),
@@ -85,14 +85,14 @@ class TestExecutionRiskGatePassCases:
         result = gate.check_order(
             order=sample_order,
             portfolio_state=portfolio,
-            trade_risk_pct=MAX_TRADE_RISK_PCT,  # exactly 2.0%
+            trade_risk_pct=Decimal("1.99"),
         )
         assert result.passed
 
-    def test_order_at_exact_heat_limit_passes(
+    def test_order_just_below_heat_limit_passes(
         self, gate: ExecutionRiskGate, sample_order: Order
     ) -> None:
-        """Order that brings heat to exactly 10.0% should pass (limit is >10.0% to block)."""
+        """Order that brings heat to just below 10.0% should pass."""
         portfolio = PortfolioState(
             account_equity=Decimal("100000"),
             current_heat_pct=Decimal("9.0"),
@@ -100,7 +100,7 @@ class TestExecutionRiskGatePassCases:
         result = gate.check_order(
             order=sample_order,
             portfolio_state=portfolio,
-            trade_risk_pct=Decimal("1.0"),  # 9.0 + 1.0 = 10.0%
+            trade_risk_pct=Decimal("0.99"),  # 9.0 + 0.99 = 9.99%
         )
         assert result.passed
 
@@ -119,6 +119,64 @@ class TestExecutionRiskGatePassCases:
         )
         assert result.passed
         assert len(result.violations) == 0
+
+
+class TestExecutionRiskGateExactLimitBlocked:
+    """Test that orders at exactly the limit are blocked (>= enforcement)."""
+
+    def test_exact_trade_limit_blocked(self, gate: ExecutionRiskGate, sample_order: Order) -> None:
+        """Order at exactly 2.0% trade risk should be BLOCKED."""
+        portfolio = PortfolioState(
+            account_equity=Decimal("100000"),
+            current_heat_pct=Decimal("0"),
+        )
+        result = gate.check_order(
+            order=sample_order,
+            portfolio_state=portfolio,
+            trade_risk_pct=MAX_TRADE_RISK_PCT,
+        )
+        assert result.blocked
+        assert result.violations[0].limit_name == "trade_risk"
+
+    def test_exact_heat_limit_blocked(self, gate: ExecutionRiskGate, sample_order: Order) -> None:
+        """Order that brings heat to exactly 10.0% should be BLOCKED."""
+        portfolio = PortfolioState(
+            account_equity=Decimal("100000"),
+            current_heat_pct=Decimal("9.0"),
+        )
+        result = gate.check_order(
+            order=sample_order,
+            portfolio_state=portfolio,
+            trade_risk_pct=Decimal("1.0"),  # 9.0 + 1.0 = 10.0%
+        )
+        assert result.blocked
+        assert result.violations[0].limit_name == "portfolio_heat"
+
+    def test_exact_campaign_limit_blocked(
+        self, gate: ExecutionRiskGate, sample_order: Order, normal_portfolio: PortfolioState
+    ) -> None:
+        """Campaign risk at exactly 5.0% should be BLOCKED."""
+        result = gate.check_order(
+            order=sample_order,
+            portfolio_state=normal_portfolio,
+            trade_risk_pct=Decimal("0.5"),
+            campaign_risk_pct=MAX_CAMPAIGN_RISK_PCT,
+        )
+        assert result.blocked
+        assert any(v.limit_name == "campaign_risk" for v in result.violations)
+
+    def test_exact_correlated_limit_blocked(
+        self, gate: ExecutionRiskGate, sample_order: Order, normal_portfolio: PortfolioState
+    ) -> None:
+        """Correlated risk at exactly 6.0% should be BLOCKED."""
+        result = gate.check_order(
+            order=sample_order,
+            portfolio_state=normal_portfolio,
+            trade_risk_pct=Decimal("0.5"),
+            correlated_risk_pct=MAX_CORRELATED_RISK_PCT,
+        )
+        assert result.blocked
+        assert any(v.limit_name == "correlated_risk" for v in result.violations)
 
 
 class TestExecutionRiskGateBlockCases:
@@ -294,3 +352,41 @@ class TestPreFlightResultProperties:
         )
         assert result.blocked is True
         assert result.passed is False
+
+
+class TestCheckRiskValues:
+    """Test check_risk_values method (order-agnostic risk check)."""
+
+    def test_passes_with_safe_values(self, gate: ExecutionRiskGate) -> None:
+        """Safe values should pass."""
+        result = gate.check_risk_values(
+            order_id="test-123",
+            symbol="AAPL",
+            trade_risk_pct=Decimal("1.0"),
+            portfolio_heat_pct=Decimal("5.0"),
+        )
+        assert result.passed
+        assert result.order_id == "test-123"
+        assert result.symbol == "AAPL"
+
+    def test_blocks_when_trade_risk_at_limit(self, gate: ExecutionRiskGate) -> None:
+        """Trade risk at limit should be blocked."""
+        result = gate.check_risk_values(
+            order_id="test-456",
+            symbol="EURUSD",
+            trade_risk_pct=Decimal("2.0"),
+            portfolio_heat_pct=Decimal("5.0"),
+        )
+        assert result.blocked
+        assert result.violations[0].limit_name == "trade_risk"
+
+    def test_blocks_when_heat_at_limit(self, gate: ExecutionRiskGate) -> None:
+        """Portfolio heat at limit should be blocked."""
+        result = gate.check_risk_values(
+            order_id="test-789",
+            symbol="MSFT",
+            trade_risk_pct=Decimal("1.0"),
+            portfolio_heat_pct=Decimal("10.0"),
+        )
+        assert result.blocked
+        assert result.violations[0].limit_name == "portfolio_heat"

@@ -44,6 +44,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from src.models.campaign_event import CampaignEvent, CampaignEventType
+from src.risk_management.execution_risk_gate import ExecutionRiskGate
 
 logger = structlog.get_logger(__name__)
 
@@ -304,6 +305,7 @@ class AutomatedExecutionService:
         self,
         adapter: TradingPlatformAdapter | None = None,
         config: ExecutionConfig | None = None,
+        risk_gate: ExecutionRiskGate | None = None,
     ):
         """
         Initialize automated execution service.
@@ -311,9 +313,11 @@ class AutomatedExecutionService:
         Args:
             adapter: Trading platform adapter (optional, can be set later)
             config: Execution configuration
+            risk_gate: Pre-flight risk gate (Story 23.11). If None, a default is created.
         """
         self._adapter = adapter
         self._config = config or ExecutionConfig()
+        self._risk_gate = risk_gate or ExecutionRiskGate()
         self._mode = ExecutionMode.DISABLED
         self._kill_switch_active = False
 
@@ -570,6 +574,36 @@ class AutomatedExecutionService:
                 )
 
             try:
+                # Final risk gate enforcement (Story 23.11)
+                # Query current risk values from adapter and run hard-limit check
+                try:
+                    current_heat = await self._adapter.get_portfolio_heat()
+                except AttributeError:
+                    current_heat = Decimal("0")
+                preflight = self._risk_gate.check_risk_values(
+                    order_id=str(order.id),
+                    symbol=order.symbol,
+                    trade_risk_pct=self._config.max_risk_per_trade_pct,
+                    portfolio_heat_pct=current_heat,
+                    campaign_risk_pct=None,
+                    correlated_risk_pct=None,
+                )
+                if preflight.blocked:
+                    violation_msgs = "; ".join(v.message for v in preflight.violations)
+                    logger.warning(
+                        "execution_blocked_by_risk_gate",
+                        order_id=str(order.id),
+                        violations=violation_msgs,
+                    )
+                    order.update_state(OrderState.REJECTED)
+                    return ExecutionReport(
+                        order_id=order.id,
+                        success=False,
+                        error_message=f"Risk gate blocked: {violation_msgs}",
+                        retry_count=retry_count,
+                        final_state=OrderState.REJECTED,
+                    )
+
                 order.update_state(OrderState.SUBMITTED)
 
                 logger.info(

@@ -157,10 +157,16 @@ class TestRateLimiterReset:
 
     def test_rate_limit_resets_after_window(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Rate limit should reset after the window expires."""
-        import time
+        import src.api.middleware.rate_limiter as rl_module
 
-        # Use a very small window
-        app = _create_test_app(max_requests=1, window_seconds=1)
+        current_time = 1000.0
+
+        def mock_monotonic() -> float:
+            return current_time
+
+        monkeypatch.setattr(rl_module.time, "monotonic", mock_monotonic)
+
+        app = _create_test_app(max_requests=1, window_seconds=60)
         client = TestClient(app)
 
         # First request passes
@@ -171,8 +177,8 @@ class TestRateLimiterReset:
         resp = client.post("/api/v1/tradingview/webhook")
         assert resp.status_code == 429
 
-        # Wait for window to expire
-        time.sleep(1.1)
+        # Advance time past the window
+        current_time = 1061.0
 
         # Should be allowed again
         resp = client.post("/api/v1/tradingview/webhook")

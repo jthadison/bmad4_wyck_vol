@@ -107,6 +107,79 @@ class ExecutionRiskGate:
             max_correlated_risk_pct=str(MAX_CORRELATED_RISK_PCT),
         )
 
+    def _check_limits(
+        self,
+        trade_risk_pct: Decimal,
+        portfolio_heat_pct: Decimal,
+        campaign_risk_pct: Optional[Decimal] = None,
+        correlated_risk_pct: Optional[Decimal] = None,
+    ) -> list[RiskViolation]:
+        """
+        Core limit-checking logic. Returns list of violations (empty = pass).
+
+        Args:
+            trade_risk_pct: Risk percentage this trade represents.
+            portfolio_heat_pct: Projected portfolio heat after this trade.
+            campaign_risk_pct: Projected campaign risk after this trade (if applicable).
+            correlated_risk_pct: Projected correlated risk after this trade (if applicable).
+
+        Returns:
+            List of RiskViolation (empty means all checks passed).
+        """
+        violations: list[RiskViolation] = []
+
+        # Check 1: Trade risk limit (2.0%) - block at or above limit
+        if trade_risk_pct >= MAX_TRADE_RISK_PCT:
+            violations.append(
+                RiskViolation(
+                    limit_name="trade_risk",
+                    current_value=trade_risk_pct,
+                    limit_value=MAX_TRADE_RISK_PCT,
+                    message=f"Trade risk {trade_risk_pct}% exceeds max {MAX_TRADE_RISK_PCT}%",
+                )
+            )
+
+        # Check 2: Portfolio heat limit (10.0%) - block at or above limit
+        if portfolio_heat_pct >= MAX_PORTFOLIO_HEAT_PCT:
+            violations.append(
+                RiskViolation(
+                    limit_name="portfolio_heat",
+                    current_value=portfolio_heat_pct,
+                    limit_value=MAX_PORTFOLIO_HEAT_PCT,
+                    message=(
+                        f"Portfolio heat would be {portfolio_heat_pct}%, "
+                        f"exceeds max {MAX_PORTFOLIO_HEAT_PCT}%"
+                    ),
+                )
+            )
+
+        # Check 3: Campaign risk limit (5.0%) - block at or above limit
+        if campaign_risk_pct is not None and campaign_risk_pct >= MAX_CAMPAIGN_RISK_PCT:
+            violations.append(
+                RiskViolation(
+                    limit_name="campaign_risk",
+                    current_value=campaign_risk_pct,
+                    limit_value=MAX_CAMPAIGN_RISK_PCT,
+                    message=f"Campaign risk {campaign_risk_pct}% exceeds max {MAX_CAMPAIGN_RISK_PCT}%",
+                )
+            )
+
+        # Check 4: Correlated risk limit (6.0%) - block at or above limit
+        if correlated_risk_pct is not None and correlated_risk_pct >= MAX_CORRELATED_RISK_PCT:
+            violations.append(
+                RiskViolation(
+                    limit_name="correlated_risk",
+                    current_value=correlated_risk_pct,
+                    limit_value=MAX_CORRELATED_RISK_PCT,
+                    message=(
+                        f"Correlated risk {correlated_risk_pct}% "
+                        f"exceeds max {MAX_CORRELATED_RISK_PCT}%"
+                    ),
+                )
+            )
+
+        return violations
+
     def check_order(
         self,
         order: Order,
@@ -119,7 +192,7 @@ class ExecutionRiskGate:
         Run all pre-flight risk checks on an order.
 
         Args:
-            order: The order to validate.
+            order: The order to validate (src.models.order.Order).
             portfolio_state: Current portfolio state.
             trade_risk_pct: Risk percentage this trade represents.
             campaign_risk_pct: Projected campaign risk after this trade (if applicable).
@@ -128,59 +201,13 @@ class ExecutionRiskGate:
         Returns:
             PreFlightResult with pass/block decision and violation details.
         """
-        violations: list[RiskViolation] = []
-
-        # Check 1: Trade risk limit (2.0%)
-        if trade_risk_pct > MAX_TRADE_RISK_PCT:
-            violations.append(
-                RiskViolation(
-                    limit_name="trade_risk",
-                    current_value=trade_risk_pct,
-                    limit_value=MAX_TRADE_RISK_PCT,
-                    message=f"Trade risk {trade_risk_pct}% exceeds max {MAX_TRADE_RISK_PCT}%",
-                )
-            )
-
-        # Check 2: Portfolio heat limit (10.0%)
         projected_heat = portfolio_state.current_heat_pct + trade_risk_pct
-        if projected_heat > MAX_PORTFOLIO_HEAT_PCT:
-            violations.append(
-                RiskViolation(
-                    limit_name="portfolio_heat",
-                    current_value=projected_heat,
-                    limit_value=MAX_PORTFOLIO_HEAT_PCT,
-                    message=(
-                        f"Portfolio heat would be {projected_heat}% "
-                        f"(current {portfolio_state.current_heat_pct}% + "
-                        f"trade {trade_risk_pct}%), exceeds max {MAX_PORTFOLIO_HEAT_PCT}%"
-                    ),
-                )
-            )
-
-        # Check 3: Campaign risk limit (5.0%)
-        if campaign_risk_pct is not None and campaign_risk_pct > MAX_CAMPAIGN_RISK_PCT:
-            violations.append(
-                RiskViolation(
-                    limit_name="campaign_risk",
-                    current_value=campaign_risk_pct,
-                    limit_value=MAX_CAMPAIGN_RISK_PCT,
-                    message=f"Campaign risk {campaign_risk_pct}% exceeds max {MAX_CAMPAIGN_RISK_PCT}%",
-                )
-            )
-
-        # Check 4: Correlated risk limit (6.0%)
-        if correlated_risk_pct is not None and correlated_risk_pct > MAX_CORRELATED_RISK_PCT:
-            violations.append(
-                RiskViolation(
-                    limit_name="correlated_risk",
-                    current_value=correlated_risk_pct,
-                    limit_value=MAX_CORRELATED_RISK_PCT,
-                    message=(
-                        f"Correlated risk {correlated_risk_pct}% "
-                        f"exceeds max {MAX_CORRELATED_RISK_PCT}%"
-                    ),
-                )
-            )
+        violations = self._check_limits(
+            trade_risk_pct=trade_risk_pct,
+            portfolio_heat_pct=projected_heat,
+            campaign_risk_pct=campaign_risk_pct,
+            correlated_risk_pct=correlated_risk_pct,
+        )
 
         result = RiskCheckResult.BLOCKED if violations else RiskCheckResult.PASSED
         preflight = PreFlightResult(
@@ -210,6 +237,72 @@ class ExecutionRiskGate:
                 "order_passed_risk_gate",
                 order_id=str(order.id),
                 symbol=order.symbol,
+                trade_risk_pct=str(trade_risk_pct),
+            )
+
+        return preflight
+
+    def check_risk_values(
+        self,
+        order_id: str,
+        symbol: str,
+        trade_risk_pct: Decimal,
+        portfolio_heat_pct: Decimal,
+        campaign_risk_pct: Optional[Decimal] = None,
+        correlated_risk_pct: Optional[Decimal] = None,
+    ) -> PreFlightResult:
+        """
+        Run all pre-flight risk checks using raw values (no Order object needed).
+
+        Use this when the caller has a different Order type (e.g.,
+        AutomatedExecutionService uses its own Order dataclass).
+
+        Args:
+            order_id: Order identifier string.
+            symbol: Trading symbol.
+            trade_risk_pct: Risk percentage this trade represents.
+            portfolio_heat_pct: Current portfolio heat percentage.
+            campaign_risk_pct: Current campaign risk percentage (if applicable).
+            correlated_risk_pct: Current correlated risk percentage (if applicable).
+
+        Returns:
+            PreFlightResult with pass/block decision and violation details.
+        """
+        violations = self._check_limits(
+            trade_risk_pct=trade_risk_pct,
+            portfolio_heat_pct=portfolio_heat_pct,
+            campaign_risk_pct=campaign_risk_pct,
+            correlated_risk_pct=correlated_risk_pct,
+        )
+
+        result = RiskCheckResult.BLOCKED if violations else RiskCheckResult.PASSED
+        preflight = PreFlightResult(
+            result=result,
+            order_id=order_id,
+            symbol=symbol,
+            violations=violations,
+        )
+
+        if preflight.blocked:
+            self._logger.warning(
+                "order_blocked_by_risk_gate",
+                order_id=order_id,
+                symbol=symbol,
+                violation_count=len(violations),
+                violations=[
+                    {
+                        "limit": v.limit_name,
+                        "current": str(v.current_value),
+                        "limit_value": str(v.limit_value),
+                    }
+                    for v in violations
+                ],
+            )
+        else:
+            self._logger.info(
+                "order_passed_risk_gate",
+                order_id=order_id,
+                symbol=symbol,
                 trade_risk_pct=str(trade_risk_pct),
             )
 
