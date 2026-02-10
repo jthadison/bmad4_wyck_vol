@@ -291,6 +291,12 @@ class Settings(BaseSettings):
         description="Refresh token expiration time in days (default: 7 days)",
     )
 
+    # CORS Configuration (Story 23.12 - H2)
+    cors_origins: list[str] = Field(
+        default=["*"],
+        description="Allowed CORS origins. Use ['*'] for development only.",
+    )
+
     # Broker Router Configuration (Story 23.7)
     auto_execute_orders: bool = Field(
         default=False,
@@ -354,6 +360,11 @@ class Settings(BaseSettings):
                 )
             if self.debug:
                 raise ValueError("DEBUG must be False in production environment")
+            if "*" in self.cors_origins:
+                raise ValueError(
+                    "CORS_ORIGINS must not contain '*' in production. "
+                    "Set CORS_ORIGINS to your domain(s), e.g., 'https://your-domain.com'"
+                )
             if "changeme" in self.database_url.lower():
                 import warnings
 

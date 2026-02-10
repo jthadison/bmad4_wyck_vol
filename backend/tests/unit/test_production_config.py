@@ -95,6 +95,7 @@ class TestProductionConfigValidation:
                 debug=False,
                 jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
                 database_url="postgresql+psycopg://user:changeme@localhost:5432/db",
+                cors_origins=["https://example.com"],
             )
             password_warnings = [x for x in w if "default password" in str(x.message)]
             assert len(password_warnings) >= 1
