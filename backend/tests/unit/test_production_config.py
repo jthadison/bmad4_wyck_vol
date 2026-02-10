@@ -199,6 +199,17 @@ class TestDockerComposeProd:
         assert "image" in frontend, "Frontend must use 'image:' for pre-built Docker images"
         assert "build" not in frontend, "Frontend must not use 'build:' in production compose"
 
+    def test_backend_has_redis_url(self, compose_config):
+        """Backend must set REDIS_URL for container networking."""
+        backend = compose_config["services"]["backend"]
+        env = backend.get("environment", {})
+        assert "REDIS_URL" in env, "Backend must set REDIS_URL for Redis container connectivity"
+        redis_url = env["REDIS_URL"]
+        assert "redis://" in str(redis_url), "REDIS_URL must be a valid redis:// URL"
+        assert "localhost" not in str(
+            redis_url
+        ), "REDIS_URL must not use localhost in container networking"
+
 
 # ============================================================================
 # Nginx Production Config Tests
@@ -645,9 +656,9 @@ class TestDockerfileProd:
         lines = dockerfile_content.split("\n")
         for line in lines:
             if line.strip().startswith("COPY") and "nginx" in line and ".conf" in line:
-                assert "nginx.prod.conf" in line, (
-                    f"COPY directive must reference nginx.prod.conf, found: {line.strip()}"
-                )
+                assert (
+                    "nginx.prod.conf" in line
+                ), f"COPY directive must reference nginx.prod.conf, found: {line.strip()}"
 
     def test_exposes_ssl_port(self, dockerfile_content):
         """Dockerfile.prod must expose port 443 for SSL."""
