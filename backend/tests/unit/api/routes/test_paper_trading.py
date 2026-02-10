@@ -367,26 +367,24 @@ class TestSessionEndpoints:
 
 
 class TestResetEndpoint:
-    """Tests for POST /reset."""
+    """Tests for POST /reset (atomic transaction with capped trade archive)."""
 
     @pytest.mark.asyncio
     async def test_reset_account_returns_404_when_no_account(self):
-        """Should return 404 if no paper trading account exists."""
+        """Should return 404 if paper trading is not enabled."""
         from fastapi import HTTPException
 
         from src.api.routes.paper_trading import reset_account
 
+        mock_db = AsyncMock()
         mock_account_repo = AsyncMock()
         mock_account_repo.get_account = AsyncMock(return_value=None)
-        mock_db = AsyncMock()
 
         with (
             patch(
                 "src.api.routes.paper_trading.PaperAccountRepository",
                 return_value=mock_account_repo,
             ),
-            patch("src.api.routes.paper_trading.PaperTradeRepository"),
-            patch("src.api.routes.paper_trading.PaperSessionRepository"),
             pytest.raises(HTTPException) as exc_info,
         ):
             await reset_account(db=mock_db)
@@ -394,27 +392,37 @@ class TestResetEndpoint:
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_reset_account_archives_and_creates_new(self):
-        """Happy path: archives session and creates fresh account."""
+    async def test_reset_account_happy_path(self):
+        """Reset should archive, delete, recreate in one commit."""
         from src.api.routes.paper_trading import reset_account
 
-        account = _make_account(total_realized_pnl=Decimal("500.00"))
+        account = _make_account()
         trades = [_make_trade(), _make_trade()]
-        new_account = _make_account()
-        archived_session_id = uuid4()
+
+        added_objects: list = []
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+        # flush assigns UUIDs to ORM objects that don't have them yet
+        async def _fake_flush() -> None:
+            for obj in added_objects:
+                if getattr(obj, "id", None) is None:
+                    obj.id = uuid4()
+
+        mock_db.flush = AsyncMock(side_effect=_fake_flush)
+        mock_db.commit = AsyncMock()
+        mock_db.execute = AsyncMock()
 
         mock_account_repo = AsyncMock()
         mock_account_repo.get_account = AsyncMock(return_value=account)
-        mock_account_repo.delete_account = AsyncMock()
-        mock_account_repo.create_account = AsyncMock(return_value=new_account)
 
         mock_trade_repo = AsyncMock()
         mock_trade_repo.list_trades = AsyncMock(return_value=(trades, 2))
+        mock_trade_repo.delete_all_trades = AsyncMock(return_value=2)
 
-        mock_session_repo = AsyncMock()
-        mock_session_repo.archive_session = AsyncMock(return_value=archived_session_id)
-
-        mock_db = AsyncMock()
+        mock_position_repo = AsyncMock()
+        mock_position_repo.delete_all_positions = AsyncMock(return_value=0)
 
         with (
             patch(
@@ -426,38 +434,49 @@ class TestResetEndpoint:
                 return_value=mock_trade_repo,
             ),
             patch(
-                "src.api.routes.paper_trading.PaperSessionRepository",
-                return_value=mock_session_repo,
+                "src.api.routes.paper_trading.PaperPositionRepository",
+                return_value=mock_position_repo,
             ),
         ):
             result = await reset_account(db=mock_db)
 
+        # db.add called for session archive + new account
+        assert mock_db.add.call_count == 2
+        mock_db.flush.assert_awaited_once()
+        mock_db.commit.assert_awaited_once()
         assert result.success is True
+        assert result.data is not None
         assert "archived_session_id" in result.data
-        mock_session_repo.archive_session.assert_awaited_once()
-        mock_account_repo.delete_account.assert_awaited_once()
-        mock_account_repo.create_account.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_reset_account_caps_trades_at_limit(self):
-        """list_trades should be called with limit=10000, not 100000."""
+    async def test_reset_account_deletes_trades_before_positions(self):
+        """Reset must delete trades then positions (FK ordering)."""
         from src.api.routes.paper_trading import reset_account
 
-        account = _make_account(total_realized_pnl=Decimal("0.00"))
-        new_account = _make_account()
+        account = _make_account()
+        added_objects: list = []
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+        async def _fake_flush() -> None:
+            for obj in added_objects:
+                if getattr(obj, "id", None) is None:
+                    obj.id = uuid4()
+
+        mock_db.flush = AsyncMock(side_effect=_fake_flush)
+        mock_db.commit = AsyncMock()
+        mock_db.execute = AsyncMock()
 
         mock_account_repo = AsyncMock()
         mock_account_repo.get_account = AsyncMock(return_value=account)
-        mock_account_repo.delete_account = AsyncMock()
-        mock_account_repo.create_account = AsyncMock(return_value=new_account)
 
         mock_trade_repo = AsyncMock()
         mock_trade_repo.list_trades = AsyncMock(return_value=([], 0))
+        mock_trade_repo.delete_all_trades = AsyncMock(return_value=0)
 
-        mock_session_repo = AsyncMock()
-        mock_session_repo.archive_session = AsyncMock(return_value=uuid4())
-
-        mock_db = AsyncMock()
+        mock_position_repo = AsyncMock()
+        mock_position_repo.delete_all_positions = AsyncMock(return_value=0)
 
         with (
             patch(
@@ -469,8 +488,57 @@ class TestResetEndpoint:
                 return_value=mock_trade_repo,
             ),
             patch(
-                "src.api.routes.paper_trading.PaperSessionRepository",
-                return_value=mock_session_repo,
+                "src.api.routes.paper_trading.PaperPositionRepository",
+                return_value=mock_position_repo,
+            ),
+        ):
+            await reset_account(db=mock_db)
+
+        mock_trade_repo.delete_all_trades.assert_awaited_once()
+        mock_position_repo.delete_all_positions.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_reset_account_caps_trades_at_10000(self):
+        """list_trades should be called with limit=10000 to cap archive size."""
+        from src.api.routes.paper_trading import reset_account
+
+        account = _make_account()
+        added_objects: list = []
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+        async def _fake_flush() -> None:
+            for obj in added_objects:
+                if getattr(obj, "id", None) is None:
+                    obj.id = uuid4()
+
+        mock_db.flush = AsyncMock(side_effect=_fake_flush)
+        mock_db.commit = AsyncMock()
+        mock_db.execute = AsyncMock()
+
+        mock_account_repo = AsyncMock()
+        mock_account_repo.get_account = AsyncMock(return_value=account)
+
+        mock_trade_repo = AsyncMock()
+        mock_trade_repo.list_trades = AsyncMock(return_value=([], 0))
+        mock_trade_repo.delete_all_trades = AsyncMock(return_value=0)
+
+        mock_position_repo = AsyncMock()
+        mock_position_repo.delete_all_positions = AsyncMock(return_value=0)
+
+        with (
+            patch(
+                "src.api.routes.paper_trading.PaperAccountRepository",
+                return_value=mock_account_repo,
+            ),
+            patch(
+                "src.api.routes.paper_trading.PaperTradeRepository",
+                return_value=mock_trade_repo,
+            ),
+            patch(
+                "src.api.routes.paper_trading.PaperPositionRepository",
+                return_value=mock_position_repo,
             ),
         ):
             await reset_account(db=mock_db)
