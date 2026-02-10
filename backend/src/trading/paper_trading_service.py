@@ -15,7 +15,7 @@ import structlog
 
 from src.brokers.paper_broker_adapter import PaperBrokerAdapter
 from src.models.backtest import BacktestResult
-from src.models.paper_trading import PaperAccount, PaperPosition
+from src.models.paper_trading import PaperAccount, PaperPosition, PaperTrade
 from src.models.signal import TradeSignal
 from src.repositories.paper_account_repository import PaperAccountRepository
 from src.repositories.paper_position_repository import PaperPositionRepository
@@ -521,6 +521,7 @@ class PaperTradingService:
         from src.repositories.paper_trading_orm import PaperAccountDB, PaperPositionDB, PaperTradeDB
 
         closed_count = 0
+        batch_trades: list[PaperTrade] = []
         session = self.account_repo.session  # All repos share this session
 
         for position in positions:
@@ -547,6 +548,7 @@ class PaperTradingService:
                     created_at=trade.created_at,
                 )
                 session.add(trade_db)
+                batch_trades.append(trade)
 
                 # Update position status (no commit)
                 stmt = (
@@ -589,16 +591,21 @@ class PaperTradingService:
                 Decimal(str(account.winning_trades)) / Decimal(str(account.total_trades))
             ) * Decimal("100")
 
-        # Calculate average R-multiple from all trades
-        trades, _ = await self.trade_repo.list_trades(limit=10000, offset=0)
-        if trades:
-            total_r = sum(t.r_multiple_achieved for t in trades)
-            account.average_r_multiple = total_r / len(trades)
+        # Calculate average R-multiple in-memory (avoids stale read with autoflush=False)
+        batch_r_total = sum(t.r_multiple_achieved for t in batch_trades)
+        original_trade_count = account.total_trades - len(batch_trades)
+        if original_trade_count > 0:
+            old_r_total = account.average_r_multiple * Decimal(str(original_trade_count))
+        else:
+            old_r_total = Decimal("0")
+        total_r = old_r_total + batch_r_total
+        if account.total_trades > 0:
+            account.average_r_multiple = total_r / Decimal(str(account.total_trades))
 
-        positions_list = await self.position_repo.list_open_positions()
-        account.total_unrealized_pnl = sum(p.unrealized_pnl for p in positions_list)
+        # All positions are now closed, so unrealized PnL and heat are 0
+        account.total_unrealized_pnl = Decimal("0")
         account.equity = account.current_capital + account.total_unrealized_pnl
-        account.current_heat = await self._calculate_current_heat(account)
+        account.current_heat = Decimal("0")
         account.updated_at = datetime.now(UTC)
 
         # Update account in DB (no commit yet)
