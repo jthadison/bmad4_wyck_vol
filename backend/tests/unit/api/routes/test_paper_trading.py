@@ -124,7 +124,7 @@ class TestGetSettings:
             "src.api.routes.paper_trading.PaperConfigRepository",
             return_value=mock_config_repo,
         ):
-            result = await get_settings(db=mock_db)
+            result = await get_settings(db=mock_db, _user_id=uuid4())
 
         assert isinstance(result, PaperTradingConfig)
         assert result.enabled is True
@@ -149,7 +149,7 @@ class TestGetSettings:
             "src.api.routes.paper_trading.PaperConfigRepository",
             return_value=mock_config_repo,
         ):
-            result = await get_settings(db=mock_db)
+            result = await get_settings(db=mock_db, _user_id=uuid4())
 
         assert result.starting_capital == Decimal("50000.00000000")
         assert result.use_realistic_fills is False
@@ -180,7 +180,7 @@ class TestUpdateSettings:
             "src.api.routes.paper_trading.PaperConfigRepository",
             return_value=mock_config_repo,
         ):
-            result = await update_settings(request=request, db=mock_db)
+            result = await update_settings(request=request, db=mock_db, _user_id=uuid4())
 
         assert result.starting_capital == Decimal("200000.00000000")
         assert result.commission_per_share == Decimal("0.01000000")
@@ -209,7 +209,7 @@ class TestCompareEndpoint:
         mock_db = AsyncMock()
 
         with pytest.raises(HTTPException) as exc_info:
-            await compare_to_backtest(backtest_id=uuid4(), db=mock_db, service=mock_service)
+            await compare_to_backtest(backtest_id=uuid4(), db=mock_db, service=mock_service, _user_id=uuid4())
 
         assert exc_info.value.status_code == 404
 
@@ -236,7 +236,7 @@ class TestCompareEndpoint:
             ),
             pytest.raises(HTTPException) as exc_info,
         ):
-            await compare_to_backtest(backtest_id=uuid4(), db=mock_db, service=mock_service)
+            await compare_to_backtest(backtest_id=uuid4(), db=mock_db, service=mock_service, _user_id=uuid4())
 
         assert exc_info.value.status_code == 404
 
@@ -269,7 +269,7 @@ class TestReportEndpoint:
             "src.repositories.backtest_repository.BacktestRepository",
             return_value=mock_backtest_repo,
         ):
-            result = await get_report(backtest_id=backtest_id, db=mock_db, service=mock_service)
+            result = await get_report(backtest_id=backtest_id, db=mock_db, service=mock_service, _user_id=uuid4())
 
         assert result.backtest_comparison == comparison_result
         mock_service.compare_to_backtest.assert_awaited_once()
@@ -288,7 +288,7 @@ class TestReportEndpoint:
 
         mock_db = AsyncMock()
 
-        result = await get_report(backtest_id=None, db=mock_db, service=mock_service)
+        result = await get_report(backtest_id=None, db=mock_db, service=mock_service, _user_id=uuid4())
 
         assert result.backtest_comparison is None
 
@@ -313,7 +313,7 @@ class TestSessionEndpoints:
             "src.api.routes.paper_trading.PaperSessionRepository",
             return_value=mock_session_repo,
         ):
-            result = await list_sessions(limit=50, offset=0, db=mock_db)
+            result = await list_sessions(limit=50, offset=0, db=mock_db, _user_id=uuid4())
 
         assert result["sessions"] == []
         assert result["total"] == 0
@@ -334,7 +334,7 @@ class TestSessionEndpoints:
             "src.api.routes.paper_trading.PaperSessionRepository",
             return_value=mock_session_repo,
         ):
-            result = await list_sessions(limit=50, offset=0, db=mock_db)
+            result = await list_sessions(limit=50, offset=0, db=mock_db, _user_id=uuid4())
 
         assert result["total"] == 1
         assert len(result["sessions"]) == 1
@@ -356,7 +356,7 @@ class TestSessionEndpoints:
             ),
             pytest.raises(HTTPException) as exc_info,
         ):
-            await get_session(session_id=uuid4(), db=mock_db)
+            await get_session(session_id=uuid4(), db=mock_db, _user_id=uuid4())
 
         assert exc_info.value.status_code == 404
 
@@ -387,7 +387,7 @@ class TestResetEndpoint:
             ),
             pytest.raises(HTTPException) as exc_info,
         ):
-            await reset_account(db=mock_db)
+            await reset_account(db=mock_db, _user_id=uuid4())
 
         assert exc_info.value.status_code == 404
 
@@ -438,7 +438,7 @@ class TestResetEndpoint:
                 return_value=mock_position_repo,
             ),
         ):
-            result = await reset_account(db=mock_db)
+            result = await reset_account(db=mock_db, _user_id=uuid4())
 
         # db.add called for session archive + new account
         assert mock_db.add.call_count == 2
@@ -492,7 +492,7 @@ class TestResetEndpoint:
                 return_value=mock_position_repo,
             ),
         ):
-            await reset_account(db=mock_db)
+            await reset_account(db=mock_db, _user_id=uuid4())
 
         mock_trade_repo.delete_all_trades.assert_awaited_once()
         mock_position_repo.delete_all_positions.assert_awaited_once()
@@ -541,6 +541,6 @@ class TestResetEndpoint:
                 return_value=mock_position_repo,
             ),
         ):
-            await reset_account(db=mock_db)
+            await reset_account(db=mock_db, _user_id=uuid4())
 
         mock_trade_repo.list_trades.assert_awaited_once_with(limit=10000, offset=0)
