@@ -187,6 +187,18 @@ class TestDockerComposeProd:
         env = backend.get("environment", {})
         assert env.get("ENVIRONMENT") == "production"
 
+    def test_backend_uses_image_not_build(self, compose_config):
+        """Backend service must use image: directive, not build:."""
+        backend = compose_config["services"]["backend"]
+        assert "image" in backend, "Backend must use 'image:' for pre-built Docker images"
+        assert "build" not in backend, "Backend must not use 'build:' in production compose"
+
+    def test_frontend_uses_image_not_build(self, compose_config):
+        """Frontend service must use image: directive, not build:."""
+        frontend = compose_config["services"]["frontend"]
+        assert "image" in frontend, "Frontend must use 'image:' for pre-built Docker images"
+        assert "build" not in frontend, "Frontend must not use 'build:' in production compose"
+
 
 # ============================================================================
 # Nginx Production Config Tests
