@@ -34,7 +34,7 @@ class DeviationSeverity(str, Enum):
     ERROR = "ERROR"
 
 
-class MetricComparison(BaseModel):
+class ValidationMetricComparison(BaseModel):
     """Comparison of a single metric between paper trading and backtest baseline."""
 
     metric_name: str
@@ -51,7 +51,7 @@ class SymbolComparisonReport(BaseModel):
     symbol: str
     baseline_version: str = ""
     baseline_date_range: dict[str, str] = Field(default_factory=dict)
-    metrics: list[MetricComparison] = Field(default_factory=list)
+    metrics: list[ValidationMetricComparison] = Field(default_factory=list)
     anomalies: list[str] = Field(default_factory=list)
     overall_status: DeviationSeverity = DeviationSeverity.OK
 
@@ -134,7 +134,7 @@ def compare_symbol_metrics(
         severity = _classify_deviation(dev, tolerance_pct)
 
         report.metrics.append(
-            MetricComparison(
+            ValidationMetricComparison(
                 metric_name=metric_name,
                 paper_value=paper_val,
                 baseline_value=baseline_val,

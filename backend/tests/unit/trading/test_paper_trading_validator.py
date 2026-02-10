@@ -8,6 +8,7 @@ Author: Story 23.8b
 """
 
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
@@ -415,3 +416,132 @@ class TestToleranceChecking:
         report = compare_symbol_metrics("TEST", paper, baseline, tolerance_pct=10.0)
         win_rate_metric = next(m for m in report.metrics if m.metric_name == "win_rate")
         assert win_rate_metric.severity == DeviationSeverity.ERROR
+
+
+# --- API Endpoint Tests ---
+
+
+class TestValidationAPIEndpoints:
+    """Tests for the validation API endpoints in paper_trading routes."""
+
+    @pytest.mark.asyncio
+    async def test_get_validation_status_no_run(self) -> None:
+        from src.api.routes.paper_trading import get_validation_status
+
+        result = await get_validation_status(_user_id=uuid4())
+        assert result["active"] is False
+
+    @pytest.mark.asyncio
+    async def test_start_validation_run_endpoint(self) -> None:
+        from src.api.routes.paper_trading import (
+            StartValidationRequest,
+            _validator,
+            start_validation_run,
+        )
+
+        # Ensure clean state
+        if _validator.current_run and _validator.current_run.status == ValidationRunStatus.RUNNING:
+            _validator.stop_run()
+
+        request = StartValidationRequest(
+            symbols=["EURUSD", "SPX500"],
+            duration_days=14,
+            tolerance_pct=10.0,
+        )
+        result = await start_validation_run(request=request, _user_id=uuid4())
+        assert result["success"] is True
+        assert result["run_id"] is not None
+        assert result["symbols"] == ["EURUSD", "SPX500"]
+
+        # Clean up
+        _validator.stop_run()
+
+    @pytest.mark.asyncio
+    async def test_start_validation_run_conflict_when_active(self) -> None:
+        from fastapi import HTTPException
+
+        from src.api.routes.paper_trading import (
+            StartValidationRequest,
+            _validator,
+            start_validation_run,
+        )
+
+        # Ensure clean state then start
+        if _validator.current_run and _validator.current_run.status == ValidationRunStatus.RUNNING:
+            _validator.stop_run()
+        _validator.start_run()
+
+        request = StartValidationRequest()
+        with pytest.raises(HTTPException) as exc_info:
+            await start_validation_run(request=request, _user_id=uuid4())
+        assert exc_info.value.status_code == 409
+
+        # Clean up
+        _validator.stop_run()
+
+    @pytest.mark.asyncio
+    async def test_stop_validation_run_endpoint(self) -> None:
+        from src.api.routes.paper_trading import _validator, stop_validation_run
+
+        # Ensure clean state then start
+        if _validator.current_run and _validator.current_run.status == ValidationRunStatus.RUNNING:
+            _validator.stop_run()
+        _validator.start_run()
+
+        result = await stop_validation_run(_user_id=uuid4())
+        assert result["success"] is True
+        assert result["signals_generated"] == 0
+
+    @pytest.mark.asyncio
+    async def test_stop_validation_run_404_when_no_run(self) -> None:
+        from fastapi import HTTPException
+
+        from src.api.routes.paper_trading import _validator, stop_validation_run
+
+        # Ensure no active run
+        if _validator.current_run and _validator.current_run.status == ValidationRunStatus.RUNNING:
+            _validator.stop_run()
+        _validator._current_run = None
+
+        with pytest.raises(HTTPException) as exc_info:
+            await stop_validation_run(_user_id=uuid4())
+        assert exc_info.value.status_code == 404
+
+    def test_get_validation_report_endpoint(self) -> None:
+        from src.api.routes.paper_trading import _validator, get_validation_report
+
+        # Ensure clean state then start and record metrics
+        if _validator.current_run and _validator.current_run.status == ValidationRunStatus.RUNNING:
+            _validator.stop_run()
+        _validator.start_run()
+        _validator.record_metrics(
+            "SPX500",
+            {
+                "win_rate": 61.7,
+                "average_r_multiple": 1.24,
+                "profit_factor": 1.85,
+                "max_drawdown": 8.2,
+                "total_trades": 47,
+            },
+        )
+
+        result = get_validation_report(_user_id=uuid4())
+        assert "overall_status" in result
+        assert "symbol_reports" in result
+
+        # Clean up
+        _validator.stop_run()
+
+    def test_get_validation_report_404_when_no_run(self) -> None:
+        from fastapi import HTTPException
+
+        from src.api.routes.paper_trading import _validator, get_validation_report
+
+        # Ensure no run
+        if _validator.current_run and _validator.current_run.status == ValidationRunStatus.RUNNING:
+            _validator.stop_run()
+        _validator._current_run = None
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_validation_report(_user_id=uuid4())
+        assert exc_info.value.status_code == 404

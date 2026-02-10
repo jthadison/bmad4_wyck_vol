@@ -37,7 +37,8 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/paper-trading", tags=["Paper Trading"])
 
-# Singleton validator instance for the application lifecycle
+# NOTE: In-memory state; requires single-worker deployment (--workers 1).
+# Multi-worker Uvicorn will create separate instances per worker process.
 _validator = PaperTradingValidator()
 
 
@@ -837,7 +838,7 @@ async def stop_validation_run(
 
 
 @router.get("/validation/report", response_model=dict)
-async def get_validation_report(
+def get_validation_report(
     _user_id: UUID = Depends(get_current_user_id),
 ) -> dict:
     """
@@ -845,6 +846,10 @@ async def get_validation_report(
 
     Compares paper trading results against backtest baselines and returns
     per-symbol deviation metrics with severity classification.
+
+    Note: This is a sync endpoint because generate_comparison_report performs
+    synchronous file I/O (loading baseline JSON files). FastAPI automatically
+    runs sync endpoints in a threadpool to avoid blocking the event loop.
     """
     run_state = _validator.current_run
     if not run_state:

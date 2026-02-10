@@ -68,7 +68,10 @@ class ValidationRunState(BaseModel):
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
 
-    # Accumulated metrics per symbol
+    # Accumulated metrics per symbol. Inner dict expected keys:
+    # win_rate (float, 0-100), average_r_multiple (float),
+    # profit_factor (float), max_drawdown (float, 0-100),
+    # total_trades (int).
     symbol_metrics: dict[str, dict] = Field(default_factory=dict)
 
     # Signals tracked
@@ -178,6 +181,10 @@ class PaperTradingValidator:
     def record_metrics(self, symbol: str, metrics: dict) -> None:
         """
         Record performance metrics for a symbol during the validation run.
+
+        This is last-write-wins by design: each call replaces the previous
+        snapshot for the given symbol with the latest metrics. Callers are
+        expected to pass a complete metrics snapshot each time.
 
         Args:
             symbol: The trading symbol.
