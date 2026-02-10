@@ -209,7 +209,9 @@ class TestCompareEndpoint:
         mock_db = AsyncMock()
 
         with pytest.raises(HTTPException) as exc_info:
-            await compare_to_backtest(backtest_id=uuid4(), db=mock_db, service=mock_service, _user_id=uuid4())
+            await compare_to_backtest(
+                backtest_id=uuid4(), db=mock_db, service=mock_service, _user_id=uuid4()
+            )
 
         assert exc_info.value.status_code == 404
 
@@ -236,7 +238,9 @@ class TestCompareEndpoint:
             ),
             pytest.raises(HTTPException) as exc_info,
         ):
-            await compare_to_backtest(backtest_id=uuid4(), db=mock_db, service=mock_service, _user_id=uuid4())
+            await compare_to_backtest(
+                backtest_id=uuid4(), db=mock_db, service=mock_service, _user_id=uuid4()
+            )
 
         assert exc_info.value.status_code == 404
 
@@ -269,7 +273,9 @@ class TestReportEndpoint:
             "src.repositories.backtest_repository.BacktestRepository",
             return_value=mock_backtest_repo,
         ):
-            result = await get_report(backtest_id=backtest_id, db=mock_db, service=mock_service, _user_id=uuid4())
+            result = await get_report(
+                backtest_id=backtest_id, db=mock_db, service=mock_service, _user_id=uuid4()
+            )
 
         assert result.backtest_comparison == comparison_result
         mock_service.compare_to_backtest.assert_awaited_once()
@@ -288,7 +294,9 @@ class TestReportEndpoint:
 
         mock_db = AsyncMock()
 
-        result = await get_report(backtest_id=None, db=mock_db, service=mock_service, _user_id=uuid4())
+        result = await get_report(
+            backtest_id=None, db=mock_db, service=mock_service, _user_id=uuid4()
+        )
 
         assert result.backtest_comparison is None
 
@@ -544,3 +552,138 @@ class TestResetEndpoint:
             await reset_account(db=mock_db, _user_id=uuid4())
 
         mock_trade_repo.list_trades.assert_awaited_once_with(limit=10000, offset=0)
+
+
+# ---------------------------------------------------------------------------
+# Validation endpoint tests (Story 23.8b - m-5)
+# ---------------------------------------------------------------------------
+
+
+class TestValidationEndpoints:
+    """Tests for validation API endpoints (POST /validation/start, GET /validation/status, GET /validation/report)."""
+
+    @pytest.mark.asyncio
+    async def test_start_validation_returns_201(self):
+        """POST /validation/start should return 201 with valid config."""
+        from src.api.routes.paper_trading import (
+            StartValidationRequest,
+            _validator,
+            start_validation_run,
+        )
+
+        # Ensure no active run
+        if _validator.current_run:
+            _validator.stop_run()
+
+        request = StartValidationRequest(
+            symbols=["EURUSD", "SPX500"],
+            duration_days=7,
+            tolerance_pct=10.0,
+        )
+
+        result = await start_validation_run(request=request, _user_id=uuid4())
+
+        assert result["success"] is True
+        assert result["message"] == "Validation run started"
+        assert "run_id" in result
+        assert result["symbols"] == ["EURUSD", "SPX500"]
+        assert result["duration_days"] == 7
+
+        # Clean up
+        _validator.stop_run()
+
+    @pytest.mark.asyncio
+    async def test_start_validation_conflict_when_already_running(self):
+        """POST /validation/start should return 409 when a run is already active."""
+        from fastapi import HTTPException
+
+        from src.api.routes.paper_trading import (
+            StartValidationRequest,
+            _validator,
+            start_validation_run,
+        )
+
+        # Ensure no active run, then start one
+        if _validator.current_run:
+            _validator.stop_run()
+        _validator.start_run()
+
+        request = StartValidationRequest(symbols=["EURUSD"], duration_days=7, tolerance_pct=10.0)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await start_validation_run(request=request, _user_id=uuid4())
+
+        assert exc_info.value.status_code == 409
+
+        # Clean up
+        _validator.stop_run()
+
+    @pytest.mark.asyncio
+    async def test_get_validation_status_no_run(self):
+        """GET /validation/status should return inactive when no run exists."""
+        from src.api.routes.paper_trading import _validator, get_validation_status
+
+        # Ensure no active run
+        if _validator.current_run:
+            _validator.stop_run()
+        _validator._current_run = None
+
+        result = await get_validation_status(_user_id=uuid4())
+
+        assert result["active"] is False
+
+    @pytest.mark.asyncio
+    async def test_get_validation_status_with_active_run(self):
+        """GET /validation/status should return active state when run is ongoing."""
+        from src.api.routes.paper_trading import _validator, get_validation_status
+
+        # Ensure clean state, then start
+        if _validator.current_run:
+            _validator.stop_run()
+        _validator._current_run = None
+        _validator.start_run()
+
+        result = await get_validation_status(_user_id=uuid4())
+
+        assert result["active"] is True
+        assert result["status"] == "RUNNING"
+
+        # Clean up
+        _validator.stop_run()
+
+    def test_get_validation_report_404_when_no_run(self):
+        """GET /validation/report should return 404 when no validation run exists."""
+        from fastapi import HTTPException
+
+        from src.api.routes.paper_trading import _validator, get_validation_report
+
+        # Ensure no run
+        if _validator.current_run:
+            _validator.stop_run()
+        _validator._current_run = None
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_validation_report(_user_id=uuid4())
+
+        assert exc_info.value.status_code == 404
+
+    def test_get_validation_report_returns_report(self):
+        """GET /validation/report should return report dict when run exists."""
+        from src.api.routes.paper_trading import _validator, get_validation_report
+
+        # Ensure clean state
+        if _validator.current_run:
+            _validator.stop_run()
+        _validator._current_run = None
+
+        _validator.start_run()
+        _validator.record_signal("EURUSD", executed=True)
+
+        result = get_validation_report(_user_id=uuid4())
+
+        assert "run_id" in result
+        assert "overall_status" in result
+        assert result["signals_generated"] == 1
+
+        # Clean up
+        _validator.stop_run()
