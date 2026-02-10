@@ -612,7 +612,7 @@ class TestHealthCheckEndpoint:
 
     @pytest.mark.asyncio
     async def test_health_check_includes_version(self):
-        """Detailed health check must include application version."""
+        """Detailed health check must include application version (dynamic, not hardcoded)."""
         from src.api.main import detailed_health_check
 
         with (
@@ -632,7 +632,22 @@ class TestHealthCheckEndpoint:
 
             result = await detailed_health_check()
 
-        assert result["version"] == "0.1.0"
+        # Version must be present and be a string
+        assert "version" in result
+        assert isinstance(result["version"], str)
+        assert len(result["version"]) > 0
+
+    def test_health_check_uses_dynamic_version(self):
+        """Health check must use importlib.metadata for version, not a hardcoded string."""
+        main_path = PROJECT_ROOT / "backend" / "src" / "api" / "main.py"
+        content = main_path.read_text()
+        # Must use importlib.metadata for dynamic versioning
+        assert "importlib.metadata" in content, "main.py must use importlib.metadata for version"
+        assert "get_version" in content, "main.py must use get_version from importlib.metadata"
+        # The detailed health check must NOT have a hardcoded "0.1.0" for version
+        assert 'health_status["version"] = app_version' in content, (
+            "Health check must use app_version variable, not a hardcoded string"
+        )
 
     @pytest.mark.asyncio
     async def test_health_check_reports_broker_status(self):

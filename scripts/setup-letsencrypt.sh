@@ -2,15 +2,25 @@
 # Setup Let's Encrypt SSL certificates
 # Requires: certbot installed on host
 # Usage: ./scripts/setup-letsencrypt.sh yourdomain.com
+#
+# NOTE: Uses --webroot method so nginx can keep running on port 80.
+# Nginx must have a location block serving /.well-known/acme-challenge/
+# from the webroot directory (e.g., /var/www/certbot).
 set -e
 
 DOMAIN=${1:?"Usage: $0 yourdomain.com"}
+
+WEBROOT="/var/www/certbot"
+if [ ! -d "$WEBROOT" ]; then
+  echo "WARNING: Webroot directory $WEBROOT does not exist. Creating it..."
+  mkdir -p "$WEBROOT"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 SSL_DIR="$PROJECT_DIR/ssl"
 
-certbot certonly --standalone \
+certbot certonly --webroot -w "$WEBROOT" \
   -d "$DOMAIN" \
   --non-interactive \
   --agree-tos \

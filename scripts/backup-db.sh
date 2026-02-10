@@ -46,6 +46,6 @@ fi
 
 # Clean up old backups beyond retention period
 echo "[$(date)] Cleaning up backups older than ${RETENTION_DAYS} days..."
-find "$BACKUP_DIR" -name "bmad_wyckoff_*.dump" -mtime +${RETENTION_DAYS} -delete
-REMAINING=$(find "$BACKUP_DIR" -name "bmad_wyckoff_*.dump" | wc -l)
+find "$BACKUP_DIR" -name "bmad_wyckoff_*.dump" -type f -mtime +${RETENTION_DAYS} -delete
+REMAINING=$(find "$BACKUP_DIR" -name "bmad_wyckoff_*.dump" -type f | wc -l)
 echo "[$(date)] Backup complete. ${REMAINING} backup(s) retained."

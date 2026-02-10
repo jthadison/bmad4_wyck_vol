@@ -8,7 +8,7 @@ SSL_DIR="$PROJECT_DIR/ssl"
 
 mkdir -p "$SSL_DIR"
 
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
   -keyout "$SSL_DIR/privkey.pem" \
   -out "$SSL_DIR/fullchain.pem" \
   -subj "/C=US/ST=State/L=City/O=BMAD/CN=localhost"
