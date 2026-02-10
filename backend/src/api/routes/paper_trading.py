@@ -38,7 +38,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/paper-trading", tags=["Paper Trading"])
 
 # NOTE: In-memory state; requires single-worker deployment (--workers 1).
-# Multi-worker Uvicorn will create separate instances per worker process.
+# For multi-worker deployments, persist validation state to Redis/PostgreSQL.
 _validator = PaperTradingValidator()
 
 

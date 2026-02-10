@@ -68,11 +68,10 @@ class ValidationRunState(BaseModel):
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
 
-    # Accumulated metrics per symbol. Inner dict expected keys:
-    # win_rate (float, 0-100), average_r_multiple (float),
-    # profit_factor (float), max_drawdown (float, 0-100),
-    # total_trades (int).
-    symbol_metrics: dict[str, dict] = Field(default_factory=dict)
+    symbol_metrics: dict[str, dict] = Field(
+        default_factory=dict,
+        description="Per-symbol metrics. Keys: win_rate, profit_factor, max_drawdown_pct, average_r_multiple, total_trades, total_pnl",
+    )
 
     # Signals tracked
     signals_generated: int = 0
