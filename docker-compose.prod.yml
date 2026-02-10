@@ -70,15 +70,14 @@ services:
 
   # Backend API (FastAPI)
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ${DOCKER_USERNAME:-bmad}/bmad-wyckoff-backend:${VERSION:-latest}
     container_name: bmad-prod-backend
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-bmad}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bmad_wyckoff}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: production
       DEBUG: "false"
       API_HOST: 0.0.0.0
@@ -111,9 +110,7 @@ services:
 
   # Frontend (Nginx + Vue SPA)
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.prod
+    image: ${DOCKER_USERNAME:-bmad}/bmad-wyckoff-frontend:${VERSION:-latest}
     container_name: bmad-prod-frontend
     restart: unless-stopped
     ports:
