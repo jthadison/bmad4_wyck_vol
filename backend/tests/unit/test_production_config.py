@@ -98,6 +98,34 @@ class TestProductionConfigValidation:
             password_warnings = [x for x in w if "default password" in str(x.message)]
             assert len(password_warnings) >= 1
 
+    def test_wildcard_cors_rejected_in_production(self):
+        """Production mode must reject wildcard CORS origins."""
+        from pydantic import ValidationError
+
+        from src.config import Settings
+
+        with pytest.raises(ValidationError, match="CORS_ORIGINS must not contain"):
+            Settings(
+                environment="production",
+                debug=False,
+                jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
+                database_url="postgresql+psycopg://user:strongpass@localhost:5432/db",
+                cors_origins=["*"],
+            )
+
+    def test_explicit_cors_origins_accepted_in_production(self):
+        """Production mode should accept explicit CORS origins."""
+        from src.config import Settings
+
+        s = Settings(
+            environment="production",
+            debug=False,
+            jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
+            database_url="postgresql+psycopg://user:strongpass@localhost:5432/db",
+            cors_origins=["https://example.com"],
+        )
+        assert s.cors_origins == ["https://example.com"]
+
     def test_async_driver_required(self):
         """Database URL must use an async-compatible driver."""
         from pydantic import ValidationError

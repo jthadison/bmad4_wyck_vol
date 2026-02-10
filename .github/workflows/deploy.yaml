@@ -261,13 +261,26 @@ jobs:
             # Restart services with zero-downtime
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
-            # Wait for health checks
+            # Wait for services to be healthy with retry polling
             echo "Waiting for services to be healthy..."
-            sleep 10
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "Backend healthy after $((i * 2)) seconds"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "ERROR: Backend health check failed after 60 seconds"
+                docker compose -f docker-compose.prod.yml logs backend --tail 50
+                exit 1
+              fi
+              sleep 2
+            done
 
-            # Verify health
-            curl -f http://localhost:8000/health || exit 1
-            curl -f http://localhost/health || exit 1
+            # Verify frontend is also healthy
+            curl -f http://localhost/health || {
+              echo "ERROR: Frontend health check failed"
+              exit 1
+            }
 
             echo "Deployment successful!"
 
