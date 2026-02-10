@@ -6,6 +6,18 @@
 
 set -euo pipefail
 
+# Validate database name contains only safe characters
+DB_NAME="${POSTGRES_DB:-bmad_wyckoff}"
+if ! [[ "$DB_NAME" =~ ^[a-zA-Z0-9_]+$ ]]; then
+  echo "ERROR: POSTGRES_DB contains invalid characters. Only alphanumeric and underscore allowed." >&2
+  exit 1
+fi
+
+if ! [[ "${RETENTION_DAYS:-30}" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: RETENTION_DAYS must be a positive integer." >&2
+  exit 1
+fi
+
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

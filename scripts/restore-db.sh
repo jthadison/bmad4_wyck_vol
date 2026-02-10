@@ -5,6 +5,19 @@
 
 set -euo pipefail
 
+# Validate database name contains only safe characters
+DB_NAME="${POSTGRES_DB:-bmad_wyckoff}"
+if ! [[ "$DB_NAME" =~ ^[a-zA-Z0-9_]+$ ]]; then
+  echo "ERROR: POSTGRES_DB contains invalid characters. Only alphanumeric and underscore allowed." >&2
+  exit 1
+fi
+
+DB_USER="${POSTGRES_USER:-bmad}"
+if ! [[ "$DB_USER" =~ ^[a-zA-Z0-9_]+$ ]]; then
+  echo "ERROR: POSTGRES_USER contains invalid characters." >&2
+  exit 1
+fi
+
 BACKUP_FILE="${1:?Usage: $0 <backup_file.dump>}"
 
 if [ ! -f "$BACKUP_FILE" ]; then

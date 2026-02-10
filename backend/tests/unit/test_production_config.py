@@ -369,6 +369,16 @@ class TestBackupScripts:
         content = (PROJECT_ROOT / "scripts" / "backup-db.sh").read_text()
         assert "-s" in content or "size" in content.lower()
 
+    def test_backup_script_validates_db_name(self):
+        """Backup script must validate POSTGRES_DB for safe characters."""
+        content = (PROJECT_ROOT / "scripts" / "backup-db.sh").read_text()
+        assert "a-zA-Z0-9_" in content, "Backup script must validate DB name characters"
+
+    def test_restore_script_validates_db_name(self):
+        """Restore script must validate POSTGRES_DB for safe characters."""
+        content = (PROJECT_ROOT / "scripts" / "restore-db.sh").read_text()
+        assert "a-zA-Z0-9_" in content, "Restore script must validate DB name characters"
+
 
 # ============================================================================
 # SSL Certificate Script Tests
@@ -575,6 +585,19 @@ class TestHealthCheckEndpoint:
         assert result["status"] == "degraded"
         assert "error" in str(result["database"])
 
+    def test_broker_router_import_path(self):
+        """Health check must use correct broker_router import path."""
+        main_path = PROJECT_ROOT / "backend" / "src" / "api" / "main.py"
+        content = main_path.read_text()
+        assert "src.brokers.broker_router" in content
+        assert "src.trading.broker_router" not in content
+
+    def test_health_error_sanitization_function_exists(self):
+        """Health check must have error sanitization for production."""
+        main_path = PROJECT_ROOT / "backend" / "src" / "api" / "main.py"
+        content = main_path.read_text()
+        assert "_sanitize_health_error" in content
+
 
 # ============================================================================
 # Deploy Workflow Tests
@@ -633,6 +656,19 @@ class TestDeployWorkflow:
         if isinstance(needs, str):
             needs = [needs]
         assert "build-and-push" in needs
+
+    def test_deploy_uses_health_poll_not_sleep(self, workflow_config):
+        """Deploy workflow must use polling loop, not fixed sleep, for health checks."""
+        path = PROJECT_ROOT / ".github" / "workflows" / "deploy.yaml"
+        content = path.read_text()
+        # Must NOT have a bare "sleep 10" for health waiting
+        assert "sleep 10" not in content or "sleep 2" in content, (
+            "Deploy must use a polling loop with short sleep intervals, not a fixed sleep 10"
+        )
+        # Must have a retry/polling pattern
+        assert "seq" in content or "for i in" in content or "retry" in content.lower(), (
+            "Deploy must have a retry/polling loop for health checks"
+        )
 
 
 # ============================================================================
