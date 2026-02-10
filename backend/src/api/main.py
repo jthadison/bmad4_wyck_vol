@@ -19,6 +19,13 @@ if sys.platform == "win32":
 
 import structlog
 from fastapi import FastAPI, Request, WebSocket
+
+try:
+    from importlib.metadata import version as get_version
+
+    app_version = get_version("bmad-wyckoff-backend")
+except Exception:
+    app_version = "unknown"
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -78,7 +85,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="BMAD Wyckoff Volume Pattern Detection API",
     description="API for Wyckoff pattern detection and trade signal generation",
-    version="0.1.0",
+    version=app_version,
     lifespan=lifespan,
 )
 
@@ -172,11 +179,11 @@ app.add_middleware(CORSExceptionMiddleware)
 # Rate limiting for order submission endpoints (Story 23.11)
 app.add_middleware(RateLimiterMiddleware, max_requests=10, window_seconds=60)
 
-# Configure CORS - Allow all origins for development
+# Configure CORS - Uses CORS_ORIGINS from settings (Story 23.12)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True if "*" not in settings.cors_origins else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -505,7 +512,7 @@ async def shutdown_event() -> None:
 @app.get("/")
 async def root() -> dict[str, str]:
     """Root endpoint."""
-    return {"message": "BMAD Wyckoff API", "version": "0.1.0"}
+    return {"message": "BMAD Wyckoff API", "version": app_version}
 
 
 @app.get("/health")
@@ -543,6 +550,13 @@ async def scanner_health_check() -> ScannerHealthResponse:
     )
 
 
+def _sanitize_health_error(error: Exception) -> str:
+    """Return generic error message in production, detailed in development."""
+    if settings.environment == "production":
+        return "unavailable"
+    return f"error: {str(error)}"
+
+
 @app.get("/api/v1/health")
 async def detailed_health_check() -> dict[str, object]:
     """
@@ -575,7 +589,7 @@ async def detailed_health_check() -> dict[str, object]:
             await session.execute(text("SELECT 1"))
         health_status["database"] = "connected"
     except Exception as e:
-        health_status["database"] = f"error: {str(e)}"
+        health_status["database"] = _sanitize_health_error(e)
         health_status["status"] = "degraded"
 
     # Check real-time feed status
@@ -587,7 +601,7 @@ async def detailed_health_check() -> dict[str, object]:
             if not feed_health.get("is_healthy"):
                 health_status["status"] = "degraded"
         except Exception as e:
-            health_status["realtime_feed"] = {"error": str(e)}
+            health_status["realtime_feed"] = {"error": _sanitize_health_error(e)}
             health_status["status"] = "degraded"
     else:
         health_status["realtime_feed"] = {"status": "not_configured"}
@@ -601,7 +615,7 @@ async def detailed_health_check() -> dict[str, object]:
         if orchestrator_health.get("status") != "healthy":
             health_status["status"] = "degraded"
     except Exception as e:
-        health_status["orchestrator"] = {"error": str(e)}
+        health_status["orchestrator"] = {"error": _sanitize_health_error(e)}
         health_status["status"] = "degraded"
 
     # Check scanner status (Story 19.1)
@@ -621,7 +635,34 @@ async def detailed_health_check() -> dict[str, object]:
     except RuntimeError:
         health_status["scanner"] = {"status": "not_configured"}
     except Exception as e:
-        health_status["scanner"] = {"error": str(e)}
+        health_status["scanner"] = {"error": _sanitize_health_error(e)}
         health_status["status"] = "degraded"
+
+    # Check Redis connectivity (Story 23.12)
+    try:
+        from src.api.dependencies import init_redis_client
+
+        redis_client = init_redis_client()
+        if redis_client:
+            await redis_client.ping()
+            health_status["redis"] = "connected"
+        else:
+            health_status["redis"] = "not_configured"
+    except Exception as e:
+        health_status["redis"] = _sanitize_health_error(e)
+        health_status["status"] = "degraded"
+
+    # Check broker connection status (Story 23.12)
+    try:
+        from src.brokers.broker_router import BrokerRouter  # noqa: F401
+
+        health_status["brokers"] = {"status": "available"}
+    except ImportError:
+        health_status["brokers"] = {"status": "not_configured"}
+    except Exception:
+        health_status["brokers"] = {"status": "not_configured"}
+
+    # Application version (Story 23.12)
+    health_status["version"] = app_version
 
     return health_status

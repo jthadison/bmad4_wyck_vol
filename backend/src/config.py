@@ -8,7 +8,7 @@ including database connection settings, API keys, and environment-specific value
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -291,6 +291,12 @@ class Settings(BaseSettings):
         description="Refresh token expiration time in days (default: 7 days)",
     )
 
+    # CORS Configuration (Story 23.12 - H2)
+    cors_origins: list[str] = Field(
+        default=["*"],
+        description="Allowed CORS origins. Use ['*'] for development only.",
+    )
+
     # Broker Router Configuration (Story 23.7)
     auto_execute_orders: bool = Field(
         default=False,
@@ -339,6 +345,35 @@ class Settings(BaseSettings):
                     "DATABASE_URL must use async driver (postgresql+psycopg:// or postgresql+asyncpg://)"
                 )
         return v
+
+    @model_validator(mode="after")
+    def validate_production_settings(self) -> "Settings":
+        """Validate that production environment has secure configuration."""
+        if self.environment == "production":
+            if (
+                self.jwt_secret_key
+                == "dev-secret-key-change-in-production-use-64-char-random-string"
+            ):
+                raise ValueError(
+                    "JWT_SECRET_KEY must be changed from default in production. "
+                    'Generate with: python -c "import secrets; print(secrets.token_urlsafe(64))"'
+                )
+            if self.debug:
+                raise ValueError("DEBUG must be False in production environment")
+            if "*" in self.cors_origins:
+                raise ValueError(
+                    "CORS_ORIGINS must not contain '*' in production. "
+                    "Set CORS_ORIGINS to your domain(s), e.g., 'https://your-domain.com'"
+                )
+            if "changeme" in self.database_url.lower():
+                import warnings
+
+                warnings.warn(
+                    "DATABASE_URL appears to contain a default password. "
+                    "Use a strong, unique password in production.",
+                    stacklevel=2,
+                )
+        return self
 
 
 # Global settings instance
