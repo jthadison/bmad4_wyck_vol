@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from src.models.paper_trading import PaperTradingConfig
 from src.repositories.paper_config_repository import PaperConfigRepository
@@ -161,3 +162,67 @@ class TestPaperConfigRepository:
         assert result.commission_per_share == original.commission_per_share
         assert result.slippage_percentage == original.slippage_percentage
         assert result.use_realistic_fills == original.use_realistic_fills
+
+    @pytest.mark.asyncio
+    async def test_save_config_uses_for_update_locking(self):
+        """save_config SELECT should use FOR UPDATE to prevent race conditions."""
+        existing_row = _make_config_db_row()
+        session = _mock_session(existing_row=existing_row)
+        repo = PaperConfigRepository(session)
+
+        config = PaperTradingConfig(
+            enabled=True,
+            starting_capital=Decimal("100000.00"),
+        )
+
+        try:
+            await repo.save_config(config)
+        except Exception:
+            pass
+
+        # Verify the executed statement used with_for_update
+        executed_stmt = session.execute.call_args_list[0][0][0]
+        assert executed_stmt._for_update_arg is not None
+        assert executed_stmt._for_update_arg.read is False
+
+    @pytest.mark.asyncio
+    async def test_save_config_retries_on_integrity_error(self):
+        """save_config should retry as update when IntegrityError occurs on insert."""
+        session = AsyncMock()
+        # First execute returns no row (empty table), second returns the row
+        existing_row = _make_config_db_row(starting_capital=Decimal("100000.00"))
+        first_result = MagicMock()
+        first_scalars = MagicMock()
+        first_scalars.first.return_value = None
+        first_result.scalars.return_value = first_scalars
+
+        second_result = MagicMock()
+        second_scalars = MagicMock()
+        second_scalars.first.return_value = existing_row
+        second_result.scalars.return_value = second_scalars
+
+        session.execute = AsyncMock(side_effect=[first_result, second_result])
+        session.commit = AsyncMock(
+            side_effect=[IntegrityError("dup", params=None, orig=Exception()), None]
+        )
+        session.rollback = AsyncMock()
+        session.refresh = AsyncMock()
+        session.add = MagicMock()
+
+        repo = PaperConfigRepository(session)
+        config = PaperTradingConfig(
+            enabled=True,
+            starting_capital=Decimal("200000.00"),
+        )
+
+        try:
+            await repo.save_config(config)
+        except Exception:
+            pass
+
+        # Should have rolled back after IntegrityError
+        session.rollback.assert_awaited_once()
+        # Should have retried with a second SELECT
+        assert session.execute.await_count == 2
+        # Should have updated the existing row on retry
+        assert existing_row.starting_capital == Decimal("200000.00")
