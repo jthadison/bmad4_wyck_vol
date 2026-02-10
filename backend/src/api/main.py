@@ -22,6 +22,7 @@ from fastapi import FastAPI, Request, WebSocket
 
 try:
     from importlib.metadata import version as get_version
+
     app_version = get_version("bmad-wyckoff-backend")
 except Exception:
     app_version = "unknown"

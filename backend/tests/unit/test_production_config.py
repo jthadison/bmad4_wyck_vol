@@ -242,9 +242,9 @@ class TestDockerComposeProd:
 
     def test_no_version_key(self, compose_config):
         """docker-compose.prod.yml must NOT have deprecated 'version' key."""
-        assert "version" not in compose_config, (
-            "Deprecated 'version' key must be removed from docker-compose.prod.yml"
-        )
+        assert (
+            "version" not in compose_config
+        ), "Deprecated 'version' key must be removed from docker-compose.prod.yml"
 
     def test_backend_has_enable_bar_cache(self, compose_config):
         """Backend must pass ENABLE_BAR_CACHE env var."""
@@ -267,18 +267,16 @@ class TestDockerComposeProd:
     def test_all_services_have_read_only(self, compose_config):
         """All services must have read_only: true for container hardening."""
         for name, svc in compose_config["services"].items():
-            assert svc.get("read_only") is True, (
-                f"Service '{name}' must have read_only: true"
-            )
+            assert svc.get("read_only") is True, f"Service '{name}' must have read_only: true"
 
     def test_all_services_have_no_new_privileges(self, compose_config):
         """All services must have no-new-privileges in security_opt."""
         for name, svc in compose_config["services"].items():
             security_opt = svc.get("security_opt", [])
             has_no_new_priv = any("no-new-privileges" in str(opt) for opt in security_opt)
-            assert has_no_new_priv, (
-                f"Service '{name}' must have no-new-privileges:true in security_opt"
-            )
+            assert (
+                has_no_new_priv
+            ), f"Service '{name}' must have no-new-privileges:true in security_opt"
 
 
 # ============================================================================
@@ -380,9 +378,9 @@ class TestNginxProdConfig:
         for line in nginx_config.splitlines():
             stripped = line.strip()
             if stripped.startswith("listen") and "443" in stripped:
-                assert "http2" not in stripped, (
-                    "http2 must not be on the listen directive (deprecated in Nginx 1.25.1+)"
-                )
+                assert (
+                    "http2" not in stripped
+                ), "http2 must not be on the listen directive (deprecated in Nginx 1.25.1+)"
 
     def test_static_asset_location_has_security_headers(self, nginx_config):
         """Static asset location block must include security headers."""
@@ -394,12 +392,10 @@ class TestNginxProdConfig:
         )
         assert match is not None, "Static asset location block not found"
         block = match.group(1)
-        assert "X-Content-Type-Options" in block, (
-            "Static asset location must include X-Content-Type-Options"
-        )
-        assert "Strict-Transport-Security" in block, (
-            "Static asset location must include HSTS"
-        )
+        assert (
+            "X-Content-Type-Options" in block
+        ), "Static asset location must include X-Content-Type-Options"
+        assert "Strict-Transport-Security" in block, "Static asset location must include HSTS"
 
     def test_html_location_has_security_headers(self, nginx_config):
         """HTML location block must include security headers."""
@@ -410,12 +406,10 @@ class TestNginxProdConfig:
         )
         assert match is not None, "HTML location block not found"
         block = match.group(1)
-        assert "X-Content-Type-Options" in block, (
-            "HTML location must include X-Content-Type-Options"
-        )
-        assert "Strict-Transport-Security" in block, (
-            "HTML location must include HSTS"
-        )
+        assert (
+            "X-Content-Type-Options" in block
+        ), "HTML location must include X-Content-Type-Options"
+        assert "Strict-Transport-Security" in block, "HTML location must include HSTS"
 
     def test_wss_in_connect_src(self, nginx_config):
         """CSP connect-src must include wss: for WebSocket over SSL."""
@@ -685,9 +679,9 @@ class TestHealthCheckEndpoint:
         assert "importlib.metadata" in content, "main.py must use importlib.metadata for version"
         assert "get_version" in content, "main.py must use get_version from importlib.metadata"
         # The detailed health check must NOT have a hardcoded "0.1.0" for version
-        assert 'health_status["version"] = app_version' in content, (
-            "Health check must use app_version variable, not a hardcoded string"
-        )
+        assert (
+            'health_status["version"] = app_version' in content
+        ), "Health check must use app_version variable, not a hardcoded string"
 
     @pytest.mark.asyncio
     async def test_health_check_reports_broker_status(self):
@@ -817,30 +811,30 @@ class TestDeployWorkflow:
         if isinstance(tag_needs, str):
             tag_needs = [tag_needs]
         # Must NOT depend on deploy-to-production
-        assert "deploy-to-production" not in tag_needs, (
-            "Pre-deploy tag must run BEFORE deploy, not after"
-        )
+        assert (
+            "deploy-to-production" not in tag_needs
+        ), "Pre-deploy tag must run BEFORE deploy, not after"
         # Deploy must depend on the pre-deploy tag job
         deploy_job = jobs["deploy-to-production"]
         deploy_needs = deploy_job.get("needs", [])
         if isinstance(deploy_needs, str):
             deploy_needs = [deploy_needs]
-        assert "create-pre-deploy-tag" in deploy_needs, (
-            "deploy-to-production must depend on create-pre-deploy-tag"
-        )
+        assert (
+            "create-pre-deploy-tag" in deploy_needs
+        ), "deploy-to-production must depend on create-pre-deploy-tag"
 
     def test_deploy_uses_health_poll_not_sleep(self, workflow_config):
         """Deploy workflow must use polling loop, not fixed sleep, for health checks."""
         path = PROJECT_ROOT / ".github" / "workflows" / "deploy.yaml"
         content = path.read_text()
         # Must NOT have a bare "sleep 10" for health waiting
-        assert "sleep 10" not in content or "sleep 2" in content, (
-            "Deploy must use a polling loop with short sleep intervals, not a fixed sleep 10"
-        )
+        assert (
+            "sleep 10" not in content or "sleep 2" in content
+        ), "Deploy must use a polling loop with short sleep intervals, not a fixed sleep 10"
         # Must have a retry/polling pattern
-        assert "seq" in content or "for i in" in content or "retry" in content.lower(), (
-            "Deploy must have a retry/polling loop for health checks"
-        )
+        assert (
+            "seq" in content or "for i in" in content or "retry" in content.lower()
+        ), "Deploy must have a retry/polling loop for health checks"
 
 
 # ============================================================================
