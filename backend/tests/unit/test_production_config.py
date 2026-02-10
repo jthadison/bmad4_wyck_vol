@@ -280,8 +280,10 @@ class TestNginxProdConfig:
         assert "TLSv1.3" in protocols
 
     def test_hsts_header(self, nginx_config):
-        """Must include HSTS header."""
+        """Must include HSTS header with includeSubDomains and preload."""
         assert "Strict-Transport-Security" in nginx_config
+        assert "includeSubDomains" in nginx_config
+        assert "preload" in nginx_config
 
     def test_ocsp_stapling(self, nginx_config):
         """Must enable OCSP stapling."""
@@ -330,6 +332,50 @@ class TestNginxProdConfig:
         assert http_block_match is not None
         http_block = http_block_match.group(0)
         assert "/health" in http_block
+
+    def test_http2_directive_separate(self, nginx_config):
+        """Must use 'http2 on;' directive, not on the listen line (Nginx 1.25.1+)."""
+        assert "http2 on;" in nginx_config
+        # Ensure http2 is NOT on the listen directive
+        for line in nginx_config.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("listen") and "443" in stripped:
+                assert "http2" not in stripped, (
+                    "http2 must not be on the listen directive (deprecated in Nginx 1.25.1+)"
+                )
+
+    def test_static_asset_location_has_security_headers(self, nginx_config):
+        """Static asset location block must include security headers."""
+        # Extract the static asset location block
+        match = re.search(
+            r"location\s+~\*\s+\\\.\(js\|css\|.*?\)\$\s*\{([^}]+)\}",
+            nginx_config,
+            re.DOTALL,
+        )
+        assert match is not None, "Static asset location block not found"
+        block = match.group(1)
+        assert "X-Content-Type-Options" in block, (
+            "Static asset location must include X-Content-Type-Options"
+        )
+        assert "Strict-Transport-Security" in block, (
+            "Static asset location must include HSTS"
+        )
+
+    def test_html_location_has_security_headers(self, nginx_config):
+        """HTML location block must include security headers."""
+        match = re.search(
+            r"location\s+~\*\s+\\\.html\$\s*\{([^}]+)\}",
+            nginx_config,
+            re.DOTALL,
+        )
+        assert match is not None, "HTML location block not found"
+        block = match.group(1)
+        assert "X-Content-Type-Options" in block, (
+            "HTML location must include X-Content-Type-Options"
+        )
+        assert "Strict-Transport-Security" in block, (
+            "HTML location must include HSTS"
+        )
 
     def test_wss_in_connect_src(self, nginx_config):
         """CSP connect-src must include wss: for WebSocket over SSL."""
@@ -404,6 +450,13 @@ class TestBackupScripts:
         content = (PROJECT_ROOT / "scripts" / "backup-db.sh").read_text()
         assert "a-zA-Z0-9_" in content, "Backup script must validate DB name characters"
 
+    def test_backup_find_uses_type_f(self):
+        """Backup script find commands must use -type f to match only files."""
+        content = (PROJECT_ROOT / "scripts" / "backup-db.sh").read_text()
+        for line in content.split("\n"):
+            if "find" in line and "bmad_wyckoff_" in line:
+                assert "-type f" in line, f"find command must include -type f: {line.strip()}"
+
     def test_restore_script_validates_db_name(self):
         """Restore script must validate POSTGRES_DB for safe characters."""
         content = (PROJECT_ROOT / "scripts" / "restore-db.sh").read_text()
@@ -443,6 +496,18 @@ class TestSSLScripts:
         content = (PROJECT_ROOT / "scripts" / "generate-self-signed-cert.sh").read_text()
         assert "privkey.pem" in content
         assert "fullchain.pem" in content
+
+    def test_self_signed_uses_rsa_4096(self):
+        """Self-signed cert script must use RSA 4096-bit keys."""
+        content = (PROJECT_ROOT / "scripts" / "generate-self-signed-cert.sh").read_text()
+        assert "rsa:4096" in content, "Self-signed script must use 4096-bit RSA keys"
+        assert "rsa:2048" not in content, "Self-signed script must not use 2048-bit RSA keys"
+
+    def test_letsencrypt_uses_webroot(self):
+        """Let's Encrypt script must use --webroot method, not --standalone."""
+        content = (PROJECT_ROOT / "scripts" / "setup-letsencrypt.sh").read_text()
+        assert "--webroot" in content, "Let's Encrypt script must use --webroot method"
+        assert "--standalone" not in content, "Let's Encrypt script must not use --standalone"
 
 
 # ============================================================================
