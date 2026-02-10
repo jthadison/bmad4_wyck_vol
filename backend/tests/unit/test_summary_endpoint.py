@@ -27,6 +27,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+# All tests in this file require a PostgreSQL database (JSONB columns).
+pytestmark = pytest.mark.database
+
 from src.database import Base
 from src.models.summary import DailySummary
 from src.repositories.summary_repository import SummaryRepository
