@@ -2,12 +2,12 @@
   "symbol": "SPX500",
   "asset_class": "us_stock",
   "suite_id": "initial-baseline-23.9",
-  "window_count": 17,
+  "window_count": 9,
   "avg_validate_win_rate": "0.6100",
   "avg_validate_profit_factor": "1.8000",
   "avg_validate_sharpe": "1.2800",
   "avg_validate_max_drawdown": "0.0800",
   "stability_score": "0.1100",
   "degradation_count": 1,
-  "notes": "Initial estimated walk-forward baselines. Values based on expected Wyckoff detection performance ranges. SPX500 daily, 2-year lookback, 6mo train / 2mo validate."
+  "notes": "Initial estimated walk-forward baselines. SPX500 daily, 2-year lookback, 6mo train / 2mo validate (75/25 split), 2mo step, 9 windows."
 }

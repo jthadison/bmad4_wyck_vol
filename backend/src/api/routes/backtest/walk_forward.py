@@ -233,8 +233,8 @@ async def list_walk_forward_results(
 
 # --- Story 23.9: Walk-Forward Validation Suite Endpoints ---
 
-# In-memory storage for suite runs (analogous to walk_forward_runs)
-_suite_runs: dict[str, dict] = {}
+# In-memory storage for suite runs, keyed by UUID for cleanup_stale_entries compat
+_suite_runs: dict[UUID, dict] = {}
 
 
 @router.post(
@@ -264,7 +264,10 @@ async def start_walk_forward_suite():
 
     config = get_default_suite_config()
     suite = WalkForwardSuite(config)
-    suite_id = str(uuid4())
+    suite_id = uuid4()
+
+    # Cleanup stale entries before inserting (same pattern as walk_forward_runs)
+    cleanup_stale_entries(_suite_runs)
 
     _suite_runs[suite_id] = {
         "status": "RUNNING",
@@ -273,7 +276,8 @@ async def start_walk_forward_suite():
 
     async def run_suite():
         try:
-            result = suite.run()
+            # Offload sync/CPU-bound suite.run() to a thread to avoid blocking the event loop
+            result = await asyncio.to_thread(suite.run)
             _suite_runs[suite_id]["status"] = "COMPLETED"
             _suite_runs[suite_id]["result"] = result
         except Exception as e:
@@ -284,7 +288,7 @@ async def start_walk_forward_suite():
     asyncio.create_task(run_suite())
 
     return {
-        "suite_id": suite_id,
+        "suite_id": str(suite_id),
         "status": "RUNNING",
         "symbols": [s.symbol for s in config.symbols],
     }
@@ -294,13 +298,13 @@ async def start_walk_forward_suite():
     "/walk-forward/suite/results",
 )
 async def get_walk_forward_suite_results(
-    suite_id: str | None = None,
+    suite_id: UUID | None = None,
 ):
     """
     Get walk-forward suite results (Story 23.9).
 
     Args:
-        suite_id: Optional suite ID. If not provided, returns the latest result.
+        suite_id: Optional suite UUID. If not provided, returns the latest result.
 
     Returns:
         Suite results or status if still running
@@ -319,12 +323,13 @@ async def get_walk_forward_suite_results(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No suite runs found",
             )
-        suite_id = max(_suite_runs.keys(), key=lambda k: _suite_runs[k]["created_at"])
+        latest_id = max(_suite_runs.keys(), key=lambda k: _suite_runs[k]["created_at"])
+        suite_id = latest_id
         run = _suite_runs[suite_id]
 
     if run["status"] == "RUNNING":
-        return {"suite_id": suite_id, "status": "RUNNING"}
+        return {"suite_id": str(suite_id), "status": "RUNNING"}
     elif run["status"] == "FAILED":
-        return {"suite_id": suite_id, "status": "FAILED", "error": run.get("error")}
+        return {"suite_id": str(suite_id), "status": "FAILED", "error": run.get("error")}
     else:
-        return {"suite_id": suite_id, "status": "COMPLETED", "result": run.get("result")}
+        return {"suite_id": str(suite_id), "status": "COMPLETED", "result": run.get("result")}

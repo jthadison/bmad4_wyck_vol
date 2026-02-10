@@ -46,11 +46,13 @@ class WalkForwardSuiteConfig(BaseModel):
     Defines parameters for running walk-forward tests across multiple symbols
     with configurable window sizes and regression detection thresholds.
 
+    Windows roll forward by validate_period_months (the engine's step size).
+    With train=6, validate=2 the split is 75/25 (6/8 total months).
+
     Attributes:
         symbols: Per-symbol configurations
         train_period_months: Training window size in months
-        validate_period_months: Validation window size in months (test split)
-        step_months: Rolling window step size in months
+        validate_period_months: Validation window size in months (also the step size)
         primary_metric: Metric for degradation detection
         degradation_threshold: Min acceptable performance ratio (default 0.80)
         regression_tolerance_pct: Tolerance for baseline regression (default 10%)
@@ -60,9 +62,10 @@ class WalkForwardSuiteConfig(BaseModel):
     symbols: list[SymbolSuiteConfig] = Field(min_length=1, description="Per-symbol configurations")
     train_period_months: int = Field(default=6, ge=1, description="Training window months")
     validate_period_months: int = Field(
-        default=2, ge=1, description="Validation window months (80/20 split of 6+2=8 -> ~75/25)"
+        default=2,
+        ge=1,
+        description="Validation window months (also the rolling step size). 6/2 = 75/25 split.",
     )
-    step_months: int = Field(default=1, ge=1, description="Rolling window step size in months")
     primary_metric: Literal["win_rate", "avg_r_multiple", "profit_factor", "sharpe_ratio"] = Field(
         default="profit_factor", description="Primary metric for degradation detection"
     )
@@ -199,7 +202,9 @@ def get_default_suite_config() -> WalkForwardSuiteConfig:
     """Get the default walk-forward suite configuration.
 
     Covers 2 forex pairs (EURUSD, GBPUSD) and 2 US stock indices (SPX500, US30).
-    Uses 6-month train / 2-month validate windows with 1-month step.
+    Uses 6-month train / 2-month validate windows (75/25 split).
+    Windows roll forward by validate_period_months (2 months), yielding 9 windows
+    over a 2-year period.
     """
     return WalkForwardSuiteConfig(
         symbols=[
@@ -230,7 +235,6 @@ def get_default_suite_config() -> WalkForwardSuiteConfig:
         ],
         train_period_months=6,
         validate_period_months=2,
-        step_months=1,
         primary_metric="profit_factor",
         degradation_threshold=Decimal("0.80"),
         regression_tolerance_pct=Decimal("10.0"),

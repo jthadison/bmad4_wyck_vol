@@ -57,11 +57,10 @@ class TestWalkForwardSuiteConfig:
         assert by_symbol["US30"].asset_class == "us_stock"
 
     def test_default_window_params(self):
-        """Default config should have 6mo train, 2mo validate, 1mo step."""
+        """Default config should have 6mo train, 2mo validate (75/25 split)."""
         config = get_default_suite_config()
         assert config.train_period_months == 6
         assert config.validate_period_months == 2
-        assert config.step_months == 1
 
     def test_default_regression_tolerance(self):
         """Default regression tolerance should be 10%."""
@@ -86,7 +85,6 @@ class TestWalkForwardSuiteConfig:
             ],
             train_period_months=4,
             validate_period_months=1,
-            step_months=1,
             regression_tolerance_pct=Decimal("5.0"),
         )
         assert len(config.symbols) == 1
@@ -553,8 +551,7 @@ class TestBaselineComparison:
 class TestBaselineSaving:
     """Test saving suite results as baselines."""
 
-    @patch("src.backtesting.walk_forward_suite.WalkForwardEngine")
-    def test_save_baselines(self, MockEngine):
+    def test_save_baselines(self):
         """Test saving suite results as baseline files."""
         with tempfile.TemporaryDirectory() as tmpdir:
             result = WalkForwardSuiteResult(
@@ -833,3 +830,128 @@ class TestRegressionDetection:
         assert len(comparisons) == 4
         for c in comparisons:
             assert c.change_pct == Decimal("0")
+
+
+class TestWalkForwardSuiteAPIEndpoints:
+    """Test suite API endpoints (m-5)."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a FastAPI test client."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.routes.backtest.walk_forward import _suite_runs, router
+
+        app = FastAPI()
+        app.include_router(router)
+
+        # Clear suite runs between tests
+        _suite_runs.clear()
+        yield TestClient(app)
+        _suite_runs.clear()
+
+    def test_post_suite_returns_202(self, client):
+        """POST /walk-forward/suite should return 202 with suite_id."""
+        with patch("src.api.routes.backtest.walk_forward.asyncio.create_task"):
+            response = client.post("/walk-forward/suite")
+
+        assert response.status_code == 202
+        data = response.json()
+        assert "suite_id" in data
+        assert data["status"] == "RUNNING"
+        assert "symbols" in data
+        assert len(data["symbols"]) == 4
+
+    def test_post_suite_rejects_concurrent(self, client):
+        """POST /walk-forward/suite should reject when one is already running."""
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        from src.api.routes.backtest.walk_forward import _suite_runs
+
+        _suite_runs[uuid4()] = {"status": "RUNNING", "created_at": datetime.now(UTC)}
+
+        response = client.post("/walk-forward/suite")
+        assert response.status_code == 503
+
+    def test_get_suite_results_404_no_runs(self, client):
+        """GET /walk-forward/suite/results should 404 when no runs exist."""
+        response = client.get("/walk-forward/suite/results")
+        assert response.status_code == 404
+
+    def test_get_suite_results_404_bad_id(self, client):
+        """GET /walk-forward/suite/results should 404 for unknown suite_id."""
+        from uuid import uuid4
+
+        response = client.get(
+            "/walk-forward/suite/results",
+            params={"suite_id": str(uuid4())},
+        )
+        assert response.status_code == 404
+
+    def test_get_suite_results_running(self, client):
+        """GET /walk-forward/suite/results returns RUNNING status for in-progress suite."""
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        from src.api.routes.backtest.walk_forward import _suite_runs
+
+        sid = uuid4()
+        _suite_runs[sid] = {"status": "RUNNING", "created_at": datetime.now(UTC)}
+
+        response = client.get(
+            "/walk-forward/suite/results",
+            params={"suite_id": str(sid)},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "RUNNING"
+
+    def test_get_suite_results_completed(self, client):
+        """GET /walk-forward/suite/results returns COMPLETED with result."""
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        from src.api.routes.backtest.walk_forward import _suite_runs
+
+        sid = uuid4()
+        mock_result = {"overall_pass": True, "total_symbols": 4}
+        _suite_runs[sid] = {
+            "status": "COMPLETED",
+            "created_at": datetime.now(UTC),
+            "result": mock_result,
+        }
+
+        response = client.get(
+            "/walk-forward/suite/results",
+            params={"suite_id": str(sid)},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "COMPLETED"
+        assert data["result"]["overall_pass"] is True
+
+    def test_get_suite_results_latest(self, client):
+        """GET /walk-forward/suite/results without suite_id returns the latest."""
+        from datetime import UTC, datetime, timedelta
+        from uuid import uuid4
+
+        from src.api.routes.backtest.walk_forward import _suite_runs
+
+        older_id = uuid4()
+        newer_id = uuid4()
+        now = datetime.now(UTC)
+        _suite_runs[older_id] = {
+            "status": "COMPLETED",
+            "created_at": now - timedelta(hours=1),
+            "result": {"suite_id": str(older_id)},
+        }
+        _suite_runs[newer_id] = {
+            "status": "COMPLETED",
+            "created_at": now,
+            "result": {"suite_id": str(newer_id)},
+        }
+
+        response = client.get("/walk-forward/suite/results")
+        assert response.status_code == 200
+        assert response.json()["suite_id"] == str(newer_id)
