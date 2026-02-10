@@ -630,7 +630,7 @@ async def detailed_health_check() -> dict[str, object]:
 
         redis_client = init_redis_client()
         if redis_client:
-            redis_client.ping()
+            await redis_client.ping()
             health_status["redis"] = "connected"
         else:
             health_status["redis"] = "not_configured"

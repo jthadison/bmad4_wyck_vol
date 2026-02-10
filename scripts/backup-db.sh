@@ -9,7 +9,7 @@ set -euo pipefail
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/bmad_wyckoff_${TIMESTAMP}.sql.gz"
+BACKUP_FILE="${BACKUP_DIR}/bmad_wyckoff_${TIMESTAMP}.dump"
 
 # Create backup directory if it doesn't exist
 mkdir -p "$BACKUP_DIR"
@@ -34,6 +34,6 @@ fi
 
 # Clean up old backups beyond retention period
 echo "[$(date)] Cleaning up backups older than ${RETENTION_DAYS} days..."
-find "$BACKUP_DIR" -name "bmad_wyckoff_*.sql.gz" -mtime +${RETENTION_DAYS} -delete
-REMAINING=$(find "$BACKUP_DIR" -name "bmad_wyckoff_*.sql.gz" | wc -l)
+find "$BACKUP_DIR" -name "bmad_wyckoff_*.dump" -mtime +${RETENTION_DAYS} -delete
+REMAINING=$(find "$BACKUP_DIR" -name "bmad_wyckoff_*.dump" | wc -l)
 echo "[$(date)] Backup complete. ${REMAINING} backup(s) retained."

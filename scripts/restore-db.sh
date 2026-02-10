@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-BACKUP_FILE="${1:?Usage: $0 <backup_file.sql.gz>}"
+BACKUP_FILE="${1:?Usage: $0 <backup_file.dump>}"
 
 if [ ! -f "$BACKUP_FILE" ]; then
   echo "ERROR: Backup file not found: $BACKUP_FILE" >&2

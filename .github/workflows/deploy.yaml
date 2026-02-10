@@ -315,6 +315,7 @@ jobs:
           ROLLBACK_TAG="rollback-$(date +%Y%m%d-%H%M%S)"
           echo "Creating rollback tag: $ROLLBACK_TAG"
           git tag -a "$ROLLBACK_TAG" -m "Rollback point before deployment of ${{ github.ref_name }}"
-          echo "Rollback tag created: $ROLLBACK_TAG"
+          git push origin "$ROLLBACK_TAG"
+          echo "Rollback tag created and pushed: $ROLLBACK_TAG"
           echo "To rollback, trigger deployment with tag: $ROLLBACK_TAG"
         continue-on-error: true
