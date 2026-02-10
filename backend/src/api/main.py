@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="BMAD Wyckoff Volume Pattern Detection API",
     description="API for Wyckoff pattern detection and trade signal generation",
-    version="0.1.0",
+    version=app_version,
     lifespan=lifespan,
 )
 
@@ -511,7 +511,7 @@ async def shutdown_event() -> None:
 @app.get("/")
 async def root() -> dict[str, str]:
     """Root endpoint."""
-    return {"message": "BMAD Wyckoff API", "version": "0.1.0"}
+    return {"message": "BMAD Wyckoff API", "version": app_version}
 
 
 @app.get("/health")
