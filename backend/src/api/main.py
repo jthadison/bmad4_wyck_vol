@@ -19,6 +19,12 @@ if sys.platform == "win32":
 
 import structlog
 from fastapi import FastAPI, Request, WebSocket
+
+try:
+    from importlib.metadata import version as get_version
+    app_version = get_version("bmad-wyckoff-backend")
+except Exception:
+    app_version = "unknown"
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -656,6 +662,6 @@ async def detailed_health_check() -> dict[str, object]:
         health_status["brokers"] = {"status": "not_configured"}
 
     # Application version (Story 23.12)
-    health_status["version"] = "0.1.0"
+    health_status["version"] = app_version
 
     return health_status

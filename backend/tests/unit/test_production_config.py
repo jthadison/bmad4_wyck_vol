@@ -240,6 +240,46 @@ class TestDockerComposeProd:
             redis_url
         ), "REDIS_URL must not use localhost in container networking"
 
+    def test_no_version_key(self, compose_config):
+        """docker-compose.prod.yml must NOT have deprecated 'version' key."""
+        assert "version" not in compose_config, (
+            "Deprecated 'version' key must be removed from docker-compose.prod.yml"
+        )
+
+    def test_backend_has_enable_bar_cache(self, compose_config):
+        """Backend must pass ENABLE_BAR_CACHE env var."""
+        backend = compose_config["services"]["backend"]
+        env = backend.get("environment", {})
+        assert "ENABLE_BAR_CACHE" in env, "Backend must set ENABLE_BAR_CACHE"
+
+    def test_backend_has_bar_cache_ttl(self, compose_config):
+        """Backend must pass BAR_CACHE_TTL env var."""
+        backend = compose_config["services"]["backend"]
+        env = backend.get("environment", {})
+        assert "BAR_CACHE_TTL" in env, "Backend must set BAR_CACHE_TTL"
+
+    def test_redis_command_includes_requirepass(self):
+        """Redis command must include --requirepass for password protection."""
+        compose_path = PROJECT_ROOT / "docker-compose.prod.yml"
+        content = compose_path.read_text()
+        assert "requirepass" in content, "Redis must use --requirepass for password protection"
+
+    def test_all_services_have_read_only(self, compose_config):
+        """All services must have read_only: true for container hardening."""
+        for name, svc in compose_config["services"].items():
+            assert svc.get("read_only") is True, (
+                f"Service '{name}' must have read_only: true"
+            )
+
+    def test_all_services_have_no_new_privileges(self, compose_config):
+        """All services must have no-new-privileges in security_opt."""
+        for name, svc in compose_config["services"].items():
+            security_opt = svc.get("security_opt", [])
+            has_no_new_priv = any("no-new-privileges" in str(opt) for opt in security_opt)
+            assert has_no_new_priv, (
+                f"Service '{name}' must have no-new-privileges:true in security_opt"
+            )
+
 
 # ============================================================================
 # Nginx Production Config Tests
@@ -766,6 +806,28 @@ class TestDeployWorkflow:
         if isinstance(needs, str):
             needs = [needs]
         assert "build-and-push" in needs
+
+    def test_pre_deploy_tag_runs_before_deploy(self, workflow_config):
+        """Pre-deploy tag job must NOT depend on deploy-to-production (must run before it)."""
+        jobs = workflow_config.get("jobs", {})
+        # The pre-deploy tag job must exist
+        assert "create-pre-deploy-tag" in jobs, "create-pre-deploy-tag job must exist"
+        tag_job = jobs["create-pre-deploy-tag"]
+        tag_needs = tag_job.get("needs", [])
+        if isinstance(tag_needs, str):
+            tag_needs = [tag_needs]
+        # Must NOT depend on deploy-to-production
+        assert "deploy-to-production" not in tag_needs, (
+            "Pre-deploy tag must run BEFORE deploy, not after"
+        )
+        # Deploy must depend on the pre-deploy tag job
+        deploy_job = jobs["deploy-to-production"]
+        deploy_needs = deploy_job.get("needs", [])
+        if isinstance(deploy_needs, str):
+            deploy_needs = [deploy_needs]
+        assert "create-pre-deploy-tag" in deploy_needs, (
+            "deploy-to-production must depend on create-pre-deploy-tag"
+        )
 
     def test_deploy_uses_health_poll_not_sleep(self, workflow_config):
         """Deploy workflow must use polling loop, not fixed sleep, for health checks."""
