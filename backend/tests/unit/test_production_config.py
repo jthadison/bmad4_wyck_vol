@@ -187,6 +187,18 @@ class TestDockerComposeProd:
         env = backend.get("environment", {})
         assert env.get("ENVIRONMENT") == "production"
 
+    def test_backend_uses_image_not_build(self, compose_config):
+        """Backend service must use image: directive, not build:."""
+        backend = compose_config["services"]["backend"]
+        assert "image" in backend, "Backend must use 'image:' for pre-built Docker images"
+        assert "build" not in backend, "Backend must not use 'build:' in production compose"
+
+    def test_frontend_uses_image_not_build(self, compose_config):
+        """Frontend service must use image: directive, not build:."""
+        frontend = compose_config["services"]["frontend"]
+        assert "image" in frontend, "Frontend must use 'image:' for pre-built Docker images"
+        assert "build" not in frontend, "Frontend must not use 'build:' in production compose"
+
 
 # ============================================================================
 # Nginx Production Config Tests
@@ -610,3 +622,33 @@ class TestDeployWorkflow:
         if isinstance(needs, str):
             needs = [needs]
         assert "build-and-push" in needs
+
+
+# ============================================================================
+# Dockerfile.prod Validation Tests
+# ============================================================================
+
+
+class TestDockerfileProd:
+    """Test frontend/Dockerfile.prod correctness."""
+
+    @pytest.fixture
+    def dockerfile_content(self) -> str:
+        path = PROJECT_ROOT / "frontend" / "Dockerfile.prod"
+        assert path.exists(), "frontend/Dockerfile.prod must exist"
+        return path.read_text()
+
+    def test_uses_production_nginx_config(self, dockerfile_content):
+        """Dockerfile.prod must copy nginx.prod.conf, not nginx.conf."""
+        assert "nginx.prod.conf" in dockerfile_content
+        # Ensure it doesn't ONLY reference nginx.conf (without .prod)
+        lines = dockerfile_content.split("\n")
+        for line in lines:
+            if line.strip().startswith("COPY") and "nginx" in line and ".conf" in line:
+                assert "nginx.prod.conf" in line, (
+                    f"COPY directive must reference nginx.prod.conf, found: {line.strip()}"
+                )
+
+    def test_exposes_ssl_port(self, dockerfile_content):
+        """Dockerfile.prod must expose port 443 for SSL."""
+        assert "443" in dockerfile_content
