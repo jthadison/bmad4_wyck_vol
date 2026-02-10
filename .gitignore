@@ -208,6 +208,12 @@ playwright-report-dev/
 test-results/
 playwright-test-output.txt
 
+# Database Backups
+backups/
+
+# SSL Certificates
+ssl/
+
 # Backtest Output Files
 backtest-response.json
 

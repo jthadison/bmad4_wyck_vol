@@ -624,4 +624,34 @@ async def detailed_health_check() -> dict[str, object]:
         health_status["scanner"] = {"error": str(e)}
         health_status["status"] = "degraded"
 
+    # Check Redis connectivity (Story 23.12)
+    try:
+        from src.api.dependencies import init_redis_client
+
+        redis_client = init_redis_client()
+        if redis_client:
+            redis_client.ping()
+            health_status["redis"] = "connected"
+        else:
+            health_status["redis"] = "not_configured"
+    except Exception as e:
+        health_status["redis"] = f"error: {str(e)}"
+        health_status["status"] = "degraded"
+
+    # Check broker connection status (Story 23.12)
+    try:
+        from src.trading.broker_router import get_broker_router
+
+        broker_router = get_broker_router()
+        if broker_router:
+            broker_health = broker_router.get_health()
+            health_status["brokers"] = broker_health
+        else:
+            health_status["brokers"] = {"status": "not_configured"}
+    except Exception:
+        health_status["brokers"] = {"status": "not_configured"}
+
+    # Application version (Story 23.12)
+    health_status["version"] = "0.1.0"
+
     return health_status
