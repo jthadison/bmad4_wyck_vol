@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import get_db_session
+from src.api.dependencies import get_current_user_id, get_db_session
 from src.brokers.paper_broker_adapter import PaperBrokerAdapter
 from src.models.paper_trading import PaperAccount, PaperPosition, PaperTrade, PaperTradingConfig
 from src.repositories.paper_account_repository import PaperAccountRepository
@@ -149,7 +149,9 @@ async def get_paper_trading_service(
 
 @router.post("/enable", response_model=PaperTradingResponse, status_code=status.HTTP_201_CREATED)
 async def enable_paper_trading(
-    request: EnablePaperTradingRequest, db: AsyncSession = Depends(get_db_session)
+    request: EnablePaperTradingRequest,
+    db: AsyncSession = Depends(get_db_session),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> PaperTradingResponse:
     """
     Enable paper trading mode and create virtual account.
@@ -215,6 +217,7 @@ async def enable_paper_trading(
 @router.post("/disable", response_model=PaperTradingResponse)
 async def disable_paper_trading(
     service: PaperTradingService = Depends(get_paper_trading_service),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> PaperTradingResponse:
     """
     Disable paper trading mode and close all open positions.
@@ -277,7 +280,10 @@ async def disable_paper_trading(
 
 
 @router.get("/account", response_model=Optional[PaperAccount])
-async def get_account(db: AsyncSession = Depends(get_db_session)) -> Optional[PaperAccount]:
+async def get_account(
+    db: AsyncSession = Depends(get_db_session),
+    _user_id: UUID = Depends(get_current_user_id),
+) -> Optional[PaperAccount]:
     """
     Get current paper trading account.
 
@@ -302,6 +308,7 @@ async def get_account(db: AsyncSession = Depends(get_db_session)) -> Optional[Pa
 @router.get("/settings", response_model=PaperTradingConfig)
 async def get_settings(
     db: AsyncSession = Depends(get_db_session),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> PaperTradingConfig:
     """
     Get current paper trading settings.
@@ -319,6 +326,7 @@ async def get_settings(
 async def update_settings(
     request: PaperTradingSettingsRequest,
     db: AsyncSession = Depends(get_db_session),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> PaperTradingConfig:
     """
     Save or update paper trading settings.
@@ -347,6 +355,7 @@ async def update_settings(
 @router.get("/positions", response_model=PositionsResponse)
 async def list_positions(
     service: PaperTradingService = Depends(get_paper_trading_service),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> PositionsResponse:
     """
     List all open paper trading positions.
@@ -391,6 +400,7 @@ async def list_trades(
     limit: int = Query(default=50, ge=1, le=1000, description="Number of trades to return"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     service: PaperTradingService = Depends(get_paper_trading_service),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> TradesResponse:
     """
     List paper trading trade history with pagination.
@@ -426,6 +436,7 @@ async def get_report(
     backtest_id: Optional[UUID] = Query(default=None, description="Backtest ID to compare against"),
     db: AsyncSession = Depends(get_db_session),
     service: PaperTradingService = Depends(get_paper_trading_service),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> ReportResponse:
     """
     Get comprehensive paper trading performance report.
@@ -490,6 +501,7 @@ async def compare_to_backtest(
     backtest_id: UUID,
     db: AsyncSession = Depends(get_db_session),
     service: PaperTradingService = Depends(get_paper_trading_service),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> dict:
     """Compare paper trading results to a specific backtest run."""
     try:
@@ -523,7 +535,10 @@ async def compare_to_backtest(
 
 
 @router.post("/reset", response_model=PaperTradingResponse)
-async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTradingResponse:
+async def reset_account(
+    db: AsyncSession = Depends(get_db_session),
+    _user_id: UUID = Depends(get_current_user_id),
+) -> PaperTradingResponse:
     """
     Reset paper trading account and archive data.
 
@@ -652,6 +667,7 @@ async def reset_account(db: AsyncSession = Depends(get_db_session)) -> PaperTrad
 @router.get("/live-eligibility", response_model=dict)
 async def check_live_eligibility(
     service: PaperTradingService = Depends(get_paper_trading_service),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> dict:
     """
     Check eligibility for live trading (3-month requirement).
@@ -689,6 +705,7 @@ async def list_sessions(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_session),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> dict:
     """List archived paper trading sessions."""
     try:
@@ -707,6 +724,7 @@ async def list_sessions(
 async def get_session(
     session_id: UUID,
     db: AsyncSession = Depends(get_db_session),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> dict:
     """Get details of an archived paper trading session."""
     try:
