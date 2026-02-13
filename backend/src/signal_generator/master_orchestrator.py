@@ -1206,23 +1206,145 @@ class MasterOrchestrator:
             return []
 
     async def _get_trading_ranges(self, symbol: str) -> list[Any]:
-        """Get trading ranges for symbol."""
-        # Stub - return empty list for now
-        return []
+        """
+        Get trading ranges for symbol from TradingRangeService.
+
+        Args:
+            symbol: Trading symbol
+
+        Returns:
+            List of TradingRange objects, or empty list on error
+        """
+        try:
+            if not self.trading_range_service:
+                self.logger.warning("trading_range_service_not_configured", symbol=symbol)
+                return []
+
+            ranges = await self.trading_range_service.get_ranges(symbol)
+            return ranges
+        except Exception as e:
+            self.logger.error(
+                "get_trading_ranges_failed",
+                symbol=symbol,
+                error=str(e),
+                exc_info=True,
+            )
+            return []
 
     async def _run_pattern_detection(
         self, bars: list[Any], trading_ranges: list[Any], correlation_id: str
     ) -> list[Any]:
-        """Run all pattern detectors in parallel."""
-        # Stub - return empty list for now
-        return []
+        """
+        Run all pattern detectors in parallel.
+
+        Each detector is expected to have a detect(bars, trading_ranges) method.
+        Detectors are run concurrently via asyncio.gather. Results from all
+        detectors are flattened into a single list.
+
+        Args:
+            bars: OHLCV bars to analyze
+            trading_ranges: Active trading ranges for the symbol
+            correlation_id: Request correlation ID
+
+        Returns:
+            Flat list of all detected patterns, or empty list on error
+        """
+        if not self.pattern_detectors:
+            self.logger.warning("no_pattern_detectors_configured", correlation_id=correlation_id)
+            return []
+
+        async def run_detector(detector: Any) -> list[Any]:
+            """Run a single detector, wrapping sync calls if needed."""
+            try:
+                result = detector.detect(bars, trading_ranges)
+                # If detector returns awaitable, await it
+                if asyncio.iscoroutine(result):
+                    result = await result
+                # Normalize to list
+                if result is None:
+                    return []
+                if isinstance(result, list):
+                    return result
+                return [result]
+            except Exception as e:
+                detector_name = getattr(detector, "__class__", type(detector)).__name__
+                self.logger.error(
+                    "pattern_detector_failed",
+                    detector=detector_name,
+                    error=str(e),
+                    correlation_id=correlation_id,
+                    exc_info=True,
+                )
+                return []
+
+        tasks = [run_detector(d) for d in self.pattern_detectors]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Flatten results, skip exceptions
+        all_patterns: list[Any] = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                detector_name = getattr(
+                    self.pattern_detectors[i], "__class__", type(self.pattern_detectors[i])
+                ).__name__
+                self.logger.error(
+                    "pattern_detector_exception",
+                    detector=detector_name,
+                    error=str(result),
+                    correlation_id=correlation_id,
+                )
+            elif isinstance(result, list):
+                all_patterns.extend(result)
+
+        self.logger.info(
+            "pattern_detection_complete",
+            detectors_run=len(self.pattern_detectors),
+            patterns_found=len(all_patterns),
+            correlation_id=correlation_id,
+        )
+
+        return all_patterns
 
     async def _process_pattern(
         self, pattern: Any, correlation_id: str
     ) -> TradeSignal | RejectedSignal | None:
-        """Process a single detected pattern through validation chain."""
-        # Stub implementation
-        return None
+        """
+        Process a single detected pattern through validation chain.
+
+        Pipeline:
+        1. Build ValidationContext from pattern data
+        2. Run validation chain (Volume -> Phase -> Levels -> Risk -> Strategy)
+        3. Generate TradeSignal (approved) or RejectedSignal (failed)
+
+        Args:
+            pattern: Detected pattern dict with symbol, timeframe, etc.
+            correlation_id: Request correlation ID
+
+        Returns:
+            TradeSignal if all validations pass, RejectedSignal if any fail,
+            or None if context could not be built
+        """
+        symbol = pattern.get("symbol", "UNKNOWN")
+        timeframe = pattern.get("timeframe", "1h")
+
+        # 1. Build validation context
+        context = await self.build_validation_context(pattern, symbol, timeframe)
+        if context is None:
+            self.logger.warning(
+                "validation_context_build_failed",
+                pattern_id=str(pattern.get("id", "unknown")),
+                symbol=symbol,
+                correlation_id=correlation_id,
+            )
+            return None
+
+        # 2. Run validation chain
+        validation_chain = await self.run_validation_chain(pattern, context, correlation_id)
+
+        # 3. Generate signal from validation results
+        signal = await self.generate_signal_from_pattern(pattern, validation_chain, context)
+
+        return signal
 
     async def _fetch_volume_analysis(
         self, symbol: str, pattern: Any, forex_session: str | None = None
