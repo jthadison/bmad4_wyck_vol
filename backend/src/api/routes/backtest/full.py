@@ -112,6 +112,10 @@ async def run_backtest(
                 "Backtest task raised unhandled exception",
                 extra={"backtest_run_id": str(run_id), "error": str(exc)},
             )
+        # Release task reference to free the coroutine result from memory
+        # (the result is already persisted to the database by this point)
+        if run_id in backtest_runs:
+            backtest_runs[run_id].pop("task", None)
 
     task.add_done_callback(_on_task_done)
 

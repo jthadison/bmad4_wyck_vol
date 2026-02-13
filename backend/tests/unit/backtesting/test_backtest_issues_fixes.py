@@ -921,14 +921,15 @@ class TestM1NextBarFills:
             make_bar(open_price=102, close=102, day_offset=2, symbol="TEST"),
         ]
 
-        result = engine.run(bars)
+        engine.run(bars)
 
-        # If order was filled at bar 0 (same-bar), entry would be at bar 0's close.
-        # Correct behavior: order created at bar 0, filled at bar 1's OPEN.
-        if result.trades:
-            trade = result.trades[0]
-            # Entry should be at bar 1's open price (101), not bar 0's close (100)
-            assert trade.entry_price == Decimal("101")
+        # The position opens but never closes (only 3 bars, no exit signal),
+        # so result.trades is empty. Verify via PositionManager instead.
+        assert len(pm.positions) == 1, "Expected one open position after signal at bar 0"
+        position = next(iter(pm.positions.values()))
+        # If order was filled at bar 0 (same-bar), entry would be at bar 0's close (100).
+        # Correct behavior: order created at bar 0, filled at bar 1's OPEN (101).
+        assert position.entry_price == Decimal("101")
 
     def test_pending_orders_filled_at_next_bar_open(self):
         """_fill_pending_orders fills at bar.open, not bar.close."""
