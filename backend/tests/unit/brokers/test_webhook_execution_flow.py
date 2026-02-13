@@ -673,7 +673,7 @@ class TestWebhookHTTPEndpoint:
             ) as mock_emit,
         ):
             mock_settings.auto_execute_orders = True
-            mock_settings.ACCOUNT_EQUITY = "100000"
+            mock_settings.account_equity = Decimal("100000")
             mock_tv_adapter.verify_webhook_signature.return_value = True
             mock_tv_adapter.webhook_secret = secret
 

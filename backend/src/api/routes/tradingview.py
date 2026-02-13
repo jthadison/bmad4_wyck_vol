@@ -33,9 +33,7 @@ router = APIRouter(prefix="/api/v1/tradingview", tags=["TradingView"])
 
 # Initialize TradingView adapter
 # Webhook secret should be configured in settings
-tradingview_adapter = TradingViewAdapter(
-    webhook_secret=getattr(settings, "TRADINGVIEW_WEBHOOK_SECRET", None)
-)
+tradingview_adapter = TradingViewAdapter(webhook_secret=settings.tradingview_webhook_secret or None)
 
 order_builder = OrderBuilder(default_platform="TradingView")
 
@@ -235,7 +233,7 @@ async def receive_webhook(
                 # Trade risk is calculated from stop_loss distance and order quantity
                 # relative to a configured account equity. If risk cannot be determined,
                 # use a fail-closed default that will block the order.
-                account_equity = Decimal(str(getattr(settings, "ACCOUNT_EQUITY", "10000")))
+                account_equity = settings.account_equity
                 if order.stop_loss and order.limit_price and account_equity > 0:
                     risk_per_unit = abs(order.limit_price - order.stop_loss)
                     trade_risk_pct = (order.quantity * risk_per_unit / account_equity) * Decimal(

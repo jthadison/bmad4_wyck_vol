@@ -308,6 +308,10 @@ async def startup_event() -> None:
             message="Real-time market data feed disabled - set ALPACA_API_KEY and ALPACA_SECRET_KEY to enable",
         )
 
+    # Initialize broker infrastructure (Story 23.7, 23.12)
+    # Must happen before signal router so broker_router is available for live routing
+    broker_router = await _initialize_broker_infrastructure()
+
     # Initialize paper trading signal routing (Story 12.8)
     try:
         from src.database import async_session_maker
@@ -318,15 +322,15 @@ async def startup_event() -> None:
         # Get orchestrator event bus
         event_bus = get_event_bus()
 
-        # Create signal router with database session factory
-        signal_router = get_signal_router(async_session_maker)
+        # Create signal router with database session factory and broker router
+        signal_router = get_signal_router(async_session_maker, broker_router=broker_router)
 
         # Register signal listener with event bus
         register_signal_listener(event_bus, signal_router)
 
-        logger.info("paper_trading_signal_routing_initialized")
+        logger.info("signal_routing_initialized", has_broker_router=broker_router is not None)
     except Exception as e:
-        logger.warning("paper_trading_signal_routing_failed", error=str(e))
+        logger.warning("signal_routing_initialization_failed", error=str(e))
 
     # Initialize signal approval expiration task (Story 19.9)
     try:
@@ -355,9 +359,6 @@ async def startup_event() -> None:
 
     # Initialize symbol search service (Story 21.4)
     await _initialize_search_service()
-
-    # Initialize kill switch service (Story 23.13)
-    _initialize_kill_switch_service()
 
 
 async def _initialize_signal_scanner_service() -> None:
@@ -456,25 +457,94 @@ async def _initialize_search_service() -> None:
         # Don't crash the app - search endpoint will return 503
 
 
-def _initialize_kill_switch_service() -> None:
+async def _initialize_broker_infrastructure() -> "BrokerRouter":
     """
-    Initialize the kill switch service (Story 23.13).
+    Initialize broker infrastructure (Story 23.7, 23.12).
 
-    Creates a BrokerRouter (no adapters connected at init) and wires
-    it into the EmergencyExitService, then registers with the kill switch routes.
+    Creates broker adapters based on configured credentials, wires them into
+    the BrokerRouter, connects to the TradingView routes, and sets up the
+    EmergencyExitService for the kill switch.
+
+    Returns:
+        BrokerRouter instance (also stored on app.state.broker_router)
     """
+    from src.api.routes.kill_switch import set_emergency_exit_service
+    from src.api.routes.tradingview import configure_broker_router
+    from src.brokers.broker_router import BrokerRouter
+    from src.orchestrator.services.emergency_exit_service import EmergencyExitService
+
+    mt5_adapter = None
+    alpaca_adapter = None
+
+    # Create MetaTrader adapter if credentials are configured
+    if settings.mt5_account and settings.mt5_password and settings.mt5_server:
+        try:
+            from src.brokers.metatrader_adapter import MetaTraderAdapter
+
+            mt5_adapter = MetaTraderAdapter(
+                account=settings.mt5_account,
+                password=settings.mt5_password,
+                server=settings.mt5_server,
+            )
+            try:
+                await mt5_adapter.connect()
+                logger.info("mt5_adapter_connected")
+            except Exception as e:
+                logger.warning("mt5_adapter_connect_failed", error=str(e))
+                mt5_adapter = None
+        except Exception as e:
+            logger.error("mt5_adapter_creation_failed", error=str(e))
+
+    # Create Alpaca trading adapter if credentials are configured
+    if settings.alpaca_trading_api_key and settings.alpaca_trading_secret_key:
+        try:
+            from src.brokers.alpaca_adapter import AlpacaAdapter as TradingAlpacaAdapter
+
+            alpaca_adapter = TradingAlpacaAdapter(
+                api_key=settings.alpaca_trading_api_key,
+                secret_key=settings.alpaca_trading_secret_key,
+                base_url=(
+                    TradingAlpacaAdapter.PAPER_BASE_URL
+                    if settings.alpaca_trading_paper
+                    else TradingAlpacaAdapter.LIVE_BASE_URL
+                ),
+            )
+            try:
+                await alpaca_adapter.connect()
+                logger.info("alpaca_trading_adapter_connected")
+            except Exception as e:
+                logger.warning("alpaca_trading_adapter_connect_failed", error=str(e))
+                alpaca_adapter = None
+        except Exception as e:
+            logger.error("alpaca_trading_adapter_creation_failed", error=str(e))
+
+    # Create broker router with adapters
+    broker_router = BrokerRouter(
+        mt5_adapter=mt5_adapter,
+        alpaca_adapter=alpaca_adapter,
+    )
+
+    # Wire broker router into TradingView routes
+    configure_broker_router(broker_router)
+
+    # Wire kill switch service
     try:
-        from src.api.routes.kill_switch import set_emergency_exit_service
-        from src.brokers.broker_router import BrokerRouter
-        from src.orchestrator.services.emergency_exit_service import EmergencyExitService
-
-        broker_router = BrokerRouter()
         exit_service = EmergencyExitService(broker_router=broker_router)
         set_emergency_exit_service(exit_service)
-
         logger.info("kill_switch_service_initialized")
     except Exception as e:
         logger.error("kill_switch_service_initialization_failed", error=str(e))
+
+    # Store on app state for health checks and shutdown
+    app.state.broker_router = broker_router
+
+    logger.info(
+        "broker_infrastructure_initialized",
+        has_mt5=mt5_adapter is not None,
+        has_alpaca=alpaca_adapter is not None,
+    )
+
+    return broker_router
 
 
 async def shutdown_event() -> None:
@@ -527,6 +597,11 @@ async def shutdown_event() -> None:
             logger.info("market_data_coordinator_stopped")
         except Exception as e:
             logger.error("market_data_coordinator_stop_failed", error=str(e))
+
+    # Disconnect broker adapters (Story 23.12)
+    broker_router = getattr(app.state, "broker_router", None)
+    if broker_router:
+        await broker_router.disconnect_all()
 
     # Close Redis connection (Story 19.21)
     try:
@@ -681,13 +756,13 @@ async def detailed_health_check() -> dict[str, object]:
         health_status["status"] = "degraded"
 
     # Check broker connection status (Story 23.12)
-    try:
-        from src.brokers.broker_router import BrokerRouter  # noqa: F401
-
-        health_status["brokers"] = {"status": "available"}
-    except ImportError:
-        health_status["brokers"] = {"status": "not_configured"}
-    except Exception:
+    broker_router = getattr(app.state, "broker_router", None)
+    if broker_router:
+        broker_status = broker_router.get_connection_status()
+        health_status["brokers"] = (
+            broker_status if broker_status else {"status": "no_adapters_configured"}
+        )
+    else:
         health_status["brokers"] = {"status": "not_configured"}
 
     # Application version (Story 23.12)
