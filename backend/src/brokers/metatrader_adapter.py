@@ -658,6 +658,30 @@ class MetaTraderAdapter(TradingPlatformAdapter):
 
         reports: list[ExecutionReport] = []
 
+        # Cancel all pending orders first to prevent fills during liquidation
+        try:
+            pending_orders = await asyncio.to_thread(self._mt5.orders_get)
+            if pending_orders:
+                for order in pending_orders:
+                    try:
+                        cancel_request = {
+                            "action": self._mt5.TRADE_ACTION_REMOVE,
+                            "order": order.ticket,
+                        }
+                        await asyncio.to_thread(self._mt5.order_send, cancel_request)
+                    except Exception as e:
+                        logger.error(
+                            "metatrader_kill_switch_cancel_order_failed",
+                            ticket=order.ticket,
+                            error=str(e),
+                        )
+                logger.info(
+                    "metatrader_kill_switch_pending_orders_cancelled",
+                    count=len(pending_orders),
+                )
+        except Exception as e:
+            logger.error("metatrader_cancel_all_orders_failed", error=str(e))
+
         try:
             positions = await asyncio.to_thread(self._mt5.positions_get)
             if not positions:

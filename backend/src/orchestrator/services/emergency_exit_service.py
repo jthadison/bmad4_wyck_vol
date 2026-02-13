@@ -15,6 +15,8 @@ from uuid import UUID
 
 import structlog
 
+from src.monitoring.audit_logger import AuditEventType, get_audit_logger
+
 if TYPE_CHECKING:
     from src.brokers.broker_router import BrokerRouter
 
@@ -206,6 +208,13 @@ class EmergencyExitService:
             positions_failed=failed_count,
         )
 
+        await get_audit_logger().log_event(
+            AuditEventType.KILL_SWITCH_ACTIVATED,
+            reason=reason,
+            positions_closed=closed_count,
+            positions_failed=failed_count,
+        )
+
         return {
             "activated": True,
             "reason": reason,
@@ -214,7 +223,7 @@ class EmergencyExitService:
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
-    def deactivate_kill_switch(self) -> dict:
+    async def deactivate_kill_switch(self) -> dict:
         """
         Deactivate the kill switch, allowing new orders.
 
@@ -224,7 +233,11 @@ class EmergencyExitService:
         if self._broker_router:
             self._broker_router.deactivate_kill_switch()
 
-        logger.info("kill_switch_deactivated")
+        logger.warning("kill_switch_deactivated")
+
+        await get_audit_logger().log_event(
+            AuditEventType.KILL_SWITCH_DEACTIVATED,
+        )
 
         return {
             "activated": False,

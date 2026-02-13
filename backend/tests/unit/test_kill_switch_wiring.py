@@ -398,13 +398,14 @@ class TestEmergencyExitServiceKillSwitch:
         assert result["positions_closed"] == 0
         assert result["positions_failed"] == 0
 
-    def test_deactivate_kill_switch(self):
+    @pytest.mark.asyncio
+    async def test_deactivate_kill_switch(self):
         """deactivate_kill_switch deactivates broker router."""
         mock_router = MagicMock()
         mock_router.deactivate_kill_switch = MagicMock()
 
         service = EmergencyExitService(broker_router=mock_router)
-        result = service.deactivate_kill_switch()
+        result = await service.deactivate_kill_switch()
 
         mock_router.deactivate_kill_switch.assert_called_once()
         assert result["activated"] is False
@@ -448,7 +449,7 @@ class TestKillSwitchEndpoints:
             "positions_failed": 0,
             "timestamp": "2026-01-01T00:00:00",
         }
-        service.deactivate_kill_switch = MagicMock(
+        service.deactivate_kill_switch = AsyncMock(
             return_value={
                 "activated": False,
                 "timestamp": "2026-01-01T00:00:00",

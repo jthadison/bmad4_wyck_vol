@@ -472,7 +472,7 @@ class AlpacaAdapter(TradingPlatformAdapter):
                             "qty": str(abs(Decimal(qty))),
                             "side": close_side,
                             "type": "market",
-                            "time_in_force": "gtc",
+                            "time_in_force": "day",
                         },
                     )
                     close_response.raise_for_status()

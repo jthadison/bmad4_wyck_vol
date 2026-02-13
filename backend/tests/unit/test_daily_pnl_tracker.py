@@ -139,7 +139,7 @@ async def test_callback_error_handled() -> None:
 async def test_reset(tracker: DailyPnLTracker) -> None:
     """Reset clears cumulative P&L and breach state."""
     await tracker.update_pnl("AAPL", Decimal("-5000"))
-    tracker.reset()
+    await tracker.reset()
 
     assert tracker.get_daily_pnl() == Decimal("0")
     assert tracker.breach_fired is False
@@ -158,7 +158,7 @@ async def test_callback_fires_after_reset() -> None:
     await tracker.check_and_notify(Decimal("100000"))
     assert callback.await_count == 1
 
-    tracker.reset()
+    await tracker.reset()
     await tracker.update_pnl("AAPL", Decimal("-4000"))
     await tracker.check_and_notify(Decimal("100000"))
     assert callback.await_count == 2

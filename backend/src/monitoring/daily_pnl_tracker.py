@@ -163,11 +163,12 @@ class DailyPnLTracker:
 
         return True
 
-    def reset(self) -> None:
+    async def reset(self) -> None:
         """Reset daily tracking for a new trading day."""
-        self._cumulative_pnl = Decimal("0")
-        self._symbol_pnl.clear()
-        self._breach_fired = False
+        async with self._lock:
+            self._cumulative_pnl = Decimal("0")
+            self._symbol_pnl.clear()
+            self._breach_fired = False
         self._logger.info("daily_pnl_reset")
 
     @property

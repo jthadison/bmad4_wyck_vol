@@ -41,8 +41,12 @@ export async function getDashboardData(): Promise<DashboardData> {
 /**
  * Activate the kill switch (emergency stop).
  */
-export async function activateKillSwitch(): Promise<KillSwitchActivateResult> {
-  return apiClient.post<KillSwitchActivateResult>('/kill-switch/activate')
+export async function activateKillSwitch(
+  reason: string = 'Manual activation'
+): Promise<KillSwitchActivateResult> {
+  return apiClient.post<KillSwitchActivateResult>('/kill-switch/activate', {
+    reason,
+  })
 }
 
 /**

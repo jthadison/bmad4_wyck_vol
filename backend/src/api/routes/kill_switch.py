@@ -129,7 +129,7 @@ async def deactivate_kill_switch(
         user_id=str(user_id),
     )
 
-    result = service.deactivate_kill_switch()
+    result = await service.deactivate_kill_switch()
     return DeactivateResponse(**result)
 
 
