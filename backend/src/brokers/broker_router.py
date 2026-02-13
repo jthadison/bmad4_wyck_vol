@@ -1,14 +1,16 @@
 """
-Broker Router (Story 23.7, 23.11)
+Broker Router (Story 23.7, 23.11, 23.13)
 
 Routes orders to the appropriate broker adapter based on symbol classification.
 Forex symbols route to MetaTrader, US stock symbols route to Alpaca.
 
 Story 23.11: Added pre-flight risk gate check before order submission.
+Story 23.13: Added kill switch state and close_all_positions().
 
-Author: Story 23.7, 23.11
+Author: Story 23.7, 23.11, 23.13
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -110,6 +112,9 @@ class BrokerRouter:
         self._mt5_adapter = mt5_adapter
         self._alpaca_adapter = alpaca_adapter
         self._risk_gate = risk_gate or ExecutionRiskGate()
+        self._kill_switch_active = False
+        self._kill_switch_activated_at: Optional[datetime] = None
+        self._kill_switch_reason: Optional[str] = None
 
         logger.info(
             "broker_router_initialized",
@@ -187,6 +192,23 @@ class BrokerRouter:
         Returns:
             ExecutionReport with execution result.
         """
+        # Kill switch check - block all new orders when active (Story 23.13)
+        if self._kill_switch_active:
+            logger.warning(
+                "broker_router_order_blocked_kill_switch",
+                order_id=str(order.id),
+                symbol=order.symbol,
+            )
+            return ExecutionReport(
+                order_id=order.id,
+                platform_order_id="",
+                platform="kill_switch",
+                status=OrderStatus.REJECTED,
+                filled_quantity=Decimal("0"),
+                remaining_quantity=order.quantity,
+                error_message="Kill switch is active - all new orders blocked",
+            )
+
         # Pre-flight risk check - fail-closed (Story 23.11)
         preflight = self._risk_gate.check_order(
             order=order,
@@ -258,3 +280,77 @@ class BrokerRouter:
         )
 
         return report
+
+    def activate_kill_switch(self, reason: str = "Manual activation") -> None:
+        """
+        Activate the kill switch, blocking all new orders.
+
+        Args:
+            reason: Reason for activation
+        """
+        self._kill_switch_active = True
+        self._kill_switch_activated_at = datetime.now(UTC)
+        self._kill_switch_reason = reason
+        logger.critical(
+            "kill_switch_activated",
+            reason=reason,
+        )
+
+    def deactivate_kill_switch(self) -> None:
+        """Deactivate the kill switch, allowing new orders."""
+        self._kill_switch_active = False
+        self._kill_switch_activated_at = None
+        self._kill_switch_reason = None
+        logger.info("kill_switch_deactivated")
+
+    def is_kill_switch_active(self) -> bool:
+        """Return whether the kill switch is currently active."""
+        return self._kill_switch_active
+
+    def get_kill_switch_status(self) -> dict[str, object]:
+        """
+        Get current kill switch status.
+
+        Returns:
+            Dict with active flag, activated_at timestamp, and reason.
+        """
+        return {
+            "active": self._kill_switch_active,
+            "activated_at": self._kill_switch_activated_at.isoformat()
+            if self._kill_switch_activated_at
+            else None,
+            "reason": self._kill_switch_reason,
+        }
+
+    async def close_all_positions(self) -> list[ExecutionReport]:
+        """
+        Close all positions across all connected brokers.
+
+        Returns:
+            Aggregated list of ExecutionReports from all adapters
+        """
+        all_reports: list[ExecutionReport] = []
+
+        for name, adapter in [("mt5", self._mt5_adapter), ("alpaca", self._alpaca_adapter)]:
+            if adapter is None:
+                continue
+            try:
+                reports = await adapter.close_all_positions()
+                all_reports.extend(reports)
+                logger.info(
+                    "broker_router_close_all_from_adapter",
+                    adapter=name,
+                    count=len(reports),
+                )
+            except Exception as e:
+                logger.error(
+                    "broker_router_close_all_adapter_error",
+                    adapter=name,
+                    error=str(e),
+                )
+
+        logger.info(
+            "broker_router_close_all_positions_complete",
+            total_reports=len(all_reports),
+        )
+        return all_reports

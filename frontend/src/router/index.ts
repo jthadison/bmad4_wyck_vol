@@ -177,6 +177,16 @@ const routes: RouteRecordRaw[] = [
       ],
     },
   },
+  // Production Monitoring Dashboard (Story 23.13)
+  {
+    path: '/monitoring',
+    name: 'monitoring',
+    component: () => import('@/components/monitoring/MonitoringDashboard.vue'),
+    meta: {
+      title: 'Production Monitoring',
+      breadcrumb: [{ label: 'Monitoring' }],
+    },
+  },
   // Backtest Report Routes (Story 12.6D - Task 24)
   {
     path: '/backtest/results',

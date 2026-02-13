@@ -427,6 +427,103 @@ class AlpacaAdapter(TradingPlatformAdapter):
             )
             return reports
 
+    async def close_all_positions(self) -> list[ExecutionReport]:
+        """
+        Close all open positions on Alpaca.
+
+        Gets all open positions and submits market sell/buy-to-cover orders for each.
+
+        Returns:
+            List of ExecutionReports for each position closure attempt
+        """
+        await self._ensure_connected()
+
+        reports: list[ExecutionReport] = []
+
+        try:
+            response = await self._client.get("/v2/positions")  # type: ignore[union-attr]
+            response.raise_for_status()
+
+            positions_data = response.json()
+            if not positions_data:
+                logger.info("alpaca_close_all_no_positions")
+                return reports
+
+            for pos in positions_data:
+                symbol = pos.get("symbol", "")
+                qty = pos.get("qty", "0")
+                side = pos.get("side", "")
+
+                # Close by submitting opposite side market order
+                close_side = "sell" if side == "long" else "buy"
+
+                try:
+                    close_response = await self._client.post(  # type: ignore[union-attr]
+                        "/v2/orders",
+                        json={
+                            "symbol": symbol,
+                            "qty": str(abs(int(float(qty)))),
+                            "side": close_side,
+                            "type": "market",
+                            "time_in_force": "gtc",
+                        },
+                    )
+                    close_response.raise_for_status()
+
+                    data = close_response.json()
+                    report = self._parse_order_response(data, order_id=uuid4())
+                    reports.append(report)
+
+                    logger.info(
+                        "alpaca_kill_switch_position_closed",
+                        symbol=symbol,
+                        qty=qty,
+                        platform_order_id=data.get("id"),
+                    )
+                except httpx.HTTPStatusError as e:
+                    reports.append(
+                        ExecutionReport(
+                            order_id=uuid4(),
+                            platform_order_id="",
+                            platform="Alpaca",
+                            status=OrderStatus.REJECTED,
+                            filled_quantity=Decimal("0"),
+                            remaining_quantity=Decimal(str(abs(int(float(qty))))),
+                            error_message=f"Close failed: HTTP {e.response.status_code}: {e.response.text}",
+                        )
+                    )
+                    logger.error(
+                        "alpaca_kill_switch_close_failed",
+                        symbol=symbol,
+                        status_code=e.response.status_code,
+                    )
+                except Exception as e:
+                    reports.append(
+                        ExecutionReport(
+                            order_id=uuid4(),
+                            platform_order_id="",
+                            platform="Alpaca",
+                            status=OrderStatus.REJECTED,
+                            filled_quantity=Decimal("0"),
+                            remaining_quantity=Decimal(str(abs(int(float(qty))))),
+                            error_message=str(e),
+                        )
+                    )
+                    logger.error(
+                        "alpaca_kill_switch_close_error",
+                        symbol=symbol,
+                        error=str(e),
+                    )
+
+        except Exception as e:
+            logger.error("alpaca_close_all_positions_error", error=str(e))
+
+        logger.info(
+            "alpaca_close_all_positions_complete",
+            total=len(reports),
+        )
+        return reports
+
     async def cancel_order(self, order_id: str) -> ExecutionReport:
         """
         Cancel an open order on Alpaca.

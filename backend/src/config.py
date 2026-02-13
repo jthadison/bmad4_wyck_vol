@@ -297,6 +297,26 @@ class Settings(BaseSettings):
         description="Allowed CORS origins. Use ['*'] for development only.",
     )
 
+    # Daily P&L and Alerting Configuration (Story 23.13)
+    daily_pnl_limit_pct: float = Field(
+        default=-3.0,
+        description="Daily P&L loss threshold percentage to trigger kill switch (negative value)",
+    )
+    slack_webhook_url: str | None = Field(
+        default=None,
+        description="Slack incoming webhook URL for operational alerts (None to disable)",
+    )
+    alert_rate_limit_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=3600,
+        description="Cooldown between duplicate alerts per event type in seconds",
+    )
+    kill_switch_auto_trigger_enabled: bool = Field(
+        default=True,
+        description="Automatically trigger kill switch on daily P&L threshold breach",
+    )
+
     # Broker Router Configuration (Story 23.7)
     auto_execute_orders: bool = Field(
         default=False,
