@@ -42,13 +42,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import structlog
 
 from src.models.ohlcv import OHLCVBar
 from src.models.trading_range import TradingRange
 from src.pattern_engine.volume_analyzer import calculate_volume_ratio
+
+if TYPE_CHECKING:
+    from src.models.phase_classification import WyckoffPhase
 
 logger = structlog.get_logger(__name__)
 
@@ -127,6 +130,7 @@ class UTADDetector:
         trading_range: TradingRange,
         bars: list[OHLCVBar],
         ice_level: Decimal,
+        phase: Optional[WyckoffPhase] = None,
     ) -> Optional[UTAD]:
         """
         Detect UTAD pattern (distribution).
@@ -138,19 +142,22 @@ class UTADDetector:
             trading_range: Trading range to analyze
             bars: OHLCV bars to scan (minimum 20 bars for volume calculation)
             ice_level: Ice resistance level to check for penetration
+            phase: Current Wyckoff phase (should be Phase D for valid UTAD).
+                When None, phase validation is skipped for backward compatibility.
 
         Returns:
             UTAD instance if valid pattern detected, None otherwise
 
         Detection Steps:
-            1. Scan last 20 bars for penetration above Ice
-            2. Validate volume >1.5x average (high volume = distribution)
-            3. Confirm failure back below Ice within 1-5 bars
-            4. Count Preliminary Supply events 10-20 bars before UTAD
-            5. Calculate confidence score
+            1. Validate phase is D (if provided)
+            2. Scan last 20 bars for penetration above Ice
+            3. Validate volume >1.5x average (high volume = distribution)
+            4. Confirm failure back below Ice within 1-5 bars
+            5. Count Preliminary Supply events 10-20 bars before UTAD
+            6. Calculate confidence score
 
         Example:
-            >>> utad = detector.detect_utad(range, bars, Decimal("175.50"))
+            >>> utad = detector.detect_utad(range, bars, Decimal("175.50"), phase=WyckoffPhase.D)
             >>> if utad:
             ...     print(f"UTAD at ${utad.utad_high} ({utad.confidence}% confidence)")
         """
@@ -172,6 +179,24 @@ class UTADDetector:
                 logger.error("invalid_ice_level", ice_level=str(ice_level))
                 return None
 
+            # Phase validation (FR15): UTAD is only valid in Phase D
+            if phase is not None:
+                from src.models.phase_classification import WyckoffPhase as WP
+
+                if phase != WP.D:
+                    logger.warning(
+                        "utad_wrong_phase",
+                        phase=phase.value,
+                        required="D",
+                        message=f"UTAD rejected: Phase {phase.value} (requires Phase D)",
+                    )
+                    return None
+            else:
+                logger.info(
+                    "utad_phase_not_provided",
+                    message="Phase not provided - skipping phase validation for backward compatibility",
+                )
+
             # Scan last 20 bars for UTAD candidates
             for i in range(len(bars) - 20, len(bars)):
                 bar = bars[i]
@@ -188,7 +213,7 @@ class UTADDetector:
                     continue
 
                 # Calculate volume ratio
-                volume_ratio = calculate_volume_ratio(bars, i, window=20)
+                volume_ratio = calculate_volume_ratio(bars, i)
                 if volume_ratio is None:
                     continue
 
@@ -210,7 +235,7 @@ class UTADDetector:
                 ps_count = 0
                 if i >= 20:
                     for k in range(i - 20, i - 10):
-                        ps_volume_ratio = calculate_volume_ratio(bars, k, window=20)
+                        ps_volume_ratio = calculate_volume_ratio(bars, k)
                         if ps_volume_ratio and ps_volume_ratio >= 1.3:
                             ps_count += 1
 

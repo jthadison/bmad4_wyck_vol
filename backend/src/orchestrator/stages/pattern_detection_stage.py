@@ -419,7 +419,7 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                     ice_level = trading_range.ice_level
                     if ice_level is not None:
                         try:
-                            utad = utad_det.detect_utad(trading_range, bars, ice_level)
+                            utad = utad_det.detect_utad(trading_range, bars, ice_level, phase=phase)
                             if utad is not None:
                                 patterns.append(utad)
                         # Catch domain-level errors only; let programming errors

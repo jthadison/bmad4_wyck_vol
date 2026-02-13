@@ -363,7 +363,7 @@ def detect_sos_breakout(
             "symbol": bar.symbol,
             "bar_timestamp": bar.timestamp.isoformat(),
             "volume_ratio": float(volume_ratio),
-            "threshold": 2.0,  # SOS threshold
+            "threshold": 1.5,  # SOS threshold (FR12: >=1.5x)
             "result": "PASS",
         }
 
@@ -381,7 +381,7 @@ def detect_sos_breakout(
             message=(
                 f"Volume: {float(volume_ratio):.2f}x "
                 f"({calculation_method + ' ' + session_name if session_name else calculation_method}) "
-                f"(threshold: >=2.0x) ✅ [FR12]"
+                f"(threshold: >=1.5x) ✅ [FR12]"
             ),
         )
 
