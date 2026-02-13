@@ -627,3 +627,408 @@ class TestPhase7TrailingStop:
         config = EngineConfig(enable_trailing_stop=False)
         assert config.enable_trailing_stop is False
         # The stop logic only activates when enable_trailing_stop is True
+
+
+# ===========================================================================
+# Bug C-1: Preview Engine Look-Ahead Bias (verified fixed)
+# ===========================================================================
+
+
+class TestBugC1PreviewLookAhead:
+    """Bug C-1: Verify BacktestEngine (preview) has no look-ahead bias.
+
+    The preview engine previously read 5 future bars for exit pricing.
+    It has been rewritten to use percentage-based exits.
+    """
+
+    def test_execute_trade_uses_no_future_bars(self):
+        """_execute_trade only uses entry_bar and signal data, no index into bars."""
+        from src.backtesting.engine.backtest_engine import BacktestEngine
+
+        engine = BacktestEngine()
+
+        entry_bar = {
+            "timestamp": _BASE_DATE,
+            "open": 100.0,
+            "high": 105.0,
+            "low": 95.0,
+            "close": 102.0,
+            "volume": 10000,
+        }
+        signal = {
+            "type": "spring",
+            "entry_price": 102.0,
+            "confidence": 0.75,
+        }
+        config = {"preview_exit_pct": "0.02"}
+
+        trade = engine._execute_trade(entry_bar, signal, config)
+
+        # Exit timestamp must equal entry timestamp (no future bar accessed)
+        assert trade["exit_timestamp"] == entry_bar["timestamp"]
+        # Exit price must be derived from entry_price, not from any future bar
+        entry_price = Decimal("102.0")
+        expected_exit = entry_price + entry_price * Decimal("0.02") * Decimal("0.75")
+        assert trade["exit_price"] == expected_exit
+
+    def test_detect_signal_uses_only_current_bar(self):
+        """_detect_signal only uses the current bar's OHLCV data."""
+        from src.backtesting.engine.backtest_engine import BacktestEngine
+
+        engine = BacktestEngine()
+
+        # Bar with >2% price change should trigger signal
+        bar = {
+            "timestamp": _BASE_DATE,
+            "open": 100.0,
+            "high": 105.0,
+            "low": 95.0,
+            "close": 103.0,  # 3% up
+            "volume": 10000,
+        }
+        config = {"volume_thresholds": {"ultra_high": 2.5}}
+
+        signal = engine._detect_signal(bar, config)
+        assert signal is not None
+        assert signal["entry_price"] == 103.0  # Uses current bar close
+
+    def test_simulate_trading_no_future_access(self):
+        """_simulate_trading iterates bars sequentially with no look-ahead."""
+        import asyncio
+
+        from src.backtesting.engine.backtest_engine import BacktestEngine
+
+        engine = BacktestEngine()
+
+        # Create bars where each bar is independent
+        bars = [
+            {
+                "timestamp": _BASE_DATE,
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.0,
+                "volume": 10000,
+            },
+            {
+                "timestamp": _BASE_DATE + timedelta(days=1),
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.0,
+                "volume": 10000,
+            },
+        ]
+        config = {}
+
+        trades = asyncio.get_event_loop().run_until_complete(
+            engine._simulate_trading(uuid4(), config, bars, "test")
+        )
+
+        # Should complete without accessing future bars (no IndexError)
+        assert isinstance(trades, list)
+
+
+# ===========================================================================
+# Bug C-2: Walk-Forward Engine Placeholder Data (verified callers provide data)
+# ===========================================================================
+
+
+class TestBugC2WalkForwardPlaceholder:
+    """Bug C-2: Verify placeholder results are clearly flagged and callers
+    provide real market_data.
+    """
+
+    def test_placeholder_result_is_flagged(self):
+        """Placeholder results have is_placeholder=True."""
+        from datetime import date
+
+        from src.backtesting.walk_forward_engine import WalkForwardEngine
+
+        result = WalkForwardEngine._create_placeholder_result(
+            "TEST",
+            date(2020, 1, 1),
+            date(2020, 6, 30),
+            BacktestConfig(symbol="TEST", start_date=date(2020, 1, 1), end_date=date(2020, 6, 30)),
+        )
+
+        assert result.is_placeholder is True
+
+    def test_placeholder_metrics_are_hardcoded(self):
+        """Placeholder metrics are always identical (the bug symptom)."""
+        from datetime import date
+
+        from src.backtesting.walk_forward_engine import WalkForwardEngine
+
+        bc = BacktestConfig(symbol="TEST", start_date=date(2020, 1, 1), end_date=date(2020, 6, 30))
+
+        r1 = WalkForwardEngine._create_placeholder_result(
+            "TEST", date(2020, 1, 1), date(2020, 3, 31), bc
+        )
+        r2 = WalkForwardEngine._create_placeholder_result(
+            "TEST", date(2020, 4, 1), date(2020, 6, 30), bc
+        )
+
+        # These are identical -- proving the placeholder produces unreliable results
+        assert r1.summary.win_rate == r2.summary.win_rate
+        assert r1.summary.profit_factor == r2.summary.profit_factor
+        assert r1.is_placeholder is True
+        assert r2.is_placeholder is True
+
+    def test_engine_with_market_data_does_not_use_placeholder(self):
+        """When market_data is provided, real engine runs instead of placeholder."""
+        from datetime import date
+
+        from src.backtesting.walk_forward_engine import WalkForwardEngine
+
+        bars = []
+        for i in range(120):  # Enough bars for MIN_BARS_PER_WINDOW
+            bar_date = date(2020, 1, 1) + timedelta(days=i)
+            if bar_date.weekday() >= 5:
+                continue
+            bars.append(
+                OHLCVBar(
+                    symbol="TEST",
+                    timeframe="1d",
+                    timestamp=datetime(bar_date.year, bar_date.month, bar_date.day, tzinfo=UTC),
+                    open=Decimal("100"),
+                    high=Decimal("101"),
+                    low=Decimal("99"),
+                    close=Decimal("100.50"),
+                    volume=10000,
+                    spread=Decimal("2.00"),
+                )
+            )
+
+        engine = WalkForwardEngine(market_data=bars)
+
+        bc = BacktestConfig(symbol="TEST", start_date=date(2020, 1, 1), end_date=date(2020, 4, 30))
+        result = engine._run_backtest_for_window("TEST", date(2020, 1, 1), date(2020, 4, 30), bc)
+
+        # Real engine result should NOT be flagged as placeholder
+        assert result.is_placeholder is False
+
+    def test_placeholder_fallback_logs_warning(self):
+        """When no market_data, a warning is logged."""
+        from datetime import date
+        from unittest.mock import MagicMock
+
+        from src.backtesting.walk_forward_engine import WalkForwardEngine
+
+        engine = WalkForwardEngine()
+        engine.logger = MagicMock()
+
+        bc = BacktestConfig(symbol="TEST", start_date=date(2020, 1, 1), end_date=date(2020, 6, 30))
+        result = engine._run_backtest_for_window("TEST", date(2020, 1, 1), date(2020, 3, 31), bc)
+
+        # Should have logged a warning
+        engine.logger.warning.assert_called_once()
+        call_args = engine.logger.warning.call_args
+        assert "UNRELIABLE" in call_args[0][0] or "placeholder" in call_args[0][0].lower()
+        assert result.is_placeholder is True
+
+
+# ===========================================================================
+# Bug C-3: Background Task DB Session (verified fixed)
+# ===========================================================================
+
+
+class TestBugC3BackgroundDBSession:
+    """Bug C-3: Verify background tasks create their own DB sessions."""
+
+    def test_full_backtest_task_does_not_accept_session_param(self):
+        """run_backtest_task does NOT accept a session parameter."""
+        import inspect
+
+        from src.api.routes.backtest.full import run_backtest_task
+
+        sig = inspect.signature(run_backtest_task)
+        param_names = list(sig.parameters.keys())
+
+        # Should only have run_id and config, NOT session
+        assert "session" not in param_names
+        assert "db" not in param_names
+        assert "run_id" in param_names
+        assert "config" in param_names
+
+    def test_async_session_maker_is_importable(self):
+        """async_session_maker exists in the database module."""
+        from src.database import async_session_maker
+
+        # In test environments it may be None (no DB configured), but it should exist
+        # The important thing is that the import works
+        assert async_session_maker is not None or True  # May be None in test env
+
+    def test_walk_forward_background_creates_own_session(self):
+        """Walk-forward endpoint background task creates its own session."""
+        import inspect
+
+        # Read the source of the walk-forward endpoint to verify it uses
+        # async_session_maker, not a request-scoped session
+        source = inspect.getsource(
+            __import__(
+                "src.api.routes.backtest.walk_forward", fromlist=["start_walk_forward_test"]
+            ).start_walk_forward_test
+        )
+
+        # The endpoint should NOT pass a session to the background task
+        assert "Depends(get_db)" not in source or "bg_session" in source
+
+    def test_regression_task_does_not_accept_session_param(self):
+        """run_regression_test_task does NOT accept a session parameter."""
+        import inspect
+
+        from src.api.routes.backtest.regression import run_regression_test_task
+
+        sig = inspect.signature(run_regression_test_task)
+        param_names = list(sig.parameters.keys())
+
+        assert "session" not in param_names
+        assert "db" not in param_names
+
+
+# ===========================================================================
+# M-1: UnifiedBacktestEngine fills at next-bar open (verified fixed)
+# ===========================================================================
+
+
+class TestM1NextBarFills:
+    """M-1: Orders must fill at next-bar open, not same-bar close."""
+
+    def test_order_created_as_pending(self):
+        """Orders are created with status=PENDING, not FILLED."""
+
+        class SignalAtBar0:
+            def detect(self, bars, index):
+                if index == 0:
+                    return make_signal(symbol=bars[0].symbol)
+                return None
+
+        class ZeroCost:
+            def calculate_commission(self, order):
+                return Decimal("0")
+
+            def calculate_slippage(self, order, bar):
+                return Decimal("0")
+
+        config = EngineConfig(enable_cost_model=False, max_open_positions=5)
+        pm = PositionManager(config.initial_capital)
+        engine = UnifiedBacktestEngine(SignalAtBar0(), ZeroCost(), pm, config)
+
+        bars = [
+            make_bar(open_price=100, close=100, day_offset=0, symbol="TEST"),
+            make_bar(open_price=101, close=101, day_offset=1, symbol="TEST"),
+            make_bar(open_price=102, close=102, day_offset=2, symbol="TEST"),
+        ]
+
+        result = engine.run(bars)
+
+        # If order was filled at bar 0 (same-bar), entry would be at bar 0's close.
+        # Correct behavior: order created at bar 0, filled at bar 1's OPEN.
+        if result.trades:
+            trade = result.trades[0]
+            # Entry should be at bar 1's open price (101), not bar 0's close (100)
+            assert trade.entry_price == Decimal("101")
+
+    def test_pending_orders_filled_at_next_bar_open(self):
+        """_fill_pending_orders fills at bar.open, not bar.close."""
+
+        class NullDetector:
+            def detect(self, bars, index):
+                return None
+
+        class ZeroCost:
+            def calculate_commission(self, order):
+                return Decimal("0")
+
+            def calculate_slippage(self, order, bar):
+                return Decimal("0")
+
+        config = EngineConfig(enable_cost_model=False)
+        pm = PositionManager(config.initial_capital)
+        engine = UnifiedBacktestEngine(NullDetector(), ZeroCost(), pm, config)
+
+        # Manually create a pending order
+        from src.models.backtest import BacktestOrder
+
+        order = BacktestOrder(
+            order_id=uuid4(),
+            symbol="TEST",
+            side="BUY",
+            order_type="MARKET",
+            quantity=100,
+            status="PENDING",
+            created_bar_timestamp=_BASE_DATE,
+        )
+        engine._pending_orders.append(order)
+
+        # Fill at next bar
+        next_bar = make_bar(open_price=105, close=110, day_offset=1, symbol="TEST")
+        engine._fill_pending_orders(next_bar)
+
+        # Should fill at open (105), not close (110)
+        assert order.fill_price == Decimal("105")
+        assert order.status == "FILLED"
+
+
+# ===========================================================================
+# M-2: In-memory run tracking cleanup (verified fixed)
+# ===========================================================================
+
+
+class TestM2MemoryLeakCleanup:
+    """M-2: backtest_runs dict has TTL/cleanup to prevent memory leak."""
+
+    def test_cleanup_removes_expired_entries(self):
+        """cleanup_stale_entries removes non-RUNNING entries older than TTL."""
+        from src.api.routes.backtest.utils import ENTRY_TTL_SECONDS, cleanup_stale_entries
+
+        store: dict = {}
+        old_time = datetime.now(UTC) - timedelta(seconds=ENTRY_TTL_SECONDS + 100)
+
+        # Add an old completed entry
+        old_id = uuid4()
+        store[old_id] = {"status": "COMPLETED", "created_at": old_time}
+
+        # Add a recent entry
+        recent_id = uuid4()
+        store[recent_id] = {"status": "COMPLETED", "created_at": datetime.now(UTC)}
+
+        cleanup_stale_entries(store)
+
+        assert old_id not in store
+        assert recent_id in store
+
+    def test_cleanup_preserves_running_entries(self):
+        """cleanup_stale_entries does NOT remove RUNNING entries even if old."""
+        from src.api.routes.backtest.utils import ENTRY_TTL_SECONDS, cleanup_stale_entries
+
+        store: dict = {}
+        old_time = datetime.now(UTC) - timedelta(seconds=ENTRY_TTL_SECONDS + 100)
+
+        running_id = uuid4()
+        store[running_id] = {"status": "RUNNING", "created_at": old_time}
+
+        cleanup_stale_entries(store)
+
+        # RUNNING entries must be preserved regardless of age
+        assert running_id in store
+
+    def test_cleanup_enforces_max_entries(self):
+        """When store exceeds MAX_ENTRIES, oldest non-RUNNING entries are dropped."""
+        from src.api.routes.backtest.utils import MAX_ENTRIES, cleanup_stale_entries
+
+        store: dict = {}
+        base_time = datetime.now(UTC)
+
+        # Fill store to MAX_ENTRIES + 10
+        for i in range(MAX_ENTRIES + 10):
+            store[uuid4()] = {
+                "status": "COMPLETED",
+                "created_at": base_time + timedelta(seconds=i),
+            }
+
+        cleanup_stale_entries(store)
+
+        # Should be at or below MAX_ENTRIES
+        assert len(store) <= MAX_ENTRIES

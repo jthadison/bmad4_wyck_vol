@@ -244,6 +244,11 @@ class BacktestEngine:
         This is a simplified placeholder for MVP. In production, this would
         integrate with the actual Wyckoff pattern detection engine.
 
+        LOOK-AHEAD BIAS CHECK (Bug C-1, verified 2026-02):
+        This method only accesses the current bar's OHLCV data. No future bars
+        are accessed. The companion _execute_trade method uses percentage-based
+        exits derived solely from entry_price and config, NOT from future bars.
+
         Args:
             bar: OHLCV bar data
             config: Configuration for signal detection
@@ -279,6 +284,13 @@ class BacktestEngine:
         Uses a fixed percentage-based exit to avoid look-ahead bias.
         No future bars are accessed -- exit price is estimated from the entry
         price using a configurable take-profit/stop-loss percentage.
+
+        LOOK-AHEAD BIAS CHECK (Bug C-1, verified 2026-02):
+        Previously this method read 5 future bars for exit pricing. It has been
+        rewritten to use percentage-based exits derived solely from entry_price,
+        exit_pct config, and signal confidence. No index into historical_bars
+        is used. The exit_timestamp is set to entry_bar's timestamp (same bar)
+        because no future bar is accessed.
 
         Args:
             entry_bar: Bar where trade was entered
@@ -769,6 +781,12 @@ class UnifiedBacktestEngine:
         This ensures orders from the previous bar are filled at the next bar's
         open price, preventing same-bar fill bias.
 
+        M-1 verification (2026-02): Orders are created with status=PENDING in
+        _create_order, queued in _execute_order, and only filled HERE at the
+        NEXT bar's open. No same-bar fills occur. The processing order in
+        _process_bar is: (1) fill pending, (2) check exits, (3) detect signal,
+        (4) create new pending orders.
+
         Args:
             bar: Current bar whose open price is used for fills
         """
@@ -831,7 +849,10 @@ class UnifiedBacktestEngine:
                         order.quantity = safe_quantity
 
             # Also validate risk for ADD orders (same-direction with existing position)
-            elif self._positions.has_position(order.symbol) and order.order_id in self._pending_order_stops:
+            elif (
+                self._positions.has_position(order.symbol)
+                and order.order_id in self._pending_order_stops
+            ):
                 position = self._positions.get_position(order.symbol)
                 if position is not None:
                     is_add = (order.side == "BUY" and position.side == "LONG") or (

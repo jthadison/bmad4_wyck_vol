@@ -148,9 +148,17 @@ class WalkForwardSuite:
 
         try:
             # Get market data for this symbol if available
+            # Bug C-2: Without market_data the engine falls back to placeholder
+            # results, which are fabricated and unreliable.
             market_data = None
             if market_data_by_symbol and symbol in market_data_by_symbol:
                 market_data = market_data_by_symbol[symbol]
+            else:
+                self.logger.warning(
+                    "no_market_data_for_symbol",
+                    symbol=symbol,
+                    reason="walk-forward results will use PLACEHOLDER metrics (unreliable)",
+                )
 
             # Build WalkForwardConfig for the existing engine
             backtest_config = self.config.to_backtest_config(symbol_config)
