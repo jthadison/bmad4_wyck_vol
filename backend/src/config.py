@@ -323,6 +323,47 @@ class Settings(BaseSettings):
         description="Automatically execute orders via broker after webhook receipt (default: off)",
     )
 
+    # MetaTrader 5 Broker Credentials (Story 23.4)
+    mt5_account: int | None = Field(
+        default=None,
+        description="MetaTrader 5 account number (None to disable MT5 adapter)",
+    )
+    mt5_password: str = Field(
+        default="",
+        description="MetaTrader 5 account password",
+    )
+    mt5_server: str = Field(
+        default="",
+        description="MetaTrader 5 server name (e.g., 'MetaQuotes-Demo')",
+    )
+
+    # Alpaca Trading Broker Credentials (Story 23.5)
+    # Separate from market data keys - these are for order execution
+    alpaca_trading_api_key: str = Field(
+        default="",
+        description="Alpaca API key for order execution (separate from market data key)",
+    )
+    alpaca_trading_secret_key: str = Field(
+        default="",
+        description="Alpaca secret key for order execution",
+    )
+    alpaca_trading_paper: bool = Field(
+        default=True,
+        description="Use Alpaca paper trading URL (True) or live URL (False)",
+    )
+
+    # TradingView Webhook Configuration
+    tradingview_webhook_secret: str = Field(
+        default="",
+        description="HMAC-SHA256 secret for TradingView webhook signature verification",
+    )
+
+    # Account Configuration for Risk Calculations
+    account_equity: Decimal = Field(
+        default=Decimal("100000"),
+        description="Account equity for risk calculations (used by risk gate)",
+    )
+
     # Email Notification Configuration (Story 19.25)
     email_provider: Literal["smtp", "sendgrid", "ses"] = Field(
         default="smtp",
@@ -393,6 +434,17 @@ class Settings(BaseSettings):
                     "Use a strong, unique password in production.",
                     stacklevel=2,
                 )
+            if self.auto_execute_orders:
+                has_mt5 = self.mt5_account and self.mt5_password and self.mt5_server
+                has_alpaca = self.alpaca_trading_api_key and self.alpaca_trading_secret_key
+                if not has_mt5 and not has_alpaca:
+                    import warnings
+
+                    warnings.warn(
+                        "AUTO_EXECUTE_ORDERS is True but no broker credentials are configured. "
+                        "Set MT5 or Alpaca trading credentials to enable order execution.",
+                        stacklevel=2,
+                    )
         return self
 
 
