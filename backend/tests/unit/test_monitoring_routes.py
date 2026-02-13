@@ -9,6 +9,8 @@ Tests:
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -17,6 +19,8 @@ from src.monitoring.audit_logger import AuditEventType, get_audit_logger
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+_FAKE_USER_ID = uuid4()
 
 
 @pytest.fixture
@@ -29,10 +33,15 @@ def app():
     """Create a minimal FastAPI app with only the monitoring router."""
     from fastapi import FastAPI
 
+    from src.api.dependencies import get_current_user_id
     from src.api.routes.monitoring import router
 
     test_app = FastAPI()
     test_app.include_router(router)
+
+    # Override auth so tests don't need real JWT tokens
+    test_app.dependency_overrides[get_current_user_id] = lambda: _FAKE_USER_ID
+
     return test_app
 
 

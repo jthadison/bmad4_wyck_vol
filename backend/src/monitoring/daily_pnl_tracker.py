@@ -126,31 +126,38 @@ class DailyPnLTracker:
         """
         Check threshold and fire callback if breached (once per day).
 
+        Uses the lock to prevent concurrent callers from both passing
+        the breach guard and firing the callback twice.
+
         Args:
             account_equity: Total account equity.
 
         Returns:
             True if threshold was breached.
         """
-        if self._breach_fired:
-            return True
+        async with self._lock:
+            if self._breach_fired:
+                return True
 
-        breached = self.check_threshold(account_equity)
-        if not breached:
-            return False
+            breached = self.check_threshold(account_equity)
+            if not breached:
+                return False
 
-        self._breach_fired = True
-        pnl_pct = self.get_pnl_percentage(account_equity)
+            self._breach_fired = True
+            pnl_pct = self.get_pnl_percentage(account_equity)
+            cumulative = self._cumulative_pnl
+
+        # Logging and callback outside lock to avoid holding it during I/O
         self._logger.warning(
             "daily_pnl_threshold_breached",
             pnl_pct=str(pnl_pct),
             threshold_pct=str(self._threshold_pct),
-            cumulative_pnl=str(self._cumulative_pnl),
+            cumulative_pnl=str(cumulative),
         )
 
         if self._on_threshold_breach:
             try:
-                await self._on_threshold_breach(pnl_pct, self._cumulative_pnl)
+                await self._on_threshold_breach(pnl_pct, cumulative)
             except Exception:
                 self._logger.exception("threshold_breach_callback_error")
 

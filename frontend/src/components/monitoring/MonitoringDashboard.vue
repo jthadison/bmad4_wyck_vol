@@ -18,15 +18,15 @@
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       <!-- Portfolio Heat Gauge -->
       <PortfolioHeatGauge
-        :heat-percent="dashboardData?.portfolio_heat_percent ?? 0"
-        :heat-limit="dashboardData?.portfolio_heat_limit ?? 10"
+        :heat-percent="dashboardData?.portfolio_heat_pct ?? 0"
+        :heat-limit="10"
       />
 
       <!-- P&L Metrics -->
       <PnLMetricsComponent :metrics="pnlMetrics" />
 
       <!-- Active Signals -->
-      <ActiveSignals :signals="dashboardData?.active_signals ?? []" />
+      <ActiveSignals :signals="[]" />
 
       <!-- Positions by Broker (spans full width on larger screens) -->
       <div class="md:col-span-2 xl:col-span-3">
@@ -73,14 +73,15 @@ const defaultPnlMetrics: PnLMetrics = {
   losing_trades_today: 0,
 }
 
-const pnlMetrics = computed<PnLMetrics>(
-  () => dashboardData.value?.pnl_metrics ?? defaultPnlMetrics
-)
+const pnlMetrics = computed<PnLMetrics>(() => ({
+  ...defaultPnlMetrics,
+  daily_pnl: dashboardData.value?.daily_pnl ?? 0,
+  total_pnl: dashboardData.value?.total_pnl ?? 0,
+}))
 
 const lastUpdated = computed(() => {
-  if (!dashboardData.value?.last_updated) return null
-  const date = new Date(dashboardData.value.last_updated)
-  return date.toLocaleTimeString()
+  if (!dashboardData.value) return null
+  return new Date().toLocaleTimeString()
 })
 
 async function fetchData(): Promise<void> {

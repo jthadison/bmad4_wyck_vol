@@ -371,6 +371,7 @@ export type {
   SystemHealth,
   AuditEvent,
   KillSwitchStatus,
-  KillSwitchResult,
+  KillSwitchActivateResult,
+  KillSwitchDeactivateResult,
   DashboardData,
 } from './monitoring'

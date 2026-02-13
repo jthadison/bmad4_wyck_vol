@@ -19,9 +19,11 @@ import time
 from typing import Any, Optional
 
 import structlog
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from src.api.dependencies import get_current_user_id
+from src.api.routes.kill_switch import _get_service as get_kill_switch_service
 from src.monitoring.audit_logger import AuditEventType, get_audit_logger
 
 logger = structlog.get_logger(__name__)
@@ -86,7 +88,9 @@ class DashboardResponse(BaseModel):
     response_model=SystemHealthResponse,
     summary="System health overview",
 )
-async def get_system_health() -> SystemHealthResponse:
+async def get_system_health(
+    _user_id: str = Depends(get_current_user_id),
+) -> SystemHealthResponse:
     """
     Return current system health including broker connections,
     kill switch status, daily P&L, and portfolio heat.
@@ -96,11 +100,9 @@ async def get_system_health() -> SystemHealthResponse:
     # Check broker connections via kill switch service
     kill_switch_active = False
     try:
-        from src.api.routes.kill_switch import _emergency_exit_service
-
-        if _emergency_exit_service is not None:
-            ks_status = _emergency_exit_service.get_kill_switch_status()
-            kill_switch_active = ks_status.get("active", False)
+        service = get_kill_switch_service()
+        ks_status = service.get_kill_switch_status()
+        kill_switch_active = ks_status.get("active", False)
     except Exception:
         pass
 
@@ -135,6 +137,7 @@ async def get_audit_trail(
     ),
     symbol: Optional[str] = Query(None, description="Filter by trading symbol"),
     limit: int = Query(100, ge=1, le=1000, description="Max events to return"),
+    _user_id: str = Depends(get_current_user_id),
 ) -> list[AuditEventResponse]:
     """
     Query recent audit trail events with optional filters.
@@ -176,7 +179,9 @@ async def get_audit_trail(
     response_model=DashboardResponse,
     summary="Trading dashboard summary",
 )
-async def get_dashboard() -> DashboardResponse:
+async def get_dashboard(
+    _user_id: str = Depends(get_current_user_id),
+) -> DashboardResponse:
     """
     Return a high-level trading dashboard including positions grouped
     by broker, P&L totals, and portfolio heat.

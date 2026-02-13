@@ -13,6 +13,7 @@ Author: Story 23.13 Implementation
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -85,7 +86,7 @@ class AuditLogger:
 
     def __init__(self, max_size: int = MAX_BUFFER_SIZE) -> None:
         self._max_size = max_size
-        self._buffer: list[AuditEvent] = []
+        self._buffer: deque[AuditEvent] = deque(maxlen=max_size)
         self._lock = asyncio.Lock()
         self._logger: BoundLogger = logger.bind(component="audit_logger")
 
@@ -128,11 +129,9 @@ class AuditLogger:
             **details,
         )
 
-        # Append to ring buffer
+        # Append to ring buffer (deque handles eviction automatically)
         async with self._lock:
             self._buffer.append(event)
-            if len(self._buffer) > self._max_size:
-                self._buffer = self._buffer[-self._max_size :]
 
         return event
 

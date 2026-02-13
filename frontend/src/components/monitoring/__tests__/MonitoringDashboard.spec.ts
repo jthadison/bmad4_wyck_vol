@@ -18,14 +18,12 @@ vi.mock('@/services/monitoringApi', () => ({
 import { getDashboardData } from '@/services/monitoringApi'
 
 const mockDashboardData: DashboardData = {
-  portfolio_heat_percent: 5.5,
-  portfolio_heat_limit: 10.0,
   positions_by_broker: {
     Alpaca: [
       {
         broker: 'Alpaca',
         symbol: 'AAPL',
-        side: 'LONG' as const,
+        side: 'LONG',
         size: 100,
         entry_price: 150.0,
         current_price: 155.0,
@@ -34,27 +32,10 @@ const mockDashboardData: DashboardData = {
       },
     ],
   },
-  pnl_metrics: {
-    daily_pnl: 250.0,
-    daily_pnl_percent: 0.5,
-    total_pnl: 1200.0,
-    total_pnl_percent: 2.4,
-    daily_loss_limit_percent: 3.0,
-    winning_trades_today: 2,
-    losing_trades_today: 1,
-  },
-  active_signals: [
-    {
-      signal_id: 'sig-001',
-      symbol: 'AAPL',
-      pattern_type: 'SPRING',
-      confidence: 85,
-      timestamp: '2026-02-10T14:30:00Z',
-      status: 'PENDING',
-    },
-  ],
-  kill_switch_active: false,
-  last_updated: '2026-02-10T14:30:00Z',
+  daily_pnl: 250.0,
+  total_pnl: 1200.0,
+  portfolio_heat_pct: 5.5,
+  active_signals_count: 1,
 }
 
 const MessageStub = defineComponent({

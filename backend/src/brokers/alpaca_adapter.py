@@ -440,6 +440,13 @@ class AlpacaAdapter(TradingPlatformAdapter):
 
         reports: list[ExecutionReport] = []
 
+        # Cancel all pending orders first to prevent fills during liquidation
+        try:
+            await self._client.delete("/v2/orders")  # type: ignore[union-attr]
+            logger.info("alpaca_kill_switch_pending_orders_cancelled")
+        except Exception as e:
+            logger.error("alpaca_cancel_all_orders_failed", error=str(e))
+
         try:
             response = await self._client.get("/v2/positions")  # type: ignore[union-attr]
             response.raise_for_status()
@@ -462,7 +469,7 @@ class AlpacaAdapter(TradingPlatformAdapter):
                         "/v2/orders",
                         json={
                             "symbol": symbol,
-                            "qty": str(abs(int(float(qty)))),
+                            "qty": str(abs(Decimal(qty))),
                             "side": close_side,
                             "type": "market",
                             "time_in_force": "gtc",
@@ -488,7 +495,7 @@ class AlpacaAdapter(TradingPlatformAdapter):
                             platform="Alpaca",
                             status=OrderStatus.REJECTED,
                             filled_quantity=Decimal("0"),
-                            remaining_quantity=Decimal(str(abs(int(float(qty))))),
+                            remaining_quantity=Decimal(str(abs(Decimal(qty)))),
                             error_message=f"Close failed: HTTP {e.response.status_code}: {e.response.text}",
                         )
                     )
@@ -505,7 +512,7 @@ class AlpacaAdapter(TradingPlatformAdapter):
                             platform="Alpaca",
                             status=OrderStatus.REJECTED,
                             filled_quantity=Decimal("0"),
-                            remaining_quantity=Decimal(str(abs(int(float(qty))))),
+                            remaining_quantity=Decimal(str(abs(Decimal(qty)))),
                             error_message=str(e),
                         )
                     )

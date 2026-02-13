@@ -46,59 +46,68 @@ export interface ActiveSignalSummary {
 
 /**
  * System health status from the monitoring endpoint.
+ * Matches backend SystemHealthResponse model.
  */
 export interface SystemHealth {
-  status: 'healthy' | 'degraded' | 'unhealthy'
+  broker_connections: Record<string, boolean>
+  kill_switch_active: boolean
+  daily_pnl_pct: number
+  portfolio_heat_pct: number
+  active_signals_count: number
   uptime_seconds: number
-  database_connected: boolean
-  redis_connected: boolean
-  brokers_connected: string[]
-  last_heartbeat: string
 }
 
 /**
  * Audit trail event from the monitoring endpoint.
+ * Matches backend AuditEventResponse model.
  */
 export interface AuditEvent {
-  id: string
   timestamp: string
   event_type: string
-  source: string
-  details: string
-  severity: 'info' | 'warning' | 'error' | 'critical'
+  symbol: string | null
+  campaign_id: string | null
+  details: Record<string, unknown>
 }
 
 /**
  * Kill switch status response.
+ * Matches backend KillSwitchStatusResponse model.
  */
 export interface KillSwitchStatus {
   active: boolean
   activated_at: string | null
-  activated_by: string | null
   reason: string | null
-  positions_closed: number
 }
 
 /**
- * Kill switch activation/deactivation result.
+ * Kill switch activation result.
+ * Matches backend ActivateResponse model.
  */
-export interface KillSwitchResult {
-  success: boolean
-  active: boolean
-  message: string
+export interface KillSwitchActivateResult {
+  activated: boolean
+  reason: string
   positions_closed: number
+  positions_failed: number
   timestamp: string
 }
 
 /**
- * Complete dashboard data aggregation from a single endpoint.
+ * Kill switch deactivation result.
+ * Matches backend DeactivateResponse model.
+ */
+export interface KillSwitchDeactivateResult {
+  activated: boolean
+  timestamp: string
+}
+
+/**
+ * Complete dashboard data from the /dashboard endpoint.
+ * Matches backend DashboardResponse model.
  */
 export interface DashboardData {
-  portfolio_heat_percent: number
-  portfolio_heat_limit: number
   positions_by_broker: Record<string, PositionByBroker[]>
-  pnl_metrics: PnLMetrics
-  active_signals: ActiveSignalSummary[]
-  kill_switch_active: boolean
-  last_updated: string
+  daily_pnl: number
+  total_pnl: number
+  portfolio_heat_pct: number
+  active_signals_count: number
 }

@@ -8,6 +8,7 @@ Author: Story 23.13
 """
 
 from typing import Optional
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -89,7 +90,7 @@ class DeactivateResponse(BaseModel):
 )
 async def activate_kill_switch(
     request: ActivateRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """
     Activate the kill switch: close all positions and block new orders.
@@ -116,16 +117,16 @@ async def activate_kill_switch(
     status_code=status.HTTP_200_OK,
 )
 async def deactivate_kill_switch(
-    user_id: str = Depends(get_current_user_id),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """
     Deactivate the kill switch, allowing new orders to be submitted.
     """
     service = _get_service()
 
-    logger.info(
+    logger.warning(
         "kill_switch_deactivate_endpoint_called",
-        user_id=user_id,
+        user_id=str(user_id),
     )
 
     result = service.deactivate_kill_switch()
@@ -138,7 +139,7 @@ async def deactivate_kill_switch(
     status_code=status.HTTP_200_OK,
 )
 async def get_kill_switch_status(
-    user_id: str = Depends(get_current_user_id),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """
     Get current kill switch status.

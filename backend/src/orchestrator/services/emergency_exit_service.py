@@ -189,6 +189,13 @@ class EmergencyExitService:
 
             closed_count = sum(1 for r in reports if r.status == OrderStatus.FILLED)
             failed_count = sum(1 for r in reports if r.status == OrderStatus.REJECTED)
+
+            if not reports:
+                logger.critical(
+                    "kill_switch_no_positions_closed",
+                    message="Kill switch activated but no positions were closed. "
+                    "Verify broker adapters are configured and connected.",
+                )
         else:
             logger.warning("kill_switch_no_broker_router_configured")
 
