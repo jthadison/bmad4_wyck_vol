@@ -41,6 +41,8 @@ from src.api.routes import (
     config,
     feedback,
     help,
+    kill_switch,
+    monitoring,
     notifications,
     orchestrator,
     paper_trading,
@@ -129,6 +131,8 @@ app.include_router(scanner.router)  # Multi-symbol scanner routes (Story 19.4)
 app.include_router(signal_approval.router)  # Signal approval queue routes (Story 19.9)
 app.include_router(settings_routes.router)  # Settings routes (Story 19.14)
 app.include_router(watchlist.router)  # Watchlist management routes (Story 19.12)
+app.include_router(monitoring.router)  # Monitoring & audit routes (Story 23.13)
+app.include_router(kill_switch.router)  # Kill switch routes (Story 23.13)
 
 
 # WebSocket endpoint for real-time updates
@@ -352,6 +356,9 @@ async def startup_event() -> None:
     # Initialize symbol search service (Story 21.4)
     await _initialize_search_service()
 
+    # Initialize kill switch service (Story 23.13)
+    _initialize_kill_switch_service()
+
 
 async def _initialize_signal_scanner_service() -> None:
     """
@@ -447,6 +454,27 @@ async def _initialize_search_service() -> None:
     except Exception as e:
         logger.error("symbol_search_service_initialization_failed", error=str(e))
         # Don't crash the app - search endpoint will return 503
+
+
+def _initialize_kill_switch_service() -> None:
+    """
+    Initialize the kill switch service (Story 23.13).
+
+    Creates a BrokerRouter (no adapters connected at init) and wires
+    it into the EmergencyExitService, then registers with the kill switch routes.
+    """
+    try:
+        from src.api.routes.kill_switch import set_emergency_exit_service
+        from src.brokers.broker_router import BrokerRouter
+        from src.orchestrator.services.emergency_exit_service import EmergencyExitService
+
+        broker_router = BrokerRouter()
+        exit_service = EmergencyExitService(broker_router=broker_router)
+        set_emergency_exit_service(exit_service)
+
+        logger.info("kill_switch_service_initialized")
+    except Exception as e:
+        logger.error("kill_switch_service_initialization_failed", error=str(e))
 
 
 async def shutdown_event() -> None:

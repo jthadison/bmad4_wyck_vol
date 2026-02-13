@@ -359,3 +359,19 @@ export {
   ASSET_CLASS_OPTIONS,
   MAX_WATCHLIST_SIZE,
 } from './scanner'
+
+// ============================================================================
+// Monitoring Dashboard Types (Story 23.13)
+// ============================================================================
+
+export type {
+  PositionByBroker,
+  PnLMetrics,
+  ActiveSignalSummary,
+  SystemHealth,
+  AuditEvent,
+  KillSwitchStatus,
+  KillSwitchActivateResult,
+  KillSwitchDeactivateResult,
+  DashboardData,
+} from './monitoring'

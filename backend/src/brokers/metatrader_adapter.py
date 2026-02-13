@@ -645,6 +645,140 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             )
             return False
 
+    async def close_all_positions(self) -> list[ExecutionReport]:
+        """
+        Close all open positions on MetaTrader.
+
+        Iterates all open positions and submits closing orders for each.
+
+        Returns:
+            List of ExecutionReports for each position closure attempt
+        """
+        await self._ensure_connected()
+
+        reports: list[ExecutionReport] = []
+
+        # Cancel all pending orders first to prevent fills during liquidation
+        try:
+            pending_orders = await asyncio.to_thread(self._mt5.orders_get)
+            if pending_orders:
+                for order in pending_orders:
+                    try:
+                        cancel_request = {
+                            "action": self._mt5.TRADE_ACTION_REMOVE,
+                            "order": order.ticket,
+                        }
+                        await asyncio.to_thread(self._mt5.order_send, cancel_request)
+                    except Exception as e:
+                        logger.error(
+                            "metatrader_kill_switch_cancel_order_failed",
+                            ticket=order.ticket,
+                            error=str(e),
+                        )
+                logger.info(
+                    "metatrader_kill_switch_pending_orders_cancelled",
+                    count=len(pending_orders),
+                )
+        except Exception as e:
+            logger.error("metatrader_cancel_all_orders_failed", error=str(e))
+
+        try:
+            positions = await asyncio.to_thread(self._mt5.positions_get)
+            if not positions:
+                logger.info("metatrader_close_all_no_positions")
+                return reports
+
+            for position in positions:
+                symbol = position.symbol
+                ticket = position.ticket
+                volume = position.volume
+
+                # Determine close direction (opposite of position type)
+                close_type = (
+                    self._mt5.ORDER_TYPE_SELL
+                    if getattr(position, "type", 0) == 0  # 0 = BUY position
+                    else self._mt5.ORDER_TYPE_BUY
+                )
+
+                request = {
+                    "action": self._mt5.TRADE_ACTION_DEAL,
+                    "symbol": symbol,
+                    "volume": volume,
+                    "type": close_type,
+                    "position": ticket,
+                    "magic": self.magic_number,
+                    "comment": "BMAD_kill_switch_close_all",
+                    "type_filling": self._mt5.ORDER_FILLING_IOC,
+                }
+
+                try:
+                    result = await asyncio.to_thread(self._mt5.order_send, request)
+
+                    if result and result.retcode == self._mt5.TRADE_RETCODE_DONE:
+                        reports.append(
+                            ExecutionReport(
+                                order_id=uuid4(),
+                                platform_order_id=str(result.order),
+                                platform="MetaTrader5",
+                                status=OrderStatus.FILLED,
+                                filled_quantity=Decimal(str(volume)),
+                                remaining_quantity=Decimal("0"),
+                                average_fill_price=Decimal(str(result.price)),
+                            )
+                        )
+                        logger.info(
+                            "metatrader_kill_switch_position_closed",
+                            symbol=symbol,
+                            ticket=ticket,
+                        )
+                    else:
+                        comment = result.comment if result else "No result"
+                        reports.append(
+                            ExecutionReport(
+                                order_id=uuid4(),
+                                platform_order_id=str(result.order) if result else "",
+                                platform="MetaTrader5",
+                                status=OrderStatus.REJECTED,
+                                filled_quantity=Decimal("0"),
+                                remaining_quantity=Decimal(str(volume)),
+                                error_message=f"Close failed: {comment}",
+                            )
+                        )
+                        logger.error(
+                            "metatrader_kill_switch_close_failed",
+                            symbol=symbol,
+                            ticket=ticket,
+                            comment=comment,
+                        )
+                except Exception as e:
+                    reports.append(
+                        ExecutionReport(
+                            order_id=uuid4(),
+                            platform_order_id="",
+                            platform="MetaTrader5",
+                            status=OrderStatus.REJECTED,
+                            filled_quantity=Decimal("0"),
+                            remaining_quantity=Decimal(str(volume)),
+                            error_message=str(e),
+                        )
+                    )
+                    logger.error(
+                        "metatrader_kill_switch_close_error",
+                        symbol=symbol,
+                        ticket=ticket,
+                        error=str(e),
+                    )
+
+        except Exception as e:
+            logger.error("metatrader_close_all_positions_error", error=str(e))
+
+        logger.info(
+            "metatrader_close_all_positions_complete",
+            total=len(reports),
+            closed=sum(1 for r in reports if r.status == OrderStatus.FILLED),
+        )
+        return reports
+
     async def cancel_order(self, order_id: str) -> ExecutionReport:
         """
         Cancel a pending order on MetaTrader.
