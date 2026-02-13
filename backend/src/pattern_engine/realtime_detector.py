@@ -533,6 +533,7 @@ class RealtimePatternDetector:
                 trading_range=trading_range,
                 bars=bars,
                 ice_level=ice_level,
+                phase=context.get_phase(),
             )
 
             if utad is None:
