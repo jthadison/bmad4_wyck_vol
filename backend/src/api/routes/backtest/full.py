@@ -93,13 +93,31 @@ async def run_backtest(
         "error": None,
     }
 
-    # Queue background task (uses its own DB session, not the request-scoped one)
-    asyncio.create_task(
+    # Queue background task (uses its own DB session, not the request-scoped one).
+    # Store task reference to prevent garbage collection and enable error logging.
+    task = asyncio.create_task(
         run_backtest_task(
             run_id,
             config,
-        )
+        ),
+        name=f"backtest-{run_id}",
     )
+    backtest_runs[run_id]["task"] = task
+
+    def _on_task_done(t: asyncio.Task) -> None:  # type: ignore[type-arg]
+        if t.cancelled():
+            logger.warning("Backtest task cancelled", extra={"backtest_run_id": str(run_id)})
+        elif exc := t.exception():
+            logger.error(
+                "Backtest task raised unhandled exception",
+                extra={"backtest_run_id": str(run_id), "error": str(exc)},
+            )
+        # Release task reference to free the coroutine result from memory
+        # (the result is already persisted to the database by this point)
+        if run_id in backtest_runs:
+            backtest_runs[run_id].pop("task", None)
+
+    task.add_done_callback(_on_task_done)
 
     logger.info(
         "Backtest queued",
@@ -284,8 +302,13 @@ async def run_backtest_task(
 
     AC7 Subtask 8.4-8.10: Execute engine, save to database via repository.
 
-    Creates its own database session rather than using the request-scoped
-    session, which is closed after the HTTP 202 response is sent.
+    Bug C-3 (verified 2026-02): This task creates its own database session
+    via ``async with async_session_maker() as session`` rather than accepting
+    the request-scoped session (which is closed after the HTTP 202 response).
+    The repository calls ``await session.commit()`` explicitly, and the
+    ``async with`` block calls ``session.close()`` on exit (both success and
+    error paths). This pattern is also used in preview.py, regression.py,
+    and walk_forward.py background tasks.
 
     Args:
         run_id: Backtest run identifier
@@ -313,7 +336,9 @@ async def run_backtest_task(
         )
         risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
 
-        # Create and run unified backtest engine
+        # Create and run unified backtest engine.
+        # engine.run() is synchronous and CPU-bound, so run it in a thread
+        # to avoid blocking the async event loop.
         engine = UnifiedBacktestEngine(
             signal_detector=validated_detector,
             cost_model=cost_model,
@@ -321,7 +346,7 @@ async def run_backtest_task(
             config=engine_config,
             risk_manager=risk_manager,
         )
-        result = engine.run(bars)
+        result = await asyncio.to_thread(engine.run, bars)
 
         # Update result with correct run_id
         result.backtest_run_id = run_id
