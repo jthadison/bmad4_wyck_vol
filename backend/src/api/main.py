@@ -457,7 +457,7 @@ async def _initialize_search_service() -> None:
         # Don't crash the app - search endpoint will return 503
 
 
-async def _initialize_broker_infrastructure():
+async def _initialize_broker_infrastructure() -> "BrokerRouter":
     """
     Initialize broker infrastructure (Story 23.7, 23.12).
 
@@ -491,6 +491,7 @@ async def _initialize_broker_infrastructure():
                 logger.info("mt5_adapter_connected")
             except Exception as e:
                 logger.warning("mt5_adapter_connect_failed", error=str(e))
+                mt5_adapter = None
         except Exception as e:
             logger.error("mt5_adapter_creation_failed", error=str(e))
 
@@ -513,6 +514,7 @@ async def _initialize_broker_infrastructure():
                 logger.info("alpaca_trading_adapter_connected")
             except Exception as e:
                 logger.warning("alpaca_trading_adapter_connect_failed", error=str(e))
+                alpaca_adapter = None
         except Exception as e:
             logger.error("alpaca_trading_adapter_creation_failed", error=str(e))
 
@@ -599,16 +601,7 @@ async def shutdown_event() -> None:
     # Disconnect broker adapters (Story 23.12)
     broker_router = getattr(app.state, "broker_router", None)
     if broker_router:
-        for name, adapter in [
-            ("mt5", broker_router._mt5_adapter),
-            ("alpaca", broker_router._alpaca_adapter),
-        ]:
-            if adapter and adapter.is_connected():
-                try:
-                    await adapter.disconnect()
-                    logger.info("broker_adapter_disconnected", adapter=name)
-                except Exception as e:
-                    logger.error("broker_adapter_disconnect_failed", adapter=name, error=str(e))
+        await broker_router.disconnect_all()
 
     # Close Redis connection (Story 19.21)
     try:
@@ -765,15 +758,7 @@ async def detailed_health_check() -> dict[str, object]:
     # Check broker connection status (Story 23.12)
     broker_router = getattr(app.state, "broker_router", None)
     if broker_router:
-        broker_status = {}
-        if broker_router._mt5_adapter:
-            broker_status["mt5"] = (
-                "connected" if broker_router._mt5_adapter.is_connected() else "disconnected"
-            )
-        if broker_router._alpaca_adapter:
-            broker_status["alpaca"] = (
-                "connected" if broker_router._alpaca_adapter.is_connected() else "disconnected"
-            )
+        broker_status = broker_router.get_connection_status()
         health_status["brokers"] = (
             broker_status if broker_status else {"status": "no_adapters_configured"}
         )

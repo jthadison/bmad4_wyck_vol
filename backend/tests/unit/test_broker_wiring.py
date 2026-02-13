@@ -132,7 +132,7 @@ class TestSignalRouterLiveRouting:
 
     @pytest.mark.asyncio
     async def test_live_routing_without_broker_router(self, mock_signal, mock_db_session_factory):
-        """Signal should return 'live' but not crash when no broker_router configured."""
+        """Signal should return 'skipped' when no broker_router configured."""
         router = SignalRouter(mock_db_session_factory, broker_router=None)
 
         with patch.object(
@@ -140,8 +140,8 @@ class TestSignalRouterLiveRouting:
         ):
             result = await router.route_signal(mock_signal, Decimal("150.00"))
 
-        # Returns "live" but _execute_live_signal returns early with a warning
-        assert result == "live"
+        # _execute_live_signal returns False when broker_router is None -> "skipped"
+        assert result == "skipped"
 
     @pytest.mark.asyncio
     async def test_paper_routing_still_works(
@@ -280,3 +280,248 @@ class TestTradingViewWebhookSecretFromSettings:
 
         # Restore original
         tradingview.broker_router = original_router
+
+
+class TestLiveSignalExceptionPropagation:
+    """Test that _execute_live_signal catches broker errors and returns False."""
+
+    @pytest.fixture(autouse=True)
+    def reset_router(self):
+        """Reset global signal router between tests."""
+        reset_signal_router()
+        yield
+        reset_signal_router()
+
+    @pytest.fixture
+    def mock_db_session_factory(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        factory = MagicMock()
+        factory.return_value = mock_session
+        return factory
+
+    @pytest.fixture
+    def mock_signal(self):
+        signal = MagicMock()
+        signal.id = "33333333-3333-3333-3333-333333333333"
+        signal.symbol = "AAPL"
+        signal.pattern_type = "SPRING"
+        signal.direction = "LONG"
+        signal.entry_price = Decimal("150.00")
+        signal.stop_loss = Decimal("148.00")
+        signal.position_size = Decimal("100")
+        signal.campaign_id = "camp-1"
+        signal.target_levels = MagicMock()
+        signal.target_levels.primary_target = Decimal("156.00")
+        return signal
+
+    @pytest.mark.asyncio
+    async def test_route_order_exception_returns_skipped(
+        self, mock_signal, mock_db_session_factory
+    ):
+        """route_signal should return 'skipped' when route_order raises."""
+        failing_broker = MagicMock(spec=BrokerRouter)
+        failing_broker.route_order = AsyncMock(side_effect=RuntimeError("broker down"))
+
+        router = SignalRouter(mock_db_session_factory, broker_router=failing_broker)
+
+        with patch.object(
+            router, "_is_paper_trading_enabled", new_callable=AsyncMock, return_value=False
+        ):
+            with patch("src.config.settings") as mock_settings:
+                mock_settings.account_equity = Decimal("100000")
+                result = await router.route_signal(mock_signal, Decimal("150.00"))
+
+        assert result == "skipped"
+        failing_broker.route_order.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_route_order_exception_does_not_propagate(
+        self, mock_signal, mock_db_session_factory
+    ):
+        """Broker exception should be caught, not propagated to caller."""
+        failing_broker = MagicMock(spec=BrokerRouter)
+        failing_broker.route_order = AsyncMock(side_effect=ConnectionError("network failure"))
+
+        router = SignalRouter(mock_db_session_factory, broker_router=failing_broker)
+
+        with patch.object(
+            router, "_is_paper_trading_enabled", new_callable=AsyncMock, return_value=False
+        ):
+            with patch("src.config.settings") as mock_settings:
+                mock_settings.account_equity = Decimal("100000")
+                # Should not raise
+                result = await router.route_signal(mock_signal, Decimal("150.00"))
+
+        assert result == "skipped"
+
+
+class TestConnectFailureSetsAdapterNone:
+    """Test that connect() failure in _initialize_broker_infrastructure sets adapter to None."""
+
+    @pytest.mark.asyncio
+    async def test_mt5_connect_failure_sets_adapter_none(self):
+        """MT5 adapter should be None on BrokerRouter if connect() fails."""
+        mock_mt5_cls = MagicMock()
+        mock_mt5_instance = MagicMock()
+        mock_mt5_instance.connect = AsyncMock(side_effect=ConnectionError("MT5 offline"))
+        mock_mt5_cls.return_value = mock_mt5_instance
+
+        with patch("src.api.main.settings") as mock_settings:
+            mock_settings.mt5_account = 12345
+            mock_settings.mt5_password = "secret"
+            mock_settings.mt5_server = "TestServer"
+            mock_settings.alpaca_trading_api_key = ""
+            mock_settings.alpaca_trading_secret_key = ""
+            mock_settings.alpaca_trading_paper = True
+
+            with patch("src.api.main.app") as mock_app:
+                mock_app.state = MagicMock()
+
+                with patch("src.api.routes.kill_switch.set_emergency_exit_service"):
+                    with patch("src.api.routes.tradingview.configure_broker_router"):
+                        with patch(
+                            "src.brokers.metatrader_adapter.MetaTraderAdapter",
+                            mock_mt5_cls,
+                        ):
+                            from src.api.main import _initialize_broker_infrastructure
+
+                            router = await _initialize_broker_infrastructure()
+
+        assert router._mt5_adapter is None
+
+    @pytest.mark.asyncio
+    async def test_alpaca_connect_failure_sets_adapter_none(self):
+        """Alpaca adapter should be None on BrokerRouter if connect() fails."""
+        mock_alpaca_cls = MagicMock()
+        mock_alpaca_instance = MagicMock()
+        mock_alpaca_instance.connect = AsyncMock(side_effect=ConnectionError("Alpaca offline"))
+        mock_alpaca_cls.return_value = mock_alpaca_instance
+        mock_alpaca_cls.PAPER_BASE_URL = "https://paper-api.alpaca.markets"
+        mock_alpaca_cls.LIVE_BASE_URL = "https://api.alpaca.markets"
+
+        with patch("src.api.main.settings") as mock_settings:
+            mock_settings.mt5_account = None
+            mock_settings.mt5_password = ""
+            mock_settings.mt5_server = ""
+            mock_settings.alpaca_trading_api_key = "AKTEST"
+            mock_settings.alpaca_trading_secret_key = "SKTEST"
+            mock_settings.alpaca_trading_paper = True
+
+            with patch("src.api.main.app") as mock_app:
+                mock_app.state = MagicMock()
+
+                with patch("src.api.routes.kill_switch.set_emergency_exit_service"):
+                    with patch("src.api.routes.tradingview.configure_broker_router"):
+                        with patch(
+                            "src.brokers.alpaca_adapter.AlpacaAdapter",
+                            mock_alpaca_cls,
+                        ):
+                            from src.api.main import _initialize_broker_infrastructure
+
+                            router = await _initialize_broker_infrastructure()
+
+        assert router._alpaca_adapter is None
+
+
+class TestGetSignalRouterSingletonUpdate:
+    """Test that get_signal_router updates broker_router on existing singleton."""
+
+    @pytest.fixture(autouse=True)
+    def reset_router(self):
+        reset_signal_router()
+        yield
+        reset_signal_router()
+
+    def test_singleton_updates_broker_router(self):
+        """Calling get_signal_router again with a new broker_router should update it."""
+        factory = MagicMock()
+
+        # First call creates the singleton with no broker_router
+        router1 = get_signal_router(factory)
+        assert router1.broker_router is None
+
+        # Second call with broker_router should update the existing singleton
+        mock_broker = MagicMock(spec=BrokerRouter)
+        router2 = get_signal_router(factory, broker_router=mock_broker)
+
+        assert router2 is router1  # Same singleton
+        assert router2.broker_router is mock_broker
+
+    def test_singleton_no_update_when_broker_router_is_none(self):
+        """Calling get_signal_router with broker_router=None should not clear existing."""
+        factory = MagicMock()
+        mock_broker = MagicMock(spec=BrokerRouter)
+
+        # Create with broker_router
+        router1 = get_signal_router(factory, broker_router=mock_broker)
+        assert router1.broker_router is mock_broker
+
+        # Second call without broker_router should NOT clear it
+        router2 = get_signal_router(factory)
+        assert router2 is router1
+        assert router2.broker_router is mock_broker
+
+
+class TestBrokerRouterPublicAccessors:
+    """Test BrokerRouter.get_connection_status() and disconnect_all()."""
+
+    def test_get_connection_status_both_connected(self):
+        """get_connection_status should report both adapters as connected."""
+        mt5 = MagicMock()
+        mt5.is_connected.return_value = True
+        alpaca = MagicMock()
+        alpaca.is_connected.return_value = True
+
+        router = BrokerRouter(mt5_adapter=mt5, alpaca_adapter=alpaca)
+        status = router.get_connection_status()
+
+        assert status == {"mt5": "connected", "alpaca": "connected"}
+
+    def test_get_connection_status_one_disconnected(self):
+        """get_connection_status should report disconnected adapters."""
+        mt5 = MagicMock()
+        mt5.is_connected.return_value = False
+        alpaca = MagicMock()
+        alpaca.is_connected.return_value = True
+
+        router = BrokerRouter(mt5_adapter=mt5, alpaca_adapter=alpaca)
+        status = router.get_connection_status()
+
+        assert status == {"mt5": "disconnected", "alpaca": "connected"}
+
+    def test_get_connection_status_no_adapters(self):
+        """get_connection_status should return empty dict with no adapters."""
+        router = BrokerRouter()
+        status = router.get_connection_status()
+
+        assert status == {}
+
+    @pytest.mark.asyncio
+    async def test_disconnect_all_calls_disconnect(self):
+        """disconnect_all should call disconnect on all connected adapters."""
+        mt5 = MagicMock()
+        mt5.is_connected.return_value = True
+        mt5.disconnect = AsyncMock()
+        alpaca = MagicMock()
+        alpaca.is_connected.return_value = True
+        alpaca.disconnect = AsyncMock()
+
+        router = BrokerRouter(mt5_adapter=mt5, alpaca_adapter=alpaca)
+        await router.disconnect_all()
+
+        mt5.disconnect.assert_called_once()
+        alpaca.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_disconnect_all_skips_disconnected_adapters(self):
+        """disconnect_all should skip adapters that are not connected."""
+        mt5 = MagicMock()
+        mt5.is_connected.return_value = False
+        mt5.disconnect = AsyncMock()
+
+        router = BrokerRouter(mt5_adapter=mt5)
+        await router.disconnect_all()
+
+        mt5.disconnect.assert_not_called()

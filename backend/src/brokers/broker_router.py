@@ -322,6 +322,33 @@ class BrokerRouter:
             "reason": self._kill_switch_reason,
         }
 
+    def get_connection_status(self) -> dict[str, str]:
+        """
+        Get connection status of all broker adapters.
+
+        Returns:
+            Dict mapping adapter name to status string
+            (e.g. {"mt5": "connected", "alpaca": "disconnected"}).
+        """
+        status: dict[str, str] = {}
+        if self._mt5_adapter:
+            status["mt5"] = "connected" if self._mt5_adapter.is_connected() else "disconnected"
+        if self._alpaca_adapter:
+            status["alpaca"] = (
+                "connected" if self._alpaca_adapter.is_connected() else "disconnected"
+            )
+        return status
+
+    async def disconnect_all(self) -> None:
+        """Disconnect all connected broker adapters."""
+        for name, adapter in [("mt5", self._mt5_adapter), ("alpaca", self._alpaca_adapter)]:
+            if adapter and adapter.is_connected():
+                try:
+                    await adapter.disconnect()
+                    logger.info("broker_adapter_disconnected", adapter=name)
+                except Exception as e:
+                    logger.error("broker_adapter_disconnect_failed", adapter=name, error=str(e))
+
     async def close_all_positions(self) -> list[ExecutionReport]:
         """
         Close all positions across all connected brokers.
