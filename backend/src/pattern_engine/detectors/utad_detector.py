@@ -1,471 +1,327 @@
 """
-UTAD (Upthrust After Distribution) Pattern Detector Module
+UTAD (Upthrust After Distribution) Detector Module
 
 Purpose:
 --------
-Detects UTAD patterns (breakout above Ice with high volume that fails back below).
-UTADs signal Phase E completion and distribution beginning - exit signals for long positions.
+Detects UTAD patterns - the distribution counterpart to Spring detection.
+UTAD represents a false breakout above Ice (resistance) on high volume that
+quickly fails back below Ice, signaling distribution and potential short opportunities.
 
-FR Requirements:
-----------------
-- FR6.2: UTAD detection (0.5-1.0% break above Ice, >1.5x volume, failure within 3 bars)
-- AC6.3: UTAD validation (Phase D/E only, high volume required)
+Story 11.9e: UTAD Detector Implementation (Team Enhancement)
 
-Author: Generated for Story 13.6 Task #2
+Detection Criteria:
+-------------------
+1. Penetration above Ice level (0-5% maximum upward thrust)
+2. High volume (>1.5x average) - indicates professional selling
+3. Price fails back below Ice within 1-5 bars
+4. Preliminary Supply (PS) events present 10-20 bars before UTAD
+
+Volume Requirement (Critical):
+------------------------------
+- ≥1.5x average volume: Distribution signal (professional selling into demand)
+- <1.5x average volume: Breakout, NOT UTAD
+
+Usage:
+------
+>>> from src.pattern_engine.detectors.utad_detector import UTADDetector
+>>> from decimal import Decimal
+>>>
+>>> detector = UTADDetector(max_penetration_pct=Decimal("5.0"))
+>>> utad = detector.detect_utad(trading_range, bars, ice_level)
+>>>
+>>> if utad:
+...     print(f"UTAD detected: {utad.penetration_pct:.2%} above Ice")
+...     print(f"Volume: {utad.volume_ratio:.2f}x (high volume = distribution)")
+...     print(f"Failed within {utad.failure_bar_index - utad.utad_bar_index} bars")
+
+Author: Story 11.9e - UTAD Detector Implementation
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from decimal import ROUND_HALF_UP, Decimal
-from typing import Optional
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Optional
 
 import structlog
 
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_classification import WyckoffPhase
 from src.models.trading_range import TradingRange
-from src.models.utad import UTAD
 from src.pattern_engine.volume_analyzer import calculate_volume_ratio
+
+if TYPE_CHECKING:
+    from src.models.phase_classification import WyckoffPhase
 
 logger = structlog.get_logger(__name__)
 
-# Minimum confidence threshold for pattern validation
-MINIMUM_CONFIDENCE_THRESHOLD = 70
 
-
-def detect_utad(
-    trading_range: TradingRange,
-    bars: list[OHLCVBar],
-    phase: WyckoffPhase,
-    start_index: int = 20,
-    skip_indices: Optional[set[int]] = None,
-) -> Optional[UTAD]:
+@dataclass
+class UTAD:
     """
-    Detect UTAD (Upthrust After Distribution) patterns.
+    UTAD (Upthrust After Distribution) pattern data structure.
 
-    An UTAD is a critical Wyckoff distribution signal that indicates Phase E markup
-    is complete. It breaks above Ice resistance on high volume to trap buyers,
-    then rapidly fails back below Ice.
+    Represents a false breakout above Ice on high volume that quickly fails,
+    signaling distribution and potential bearish reversal.
 
-    Args:
-        trading_range: Active trading range with Ice level (trading_range.ice must not be None)
-        bars: OHLCV bars (minimum 20 bars for volume ratio calculation)
-        phase: Current Wyckoff phase (must be Phase D or E per FR6.2)
-        start_index: Index to start scanning from (default: 20 for volume calculation)
-        skip_indices: Set of bar indices to skip (already detected UTADs)
-
-    Returns:
-        Optional[UTAD]: UTAD if detected, None if not found or rejected
-
-    Raises:
-        ValueError: If trading_range is None, trading_range.ice is None,
-            or trading_range.ice.price <= 0
-
-    FR Requirements:
-        - FR6.2: UTAD detection (0.5-1.0% breakout above Ice)
-        - FR6.2: Volume validation (>1.5x required, binary rejection)
-        - FR6.2: Failure validation (close back below Ice within 3 bars)
-        - AC6.3: Phase D/E only (UTADs invalid in other phases)
-
-    Example:
-        >>> utad = detect_utad(range, bars, WyckoffPhase.E)
-        >>> if utad:
-        ...     print(f"UTAD: {utad.breakout_pct:.2%} above Ice")
-        ...     print(f"Volume: {utad.volume_ratio:.2f}x (high volume)")
-        ...     print(f"Failed in {utad.bars_to_failure} bars")
+    Attributes:
+        utad_bar_index: Index of the UTAD bar (thrust above Ice)
+        utad_timestamp: Timestamp of the UTAD event
+        utad_high: Highest price during UTAD thrust
+        ice_level: Ice resistance level that was penetrated
+        penetration_pct: Percentage penetration above Ice (0-5%)
+        volume_ratio: Volume ratio (should be >1.5x for valid UTAD)
+        failure_bar_index: Index where price failed back below Ice
+        confidence: Confidence score (0-100)
+        preliminary_supply_count: Number of PS events before UTAD
     """
-    # ============================================================
-    # INPUT VALIDATION
-    # ============================================================
 
-    # Validate trading range
-    if trading_range is None:
-        logger.error("trading_range_missing")
-        raise ValueError("Trading range required for UTAD detection")
-
-    # Validate Ice exists (FR6.2)
-    if trading_range.ice is None or trading_range.ice.price <= 0:
-        logger.error(
-            "ice_missing_or_invalid",
-            symbol=trading_range.symbol,
-            ice=trading_range.ice.price if trading_range.ice else None,
-        )
-        raise ValueError("Valid Ice level required for UTAD detection")
-
-    # Validate sufficient bars for volume calculation
-    if len(bars) < 20:
-        logger.warning(
-            "insufficient_bars_for_utad_detection",
-            bars_available=len(bars),
-            bars_required=20,
-            message="Need at least 20 bars for volume average calculation",
-        )
-        return None
-
-    # ============================================================
-    # PHASE VALIDATION (FR6.2)
-    # ============================================================
-
-    if phase not in [WyckoffPhase.D, WyckoffPhase.E]:
-        logger.debug(
-            "utad_wrong_phase",
-            current_phase=phase.value,
-            required_phase="D or E",
-            message="UTAD only valid in Phase D or E (FR6.2)",
-        )
-        return None
-
-    # ============================================================
-    # EXTRACT ICE LEVEL
-    # ============================================================
-
-    ice_level = trading_range.ice.price  # Decimal from IceLevel model
-
-    logger.debug(
-        "utad_detection_starting",
-        symbol=trading_range.symbol,
-        ice_level=float(ice_level),
-        phase=phase.value,
-        bars_to_scan=min(20, len(bars)),
-    )
-
-    # ============================================================
-    # SCAN FOR UTAD PATTERN
-    # ============================================================
-
-    # Initialize skip_indices if None
-    if skip_indices is None:
-        skip_indices = set()
-
-    # Scan from start_index to end of bars for breakout above Ice
-    # Ensure start_index is at least 20 (minimum for volume calculation)
-    scan_start = max(20, start_index)
-
-    for i in range(scan_start, len(bars)):
-        # Skip if this index was already detected
-        if i in skip_indices:
-            continue
-        bar = bars[i]
-
-        # Check if bar broke above Ice
-        if bar.high <= ice_level:
-            continue  # No breakout, skip
-
-        # ============================================================
-        # CALCULATE BREAKOUT PERCENTAGE (AC6.3)
-        # ============================================================
-
-        # Quantize to 4 decimal places to match UTAD model constraint
-        breakout_pct = ((bar.high - ice_level) / ice_level).quantize(
-            Decimal("0.0001"), rounding=ROUND_HALF_UP
-        )
-
-        # ============================================================
-        # VALIDATE BREAKOUT DISTANCE (AC6.3)
-        # ============================================================
-
-        if breakout_pct < Decimal("0.005"):  # 0.5% min
-            logger.debug(
-                "utad_breakout_too_small",
-                symbol=bar.symbol,
-                bar_timestamp=bar.timestamp.isoformat(),
-                breakout_pct=float(breakout_pct),
-                min_allowed=0.005,
-                message="Breakout <0.5% too small - may be noise, not UTAD",
-            )
-            continue  # Skip this candidate, try next bar
-
-        if breakout_pct > Decimal("0.010"):  # 1.0% max
-            logger.debug(
-                "utad_breakout_too_large",
-                symbol=bar.symbol,
-                bar_timestamp=bar.timestamp.isoformat(),
-                breakout_pct=float(breakout_pct),
-                max_allowed=0.010,
-                message="Breakout >1.0% too large - indicates genuine breakout, not UTAD",
-            )
-            continue  # Skip this candidate, try next bar
-
-        # ============================================================
-        # CRITICAL VOLUME VALIDATION (FR6.2)
-        # ============================================================
-
-        # Calculate volume ratio using standard VolumeAnalyzer
-        volume_ratio_float = calculate_volume_ratio(bars, i)
-
-        if volume_ratio_float is None:
-            logger.error(
-                "volume_ratio_calculation_failed",
-                bar_timestamp=bar.timestamp.isoformat(),
-                bar_index=i,
-                message="VolumeAnalyzer returned None (insufficient data or zero average)",
-            )
-            continue  # Skip candidate
-
-        # Convert float to Decimal and quantize to 4 decimal places
-        volume_ratio = Decimal(str(volume_ratio_float)).quantize(
-            Decimal("0.0001"), rounding=ROUND_HALF_UP
-        )
-
-        # FR6.2 enforcement - HIGH VOLUME required for UTAD (AC6.3)
-        if volume_ratio <= Decimal("1.5"):
-            logger.debug(
-                "utad_invalid_low_volume",
-                symbol=bar.symbol,
-                bar_timestamp=bar.timestamp.isoformat(),
-                volume_ratio=float(volume_ratio),
-                threshold=1.5,
-                message=f"UTAD INVALID: Volume {volume_ratio:.2f}x <= 1.5x threshold [FR6.2]",
-            )
-            continue  # REJECT immediately - no further processing
-
-        # ============================================================
-        # FAILURE VALIDATION (AC6.3)
-        # ============================================================
-
-        # Check if price fails back below Ice within 3 bars
-        failure_window_end = min(i + 4, len(bars))  # Current + next 3 bars
-        failure_window = bars[i:failure_window_end]
-
-        bars_to_failure = None
-        failure_price = None
-
-        for j, failure_bar in enumerate(failure_window):
-            if failure_bar.close < ice_level:
-                # Failure confirmed!
-                bars_to_failure = j if j > 0 else 1  # Minimum 1 bar
-                failure_price = failure_bar.close
-                break
-
-        if bars_to_failure is None:
-            # No failure within 3 bars - might be genuine breakout
-            logger.debug(
-                "utad_no_failure",
-                symbol=bar.symbol,
-                breakout_timestamp=bar.timestamp.isoformat(),
-                ice_level=float(ice_level),
-                message="Price did not fail below Ice within 3 bars - not UTAD (genuine breakout?)",
-            )
-            continue  # Try next breakout candidate
-
-        # ============================================================
-        # CALCULATE CONFIDENCE SCORE
-        # ============================================================
-
-        confidence = _calculate_utad_confidence(
-            breakout_pct=breakout_pct,
-            volume_ratio=volume_ratio,
-            bars_to_failure=bars_to_failure,
-        )
-
-        if confidence < MINIMUM_CONFIDENCE_THRESHOLD:
-            logger.debug(
-                "utad_low_confidence",
-                symbol=bar.symbol,
-                bar_timestamp=bar.timestamp.isoformat(),
-                confidence=confidence,
-                threshold=MINIMUM_CONFIDENCE_THRESHOLD,
-                message=f"UTAD confidence {confidence} < {MINIMUM_CONFIDENCE_THRESHOLD} threshold",
-            )
-            continue  # Skip low-confidence patterns
-
-        # ============================================================
-        # CREATE UTAD INSTANCE (AC6.3)
-        # ============================================================
-
-        utad = UTAD(
-            timestamp=bar.timestamp,
-            breakout_price=bar.high,
-            failure_price=failure_price,
-            ice_level=ice_level,
-            volume_ratio=volume_ratio,
-            bars_to_failure=bars_to_failure,
-            breakout_pct=breakout_pct,
-            confidence=confidence,
-            phase=phase,
-            trading_range_id=trading_range.id,
-            detection_timestamp=datetime.now(UTC),
-            bar_index=i,
-        )
-
-        logger.info(
-            "utad_detected",
-            symbol=bar.symbol,
-            utad_timestamp=bar.timestamp.isoformat(),
-            breakout_pct=float(breakout_pct),
-            volume_ratio=float(volume_ratio),
-            bars_to_failure=bars_to_failure,
-            ice_level=float(ice_level),
-            phase=phase.value,
-            confidence=confidence,
-            quality_tier=utad.quality_tier,
-            message=(
-                f"UTAD detected: {breakout_pct*100:.2f}% break above Ice, "
-                f"{volume_ratio:.2f}x volume, failed in {bars_to_failure} bars"
-            ),
-        )
-
-        # Return first valid UTAD
-        return utad
-
-    # ============================================================
-    # NO UTAD DETECTED
-    # ============================================================
-
-    logger.debug(
-        "no_utad_detected",
-        symbol=trading_range.symbol,
-        phase=phase.value,
-        bars_analyzed=len(bars),
-        message="No valid UTAD pattern found in analyzed bars",
-    )
-
-    return None
+    utad_bar_index: int
+    utad_timestamp: datetime
+    utad_high: Decimal
+    ice_level: Decimal
+    penetration_pct: Decimal
+    volume_ratio: Decimal
+    failure_bar_index: int
+    confidence: int
+    preliminary_supply_count: int
 
 
-def _calculate_utad_confidence(
-    breakout_pct: Decimal,
-    volume_ratio: Decimal,
-    bars_to_failure: int,
-) -> int:
-    """
-    Calculate UTAD pattern confidence score (70-100).
-
-    Confidence Factors:
-    - Breakout Size: Ideal 0.6-0.8% (80 pts), acceptable 0.5-1.0% (70 pts)
-    - Volume Spike: >2.0x = excellent (90 pts), 1.7-2.0x = good (85 pts), 1.5-1.7x = acceptable (75 pts)
-    - Failure Speed: 1-2 bars = rapid (90 pts), 3 bars = acceptable (80 pts)
-
-    Args:
-        breakout_pct: Breakout percentage above Ice
-        volume_ratio: Volume ratio (>1.5x)
-        bars_to_failure: Bars to failure (1-3)
-
-    Returns:
-        int: Confidence score (70-100)
-
-    Example:
-        >>> _calculate_utad_confidence(Decimal("0.007"), Decimal("2.2"), 2)
-        88
-    """
-    # Base confidence
-    confidence = 70
-
-    # Breakout size scoring
-    if Decimal("0.006") <= breakout_pct <= Decimal("0.008"):
-        confidence += 10  # Ideal breakout size
-    elif Decimal("0.005") <= breakout_pct <= Decimal("0.009"):
-        confidence += 5  # Good breakout size
-
-    # Volume spike scoring
-    if volume_ratio >= Decimal("2.0"):
-        confidence += 15  # Excellent volume spike
-    elif volume_ratio >= Decimal("1.7"):
-        confidence += 10  # Good volume spike
-
-    # Failure speed scoring
-    if bars_to_failure <= 2:
-        confidence += 5  # Rapid failure
-
-    return min(confidence, 100)  # Cap at 100
-
-
-# Backward compatibility class for tests that expect object-oriented API
 class UTADDetector:
     """
-    Backward compatibility wrapper for UTAD detection.
+    UTAD (Upthrust After Distribution) pattern detector.
 
-    This class provides an object-oriented interface that wraps the
-    functional `detect_utad()` API. Use this for legacy tests or code
-    that expects a class-based detector.
+    Detects false breakouts above Ice (resistance) that quickly fail back below,
+    signaling distribution and potential short opportunities. This is the bearish
+    counterpart to Spring detection.
 
-    Deprecated: Use the functional `detect_utad()` API directly instead.
-    This class will be removed in v0.3.0.
+    Attributes:
+        max_penetration_pct: Maximum allowed penetration above Ice (default: 5.0%)
 
-    Args:
-        max_penetration_pct: Maximum breakout percentage (not used, for compatibility)
-        min_volume_ratio: Minimum volume ratio (not used, for compatibility)
+    Example:
+        >>> detector = UTADDetector(max_penetration_pct=Decimal("5.0"))
+        >>> utad = detector.detect_utad(trading_range, bars, ice_level)
+        >>> if utad and utad.confidence >= 70:
+        ...     print("High-confidence UTAD detected - distribution signal")
     """
 
-    def __init__(
-        self,
-        max_penetration_pct: Optional[Decimal] = None,
-        min_volume_ratio: Optional[Decimal] = None,
-    ) -> None:
-        """Initialize detector with optional config (compatibility only)."""
-        # Store params for compatibility, but don't use them
-        # The functional API has these hardcoded per FR6.2 requirements
-        self.max_penetration_pct = max_penetration_pct or Decimal("1.0")
-        self.min_volume_ratio = min_volume_ratio or Decimal("1.5")
-
-    def detect(
-        self,
-        trading_range: TradingRange,
-        bars: list[OHLCVBar],
-        phase: WyckoffPhase,
-        start_index: int = 20,
-        skip_indices: Optional[set[int]] = None,
-    ) -> Optional[UTAD]:
+    def __init__(self, max_penetration_pct: Decimal = Decimal("5.0")) -> None:
         """
-        Detect UTAD pattern (wrapper for functional API).
+        Initialize UTAD detector.
 
         Args:
-            trading_range: Trading range with Ice level
-            bars: List of OHLCV bars to analyze
-            phase: Current Wyckoff phase (D or E only)
-            start_index: Minimum bars for volume baseline (default: 20)
-            skip_indices: Bar indices to skip during detection
+            max_penetration_pct: Maximum penetration above Ice as percentage (default: 5.0)
 
-        Returns:
-            UTAD instance if detected, None otherwise
+        Raises:
+            ValueError: If max_penetration_pct is outside valid range (0-10)
         """
-        return detect_utad(trading_range, bars, phase, start_index, skip_indices)
+        if max_penetration_pct <= 0 or max_penetration_pct > 10:
+            raise ValueError(f"max_penetration_pct must be 0-10, got {max_penetration_pct}")
+
+        self.max_penetration_pct = max_penetration_pct
+
+        logger.debug(
+            "utad_detector_initialized",
+            max_penetration_pct=float(max_penetration_pct),
+        )
 
     def detect_utad(
         self,
         trading_range: TradingRange,
         bars: list[OHLCVBar],
-        ice_level: Decimal,  # Compatibility: ice_level parameter for old API
+        ice_level: Decimal,
         phase: Optional[WyckoffPhase] = None,
     ) -> Optional[UTAD]:
         """
-        Legacy method signature for UTAD detection.
+        Detect UTAD pattern (distribution).
+
+        Scans for false breakouts above Ice that quickly fail back below,
+        indicating professional selling and potential distribution.
 
         Args:
-            trading_range: Trading range with Ice level
-            bars: List of OHLCV bars to analyze
-            ice_level: Ice level (for backward compatibility - sets range.ice if missing)
-            phase: Current Wyckoff phase (defaults to Phase E if not provided)
+            trading_range: Trading range to analyze
+            bars: OHLCV bars to scan (minimum 20 bars for volume calculation)
+            ice_level: Ice resistance level to check for penetration
+            phase: Current Wyckoff phase (should be Phase D for valid UTAD).
+                When None, phase validation is skipped for backward compatibility.
 
         Returns:
-            UTAD instance if detected, None otherwise
+            UTAD instance if valid pattern detected, None otherwise
+
+        Detection Steps:
+            1. Validate phase is D (if provided)
+            2. Scan last 20 bars for penetration above Ice
+            3. Validate volume >1.5x average (high volume = distribution)
+            4. Confirm failure back below Ice within 1-5 bars
+            5. Count Preliminary Supply events 10-20 bars before UTAD
+            6. Calculate confidence score
+
+        Example:
+            >>> utad = detector.detect_utad(range, bars, Decimal("175.50"), phase=WyckoffPhase.D)
+            >>> if utad:
+            ...     print(f"UTAD at ${utad.utad_high} ({utad.confidence}% confidence)")
         """
-        # Default to Phase E for UTAD detection
-        phase = phase or WyckoffPhase.E
+        try:
+            # Input validation
+            if not bars:
+                logger.debug("utad_detection_skipped", reason="empty_bars")
+                return None
 
-        # Backward compatibility: If trading_range doesn't have ice set,
-        # create a temporary IceLevel from the passed ice_level parameter
-        if trading_range.ice is None:
-            from datetime import UTC, datetime
+            if len(bars) < 20:
+                logger.debug(
+                    "utad_detection_skipped",
+                    reason="insufficient_bars",
+                    bar_count=len(bars),
+                )
+                return None
 
-            from src.models.ice_level import IceLevel
+            if ice_level <= 0:
+                logger.error("invalid_ice_level", ice_level=str(ice_level))
+                return None
 
-            # Create a minimal IceLevel with all required fields for backward compatibility
-            # This supports legacy code that passes ice_level as a Decimal parameter
-            now = datetime.now(UTC)
-            trading_range.ice = IceLevel(
-                price=ice_level,
-                absolute_high=ice_level,  # Use same as price (no historical data available)
-                touch_count=2,  # Minimum valid touch count
-                touch_details=[],  # Empty list (no historical touch data available)
-                strength_score=60,  # Moderate strength (60/100) for compatibility
-                strength_rating="MODERATE",  # Corresponds to strength_score=60
-                last_test_timestamp=now,
-                first_test_timestamp=now,
-                hold_duration=0,  # No historical duration data
-                confidence="MEDIUM",  # Medium confidence for backward compat
-                volume_trend="FLAT",  # Neutral volume trend (no data)
-            )
+            # Phase validation (FR15): UTAD is only valid in Phase D
+            if phase is not None:
+                from src.models.phase_classification import WyckoffPhase as WP
 
-        return detect_utad(trading_range, bars, phase)
+                if phase != WP.D:
+                    logger.warning(
+                        "utad_wrong_phase",
+                        phase=phase.value,
+                        required="D",
+                        message=f"UTAD rejected: Phase {phase.value} (requires Phase D)",
+                    )
+                    return None
+            else:
+                logger.info(
+                    "utad_phase_not_provided",
+                    message="Phase not provided - skipping phase validation for backward compatibility",
+                )
+
+            # Scan last 20 bars for UTAD candidates
+            for i in range(len(bars) - 20, len(bars)):
+                bar = bars[i]
+
+                # Check for penetration above Ice
+                if bar.high <= ice_level:
+                    continue
+
+                # Calculate penetration percentage
+                penetration_pct = ((bar.high - ice_level) / ice_level) * 100
+
+                # Validate penetration within limits (0-5%)
+                if penetration_pct > self.max_penetration_pct:
+                    continue
+
+                # Calculate volume ratio
+                volume_ratio = calculate_volume_ratio(bars, i)
+                if volume_ratio is None:
+                    continue
+
+                # Validate high volume (>1.5x required for UTAD)
+                if volume_ratio < 1.5:
+                    continue  # Low volume = breakout, not UTAD
+
+                # Check for failure back below Ice within 1-5 bars
+                failure_bar_index = None
+                for j in range(i + 1, min(i + 6, len(bars))):
+                    if bars[j].close < ice_level:
+                        failure_bar_index = j
+                        break
+
+                if failure_bar_index is None:
+                    continue  # No failure = valid breakout, not UTAD
+
+                # Count Preliminary Supply events (high volume bars 10-20 bars before)
+                ps_count = 0
+                if i >= 20:
+                    for k in range(i - 20, i - 10):
+                        ps_volume_ratio = calculate_volume_ratio(bars, k)
+                        if ps_volume_ratio and ps_volume_ratio >= 1.3:
+                            ps_count += 1
+
+                # Calculate confidence score
+                confidence = self._calculate_confidence(
+                    penetration_pct,
+                    volume_ratio,
+                    failure_bar_index - i,
+                    ps_count,
+                )
+
+                # Return first valid UTAD found
+                utad = UTAD(
+                    utad_bar_index=i,
+                    utad_timestamp=bar.timestamp,
+                    utad_high=bar.high,
+                    ice_level=ice_level,
+                    penetration_pct=penetration_pct,
+                    volume_ratio=Decimal(str(volume_ratio)),
+                    failure_bar_index=failure_bar_index,
+                    confidence=confidence,
+                    preliminary_supply_count=ps_count,
+                )
+
+                logger.info(
+                    "utad_detected",
+                    utad_bar_index=i,
+                    penetration_pct=float(penetration_pct),
+                    volume_ratio=volume_ratio,
+                    failure_bars=failure_bar_index - i,
+                    ps_count=ps_count,
+                    confidence=confidence,
+                )
+
+                return utad
+
+            # No UTAD found
+            logger.debug("no_utad_detected", bars_scanned=len(bars))
+            return None
+
+        except Exception as e:
+            logger.error("utad_detection_failed", error=str(e))
+            return None
+
+    def _calculate_confidence(
+        self,
+        penetration_pct: Decimal,
+        volume_ratio: float,
+        failure_bars: int,
+        ps_count: int,
+    ) -> int:
+        """
+        Calculate UTAD confidence score (0-100).
+
+        Args:
+            penetration_pct: Percentage penetration above Ice
+            volume_ratio: Volume ratio (higher = more distribution)
+            failure_bars: Number of bars until failure (fewer = stronger)
+            ps_count: Count of Preliminary Supply events
+
+        Returns:
+            Confidence score 0-100
+
+        Scoring:
+            - Base: 60 points (valid UTAD detected)
+            - Volume bonus: +10 points if ≥2.0x (very high volume)
+            - Failure speed bonus: +10 points if fails within 2 bars
+            - PS bonus: +10 points if 3+ PS events
+            - Penetration bonus: +10 points if <2% penetration (tight false breakout)
+        """
+        confidence = 60  # Base score for valid UTAD
+
+        # Volume bonus (higher volume = more distribution)
+        if volume_ratio >= 2.0:
+            confidence += 10
+
+        # Failure speed bonus (faster failure = stronger distribution)
+        if failure_bars <= 2:
+            confidence += 10
+
+        # Preliminary Supply bonus
+        if ps_count >= 3:
+            confidence += 10
+
+        # Tight penetration bonus (smaller thrust = cleaner UTAD)
+        if penetration_pct < Decimal("2.0"):
+            confidence += 10
+
+        return min(confidence, 100)

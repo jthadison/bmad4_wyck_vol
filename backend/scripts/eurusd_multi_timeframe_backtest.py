@@ -29,7 +29,7 @@ Author: Wyckoff Mentor Analysis
 
 import asyncio
 import sys
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -54,7 +54,7 @@ from src.models.backtest import BacktestConfig, BacktestResult
 from src.models.creek_level import CreekLevel
 from src.models.forex import ForexSession, get_forex_session
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_classification import PhaseClassification, PhaseEvents, WyckoffPhase
+from src.models.phase_classification import PhaseClassification, WyckoffPhase
 from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.detectors.lps_detector import detect_lps
 from src.pattern_engine.detectors.sos_detector import detect_sos_breakout
@@ -402,15 +402,6 @@ class EURUSDMultiTimeframeBacktest:
                 detected_phase_classification = PhaseClassification(
                     phase=phase_info.phase,
                     confidence=phase_info.confidence,
-                    duration=getattr(phase_info, "duration", 0),
-                    events_detected=getattr(phase_info, "events", PhaseEvents()),
-                    trading_allowed=getattr(phase_info, "trading_allowed", True),
-                    phase_start_index=getattr(phase_info, "phase_start_index", current_index),
-                    phase_start_timestamp=getattr(
-                        phase_info,
-                        "phase_start_timestamp",
-                        datetime.fromtimestamp(bar.timestamp.timestamp(), tz=UTC),
-                    ),
                 )
         except Exception:
             pass  # PhaseDetector may fail if conditions aren't met
@@ -421,11 +412,6 @@ class EURUSDMultiTimeframeBacktest:
             detected_phase_classification = PhaseClassification(
                 phase=WyckoffPhase.B,  # Default to Phase B (building cause)
                 confidence=50,  # Low confidence when not detected
-                duration=0,  # Unknown duration for fallback
-                events_detected=PhaseEvents(),  # No events detected
-                trading_allowed=False,  # Conservative: don't trade on fallback phase
-                phase_start_index=current_index,  # Current bar as start
-                phase_start_timestamp=datetime.fromtimestamp(bar.timestamp.timestamp(), tz=UTC),
             )
 
         # Detect patterns using real detectors with detected phase

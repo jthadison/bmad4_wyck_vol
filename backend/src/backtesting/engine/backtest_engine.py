@@ -44,7 +44,6 @@ from src.models.backtest import (
 )
 from src.models.ohlcv import OHLCVBar
 from src.models.signal import TradeSignal
-from src.pattern_engine.volume_logger import VolumeLogger
 
 logger = logging.getLogger(__name__)
 
@@ -429,7 +428,6 @@ class UnifiedBacktestEngine:
         position_manager: PositionManager,
         config: EngineConfig,
         risk_manager: BacktestRiskManager | None = None,
-        volume_logger: VolumeLogger | None = None,
     ) -> None:
         """
         Initialize unified backtest engine with injectable dependencies.
@@ -441,15 +439,12 @@ class UnifiedBacktestEngine:
             config: Engine configuration parameters
             risk_manager: Optional risk manager for position sizing and risk limits.
                           When None, falls back to flat percentage sizing.
-            volume_logger: Optional volume logger for educational Wyckoff analysis.
-                           When None, creates a default instance with MAX_ENTRIES limit (Story 13.8).
         """
         self._detector = signal_detector
         self._cost_model = cost_model
         self._positions = position_manager
         self._config = config
         self._risk_manager = risk_manager
-        self._volume_logger = volume_logger or VolumeLogger()
         self._equity_curve: list[EquityCurvePoint] = []
         self._bars: list[OHLCVBar] = []
         self._pending_orders: list[BacktestOrder] = []
@@ -521,33 +516,8 @@ class UnifiedBacktestEngine:
         visible_bars = self._bars[: index + 1]
         signal = self._detector.detect(visible_bars, index)
 
-        # Step 2b: Log volume analysis (Story 13.8)
-        if index >= 20:  # Need sufficient history for volume analysis
-            recent_bars = visible_bars[-20:]
-
-            # Calculate average volume from recent bars
-            avg_volume = sum(Decimal(str(b.volume)) for b in recent_bars) / len(recent_bars)
-
-            # Detect volume spikes for climactic action
-            self._volume_logger.detect_volume_spike(bar=bar, avg_volume=avg_volume)
-
-            # Detect volume divergences periodically (every 10 bars to reduce overhead)
-            if index % 10 == 0:
-                self._volume_logger.detect_volume_divergence(bars=recent_bars)
-
         # Step 3: Create order as PENDING (will be filled on next bar)
         if signal is not None:
-            # Validate pattern volume before handling signal
-            if hasattr(signal, "pattern_type") and hasattr(signal, "volume_ratio"):
-                asset_class = "forex" if "USD" in bar.symbol else "stock"
-                self._volume_logger.validate_pattern_volume(
-                    pattern_type=signal.pattern_type or "UNKNOWN",
-                    volume_ratio=signal.volume_ratio,
-                    timestamp=bar.timestamp,
-                    asset_class=asset_class,
-                    session=getattr(signal, "session", None),
-                )
-
             self._handle_signal(signal, bar, portfolio_value)
 
         # Step 4: Record equity curve point
@@ -1114,9 +1084,6 @@ class UnifiedBacktestEngine:
             max_position_size=self._config.max_position_size,
         )
 
-        # Get volume analysis summary (Story 13.8)
-        volume_analysis = self._volume_logger.get_summary() if self._volume_logger else None
-
         return BacktestResult(
             backtest_run_id=uuid4(),
             symbol=symbol,
@@ -1127,63 +1094,9 @@ class UnifiedBacktestEngine:
             equity_curve=self._equity_curve,
             trades=trades,
             summary=metrics,
-            volume_analysis=volume_analysis,
             look_ahead_bias_check=True,
             execution_time_seconds=Decimal(str(execution_time)),
         )
-
-    def _get_bars_per_year(self, timeframe: str) -> int:
-        """Calculate number of bars per year based on timeframe.
-
-        Story 13.5 C-2 Fix: Dynamic calculation for intraday timeframes.
-
-        **IMPORTANT - Asset Class Assumptions**:
-        - Assumes 24/5 trading (forex/crypto market hours)
-        - 252 trading days per year baseline
-        - For equities with 6.5h/day market hours, bars_per_year would differ
-        - Future enhancement needed for asset-class-specific trading hours
-
-        Args:
-            timeframe: Timeframe string (e.g., "1d", "1h", "15m", "5m")
-
-        Returns:
-            Number of bars per trading year
-
-        Examples:
-            "1d" -> 252 (252 trading days)
-            "1h" -> 6,048 (252 days * 24 hours, assuming 24/5 forex)
-            "30m" -> 12,096 (252 days * 24 hours * 2)
-            "15m" -> 24,192 (252 days * 24 hours * 4)
-            "5m" -> 72,576 (252 days * 24 hours * 12)
-            "1m" -> 362,880 (252 days * 24 hours * 60)
-
-        Warning:
-            For equity backtests (US30, SPY, etc.), intraday Sharpe ratios
-            will be overstated due to 24h assumption vs 6.5h reality.
-            Error magnitude on Sharpe: ~1.92x (sqrt(24/6.5)).
-        """
-        # Parse timeframe string
-        timeframe_lower = timeframe.lower()
-
-        if timeframe_lower == "1d" or timeframe_lower == "daily":
-            return 252
-        elif timeframe_lower == "1h" or timeframe_lower == "hourly":
-            return 252 * 24  # 6,048
-        elif timeframe_lower == "4h":
-            return 252 * 6  # 1,512 (24/4 = 6 bars per day)
-        elif timeframe_lower == "30m":
-            return 252 * 24 * 2  # 12,096 (2 thirty-minute periods per hour)
-        elif timeframe_lower == "15m":
-            return 252 * 24 * 4  # 24,192 (4 fifteen-minute periods per hour)
-        elif timeframe_lower == "5m":
-            return 252 * 24 * 12  # 72,576 (12 five-minute periods per hour)
-        elif timeframe_lower == "1m":
-            return 252 * 24 * 60  # 362,880 (60 one-minute periods per hour)
-        elif timeframe_lower == "1w" or timeframe_lower == "weekly":
-            return 52  # 52 weeks per year
-        else:
-            # Default to daily if unknown
-            return 252
 
     def _calculate_metrics(self, trades: list) -> BacktestMetrics:
         """
@@ -1254,28 +1167,24 @@ class UnifiedBacktestEngine:
                 exponent = 365.25 / total_days
                 cagr = Decimal(str(ratio**exponent - 1.0))
 
-        # Sharpe ratio: (mean(bar_returns) - bar_rf) / std(bar_returns) * sqrt(bars_per_year)
-        # Story 13.5 C-2 Fix: Timeframe-aware annualization
+        # Sharpe ratio: (mean(daily_returns) - daily_rf) / std(daily_returns) * sqrt(252)
         sharpe_ratio = Decimal("0")
         if len(self._equity_curve) >= 2:
-            bar_returns: list[float] = []
+            daily_returns: list[float] = []
             for i in range(1, len(self._equity_curve)):
                 prev_val = float(self._equity_curve[i - 1].portfolio_value)
                 curr_val = float(self._equity_curve[i].portfolio_value)
                 if prev_val > 0:
-                    bar_returns.append((curr_val - prev_val) / prev_val)
-            if len(bar_returns) >= 2:
-                # Get bars per year for this timeframe
-                bars_per_year = self._get_bars_per_year(self._config.timeframe)
-
-                mean_ret = sum(bar_returns) / len(bar_returns)
-                bar_rf = 0.02 / bars_per_year  # Annual risk-free rate (2%) / bars per year
-                variance = sum((r - mean_ret) ** 2 for r in bar_returns) / (len(bar_returns) - 1)
+                    daily_returns.append((curr_val - prev_val) / prev_val)
+            if len(daily_returns) >= 2:
+                mean_ret = sum(daily_returns) / len(daily_returns)
+                daily_rf = 0.02 / 252  # Annual risk-free rate (2%) / trading days
+                variance = sum((r - mean_ret) ** 2 for r in daily_returns) / (
+                    len(daily_returns) - 1
+                )
                 std_ret = math.sqrt(variance)
                 if std_ret > 0:
-                    sharpe_ratio = Decimal(
-                        str((mean_ret - bar_rf) / std_ret * math.sqrt(bars_per_year))
-                    )
+                    sharpe_ratio = Decimal(str((mean_ret - daily_rf) / std_ret * math.sqrt(252)))
 
         return BacktestMetrics(
             total_signals=len(trades),

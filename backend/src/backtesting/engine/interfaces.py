@@ -155,17 +155,12 @@ class EngineConfig:
     max_open_positions : int
         Maximum number of concurrent open positions (default: 5, max: 100)
 
-    timeframe : str
-        Data timeframe for annualization in Sharpe ratio calculation (default: "1d")
-        Supported: "1d", "1h", "4h", "15m", "30m", "5m", "1m", "1w"
-
     Example:
     --------
     >>> config = EngineConfig(
     ...     initial_capital=Decimal("50000"),
     ...     max_position_size=Decimal("0.05"),
-    ...     enable_cost_model=True,
-    ...     timeframe="1h"  # For intraday backtests
+    ...     enable_cost_model=True
     ... )
     """
 
@@ -175,7 +170,6 @@ class EngineConfig:
     risk_per_trade: Decimal = field(default_factory=lambda: Decimal("0.02"))
     max_open_positions: int = 5
     enable_trailing_stop: bool = False
-    timeframe: str = "1d"  # Story 13.5 C-2 Fix: For timeframe-aware Sharpe ratio annualization
 
     def __post_init__(self) -> None:
         """Validate configuration values after initialization."""
