@@ -128,17 +128,23 @@ const educationalInsights = computed(() => {
   if (analysis.total_validations > 0) {
     if (analysis.pass_rate >= 90) {
       insights.push(
-        `Volume validation (${analysis.pass_rate.toFixed(1)}% pass rate) shows high pattern quality. ` +
+        `Volume validation (${analysis.pass_rate.toFixed(
+          1
+        )}% pass rate) shows high pattern quality. ` +
           'Patterns with volume confirmation have historically higher win rates.'
       )
     } else if (analysis.pass_rate >= 70) {
       insights.push(
-        `Volume validation (${analysis.pass_rate.toFixed(1)}% pass rate) shows moderate filtering. ` +
+        `Volume validation (${analysis.pass_rate.toFixed(
+          1
+        )}% pass rate) shows moderate filtering. ` +
           'Review rejected patterns to understand volume violation patterns.'
       )
     } else {
       insights.push(
-        `Volume validation (${analysis.pass_rate.toFixed(1)}% pass rate) shows aggressive filtering. ` +
+        `Volume validation (${analysis.pass_rate.toFixed(
+          1
+        )}% pass rate) shows aggressive filtering. ` +
           'Consider whether thresholds are too strict for this market.'
       )
     }
@@ -149,12 +155,16 @@ const educationalInsights = computed(() => {
     const declPct = trendStats.value.decliningPct
     if (declPct >= 60) {
       insights.push(
-        `Declining volume in ${declPct.toFixed(0)}% of analyses confirms Wyckoff principle: ` +
+        `Declining volume in ${declPct.toFixed(
+          0
+        )}% of analyses confirms Wyckoff principle: ` +
           '"Supply exhaustion shows as declining volume before breakout."'
       )
     } else if (declPct <= 30) {
       insights.push(
-        `Rising volume in ${(100 - declPct).toFixed(0)}% of analyses may indicate distribution. ` +
+        `Rising volume in ${(100 - declPct).toFixed(
+          0
+        )}% of analyses may indicate distribution. ` +
           'Exercise caution with new entries.'
       )
     }
@@ -264,13 +274,16 @@ const getTrendColorClass = (trend: string): string => {
     <!-- Section 1: Pattern Volume Validation -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow mb-4">
       <button
+        id="validation-heading"
         class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-t-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        :aria-expanded="expandedSections.validation"
+        aria-controls="validation-section"
         @click="toggleSection('validation')"
       >
         <span
           class="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2"
         >
-          <i class="pi pi-check-square"></i>
+          <i class="pi pi-check-square" aria-hidden="true"></i>
           1. Pattern Volume Validation
         </span>
         <i
@@ -278,10 +291,17 @@ const getTrendColorClass = (trend: string): string => {
           :class="
             expandedSections.validation ? 'pi-chevron-up' : 'pi-chevron-down'
           "
+          aria-hidden="true"
         ></i>
       </button>
 
-      <div v-if="expandedSections.validation" class="px-4 pb-4">
+      <div
+        v-if="expandedSections.validation"
+        id="validation-section"
+        role="region"
+        aria-labelledby="validation-heading"
+        class="px-4 pb-4"
+      >
         <div
           v-if="patternEntries.length === 0"
           class="text-gray-500 dark:text-gray-400 text-sm py-4 text-center"
@@ -291,15 +311,27 @@ const getTrendColorClass = (trend: string): string => {
 
         <div v-else class="overflow-x-auto">
           <table class="w-full border-collapse text-sm">
+            <caption class="sr-only">
+              Pattern Volume Validation Statistics
+            </caption>
             <thead>
               <tr
                 class="border-b border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400"
               >
-                <th class="py-2 text-left font-semibold">Pattern</th>
-                <th class="py-2 text-right font-semibold">Detected</th>
-                <th class="py-2 text-right font-semibold">Valid</th>
-                <th class="py-2 text-right font-semibold">Rejected</th>
-                <th class="py-2 text-left font-semibold pl-4 min-w-[120px]">
+                <th scope="col" class="py-2 text-left font-semibold">
+                  Pattern
+                </th>
+                <th scope="col" class="py-2 text-right font-semibold">
+                  Detected
+                </th>
+                <th scope="col" class="py-2 text-right font-semibold">Valid</th>
+                <th scope="col" class="py-2 text-right font-semibold">
+                  Rejected
+                </th>
+                <th
+                  scope="col"
+                  class="py-2 text-left font-semibold pl-4 min-w-[120px]"
+                >
                   Pass Rate
                 </th>
               </tr>
@@ -310,9 +342,7 @@ const getTrendColorClass = (trend: string): string => {
                 :key="patternType"
                 class="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
-                <td
-                  class="py-2 font-semibold text-gray-900 dark:text-gray-100"
-                >
+                <td class="py-2 font-semibold text-gray-900 dark:text-gray-100">
                   {{ patternType }}
                 </td>
                 <td class="py-2 text-right text-gray-700 dark:text-gray-300">
@@ -357,24 +387,32 @@ const getTrendColorClass = (trend: string): string => {
     <!-- Section 2: Volume Trend Analysis -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow mb-4">
       <button
+        id="trends-heading"
         class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-t-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        :aria-expanded="expandedSections.trends"
+        aria-controls="trends-section"
         @click="toggleSection('trends')"
       >
         <span
           class="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2"
         >
-          <i class="pi pi-chart-line"></i>
+          <i class="pi pi-chart-line" aria-hidden="true"></i>
           2. Volume Trend Analysis
         </span>
         <i
           class="pi text-gray-400"
-          :class="
-            expandedSections.trends ? 'pi-chevron-up' : 'pi-chevron-down'
-          "
+          :class="expandedSections.trends ? 'pi-chevron-up' : 'pi-chevron-down'"
+          aria-hidden="true"
         ></i>
       </button>
 
-      <div v-if="expandedSections.trends" class="px-4 pb-4">
+      <div
+        v-if="expandedSections.trends"
+        id="trends-section"
+        role="region"
+        aria-labelledby="trends-heading"
+        class="px-4 pb-4"
+      >
         <div
           v-if="!trendStats"
           class="text-gray-500 dark:text-gray-400 text-sm py-4 text-center"
@@ -407,9 +445,7 @@ const getTrendColorClass = (trend: string): string => {
             class="p-3 rounded-lg bg-red-50 dark:bg-red-900 dark:bg-opacity-20 border border-red-200 dark:border-red-800"
           >
             <div class="flex justify-between items-center">
-              <span class="text-sm text-red-700 dark:text-red-400"
-                >Rising</span
-              >
+              <span class="text-sm text-red-700 dark:text-red-400">Rising</span>
               <span class="text-lg font-bold text-red-700 dark:text-red-400">
                 {{ trendStats.rising }}
               </span>
@@ -424,9 +460,7 @@ const getTrendColorClass = (trend: string): string => {
             class="p-3 rounded-lg bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600"
           >
             <div class="flex justify-between items-center">
-              <span class="text-sm text-gray-700 dark:text-gray-400"
-                >Flat</span
-              >
+              <span class="text-sm text-gray-700 dark:text-gray-400">Flat</span>
               <span class="text-lg font-bold text-gray-700 dark:text-gray-300">
                 {{ trendStats.flat }}
               </span>
@@ -462,27 +496,22 @@ const getTrendColorClass = (trend: string): string => {
                 :key="index"
                 class="border-b border-gray-100 dark:border-gray-700"
               >
-                <td class="py-2 font-semibold" :class="getTrendColorClass(trend.trend)">
+                <td
+                  class="py-2 font-semibold"
+                  :class="getTrendColorClass(trend.trend)"
+                >
                   {{ trend.trend }}
                 </td>
-                <td
-                  class="py-2 text-right text-gray-700 dark:text-gray-300"
-                >
+                <td class="py-2 text-right text-gray-700 dark:text-gray-300">
                   {{ trend.slope_pct.toFixed(1) }}%
                 </td>
-                <td
-                  class="py-2 text-right text-gray-700 dark:text-gray-300"
-                >
+                <td class="py-2 text-right text-gray-700 dark:text-gray-300">
                   {{ Math.round(trend.avg_volume).toLocaleString() }}
                 </td>
-                <td
-                  class="py-2 text-right text-gray-700 dark:text-gray-300"
-                >
+                <td class="py-2 text-right text-gray-700 dark:text-gray-300">
                   {{ trend.bars_analyzed }}
                 </td>
-                <td
-                  class="py-2 pl-4 text-gray-600 dark:text-gray-400 text-xs"
-                >
+                <td class="py-2 pl-4 text-gray-600 dark:text-gray-400 text-xs">
                   {{ trend.interpretation }}
                 </td>
               </tr>
@@ -495,24 +524,32 @@ const getTrendColorClass = (trend: string): string => {
     <!-- Section 3: Volume Spikes -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow mb-4">
       <button
+        id="spikes-heading"
         class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-t-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        :aria-expanded="expandedSections.spikes"
+        aria-controls="spikes-section"
         @click="toggleSection('spikes')"
       >
         <span
           class="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2"
         >
-          <i class="pi pi-bolt"></i>
+          <i class="pi pi-bolt" aria-hidden="true"></i>
           3. Volume Spikes (Climactic Action)
         </span>
         <i
           class="pi text-gray-400"
-          :class="
-            expandedSections.spikes ? 'pi-chevron-up' : 'pi-chevron-down'
-          "
+          :class="expandedSections.spikes ? 'pi-chevron-up' : 'pi-chevron-down'"
+          aria-hidden="true"
         ></i>
       </button>
 
-      <div v-if="expandedSections.spikes" class="px-4 pb-4">
+      <div
+        v-if="expandedSections.spikes"
+        id="spikes-section"
+        role="region"
+        aria-labelledby="spikes-heading"
+        class="px-4 pb-4"
+      >
         <div
           v-if="!spikeStats"
           class="text-gray-500 dark:text-gray-400 text-sm py-4 text-center"
@@ -594,26 +631,34 @@ const getTrendColorClass = (trend: string): string => {
     <!-- Section 4: Volume Divergences -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow mb-4">
       <button
+        id="divergences-heading"
         class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-t-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        :aria-expanded="expandedSections.divergences"
+        aria-controls="divergences-section"
         @click="toggleSection('divergences')"
       >
         <span
           class="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2"
         >
-          <i class="pi pi-arrows-h"></i>
+          <i class="pi pi-arrows-h" aria-hidden="true"></i>
           4. Volume Divergences
         </span>
         <i
           class="pi text-gray-400"
           :class="
-            expandedSections.divergences
-              ? 'pi-chevron-up'
-              : 'pi-chevron-down'
+            expandedSections.divergences ? 'pi-chevron-up' : 'pi-chevron-down'
           "
+          aria-hidden="true"
         ></i>
       </button>
 
-      <div v-if="expandedSections.divergences" class="px-4 pb-4">
+      <div
+        v-if="expandedSections.divergences"
+        id="divergences-section"
+        role="region"
+        aria-labelledby="divergences-heading"
+        class="px-4 pb-4"
+      >
         <div
           v-if="!divergenceStats"
           class="text-gray-500 dark:text-gray-400 text-sm py-4 text-center"
@@ -665,13 +710,16 @@ const getTrendColorClass = (trend: string): string => {
     <!-- Section 5: Educational Insights -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
       <button
+        id="insights-heading"
         class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-t-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        :aria-expanded="expandedSections.insights"
+        aria-controls="insights-section"
         @click="toggleSection('insights')"
       >
         <span
           class="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2"
         >
-          <i class="pi pi-book"></i>
+          <i class="pi pi-book" aria-hidden="true"></i>
           5. Wyckoff Educational Insights
         </span>
         <i
@@ -679,19 +727,24 @@ const getTrendColorClass = (trend: string): string => {
           :class="
             expandedSections.insights ? 'pi-chevron-up' : 'pi-chevron-down'
           "
+          aria-hidden="true"
         ></i>
       </button>
 
-      <div v-if="expandedSections.insights" class="px-4 pb-4">
+      <div
+        v-if="expandedSections.insights"
+        id="insights-section"
+        role="region"
+        aria-labelledby="insights-heading"
+        class="px-4 pb-4"
+      >
         <ul class="space-y-3">
           <li
             v-for="(insight, index) in educationalInsights"
             :key="index"
             class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300"
           >
-            <i
-              class="pi pi-info-circle text-blue-500 mt-0.5 flex-shrink-0"
-            ></i>
+            <i class="pi pi-info-circle text-blue-500 mt-0.5 flex-shrink-0"></i>
             <span>{{ insight }}</span>
           </li>
         </ul>
@@ -701,6 +754,18 @@ const getTrendColorClass = (trend: string): string => {
 </template>
 
 <style scoped>
+/* Screen reader only - visually hidden but accessible to assistive technology */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
 table {
   font-variant-numeric: tabular-nums;
 }

@@ -212,10 +212,7 @@
       </section>
 
       <!-- Volume Analysis Section (Story 13.8) -->
-      <section
-        v-if="backtestResult.volume_analysis"
-        id="volume-analysis"
-      >
+      <section v-if="backtestResult.volume_analysis" id="volume-analysis">
         <h2 class="text-2xl font-semibold text-gray-100 mb-4">
           Volume Analysis
         </h2>

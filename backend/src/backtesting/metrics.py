@@ -297,6 +297,8 @@ class MetricsCalculator:
             return 252 * 6  # 1,512 (24/4 = 6 bars per day)
         elif timeframe_lower == "15m":
             return 252 * 24 * 4  # 24,192 (4 fifteen-minute periods per hour)
+        elif timeframe_lower == "30m":
+            return 252 * 24 * 2  # 12,096 (2 thirty-minute periods per hour)
         elif timeframe_lower == "5m":
             return 252 * 24 * 12  # 72,576 (12 five-minute periods per hour)
         elif timeframe_lower == "1m":

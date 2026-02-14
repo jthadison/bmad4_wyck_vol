@@ -9,6 +9,7 @@
  * - Verify volume and phase validation rules are enforced
  */
 import { test, expect } from '@playwright/test'
+import type { BacktestResult, BacktestTrade } from '@/types/backtest'
 
 test.describe('EURUSD Backtest - Multi-Timeframe', () => {
   test.beforeEach(async ({ page }) => {
@@ -294,13 +295,13 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     const resultsResponse = await request.get(
       `http://localhost:8000/api/v1/backtest/results/${runId}`
     )
-    const results = await resultsResponse.json()
+    const results = (await resultsResponse.json()) as BacktestResult
 
     // Check for Wyckoff patterns in trades
     const wyckoffPatterns = ['SPRING', 'SOS', 'LPS', 'UTAD', 'ST']
     const tradePatterns = results.trades
-      .map((trade: any) => trade.pattern_type)
-      .filter((pattern: string) => pattern !== null)
+      .map((trade: BacktestTrade) => trade.pattern_type)
+      .filter((pattern: string | null) => pattern !== null)
 
     console.log('📊 Detected Patterns:', [...new Set(tradePatterns)])
 
