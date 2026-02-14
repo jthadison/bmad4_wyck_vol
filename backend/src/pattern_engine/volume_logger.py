@@ -156,6 +156,16 @@ class VolumeLogger:
     - Volume spikes (FR8.4)
     - Volume divergences (FR8.5)
 
+    Thread Safety:
+        This class is NOT thread-safe. All methods that modify state must be
+        called from a single thread or with external synchronization.
+        Create one VolumeLogger per symbol/backtest to avoid mixing stats.
+
+    Memory:
+        Tracking lists are bounded by max_entries (default 10,000).
+        Oldest entries are evicted when capacity is reached.
+        Call reset() between backtest runs to free memory.
+
     Example:
         volume_logger = VolumeLogger()
 
@@ -172,18 +182,35 @@ class VolumeLogger:
         summary = volume_logger.get_summary()
     """
 
-    def __init__(self):
-        """Initialize volume logger with empty tracking lists."""
+    # Default max entries per tracking list to prevent unbounded memory growth.
+    # A 1-year 15m backtest produces ~26,000 bars; 10,000 entries is sufficient
+    # for most analyses while keeping memory usage under ~5MB.
+    DEFAULT_MAX_ENTRIES = 10_000
+
+    def __init__(self, max_entries: int = DEFAULT_MAX_ENTRIES):
+        """Initialize volume logger with bounded tracking lists.
+
+        Args:
+            max_entries: Maximum entries per tracking list before oldest are evicted.
+                         Set to 0 for unbounded (not recommended for long backtests).
+        """
+        self.max_entries = max_entries
         self.validations: list[VolumeValidationResult] = []
         self.spikes: list[VolumeSpike] = []
         self.divergences: list[VolumeDivergence] = []
         self.trends: list[VolumeTrendResult] = []
         self.session_contexts: list[dict] = []
 
+    def _bounded_append(self, target_list: list, item: Any) -> None:
+        """Append item to list, evicting oldest entry if at capacity."""
+        if self.max_entries > 0 and len(target_list) >= self.max_entries:
+            target_list.pop(0)
+        target_list.append(item)
+
     def validate_pattern_volume(
         self,
         pattern_type: str,
-        volume_ratio: Decimal,
+        volume_ratio: Optional[Decimal],
         timestamp: datetime,
         asset_class: str = "stock",
         session: Optional[ForexSession] = None,
@@ -193,13 +220,14 @@ class VolumeLogger:
 
         Args:
             pattern_type: Pattern type ("Spring", "SOS", "LPS", "UTAD", "SellingClimax")
-            volume_ratio: Calculated volume ratio
+            volume_ratio: Calculated volume ratio, or None if unavailable
             timestamp: Pattern timestamp
             asset_class: "stock" or "forex"
             session: Forex session (if intraday)
 
         Returns:
-            True if volume meets requirements, False otherwise
+            True if volume meets requirements, False otherwise.
+            Returns True if volume_ratio is None (insufficient data to validate).
 
         Example:
             >>> logger = VolumeLogger()
@@ -212,6 +240,15 @@ class VolumeLogger:
             ... )
             >>> # Logs: [VOLUME PASS] Spring volume validated (0.58x < 0.85x threshold)
         """
+        # Guard: None volume_ratio means insufficient data (e.g., first 20 bars)
+        if volume_ratio is None:
+            logger.debug(
+                "volume_validation_skipped",
+                pattern_type=pattern_type,
+                reason="volume_ratio is None (insufficient data)",
+            )
+            return True
+
         threshold = self._get_threshold(pattern_type, asset_class, session)
         if threshold is None:
             logger.warning(
@@ -256,13 +293,13 @@ class VolumeLogger:
             wyckoff_interpretation=interpretation,
         )
 
-        self.validations.append(result)
+        self._bounded_append(self.validations, result)
 
-        # Log result
+        # Log result: DEBUG for passes (high volume in backtests), WARNING for violations
         session_str = f" ({session.value} session)" if session else ""
 
         if is_valid:
-            logger.info(
+            logger.debug(
                 f"[VOLUME PASS] {pattern_type} volume validated{session_str}",
                 timestamp=timestamp.isoformat(),
                 volume_ratio=f"{vol_ratio:.2f}x",
@@ -322,9 +359,9 @@ class VolumeLogger:
             "overall_avg": int(overall_avg),
         }
 
-        self.session_contexts.append(context)
+        self._bounded_append(self.session_contexts, context)
 
-        logger.info(
+        logger.debug(
             f"[VOLUME CONTEXT] {session.value} Session",
             timestamp=bar.timestamp.isoformat(),
             bar_volume=int(bar.volume),
@@ -334,7 +371,7 @@ class VolumeLogger:
 
         # Educational insight if ratios differ significantly
         if abs(absolute_ratio - session_ratio) > 0.3:
-            logger.info(
+            logger.debug(
                 "[VOLUME INSIGHT] Session context changes interpretation",
                 without_context=f"{absolute_ratio:.2f}x overall avg",
                 with_context=f"{session_ratio:.2f}x {session.value} avg",
@@ -410,10 +447,10 @@ class VolumeLogger:
             bars_analyzed=len(volumes),
         )
 
-        self.trends.append(result)
+        self._bounded_append(self.trends, result)
 
-        # Log the trend
-        logger.info(
+        # Log the trend (DEBUG for routine, keeps backtest logs clean)
+        logger.debug(
             f"[VOLUME TREND] {trend} over {len(volumes)} bars",
             context=context,
             slope_pct=f"{slope_pct:.1f}%",
@@ -498,9 +535,9 @@ class VolumeLogger:
             interpretation=interpretation,
         )
 
-        self.spikes.append(spike)
+        self._bounded_append(self.spikes, spike)
 
-        # Log the spike
+        # Log the spike (WARNING stays - spikes are noteworthy events)
         logger.warning(
             "[VOLUME SPIKE] Climactic volume detected",
             timestamp=bar.timestamp.isoformat(),
@@ -510,7 +547,7 @@ class VolumeLogger:
             price_action=price_action,
         )
 
-        logger.info(f"[WYCKOFF INTERPRETATION] {interpretation}")
+        logger.debug(f"[WYCKOFF INTERPRETATION] {interpretation}")
 
         return spike
 
@@ -575,7 +612,7 @@ class VolumeLogger:
                     interpretation=interpretation,
                 )
 
-                self.divergences.append(divergence)
+                self._bounded_append(self.divergences, divergence)
 
                 logger.warning(
                     "[VOLUME DIVERGENCE] BEARISH divergence detected",
@@ -587,7 +624,7 @@ class VolumeLogger:
                     divergence_pct=f"-{divergence_pct:.1f}%",
                 )
 
-                logger.info(f"[WYCKOFF INTERPRETATION] {interpretation}")
+                logger.debug(f"[WYCKOFF INTERPRETATION] {interpretation}")
 
                 return divergence
 
@@ -617,7 +654,7 @@ class VolumeLogger:
                     interpretation=interpretation,
                 )
 
-                self.divergences.append(divergence)
+                self._bounded_append(self.divergences, divergence)
 
                 logger.warning(
                     "[VOLUME DIVERGENCE] BULLISH divergence detected",
@@ -629,7 +666,7 @@ class VolumeLogger:
                     divergence_pct=f"-{divergence_pct:.1f}%",
                 )
 
-                logger.info(f"[WYCKOFF INTERPRETATION] {interpretation}")
+                logger.debug(f"[WYCKOFF INTERPRETATION] {interpretation}")
 
                 return divergence
 
@@ -803,7 +840,13 @@ class VolumeLogger:
         asset_class: str,
         session: Optional[ForexSession],
     ) -> Optional[dict[str, Decimal]]:
-        """Get volume threshold for pattern type, asset class, and session."""
+        """Get volume threshold for pattern type, asset class, and session.
+
+        Handles all 5 ForexSession values: ASIAN, LONDON, OVERLAP, NY, NY_CLOSE.
+        Session-specific overrides (forex_asian, forex_overlap) take priority
+        over the default forex threshold. LONDON, NY, and NY_CLOSE fall through
+        to the default forex threshold since they don't have special overrides.
+        """
         pattern_thresholds: Optional[dict[str, Any]] = VOLUME_THRESHOLDS.get(pattern_type)
         if pattern_thresholds is None:
             return None
@@ -821,16 +864,16 @@ class VolumeLogger:
             return pattern_thresholds.get("stock")
 
         # Forex thresholds with session-specific overrides
-        if asset_class == "forex" or asset_class == "FOREX":
-            if session == ForexSession.ASIAN:
-                asian_threshold = pattern_thresholds.get("forex_asian")
-                if asian_threshold:
-                    return asian_threshold
-            elif session == ForexSession.OVERLAP:
-                overlap_threshold = pattern_thresholds.get("forex_overlap")
-                if overlap_threshold:
-                    return overlap_threshold
+        if asset_class in ("forex", "FOREX"):
+            # Check for session-specific override first
+            if session is not None:
+                session_key = f"forex_{session.value.lower()}"
+                session_threshold = pattern_thresholds.get(session_key)
+                if session_threshold:
+                    return session_threshold
 
+            # Fall through to default forex threshold for all sessions
+            # (LONDON, NY, NY_CLOSE, or when no session-specific override exists)
             return pattern_thresholds.get("forex")
 
         return pattern_thresholds.get("stock")
