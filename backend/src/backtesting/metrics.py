@@ -341,9 +341,9 @@ class MetricsCalculator:
             Sharpe = (0.1% - 0.008%) / 0.5% * sqrt(252) = 2.92
 
         Example (Hourly):
-            Avg hourly return = 0.004%, std dev = 0.032%
-            Risk-free rate = 2% annual = 0.00033% hourly
-            Sharpe = (0.004% - 0.00033%) / 0.032% * sqrt(6048) = 2.92
+            Avg hourly return = 0.00417%, std dev = 0.102%
+            Risk-free rate = 2% annual = 0.000333% hourly
+            Sharpe = (0.00417% - 0.000333%) / 0.102% * sqrt(6048) = 2.92
         """
         if len(equity_curve) < 2:
             return Decimal("0")
