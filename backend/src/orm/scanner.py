@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String
-from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -242,6 +242,14 @@ class ScannerHistoryORM(Base):
         Integer,
         nullable=False,
         server_default="0",
+    )
+
+    # Correlation IDs of signals generated during this cycle (Task #25)
+    # Stored as JSONB array of UUID strings: ["uuid1", "uuid2", ...]
+    correlation_ids: Mapped[list[str] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        server_default="[]",
     )
 
     # Cycle status: COMPLETED, PARTIAL, FAILED, SKIPPED

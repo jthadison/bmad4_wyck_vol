@@ -90,6 +90,7 @@ class ScanCycleResult:
     symbols_skipped_session: int = 0  # Story 20.4: forex session filtering
     symbols_skipped_rate_limit: int = 0  # Story 20.4: rate limiting
     kill_switch_triggered: bool = False  # Story 20.4: kill switch was activated
+    correlation_ids: list[str] = field(default_factory=list)  # Task #25: Signal correlation IDs
 
 
 class ScannerState(str, Enum):
@@ -781,6 +782,9 @@ class SignalScannerService:
                 status=status.value,
             )
 
+            # Extract correlation IDs from signals for audit trail (Task #25)
+            correlation_ids = [str(signal.correlation_id) for signal in all_signals]
+
             # Record cycle in history
             result = ScanCycleResult(
                 cycle_started_at=cycle_started_at,
@@ -793,6 +797,7 @@ class SignalScannerService:
                 symbols_no_data=symbols_no_data,
                 symbols_skipped_session=symbols_skipped_session,
                 symbols_skipped_rate_limit=symbols_skipped_rate_limit,
+                correlation_ids=correlation_ids,
             )
 
             await self._record_cycle_history(result)
@@ -934,6 +939,10 @@ class SignalScannerService:
     async def _record_cycle_history(self, result: ScanCycleResult) -> None:
         """
         Record scan cycle in history table.
+
+        NOTE (L-3): History is ALWAYS recorded after every scan cycle, regardless
+        of outcome (COMPLETED, PARTIAL, FAILED, SKIPPED). This ensures we have a
+        complete audit trail of all scanner activity, including failures.
 
         Args:
             result: Completed scan cycle result

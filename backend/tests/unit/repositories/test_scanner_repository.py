@@ -638,6 +638,63 @@ class TestGetHistory:
 
         assert result == []
 
+    @pytest.mark.asyncio
+    async def test_get_history_includes_correlation_ids(self, db_session):
+        """Test that correlation_ids are persisted and retrieved (M-3)."""
+        await _create_singleton_config(db_session)
+
+        repository = ScannerRepository(db_session)
+
+        # Create history with correlation_ids
+        correlation_ids = ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"]
+        history_data = ScannerHistoryCreate(
+            cycle_started_at=datetime.now(UTC),
+            cycle_ended_at=datetime.now(UTC),
+            symbols_scanned=2,
+            signals_generated=2,
+            errors_count=0,
+            status=ScanCycleStatus.COMPLETED,
+            correlation_ids=correlation_ids,  # Task #25
+        )
+
+        created_history = await repository.add_history(history_data)
+
+        # Verify correlation_ids were persisted
+        assert created_history.correlation_ids == correlation_ids
+
+        # Verify correlation_ids are retrieved
+        history_list = await repository.get_history(limit=1)
+        assert len(history_list) == 1
+        assert history_list[0].correlation_ids == correlation_ids
+
+    @pytest.mark.asyncio
+    async def test_get_history_handles_null_correlation_ids(self, db_session):
+        """Test that NULL correlation_ids (old records) are handled gracefully (M-3)."""
+        await _create_singleton_config(db_session)
+
+        repository = ScannerRepository(db_session)
+
+        # Create history without correlation_ids (simulating old records)
+        history_data = ScannerHistoryCreate(
+            cycle_started_at=datetime.now(UTC),
+            cycle_ended_at=datetime.now(UTC),
+            symbols_scanned=0,
+            signals_generated=0,
+            errors_count=0,
+            status=ScanCycleStatus.COMPLETED,
+            correlation_ids=None,  # Explicitly None
+        )
+
+        created_history = await repository.add_history(history_data)
+
+        # Verify None is handled
+        assert created_history.correlation_ids is None
+
+        # Verify retrieval doesn't crash
+        history_list = await repository.get_history(limit=1)
+        assert len(history_list) == 1
+        assert history_list[0].correlation_ids is None
+
 
 # =========================================
 # Helper Functions

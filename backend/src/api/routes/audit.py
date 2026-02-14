@@ -31,11 +31,15 @@ from datetime import datetime
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.database import get_db
 from src.models.audit import AuditLogQueryParams, AuditLogResponse
+from src.models.audit_trail import AuditTrailQuery, AuditTrailResponse
 from src.repositories.audit_repository import AuditRepository
+from src.repositories.audit_trail_repository import AuditTrailRepository
 
 logger = structlog.get_logger()
 
@@ -205,4 +209,66 @@ async def get_audit_log(
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to query audit log",
+        ) from e
+
+
+@router.get(
+    "/audit-trail",
+    response_model=AuditTrailResponse,
+    summary="Query audit trail (overrides, config changes)",
+    description=(
+        "Retrieve audit trail entries for manual overrides and compliance tracking. "
+        "Supports filtering by event type, entity, actor, and date range."
+    ),
+)
+async def get_audit_trail(
+    event_type: Optional[str] = Query(None, description="Filter by event type"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type"),
+    entity_id: Optional[str] = Query(None, description="Filter by entity ID"),
+    actor: Optional[str] = Query(None, description="Filter by actor"),
+    correlation_id: Optional[str] = Query(None, description="Filter by correlation ID"),
+    start_date: Optional[datetime] = Query(None, description="Filter start date (UTC)"),
+    end_date: Optional[datetime] = Query(None, description="Filter end date (UTC)"),
+    limit: int = Query(50, ge=1, le=200, description="Results per page"),
+    offset: int = Query(0, ge=0, description="Starting position"),
+    db: AsyncSession = Depends(get_db),
+) -> AuditTrailResponse:
+    """
+    Query audit trail with filtering and pagination.
+
+    Returns paginated list of audit trail entries for compliance review.
+    """
+    try:
+        if start_date and end_date and start_date > end_date:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="start_date must be before end_date",
+            )
+
+        params = AuditTrailQuery(
+            event_type=event_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            actor=actor,
+            correlation_id=correlation_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            offset=offset,
+        )
+
+        repo = AuditTrailRepository(db)
+        entries, total_count = await repo.query(params)
+
+        return AuditTrailResponse(
+            data=entries, total_count=total_count, limit=limit, offset=offset
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("audit_trail_query_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to query audit trail",
         ) from e
