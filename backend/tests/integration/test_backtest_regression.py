@@ -1,11 +1,17 @@
 """
-Backtest Regression Test (Story 13.5 Task 5)
+Backtest Regression Test (Story 13.5 Task 5, updated Story 13.8)
 
 Purpose:
 --------
 Verify that the daily (1d) timeframe produces consistent results after
 integrating real pattern detectors. Ensures backward compatibility with
 the golden master baseline established in Story 13.0.
+
+Story 13.8 Addition:
+--------------------
+Verify that VolumeLogger integration does not break existing backtest logic.
+Volume logging regression tests validate threshold stability and known
+pattern validation results (AC8.9).
 
 Test Strategy:
 --------------
@@ -17,21 +23,24 @@ Test Strategy:
 Acceptance Criteria:
 --------------------
 - AC6.9: Daily timeframe produces same results as golden master baseline
+- AC8.9: Volume logging does not break existing backtest results
 - Total trades matches exactly (or within ±1 trade)
 - Total return percentage within ±1% tolerance
 - Win rate within ±5% tolerance
 
-Author: Developer Agent (Story 13.5)
+Author: Developer Agent (Story 13.5), Test Engineer (Story 13.8)
 """
 
 import json
 import os
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-# These tests require POLYGON_API_KEY for market data download
-pytestmark = pytest.mark.skipif(
+# Marker for tests that require POLYGON_API_KEY for market data download
+requires_polygon = pytest.mark.skipif(
     not os.environ.get("POLYGON_API_KEY"),
     reason="POLYGON_API_KEY environment variable not set",
 )
@@ -120,6 +129,7 @@ def save_golden_master(request):
     return _save
 
 
+@requires_polygon
 @pytest.mark.asyncio
 async def test_daily_backtest_backward_compatibility(golden_master_baseline, save_golden_master):
     """
@@ -180,6 +190,7 @@ async def test_daily_backtest_backward_compatibility(golden_master_baseline, sav
     print(f"  Win Rate: {actual_win_rate:.1%} (expected: {expected['win_rate']:.1%})")
 
 
+@requires_polygon
 @pytest.mark.asyncio
 async def test_daily_backtest_uses_standard_detectors():
     """
@@ -204,6 +215,7 @@ async def test_daily_backtest_uses_standard_detectors():
     print("  Daily timeframe correctly uses standard detectors")
 
 
+@requires_polygon
 @pytest.mark.asyncio
 async def test_wyckoff_exit_logic_regression():
     """
@@ -279,6 +291,7 @@ async def test_wyckoff_exit_logic_regression():
     print("\n[REGRESSION TEST PASSED]")
 
 
+@requires_polygon
 @pytest.mark.asyncio
 async def test_exit_reason_distribution():
     """
@@ -335,3 +348,160 @@ async def test_exit_reason_distribution():
     print(
         f"  Total trades with exit reasons: {len([t for t in result.trades if hasattr(t, 'exit_reason') and t.exit_reason])}/{len(result.trades)}"
     )
+
+
+# =============================================================================
+# Story 13.8 - Volume Logging Regression Tests (AC8.9)
+# These tests do NOT require POLYGON_API_KEY and run in all environments.
+# =============================================================================
+
+
+class TestVolumeLoggingRegression:
+    """
+    AC8.9: Verify volume logging does not break existing backtest logic.
+
+    These regression tests ensure:
+    - VolumeLogger thresholds remain stable across releases
+    - Known pattern validations produce expected results
+    - VolumeLogger instantiation and operation have no side effects
+    - Volume analysis report generation works correctly
+    """
+
+    def test_volume_logger_instantiation(self):
+        """VolumeLogger should instantiate cleanly with empty state."""
+        from src.pattern_engine.volume_logger import VolumeLogger
+
+        logger = VolumeLogger()
+        assert len(logger.validations) == 0
+        assert len(logger.spikes) == 0
+        assert len(logger.divergences) == 0
+        assert len(logger.trends) == 0
+        assert len(logger.session_contexts) == 0
+
+    def test_volume_thresholds_regression(self):
+        """Volume thresholds must remain stable (AC8.9).
+
+        These values are contractual -- changing them would affect
+        all pattern detection and must be coordinated across the system.
+        """
+        from src.pattern_engine.volume_logger import VOLUME_THRESHOLDS
+
+        # Spring thresholds (low volume shakeout)
+        assert VOLUME_THRESHOLDS["Spring"]["stock"]["max"] == Decimal("0.7")
+        assert VOLUME_THRESHOLDS["Spring"]["forex"]["max"] == Decimal("0.85")
+        assert VOLUME_THRESHOLDS["Spring"]["forex_asian"]["max"] == Decimal("0.60")
+
+        # SOS thresholds (high volume demand)
+        assert VOLUME_THRESHOLDS["SOS"]["stock"]["min"] == Decimal("1.5")
+        assert VOLUME_THRESHOLDS["SOS"]["forex"]["min"] == Decimal("1.8")
+        assert VOLUME_THRESHOLDS["SOS"]["forex_asian"]["min"] == Decimal("2.0")
+
+        # UTAD thresholds (distribution climax)
+        assert VOLUME_THRESHOLDS["UTAD"]["stock"]["min"] == Decimal("1.2")
+        assert VOLUME_THRESHOLDS["UTAD"]["forex"]["min"] == Decimal("2.5")
+
+        # SellingClimax threshold (panic selling)
+        assert VOLUME_THRESHOLDS["SellingClimax"]["min"] == Decimal("2.0")
+
+        # LPS thresholds (low/moderate or absorption)
+        assert VOLUME_THRESHOLDS["LPS"]["standard"]["max"] == Decimal("1.0")
+
+    def test_known_validation_results_regression(self):
+        """Known pattern/volume combinations must always produce same result.
+
+        This is the canonical regression set. If any of these flip, it
+        indicates a threshold or logic change that needs investigation.
+        """
+        from src.pattern_engine.volume_logger import VolumeLogger
+
+        logger = VolumeLogger()
+        timestamp = datetime.now(UTC)
+
+        # (pattern_type, volume_ratio, asset_class, expected_result)
+        regression_cases = [
+            # Springs - must require low volume
+            ("Spring", Decimal("0.50"), "stock", True),
+            ("Spring", Decimal("0.69"), "stock", True),
+            ("Spring", Decimal("0.71"), "stock", False),
+            ("Spring", Decimal("1.00"), "stock", False),
+            # SOS - must require high volume
+            ("SOS", Decimal("1.50"), "stock", True),
+            ("SOS", Decimal("2.00"), "stock", True),
+            ("SOS", Decimal("1.49"), "stock", False),
+            ("SOS", Decimal("0.80"), "stock", False),
+            # LPS - must be low volume (standard path)
+            ("LPS", Decimal("0.50"), "stock", True),
+            ("LPS", Decimal("0.99"), "stock", True),
+            ("LPS", Decimal("1.01"), "stock", False),
+            ("LPS", Decimal("2.00"), "stock", False),
+            # SellingClimax - must be ultra-high
+            ("SellingClimax", Decimal("2.00"), "stock", True),
+            ("SellingClimax", Decimal("3.50"), "stock", True),
+            ("SellingClimax", Decimal("1.99"), "stock", False),
+            # UTAD stock
+            ("UTAD", Decimal("1.20"), "stock", True),
+            ("UTAD", Decimal("1.19"), "stock", False),
+            # Forex-specific thresholds
+            ("Spring", Decimal("0.84"), "forex", True),
+            ("Spring", Decimal("0.86"), "forex", False),
+            ("SOS", Decimal("1.80"), "forex", True),
+            ("SOS", Decimal("1.79"), "forex", False),
+        ]
+
+        for pattern_type, volume_ratio, asset_class, expected in regression_cases:
+            result = logger.validate_pattern_volume(
+                pattern_type=pattern_type,
+                volume_ratio=volume_ratio,
+                timestamp=timestamp,
+                asset_class=asset_class,
+            )
+            assert result == expected, (
+                f"REGRESSION FAILURE: {pattern_type} at {volume_ratio}x ({asset_class}) "
+                f"expected {expected}, got {result}"
+            )
+
+    def test_volume_logger_report_no_crash(self, capsys):
+        """Volume analysis report must not crash in any state (AC8.9)."""
+        from src.pattern_engine.volume_logger import VolumeLogger
+
+        logger = VolumeLogger()
+
+        # Report with empty data should not crash
+        logger.print_volume_analysis_report("1d")
+        captured = capsys.readouterr()
+        assert "[VOLUME ANALYSIS] - 1d" in captured.out
+
+        # Report after some validations should not crash
+        logger.validate_pattern_volume("Spring", Decimal("0.5"), datetime.now(UTC), "stock")
+        logger.validate_pattern_volume("SOS", Decimal("1.0"), datetime.now(UTC), "stock")
+        logger.print_volume_analysis_report("1d")
+        captured = capsys.readouterr()
+        assert "PATTERN VOLUME VALIDATION" in captured.out
+
+    def test_volume_logger_reset_regression(self):
+        """Reset must fully clear state without residual data."""
+        from src.pattern_engine.volume_logger import VolumeLogger
+
+        logger = VolumeLogger()
+        timestamp = datetime.now(UTC)
+
+        # Populate all lists
+        logger.validate_pattern_volume("Spring", Decimal("0.5"), timestamp, "stock")
+        logger.validate_pattern_volume("SOS", Decimal("2.0"), timestamp, "stock")
+
+        # Verify populated
+        assert len(logger.validations) == 2
+
+        # Reset
+        logger.reset()
+
+        # Verify clean
+        assert len(logger.validations) == 0
+        assert len(logger.spikes) == 0
+        assert len(logger.divergences) == 0
+        assert len(logger.trends) == 0
+        assert len(logger.session_contexts) == 0
+
+        # Verify still functional after reset
+        logger.validate_pattern_volume("Spring", Decimal("0.5"), timestamp, "stock")
+        assert len(logger.validations) == 1

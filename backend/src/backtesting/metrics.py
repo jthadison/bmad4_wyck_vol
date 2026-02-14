@@ -277,6 +277,7 @@ class MetricsCalculator:
         Examples:
             "1d" -> 252 (252 trading days)
             "1h" -> 6,048 (252 days * 24 hours, assuming 24/5 forex)
+            "30m" -> 12,096 (252 days * 24 hours * 2)
             "15m" -> 24,192 (252 days * 24 hours * 4 quarters)
             "5m" -> 72,576 (252 days * 24 hours * 12 periods)
             "1m" -> 362,880 (252 days * 24 hours * 60 minutes)
@@ -284,7 +285,7 @@ class MetricsCalculator:
         Warning:
             For equity backtests (US30, SPY, etc.), intraday Sharpe ratios
             will be slightly overstated due to 24h assumption vs 6.5h reality.
-            Error magnitude: ~3.7x (24/6.5) on annualization factor.
+            Error magnitude on Sharpe: ~1.92x (sqrt(24/6.5)).
         """
         # Parse timeframe string
         timeframe_lower = timeframe.lower()
@@ -295,6 +296,8 @@ class MetricsCalculator:
             return 252 * 24  # 6,048
         elif timeframe_lower == "4h":
             return 252 * 6  # 1,512 (24/4 = 6 bars per day)
+        elif timeframe_lower == "30m":
+            return 252 * 24 * 2  # 12,096 (2 thirty-minute periods per hour)
         elif timeframe_lower == "15m":
             return 252 * 24 * 4  # 24,192 (4 fifteen-minute periods per hour)
         elif timeframe_lower == "5m":

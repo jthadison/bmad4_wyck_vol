@@ -33,8 +33,10 @@ from src.models.ohlcv import OHLCVBar
 logger = structlog.get_logger(__name__)
 
 
-# Volume thresholds by pattern type
-# Aligned with existing VolumeValidator (Story 8.3, 8.3.1) and Story 9.1 optimizations
+# Volume thresholds by pattern type for educational logging.
+# Canonical sources: VolumeValidator (Story 8.3, 8.3.1) and config/volume_thresholds.yaml (Story 9.1).
+# These thresholds MUST stay aligned with those sources. If thresholds change in the canonical
+# sources, update this dict accordingly.
 VOLUME_THRESHOLDS: dict[str, dict[str, Any]] = {
     "Spring": {
         "stock": {"min": Decimal("0.0"), "max": Decimal("0.7")},
@@ -51,7 +53,8 @@ VOLUME_THRESHOLDS: dict[str, dict[str, Any]] = {
         "wyckoff_rule": "SOS requires strong volume showing institutional participation",
     },
     "LPS": {
-        "standard": {"min": Decimal("0.0"), "max": Decimal("1.0")},
+        "stock": {"min": Decimal("0.0"), "max": Decimal("0.85")},
+        "forex": {"min": Decimal("0.0"), "max": Decimal("1.0")},
         "absorption": {
             "min": Decimal("1.0"),
             "max": Decimal("1.5"),
@@ -61,7 +64,7 @@ VOLUME_THRESHOLDS: dict[str, dict[str, Any]] = {
         "wyckoff_rule": "LPS should be quiet unless showing absorption (high vol + close high)",
     },
     "UTAD": {
-        "stock": {"min": Decimal("1.2"), "max": Decimal("999.0")},
+        "stock": {"min": Decimal("2.0"), "max": Decimal("999.0")},
         "forex": {"min": Decimal("2.5"), "max": Decimal("999.0")},
         "forex_overlap": {"min": Decimal("2.2"), "max": Decimal("999.0")},
         "forex_asian": {"min": Decimal("2.8"), "max": Decimal("999.0")},
@@ -172,6 +175,9 @@ class VolumeLogger:
         summary = volume_logger.get_summary()
     """
 
+    # Max entries per list to bound memory usage. Oldest entries are evicted first.
+    MAX_ENTRIES = 10000
+
     def __init__(self):
         """Initialize volume logger with empty tracking lists."""
         self.validations: list[VolumeValidationResult] = []
@@ -180,10 +186,16 @@ class VolumeLogger:
         self.trends: list[VolumeTrendResult] = []
         self.session_contexts: list[dict] = []
 
+    def _append_bounded(self, target: list, item: object) -> None:
+        """Append item to list, evicting oldest if at capacity."""
+        if len(target) >= self.MAX_ENTRIES:
+            target.pop(0)
+        target.append(item)
+
     def validate_pattern_volume(
         self,
         pattern_type: str,
-        volume_ratio: Decimal,
+        volume_ratio: Optional[Decimal],
         timestamp: datetime,
         asset_class: str = "stock",
         session: Optional[ForexSession] = None,
@@ -193,7 +205,7 @@ class VolumeLogger:
 
         Args:
             pattern_type: Pattern type ("Spring", "SOS", "LPS", "UTAD", "SellingClimax")
-            volume_ratio: Calculated volume ratio
+            volume_ratio: Calculated volume ratio (None treated as missing data, returns True)
             timestamp: Pattern timestamp
             asset_class: "stock" or "forex"
             session: Forex session (if intraday)
@@ -212,6 +224,10 @@ class VolumeLogger:
             ... )
             >>> # Logs: [VOLUME PASS] Spring volume validated (0.58x < 0.85x threshold)
         """
+        if volume_ratio is None:
+            logger.debug("volume_ratio_is_none", pattern_type=pattern_type)
+            return True
+
         threshold = self._get_threshold(pattern_type, asset_class, session)
         if threshold is None:
             logger.warning(
@@ -256,13 +272,13 @@ class VolumeLogger:
             wyckoff_interpretation=interpretation,
         )
 
-        self.validations.append(result)
+        self._append_bounded(self.validations, result)
 
-        # Log result
+        # Log: DEBUG for passes, WARNING for failures (reduces log volume)
         session_str = f" ({session.value} session)" if session else ""
 
         if is_valid:
-            logger.info(
+            logger.debug(
                 f"[VOLUME PASS] {pattern_type} volume validated{session_str}",
                 timestamp=timestamp.isoformat(),
                 volume_ratio=f"{vol_ratio:.2f}x",
@@ -322,9 +338,9 @@ class VolumeLogger:
             "overall_avg": int(overall_avg),
         }
 
-        self.session_contexts.append(context)
+        self._append_bounded(self.session_contexts, context)
 
-        logger.info(
+        logger.debug(
             f"[VOLUME CONTEXT] {session.value} Session",
             timestamp=bar.timestamp.isoformat(),
             bar_volume=int(bar.volume),
@@ -334,7 +350,7 @@ class VolumeLogger:
 
         # Educational insight if ratios differ significantly
         if abs(absolute_ratio - session_ratio) > 0.3:
-            logger.info(
+            logger.debug(
                 "[VOLUME INSIGHT] Session context changes interpretation",
                 without_context=f"{absolute_ratio:.2f}x overall avg",
                 with_context=f"{session_ratio:.2f}x {session.value} avg",
@@ -410,10 +426,10 @@ class VolumeLogger:
             bars_analyzed=len(volumes),
         )
 
-        self.trends.append(result)
+        self._append_bounded(self.trends, result)
 
         # Log the trend
-        logger.info(
+        logger.debug(
             f"[VOLUME TREND] {trend} over {len(volumes)} bars",
             context=context,
             slope_pct=f"{slope_pct:.1f}%",
@@ -498,9 +514,9 @@ class VolumeLogger:
             interpretation=interpretation,
         )
 
-        self.spikes.append(spike)
+        self._append_bounded(self.spikes, spike)
 
-        # Log the spike
+        # Log the spike (WARNING since spikes are noteworthy events)
         logger.warning(
             "[VOLUME SPIKE] Climactic volume detected",
             timestamp=bar.timestamp.isoformat(),
@@ -545,18 +561,27 @@ class VolumeLogger:
 
         recent_bars = bars[-lookback:]
 
-        # Build list of highs and lows with volumes
-        highs_with_volume = [(b.high, b.volume, b.timestamp) for b in recent_bars]
-        lows_with_volume = [(b.low, b.volume, b.timestamp) for b in recent_bars]
+        # Split into earlier half and later half to ensure temporal ordering.
+        # Divergence requires the LATER extreme to have less volume than the EARLIER one.
+        mid = len(recent_bars) // 2
+        earlier_half = recent_bars[:mid]
+        later_half = recent_bars[mid:]
 
-        # Check for bearish divergence (new high, lower volume)
-        sorted_highs = sorted(highs_with_volume, key=lambda x: x[0], reverse=True)
-        if len(sorted_highs) >= 2:
-            newest_high = sorted_highs[0]
-            prev_high = sorted_highs[1]
+        if not earlier_half or not later_half:
+            return None
 
-            if newest_high[1] < prev_high[1] * Decimal("0.8"):  # 20% volume decline
-                divergence_pct = float((prev_high[1] - newest_high[1]) / prev_high[1] * 100)
+        # Find highest high in each half (for bearish divergence check)
+        earlier_high_bar = max(earlier_half, key=lambda b: b.high)
+        later_high_bar = max(later_half, key=lambda b: b.high)
+
+        # Bearish divergence: later half makes higher high on lower volume
+        if later_high_bar.high > earlier_high_bar.high and earlier_high_bar.volume > 0:
+            if later_high_bar.volume < earlier_high_bar.volume * Decimal("0.8"):
+                divergence_pct = float(
+                    (earlier_high_bar.volume - later_high_bar.volume)
+                    / earlier_high_bar.volume
+                    * 100
+                )
 
                 interpretation = (
                     "Price making new highs but volume declining. "
@@ -565,11 +590,11 @@ class VolumeLogger:
                 )
 
                 divergence = VolumeDivergence(
-                    timestamp=newest_high[2],
-                    price_extreme=newest_high[0],
-                    previous_extreme=prev_high[0],
-                    current_volume=newest_high[1],
-                    previous_volume=prev_high[1],
+                    timestamp=later_high_bar.timestamp,
+                    price_extreme=later_high_bar.high,
+                    previous_extreme=earlier_high_bar.high,
+                    current_volume=later_high_bar.volume,
+                    previous_volume=earlier_high_bar.volume,
                     divergence_pct=divergence_pct,
                     direction="BEARISH",
                     interpretation=interpretation,
@@ -591,14 +616,18 @@ class VolumeLogger:
 
                 return divergence
 
-        # Check for bullish divergence (new low, lower volume)
-        sorted_lows = sorted(lows_with_volume, key=lambda x: x[0])
-        if len(sorted_lows) >= 2:
-            newest_low = sorted_lows[0]
-            prev_low = sorted_lows[1]
+        # Find lowest low in each half (for bullish divergence check)
+        earlier_low_bar = min(earlier_half, key=lambda b: b.low)
+        later_low_bar = min(later_half, key=lambda b: b.low)
 
-            if newest_low[1] < prev_low[1] * Decimal("0.8"):  # 20% volume decline
-                divergence_pct = float((prev_low[1] - newest_low[1]) / prev_low[1] * 100)
+        # Bullish divergence: later half makes lower low on lower volume
+        if later_low_bar.low < earlier_low_bar.low and earlier_low_bar.volume > 0:
+            if later_low_bar.volume < earlier_low_bar.volume * Decimal("0.8"):
+                divergence_pct = float(
+                    (earlier_low_bar.volume - later_low_bar.volume)
+                    / earlier_low_bar.volume
+                    * 100
+                )
 
                 interpretation = (
                     "Price making new lows but volume declining. "
@@ -607,11 +636,11 @@ class VolumeLogger:
                 )
 
                 divergence = VolumeDivergence(
-                    timestamp=newest_low[2],
-                    price_extreme=newest_low[0],
-                    previous_extreme=prev_low[0],
-                    current_volume=newest_low[1],
-                    previous_volume=prev_low[1],
+                    timestamp=later_low_bar.timestamp,
+                    price_extreme=later_low_bar.low,
+                    previous_extreme=earlier_low_bar.low,
+                    current_volume=later_low_bar.volume,
+                    previous_volume=earlier_low_bar.volume,
                     divergence_pct=divergence_pct,
                     direction="BULLISH",
                     interpretation=interpretation,
@@ -812,9 +841,13 @@ class VolumeLogger:
         if "min" in pattern_thresholds and "max" in pattern_thresholds:
             return {"min": pattern_thresholds["min"], "max": pattern_thresholds["max"]}
 
-        # Handle LPS special case
+        # Handle LPS: use asset_class key like other patterns, fall back to forex
         if pattern_type == "LPS":
-            return pattern_thresholds.get("standard", {"min": Decimal("0"), "max": Decimal("1.0")})
+            if asset_class == "stock":
+                return pattern_thresholds.get(
+                    "stock", {"min": Decimal("0"), "max": Decimal("0.85")}
+                )
+            return pattern_thresholds.get("forex", {"min": Decimal("0"), "max": Decimal("1.0")})
 
         # Stock thresholds
         if asset_class == "stock":

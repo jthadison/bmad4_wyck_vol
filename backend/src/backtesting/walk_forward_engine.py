@@ -444,7 +444,10 @@ class WalkForwardEngine:
         validated_detector = ValidatedSignalDetector(detector)
         cost_model = ZeroCostModel()
         position_manager = PositionManager(base_config.initial_capital)
-        engine_config = EngineConfig(initial_capital=base_config.initial_capital)
+        engine_config = EngineConfig(
+            initial_capital=base_config.initial_capital,
+            timeframe=base_config.timeframe,  # Story 13.5 C-2 Fix: Pass timeframe for Sharpe calculation
+        )
         risk_manager = BacktestRiskManager(initial_capital=base_config.initial_capital)
 
         engine = UnifiedBacktestEngine(

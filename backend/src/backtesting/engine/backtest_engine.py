@@ -1098,6 +1098,59 @@ class UnifiedBacktestEngine:
             execution_time_seconds=Decimal(str(execution_time)),
         )
 
+    def _get_bars_per_year(self, timeframe: str) -> int:
+        """Calculate number of bars per year based on timeframe.
+
+        Story 13.5 C-2 Fix: Dynamic calculation for intraday timeframes.
+
+        **IMPORTANT - Asset Class Assumptions**:
+        - Assumes 24/5 trading (forex/crypto market hours)
+        - 252 trading days per year baseline
+        - For equities with 6.5h/day market hours, bars_per_year would differ
+        - Future enhancement needed for asset-class-specific trading hours
+
+        Args:
+            timeframe: Timeframe string (e.g., "1d", "1h", "15m", "5m")
+
+        Returns:
+            Number of bars per trading year
+
+        Examples:
+            "1d" -> 252 (252 trading days)
+            "1h" -> 6,048 (252 days * 24 hours, assuming 24/5 forex)
+            "30m" -> 12,096 (252 days * 24 hours * 2)
+            "15m" -> 24,192 (252 days * 24 hours * 4)
+            "5m" -> 72,576 (252 days * 24 hours * 12)
+            "1m" -> 362,880 (252 days * 24 hours * 60)
+
+        Warning:
+            For equity backtests (US30, SPY, etc.), intraday Sharpe ratios
+            will be overstated due to 24h assumption vs 6.5h reality.
+            Error magnitude on Sharpe: ~1.92x (sqrt(24/6.5)).
+        """
+        # Parse timeframe string
+        timeframe_lower = timeframe.lower()
+
+        if timeframe_lower == "1d" or timeframe_lower == "daily":
+            return 252
+        elif timeframe_lower == "1h" or timeframe_lower == "hourly":
+            return 252 * 24  # 6,048
+        elif timeframe_lower == "4h":
+            return 252 * 6  # 1,512 (24/4 = 6 bars per day)
+        elif timeframe_lower == "30m":
+            return 252 * 24 * 2  # 12,096 (2 thirty-minute periods per hour)
+        elif timeframe_lower == "15m":
+            return 252 * 24 * 4  # 24,192 (4 fifteen-minute periods per hour)
+        elif timeframe_lower == "5m":
+            return 252 * 24 * 12  # 72,576 (12 five-minute periods per hour)
+        elif timeframe_lower == "1m":
+            return 252 * 24 * 60  # 362,880 (60 one-minute periods per hour)
+        elif timeframe_lower == "1w" or timeframe_lower == "weekly":
+            return 52  # 52 weeks per year
+        else:
+            # Default to daily if unknown
+            return 252
+
     def _calculate_metrics(self, trades: list) -> BacktestMetrics:
         """
         Calculate performance metrics from trades.
@@ -1167,24 +1220,28 @@ class UnifiedBacktestEngine:
                 exponent = 365.25 / total_days
                 cagr = Decimal(str(ratio**exponent - 1.0))
 
-        # Sharpe ratio: (mean(daily_returns) - daily_rf) / std(daily_returns) * sqrt(252)
+        # Sharpe ratio: (mean(bar_returns) - bar_rf) / std(bar_returns) * sqrt(bars_per_year)
+        # Story 13.5 C-2 Fix: Timeframe-aware annualization
         sharpe_ratio = Decimal("0")
         if len(self._equity_curve) >= 2:
-            daily_returns: list[float] = []
+            bar_returns: list[float] = []
             for i in range(1, len(self._equity_curve)):
                 prev_val = float(self._equity_curve[i - 1].portfolio_value)
                 curr_val = float(self._equity_curve[i].portfolio_value)
                 if prev_val > 0:
-                    daily_returns.append((curr_val - prev_val) / prev_val)
-            if len(daily_returns) >= 2:
-                mean_ret = sum(daily_returns) / len(daily_returns)
-                daily_rf = 0.02 / 252  # Annual risk-free rate (2%) / trading days
-                variance = sum((r - mean_ret) ** 2 for r in daily_returns) / (
-                    len(daily_returns) - 1
-                )
+                    bar_returns.append((curr_val - prev_val) / prev_val)
+            if len(bar_returns) >= 2:
+                # Get bars per year for this timeframe
+                bars_per_year = self._get_bars_per_year(self._config.timeframe)
+
+                mean_ret = sum(bar_returns) / len(bar_returns)
+                bar_rf = 0.02 / bars_per_year  # Annual risk-free rate (2%) / bars per year
+                variance = sum((r - mean_ret) ** 2 for r in bar_returns) / (len(bar_returns) - 1)
                 std_ret = math.sqrt(variance)
                 if std_ret > 0:
-                    sharpe_ratio = Decimal(str((mean_ret - daily_rf) / std_ret * math.sqrt(252)))
+                    sharpe_ratio = Decimal(
+                        str((mean_ret - bar_rf) / std_ret * math.sqrt(bars_per_year))
+                    )
 
         return BacktestMetrics(
             total_signals=len(trades),
