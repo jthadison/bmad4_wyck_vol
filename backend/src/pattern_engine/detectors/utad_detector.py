@@ -449,14 +449,23 @@ class UTADDetector:
         if trading_range.ice is None:
             from datetime import UTC, datetime
 
-            from src.models.trading_range import IceLevel
+            from src.models.ice_level import IceLevel
 
-            # Create a temporary IceLevel for the detection
+            # Create a minimal IceLevel with all required fields for backward compatibility
+            # This supports legacy code that passes ice_level as a Decimal parameter
+            now = datetime.now(UTC)
             trading_range.ice = IceLevel(
                 price=ice_level,
-                strength=5,  # Default strength for compatibility
-                timestamp=datetime.now(UTC),
-                bar_index=0,
+                absolute_high=ice_level,  # Use same as price (no historical data available)
+                touch_count=2,  # Minimum valid touch count
+                touch_details=[],  # Empty list (no historical touch data available)
+                strength_score=60,  # Moderate strength (60/100) for compatibility
+                strength_rating="MODERATE",  # Corresponds to strength_score=60
+                last_test_timestamp=now,
+                first_test_timestamp=now,
+                hold_duration=0,  # No historical duration data
+                confidence="MEDIUM",  # Medium confidence for backward compat
+                volume_trend="FLAT",  # Neutral volume trend (no data)
             )
 
         return detect_utad(trading_range, bars, phase)
