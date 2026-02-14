@@ -14,8 +14,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from src.pattern_engine.volume_logger import VolumeAnalysisSummary
-
 from .config import BacktestConfig
 from .costs import (
     BacktestCostSummary,
@@ -404,10 +402,6 @@ class BacktestResult(BaseModel):
     )
     campaign_performance: list[CampaignPerformance] = Field(
         default_factory=list, description="Wyckoff campaign tracking (Story 12.6A)"
-    )
-    # Story 13.8: Volume analysis report
-    volume_analysis: VolumeAnalysisSummary | None = Field(
-        default=None, description="Volume analysis report (Story 13.8)"
     )
     # Story 12.6A AC6: Extreme trades and streaks
     largest_winner: BacktestTrade | None = Field(

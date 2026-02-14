@@ -277,6 +277,7 @@ class MetricsCalculator:
         Examples:
             "1d" -> 252 (252 trading days)
             "1h" -> 6,048 (252 days * 24 hours, assuming 24/5 forex)
+            "30m" -> 12,096 (252 days * 24 hours * 2)
             "15m" -> 24,192 (252 days * 24 hours * 4 quarters)
             "5m" -> 72,576 (252 days * 24 hours * 12 periods)
             "1m" -> 362,880 (252 days * 24 hours * 60 minutes)
@@ -284,7 +285,7 @@ class MetricsCalculator:
         Warning:
             For equity backtests (US30, SPY, etc.), intraday Sharpe ratios
             will be slightly overstated due to 24h assumption vs 6.5h reality.
-            Error magnitude: ~3.7x (24/6.5) on annualization factor.
+            Error magnitude on Sharpe: ~1.92x (sqrt(24/6.5)).
         """
         # Parse timeframe string
         timeframe_lower = timeframe.lower()
@@ -295,10 +296,10 @@ class MetricsCalculator:
             return 252 * 24  # 6,048
         elif timeframe_lower == "4h":
             return 252 * 6  # 1,512 (24/4 = 6 bars per day)
-        elif timeframe_lower == "15m":
-            return 252 * 24 * 4  # 24,192 (4 fifteen-minute periods per hour)
         elif timeframe_lower == "30m":
             return 252 * 24 * 2  # 12,096 (2 thirty-minute periods per hour)
+        elif timeframe_lower == "15m":
+            return 252 * 24 * 4  # 24,192 (4 fifteen-minute periods per hour)
         elif timeframe_lower == "5m":
             return 252 * 24 * 12  # 72,576 (12 five-minute periods per hour)
         elif timeframe_lower == "1m":
@@ -340,9 +341,9 @@ class MetricsCalculator:
             Sharpe = (0.1% - 0.008%) / 0.5% * sqrt(252) = 2.92
 
         Example (Hourly):
-            Avg hourly return = 0.004%, std dev = 0.032%
-            Risk-free rate = 2% annual = 0.00033% hourly
-            Sharpe = (0.004% - 0.00033%) / 0.032% * sqrt(6048) = 2.92
+            Avg hourly return = 0.00417%, std dev = 0.102%
+            Risk-free rate = 2% annual = 0.000333% hourly
+            Sharpe = (0.00417% - 0.000333%) / 0.102% * sqrt(6048) = 2.92
         """
         if len(equity_curve) < 2:
             return Decimal("0")

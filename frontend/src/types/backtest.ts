@@ -278,9 +278,6 @@ export interface BacktestResult {
   risk_metrics: RiskMetrics
   campaign_performance: CampaignPerformance[] // CRITICAL
 
-  // Volume analysis (Story 13.8)
-  volume_analysis?: VolumeAnalysisReport
-
   // Extreme trades
   largest_winner: BacktestTrade | null
   largest_loser: BacktestTrade | null
@@ -321,77 +318,6 @@ export interface BacktestResultSummary {
 
   // Metadata
   created_at: string // ISO 8601 datetime (UTC)
-}
-
-// ==========================================================================================
-// Story 13.8: Volume Analysis Types
-// ==========================================================================================
-
-/**
- * Volume validation statistics per pattern type (Story 13.8 FR8.6).
- *
- * Matches VolumeLogger.get_validation_stats() output from backend.
- */
-export interface VolumeValidationPatternStats {
-  total: number
-  passed: number
-  failed: number
-  pass_rate: number // 0-100
-}
-
-/**
- * Volume spike data from backend VolumeSpike dataclass (Story 13.8 FR8.4).
- */
-export interface VolumeSpikeSummary {
-  timestamp: string // ISO 8601
-  volume: number
-  volume_ratio: number
-  avg_volume: number
-  magnitude: 'HIGH' | 'ULTRA_HIGH'
-  price_action: 'UP' | 'DOWN' | 'SIDEWAYS'
-  interpretation: string
-}
-
-/**
- * Volume divergence data from backend VolumeDivergence dataclass (Story 13.8 FR8.5).
- */
-export interface VolumeDivergenceSummary {
-  timestamp: string // ISO 8601
-  price_extreme: string // Decimal
-  previous_extreme: string // Decimal
-  current_volume: string // Decimal
-  previous_volume: string // Decimal
-  divergence_pct: number
-  direction: 'BULLISH' | 'BEARISH'
-  interpretation: string
-}
-
-/**
- * Volume trend result from backend VolumeTrendResult dataclass (Story 13.8 FR8.3).
- */
-export interface VolumeTrendSummary {
-  trend: 'DECLINING' | 'RISING' | 'FLAT' | 'INSUFFICIENT_DATA'
-  slope_pct: number
-  avg_volume: number
-  interpretation: string
-  bars_analyzed: number
-}
-
-/**
- * Comprehensive volume analysis report (Story 13.8 FR8.6).
- *
- * Matches VolumeAnalysisSummary dataclass from backend volume_logger.py.
- * Contains all data needed for the VolumeAnalysisPanel UI component.
- */
-export interface VolumeAnalysisReport {
-  validations_by_pattern: Record<string, VolumeValidationPatternStats>
-  total_validations: number
-  total_passed: number
-  total_failed: number
-  pass_rate: number // 0-100
-  spikes: VolumeSpikeSummary[]
-  divergences: VolumeDivergenceSummary[]
-  trends: VolumeTrendSummary[]
 }
 
 // ==========================================================================================

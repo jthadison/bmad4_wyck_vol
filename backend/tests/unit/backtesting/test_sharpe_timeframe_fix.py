@@ -114,6 +114,9 @@ class TestSharpeTimeframeAwareness:
         assert calculator._get_bars_per_year("daily") == 252
         assert calculator._get_bars_per_year("1h") == 6048  # 252 * 24
         assert calculator._get_bars_per_year("4h") == 1512  # 252 * 6
+        assert (
+            calculator._get_bars_per_year("30m") == 12096
+        )  # 252 * 24 * 2 (Story 13.5 YELLOW-2 Fix)
         assert calculator._get_bars_per_year("15m") == 24192  # 252 * 24 * 4
         assert calculator._get_bars_per_year("5m") == 72576  # 252 * 24 * 12
         assert calculator._get_bars_per_year("1m") == 362880  # 252 * 24 * 60
@@ -125,7 +128,7 @@ class TestSharpeTimeframeAwareness:
         calculator = MetricsCalculator()
 
         assert calculator._get_bars_per_year("unknown_tf") == 252
-        assert calculator._get_bars_per_year("30m") == 12096  # 252 * 24 * 2 (P2-009 fix)
+        assert calculator._get_bars_per_year("2h") == 252  # Not explicitly handled
 
     def _create_equity_curve_with_constant_returns(
         self,
