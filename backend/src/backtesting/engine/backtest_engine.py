@@ -44,6 +44,7 @@ from src.models.backtest import (
 )
 from src.models.ohlcv import OHLCVBar
 from src.models.signal import TradeSignal
+from src.pattern_engine.volume_logger import VolumeLogger
 
 logger = logging.getLogger(__name__)
 
@@ -428,6 +429,7 @@ class UnifiedBacktestEngine:
         position_manager: PositionManager,
         config: EngineConfig,
         risk_manager: BacktestRiskManager | None = None,
+        volume_logger: VolumeLogger | None = None,
     ) -> None:
         """
         Initialize unified backtest engine with injectable dependencies.
@@ -439,12 +441,15 @@ class UnifiedBacktestEngine:
             config: Engine configuration parameters
             risk_manager: Optional risk manager for position sizing and risk limits.
                           When None, falls back to flat percentage sizing.
+            volume_logger: Optional volume logger for educational Wyckoff analysis.
+                           When None, creates a default instance (Story 13.8).
         """
         self._detector = signal_detector
         self._cost_model = cost_model
         self._positions = position_manager
         self._config = config
         self._risk_manager = risk_manager
+        self._volume_logger = volume_logger or VolumeLogger(max_entries=10_000)
         self._equity_curve: list[EquityCurvePoint] = []
         self._bars: list[OHLCVBar] = []
         self._pending_orders: list[BacktestOrder] = []
@@ -516,8 +521,33 @@ class UnifiedBacktestEngine:
         visible_bars = self._bars[: index + 1]
         signal = self._detector.detect(visible_bars, index)
 
+        # Step 2b: Log volume analysis (Story 13.8)
+        if index >= 20:  # Need sufficient history for volume analysis
+            recent_bars = visible_bars[-20:]
+
+            # Calculate average volume from recent bars
+            avg_volume = sum(Decimal(str(b.volume)) for b in recent_bars) / len(recent_bars)
+
+            # Detect volume spikes for climactic action
+            self._volume_logger.detect_volume_spike(bar=bar, avg_volume=avg_volume)
+
+            # Detect volume divergences periodically (every 10 bars to reduce overhead)
+            if index % 10 == 0:
+                self._volume_logger.detect_volume_divergence(bars=recent_bars)
+
         # Step 3: Create order as PENDING (will be filled on next bar)
         if signal is not None:
+            # Validate pattern volume before handling signal
+            if hasattr(signal, 'pattern_type') and hasattr(signal, 'volume_ratio'):
+                asset_class = "forex" if "USD" in bar.symbol else "stock"
+                self._volume_logger.validate_pattern_volume(
+                    pattern_type=signal.pattern_type or "UNKNOWN",
+                    volume_ratio=signal.volume_ratio,
+                    timestamp=bar.timestamp,
+                    asset_class=asset_class,
+                    session=getattr(signal, 'session', None)
+                )
+
             self._handle_signal(signal, bar, portfolio_value)
 
         # Step 4: Record equity curve point
@@ -1084,6 +1114,9 @@ class UnifiedBacktestEngine:
             max_position_size=self._config.max_position_size,
         )
 
+        # Get volume analysis summary (Story 13.8)
+        volume_analysis = self._volume_logger.get_summary() if self._volume_logger else None
+
         return BacktestResult(
             backtest_run_id=uuid4(),
             symbol=symbol,
@@ -1094,6 +1127,7 @@ class UnifiedBacktestEngine:
             equity_curve=self._equity_curve,
             trades=trades,
             summary=metrics,
+            volume_analysis=volume_analysis,
             look_ahead_bias_check=True,
             execution_time_seconds=Decimal(str(execution_time)),
         )
