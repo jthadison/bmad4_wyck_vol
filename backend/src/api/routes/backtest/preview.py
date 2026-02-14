@@ -67,6 +67,21 @@ async def start_backtest_preview(
             "estimated_duration_seconds": 120
         }
     """
+    # DEPRECATION: Preview mode disabled due to critical statistical flaws
+    # See Story 13.5 / Bug C-1 for details
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=(
+            "Preview mode temporarily disabled due to critical statistical issues:\n"
+            "1. Same-bar entry/exit violates chronological ordering\n"
+            "2. Confidence-scaled exits have no statistical justification\n"
+            "3. No stop-loss simulation (assumes all trades profitable)\n\n"
+            "Please use /api/v1/backtest/full for accurate backtesting.\n"
+            "Preview mode will be re-enabled in a future release with proper multi-bar simulation."
+        ),
+    )
+
+    # DEPRECATED CODE BELOW - Will be removed in next cleanup
     print(f"[ROUTE DEBUG] start_backtest_preview called, request={request}", flush=True)
 
     # Check for concurrent backtest limit (MVP: max 5 concurrent)
