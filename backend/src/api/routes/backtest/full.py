@@ -333,6 +333,7 @@ async def run_backtest_task(
         engine_config = EngineConfig(
             initial_capital=config.initial_capital,
             max_position_size=config.max_position_size,
+            timeframe=config.timeframe,  # Story 13.5 C-2 Fix: Pass timeframe for Sharpe calculation
         )
         risk_manager = BacktestRiskManager(initial_capital=config.initial_capital)
 
