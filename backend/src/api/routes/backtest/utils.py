@@ -82,8 +82,8 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
 
     Args:
         days: Number of days of historical data
-        symbol: Stock symbol (e.g., "SPY", "PLTR")
-        timeframe: Bar timeframe (e.g., "1d", "4h", "1h")
+        symbol: Stock symbol (e.g., "SPY", "PLTR") or forex pair (e.g., "EURUSD", "GBPUSD")
+        timeframe: Bar timeframe (e.g., "1d", "4h", "1h", "15m")
 
     Returns:
         List of OHLCV bar dictionaries
@@ -104,10 +104,16 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
         end_date = datetime.now(UTC).date()
         start_date = end_date - timedelta(days=days)
 
+        # Detect asset class from symbol format
+        # Forex pairs are 6 characters (EURUSD, GBPUSD, etc.)
+        # Stocks are typically 1-5 characters (AAPL, SPY, PLTR, etc.)
+        asset_class = "forex" if len(symbol) == 6 and symbol.isalpha() else None
+
         logger.info(
             "Fetching real market data from Polygon.io",
             extra={
                 "symbol": symbol,
+                "asset_class": asset_class,
                 "start_date": str(start_date),
                 "end_date": str(end_date),
                 "timeframe": timeframe,
@@ -120,6 +126,7 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
             start_date=start_date,
             end_date=end_date,
             timeframe=timeframe,
+            asset_class=asset_class,
         )
 
         # Convert OHLCVBar objects to dictionaries

@@ -50,13 +50,15 @@ class MetricsCalculator:
         )
     """
 
-    def __init__(self, risk_free_rate: Decimal = Decimal("0.02")):
+    def __init__(self, risk_free_rate: Decimal = Decimal("0.02"), timeframe: str = "1d"):
         """Initialize metrics calculator.
 
         Args:
             risk_free_rate: Annual risk-free rate for Sharpe calculation (default 2% = 0.02)
+            timeframe: Data timeframe for annualization (e.g., "1d", "1h", "15m")
         """
         self.risk_free_rate = risk_free_rate
+        self.timeframe = timeframe
 
     def calculate_metrics(
         self,
@@ -236,10 +238,51 @@ class MetricsCalculator:
         cagr_float = (final_float / initial_float) ** (1 / years_float) - 1
         return Decimal(str(cagr_float))
 
-    def _calculate_sharpe_ratio(self, equity_curve: list[EquityCurvePoint]) -> Decimal:
-        """Calculate Sharpe ratio.
+    def _get_bars_per_year(self, timeframe: str) -> int:
+        """Calculate number of bars per year based on timeframe.
 
-        AC10 Subtask 7.5: Sharpe = (avg_daily_return - risk_free_rate) / std_dev * sqrt(252)
+        Story 13.5 C-2 Fix: Dynamic calculation for intraday timeframes.
+
+        Args:
+            timeframe: Timeframe string (e.g., "1d", "1h", "15m", "5m")
+
+        Returns:
+            Number of bars per trading year
+
+        Examples:
+            "1d" -> 252 (252 trading days)
+            "1h" -> 6,048 (252 days * 24 hours, assuming 24/5 forex)
+            "15m" -> 24,192 (252 days * 24 hours * 4 quarters)
+            "5m" -> 72,576 (252 days * 24 hours * 12 periods)
+            "1m" -> 362,880 (252 days * 24 hours * 60 minutes)
+        """
+        # Parse timeframe string
+        timeframe_lower = timeframe.lower()
+
+        if timeframe_lower == "1d" or timeframe_lower == "daily":
+            return 252
+        elif timeframe_lower == "1h" or timeframe_lower == "hourly":
+            return 252 * 24  # 6,048
+        elif timeframe_lower == "4h":
+            return 252 * 6  # 1,512 (24/4 = 6 bars per day)
+        elif timeframe_lower == "15m":
+            return 252 * 24 * 4  # 24,192 (4 fifteen-minute periods per hour)
+        elif timeframe_lower == "5m":
+            return 252 * 24 * 12  # 72,576 (12 five-minute periods per hour)
+        elif timeframe_lower == "1m":
+            return 252 * 24 * 60  # 362,880 (60 one-minute periods per hour)
+        elif timeframe_lower == "1w" or timeframe_lower == "weekly":
+            return 52  # 52 weeks per year
+        else:
+            # Default to daily if unknown
+            return 252
+
+    def _calculate_sharpe_ratio(self, equity_curve: list[EquityCurvePoint]) -> Decimal:
+        """Calculate Sharpe ratio with timeframe-aware annualization.
+
+        AC10 Subtask 7.5: Sharpe = (avg_return - risk_free_rate) / std_dev * sqrt(bars_per_year)
+
+        Story 13.5 C-2 Fix: Now uses timeframe-specific annualization factor.
 
         Args:
             equity_curve: List of equity curve points
@@ -247,33 +290,38 @@ class MetricsCalculator:
         Returns:
             Sharpe ratio (annualized)
 
-        Example:
+        Example (Daily):
             Avg daily return = 0.1%, std dev = 0.5%
             Risk-free rate = 2% annual = 0.008% daily
             Sharpe = (0.1% - 0.008%) / 0.5% * sqrt(252) = 2.92
+
+        Example (Hourly):
+            Avg hourly return = 0.004%, std dev = 0.032%
+            Risk-free rate = 2% annual = 0.00033% hourly
+            Sharpe = (0.004% - 0.00033%) / 0.032% * sqrt(6048) = 2.92
         """
         if len(equity_curve) < 2:
             return Decimal("0")
 
-        # Calculate daily returns from equity values
-        daily_returns = []
+        # Calculate bar-to-bar returns from equity values
+        bar_returns = []
         for i in range(1, len(equity_curve)):
             prev_value = equity_curve[i - 1].equity_value
             curr_value = equity_curve[i].equity_value
             if prev_value > 0:
-                daily_return = (curr_value - prev_value) / prev_value
-                daily_returns.append(daily_return)
+                bar_return = (curr_value - prev_value) / prev_value
+                bar_returns.append(bar_return)
 
-        if len(daily_returns) < 2:
+        if len(bar_returns) < 2:
             return Decimal("0")
 
-        # Calculate average daily return
-        avg_daily_return = sum(daily_returns, Decimal("0")) / Decimal(len(daily_returns))
+        # Calculate average bar return
+        avg_bar_return = sum(bar_returns, Decimal("0")) / Decimal(len(bar_returns))
 
-        # Calculate standard deviation of daily returns
+        # Calculate standard deviation of bar returns
         # Use Bessel's correction (n-1) for sample variance
-        variance = sum((r - avg_daily_return) ** 2 for r in daily_returns) / Decimal(
-            len(daily_returns) - 1
+        variance = sum((r - avg_bar_return) ** 2 for r in bar_returns) / Decimal(
+            len(bar_returns) - 1
         )
 
         # Convert to float for sqrt calculation
@@ -286,12 +334,15 @@ class MetricsCalculator:
         if std_dev == 0:
             return Decimal("0")
 
-        # Daily risk-free rate
-        daily_risk_free = self.risk_free_rate / Decimal("252")
+        # Get bars per year for this timeframe (Story 13.5 C-2 Fix)
+        bars_per_year = self._get_bars_per_year(self.timeframe)
+
+        # Per-bar risk-free rate (annualized rate / bars per year)
+        bar_risk_free = self.risk_free_rate / Decimal(str(bars_per_year))
 
         # Sharpe ratio (annualized)
-        # Sharpe = (avg_daily_return - daily_risk_free) / std_dev * sqrt(252)
-        sharpe = (avg_daily_return - daily_risk_free) / std_dev * Decimal(str(252**0.5))
+        # Sharpe = (avg_bar_return - bar_risk_free) / std_dev * sqrt(bars_per_year)
+        sharpe = (avg_bar_return - bar_risk_free) / std_dev * Decimal(str(bars_per_year**0.5))
 
         return sharpe
 

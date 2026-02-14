@@ -193,7 +193,8 @@ class BacktestEngine:
         # Story 12.6: Calculate enhanced metrics
         from src.backtesting.metrics import MetricsCalculator
 
-        metrics_calculator = MetricsCalculator()
+        # Story 13.5 C-2 Fix: Pass timeframe for correct Sharpe ratio annualization
+        metrics_calculator = MetricsCalculator(timeframe=self.config.timeframe)
 
         # Calculate extended reporting metrics
         monthly_returns = metrics_calculator.calculate_monthly_returns(
