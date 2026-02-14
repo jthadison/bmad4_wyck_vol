@@ -14,6 +14,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.scanner_persistence import (
+    ScanCycleStatus,
     ScannerConfig,
     ScannerConfigUpdate,
     ScannerHistory,
@@ -380,6 +381,7 @@ class ScannerRepository:
             errors_count=cycle_data.errors_count,
             symbols_no_data=cycle_data.symbols_no_data,
             status=cycle_data.status.value,
+            correlation_ids=cycle_data.correlation_ids,  # Task #25: Map correlation IDs to ORM
         )
 
         self.session.add(orm_entry)
@@ -398,25 +400,63 @@ class ScannerRepository:
     async def get_history(
         self,
         limit: int = 50,
+        status: "ScanCycleStatus | None" = None,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+        min_signals: int | None = None,
+        has_errors: bool | None = None,
     ) -> list[ScannerHistory]:
         """
-        Get scan cycle history.
+        Get scan cycle history with optional filtering (Task #27).
 
         Args:
             limit: Maximum entries to return (default 50)
+            status: Filter by scan cycle status
+            from_date: Filter cycles started on or after this datetime
+            to_date: Filter cycles started on or before this datetime
+            min_signals: Filter cycles with at least this many signals
+            has_errors: Filter cycles with/without errors
 
         Returns:
             List of ScannerHistory entries, ordered by date DESC
         """
-        stmt = (
-            select(ScannerHistoryORM)
-            .order_by(ScannerHistoryORM.cycle_started_at.desc())
-            .limit(limit)
-        )
+        stmt = select(ScannerHistoryORM)
+
+        # Apply filters
+        if status is not None:
+            stmt = stmt.where(ScannerHistoryORM.status == status.value)
+
+        if from_date is not None:
+            stmt = stmt.where(ScannerHistoryORM.cycle_started_at >= from_date)
+
+        if to_date is not None:
+            stmt = stmt.where(ScannerHistoryORM.cycle_started_at <= to_date)
+
+        if min_signals is not None:
+            stmt = stmt.where(ScannerHistoryORM.signals_generated >= min_signals)
+
+        if has_errors is not None:
+            if has_errors:
+                stmt = stmt.where(ScannerHistoryORM.errors_count > 0)
+            else:
+                stmt = stmt.where(ScannerHistoryORM.errors_count == 0)
+
+        # Order and limit
+        stmt = stmt.order_by(ScannerHistoryORM.cycle_started_at.desc()).limit(limit)
 
         result = await self.session.execute(stmt)
         orm_entries = result.scalars().all()
 
-        logger.debug("scanner_history_retrieved", count=len(orm_entries))
+        logger.debug(
+            "scanner_history_retrieved",
+            count=len(orm_entries),
+            filters={
+                "status": status.value if status else None,
+                "from_date": from_date,
+                "to_date": to_date,
+                "min_signals": min_signals,
+                "has_errors": has_errors,
+            },
+        )
 
         return [ScannerHistory.model_validate(e) for e in orm_entries]

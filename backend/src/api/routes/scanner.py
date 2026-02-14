@@ -42,7 +42,7 @@ Author: Story 19.4 (Multi-Symbol Concurrent Processing)
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import structlog
@@ -363,7 +363,7 @@ async def get_scanner_control_status(
     "/history",
     response_model=list[ScannerHistoryResponse],
     summary="Get Scan History",
-    description="Returns scan cycle history records.",
+    description="Returns scan cycle history records with optional filtering (Task #27).",
 )
 async def get_scanner_history(
     limit: int = Query(
@@ -372,22 +372,64 @@ async def get_scanner_history(
         le=MAX_HISTORY_LIMIT,
         description="Maximum number of records to return (1-100)",
     ),
+    status: ScanCycleStatus | None = Query(
+        default=None,
+        description="Filter by scan cycle status (COMPLETED, PARTIAL, FAILED, SKIPPED)",
+    ),
+    from_date: datetime | None = Query(
+        default=None,
+        description="Filter cycles started on or after this datetime (ISO 8601 format)",
+    ),
+    to_date: datetime | None = Query(
+        default=None,
+        description="Filter cycles started on or before this datetime (ISO 8601 format)",
+    ),
+    min_signals: int | None = Query(
+        default=None,
+        ge=0,
+        description="Filter cycles that generated at least this many signals",
+    ),
+    has_errors: bool | None = Query(
+        default=None,
+        description="Filter cycles with errors (true) or without errors (false)",
+    ),
     repository: ScannerRepository = Depends(_get_scanner_repository_dep),
 ) -> list[ScannerHistoryResponse]:
     """
-    Get scan cycle history (Story 20.5a AC4).
+    Get scan cycle history (Story 20.5a AC4, Task #27 filtering).
 
     Returns history records ordered by cycle_started_at descending.
 
     Args:
         limit: Maximum records to return (default 50, max 100)
+        status: Filter by cycle status
+        from_date: Filter cycles started on or after this datetime
+        to_date: Filter cycles started on or before this datetime
+        min_signals: Filter cycles with at least this many signals
+        has_errors: Filter cycles with/without errors
 
     Returns:
-        List of ScannerHistoryResponse records
+        List of ScannerHistoryResponse records matching filters
     """
-    history = await repository.get_history(limit=limit)
+    history = await repository.get_history(
+        limit=limit,
+        status=status,
+        from_date=from_date,
+        to_date=to_date,
+        min_signals=min_signals,
+        has_errors=has_errors,
+    )
 
-    logger.info("scanner_history_queried", count=len(history), limit=limit)
+    logger.info(
+        "scanner_history_queried",
+        count=len(history),
+        limit=limit,
+        status=status.value if status else None,
+        from_date=from_date,
+        to_date=to_date,
+        min_signals=min_signals,
+        has_errors=has_errors,
+    )
 
     return [
         ScannerHistoryResponse(

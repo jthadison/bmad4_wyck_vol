@@ -231,42 +231,44 @@ class Settings(BaseSettings):
         description="Path to risk allocation configuration file (relative to backend/)",
     )
 
-    # MasterOrchestrator Configuration (Story 8.10)
-    max_concurrent_symbols: int = Field(
-        default=10,
-        ge=1,
-        le=50,
-        description="Parallel symbol processing limit (orchestrator)",
-    )
-    cache_ttl_seconds: int = Field(
-        default=300,
-        ge=60,
-        le=3600,
-        description="Cache expiration time for ranges/phases (5 min default)",
-    )
-    performance_alert_threshold_ms: int = Field(
-        default=1000,
-        ge=100,
-        le=10000,
-        description="Latency alert threshold in milliseconds (NFR1: <1s)",
-    )
-    backpressure_queue_size: int = Field(
-        default=10,
-        ge=5,
-        le=100,
-        description="Max queued bars for real-time processing",
-    )
-    enable_real_time_mode: bool = Field(
-        default=True,
-        description="Enable WebSocket bar processing",
-    )
-    enable_performance_tracking: bool = Field(
-        default=True,
-        description="Enable pipeline latency tracking",
-    )
+    # MasterOrchestrator Configuration
+    # NOTE: Orchestrator-specific settings (max_concurrent_symbols, cache_ttl_seconds,
+    # detector_mode, etc.) are managed by OrchestratorConfig in
+    # src/orchestrator/config.py with ORCHESTRATOR_ env prefix.
+    # See docs/architecture/configuration.md for details.
     forex_volume_source: Literal["TICK", "ACTUAL", "ESTIMATED"] = Field(
         default="TICK",
         description="Default volume source for forex (TICK for most brokers)",
+    )
+
+    # Market Regime Detection Thresholds (Story 16.7a)
+    # WARNING: These are trading methodology parameters derived from Wyckoff analysis.
+    # Changing these values affects signal detection behavior and MUST be backtested
+    # before use in production. Override only for emergency situations (market crash,
+    # extreme volatility regime changes).
+    regime_adx_threshold: float = Field(
+        default=25.0,
+        ge=10.0,
+        le=50.0,
+        description="ADX threshold for trending vs ranging detection. "
+        "WARNING: Changing this value affects trading methodology and MUST be "
+        "backtested before use in production. Standard TA value is 25.",
+    )
+    regime_high_vol_multiplier: float = Field(
+        default=1.5,
+        ge=1.1,
+        le=3.0,
+        description="ATR multiplier above which market is HIGH_VOLATILITY. "
+        "WARNING: Changing this value affects trading methodology and MUST be "
+        "backtested before use in production.",
+    )
+    regime_low_vol_multiplier: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=0.9,
+        description="ATR multiplier below which market is LOW_VOLATILITY. "
+        "WARNING: Changing this value affects trading methodology and MUST be "
+        "backtested before use in production.",
     )
 
     # JWT Authentication Configuration (Story 11.7)
@@ -321,6 +323,10 @@ class Settings(BaseSettings):
     auto_execute_orders: bool = Field(
         default=False,
         description="Automatically execute orders via broker after webhook receipt (default: off)",
+    )
+    paper_trading_validated: bool = Field(
+        default=False,
+        description="Explicit validation flag required to enable auto_execute_orders (safety gate)",
     )
 
     # MetaTrader 5 Broker Credentials (Story 23.4)
@@ -409,8 +415,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
-        """Validate that production environment has secure configuration."""
+        """Validate that production environment has secure configuration.
+
+        Hard errors prevent startup with unsafe configuration.
+        These are non-negotiable for production safety.
+        """
+        # Universal safety gate: auto-execution requires explicit validation
+        if self.auto_execute_orders and not self.paper_trading_validated:
+            raise ValueError(
+                "AUTO_EXECUTE_ORDERS=True requires PAPER_TRADING_VALIDATED=true. "
+                "This safety gate prevents accidental live trading. "
+                "Set PAPER_TRADING_VALIDATED=true in .env only after verifying broker configuration."
+            )
+
         if self.environment == "production":
+            # Hard errors: application will not start with these misconfigurations
             if (
                 self.jwt_secret_key
                 == "dev-secret-key-change-in-production-use-64-char-random-string"
@@ -427,24 +446,31 @@ class Settings(BaseSettings):
                     "Set CORS_ORIGINS to your domain(s), e.g., 'https://your-domain.com'"
                 )
             if "changeme" in self.database_url.lower():
-                import warnings
-
-                warnings.warn(
-                    "DATABASE_URL appears to contain a default password. "
-                    "Use a strong, unique password in production.",
-                    stacklevel=2,
+                raise ValueError(
+                    "DATABASE_URL contains a default password ('changeme'). "
+                    "Use a strong, unique password in production."
                 )
             if self.auto_execute_orders:
                 has_mt5 = self.mt5_account and self.mt5_password and self.mt5_server
                 has_alpaca = self.alpaca_trading_api_key and self.alpaca_trading_secret_key
                 if not has_mt5 and not has_alpaca:
-                    import warnings
-
-                    warnings.warn(
+                    raise ValueError(
                         "AUTO_EXECUTE_ORDERS is True but no broker credentials are configured. "
-                        "Set MT5 or Alpaca trading credentials to enable order execution.",
-                        stacklevel=2,
+                        "Set MT5 or Alpaca trading credentials, or disable AUTO_EXECUTE_ORDERS."
                     )
+
+            # Validate market data provider API key is configured
+            provider = self.default_provider.lower()
+            if provider == "polygon" and not self.polygon_api_key:
+                raise ValueError(
+                    "POLYGON_API_KEY is required when DEFAULT_PROVIDER is 'polygon'. "
+                    "Get a key from https://polygon.io/dashboard/api-keys"
+                )
+            if provider == "alpaca" and not (self.alpaca_api_key and self.alpaca_secret_key):
+                raise ValueError(
+                    "ALPACA_API_KEY and ALPACA_SECRET_KEY are required when "
+                    "DEFAULT_PROVIDER is 'alpaca'."
+                )
         return self
 
 

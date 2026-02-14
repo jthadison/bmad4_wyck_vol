@@ -245,9 +245,9 @@ class MasterOrchestrator:
         signal_priority_queue: SignalPriorityQueue | None = None,  # NEW: Story 9.3
         websocket_manager: Any = None,  # NEW: Story 10.9 - WebSocket event emissions
         performance_tracker: PerformanceTracker | None = None,
-        max_concurrent_symbols: int = 10,
-        cache_ttl_seconds: int = 300,
-        enable_performance_tracking: bool = True,
+        max_concurrent_symbols: int | None = None,
+        cache_ttl_seconds: int | None = None,
+        enable_performance_tracking: bool | None = None,
     ):
         """
         Initialize orchestrator with all dependencies (dependency injection).
@@ -269,10 +269,15 @@ class MasterOrchestrator:
             rejection_repository: Log rejections
             signal_priority_queue: Priority queue for signal ranking (Story 9.3)
             performance_tracker: Track latency
-            max_concurrent_symbols: Parallel processing limit
-            cache_ttl_seconds: Cache expiration time
-            enable_performance_tracking: Toggle metrics collection
+            max_concurrent_symbols: Parallel processing limit (from OrchestratorConfig if None)
+            cache_ttl_seconds: Cache expiration time (from OrchestratorConfig if None)
+            enable_performance_tracking: Toggle metrics collection (from OrchestratorConfig if None)
         """
+        # Load defaults from OrchestratorConfig when explicit values not provided
+        from src.orchestrator.config import OrchestratorConfig
+
+        _orch_config = OrchestratorConfig()
+
         self.market_data_service = market_data_service
         self.trading_range_service = trading_range_service
         self.volume_service = volume_service  # NEW: Story 8.10.1
@@ -294,9 +299,21 @@ class MasterOrchestrator:
         self.signal_priority_queue = signal_priority_queue  # NEW: Story 9.3
         self.websocket_manager = websocket_manager  # NEW: Story 10.9
         self.performance_tracker = performance_tracker or PerformanceTracker()
-        self.max_concurrent_symbols = max_concurrent_symbols
-        self.cache_ttl_seconds = cache_ttl_seconds
-        self.enable_performance_tracking = enable_performance_tracking
+        self.max_concurrent_symbols = (
+            max_concurrent_symbols
+            if max_concurrent_symbols is not None
+            else _orch_config.max_concurrent_symbols
+        )
+        self.cache_ttl_seconds = (
+            cache_ttl_seconds
+            if cache_ttl_seconds is not None
+            else _orch_config.cache_ttl_seconds
+        )
+        self.enable_performance_tracking = (
+            enable_performance_tracking
+            if enable_performance_tracking is not None
+            else True
+        )
 
         # Caching
         self._range_cache: dict[str, tuple[Any, float]] = {}  # {symbol: (range, timestamp)}

@@ -210,6 +210,16 @@ const routes: RouteRecordRaw[] = [
       ],
     },
   },
+  // Audit Trail Admin Dashboard (Task #2)
+  {
+    path: '/admin/audit-trail',
+    name: 'audit-trail',
+    component: () => import('@/views/admin/AuditTrailView.vue'),
+    meta: {
+      title: 'Audit Trail',
+      breadcrumb: [{ label: 'Admin' }, { label: 'Audit Trail' }],
+    },
+  },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',

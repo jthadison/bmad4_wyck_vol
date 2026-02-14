@@ -645,4 +645,38 @@ export async function getPatternEffectiveness(
   )
 }
 
+// ============================================================================
+// Audit Trail API (Task #2 - Correlation Override Audit Trail)
+// ============================================================================
+
+import type {
+  AuditTrailQueryParams,
+  AuditTrailResponse,
+} from '@/types/audit-trail'
+
+/**
+ * Query audit trail with filtering and pagination (Task #2)
+ *
+ * @param params - Query parameters for filtering/pagination
+ * @returns Promise resolving to paginated audit trail response
+ *
+ * @example
+ * ```ts
+ * const response = await getAuditTrail({
+ *   event_type: 'CORRELATION_OVERRIDE',
+ *   actor: 'admin',
+ *   limit: 100,
+ *   offset: 0
+ * })
+ * ```
+ */
+export async function getAuditTrail(
+  params?: AuditTrailQueryParams
+): Promise<AuditTrailResponse> {
+  return apiClient.get<AuditTrailResponse>(
+    '/audit-trail',
+    params as Record<string, unknown>
+  )
+}
+
 export default apiClient

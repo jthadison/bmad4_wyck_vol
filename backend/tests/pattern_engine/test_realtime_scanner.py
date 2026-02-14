@@ -911,3 +911,96 @@ class TestPriorityProcessingOrder:
         assert processed_symbols == ["LOW_SYM", "HIGH_SYM"]
 
         await scanner.stop()
+
+
+# =============================
+# Pattern Detection Integration Tests (Story 19.2-19.3)
+# =============================
+
+
+class TestPatternDetectionIntegration:
+    """Tests for BarWindowManager + RealtimePatternDetector wiring."""
+
+    @pytest.mark.asyncio
+    async def test_scanner_with_window_manager(self, mock_coordinator):
+        """Scanner adds bars to window manager when configured."""
+        from src.pattern_engine.bar_window_manager import BarWindowManager
+
+        window_manager = BarWindowManager()
+        scanner = RealtimePatternScanner(
+            queue_max_size=100,
+            window_manager=window_manager,
+        )
+
+        await scanner.start(mock_coordinator)
+
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1m",
+            timestamp=datetime.now(UTC),
+            open=Decimal("150.00"),
+            high=Decimal("151.00"),
+            low=Decimal("149.50"),
+            close=Decimal("150.50"),
+            volume=100000,
+            spread=Decimal("1.50"),
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+        scanner._on_bar_received(bar)
+
+        # Wait for processing
+        await asyncio.sleep(0.3)
+
+        # Bar should be in the window manager
+        bars = window_manager.get_bars("AAPL")
+        assert len(bars) == 1
+        assert bars[0].symbol == "AAPL"
+
+        await scanner.stop()
+
+    @pytest.mark.asyncio
+    async def test_scanner_without_components_still_works(self, mock_coordinator):
+        """Scanner works without window manager or detector (backward compat)."""
+        scanner = RealtimePatternScanner(queue_max_size=100)
+
+        await scanner.start(mock_coordinator)
+
+        bar = OHLCVBar(
+            symbol="AAPL",
+            timeframe="1m",
+            timestamp=datetime.now(UTC),
+            open=Decimal("150.00"),
+            high=Decimal("151.00"),
+            low=Decimal("149.50"),
+            close=Decimal("150.50"),
+            volume=100000,
+            spread=Decimal("1.50"),
+            spread_ratio=Decimal("1.0"),
+            volume_ratio=Decimal("1.0"),
+        )
+        scanner._on_bar_received(bar)
+
+        await asyncio.sleep(0.3)
+
+        # Should process without error
+        assert scanner._metrics.bars_processed >= 1
+
+        await scanner.stop()
+
+    def test_init_scanner_with_components(self):
+        """init_scanner accepts window_manager and pattern_detector."""
+        from src.pattern_engine.bar_window_manager import BarWindowManager
+        from src.pattern_engine.realtime_detector import RealtimePatternDetector
+
+        wm = BarWindowManager()
+        pd = RealtimePatternDetector(window_manager=wm)
+
+        scanner = init_scanner(
+            queue_max_size=100,
+            window_manager=wm,
+            pattern_detector=pd,
+        )
+
+        assert scanner._window_manager is wm
+        assert scanner._pattern_detector is pd

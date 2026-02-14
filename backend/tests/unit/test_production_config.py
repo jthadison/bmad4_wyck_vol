@@ -82,14 +82,13 @@ class TestProductionConfigValidation:
         assert s.environment == "development"
         assert s.debug is True
 
-    def test_changeme_password_warns_in_production(self):
-        """Production mode should warn when DATABASE_URL contains 'changeme'."""
-        import warnings
+    def test_changeme_password_rejected_in_production(self):
+        """Production mode should reject when DATABASE_URL contains 'changeme'."""
+        import pytest
 
         from src.config import Settings
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with pytest.raises(ValueError, match="default password"):
             Settings(
                 environment="production",
                 debug=False,
@@ -97,8 +96,6 @@ class TestProductionConfigValidation:
                 database_url="postgresql+psycopg://user:changeme@localhost:5432/db",
                 cors_origins=["https://example.com"],
             )
-            password_warnings = [x for x in w if "default password" in str(x.message)]
-            assert len(password_warnings) >= 1
 
     def test_wildcard_cors_rejected_in_production(self):
         """Production mode must reject wildcard CORS origins."""
@@ -127,6 +124,94 @@ class TestProductionConfigValidation:
             cors_origins=["https://example.com"],
         )
         assert s.cors_origins == ["https://example.com"]
+
+    def test_auto_execute_without_paper_trading_validated_rejected(self):
+        """AUTO_EXECUTE_ORDERS=True must be rejected without PAPER_TRADING_VALIDATED (H-1)."""
+        from pydantic import ValidationError
+
+        from src.config import Settings
+
+        with pytest.raises(ValidationError, match="PAPER_TRADING_VALIDATED"):
+            Settings(
+                environment="development",  # Universal gate - applies to all environments
+                debug=True,
+                auto_execute_orders=True,  # Trying to auto-execute
+                paper_trading_validated=False,  # But not validated
+                database_url="postgresql+psycopg://user:pass@localhost:5432/db",
+            )
+
+    def test_auto_execute_with_paper_trading_validated_accepted(self):
+        """AUTO_EXECUTE_ORDERS=True is accepted with PAPER_TRADING_VALIDATED=true (H-1)."""
+        from src.config import Settings
+
+        s = Settings(
+            environment="development",
+            debug=True,
+            auto_execute_orders=True,
+            paper_trading_validated=True,  # Explicitly validated
+            database_url="postgresql+psycopg://user:pass@localhost:5432/db",
+            # Need at least one broker configured for production
+            mt5_account=12345,
+            mt5_password="test",
+            mt5_server="test-server",
+        )
+        assert s.auto_execute_orders is True
+        assert s.paper_trading_validated is True
+
+    def test_auto_execute_without_broker_credentials_rejected_in_production(self):
+        """AUTO_EXECUTE_ORDERS=True requires MT5 or Alpaca credentials in production (L-4)."""
+        from pydantic import ValidationError
+
+        from src.config import Settings
+
+        with pytest.raises(ValidationError, match="no broker credentials"):
+            Settings(
+                environment="production",
+                debug=False,
+                jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
+                database_url="postgresql+psycopg://user:strongpass@localhost:5432/db",
+                cors_origins=["https://example.com"],
+                auto_execute_orders=True,
+                paper_trading_validated=True,
+                # No MT5 or Alpaca credentials provided
+            )
+
+    def test_auto_execute_with_mt5_credentials_accepted_in_production(self):
+        """AUTO_EXECUTE_ORDERS=True with MT5 credentials is accepted in production (L-4)."""
+        from src.config import Settings
+
+        s = Settings(
+            environment="production",
+            debug=False,
+            jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
+            database_url="postgresql+psycopg://user:strongpass@localhost:5432/db",
+            cors_origins=["https://example.com"],
+            auto_execute_orders=True,
+            paper_trading_validated=True,
+            mt5_account=12345,
+            mt5_password="secure-password",
+            mt5_server="MetaQuotes-Demo",
+        )
+        assert s.auto_execute_orders is True
+        assert s.mt5_account == 12345
+
+    def test_auto_execute_with_alpaca_credentials_accepted_in_production(self):
+        """AUTO_EXECUTE_ORDERS=True with Alpaca credentials is accepted in production (L-4)."""
+        from src.config import Settings
+
+        s = Settings(
+            environment="production",
+            debug=False,
+            jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
+            database_url="postgresql+psycopg://user:strongpass@localhost:5432/db",
+            cors_origins=["https://example.com"],
+            auto_execute_orders=True,
+            paper_trading_validated=True,
+            alpaca_trading_api_key="test-api-key",
+            alpaca_trading_secret_key="test-secret-key",
+        )
+        assert s.auto_execute_orders is True
+        assert s.alpaca_trading_api_key == "test-api-key"
 
     def test_async_driver_required(self):
         """Database URL must use an async-compatible driver."""
