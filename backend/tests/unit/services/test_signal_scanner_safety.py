@@ -773,9 +773,7 @@ class TestHistoryRecordingOnFailures:
     """Test that scan history is recorded even when failures occur."""
 
     @pytest.mark.asyncio
-    async def test_history_recorded_on_partial_failure(
-        self, mock_repository, mock_orchestrator
-    ):
+    async def test_history_recorded_on_partial_failure(self, mock_repository, mock_orchestrator):
         """History should be recorded when some symbols succeed and some fail."""
         # Setup: 3 symbols, 2 succeed, 1 fails
         symbols = [
@@ -813,9 +811,7 @@ class TestHistoryRecordingOnFailures:
         assert history_call.errors_count == 1
 
     @pytest.mark.asyncio
-    async def test_history_recorded_on_complete_failure(
-        self, mock_repository, mock_orchestrator
-    ):
+    async def test_history_recorded_on_complete_failure(self, mock_repository, mock_orchestrator):
         """History should be recorded when all symbols fail."""
         symbols = [
             create_mock_symbol("FAIL1", asset_class=AssetClass.STOCK),
@@ -824,9 +820,7 @@ class TestHistoryRecordingOnFailures:
         mock_repository.get_enabled_symbols = AsyncMock(return_value=symbols)
 
         # All symbols fail
-        mock_orchestrator.analyze_symbol = AsyncMock(
-            side_effect=Exception("Analysis failed")
-        )
+        mock_orchestrator.analyze_symbol = AsyncMock(side_effect=Exception("Analysis failed"))
 
         scanner = SignalScannerService(
             repository=mock_repository,
@@ -847,9 +841,7 @@ class TestHistoryRecordingOnFailures:
         assert history_call.errors_count == 2
 
     @pytest.mark.asyncio
-    async def test_history_recorded_on_kill_switch_abort(
-        self, mock_repository, mock_orchestrator
-    ):
+    async def test_history_recorded_on_kill_switch_abort(self, mock_repository, mock_orchestrator):
         """History should record SKIPPED status when kill switch aborts scan."""
         symbols = [
             create_mock_symbol("AAPL", asset_class=AssetClass.STOCK),
@@ -888,14 +880,9 @@ class TestHistoryRecordingOnFailures:
         assert history_call.status == ScanCycleStatus.SKIPPED
 
     @pytest.mark.asyncio
-    async def test_error_count_matches_actual_failures(
-        self, mock_repository, mock_orchestrator
-    ):
+    async def test_error_count_matches_actual_failures(self, mock_repository, mock_orchestrator):
         """Error count in history should match actual number of failures."""
-        symbols = [
-            create_mock_symbol(f"SYM{i}", asset_class=AssetClass.STOCK)
-            for i in range(10)
-        ]
+        symbols = [create_mock_symbol(f"SYM{i}", asset_class=AssetClass.STOCK) for i in range(10)]
         mock_repository.get_enabled_symbols = AsyncMock(return_value=symbols)
 
         # Fail symbols 3, 5, 7 (3 failures out of 10)
@@ -927,9 +914,7 @@ class TestHistoryRecordingOnFailures:
         """Failed scan cycles should be queryable from history."""
         symbols = [create_mock_symbol("FAIL", asset_class=AssetClass.STOCK)]
         mock_repository.get_enabled_symbols = AsyncMock(return_value=symbols)
-        mock_orchestrator.analyze_symbol = AsyncMock(
-            side_effect=Exception("Analysis failed")
-        )
+        mock_orchestrator.analyze_symbol = AsyncMock(side_effect=Exception("Analysis failed"))
 
         scanner = SignalScannerService(
             repository=mock_repository,

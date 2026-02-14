@@ -97,9 +97,7 @@ class AuditTrailRepository:
 
         if params.correlation_id:
             base_query = base_query.where(AuditTrailORM.correlation_id == params.correlation_id)
-            count_query = count_query.where(
-                AuditTrailORM.correlation_id == params.correlation_id
-            )
+            count_query = count_query.where(AuditTrailORM.correlation_id == params.correlation_id)
 
         if params.start_date:
             base_query = base_query.where(AuditTrailORM.created_at >= params.start_date)

@@ -369,9 +369,12 @@ class TestSOSDetectionConsistency:
             # Verify detect_sos_breakout was called
             mock_sos.assert_called_once()
 
-            # Verify trading_range was passed
+            # Verify required parameters were passed (range, volume_analysis, phase, symbol)
             call_kwargs = mock_sos.call_args.kwargs
-            assert call_kwargs["trading_range"] == trading_range_with_levels
+            assert call_kwargs["range"] == trading_range_with_levels
+            assert "volume_analysis" in call_kwargs
+            assert "phase" in call_kwargs
+            assert call_kwargs["symbol"] == "AAPL"
 
 
 # =============================

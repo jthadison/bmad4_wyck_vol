@@ -7,6 +7,9 @@ on live data. Story 19.1.
 
 Story 19.23: Added symbol priority tiers for priority-based bar processing.
 High-priority symbols are processed before medium and low during congestion.
+
+Story 19.2-19.3: Integrated BarWindowManager and RealtimePatternDetector for
+real-time pattern detection on incoming bars.
 """
 
 from __future__ import annotations
@@ -32,6 +35,8 @@ from src.pattern_engine.priority_queue import (
 
 if TYPE_CHECKING:
     from src.market_data.service import MarketDataCoordinator
+    from src.pattern_engine.bar_window_manager import BarWindowManager
+    from src.pattern_engine.realtime_detector import RealtimePatternDetector
 
 logger = structlog.get_logger(__name__)
 
@@ -149,6 +154,8 @@ class RealtimePatternScanner:
         self,
         queue_max_size: int | None = None,
         processing_timeout_ms: int | None = None,
+        window_manager: BarWindowManager | None = None,
+        pattern_detector: RealtimePatternDetector | None = None,
     ):
         """
         Initialize the real-time pattern scanner.
@@ -156,6 +163,8 @@ class RealtimePatternScanner:
         Args:
             queue_max_size: Maximum bars to queue (defaults from settings)
             processing_timeout_ms: Target processing time per bar (defaults from settings)
+            window_manager: BarWindowManager for rolling window data (Story 19.2)
+            pattern_detector: RealtimePatternDetector for pattern detection (Story 19.3)
         """
         self._queue_max_size = (
             queue_max_size if queue_max_size is not None else _get_queue_max_size()
@@ -165,6 +174,10 @@ class RealtimePatternScanner:
             if processing_timeout_ms is not None
             else _get_processing_timeout_ms()
         )
+
+        # Pattern detection components (Story 19.2-19.3)
+        self._window_manager = window_manager
+        self._pattern_detector = pattern_detector
 
         # Priority queue for bar buffering (Story 19.23)
         # Uses priority-based ordering: HIGH > MEDIUM > LOW
@@ -190,6 +203,8 @@ class RealtimePatternScanner:
             "realtime_scanner_initialized",
             queue_max_size=self._queue_max_size,
             processing_timeout_ms=self._processing_timeout_ms,
+            has_window_manager=window_manager is not None,
+            has_pattern_detector=pattern_detector is not None,
         )
 
     @property
@@ -421,8 +436,8 @@ class RealtimePatternScanner:
         """
         Process a single bar through pattern detection.
 
-        For Story 19.1, this is a placeholder that logs the bar.
-        Pattern detection will be added in subsequent stories.
+        Story 19.2-19.3: Adds bar to rolling window and runs pattern detection
+        using the same detectors as the backtesting engine.
 
         Args:
             bar: OHLCVBar to process
@@ -431,7 +446,7 @@ class RealtimePatternScanner:
         receive_time = datetime.now(UTC)
         bar_age_ms = (receive_time - bar.timestamp).total_seconds() * 1000
 
-        logger.info(
+        logger.debug(
             "realtime_bar_processing",
             symbol=bar.symbol,
             timestamp=bar.timestamp.isoformat(),
@@ -440,8 +455,24 @@ class RealtimePatternScanner:
             volume=bar.volume,
         )
 
-        # TODO: Story 19.2+ will add pattern detection here
-        # For now, we just validate the bar was received and processed
+        # Story 19.2: Add bar to rolling window
+        if self._window_manager is not None:
+            await self._window_manager.add_bar(bar.symbol, bar)
+
+        # Story 19.3: Run pattern detection if detector is configured
+        if self._pattern_detector is not None and self._window_manager is not None:
+            from src.pattern_engine.bar_window_manager import WindowState
+
+            # Only detect patterns when window is ready (200 bars)
+            if self._window_manager.get_state(bar.symbol) == WindowState.READY:
+                events = await self._pattern_detector.process_bar(bar)
+                if events:
+                    logger.info(
+                        "patterns_detected",
+                        symbol=bar.symbol,
+                        pattern_count=len(events),
+                        patterns=[e.pattern_type.value for e in events],
+                    )
 
     def _handle_processing_error(self, error: Exception) -> None:
         """
@@ -540,6 +571,8 @@ def get_scanner() -> RealtimePatternScanner:
 def init_scanner(
     queue_max_size: int | None = None,
     processing_timeout_ms: int | None = None,
+    window_manager: BarWindowManager | None = None,
+    pattern_detector: RealtimePatternDetector | None = None,
 ) -> RealtimePatternScanner:
     """
     Initialize the global scanner instance.
@@ -547,6 +580,8 @@ def init_scanner(
     Args:
         queue_max_size: Maximum bars to queue (defaults from settings)
         processing_timeout_ms: Target processing time per bar (defaults from settings)
+        window_manager: BarWindowManager for rolling window data (Story 19.2)
+        pattern_detector: RealtimePatternDetector for pattern detection (Story 19.3)
 
     Returns:
         RealtimePatternScanner instance
@@ -555,5 +590,7 @@ def init_scanner(
     _scanner = RealtimePatternScanner(
         queue_max_size=queue_max_size,
         processing_timeout_ms=processing_timeout_ms,
+        window_manager=window_manager,
+        pattern_detector=pattern_detector,
     )
     return _scanner

@@ -27,9 +27,7 @@ class AuditTrailCreate(BaseModel):
     correlation_id: str | None = Field(
         None, max_length=100, description="Correlation ID for cross-system tracing"
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict, description="Additional context data"
-    )
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional context data")
 
 
 class AuditTrailEntry(BaseModel):

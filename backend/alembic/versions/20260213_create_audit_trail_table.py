@@ -138,12 +138,8 @@ def upgrade() -> None:
     )
 
     # Tamper-proof: prevent UPDATE and DELETE on audit_trail
-    op.execute(
-        "CREATE RULE audit_trail_no_update AS ON UPDATE TO audit_trail DO INSTEAD NOTHING;"
-    )
-    op.execute(
-        "CREATE RULE audit_trail_no_delete AS ON DELETE TO audit_trail DO INSTEAD NOTHING;"
-    )
+    op.execute("CREATE RULE audit_trail_no_update AS ON UPDATE TO audit_trail DO INSTEAD NOTHING;")
+    op.execute("CREATE RULE audit_trail_no_delete AS ON DELETE TO audit_trail DO INSTEAD NOTHING;")
 
 
 def downgrade() -> None:

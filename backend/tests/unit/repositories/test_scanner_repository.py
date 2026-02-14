@@ -646,7 +646,10 @@ class TestGetHistory:
         repository = ScannerRepository(db_session)
 
         # Create history with correlation_ids
-        correlation_ids = ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"]
+        correlation_ids = [
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ]
         history_data = ScannerHistoryCreate(
             cycle_started_at=datetime.now(UTC),
             cycle_ended_at=datetime.now(UTC),

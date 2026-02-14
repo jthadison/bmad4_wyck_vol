@@ -59,14 +59,44 @@ class MarketRegimeDetector:
     >>> print(regime)  # MarketRegime.RANGING
     """
 
-    def __init__(self) -> None:
-        """Initialize market regime detector."""
+    def __init__(
+        self,
+        adx_threshold: float | None = None,
+        high_vol_multiplier: float | None = None,
+        low_vol_multiplier: float | None = None,
+    ) -> None:
+        """
+        Initialize market regime detector.
+
+        Args:
+            adx_threshold: Override ADX threshold (reads from Settings if None).
+            high_vol_multiplier: Override high volatility multiplier (reads from Settings if None).
+            low_vol_multiplier: Override low volatility multiplier (reads from Settings if None).
+        """
+        from src.config import get_settings
+
+        settings = get_settings()
+
         self.adx_period = 14
         self.atr_period = 14
         self.avg_atr_period = 20
-        self.adx_threshold = Decimal("25.0")
-        self.high_vol_multiplier = Decimal("1.5")
-        self.low_vol_multiplier = Decimal("0.5")
+        self.adx_threshold = Decimal(
+            str(adx_threshold if adx_threshold is not None else settings.regime_adx_threshold)
+        )
+        self.high_vol_multiplier = Decimal(
+            str(
+                high_vol_multiplier
+                if high_vol_multiplier is not None
+                else settings.regime_high_vol_multiplier
+            )
+        )
+        self.low_vol_multiplier = Decimal(
+            str(
+                low_vol_multiplier
+                if low_vol_multiplier is not None
+                else settings.regime_low_vol_multiplier
+            )
+        )
 
     def detect_regime(self, bars: list["OHLCVBar"]) -> MarketRegime:
         """

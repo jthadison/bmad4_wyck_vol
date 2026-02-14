@@ -411,14 +411,15 @@ class TestCampaignCountLimits:
 class TestOverrideMechanism:
     """Integration tests for override mechanism (AC 10)."""
 
-    def test_override_mechanism_bypasses_rejection_in_strict_mode(self) -> None:
+    @pytest.mark.asyncio
+    async def test_override_mechanism_bypasses_rejection_in_strict_mode(self) -> None:
         """Test override mechanism bypasses rejection in strict mode (AC 10)."""
         signal_id = uuid4()
         approver = "john.doe@example.com"
         reason = "Exceptional Wyckoff setup with strong volume confirmation"
 
-        # Execute override
-        result = override_correlation_limit(signal_id, approver, reason)
+        # Execute override (no session = log-only mode)
+        result = await override_correlation_limit(signal_id, approver, reason)
 
         # Should return True to allow signal approval
         assert result is True

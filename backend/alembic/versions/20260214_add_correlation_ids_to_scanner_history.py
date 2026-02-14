@@ -37,7 +37,9 @@ def upgrade() -> None:
     )
 
     # Backfill existing rows with empty array (M-1: server_default only applies to new inserts)
-    op.execute("UPDATE scanner_history SET correlation_ids = '[]'::jsonb WHERE correlation_ids IS NULL")
+    op.execute(
+        "UPDATE scanner_history SET correlation_ids = '[]'::jsonb WHERE correlation_ids IS NULL"
+    )
 
 
 def downgrade() -> None:

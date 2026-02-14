@@ -260,9 +260,7 @@ async def get_audit_trail(
         repo = AuditTrailRepository(db)
         entries, total_count = await repo.query(params)
 
-        return AuditTrailResponse(
-            data=entries, total_count=total_count, limit=limit, offset=offset
-        )
+        return AuditTrailResponse(data=entries, total_count=total_count, limit=limit, offset=offset)
 
     except HTTPException:
         raise

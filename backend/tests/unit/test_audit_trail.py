@@ -174,9 +174,7 @@ class TestAuditTrailResponse:
 
     def test_empty_response(self) -> None:
         """Test empty response."""
-        response = AuditTrailResponse(
-            data=[], total_count=0, limit=50, offset=0
-        )
+        response = AuditTrailResponse(data=[], total_count=0, limit=50, offset=0)
         assert len(response.data) == 0
         assert response.total_count == 0
 
@@ -197,8 +195,15 @@ class TestAuditTrailORM:
         """Test expected columns exist."""
         columns = {c.name for c in AuditTrailORM.__table__.columns}
         expected = {
-            "id", "event_type", "entity_type", "entity_id",
-            "actor", "action", "correlation_id", "metadata", "created_at",
+            "id",
+            "event_type",
+            "entity_type",
+            "entity_id",
+            "actor",
+            "action",
+            "correlation_id",
+            "metadata",
+            "created_at",
         }
         assert expected == columns
 

@@ -6,7 +6,7 @@ ensuring real code paths are exercised (not patched away).
 """
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -208,9 +208,7 @@ class TestAuditTrailRepositoryQuery:
         session = self._setup_session_with_rows([], 0)
         repo = AuditTrailRepository(session)
 
-        entries, total = await repo.query(
-            AuditTrailQuery(event_type="NONEXISTENT")
-        )
+        entries, total = await repo.query(AuditTrailQuery(event_type="NONEXISTENT"))
 
         assert len(entries) == 0
         assert total == 0
@@ -256,9 +254,7 @@ class TestAuditTrailRepositoryQuery:
         session = self._setup_session_with_rows(rows, 10)
         repo = AuditTrailRepository(session)
 
-        entries, total = await repo.query(
-            AuditTrailQuery(limit=2, offset=5)
-        )
+        entries, total = await repo.query(AuditTrailQuery(limit=2, offset=5))
 
         assert len(entries) == 2
         assert total == 10  # total count ignores pagination
