@@ -42,7 +42,16 @@ class MetricsCalculator:
     - trade counts
 
     Example:
-        calculator = MetricsCalculator()
+        # Daily backtest (default)
+        calculator = MetricsCalculator(timeframe="1d")
+        metrics = calculator.calculate_metrics(
+            equity_curve=equity_curve,
+            trades=trades,
+            initial_capital=Decimal("100000"),
+        )
+
+        # Intraday backtest (Story 13.5)
+        calculator = MetricsCalculator(timeframe="1h")
         metrics = calculator.calculate_metrics(
             equity_curve=equity_curve,
             trades=trades,
@@ -253,6 +262,12 @@ class MetricsCalculator:
 
         Story 13.5 C-2 Fix: Dynamic calculation for intraday timeframes.
 
+        **IMPORTANT - Asset Class Assumptions (CR-3)**:
+        - Assumes 24/5 trading (forex/crypto market hours)
+        - 252 trading days per year baseline
+        - For equities with 6.5h/day market hours, bars_per_year would differ
+        - Future enhancement needed for asset-class-specific trading hours
+
         Args:
             timeframe: Timeframe string (e.g., "1d", "1h", "15m", "5m")
 
@@ -265,6 +280,11 @@ class MetricsCalculator:
             "15m" -> 24,192 (252 days * 24 hours * 4 quarters)
             "5m" -> 72,576 (252 days * 24 hours * 12 periods)
             "1m" -> 362,880 (252 days * 24 hours * 60 minutes)
+
+        Warning:
+            For equity backtests (US30, SPY, etc.), intraday Sharpe ratios
+            will be slightly overstated due to 24h assumption vs 6.5h reality.
+            Error magnitude: ~3.7x (24/6.5) on annualization factor.
         """
         # Parse timeframe string
         timeframe_lower = timeframe.lower()
@@ -294,11 +314,23 @@ class MetricsCalculator:
 
         Story 13.5 C-2 Fix: Now uses timeframe-specific annualization factor.
 
+        **IMPORTANT - Asset Class Assumptions (CR-3)**:
+        See _get_bars_per_year() docstring for 24/5 forex/crypto assumption details.
+
         Args:
             equity_curve: List of equity curve points
 
         Returns:
             Sharpe ratio (annualized)
+
+        Example Usage (Story 13.5):
+            # Daily backtest
+            calculator = MetricsCalculator(timeframe="1d")
+            sharpe = calculator._calculate_sharpe_ratio(equity_curve)
+
+            # Hourly backtest (intraday)
+            calculator = MetricsCalculator(timeframe="1h")
+            sharpe = calculator._calculate_sharpe_ratio(equity_curve)
 
         Example (Daily):
             Avg daily return = 0.1%, std dev = 0.5%
