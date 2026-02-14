@@ -51,6 +51,13 @@ class TestAuditTrailRepositoryInsert:
     async def test_insert_adds_to_session_and_flushes(self) -> None:
         """Test insert calls session.add() and session.flush()."""
         session = AsyncMock()
+
+        # Mock add() to populate id and created_at on the ORM object
+        def mock_add(orm_obj):
+            orm_obj.id = uuid4()
+            orm_obj.created_at = datetime.now(UTC)
+
+        session.add = MagicMock(side_effect=mock_add)
         repo = AuditTrailRepository(session)
 
         entry = AuditTrailCreate(
@@ -76,6 +83,13 @@ class TestAuditTrailRepositoryInsert:
     async def test_insert_passes_correlation_id(self) -> None:
         """Test insert correctly passes correlation_id to ORM."""
         session = AsyncMock()
+
+        # Mock add() to populate id and created_at on the ORM object
+        def mock_add(orm_obj):
+            orm_obj.id = uuid4()
+            orm_obj.created_at = datetime.now(UTC)
+
+        session.add = MagicMock(side_effect=mock_add)
         repo = AuditTrailRepository(session)
 
         entry = AuditTrailCreate(
@@ -97,6 +111,13 @@ class TestAuditTrailRepositoryInsert:
     async def test_insert_without_correlation_id(self) -> None:
         """Test insert with None correlation_id."""
         session = AsyncMock()
+
+        # Mock add() to populate id and created_at on the ORM object
+        def mock_add(orm_obj):
+            orm_obj.id = uuid4()
+            orm_obj.created_at = datetime.now(UTC)
+
+        session.add = MagicMock(side_effect=mock_add)
         repo = AuditTrailRepository(session)
 
         entry = AuditTrailCreate(
@@ -116,6 +137,13 @@ class TestAuditTrailRepositoryInsert:
     async def test_insert_returns_audit_trail_entry(self) -> None:
         """Test insert returns proper AuditTrailEntry with all fields."""
         session = AsyncMock()
+
+        # Mock add() to populate id and created_at on the ORM object
+        def mock_add(orm_obj):
+            orm_obj.id = uuid4()
+            orm_obj.created_at = datetime.now(UTC)
+
+        session.add = MagicMock(side_effect=mock_add)
         repo = AuditTrailRepository(session)
 
         signal_id = str(uuid4())

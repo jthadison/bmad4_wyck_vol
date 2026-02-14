@@ -928,6 +928,10 @@ class SignalScannerService:
         if symbols_total > 0 and errors_count == symbols_total:
             return ScanCycleStatus.FAILED
 
+        # Partial completion if some (but not all) symbols had errors
+        if errors_count > 0 and errors_count < symbols_total:
+            return ScanCycleStatus.PARTIAL
+
         # Story 20.4 PR review: account for skipped symbols
         total_skipped = symbols_skipped_session + symbols_skipped_rate_limit
         if symbols_total > 0 and total_skipped == symbols_total and symbols_processed == 0:
