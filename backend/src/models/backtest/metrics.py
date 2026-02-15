@@ -20,6 +20,7 @@ __all__ = [
     "DrawdownPeriod",
     "RiskMetrics",
     "CampaignPerformance",
+    "EntryTypeMetrics",
 ]
 
 
@@ -404,6 +405,61 @@ class CampaignPerformance(BaseModel):
         """Convert numeric values to Decimal."""
         if v is None:
             return None
+        if isinstance(v, Decimal):
+            return v
+        return Decimal(str(v))
+
+
+class EntryTypeMetrics(BaseModel):
+    """Per-entry-type performance metrics for BMAD workflow analysis (Story 13.10).
+
+    Tracks performance statistics for each entry type (SPRING, SOS, LPS) to enable
+    comparison of entry strategies and BMAD workflow optimization.
+
+    Attributes:
+        entry_type: BMAD entry type (SPRING, SOS, LPS)
+        total_trades: Total trades using this entry type
+        winning_trades: Number of winning trades
+        losing_trades: Number of losing trades
+        win_rate: Win rate as decimal (0.0-1.0)
+        avg_r_multiple: Average R-multiple across trades
+        profit_factor: Total wins / Total losses
+        total_pnl: Sum of all P&L for this entry type
+        avg_trade_duration_hours: Average time in trade (hours)
+        best_trade_pnl: Largest winning trade P&L
+        worst_trade_pnl: Largest losing trade P&L
+        avg_entry_phase: Most common entry phase for this type
+        add_count_total: Total LPS add entries (only relevant for LPS type)
+    """
+
+    entry_type: Literal["SPRING", "SOS", "LPS"] = Field(..., description="BMAD entry type")
+    total_trades: int = Field(..., ge=0, description="Total trades for this entry type")
+    winning_trades: int = Field(..., ge=0, description="Number of winning trades")
+    losing_trades: int = Field(..., ge=0, description="Number of losing trades")
+    win_rate: Decimal = Field(
+        ..., ge=Decimal("0"), le=Decimal("1"), decimal_places=4, description="Win rate (0.0-1.0)"
+    )
+    avg_r_multiple: Decimal = Field(..., decimal_places=4, description="Average R-multiple")
+    profit_factor: Decimal = Field(
+        ..., ge=Decimal("0"), decimal_places=4, description="Wins/Losses ratio"
+    )
+    total_pnl: Decimal = Field(..., decimal_places=2, description="Total P&L for entry type")
+    avg_trade_duration_hours: Decimal = Field(
+        ..., ge=Decimal("0"), decimal_places=2, description="Avg time in trade (hours)"
+    )
+    best_trade_pnl: Decimal = Field(..., decimal_places=2, description="Best trade P&L")
+    worst_trade_pnl: Decimal = Field(..., decimal_places=2, description="Worst trade P&L")
+    avg_entry_phase: Literal["C", "D", "E"] | None = Field(
+        default=None, description="Most common Wyckoff phase at entry"
+    )
+    add_count_total: int = Field(
+        default=0, ge=0, description="Total LPS add entries (relevant for LPS type)"
+    )
+
+    @field_validator("win_rate", "avg_r_multiple", "profit_factor", mode="before")
+    @classmethod
+    def convert_to_decimal(cls, v) -> Decimal:
+        """Convert numeric values to Decimal."""
         if isinstance(v, Decimal):
             return v
         return Decimal(str(v))
