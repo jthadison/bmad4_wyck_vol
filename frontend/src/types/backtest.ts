@@ -204,6 +204,7 @@ export interface BacktestTrade {
   r_multiple: string // Decimal (pnl / initial_risk)
   duration_hours: number
   exit_reason: string // "TARGET", "STOP", "TIME", etc.
+  entry_type?: string // "SPRING", "SOS", "LPS" (Story 13.10)
 }
 
 /**
@@ -283,6 +284,9 @@ export interface BacktestResult {
 
   // Phase analysis (Story 13.7)
   phase_analysis?: PhaseAnalysisReport
+
+  // Entry type analysis (Story 13.10)
+  entry_type_analysis?: EntryTypeAnalysis
 
   // Extreme trades
   largest_winner: BacktestTrade | null
@@ -395,6 +399,65 @@ export interface VolumeAnalysisReport {
   spikes: VolumeSpikeSummary[]
   divergences: VolumeDivergenceSummary[]
   trends: VolumeTrendSummary[]
+}
+
+// ==========================================================================================
+// Story 13.10: Entry Type Analysis Types (Spring & LPS Entry Logic)
+// ==========================================================================================
+
+/**
+ * Performance metrics for a single entry type (Story 13.10).
+ *
+ * Tracks win rate, R-multiple, and P&L for SPRING, SOS, or LPS entries.
+ */
+export interface EntryTypePerformance {
+  entry_type: string // "SPRING", "SOS", "LPS"
+  total_trades: number
+  winning_trades: number
+  losing_trades: number
+  win_rate: string // Decimal (0.0-1.0)
+  avg_r_multiple: string // Decimal
+  profit_factor: string // Decimal
+  total_pnl: string // Decimal (currency)
+  avg_risk_pct: string // Decimal (avg position risk as % of capital)
+}
+
+/**
+ * BMAD workflow stage completion tracking (Story 13.10).
+ *
+ * Tracks how many campaigns reached each BMAD stage.
+ */
+export interface BmadStageStats {
+  stage: string // "BUY", "MONITOR", "ADD", "DUMP"
+  campaigns_reached: number
+  percentage: string // Decimal (0-100)
+}
+
+/**
+ * Complete entry type analysis report (Story 13.10).
+ *
+ * Contains all data for the EntryTypeAnalysis UI component including
+ * per-entry-type performance, BMAD workflow progression, and Spring vs SOS comparison.
+ */
+export interface EntryTypeAnalysis {
+  entry_type_performance: EntryTypePerformance[]
+  bmad_stages: BmadStageStats[]
+  total_spring_entries: number
+  total_sos_entries: number
+  total_lps_entries: number
+  spring_vs_sos_improvement: {
+    win_rate_diff: string // Decimal
+    avg_r_diff: string // Decimal
+    profit_factor_diff: string // Decimal
+  } | null
+}
+
+/**
+ * Props for EntryTypeAnalysis component (Story 13.10)
+ */
+export interface EntryTypeAnalysisPanelProps {
+  entryTypeAnalysis: EntryTypeAnalysis
+  trades: BacktestTrade[]
 }
 
 // ==========================================================================================
