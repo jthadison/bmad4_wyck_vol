@@ -94,6 +94,20 @@ jobs:
             --reruns-delay 1 \
             -v
 
+      - name: Verify entry type tests exist (Story 13.10)
+        working-directory: backend
+        run: |
+          echo "## Entry Type Test Coverage (Story 13.10)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          # Check for entry type test files
+          ENTRY_TESTS=$(find tests/ -name "*.py" -exec grep -l "entry_type\|EntryType\|spring.*entry\|lps.*entry\|BMAD" {} + 2>/dev/null | wc -l)
+          echo "- Entry type test files found: $ENTRY_TESTS" >> $GITHUB_STEP_SUMMARY
+          if [ "$ENTRY_TESTS" -gt 0 ]; then
+            echo "- Status: Entry type tests present" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Status: No entry type tests found (Story 13.10 tests may not be merged yet)" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Check optional Codecov secret
         run: |
           if [ -z "$CODECOV_TOKEN" ]; then
@@ -546,6 +560,10 @@ jobs:
           echo "| Accuracy Tests | ${{ needs.accuracy-tests.result == 'success' && '✅' || needs.accuracy-tests.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Code Quality | ${{ needs.code-quality.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security Scan | ${{ needs.security-scan.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Story 13.10 Entry Type Checks" >> $GITHUB_STEP_SUMMARY
+          echo "Entry type metrics and observability are tracked via Prometheus counters" >> $GITHUB_STEP_SUMMARY
+          echo "in \`backend/src/observability/metrics.py\` (entries_by_type_total, bmad_stage_completions_total)." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Run Details" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY

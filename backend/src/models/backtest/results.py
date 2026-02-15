@@ -26,6 +26,7 @@ from .metrics import (
     BacktestMetrics,
     CampaignPerformance,
     DrawdownPeriod,
+    EntryTypeMetrics,
     MonthlyReturn,
     PatternPerformance,
     RiskMetrics,
@@ -42,6 +43,9 @@ __all__ = [
     "BacktestPosition",
     "BacktestTrade",
     "BacktestResult",
+    "EntryTypePerformance",
+    "BmadStageStats",
+    "EntryTypeAnalysis",
 ]
 
 
@@ -199,6 +203,8 @@ class BacktestPosition(BaseModel):
 
     Extended in Story 12.1 Task 4 to include position_id, side, timestamps,
     and commission tracking.
+    Extended in Story 13.10 to include entry_type, entry_phase, and add_count
+    for BMAD workflow tracking.
 
     Attributes:
         position_id: Unique position identifier
@@ -211,6 +217,9 @@ class BacktestPosition(BaseModel):
         last_updated: Timestamp of last position update
         unrealized_pnl: Unrealized profit/loss
         total_commission: Total commission paid for this position
+        entry_type: BMAD entry type (SPRING, SOS, LPS) (Story 13.10)
+        entry_phase: Wyckoff phase at entry (C, D, E) (Story 13.10)
+        add_count: Number of LPS add entries for this position (Story 13.10)
     """
 
     position_id: UUID = Field(description="Unique position ID")
@@ -223,6 +232,16 @@ class BacktestPosition(BaseModel):
     last_updated: datetime = Field(description="Last update timestamp")
     unrealized_pnl: Decimal = Field(default=Decimal("0"), description="Unrealized P&L")
     total_commission: Decimal = Field(default=Decimal("0"), description="Total commission")
+    # Story 13.10: BMAD entry type tracking
+    entry_type: Literal["SPRING", "SOS", "LPS"] | None = Field(
+        default=None, description="BMAD entry type (Story 13.10)"
+    )
+    entry_phase: Literal["C", "D", "E"] | None = Field(
+        default=None, description="Wyckoff phase at entry (Story 13.10)"
+    )
+    add_count: int = Field(
+        default=0, ge=0, description="Number of LPS add entries for this position (Story 13.10)"
+    )
 
     # Backward compatibility alias for Story 11.2
     @property
@@ -301,6 +320,13 @@ class BacktestTrade(BaseModel):
     exit_reason: str | None = Field(
         default=None, description="Reason for exit (JUMP_LEVEL_HIT, UTAD_DETECTED, etc.)"
     )
+    # Story 13.10: BMAD entry type tracking
+    entry_type: Literal["SPRING", "SOS", "LPS"] | None = Field(
+        default=None, description="BMAD entry type (Story 13.10)"
+    )
+    entry_phase: Literal["C", "D", "E"] | None = Field(
+        default=None, description="Wyckoff phase at entry (Story 13.10)"
+    )
 
     # Backward compatibility aliases for Story 11.2
     @property
@@ -338,6 +364,70 @@ class BacktestTrade(BaseModel):
     def net_r_multiple(self) -> Decimal:
         """Alias for r_multiple (Story 12.5)."""
         return self.r_multiple
+
+
+class EntryTypePerformance(BaseModel):
+    """Per-entry-type performance metrics for frontend (Story 13.10).
+
+    Attributes:
+        entry_type: BMAD entry type (SPRING, SOS, LPS)
+        count: Total entries of this type
+        win_rate: Win rate as 0-100 percentage
+        avg_r_multiple: Average risk-reward multiple
+        profit_factor: Total wins / total losses
+        total_pnl_pct: Total P&L as percentage
+        avg_risk_pct: Average risk per entry as percentage
+    """
+
+    entry_type: Literal["SPRING", "SOS", "LPS"] = Field(..., description="BMAD entry type")
+    count: int = Field(..., ge=0, description="Total entries of this type")
+    win_rate: float = Field(..., ge=0, le=100, description="Win rate (0-100%)")
+    avg_r_multiple: float = Field(..., description="Average R-multiple")
+    profit_factor: float = Field(..., ge=0, description="Wins/Losses ratio")
+    total_pnl_pct: float = Field(..., description="Total P&L percentage")
+    avg_risk_pct: float = Field(..., ge=0, description="Average risk percentage")
+
+
+class BmadStageStats(BaseModel):
+    """BMAD workflow stage completion stats for frontend (Story 13.10).
+
+    Attributes:
+        stage: BMAD stage (BUY, MONITOR, ADD, DUMP)
+        count: Number of times this stage was reached
+        completion_pct: Completion percentage (0-100)
+    """
+
+    stage: Literal["BUY", "MONITOR", "ADD", "DUMP"] = Field(..., description="BMAD workflow stage")
+    count: int = Field(..., ge=0, description="Times this stage was reached")
+    completion_pct: float = Field(..., ge=0, le=100, description="Completion percentage (0-100)")
+
+
+class EntryTypeAnalysis(BaseModel):
+    """Complete entry type analysis for frontend rendering (Story 13.10).
+
+    Provides structured data for the EntryTypeAnalysis Vue component.
+
+    Attributes:
+        performance_by_type: Per-type performance (SPRING, SOS, LPS)
+        bmad_stages: BMAD workflow stage stats
+        spring_vs_sos_improvement: Comparison stats
+        total_entries: Total entries across all types
+        entries_by_type: Count per entry type
+    """
+
+    performance_by_type: list[EntryTypePerformance] = Field(
+        default_factory=list, description="Performance by entry type"
+    )
+    bmad_stages: list[BmadStageStats] = Field(
+        default_factory=list, description="BMAD stage completion stats"
+    )
+    spring_vs_sos_improvement: dict = Field(
+        default_factory=dict, description="Spring vs SOS comparison stats"
+    )
+    total_entries: int = Field(default=0, ge=0, description="Total entries across all types")
+    entries_by_type: dict[str, int] = Field(
+        default_factory=dict, description="Count per entry type"
+    )
 
 
 class BacktestResult(BaseModel):
@@ -413,6 +503,14 @@ class BacktestResult(BaseModel):
     # Story 13.7: Phase analysis report (Task #12)
     phase_analysis: PhaseAnalysisReport | None = Field(
         default=None, description="Phase detection analysis report (Story 13.7, FR7.8)"
+    )
+    # Story 13.10: Entry type metrics for BMAD workflow analysis
+    entry_type_metrics: list[EntryTypeMetrics] = Field(
+        default_factory=list, description="Per-entry-type performance metrics (Story 13.10)"
+    )
+    # Story 13.10: Structured entry type analysis for frontend
+    entry_type_analysis: EntryTypeAnalysis | None = Field(
+        default=None, description="Entry type analysis for frontend rendering (Story 13.10)"
     )
     # Story 12.6A AC6: Extreme trades and streaks
     largest_winner: BacktestTrade | None = Field(

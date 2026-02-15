@@ -180,3 +180,44 @@ stale_symbols_total = Gauge(
     "stale_symbols_total",
     "Total count of symbols with stale data",
 )
+
+# ===== Story 13.10: Entry Type Tracking Metrics =====
+#
+# These metrics track the distribution and performance of different entry types
+# (Spring, SOS, LPS) within the BMAD workflow.
+
+# Entry type distribution counter
+entries_by_type_total = Counter(
+    "entries_by_type_total",
+    "Total entries by type (Spring, SOS, LPS)",
+    labelnames=["entry_type", "symbol"],
+)
+
+# BMAD workflow stage completion
+bmad_stage_completions_total = Counter(
+    "bmad_stage_completions_total",
+    "BMAD workflow stage completions (Buy, Monitor, Add, Dump)",
+    labelnames=["stage", "symbol"],
+)
+
+# Entry priority decisions
+entry_priority_decisions_total = Counter(
+    "entry_priority_decisions_total",
+    "Entry priority decisions when multiple signals present",
+    labelnames=["chosen_type", "competing_types"],
+)
+
+# Entry type win rate gauge (updated periodically from backtest/live results)
+entry_type_win_rate = Gauge(
+    "entry_type_win_rate",
+    "Win rate by entry type",
+    labelnames=["entry_type"],
+)
+
+# Entry type evaluation latency
+entry_type_evaluation_latency = Histogram(
+    "entry_type_evaluation_latency_seconds",
+    "Time to evaluate entry type eligibility",
+    labelnames=["entry_type"],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1],
+)
