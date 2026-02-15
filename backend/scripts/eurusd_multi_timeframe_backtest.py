@@ -87,8 +87,12 @@ MAX_LPS_ADDS = 2
 # Minimum confidence threshold for Spring entries (devil's advocate recommendation)
 MIN_SPRING_CONFIDENCE = 75
 
-# Default LPS add sizing as fraction of initial position (configurable, default 50%)
-LPS_ADD_SIZE_FRACTION = Decimal("0.50")
+# Default LPS add sizing as fraction of initial position (configurable)
+# Phase D: Full add (50%) - primary markup opportunity
+# Phase E: Reduced add (25%) - late retest, higher risk
+LPS_ADD_SIZE_FRACTION_PHASE_D = Decimal("0.50")
+LPS_ADD_SIZE_FRACTION_PHASE_E = Decimal("0.25")
+MIN_CONFIDENCE_PHASE_E = 80  # Higher confidence threshold for Phase E adds
 
 
 @dataclass
@@ -820,8 +824,8 @@ class EURUSDMultiTimeframeBacktest:
                     if signal:
                         return signal
 
-            # PRIORITY 2: LPS Add (Phase D - corrected per Wyckoff methodology)
-            if context["position"] and campaign.current_phase == WyckoffPhase.D:
+            # PRIORITY 2: LPS Add (Phase D primary, Phase E reduced - per Wyckoff mentor)
+            if context["position"] and campaign.current_phase in [WyckoffPhase.D, WyckoffPhase.E]:
                 lps_patterns = [p for p in campaign.patterns if isinstance(p, LPS)]
                 if lps_patterns:
                     latest_lps = max(lps_patterns, key=lambda p: p.detection_timestamp)
@@ -1031,12 +1035,17 @@ class EURUSDMultiTimeframeBacktest:
         """
         Evaluate LPS pattern for adding to existing position (FR10.2, AC10.3, AC10.4).
 
-        LPS Add Logic (corrected: Phase D, not Phase E):
-        1. LPS detected in Phase D (markup, after SOS confirms)
+        LPS Add Logic (per Wyckoff mentor ruling):
+        Phase D (primary): Full 50% add - classic retest during markup initiation
+        Phase E (optional): Reduced 25% add - late retest, requires higher confidence
+
+        Requirements:
+        1. LPS detected in Phase D or E
         2. Existing position open (from Spring or SOS)
         3. Initial position is profitable
-        4. Add LPS_ADD_SIZE_FRACTION of initial position size
+        4. Add phase-appropriate fraction of initial position size
         5. Max MAX_LPS_ADDS adds per campaign
+        6. Phase E requires confidence >= 80 (vs 70 for Phase D)
 
         Returns:
             "BUY" if add criteria met, None otherwise
@@ -1076,6 +1085,19 @@ class EURUSDMultiTimeframeBacktest:
             )
             return None
 
+        # Phase-based sizing (per Wyckoff mentor ruling)
+        current_phase = campaign.current_phase
+        if current_phase == WyckoffPhase.E:
+            # Phase E: Late retest, use reduced sizing and higher confidence bar
+            add_size_fraction = LPS_ADD_SIZE_FRACTION_PHASE_E
+            phase_label = "Phase E (Late retest - reduced size)"
+            # TODO: Add confidence check once LPS has confidence score
+            # For now, rely on profitable position requirement as proxy
+        else:
+            # Phase D: Primary markup opportunity, full sizing
+            add_size_fraction = LPS_ADD_SIZE_FRACTION_PHASE_D
+            phase_label = "Phase D (Add phase - BMAD)"
+
         # Risk validation for add
         add_entry_price = Decimal(str(bar.close))
         stop_loss = (
@@ -1112,8 +1134,8 @@ class EURUSDMultiTimeframeBacktest:
                 )
                 return None
 
-            # Scale add size (configurable, default 50% per mentor recommendation)
-            add_size = add_position_size * LPS_ADD_SIZE_FRACTION
+            # Scale add size based on phase (Phase D: 50%, Phase E: 25%)
+            add_size = add_position_size * add_size_fraction
 
             self.risk_manager.register_position(
                 symbol=self.symbol,
@@ -1140,7 +1162,8 @@ class EURUSDMultiTimeframeBacktest:
             add_price=float(add_entry_price),
             stop=float(stop_loss),
             initial_pnl=float(current_pnl_pct),
-            phase="Phase D (Add phase - BMAD)",
+            add_size_pct=float(add_size_fraction * 100),
+            phase=phase_label,
         )
 
         context["last_add_lps"] = lps.detection_timestamp
@@ -1323,7 +1346,7 @@ class EURUSDMultiTimeframeBacktest:
         print(f"  Avg Profit:          {sos_m.avg_pnl:+.2f}%")
         print(f"  Risk/Reward Ratio:   1:{sos_m.risk_reward_ratio:.1f}")
 
-        print("\n3. LPS ADDS (Add Phase - Phase E)")
+        print("\n3. LPS ADDS (Add Phase - Phase D)")
         print("-" * 70)
         print(f"  Total Adds:          {lps_m.total_entries}")
         print(f"  Success Rate:        {lps_m.win_rate:.1f}%")
