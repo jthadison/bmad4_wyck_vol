@@ -220,3 +220,4 @@ backtest-response.json
 # Development Debug Files
 backend/test_response.json
 frontend/debug-screenshot.png
+.archive/
