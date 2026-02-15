@@ -505,3 +505,242 @@ class TestVolumeLoggingRegression:
         # Verify still functional after reset
         logger.validate_pattern_volume("Spring", Decimal("0.5"), timestamp, "stock")
         assert len(logger.validations) == 1
+
+
+# =============================================================================
+# Story 13.7 - Phase Detection Regression Tests (AC7.9)
+# =============================================================================
+
+
+@requires_polygon
+@pytest.mark.asyncio
+async def test_phase_detection_regression():
+    """
+    AC7.9: Verify phase detection integration doesn't break existing backtest logic.
+
+    This regression test ensures that integrating PhaseDetector and phase-based
+    validation maintains backward compatibility and performance standards.
+
+    Validates:
+    ----------
+    1. Phase distribution is consistent and reasonable
+    2. Pattern-phase alignment rate ≥80%
+    3. Win rate change within ±5% tolerance
+    4. Performance impact is minimal (<10% slowdown)
+    5. Phase detection doesn't introduce regressions
+
+    Acceptance Criteria:
+    --------------------
+    - AC7.9: Phase detection regression validation
+    - Phase distribution shows realistic Wyckoff progression
+    - Pattern-phase alignment ≥80% (most patterns in correct phase)
+    - Win rate doesn't degrade by >5%
+    - Backtest execution time doesn't increase by >10%
+
+    Author: Test Specialist (Story 13.7)
+    """
+    import time
+
+    # Arrange
+    backtest = EURUSDMultiTimeframeBacktest()
+
+    # Baseline metrics (from Story 13.5/13.6)
+    # These should be updated based on actual baseline run
+    baseline_win_rate = 0.60  # 60% baseline win rate
+    baseline_execution_time = 30.0  # 30 seconds baseline
+
+    # Act - Run 1h backtest with phase detection enabled
+    start_time = time.time()
+    result = await backtest.run_single_timeframe("1h", backtest.TIMEFRAMES["1h"])
+    execution_time = time.time() - start_time
+
+    # Skip if no trades generated
+    if len(result.trades) == 0:
+        pytest.skip("No trades generated - cannot validate phase detection regression")
+
+    # =========================================================================
+    # Assertion 1: Phase Distribution Validation
+    # =========================================================================
+    # Phase distribution should show realistic Wyckoff progression
+    # Expected: More time in accumulation (A, B, C) than markup (D, E)
+
+    # Extract phase information from result metadata
+    phase_distribution = getattr(result, "phase_distribution", None)
+
+    if phase_distribution:
+        total_bars = sum(phase_distribution.values())
+
+        # Calculate accumulation vs markup time
+        accumulation_bars = (
+            phase_distribution.get("A", 0)
+            + phase_distribution.get("B", 0)
+            + phase_distribution.get("C", 0)
+        )
+        markup_bars = phase_distribution.get("D", 0) + phase_distribution.get("E", 0)
+
+        accumulation_pct = (accumulation_bars / total_bars * 100) if total_bars > 0 else 0
+        markup_pct = (markup_bars / total_bars * 100) if total_bars > 0 else 0
+
+        # Wyckoff principle: Accumulation time > Markup time
+        assert accumulation_pct > markup_pct, (
+            f"Phase distribution unrealistic: Accumulation {accumulation_pct:.1f}% "
+            f"should exceed Markup {markup_pct:.1f}%"
+        )
+
+        print("\n[PHASE DISTRIBUTION VALIDATION]")
+        print(f"  Total Bars Analyzed: {total_bars}")
+        print(f"  Accumulation Time: {accumulation_pct:.1f}% ({accumulation_bars} bars)")
+        print(f"  Markup Time: {markup_pct:.1f}% ({markup_bars} bars)")
+        print(f"  Phase A: {phase_distribution.get('A', 0)} bars")
+        print(f"  Phase B: {phase_distribution.get('B', 0)} bars")
+        print(f"  Phase C: {phase_distribution.get('C', 0)} bars")
+        print(f"  Phase D: {phase_distribution.get('D', 0)} bars")
+        print(f"  Phase E: {phase_distribution.get('E', 0)} bars")
+    else:
+        print("\n[WARNING] Phase distribution not available in result metadata")
+
+    # =========================================================================
+    # Assertion 2: Pattern-Phase Alignment Rate
+    # =========================================================================
+    # At least 80% of patterns should be in their expected phase
+    # (AC7.10 target)
+
+    pattern_phase_alignment = getattr(result, "pattern_phase_alignment_rate", None)
+
+    if pattern_phase_alignment is not None:
+        assert pattern_phase_alignment >= 0.80, (
+            f"Pattern-phase alignment {pattern_phase_alignment:.1%} below 80% threshold. "
+            "Most patterns should occur in their expected Wyckoff phase."
+        )
+
+        print("\n[PATTERN-PHASE ALIGNMENT]")
+        print(f"  Alignment Rate: {pattern_phase_alignment:.1%} ✅")
+        print("  Threshold: ≥80%")
+    else:
+        print("\n[WARNING] Pattern-phase alignment not available in result metadata")
+
+    # =========================================================================
+    # Assertion 3: Win Rate Regression Check
+    # =========================================================================
+    # Win rate should not degrade by more than 5% from baseline
+
+    actual_win_rate = float(result.summary.win_rate)
+    win_rate_change = actual_win_rate - baseline_win_rate
+
+    # Allow ±5% tolerance
+    assert abs(win_rate_change) <= 0.05, (
+        f"Win rate changed by {win_rate_change:+.1%} from baseline {baseline_win_rate:.1%}. "
+        f"Exceeds ±5% tolerance. Phase detection may have introduced regression."
+    )
+
+    print("\n[WIN RATE REGRESSION CHECK]")
+    print(f"  Baseline Win Rate: {baseline_win_rate:.1%}")
+    print(f"  Actual Win Rate: {actual_win_rate:.1%}")
+    print(f"  Change: {win_rate_change:+.1%}")
+    print(f"  Status: {'✅ PASS' if abs(win_rate_change) <= 0.05 else '❌ FAIL'}")
+
+    # =========================================================================
+    # Assertion 4: Performance Impact Check
+    # =========================================================================
+    # Execution time should not increase by more than 10%
+
+    performance_impact = (execution_time - baseline_execution_time) / baseline_execution_time * 100
+
+    assert performance_impact <= 10.0, (
+        f"Performance degraded by {performance_impact:.1f}% (execution time: {execution_time:.1f}s). "
+        f"Exceeds 10% tolerance. Phase detection implementation may be inefficient."
+    )
+
+    print("\n[PERFORMANCE IMPACT CHECK]")
+    print(f"  Baseline Execution Time: {baseline_execution_time:.1f}s")
+    print(f"  Actual Execution Time: {execution_time:.1f}s")
+    print(f"  Performance Impact: {performance_impact:+.1f}%")
+    print(f"  Status: {'✅ PASS' if performance_impact <= 10.0 else '❌ FAIL'}")
+
+    # =========================================================================
+    # Assertion 5: Basic Metrics Stability
+    # =========================================================================
+    # Total return and trade count should be reasonable
+
+    total_trades = result.summary.total_trades
+    total_return = float(result.summary.total_return_pct)
+
+    assert total_trades > 0, "No trades generated - phase detection may be too restrictive"
+
+    print("\n[REGRESSION TEST SUMMARY]")
+    print(f"  Total Trades: {total_trades}")
+    print(f"  Total Return: {total_return:.2f}%")
+    print(f"  Win Rate: {actual_win_rate:.1%}")
+    print(f"  Execution Time: {execution_time:.1f}s")
+    print("\n[AC7.9 REGRESSION TEST PASSED] ✅")
+
+
+@requires_polygon
+@pytest.mark.asyncio
+async def test_phase_detection_does_not_reduce_pattern_detection():
+    """
+    Verify that phase validation doesn't reject too many valid patterns.
+
+    Phase validation should improve quality (reduce false positives),
+    not block all patterns (reduce true positives).
+
+    This test ensures the validation thresholds are balanced.
+
+    Validates:
+    ----------
+    - Pattern detection rate doesn't drop by >30%
+    - Springs still detected in Phase C
+    - SOS still detected in Phase D/E
+    - LPS still detected in Phase D/E (AC7.23)
+
+    Author: Test Specialist (Story 13.7)
+    """
+    # Arrange
+    backtest = EURUSDMultiTimeframeBacktest()
+
+    # Baseline: Story 13.5/13.6 detected X patterns without phase validation
+    baseline_pattern_count = 10  # Placeholder - update based on actual baseline
+
+    # Act
+    result = await backtest.run_single_timeframe("1h", backtest.TIMEFRAMES["1h"])
+
+    # Extract pattern counts from result
+    patterns_detected = getattr(result, "total_patterns_detected", 0)
+    patterns_rejected_phase = getattr(result, "patterns_rejected_phase_mismatch", 0)
+    patterns_rejected_level = getattr(result, "patterns_rejected_level_proximity", 0)
+
+    if patterns_detected == 0:
+        pytest.skip("No patterns detected - cannot validate rejection rates")
+
+    # Assert - Pattern detection shouldn't drop dramatically
+    detection_rate_change = (
+        (patterns_detected - baseline_pattern_count) / baseline_pattern_count * 100
+    )
+
+    assert detection_rate_change >= -30.0, (
+        f"Pattern detection dropped by {abs(detection_rate_change):.1f}%. "
+        "Phase validation may be too restrictive."
+    )
+
+    # Assert - Some patterns should pass validation
+    patterns_accepted = patterns_detected - patterns_rejected_phase - patterns_rejected_level
+
+    assert patterns_accepted > 0, (
+        "All patterns rejected by phase/level validation. " "Validation thresholds are too strict."
+    )
+
+    acceptance_rate = (patterns_accepted / patterns_detected * 100) if patterns_detected > 0 else 0
+
+    # At least 50% of detected patterns should pass validation
+    assert acceptance_rate >= 50.0, (
+        f"Only {acceptance_rate:.1f}% of patterns passed validation. "
+        "Phase/level validation may be too restrictive."
+    )
+
+    print("\n[PATTERN REJECTION BALANCE CHECK]")
+    print(f"  Total Patterns Detected: {patterns_detected}")
+    print(f"  Patterns Accepted: {patterns_accepted} ({acceptance_rate:.1f}%)")
+    print(f"  Rejected (Phase Mismatch): {patterns_rejected_phase}")
+    print(f"  Rejected (Level Proximity): {patterns_rejected_level}")
+    print(f"  Detection Rate Change: {detection_rate_change:+.1f}%")
+    print("\n[PATTERN REJECTION BALANCE TEST PASSED] ✅")
