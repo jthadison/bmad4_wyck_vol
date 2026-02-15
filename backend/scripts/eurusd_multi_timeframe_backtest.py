@@ -373,6 +373,10 @@ class EURUSDMultiTimeframeBacktest:
         # Build dynamic trading range from recent 50 bars
         trading_range = self._build_trading_range(bars_list, current_index)
 
+        # Story 13.7 (AC7.11, AC7.15, FR7.5): Update campaign lifecycle on each bar
+        # CRITICAL FIX: Previously campaigns stuck in FORMING state forever
+        self._update_campaign_lifecycle(context, bar.timestamp, current_index)
+
         # Story 13.7 (AC7.2): Use PhaseDetector.detect_phase() instead of hardcoded phases
         detected_phase_classification = None
         try:
@@ -682,6 +686,8 @@ class EURUSDMultiTimeframeBacktest:
                                 "0.0001"
                             )
                             campaign.timeframe = self.current_timeframe
+                            # Story 13.7 (FR7.6): Track active campaign for exit handling
+                            context["active_campaign_id"] = campaign.campaign_id
 
                         return "BUY"
 
@@ -701,17 +707,29 @@ class EURUSDMultiTimeframeBacktest:
 
             if should_exit:
                 # Story 13.9 (AC9.7): Close position in risk manager
+                exit_price = Decimal(str(bar.close))
+                entry_price = Decimal(str(context["entry_price"]))
+
                 if self.risk_manager:
-                    exit_price = Decimal(str(bar.close))
                     self.risk_manager.close_all_positions_for_symbol(
                         symbol=self.symbol,
                         exit_price=exit_price,
+                    )
+
+                # Story 13.7 (AC7.12, AC7.13, FR7.6): Mark campaign as COMPLETED/FAILED
+                if context.get("active_campaign_id"):
+                    self._handle_campaign_exit(
+                        campaign_id=context["active_campaign_id"],
+                        exit_price=exit_price,
+                        entry_price=entry_price,
+                        exit_reason=exit_reason,
                     )
 
                 context["position"] = False
                 context["entry_price"] = None
                 context["stop_loss"] = None
                 context["position_size"] = None
+                context["active_campaign_id"] = None  # Clear active campaign
                 context["exit_reasons"].append(exit_reason)  # FR6.7: Track exit reason
                 return "SELL"
 
@@ -900,6 +918,122 @@ class EURUSDMultiTimeframeBacktest:
             duration=max(len(lookback_bars), 10),  # Ensure minimum 10 bars
             creek=creek,
             status=RangeStatus.ACTIVE,
+        )
+
+    def _update_campaign_lifecycle(
+        self, context: dict, current_time: datetime, bar_index: int
+    ) -> None:
+        """
+        Update campaign states on each bar (Story 13.7, FR7.5, AC7.11, AC7.15).
+
+        State Transitions:
+        - FORMING (1 pattern) → ACTIVE (2+ patterns) - automatic via add_pattern()
+        - ACTIVE → FAILED (expiration exceeded) - via expire_stale_campaigns()
+
+        Args:
+            context: Strategy context
+            current_time: Current bar timestamp
+            bar_index: Current bar index for logging
+
+        Critical Fix:
+            Previously campaigns stuck in FORMING state forever because
+            expire_stale_campaigns() was never called from strategy loop.
+        """
+        # Initialize campaign state tracking in context
+        if "campaign_states" not in context:
+            context["campaign_states"] = {}
+
+        # Update campaign states (check expiration, FORMING → ACTIVE handled by add_pattern)
+        self.campaign_detector.expire_stale_campaigns(current_time)
+
+        # Log state transitions
+        for campaign in self.campaign_detector._campaigns_by_id.values():
+            campaign_id = campaign.campaign_id
+            old_state = context["campaign_states"].get(campaign_id)
+            new_state = campaign.state
+
+            if old_state != new_state:
+                # State changed - log transition
+                logger.info(
+                    "[CAMPAIGN LIFECYCLE] State transition",
+                    campaign_id=campaign_id,
+                    transition=f"{old_state.name if old_state else 'NEW'} → {new_state.name}",
+                    patterns=len(campaign.patterns),
+                    bar_index=bar_index,
+                    timestamp=current_time,
+                    current_phase=campaign.current_phase.name if campaign.current_phase else None,
+                )
+
+                # Update tracked state
+                context["campaign_states"][campaign_id] = new_state
+
+    def _handle_campaign_exit(
+        self, campaign_id: str, exit_price: Decimal, entry_price: Decimal, exit_reason: str
+    ) -> None:
+        """
+        Mark campaign as COMPLETED or FAILED on position exit (Story 13.7, FR7.6, AC7.12, AC7.13).
+
+        Args:
+            campaign_id: Campaign ID to complete
+            exit_price: Exit price
+            entry_price: Entry price
+            exit_reason: Reason for exit
+
+        Logic:
+            - Calculate P&L percentage
+            - Mark COMPLETED if profit > 0
+            - Mark FAILED if profit <= 0
+            - Log campaign outcome
+        """
+        # Find campaign
+        campaign = next(
+            (
+                c
+                for c in self.campaign_detector._campaigns_by_id.values()
+                if c.campaign_id == campaign_id
+            ),
+            None,
+        )
+
+        if not campaign:
+            logger.warning(
+                "[CAMPAIGN EXIT] Campaign not found",
+                campaign_id=campaign_id,
+                exit_reason=exit_reason,
+            )
+            return
+
+        # Calculate P&L
+        pnl_pct = float((exit_price - entry_price) / entry_price * 100)
+
+        # Determine outcome
+        from src.models.campaign_state import CampaignState
+
+        old_state = campaign.state
+
+        if pnl_pct > 0:
+            campaign.state = CampaignState.COMPLETED
+            campaign.failure_reason = None
+            outcome = "COMPLETED"
+        else:
+            campaign.state = CampaignState.FAILED
+            campaign.failure_reason = exit_reason
+            outcome = "FAILED"
+
+        # Update indexes
+        self.campaign_detector._update_indexes(campaign, old_state)
+
+        # Log campaign outcome
+        logger.info(
+            f"[CAMPAIGN LIFECYCLE] Campaign {outcome}",
+            campaign_id=campaign_id,
+            outcome=outcome,
+            exit_reason=exit_reason,
+            pnl_pct=round(pnl_pct, 2),
+            entry_price=float(entry_price),
+            exit_price=float(exit_price),
+            duration_patterns=len(campaign.patterns),
+            final_phase=campaign.current_phase.name if campaign.current_phase else None,
         )
 
     def _detect_volume_divergence(self, bars: list[OHLCVBar], context: dict) -> bool:
