@@ -10,6 +10,7 @@ This document describes the comprehensive test coverage for Story 13.7, which im
 
 **Total Tests Implemented:** 21 tests across 2 files
 - **Update (2026-02-14):** Added 5 tests for critical issues from Task #18 (devil's advocate review)
+- **Update (2026-02-14):** Enhanced regression tests with statistical rigor per quant-analyst specifications
 
 ---
 
@@ -21,20 +22,61 @@ This document describes the comprehensive test coverage for Story 13.7, which im
 
 #### Tests Added (Story 13.7)
 
-##### `test_phase_detection_regression()` - AC7.9
+##### `test_phase_detection_regression()` - AC7.9 (ENHANCED WITH STATISTICAL RIGOR)
 **Validates:**
 - Phase distribution shows realistic Wyckoff progression (accumulation > markup)
 - Pattern-phase alignment rate ≥80%
-- Win rate doesn't degrade by >5% from baseline
+- Win rate doesn't degrade by >3pp from baseline (statistical validation)
+- Sharpe ratio within ±0.2 tolerance (±0.3 for small samples)
+- Max drawdown asymmetric check (overfitting detection)
+- Trade count within ±10% (relative tolerance)
+- Profit factor within ±0.3 tolerance
 - Performance impact <10% (execution time)
-- Basic metrics stability (trades, returns)
+
+**Statistical Methodology (Task #44):**
+- **Bonferroni Correction:** α = 0.05 / 5 metrics = 0.01 (conservative testing)
+- **Win Rate:** Two-proportion z-test + ±3pp tolerance (both must pass)
+- **Sharpe Ratio:** Adaptive tolerance (wider for n<30)
+- **Max Drawdown:** Asymmetric (improvement=warning, +5% degradation allowed)
+- **Sample Size:** n<30 triggers warning (preliminary flag), test continues
+- **Dependencies:** scipy 1.17.0, statsmodels 0.14.6 (both pre-installed)
 
 **Assertions:**
 1. Accumulation time (A+B+C) > Markup time (D+E) - Wyckoff principle
 2. Pattern-phase alignment ≥ 80% threshold
-3. Win rate change within ±5% tolerance
-4. Execution time increase ≤10%
-5. Total trades > 0 (not too restrictive)
+3. Win rate: ±3pp tolerance + z-test (p > 0.01 Bonferroni α)
+4. Sharpe ratio: ±0.2 (±0.3 for n<30)
+5. Max drawdown: Asymmetric (improvement=warning, worse≤+5%)
+6. Trade count: ±10% relative
+7. Profit factor: ±0.3 absolute
+8. Execution time increase ≤10%
+
+**Output Format:**
+```
+================================================================================
+[REGRESSION TEST SUMMARY - Story 13.7 AC7.9]
+================================================================================
+
+📊 PERFORMANCE METRICS:
+  Total Trades:    48 (baseline: 50)
+  Total Return:    5.2%
+  Win Rate:        65.2% (baseline: 60.0%)
+  Sharpe Ratio:    1.52 (baseline: 1.50)
+  Max Drawdown:    15.3% (baseline: 15.0%)
+  Profit Factor:   2.05 (baseline: 2.00)
+  Execution Time:  28.5s (baseline: 30.0s)
+
+📈 STATISTICAL VALIDATION:
+  Method:          Two-proportion z-test (win rate) + tolerance bands
+  Bonferroni α:    0.010 (5 metrics tested)
+  Sample Size:     48 trades ✅ ADEQUATE (≥30)
+  Preliminary:     No - results reliable
+
+✅ [AC7.9 REGRESSION TEST PASSED]
+   All metrics within statistical tolerances. No regression detected.
+   Phase detection integration maintains backward compatibility.
+================================================================================
+```
 
 ##### `test_phase_detection_does_not_reduce_pattern_detection()` - AC7.9 Balance Check
 **Validates:**
@@ -238,11 +280,20 @@ pytest tests/integration/test_phase_detection_integration.py --cov=src.pattern_e
 3. Compare results within tolerance
 4. Validate phase-specific metrics (distribution, alignment)
 
-**Tolerances:**
-- Win rate: ±5%
-- Execution time: +10%
-- Pattern detection: -30%
-- Acceptance rate: ≥50%
+**Tolerances (Story 13.7 Statistical Methodology):**
+- **Win rate:** ±3pp (absolute) + two-proportion z-test (p > 0.01)
+- **Sharpe ratio:** ±0.2 (standard), ±0.3 (n<30)
+- **Max drawdown:** Asymmetric (improvement=warning, degradation≤+5%)
+- **Trade count:** ±10% (relative)
+- **Profit factor:** ±0.3 (absolute)
+- **Execution time:** +10%
+- **Pattern detection:** -30%
+- **Acceptance rate:** ≥50%
+
+**Statistical Rigor:**
+- Bonferroni correction for multiple testing (5 metrics)
+- Sample size checks (n<30 = preliminary flag)
+- Asymmetric overfitting detection (better results trigger warnings)
 
 ### Integration Tests Strategy
 **Goal:** Validate end-to-end phase detection pipeline
@@ -315,6 +366,10 @@ pytest tests/integration/test_phase_detection_integration.py --cov=src.pattern_e
 
 ---
 
-**Document Version:** 1.0
+**Document Version:** 1.1
 **Last Updated:** 2026-02-14
-**Status:** Test implementation complete, awaiting backend integration
+**Status:** Test implementation complete with statistical rigor (Task #44), awaiting backend integration
+
+**Change Log:**
+- v1.1 (2026-02-14): Added statistical methodology section, enhanced regression test documentation
+- v1.0 (2026-02-14): Initial test coverage documentation
