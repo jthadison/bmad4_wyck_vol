@@ -662,8 +662,7 @@ async def test_phase_detection_regression():
     stat_ok = True
     try:
         z_stat, p_value = proportions_ztest(
-            [current_wins, baseline_wins],
-            [total_trades, baseline_trades]
+            [current_wins, baseline_wins], [total_trades, baseline_trades]
         )
         stat_ok = p_value > BONFERRONI_ALPHA  # Bonferroni-corrected alpha
     except Exception as e:
@@ -692,7 +691,9 @@ async def test_phase_detection_regression():
     print(f"  P-value: {p_value:.4f}")
     print(f"  Bonferroni α (5 metrics): {BONFERRONI_ALPHA:.3f}")
     print(f"  Statistical Test: {'✅ PASS' if stat_ok else '❌ FAIL'}")
-    print(f"  Sample Size: {total_trades} trades {'⚠️ PRELIMINARY' if preliminary else '✅ ADEQUATE'}")
+    print(
+        f"  Sample Size: {total_trades} trades {'⚠️ PRELIMINARY' if preliminary else '✅ ADEQUATE'}"
+    )
 
     # =========================================================================
     # Assertion 4: Performance Impact Check
@@ -745,7 +746,9 @@ async def test_phase_detection_regression():
         print(f"  Difference: {sharpe_diff:+.2f}")
         print(f"  Tolerance: ±{sharpe_tolerance:.1f}")
         print(f"  Status: {'✅ PASS' if sharpe_ok else '❌ FAIL'}")
-        print(f"  Sample Size: {total_trades} trades {'⚠️ PRELIMINARY' if preliminary else '✅ ADEQUATE'}")
+        print(
+            f"  Sample Size: {total_trades} trades {'⚠️ PRELIMINARY' if preliminary else '✅ ADEQUATE'}"
+        )
     else:
         print("\n[WARNING] Sharpe ratio not available in result")
 
@@ -773,7 +776,9 @@ async def test_phase_detection_regression():
             print("\n⚠️  [OVERFITTING WARNING] Max drawdown improved - investigate carefully!")
             print(f"  Baseline: {baseline_max_dd:.2f}%")
             print(f"  Current:  {max_dd_current:.2f}%")
-            print(f"  Improvement: {improvement_pp:.2f}pp ({improvement_pp/baseline_max_dd*100:.1f}%)")
+            print(
+                f"  Improvement: {improvement_pp:.2f}pp ({improvement_pp/baseline_max_dd*100:.1f}%)"
+            )
             print("  ")
             print("  This may indicate:")
             print("    - Overfitting to test data")
@@ -860,7 +865,7 @@ async def test_phase_detection_regression():
         print(f"  Baseline: {baseline_profit_factor:.2f}")
         print(f"  Current:  {profit_factor_current:.2f}")
         print(f"  Difference: {pf_diff:+.2f}")
-        print(f"  Tolerance: ±0.3")
+        print("  Tolerance: ±0.3")
         print(f"  Status: {'✅ PASS' if pf_ok else '❌ FAIL'}")
     else:
         print("\n[WARNING] Profit factor not available in result")
@@ -871,28 +876,44 @@ async def test_phase_detection_regression():
 
     total_return = float(result.summary.total_return_pct)
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("[REGRESSION TEST SUMMARY - Story 13.7 AC7.9]")
-    print("="*80)
+    print("=" * 80)
     print("\n📊 PERFORMANCE METRICS:")
     print(f"  Total Trades:    {total_trades} (baseline: {baseline_trades})")
     print(f"  Total Return:    {total_return:.2f}%")
     print(f"  Win Rate:        {actual_win_rate:.1f}% (baseline: {baseline_win_rate_pct:.1f}%)")
-    print(f"  Sharpe Ratio:    {sharpe_current:.2f} (baseline: {baseline_sharpe:.2f})" if sharpe_current else "  Sharpe Ratio:    N/A")
-    print(f"  Max Drawdown:    {max_dd_current:.2f}% (baseline: {baseline_max_dd:.2f}%)" if max_dd_current else "  Max Drawdown:    N/A")
-    print(f"  Profit Factor:   {profit_factor_current:.2f} (baseline: {baseline_profit_factor:.2f})" if profit_factor_current else "  Profit Factor:   N/A")
+    print(
+        f"  Sharpe Ratio:    {sharpe_current:.2f} (baseline: {baseline_sharpe:.2f})"
+        if sharpe_current
+        else "  Sharpe Ratio:    N/A"
+    )
+    print(
+        f"  Max Drawdown:    {max_dd_current:.2f}% (baseline: {baseline_max_dd:.2f}%)"
+        if max_dd_current
+        else "  Max Drawdown:    N/A"
+    )
+    print(
+        f"  Profit Factor:   {profit_factor_current:.2f} (baseline: {baseline_profit_factor:.2f})"
+        if profit_factor_current
+        else "  Profit Factor:   N/A"
+    )
     print(f"  Execution Time:  {execution_time:.1f}s (baseline: {baseline_execution_time:.1f}s)")
 
     print("\n📈 STATISTICAL VALIDATION:")
-    print(f"  Method:          Two-proportion z-test (win rate) + tolerance bands")
+    print("  Method:          Two-proportion z-test (win rate) + tolerance bands")
     print(f"  Bonferroni α:    {BONFERRONI_ALPHA:.3f} (5 metrics tested)")
-    print(f"  Sample Size:     {total_trades} trades {'⚠️ PRELIMINARY (<30)' if preliminary else '✅ ADEQUATE (≥30)'}")
-    print(f"  Preliminary:     {'Yes - interpret with caution' if preliminary else 'No - results reliable'}")
+    print(
+        f"  Sample Size:     {total_trades} trades {'⚠️ PRELIMINARY (<30)' if preliminary else '✅ ADEQUATE (≥30)'}"
+    )
+    print(
+        f"  Preliminary:     {'Yes - interpret with caution' if preliminary else 'No - results reliable'}"
+    )
 
     print("\n✅ [AC7.9 REGRESSION TEST PASSED]")
     print("   All metrics within statistical tolerances. No regression detected.")
     print("   Phase detection integration maintains backward compatibility.")
-    print("="*80)
+    print("=" * 80)
 
 
 @requires_polygon
