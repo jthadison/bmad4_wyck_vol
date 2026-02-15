@@ -433,7 +433,9 @@ class EURUSDMultiTimeframeBacktest:
             logger.debug(
                 "low_phase_confidence_skip_patterns",
                 confidence=detected_phase_classification.confidence,
-                phase=detected_phase_classification.phase.name if detected_phase_classification.phase else "UNKNOWN",
+                phase=detected_phase_classification.phase.name
+                if detected_phase_classification.phase
+                else "UNKNOWN",
                 bar_index=current_index,
                 reason="Phase confidence below 60% threshold - ambiguous market structure",
             )

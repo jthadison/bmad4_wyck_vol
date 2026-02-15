@@ -385,6 +385,15 @@ class Campaign(BaseModel):
     status: CampaignStatus = Field(..., description="Current lifecycle state")
     phase: Literal["C", "D", "E"] = Field(..., description="Wyckoff phase")
 
+    # Phase progression tracking (Story 13.7, Task #6, FR7.3)
+    phase_history: list[tuple[datetime, str]] = Field(
+        default_factory=list,
+        description="Phase transition history: [(timestamp, phase_name), ...] for tracking campaign progression",
+    )
+    phase_transition_count: int = Field(
+        default=0, ge=0, description="Count of phase transitions for campaign quality metrics"
+    )
+
     # Positions and risk tracking
     positions: list[CampaignPosition] = Field(
         default_factory=list, description="All campaign positions"
@@ -550,6 +559,78 @@ class Campaign(BaseModel):
             True if (total_allocation + new_allocation) <= 5.0%
         """
         return (self.total_allocation + new_allocation) <= Decimal("5.0")
+
+    def add_phase_transition(self, timestamp: datetime, new_phase: str) -> None:
+        """
+        Record phase transition with timestamp (Story 13.7, Task #6, FR7.3).
+
+        This method tracks Wyckoff phase progression for campaign quality analysis.
+        All transitions are validated by phase_validator.is_valid_phase_transition()
+        before being recorded.
+
+        Parameters:
+        -----------
+        timestamp : datetime
+            UTC timestamp when phase transition occurred
+        new_phase : str
+            New Wyckoff phase (A, B, C, D, E, or None for completion)
+
+        Example:
+        --------
+        >>> campaign.add_phase_transition(datetime.now(UTC), "D")
+        >>> # Records transition: C → D at timestamp
+        >>> campaign.phase_transition_count  # 1
+        >>> campaign.phase_history  # [(timestamp, "D")]
+        """
+        self.phase_history.append((timestamp, new_phase))
+        self.phase = new_phase if new_phase else self.phase  # type: ignore
+        self.phase_transition_count += 1
+        self.updated_at = datetime.now(UTC)
+
+    def get_phase_duration(self, target_phase: str) -> int:
+        """
+        Calculate bars spent in specific Wyckoff phase (Story 13.7, FR7.3).
+
+        Useful for campaign quality analysis - healthy accumulation should
+        spend significant time in Phase B/C before Phase D breakout.
+
+        Parameters:
+        -----------
+        target_phase : str
+            Wyckoff phase to calculate duration for (C, D, E)
+
+        Returns:
+        --------
+        int
+            Estimated number of bars spent in target phase
+
+        Note:
+        -----
+        This is an approximation based on phase_history timestamps.
+        Actual bar count depends on timeframe (15m, 1h, 1d, etc.)
+        """
+        total_seconds = 0
+        for i, (ts, phase_name) in enumerate(self.phase_history):
+            if phase_name == target_phase:
+                # Calculate duration until next transition or now
+                if i + 1 < len(self.phase_history):
+                    next_ts = self.phase_history[i + 1][0]
+                    duration = (next_ts - ts).total_seconds()
+                else:
+                    # Current phase - calculate from last transition to now
+                    duration = (datetime.now(UTC) - ts).total_seconds()
+                total_seconds += duration
+
+        # Convert to bars based on timeframe
+        timeframe_seconds = {
+            "15m": 15 * 60,
+            "1h": 60 * 60,
+            "4h": 4 * 60 * 60,
+            "1d": 24 * 60 * 60,
+            "1w": 7 * 24 * 60 * 60,
+        }
+        bar_duration = timeframe_seconds.get(self.timeframe, 60 * 60)  # Default to 1h
+        return int(total_seconds / bar_duration)
 
     model_config = {"json_encoders": {Decimal: str, datetime: lambda v: v.isoformat(), UUID: str}}
 

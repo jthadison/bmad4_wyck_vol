@@ -32,6 +32,16 @@ from .metrics import (
     PatternPerformance,
     RiskMetrics,
 )
+from .phase_analysis import (
+    PATTERN_EXPECTED_PHASES,
+    PHASE_DESCRIPTIONS,
+    CampaignPhaseProgression,
+    CampaignPhaseTransition,
+    PatternPhaseAlignment,
+    PhaseAnalysisReport,
+    PhaseDistribution,
+    WyckoffInsight,
+)
 from .regression import (
     MetricComparison,
     RegressionBaseline,
@@ -98,4 +108,13 @@ __all__ = [
     "RegressionComparison",
     "RegressionTestConfig",
     "RegressionTestResult",
+    # Phase Analysis (Story 13.7)
+    "CampaignPhaseProgression",
+    "CampaignPhaseTransition",
+    "PATTERN_EXPECTED_PHASES",
+    "PHASE_DESCRIPTIONS",
+    "PhaseAnalysisReport",
+    "PhaseDistribution",
+    "PatternPhaseAlignment",
+    "WyckoffInsight",
 ]

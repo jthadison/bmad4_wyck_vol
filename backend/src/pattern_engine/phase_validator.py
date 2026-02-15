@@ -14,6 +14,7 @@ This module implements:
 Author: Story 13.7 Implementation
 """
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional, Union
 
@@ -46,14 +47,24 @@ PATTERN_PHASE_EXPECTATIONS = {
 # ============================================================================
 # Valid phase transitions - Wyckoff progression (FR7.3)
 # Updated 2026-01-13: Added B → D for Schematic #1 (AC7.22 - Philip)
+# Updated 2026-02-15: Fixed Phase E dead-end, added failure transitions (Task #40)
 # ============================================================================
 VALID_PHASE_TRANSITIONS = {
     None: [WyckoffPhase.A, WyckoffPhase.B],  # Campaign can start in A or B
     WyckoffPhase.A: [WyckoffPhase.B],
     WyckoffPhase.B: [WyckoffPhase.B, WyckoffPhase.C, WyckoffPhase.D],  # B→D for Schematic #1
     WyckoffPhase.C: [WyckoffPhase.C, WyckoffPhase.D],  # Can stay in C (multiple tests)
-    WyckoffPhase.D: [WyckoffPhase.D, WyckoffPhase.E],  # Can stay in D
-    WyckoffPhase.E: [WyckoffPhase.E],  # Can stay in Phase E during markup
+    WyckoffPhase.D: [
+        WyckoffPhase.D,
+        WyckoffPhase.E,
+        WyckoffPhase.C,
+        WyckoffPhase.B,
+    ],  # D→C/B for failed breakout
+    WyckoffPhase.E: [
+        WyckoffPhase.E,
+        WyckoffPhase.A,
+        None,
+    ],  # E→A for distribution, E→None for completion
 }
 
 
@@ -469,22 +480,22 @@ def adjust_pattern_confidence_for_phase_and_volume(
 
 def is_valid_phase_transition(
     current_phase: Optional[WyckoffPhase],
-    new_phase: WyckoffPhase,
+    new_phase: Optional[WyckoffPhase],
 ) -> bool:
     """
     Validate phase transition follows Wyckoff progression.
 
-    FR7.3: Valid Phase Transitions (updated AC7.22):
+    FR7.3: Valid Phase Transitions (updated AC7.22 + Task #40):
         - None → A or B (campaign start)
         - A → B
         - B → B, C, or D (B→D for Schematic #1 without Spring)
         - C → C or D
-        - D → D or E
-        - E → E (stay in markup)
+        - D → D, E, C, or B (D→C/B for failed breakout)
+        - E → E, A, or None (E→A for distribution, E→None for completion)
 
     Args:
         current_phase: Current campaign phase (None if starting)
-        new_phase: New phase to transition to
+        new_phase: New phase to transition to (None for campaign completion)
 
     Returns:
         True if transition is valid
@@ -492,6 +503,12 @@ def is_valid_phase_transition(
     Example:
         >>> is_valid_phase_transition(WyckoffPhase.B, WyckoffPhase.D)
         True  # Schematic #1 (no Spring)
+
+        >>> is_valid_phase_transition(WyckoffPhase.E, WyckoffPhase.A)
+        True  # Distribution detected, new accumulation starting
+
+        >>> is_valid_phase_transition(WyckoffPhase.E, None)
+        True  # Campaign completion (position exited)
 
         >>> is_valid_phase_transition(WyckoffPhase.D, WyckoffPhase.A)
         False  # Invalid regression
@@ -502,18 +519,34 @@ def is_valid_phase_transition(
 
     if not is_valid:
         current_name = current_phase.name if current_phase else "START"
+        new_name = new_phase.name if new_phase else "COMPLETED"
         logger.warning(
             "invalid_phase_transition",
             current_phase=current_name,
-            new_phase=new_phase.name,
-            valid_transitions=[p.name for p in valid_next_phases],
+            new_phase=new_name,
+            valid_transitions=[p.name if p else "COMPLETED" for p in valid_next_phases],
         )
     else:
-        # Check for special Schematic #1 (B→D without Spring)
+        # Check for special transitions
         if current_phase == WyckoffPhase.B and new_phase == WyckoffPhase.D:
             logger.info(
                 "schematic_1_detected",
                 message="Following Accumulation Schematic #1 (no Spring)",
+            )
+        elif current_phase == WyckoffPhase.E and new_phase == WyckoffPhase.A:
+            logger.info(
+                "distribution_detected",
+                message="Phase E → A: Distribution signs detected, new accumulation starting",
+            )
+        elif current_phase == WyckoffPhase.E and new_phase is None:
+            logger.info(
+                "campaign_completion",
+                message="Phase E → COMPLETED: Campaign exited successfully",
+            )
+        elif current_phase == WyckoffPhase.D and new_phase in [WyckoffPhase.C, WyckoffPhase.B]:
+            logger.info(
+                "breakout_failure",
+                message=f"Phase D → {new_phase.name}: SOS breakout failed, returning to {new_phase.name}",
             )
 
     return is_valid
@@ -521,20 +554,20 @@ def is_valid_phase_transition(
 
 def get_transition_description(
     from_phase: Optional[WyckoffPhase],
-    to_phase: WyckoffPhase,
+    to_phase: Optional[WyckoffPhase],
 ) -> str:
     """
     Get human-readable description of phase transition.
 
     Args:
         from_phase: Starting phase
-        to_phase: Target phase
+        to_phase: Target phase (None for campaign completion)
 
     Returns:
         Description string
     """
     from_name = from_phase.name if from_phase else "START"
-    to_name = to_phase.name
+    to_name = to_phase.name if to_phase else "COMPLETED"
 
     descriptions = {
         ("START", "A"): "Campaign started with Selling Climax detected",
@@ -544,9 +577,94 @@ def get_transition_description(
         ("B", "D"): "Following Schematic #1 - SOS breakout without Spring",
         ("C", "D"): "Spring held, Sign of Strength breakout",
         ("D", "E"): "Breakout confirmed, entering markup phase",
+        ("D", "C"): "SOS breakout failed, returning to test phase",
+        ("D", "B"): "Breakout breakdown, returning to range building",
+        ("E", "A"): "Distribution detected, new accumulation cycle starting",
+        ("E", "COMPLETED"): "Campaign completed successfully after markup",
     }
 
     return descriptions.get((from_name, to_name), f"Phase transition: {from_name} → {to_name}")
+
+
+# ============================================================================
+# Campaign Phase Update Functions (FR7.3, Task #6)
+# ============================================================================
+
+
+def update_campaign_phase(
+    campaign: "Campaign",  # type: ignore
+    new_phase: Optional[WyckoffPhase],
+    timestamp: datetime,
+) -> bool:
+    """
+    Update campaign phase with validation (Story 13.7, Task #6, FR7.3).
+
+    Validates phase transition before updating campaign. Invalid transitions
+    are rejected with warning logs.
+
+    Args:
+        campaign: Campaign object to update
+        new_phase: New Wyckoff phase (A-E, or None for completion)
+        timestamp: When transition occurred (UTC)
+
+    Returns:
+        bool: True if transition was valid and applied, False if rejected
+
+    Example:
+        >>> from src.models.phase_classification import WyckoffPhase
+        >>> from datetime import datetime, UTC
+        >>> # Campaign in Phase C, transitioning to Phase D
+        >>> success = update_campaign_phase(
+        ...     campaign,
+        ...     WyckoffPhase.D,
+        ...     datetime.now(UTC)
+        ... )
+        >>> if success:
+        ...     print(f"Phase updated: {campaign.phase}")
+    """
+    # Get current phase (convert string to WyckoffPhase if needed)
+    current_phase_str = campaign.phase if hasattr(campaign, "phase") else None
+    current_phase = None
+    if current_phase_str:
+        try:
+            current_phase = WyckoffPhase[current_phase_str]
+        except (KeyError, TypeError):
+            current_phase = None
+
+    # Validate transition
+    is_valid = is_valid_phase_transition(current_phase, new_phase)
+
+    if not is_valid:
+        current_name = current_phase.name if current_phase else "START"
+        new_name = new_phase.name if new_phase else "COMPLETED"
+        logger.warning(
+            "campaign_phase_transition_rejected",
+            campaign_id=getattr(campaign, "campaign_id", "unknown"),
+            current_phase=current_name,
+            new_phase=new_name,
+            reason="Invalid Wyckoff phase progression",
+        )
+        return False
+
+    # Apply transition
+    new_phase_str = new_phase.name if new_phase else None
+    campaign.add_phase_transition(timestamp, new_phase_str)
+
+    # Log successful transition
+    current_name = current_phase.name if current_phase else "START"
+    new_name = new_phase.name if new_phase else "COMPLETED"
+    description = get_transition_description(current_phase, new_phase)
+
+    logger.info(
+        "campaign_phase_transition",
+        campaign_id=getattr(campaign, "campaign_id", "unknown"),
+        transition=f"{current_name} → {new_name}",
+        description=description,
+        timestamp=timestamp.isoformat(),
+        transition_count=campaign.phase_transition_count,
+    )
+
+    return True
 
 
 # ============================================================================
