@@ -5,7 +5,6 @@ Pydantic models for phase detection analysis reporting in backtests.
 These match the TypeScript types in frontend/src/types/backtest.ts:401-505
 """
 
-from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
