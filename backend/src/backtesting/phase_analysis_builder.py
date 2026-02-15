@@ -10,6 +10,7 @@ Builds PhaseAnalysisReport from backtest execution data including:
 
 from collections import defaultdict
 from datetime import datetime
+from typing import TypedDict
 
 from src.models.backtest.phase_analysis import (
     CampaignPhaseProgression,
@@ -21,6 +22,45 @@ from src.models.backtest.phase_analysis import (
     WyckoffInsight,
 )
 from src.models.wyckoff import WyckoffPhase
+
+
+# Story 13.7 P1-002: Campaign data contract for PhaseAnalysisBuilder
+class CampaignData(TypedDict, total=False):
+    """
+    Type definition for campaign data expected by PhaseAnalysisBuilder.
+
+    Used to provide type safety when building campaign phase progressions
+    from backtest execution data.
+
+    Required Fields:
+    ----------------
+    campaign_id : str
+        Unique campaign identifier
+
+    Optional Fields:
+    ----------------
+    campaign_type : str
+        Campaign type (ACCUMULATION or DISTRIBUTION), defaults to "ACCUMULATION"
+    symbol : str
+        Trading symbol, defaults to ""
+    start_date : str
+        ISO 8601 datetime (UTC), defaults to ""
+    end_date : str | None
+        ISO 8601 datetime (UTC) or None if ongoing
+    status : str
+        Campaign status (COMPLETED, FAILED, IN_PROGRESS), defaults to "IN_PROGRESS"
+    total_patterns : int
+        Number of patterns detected in campaign, defaults to 0
+    """
+
+    campaign_id: str  # Required
+    campaign_type: str
+    symbol: str
+    start_date: str
+    end_date: str | None
+    status: str
+    total_patterns: int
+
 
 # Story 13.7 AC7.14: Pattern-phase expectations from phase_validator.py
 PATTERN_PHASE_EXPECTATIONS = {
@@ -100,12 +140,12 @@ class PhaseAnalysisBuilder:
         self.phase_transition_errors += 1
 
     def build_report(
-        self, campaigns: list[dict], timeframe_hours: float = 24.0
+        self, campaigns: list[CampaignData], timeframe_hours: float = 24.0
     ) -> PhaseAnalysisReport:
         """Build complete phase analysis report.
 
         Args:
-            campaigns: List of campaign dicts with campaign_id, type, symbol, start_date, etc.
+            campaigns: List of campaign data conforming to CampaignData TypedDict contract
             timeframe_hours: Hours per bar for time calculations (default 24 for daily)
 
         Returns:
@@ -199,8 +239,22 @@ class PhaseAnalysisBuilder:
         alignments.sort(key=lambda a: a.alignment_rate)
         return alignments
 
-    def _build_campaign_progressions(self, campaigns: list[dict]) -> list[CampaignPhaseProgression]:
-        """Build campaign phase progression tracking."""
+    def _build_campaign_progressions(
+        self, campaigns: list[CampaignData]
+    ) -> list[CampaignPhaseProgression]:
+        """
+        Build campaign phase progression tracking.
+
+        Parameters:
+        -----------
+        campaigns : list[CampaignData]
+            List of campaign dictionaries conforming to CampaignData TypedDict contract
+
+        Returns:
+        --------
+        list[CampaignPhaseProgression]
+            Campaign phase progression models for reporting
+        """
         progressions = []
         for campaign in campaigns:
             campaign_id = campaign.get("campaign_id", "")
