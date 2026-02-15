@@ -33,12 +33,11 @@ from .metrics import (
     RiskMetrics,
 )
 from .phase_analysis import (
-    PATTERN_EXPECTED_PHASES,
-    PHASE_DESCRIPTIONS,
     CampaignPhaseProgression,
     CampaignPhaseTransition,
     PatternPhaseAlignment,
     PhaseAnalysisReport,
+    PhaseDetectionQuality,
     PhaseDistribution,
     WyckoffInsight,
 )
@@ -111,10 +110,9 @@ __all__ = [
     # Phase Analysis (Story 13.7)
     "CampaignPhaseProgression",
     "CampaignPhaseTransition",
-    "PATTERN_EXPECTED_PHASES",
-    "PHASE_DESCRIPTIONS",
-    "PhaseAnalysisReport",
-    "PhaseDistribution",
     "PatternPhaseAlignment",
+    "PhaseAnalysisReport",
+    "PhaseDetectionQuality",
+    "PhaseDistribution",
     "WyckoffInsight",
 ]
