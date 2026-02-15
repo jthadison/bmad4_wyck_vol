@@ -8,7 +8,8 @@ This document describes the comprehensive test coverage for Story 13.7, which im
 
 **Total Acceptance Criteria:** 24 (AC7.1-AC7.24)
 
-**Total Tests Implemented:** 16 tests across 2 files
+**Total Tests Implemented:** 21 tests across 2 files
+- **Update (2026-02-14):** Added 5 tests for critical issues from Task #18 (devil's advocate review)
 
 ---
 
@@ -109,7 +110,7 @@ This document describes the comprehensive test coverage for Story 13.7, which im
    - Confidence maintained/boosted
 
 ##### `TestPhaseTransitionTracking` - AC7.5, AC7.6, AC7.22
-3 tests covering campaign phase progression:
+5 tests covering campaign phase progression:
 
 1. **`test_valid_wyckoff_progression()`** - AC7.5
    - A → B → C → D → E progression valid
@@ -122,6 +123,30 @@ This document describes the comprehensive test coverage for Story 13.7, which im
    - D → A regression blocked
    - E → B regression blocked
    - C → A regression blocked
+
+4. **`test_phase_e_can_stay_in_phase()`** - Task #40 (Critical)
+   - E → E transition allowed (markup continuation)
+   - Prevents Phase E dead-end bug
+
+5. **`test_phase_e_can_transition_to_distribution()`** - Task #40 (Critical)
+   - E → A transition allowed (markup → distribution)
+   - **Will FAIL until backend implements fix**
+   - Regression test for critical bug
+
+##### `TestPhaseConfidenceThreshold` - Task #41 (Critical)
+3 tests covering 60% phase confidence threshold:
+
+1. **`test_low_confidence_phase_should_be_rejected()`**
+   - Confidence <60% should not proceed
+   - Enforces Story 13.7 line 1299 requirement
+
+2. **`test_threshold_confidence_phase_should_proceed()`**
+   - Confidence exactly 60% should proceed
+   - Boundary condition validation
+
+3. **`test_high_confidence_phase_should_proceed()`**
+   - Confidence >60% should proceed
+   - Normal operation validation
 
 ---
 
