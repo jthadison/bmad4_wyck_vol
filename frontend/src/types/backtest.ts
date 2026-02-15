@@ -281,6 +281,9 @@ export interface BacktestResult {
   // Volume analysis (Story 13.8)
   volume_analysis?: VolumeAnalysisReport
 
+  // Phase analysis (Story 13.7)
+  phase_analysis?: PhaseAnalysisReport
+
   // Extreme trades
   largest_winner: BacktestTrade | null
   largest_loser: BacktestTrade | null
@@ -395,6 +398,169 @@ export interface VolumeAnalysisReport {
 }
 
 // ==========================================================================================
+// Story 13.6: Exit Analysis Types (Wyckoff-Based Exit Logic)
+// ==========================================================================================
+
+/**
+ * Exit reason performance metrics (Story 13.6 AC6.10).
+ *
+ * Performance statistics for each individual exit reason.
+ */
+export interface ExitReasonPerformance {
+  exit_reason: string // Exit reason code (JUMP_LEVEL, SUPPORT_BREAK, etc.)
+  total_exits: number // Number of exits for this reason
+  percentage: string // Percentage of total exits (decimal as string)
+  avg_profit_pct: string // Average profit percentage (decimal as string)
+  avg_bars_held: number // Average number of bars held
+  win_rate: string // Win rate for this exit reason (decimal as string)
+  total_pnl: string // Total P&L for this exit reason (decimal as string)
+}
+
+/**
+ * Grouped exit performance statistics.
+ */
+export interface GroupedExitPerformance {
+  total: number // Total exits in this group
+  avg_profit_pct: string // Average profit percentage (decimal as string)
+  win_rate: string // Win rate for this group (decimal as string)
+}
+
+/**
+ * Wyckoff vs percentage exit comparison metrics.
+ */
+export interface WyckoffVsPercentageComparison {
+  wyckoff_return_pct: string // Return using Wyckoff exits (decimal as string)
+  wyckoff_win_rate: string // Win rate using Wyckoff exits (decimal as string)
+  percentage_return_pct: string // Return using percentage exits (decimal as string)
+  percentage_win_rate: string // Win rate using percentage exits (decimal as string)
+  improvement_return_pct: string // Improvement in return (decimal as string)
+  improvement_win_rate: string // Improvement in win rate (decimal as string)
+}
+
+/**
+ * Complete exit analysis report (Story 13.6 AC6.10).
+ *
+ * Comprehensive analysis of exit logic performance including:
+ * - Exit reason distribution
+ * - Performance by exit type
+ * - Wyckoff vs percentage comparison
+ */
+export interface ExitAnalysis {
+  total_exits: number
+  exit_reason_performance: ExitReasonPerformance[]
+  structural_exits: GroupedExitPerformance // JUMP_LEVEL, PHASE_E_COMPLETE
+  invalidation_exits: {
+    // SUPPORT_BREAK
+    total: number
+    avg_loss_pct: string
+    win_rate: string
+  }
+  safety_exits: GroupedExitPerformance // VOLUME_DIVERGENCE, TIME_LIMIT
+  wyckoff_vs_percentage?: WyckoffVsPercentageComparison
+}
+
+// ==========================================================================================
+// Story 13.7: Phase Analysis Types (FR7.8)
+// ==========================================================================================
+
+/**
+ * Time spent in each Wyckoff phase during backtest (Story 13.7 AC7.15).
+ */
+export interface PhaseDistribution {
+  phase: string // Phase name: A, B, C, D, E
+  bar_count: number // Number of bars in this phase
+  hours: number // Duration in hours
+  percentage: number // Percentage of total bars (0-100)
+}
+
+/**
+ * Pattern-phase alignment statistics (Story 13.7 AC7.16).
+ *
+ * Tracks how well detected patterns align with their expected Wyckoff phases.
+ */
+export interface PatternPhaseAlignment {
+  pattern_type: string // Pattern type: SPRING, SOS, LPS, etc.
+  expected_phases: string[] // Expected phases for this pattern
+  aligned_count: number // Count of aligned patterns
+  total_count: number // Total patterns of this type
+  alignment_rate: number // Alignment rate (0-100)
+}
+
+/**
+ * Individual phase transition in a campaign.
+ */
+export interface CampaignPhaseTransition {
+  from_phase: string | null // Source phase (null if campaign start)
+  to_phase: string // Destination phase
+  timestamp: string // ISO 8601 datetime (UTC)
+  bar_index: number // Bar index when transition occurred
+}
+
+/**
+ * Phase progression for a single campaign (Story 13.7 AC7.17).
+ *
+ * Tracks how a campaign progresses through Wyckoff phases from start to finish.
+ */
+export interface CampaignPhaseProgression {
+  campaign_id: string // Campaign unique identifier
+  campaign_type: 'ACCUMULATION' | 'DISTRIBUTION'
+  symbol: string
+  start_date: string // ISO 8601 datetime (UTC)
+  end_date: string | null // ISO 8601 datetime (UTC) or null if ongoing
+  status: 'COMPLETED' | 'FAILED' | 'IN_PROGRESS'
+  phase_sequence: string[] // Ordered list of phases: [A, B, C, D]
+  transitions: CampaignPhaseTransition[] // Phase transitions with timestamps
+  completion_stage: string // Final phase reached
+  total_patterns: number // Patterns detected in campaign
+}
+
+/**
+ * Educational insight about phase detection quality (Story 13.7 AC7.18).
+ *
+ * Provides Wyckoff methodology interpretation of phase detection results.
+ */
+export interface WyckoffInsight {
+  category: 'DURATION' | 'ALIGNMENT' | 'STRUCTURE' | 'QUALITY'
+  observation: string // Factual observation about the data
+  interpretation: string // Wyckoff methodology interpretation
+  significance: 'HIGH' | 'MEDIUM' | 'LOW'
+}
+
+/**
+ * Phase detection quality metrics.
+ */
+export interface PhaseDetectionQuality {
+  high_confidence_bars: number // Bars with confidence >= 80%
+  medium_confidence_bars: number // Bars with 60-79% confidence
+  low_confidence_bars: number // Bars with < 60% confidence
+  fallback_percentage: number // Percentage of bars using fallback detection (0-100)
+}
+
+/**
+ * Complete phase analysis report (Story 13.7 FR7.8, AC7.15-7.18).
+ *
+ * Provides comprehensive analysis of phase detection effectiveness including:
+ * - Time spent in each phase
+ * - Pattern-phase alignment rates
+ * - Campaign progression tracking
+ * - Wyckoff methodology insights
+ */
+export interface PhaseAnalysisReport {
+  total_bars_analyzed: number
+  phase_distributions: PhaseDistribution[]
+  pattern_alignments: PatternPhaseAlignment[]
+  campaign_progressions: CampaignPhaseProgression[]
+  insights: WyckoffInsight[]
+  overall_alignment_rate: number // Overall pattern-phase alignment rate (0-100)
+  total_aligned_patterns: number
+  total_patterns: number
+  invalid_patterns_rejected: number
+  avg_phase_confidence: number // Average phase confidence (0-100)
+  phase_transition_errors: number
+  detection_quality: PhaseDetectionQuality
+}
+
+// ==========================================================================================
 // Helper Types for UI Components (Story 12.6C)
 // ==========================================================================================
 
@@ -455,6 +621,13 @@ export interface TradeListTableProps {
  */
 export interface RiskMetricsPanelProps {
   riskMetrics: RiskMetrics
+}
+
+/**
+ * Props for PhaseAnalysisPanel component (Story 13.7 Task 12)
+ */
+export interface PhaseAnalysisPanelProps {
+  phaseAnalysis: PhaseAnalysisReport
 }
 
 /**
