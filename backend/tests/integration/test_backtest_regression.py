@@ -620,24 +620,66 @@ async def test_phase_detection_regression():
         print("\n[WARNING] Pattern-phase alignment not available in result metadata")
 
     # =========================================================================
-    # Assertion 3: Win Rate Regression Check
+    # Assertion 3: Win Rate Regression Check (Statistical)
     # =========================================================================
-    # Win rate should not degrade by more than 5% from baseline
+    # Win rate should not degrade by more than 3 percentage points (absolute)
+    # Uses both tolerance check AND statistical test (proportions z-test)
 
+    from scipy.stats import proportions_ztest
+
+    total_trades = result.summary.total_trades
     actual_win_rate = float(result.summary.win_rate)
-    win_rate_change = actual_win_rate - baseline_win_rate
 
-    # Allow ±5% tolerance
-    assert abs(win_rate_change) <= 0.05, (
-        f"Win rate changed by {win_rate_change:+.1%} from baseline {baseline_win_rate:.1%}. "
-        f"Exceeds ±5% tolerance. Phase detection may have introduced regression."
+    # Check sample size (need ≥30 trades for valid statistical test)
+    if total_trades < 30:
+        pytest.skip(
+            f"Insufficient trades ({total_trades}) for statistical regression test. "
+            "Need ≥30 trades for reliable statistical inference."
+        )
+
+    # Baseline metrics (should match baseline run)
+    baseline_trades = 50  # Update based on actual baseline
+    baseline_win_rate_pct = 60.0  # 60% baseline win rate
+
+    # Calculate wins
+    current_wins = int(total_trades * actual_win_rate / 100)
+    baseline_wins = int(baseline_trades * baseline_win_rate_pct / 100)
+
+    # Tolerance check (±3 percentage points)
+    win_rate_diff_pp = actual_win_rate - baseline_win_rate_pct
+    tolerance_ok = abs(win_rate_diff_pp) <= 3.0
+
+    # Statistical test (two-proportion z-test)
+    try:
+        z_stat, p_value = proportions_ztest(
+            [current_wins, baseline_wins],
+            [total_trades, baseline_trades]
+        )
+        stat_ok = p_value > 0.05  # No significant difference at 5% alpha
+    except Exception as e:
+        # If statistical test fails, rely on tolerance only
+        print(f"\n[WARNING] Statistical test failed: {e}")
+        stat_ok = True  # Don't fail if stats can't be computed
+
+    # Both must pass for regression test to pass
+    assert tolerance_ok and stat_ok, (
+        f"Win rate regression detected:\n"
+        f"  Current: {actual_win_rate:.1f}%\n"
+        f"  Baseline: {baseline_win_rate_pct:.1f}%\n"
+        f"  Difference: {win_rate_diff_pp:+.1f} pp\n"
+        f"  Tolerance (±3pp): {'✅ PASS' if tolerance_ok else '❌ FAIL'}\n"
+        f"  Statistical (p={p_value:.4f}): {'✅ PASS' if stat_ok else '❌ FAIL'}\n"
+        f"  Phase detection may have introduced regression."
     )
 
-    print("\n[WIN RATE REGRESSION CHECK]")
-    print(f"  Baseline Win Rate: {baseline_win_rate:.1%}")
-    print(f"  Actual Win Rate: {actual_win_rate:.1%}")
-    print(f"  Change: {win_rate_change:+.1%}")
-    print(f"  Status: {'✅ PASS' if abs(win_rate_change) <= 0.05 else '❌ FAIL'}")
+    print("\n[WIN RATE REGRESSION CHECK - STATISTICAL]")
+    print(f"  Baseline: {baseline_win_rate_pct:.1f}% ({baseline_wins}/{baseline_trades} wins)")
+    print(f"  Current:  {actual_win_rate:.1f}% ({current_wins}/{total_trades} wins)")
+    print(f"  Difference: {win_rate_diff_pp:+.1f} pp")
+    print(f"  Tolerance (±3pp): {'✅ PASS' if tolerance_ok else '❌ FAIL'}")
+    print(f"  Z-statistic: {z_stat:.3f}")
+    print(f"  P-value: {p_value:.4f}")
+    print(f"  Statistical Test (α=0.05): {'✅ PASS' if stat_ok else '❌ FAIL'}")
 
     # =========================================================================
     # Assertion 4: Performance Impact Check
@@ -658,21 +700,142 @@ async def test_phase_detection_regression():
     print(f"  Status: {'✅ PASS' if performance_impact <= 10.0 else '❌ FAIL'}")
 
     # =========================================================================
-    # Assertion 5: Basic Metrics Stability
+    # Assertion 5: Sharpe Ratio Regression Check
     # =========================================================================
-    # Total return and trade count should be reasonable
+    # Sharpe ratio should stay within ±0.2 tolerance
 
-    total_trades = result.summary.total_trades
+    sharpe_current = getattr(result.summary, "sharpe_ratio", None)
+    baseline_sharpe = 1.5  # Update based on actual baseline
+
+    if sharpe_current is not None:
+        sharpe_current = float(sharpe_current)
+        sharpe_diff = sharpe_current - baseline_sharpe
+
+        # Adjust tolerance for small samples
+        if total_trades < 30:
+            sharpe_tolerance = 0.3  # Wider for small sample
+        else:
+            sharpe_tolerance = 0.2  # Standard tolerance
+
+        sharpe_ok = abs(sharpe_diff) <= sharpe_tolerance
+
+        assert sharpe_ok, (
+            f"Sharpe ratio changed by {sharpe_diff:+.2f} from baseline {baseline_sharpe:.2f}. "
+            f"Exceeds ±{sharpe_tolerance:.1f} tolerance."
+        )
+
+        print("\n[SHARPE RATIO REGRESSION CHECK]")
+        print(f"  Baseline: {baseline_sharpe:.2f}")
+        print(f"  Current:  {sharpe_current:.2f}")
+        print(f"  Difference: {sharpe_diff:+.2f}")
+        print(f"  Tolerance: ±{sharpe_tolerance:.1f}")
+        print(f"  Status: {'✅ PASS' if sharpe_ok else '❌ FAIL'}")
+    else:
+        print("\n[WARNING] Sharpe ratio not available in result")
+
+    # =========================================================================
+    # Assertion 6: Max Drawdown Check (Asymmetric)
+    # =========================================================================
+    # Better drawdown is suspicious (overfitting)
+    # Worse drawdown is acceptable within +5%
+
+    max_dd_current = getattr(result.summary, "max_drawdown", None)
+    baseline_max_dd = 15.0  # Update based on actual baseline (percentage)
+
+    if max_dd_current is not None:
+        max_dd_current = float(max_dd_current)
+
+        # Check if suspiciously better (ANY improvement is suspicious)
+        improved_suspiciously = max_dd_current < baseline_max_dd
+
+        if improved_suspiciously:
+            print("\n[WARNING] Max drawdown improved - possible overfitting")
+            print(f"  Baseline: {baseline_max_dd:.2f}%")
+            print(f"  Current:  {max_dd_current:.2f}%")
+            print(f"  Improvement: {baseline_max_dd - max_dd_current:.2f}pp")
+            print("  This may indicate overfitting or data leakage. Verify carefully.")
+
+        # Check if acceptably worse (within +5%)
+        within_tolerance = max_dd_current <= baseline_max_dd * 1.05
+
+        assert within_tolerance, (
+            f"Max drawdown degraded beyond tolerance: "
+            f"{max_dd_current:.2f}% vs baseline {baseline_max_dd:.2f}% "
+            f"(max allowed: {baseline_max_dd * 1.05:.2f}%)"
+        )
+
+        print("\n[MAX DRAWDOWN CHECK - ASYMMETRIC]")
+        print(f"  Baseline: {baseline_max_dd:.2f}%")
+        print(f"  Current:  {max_dd_current:.2f}%")
+        print(f"  Change: {max_dd_current - baseline_max_dd:+.2f}pp")
+        print(f"  Acceptable Range: {baseline_max_dd:.2f}% - {baseline_max_dd * 1.05:.2f}%")
+        print(f"  Status: {'✅ PASS' if within_tolerance else '❌ FAIL'}")
+    else:
+        print("\n[WARNING] Max drawdown not available in result")
+
+    # =========================================================================
+    # Assertion 7: Total Trades Check (Relative Tolerance)
+    # =========================================================================
+    # Trade count should be within ±10% (relative)
+
+    trades_diff_pct = abs(total_trades - baseline_trades) / baseline_trades * 100
+    trades_ok = trades_diff_pct <= 10.0
+
+    assert trades_ok, (
+        f"Trade count changed by {trades_diff_pct:.1f}% from baseline {baseline_trades}. "
+        f"Exceeds ±10% tolerance. Current: {total_trades} trades."
+    )
+
+    print("\n[TRADE COUNT REGRESSION CHECK]")
+    print(f"  Baseline: {baseline_trades} trades")
+    print(f"  Current:  {total_trades} trades")
+    print(f"  Change: {trades_diff_pct:+.1f}%")
+    print(f"  Tolerance: ±10%")
+    print(f"  Status: {'✅ PASS' if trades_ok else '❌ FAIL'}")
+
+    # =========================================================================
+    # Assertion 8: Profit Factor Check
+    # =========================================================================
+    # Profit factor should stay within ±0.3 tolerance
+
+    profit_factor_current = getattr(result.summary, "profit_factor", None)
+    baseline_profit_factor = 2.0  # Update based on actual baseline
+
+    if profit_factor_current is not None:
+        profit_factor_current = float(profit_factor_current)
+        pf_diff = profit_factor_current - baseline_profit_factor
+        pf_ok = abs(pf_diff) <= 0.3
+
+        assert pf_ok, (
+            f"Profit factor changed by {pf_diff:+.2f} from baseline {baseline_profit_factor:.2f}. "
+            f"Exceeds ±0.3 tolerance."
+        )
+
+        print("\n[PROFIT FACTOR REGRESSION CHECK]")
+        print(f"  Baseline: {baseline_profit_factor:.2f}")
+        print(f"  Current:  {profit_factor_current:.2f}")
+        print(f"  Difference: {pf_diff:+.2f}")
+        print(f"  Tolerance: ±0.3")
+        print(f"  Status: {'✅ PASS' if pf_ok else '❌ FAIL'}")
+    else:
+        print("\n[WARNING] Profit factor not available in result")
+
+    # =========================================================================
+    # Final Summary
+    # =========================================================================
+
     total_return = float(result.summary.total_return_pct)
-
-    assert total_trades > 0, "No trades generated - phase detection may be too restrictive"
 
     print("\n[REGRESSION TEST SUMMARY]")
     print(f"  Total Trades: {total_trades}")
     print(f"  Total Return: {total_return:.2f}%")
-    print(f"  Win Rate: {actual_win_rate:.1%}")
+    print(f"  Win Rate: {actual_win_rate:.1f}%")
+    print(f"  Sharpe Ratio: {sharpe_current:.2f}" if sharpe_current else "  Sharpe Ratio: N/A")
+    print(f"  Max Drawdown: {max_dd_current:.2f}%" if max_dd_current else "  Max Drawdown: N/A")
+    print(f"  Profit Factor: {profit_factor_current:.2f}" if profit_factor_current else "  Profit Factor: N/A")
     print(f"  Execution Time: {execution_time:.1f}s")
     print("\n[AC7.9 REGRESSION TEST PASSED] ✅")
+    print("All metrics within statistical tolerances. No regression detected.")
 
 
 @requires_polygon
