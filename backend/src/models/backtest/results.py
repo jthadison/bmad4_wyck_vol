@@ -30,6 +30,7 @@ from .metrics import (
     PatternPerformance,
     RiskMetrics,
 )
+from .phase_analysis import PhaseAnalysisReport
 
 __all__ = [
     "EquityCurvePoint",
@@ -408,6 +409,10 @@ class BacktestResult(BaseModel):
     # Story 13.8: Volume analysis report
     volume_analysis: VolumeAnalysisSummary | None = Field(
         default=None, description="Volume analysis report (Story 13.8)"
+    )
+    # Story 13.7: Phase analysis report (Task #12)
+    phase_analysis: PhaseAnalysisReport | None = Field(
+        default=None, description="Phase detection analysis report (Story 13.7, FR7.8)"
     )
     # Story 12.6A AC6: Extreme trades and streaks
     largest_winner: BacktestTrade | None = Field(

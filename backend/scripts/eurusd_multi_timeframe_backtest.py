@@ -428,6 +428,19 @@ class EURUSDMultiTimeframeBacktest:
                 phase_start_timestamp=datetime.fromtimestamp(bar.timestamp.timestamp(), tz=UTC),
             )
 
+        # Story 13.7 (AC7.2): Skip pattern detection if phase confidence < 60% (Task #41)
+        if detected_phase_classification.confidence < 60:
+            logger.debug(
+                "low_phase_confidence_skip_patterns",
+                confidence=detected_phase_classification.confidence,
+                phase=detected_phase_classification.phase.name
+                if detected_phase_classification.phase
+                else "UNKNOWN",
+                bar_index=current_index,
+                reason="Phase confidence below 60% threshold - ambiguous market structure",
+            )
+            return None  # Skip pattern detection entirely
+
         # Detect patterns using real detectors with detected phase
         # 1. Spring Detection - requires Phase C
         try:

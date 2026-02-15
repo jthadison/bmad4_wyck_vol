@@ -10,7 +10,8 @@ Second stage in the validation chain: Volume → Phase → Levels → Risk → S
 
 Functional Requirements Enforced:
 ----------------------------------
-FR3: Phase confidence must be ≥70%
+AC7.2: Phase confidence must be ≥60% (minimum for pattern detection)
+FR3: Phase confidence must be ≥70% (signal generation requirement)
 FR14: Early phase rejection (no trading in Phase A or Phase B <10 bars)
 FR15: Phase-pattern alignment rules:
     - Spring: Only Phase C allowed
@@ -40,8 +41,9 @@ class PhaseValidator(BaseValidator):
     """
     Phase validation stage.
 
-    Validates pattern-phase alignment per FR14 and FR15:
-    - FR3: Phase confidence ≥70%
+    Validates pattern-phase alignment with two-tier confidence thresholds:
+    - AC7.2: Phase confidence ≥60% (minimum for pattern detection)
+    - FR3: Phase confidence ≥70% (signal generation requirement)
     - FR14: No trading in Phase A or early Phase B (<10 bars)
     - FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→Distribution C/D)
 
@@ -74,7 +76,8 @@ class PhaseValidator(BaseValidator):
 
         Validates:
         1. Phase info presence
-        2. FR3: Phase confidence ≥70%
+        2a. AC7.2: Phase confidence ≥60% (minimum threshold for pattern detection)
+        2b. FR3: Phase confidence ≥70% (signal generation requirement)
         3. FR14: Early phase rejection (no Phase A, no Phase B <10 bars)
         4. FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, etc.)
 
@@ -116,7 +119,23 @@ class PhaseValidator(BaseValidator):
             phase_confidence=confidence,
         )
 
-        # Step 2: Validate FR3 phase confidence ≥70%
+        # Step 2a: Validate AC7.2 minimum phase confidence ≥60% (Story 13.7 P1-001)
+        # This is the absolute minimum for pattern detection - below 60% means phase is too ambiguous
+        if confidence < 60:
+            logger.warning(
+                "phase_validation_failed",
+                pattern_type=pattern_type,
+                phase=phase.value if phase else "None",
+                confidence=confidence,
+                reason=f"Phase confidence {confidence}% below 60% minimum threshold - phase too ambiguous for pattern detection (AC7.2)",
+                failed_requirement="AC7.2",
+            )
+            return self.create_result(
+                ValidationStatus.FAIL,
+                reason=f"Phase {phase.value if phase else 'None'} confidence {confidence}% below 60% minimum threshold - ambiguous market structure prevents reliable pattern detection (AC7.2)",
+            )
+
+        # Step 2b: Validate FR3 phase confidence ≥70%
         is_valid, reason = self._validate_phase_confidence(phase_classification)
         if not is_valid:
             logger.warning(
@@ -162,9 +181,10 @@ class PhaseValidator(BaseValidator):
             "pattern_type": pattern_type,
             "phase_duration": phase_classification.duration,
             "trading_allowed": phase_classification.trading_allowed,
+            "ac7_2_confidence_check": "PASS",  # ≥60% minimum threshold
+            "fr3_confidence_check": "PASS",  # ≥70% signal generation
             "fr14_check": "PASS",
             "fr15_check": "PASS",
-            "fr3_confidence_check": "PASS",
         }
 
         logger.info(
