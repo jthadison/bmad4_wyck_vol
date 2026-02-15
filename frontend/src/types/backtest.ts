@@ -281,6 +281,9 @@ export interface BacktestResult {
   // Volume analysis (Story 13.8)
   volume_analysis?: VolumeAnalysisReport
 
+  // Phase analysis (Story 13.7)
+  phase_analysis?: PhaseAnalysisReport
+
   // Extreme trades
   largest_winner: BacktestTrade | null
   largest_loser: BacktestTrade | null
@@ -395,6 +398,125 @@ export interface VolumeAnalysisReport {
 }
 
 // ==========================================================================================
+// Story 13.7: Phase Analysis Types
+// ==========================================================================================
+
+/**
+ * Phase distribution data (Story 13.7 FR7.8).
+ *
+ * Tracks time spent in each Wyckoff phase during the backtest period.
+ */
+export interface PhaseDistribution {
+  phase: 'A' | 'B' | 'C' | 'D' | 'E' | 'UNKNOWN'
+  bar_count: number
+  percentage: number // 0-100
+  hours: number
+  description: string // e.g., "Climactic action", "Range building"
+}
+
+/**
+ * Pattern-phase alignment statistics (Story 13.7 FR7.8).
+ *
+ * Tracks how well detected patterns align with expected Wyckoff phases.
+ */
+export interface PatternPhaseAlignment {
+  pattern_type: string // SPRING, SOS, LPS, etc.
+  expected_phases: string[] // ["C"] for Spring, ["D", "E"] for SOS
+  aligned_count: number // Patterns in correct phase
+  total_count: number // Total patterns detected
+  alignment_rate: number // 0-100 percentage
+}
+
+/**
+ * Campaign phase transition (Story 13.7 FR7.3).
+ *
+ * Individual phase transition within a campaign timeline.
+ */
+export interface CampaignPhaseTransition {
+  from_phase: string | null // null for campaign start
+  to_phase: string
+  timestamp: string // ISO 8601
+  bar_index: number
+  trigger_pattern: string | null // Pattern that caused transition (e.g., "SPRING", "SOS")
+  is_valid: boolean // Whether transition follows Wyckoff rules
+}
+
+/**
+ * Campaign phase progression (Story 13.7 FR7.8).
+ *
+ * Complete phase timeline for a single Wyckoff campaign.
+ */
+export interface CampaignPhaseProgression {
+  campaign_id: string
+  campaign_type: 'ACCUMULATION' | 'DISTRIBUTION'
+  start_timestamp: string // ISO 8601
+  end_timestamp: string | null // null if IN_PROGRESS
+  total_bars: number
+  total_hours: number
+
+  // Phase breakdown
+  phase_durations: Record<string, number> // Phase -> bar count
+  phase_percentages: Record<string, number> // Phase -> percentage
+
+  // Timeline
+  transitions: CampaignPhaseTransition[]
+  invalid_transitions: number
+
+  // Quality metrics
+  quality_score: number // 0-100
+  followed_wyckoff_sequence: boolean
+  completion_stage: string // "Phase C", "Phase D", "Markup", etc.
+}
+
+/**
+ * Wyckoff insights based on phase analysis (Story 13.7 FR7.8).
+ *
+ * Educational interpretations of phase distribution patterns.
+ */
+export interface WyckoffInsight {
+  category: 'DURATION' | 'ALIGNMENT' | 'STRUCTURE' | 'QUALITY'
+  observation: string
+  interpretation: string
+  significance: 'HIGH' | 'MEDIUM' | 'LOW'
+}
+
+/**
+ * Comprehensive phase analysis report (Story 13.7 FR7.8).
+ *
+ * Complete phase detection analysis for backtest results.
+ */
+export interface PhaseAnalysisReport {
+  // Overall phase distribution
+  total_bars_analyzed: number
+  phase_distributions: PhaseDistribution[]
+
+  // Detection quality metrics (Devil's Advocate feedback)
+  detection_quality: {
+    high_confidence_bars: number // Phase confidence >= 80%
+    medium_confidence_bars: number // 60% <= confidence < 80%
+    low_confidence_bars: number // < 60% (fallback/unreliable)
+    fallback_percentage: number // % of bars using fallback (0-100)
+  }
+
+  // Pattern-phase alignment
+  pattern_alignments: PatternPhaseAlignment[]
+  overall_alignment_rate: number // 0-100
+  total_aligned_patterns: number
+  total_patterns: number
+  invalid_patterns_rejected: number
+
+  // Campaign phase progressions
+  campaign_progressions: CampaignPhaseProgression[]
+
+  // Wyckoff insights
+  insights: WyckoffInsight[]
+
+  // Summary statistics
+  avg_phase_confidence: number // 0-100
+  phase_transition_errors: number // Invalid transitions detected
+}
+
+// ==========================================================================================
 // Helper Types for UI Components (Story 12.6C)
 // ==========================================================================================
 
@@ -455,6 +577,13 @@ export interface TradeListTableProps {
  */
 export interface RiskMetricsPanelProps {
   riskMetrics: RiskMetrics
+}
+
+/**
+ * Props for PhaseAnalysisPanel component (Story 13.7 Task 12)
+ */
+export interface PhaseAnalysisPanelProps {
+  phaseAnalysis: PhaseAnalysisReport
 }
 
 /**

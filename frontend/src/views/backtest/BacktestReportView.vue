@@ -221,6 +221,14 @@
         />
       </section>
 
+      <!-- Phase Analysis Section (Story 13.7) -->
+      <section v-if="backtestResult.phase_analysis" id="phase-analysis">
+        <h2 class="text-2xl font-semibold text-gray-100 mb-4">
+          Phase Analysis
+        </h2>
+        <PhaseAnalysisPanel :phase-analysis="backtestResult.phase_analysis" />
+      </section>
+
       <!-- Campaign Performance Section (CRITICAL) -->
       <section
         v-if="backtestResult.campaign_performance?.length > 0"
@@ -284,6 +292,7 @@ import PatternPerformanceTable from '@/components/backtest/PatternPerformanceTab
 import CampaignPerformanceTable from '@/components/backtest/CampaignPerformanceTable.vue'
 import TradeListTable from '@/components/backtest/TradeListTable.vue'
 import VolumeAnalysisPanel from '@/components/backtest/VolumeAnalysisPanel.vue'
+import PhaseAnalysisPanel from '@/components/backtest/PhaseAnalysisPanel.vue'
 
 // Skeleton components
 import BacktestSummaryPanelSkeleton from '@/components/backtest/skeletons/BacktestSummaryPanelSkeleton.vue'
