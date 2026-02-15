@@ -229,6 +229,17 @@
         <PhaseAnalysisPanel :phase-analysis="backtestResult.phase_analysis" />
       </section>
 
+      <!-- Entry Type Analysis Section (Story 13.10) -->
+      <section v-if="backtestResult.entry_type_analysis" id="entry-types">
+        <h2 class="text-2xl font-semibold text-gray-100 mb-4">
+          Entry Type Analysis
+        </h2>
+        <EntryTypeAnalysis
+          :entry-type-analysis="backtestResult.entry_type_analysis"
+          :trades="backtestResult.trades"
+        />
+      </section>
+
       <!-- Campaign Performance Section (CRITICAL) -->
       <section
         v-if="backtestResult.campaign_performance?.length > 0"
@@ -293,6 +304,7 @@ import CampaignPerformanceTable from '@/components/backtest/CampaignPerformanceT
 import TradeListTable from '@/components/backtest/TradeListTable.vue'
 import VolumeAnalysisPanel from '@/components/backtest/VolumeAnalysisPanel.vue'
 import PhaseAnalysisPanel from '@/components/backtest/PhaseAnalysisPanel.vue'
+import EntryTypeAnalysis from '@/components/backtest/EntryTypeAnalysis.vue'
 
 // Skeleton components
 import BacktestSummaryPanelSkeleton from '@/components/backtest/skeletons/BacktestSummaryPanelSkeleton.vue'
