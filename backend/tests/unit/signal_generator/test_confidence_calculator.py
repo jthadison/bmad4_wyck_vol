@@ -161,15 +161,33 @@ class TestCalculateVolumeScoreLPS:
 
 
 class TestCalculateVolumeScoreUTAD:
-    """Tests for UTAD pattern volume score calculation."""
+    """Tests for UTAD pattern volume score calculation.
 
-    def test_utad_perfect_volume_0_4(self):
-        """UTAD with 0.4x volume should score 1.0 (perfect)."""
-        assert calculate_volume_score("UTAD", 0.4) == 1.0
+    UTAD requires HIGH volume to confirm supply overwhelming demand.
+    This is the correct Wyckoff interpretation (distribution trap).
+    """
 
-    def test_utad_violation_0_7(self):
-        """UTAD with 0.7x volume should score 0.0 (violation)."""
+    def test_utad_excellent_volume_2_5(self):
+        """UTAD with 2.5x volume should score 1.0 (excellent distribution signal)."""
+        assert calculate_volume_score("UTAD", 2.5) == 1.0
+
+    def test_utad_very_strong_volume_2_0(self):
+        """UTAD with 2.0x volume should score 0.9 (very strong)."""
+        assert calculate_volume_score("UTAD", 2.0) == 0.9
+
+    def test_utad_strong_volume_1_5(self):
+        """UTAD with 1.5x volume should score 0.8 (strong)."""
+        assert calculate_volume_score("UTAD", 1.5) == 0.8
+
+    def test_utad_acceptable_volume_1_2(self):
+        """UTAD with 1.2x volume should score 0.7 (meets validator minimum)."""
+        assert calculate_volume_score("UTAD", 1.2) == 0.7
+
+    def test_utad_violation_low_volume(self):
+        """UTAD with low volume (< 1.2x) should score 0.0 (violation)."""
         assert calculate_volume_score("UTAD", 0.7) == 0.0
+        assert calculate_volume_score("UTAD", 1.0) == 0.0
+        assert calculate_volume_score("UTAD", 1.1) == 0.0
 
 
 class TestCalculateVolumeScoreSC:

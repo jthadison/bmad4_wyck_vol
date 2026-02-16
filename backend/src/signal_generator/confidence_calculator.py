@@ -214,18 +214,19 @@ def calculate_volume_score(
             return 0.5
 
     elif pattern_type == "UTAD":
-        # UTAD: Lower volume is better (failed upthrust)
-        # Similar to Spring but for distribution
-        if volume_ratio <= 0.4:
-            return 1.0
-        elif volume_ratio <= 0.5:
-            return 0.9
-        elif volume_ratio <= 0.6:
-            return 0.75
-        elif volume_ratio < 0.7:
-            return 0.6
+        # UTAD: HIGH volume confirms supply overwhelming demand
+        # Upthrust with high volume shows institutions selling into buying pressure
+        # Similar to SC (climactic action) but for failed breakouts
+        if volume_ratio >= 2.5:
+            return 1.0  # Excellent - strong distribution signal
+        elif volume_ratio >= 2.0:
+            return 0.9  # Very strong
+        elif volume_ratio >= 1.5:
+            return 0.8  # Strong
+        elif volume_ratio >= 1.2:
+            return 0.7  # Acceptable - meets validator minimum for stocks
         else:
-            return 0.0  # Violation
+            return 0.0  # Violation - won't pass validator
 
     elif pattern_type == "SC":
         # Selling Climax: Ultra-high volume required
