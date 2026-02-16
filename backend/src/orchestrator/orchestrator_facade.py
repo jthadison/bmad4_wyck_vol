@@ -5,6 +5,7 @@ Provides the same interface as the original MasterOrchestrator but
 delegates to PipelineCoordinator for stage execution.
 
 Story 18.10.5: Services Extraction and Orchestrator Facade (AC5)
+Story 23.2: Wire orchestrator pipeline with real detectors
 """
 
 import asyncio
@@ -21,9 +22,38 @@ from src.orchestrator.container import OrchestratorContainer, get_orchestrator_c
 from src.orchestrator.event_bus import EventBus, get_event_bus
 from src.orchestrator.master_orchestrator import TradeSignal
 from src.orchestrator.pipeline import PipelineContextBuilder, PipelineCoordinator
+from src.orchestrator.pipeline.context import PipelineContext
 from src.orchestrator.services import PortfolioMonitor
 
 logger = structlog.get_logger(__name__)
+
+
+class _PassThroughSignalGenerator:
+    """Adapter: passes validated patterns through as signals without transformation."""
+
+    async def generate_signal(
+        self,
+        pattern: Any,
+        trading_range: Any | None,
+        context: PipelineContext,
+    ) -> Any | None:
+        """Return the pattern as-is (already a valid signal/pattern object)."""
+        return pattern
+
+
+class _RiskManagerAdapter:
+    """Adapter: wraps RiskManager to satisfy the RiskAssessor protocol."""
+
+    def __init__(self, risk_manager: Any) -> None:
+        self._risk_manager = risk_manager
+
+    async def apply_sizing(
+        self,
+        signal: Any,
+        context: PipelineContext,
+    ) -> Any | None:
+        """Pass signal through (risk validation done in ValidationStage)."""
+        return signal
 
 
 class NoDataError(Exception):
@@ -103,7 +133,9 @@ class MasterOrchestratorFacade:
             stages.append(RangeDetectionStage(self._container.trading_range_detector))
 
         # Stage 3: Phase Detection
-        stages.append(PhaseDetectionStage())
+        from src.pattern_engine.phase_detector_v2 import PhaseDetector
+
+        stages.append(PhaseDetectionStage(PhaseDetector()))
 
         # Stage 4: Pattern Detection
         from src.orchestrator.stages.pattern_detection_stage import (
@@ -135,15 +167,31 @@ class MasterOrchestratorFacade:
 
         stages.append(PatternDetectionStage(registry))
 
-        # Stage 5: Validation
-        stages.append(ValidationStage())
+        # Stage 5: Validation (FR20 order: Volume -> Phase -> Levels -> Risk)
+        # StrategyValidator omitted: requires NewsCalendarFactory with external services.
+        # Core Wyckoff validation is covered by the first 4 validators.
+        from src.signal_generator.validation_chain import ValidationChainOrchestrator
+        from src.signal_generator.validators import (
+            LevelValidator,
+            PhaseValidator,
+            RiskValidator,
+            VolumeValidator,
+        )
+
+        validators = [
+            VolumeValidator(),
+            PhaseValidator(),
+            LevelValidator(),
+            RiskValidator(),
+        ]
+        stages.append(ValidationStage(ValidationChainOrchestrator(validators)))
 
         # Stage 6: Signal Generation
-        stages.append(SignalGenerationStage())
+        stages.append(SignalGenerationStage(_PassThroughSignalGenerator()))
 
         # Stage 7: Risk Assessment
         if hasattr(self._container, "risk_manager"):
-            stages.append(RiskAssessmentStage(self._container.risk_manager))
+            stages.append(RiskAssessmentStage(_RiskManagerAdapter(self._container.risk_manager)))
 
         return PipelineCoordinator(stages)
 

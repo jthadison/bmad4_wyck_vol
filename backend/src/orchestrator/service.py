@@ -5,6 +5,7 @@ Provides singleton orchestrator instance for use across the application,
 with lifespan management and health check endpoint integration.
 
 Story 8.1: Master Orchestrator Architecture (AC: 6, 7)
+Story 23.2: Wire orchestrator pipeline with real detectors
 """
 
 from collections.abc import AsyncGenerator
@@ -20,27 +21,30 @@ from src.orchestrator.container import (
     reset_orchestrator_container,
 )
 from src.orchestrator.event_bus import reset_event_bus
-from src.orchestrator.master_orchestrator import MasterOrchestrator, TradeSignal
+from src.orchestrator.master_orchestrator import TradeSignal
+from src.orchestrator.orchestrator_facade import MasterOrchestratorFacade
 
 logger = structlog.get_logger(__name__)
 
-# Global orchestrator instance
-_orchestrator: MasterOrchestrator | None = None
+# Global orchestrator instance (Story 23.2: uses facade with real detectors)
+_orchestrator: MasterOrchestratorFacade | None = None
 
 
-def get_orchestrator() -> MasterOrchestrator:
+def get_orchestrator() -> MasterOrchestratorFacade:
     """
     Get the global orchestrator instance.
 
     Creates a new instance if one doesn't exist.
+    Uses MasterOrchestratorFacade which wires real detectors
+    (Spring, SOS, UTAD, LPS) via PipelineCoordinator.
 
     Returns:
-        The global MasterOrchestrator instance
+        The global MasterOrchestratorFacade instance
     """
     global _orchestrator
 
     if _orchestrator is None:
-        _orchestrator = MasterOrchestrator()
+        _orchestrator = MasterOrchestratorFacade()
         logger.info("orchestrator_service_created")
 
     return _orchestrator
@@ -150,7 +154,7 @@ async def orchestrator_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("orchestrator_service_stopped")
 
 
-def create_orchestrator_with_config(config: OrchestratorConfig) -> MasterOrchestrator:
+def create_orchestrator_with_config(config: OrchestratorConfig) -> MasterOrchestratorFacade:
     """
     Create an orchestrator with custom configuration.
 
@@ -160,7 +164,7 @@ def create_orchestrator_with_config(config: OrchestratorConfig) -> MasterOrchest
         config: Custom orchestrator configuration
 
     Returns:
-        The new MasterOrchestrator instance
+        The new MasterOrchestratorFacade instance
     """
     global _orchestrator
 
@@ -168,7 +172,7 @@ def create_orchestrator_with_config(config: OrchestratorConfig) -> MasterOrchest
     reset_orchestrator()
 
     # Create with custom config
-    _orchestrator = MasterOrchestrator(config=config)
+    _orchestrator = MasterOrchestratorFacade(config=config)
 
     logger.info(
         "orchestrator_service_reconfigured",
