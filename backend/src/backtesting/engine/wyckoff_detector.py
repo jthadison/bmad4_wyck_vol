@@ -50,6 +50,9 @@ UTAD_STOP_BUFFER = Decimal("0.02")  # 2% above upthrust high
 # --- Minimum R-multiple (FR19) ---
 MIN_R_MULTIPLE = Decimal("2.0")
 
+# --- Decimal precision for price fields (max 8 decimal places per TradeSignal model) ---
+_PRICE_QUANT = Decimal("0.00000001")
+
 
 @dataclass
 class _TradingRange:
@@ -487,6 +490,13 @@ class WyckoffSignalDetector:
         volume_conf: int,
     ) -> Optional[TradeSignal]:
         """Build a valid TradeSignal, returning None if constraints can't be met."""
+        # Quantize price fields to 8 decimal places to satisfy TradeSignal model
+        # constraints. Forex pairs (e.g. EURUSD ~1.08) produce >8 decimals after
+        # arithmetic with stop buffer percentages, causing Pydantic validation failure.
+        entry_price = entry_price.quantize(_PRICE_QUANT, rounding=ROUND_HALF_UP)
+        stop_loss = stop_loss.quantize(_PRICE_QUANT, rounding=ROUND_HALF_UP)
+        primary_target = primary_target.quantize(_PRICE_QUANT, rounding=ROUND_HALF_UP)
+
         risk = abs(entry_price - stop_loss)
         if risk == 0:
             return None
@@ -534,8 +544,10 @@ class WyckoffSignalDetector:
                 target_levels=TargetLevels(primary_target=primary_target),
                 position_size=position_size,
                 position_size_unit="SHARES",
-                notional_value=entry_price * position_size,
-                risk_amount=risk * position_size,
+                notional_value=(entry_price * position_size).quantize(
+                    _PRICE_QUANT, rounding=ROUND_HALF_UP
+                ),
+                risk_amount=(risk * position_size).quantize(_PRICE_QUANT, rounding=ROUND_HALF_UP),
                 r_multiple=r_multiple,
                 confidence_score=overall,
                 confidence_components=ConfidenceComponents(
