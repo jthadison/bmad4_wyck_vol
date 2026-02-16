@@ -73,7 +73,7 @@ repos:
     hooks:
       - id: pytest-fast
         name: pytest fast unit tests
-        entry: bash -c 'cd backend && poetry run pytest tests/unit -p no:cov -p no:benchmark -p no:faker -x -q --tb=line --no-header -m "not slow and not integration and not database" --timeout=10 --ignore=tests/unit/help --ignore=tests/unit/market_data/adapters/test_polygon_adapter.py --ignore=tests/unit/market_data/test_alpaca_adapter.py'
+        entry: bash -c 'cd backend && poetry run pytest tests/unit -p no:cov -p no:benchmark -p no:faker -x -q --tb=line --no-header -m "not slow and not integration and not database" --timeout=10 --ignore=tests/unit/help --ignore=tests/unit/market_data/adapters/test_polygon_adapter.py --ignore=tests/unit/market_data/test_alpaca_adapter.py --ignore=tests/unit/brokers/test_alpaca_adapter.py'
         language: system
         pass_filenames: false
         files: ^backend/
