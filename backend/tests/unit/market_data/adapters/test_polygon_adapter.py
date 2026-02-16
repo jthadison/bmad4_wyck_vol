@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 from pytest_httpx import HTTPXMock
 
-from src.market_data.adapters.polygon_adapter import PolygonAdapter
+from src.market_data.adapters.polygon_adapter import SYMBOL_MAP, PolygonAdapter
 
 
 @pytest.mark.asyncio
@@ -359,3 +359,53 @@ class TestPolygonFormatSymbol:
     def test_empty_string_forex_adds_bare_prefix(self):
         """An empty symbol with forex asset class still receives the C: prefix."""
         assert self.adapter._format_symbol("", "forex") == "C:"
+
+
+class TestSymbolMap:
+    """Tests for SYMBOL_MAP-based symbol translation."""
+
+    def setup_method(self):
+        self.adapter = PolygonAdapter(api_key="test-key")
+
+    def test_us30_maps_to_dji_index(self):
+        """US30 should map to I:DJI regardless of asset_class."""
+        assert self.adapter._format_symbol("US30", None) == "I:DJI"
+        assert self.adapter._format_symbol("US30", "stock") == "I:DJI"
+        assert self.adapter._format_symbol("US30", "index") == "I:DJI"
+
+    def test_nas100_maps_to_ndx_index(self):
+        """NAS100 should map to I:NDX regardless of asset_class."""
+        assert self.adapter._format_symbol("NAS100", None) == "I:NDX"
+        assert self.adapter._format_symbol("NAS100", "index") == "I:NDX"
+
+    def test_spx500_maps_to_spx_index(self):
+        """SPX500 should map to I:SPX."""
+        assert self.adapter._format_symbol("SPX500", None) == "I:SPX"
+
+    def test_xauusd_maps_to_c_xauusd(self):
+        """XAUUSD (gold) should map to C:XAUUSD regardless of asset_class."""
+        assert self.adapter._format_symbol("XAUUSD", None) == "C:XAUUSD"
+        assert self.adapter._format_symbol("XAUUSD", "forex") == "C:XAUUSD"
+
+    def test_eurusd_maps_via_symbol_map(self):
+        """EURUSD should be resolved via SYMBOL_MAP to C:EURUSD."""
+        assert self.adapter._format_symbol("EURUSD", None) == "C:EURUSD"
+
+    def test_gbpusd_maps_via_symbol_map(self):
+        """GBPUSD should map to C:GBPUSD."""
+        assert self.adapter._format_symbol("GBPUSD", None) == "C:GBPUSD"
+
+    def test_unmapped_stock_passes_through(self):
+        """Symbols not in SYMBOL_MAP fall through to existing logic."""
+        assert self.adapter._format_symbol("SPY", None) == "SPY"
+        assert self.adapter._format_symbol("DIA", None) == "DIA"
+        assert self.adapter._format_symbol("QQQ", None) == "QQQ"
+
+    def test_symbol_map_contains_expected_keys(self):
+        """Verify all required mappings are present in SYMBOL_MAP."""
+        assert "US30" in SYMBOL_MAP
+        assert "NAS100" in SYMBOL_MAP
+        assert "XAUUSD" in SYMBOL_MAP
+        assert "EURUSD" in SYMBOL_MAP
+        assert "GBPUSD" in SYMBOL_MAP
+        assert "USDJPY" in SYMBOL_MAP
