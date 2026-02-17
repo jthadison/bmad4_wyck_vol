@@ -230,8 +230,16 @@ def generate_ohlcv_bars(
     start_date = datetime(2024, 1, 1, tzinfo=UTC)
     ohlcv_bars: list[OHLCVBar] = []
 
+    # Generate weekday-only timestamps (Mon-Fri) so 504 trading days spans 2+ calendar years
+    trading_days: list[datetime] = []
+    dt = start_date
+    while len(trading_days) < n_bars:
+        if dt.weekday() < 5:  # Mon=0 .. Fri=4
+            trading_days.append(dt)
+        dt += timedelta(days=1)
+
     for i, raw in enumerate(raw_bars[:n_bars]):
-        ts = start_date + timedelta(days=i)
+        ts = trading_days[i]
         spread = raw["high"] - raw["low"]
         ohlcv_bars.append(
             OHLCVBar(

@@ -133,13 +133,12 @@ jobs:
                   f.write('false')
           "
 
-      # Story 23.3: Validate backtest baselines exist and are loadable (NFR21)
-      # Uses check_backtest_regression.py to load all baseline JSON files from
-      # tests/datasets/baselines/backtest/ and verify they parse correctly.
-      # Exit 0 = baselines valid (or not yet established), Exit 1 = corrupt baselines.
-      # Note: Full regression comparison (re-run backtests vs baseline with +/-5%
-      # tolerance) depends on backtest runner infra; the loader and compare_metrics()
-      # functions in backtest_baseline_loader.py are ready for that future step.
+      # Story 23.3: Re-run backtests and compare against stored baselines (NFR21)
+      # Uses check_backtest_regression.py to regenerate synthetic data with the same
+      # seeds, run UnifiedBacktestEngine, and compare current metrics against stored
+      # baselines via detect_backtest_regression() with +/-5% tolerance.
+      # Exit 0 = all metrics within tolerance (or baselines not yet established).
+      # Exit 1 = regression detected in one or more symbols.
       - name: Validate backtest performance baselines
         id: backtest_baseline_check
         working-directory: backend

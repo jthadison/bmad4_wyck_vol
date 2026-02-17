@@ -14,6 +14,7 @@ use the baseline loader's own data (already validated in test_backtest_baselines
 Author: Story 23.3
 """
 
+import hashlib
 import json
 import sys
 from decimal import Decimal
@@ -301,3 +302,35 @@ class TestDeterminism:
         assert first.win_rate == second.win_rate
         assert first.profit_factor == second.profit_factor
         assert first.average_r_multiple == second.average_r_multiple
+
+
+# --- AC4 CI Script: Re-run with generator seeds and compare against stored baselines ---
+
+# Seed logic matching generate_backtest_baselines.py
+_RNG_SEED = 42
+
+
+class TestAC4RegressionCIScript:
+    """AC4: Re-run backtests with the same seeds as the generator and compare
+    against committed baselines using detect_backtest_regression().
+
+    This mirrors what check_backtest_regression.py does in CI.
+    """
+
+    @pytest.mark.parametrize("symbol,base_price,base_volume,max_pos", SYMBOL_CONFIGS)
+    def test_no_regression_vs_baseline(
+        self, baselines_dir, symbol, base_price, base_volume, max_pos
+    ):
+        """Fresh engine run with generator seeds matches stored baseline within tolerance."""
+        baseline = load_backtest_baseline(symbol, baselines_dir)
+        assert baseline is not None, f"No committed baseline for {symbol}"
+
+        # Same seed derivation as generate_backtest_baselines.py
+        symbol_offset = int(hashlib.md5(symbol.encode()).hexdigest(), 16) % 1000
+        seed = _RNG_SEED + symbol_offset
+
+        bars = generate_ohlcv_bars(symbol, base_price, base_volume, n_bars=504, seed=seed)
+        result = run_backtest(bars, max_position_size=max_pos)
+
+        regression, degraded = detect_backtest_regression(result.summary, baseline)
+        assert regression is False, f"{symbol}: regression detected vs stored baseline: {degraded}"

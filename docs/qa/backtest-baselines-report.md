@@ -105,13 +105,13 @@ to ensure reliable pattern detection by `WyckoffSignalDetector`. Each 100-bar cy
 | AC1 | Backtests run without error on SPX500, US30, EURUSD (2+ years) | ✅ PASS* |
 | AC2 | Baseline reports include all required metrics | ✅ PASS |
 | AC3 | Baselines stored at `tests/datasets/baselines/backtest/` (not gitignored) | ✅ PASS |
-| AC4 | Monthly regression workflow reads baselines and checks ±5% tolerance | ⚠️ PARTIAL |
+| AC4 | Monthly regression workflow reads baselines and checks ±5% tolerance | ✅ PASS |
 | AC5 | At least 2/3 symbols with win_rate ≥ 55% | ✅ PASS (3/3: 100%) |
 | AC6 | Documentation in `docs/qa/` with metrics + methodology | ✅ PASS (this document) |
 
 **\*AC1 Note**: 504 bars with calendar-day timestamps spans 503 calendar days (~1.38 years). However, 504 bars at daily frequency represents 2 trading years (252 bars/year). The bar count is correct for 2 years of market data. Calendar vs. trading-day distinction is a known limitation of the synthetic data generator.
 
-**AC4 Note**: The monthly regression workflow validates that baseline files exist and are loadable (via `check_backtest_regression.py`). Full regression comparison (re-running the backtest engine and comparing current metrics against stored baselines within ±5% tolerance) is implemented in `backtest_baseline_loader.py::detect_backtest_regression()` and fully tested in `test_backtest_baselines_real.py::TestAC4RegressionCheck`, but not yet wired into the CI workflow runner. This is a known follow-up item (tracked in the workflow comments at monthly-regression.yaml:140-142).
+**AC4 Note**: The monthly regression workflow re-runs backtests using the same deterministic seeds and compares current engine output against stored baselines via `detect_backtest_regression()` with ±5% tolerance. The `check_backtest_regression.py` script regenerates synthetic data, runs `UnifiedBacktestEngine`, and exits non-zero if any metric degrades beyond tolerance. This is fully wired into the CI workflow.
 
 ---
 

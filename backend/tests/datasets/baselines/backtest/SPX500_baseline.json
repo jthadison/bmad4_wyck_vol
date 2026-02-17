@@ -5,7 +5,7 @@
   "established_at": "2026-02-16T00:00:00Z",
   "date_range": {
     "start": "2024-01-01",
-    "end": "2025-05-18"
+    "end": "2025-12-04"
   },
   "metrics": {
     "total_signals": 5,
@@ -14,7 +14,7 @@
     "profit_factor": "999.9900",
     "max_drawdown": "0.0000",
     "total_return_pct": "3.0580",
-    "cagr": "0.0221",
+    "cagr": "0.0158",
     "sharpe_ratio": "-0.5242",
     "max_drawdown_duration_days": 0,
     "total_trades": 5,
