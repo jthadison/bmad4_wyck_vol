@@ -106,9 +106,9 @@ def _make_order_info(ticket=12345, volume_current=0.0, volume_initial=1.0, price
     )
 
 
-def _make_position(ticket=99999, magic=234000, volume=1.0, type=0):
+def _make_position(ticket=99999, magic=234000, volume=1.0, type=0, symbol="EURUSD"):
     """Create a mock position entry."""
-    return SimpleNamespace(ticket=ticket, magic=magic, volume=volume, type=type)
+    return SimpleNamespace(ticket=ticket, magic=magic, volume=volume, type=type, symbol=symbol)
 
 
 def _make_market_buy_order(**kwargs):
@@ -737,13 +737,15 @@ class TestOCOOrder:
         assert len(reports) == 1
         assert reports[0].status == OrderStatus.REJECTED
 
-    async def test_oco_sltp_modify_fails(self, adapter, mt5_mock):
-        """SL/TP modification fails after entry fill."""
-        # First call: primary order fills
-        # Second call: SLTP modify fails
+    async def test_oco_sltp_modify_fails_emergency_close_succeeds(self, adapter, mt5_mock):
+        """SL/TP modification fails, emergency close succeeds."""
+        # Call 1: primary order fills
+        # Call 2: SLTP modify fails
+        # Call 3: emergency close succeeds
         mt5_mock.order_send.side_effect = [
             _make_send_result(volume=1.0, price=1.10),
             _make_send_result(retcode=TRADE_RETCODE_ERROR, comment="Modify failed"),
+            _make_send_result(volume=1.0, price=1.10),  # emergency close
         ]
         mt5_mock.history_deals_get.return_value = [_make_deal()]
         mt5_mock.positions_get.return_value = [_make_position()]
@@ -779,6 +781,43 @@ class TestOCOOrder:
         assert reports[2].status == OrderStatus.REJECTED  # TP failed
         assert "stop loss" in reports[1].error_message.lower()
         assert "take profit" in reports[2].error_message.lower()
+        # Emergency close succeeded, so no manual intervention warning
+        assert "MANUAL INTERVENTION" not in reports[1].error_message
+        assert "MANUAL INTERVENTION" not in reports[2].error_message
+
+    async def test_oco_sltp_modify_fails_emergency_close_fails(self, adapter, mt5_mock):
+        """SL/TP modification fails AND emergency close fails."""
+        # Call 1: primary order fills
+        # Call 2: SLTP modify fails
+        # Call 3: emergency close also fails
+        mt5_mock.order_send.side_effect = [
+            _make_send_result(volume=1.0, price=1.10),
+            _make_send_result(retcode=TRADE_RETCODE_ERROR, comment="Modify failed"),
+            _make_send_result(retcode=TRADE_RETCODE_ERROR, comment="Close rejected"),
+        ]
+        mt5_mock.history_deals_get.return_value = [_make_deal()]
+        mt5_mock.positions_get.return_value = [_make_position()]
+
+        primary = _make_market_buy_order()
+        sl_order = Order(
+            platform="MetaTrader5",
+            symbol="EURUSD",
+            side=OrderSide.SELL,
+            order_type=OrderType.STOP,
+            quantity=Decimal("1.0"),
+            stop_price=Decimal("1.0800"),
+        )
+        oco = OCOOrder(
+            primary_order=primary,
+            stop_loss_order=sl_order,
+        )
+
+        reports = await adapter.place_oco_order(oco)
+
+        assert len(reports) == 2
+        assert reports[0].status == OrderStatus.FILLED
+        assert reports[1].status == OrderStatus.REJECTED
+        assert "MANUAL INTERVENTION REQUIRED" in reports[1].error_message
 
     async def test_oco_no_position_for_sltp(self, adapter, mt5_mock):
         """Position not found when trying to set SL/TP."""
@@ -914,6 +953,7 @@ class TestGetOrderStatus:
     """Tests for order status queries."""
 
     async def test_get_order_status(self, adapter, mt5_mock):
+        """orders_get only returns pending orders, so status is always PENDING."""
         mt5_mock.orders_get.return_value = [
             _make_order_info(ticket=12345, volume_current=0.3, volume_initial=1.0)
         ]
@@ -1139,3 +1179,92 @@ class TestMagicNumber:
 
         call_args = mt5_mock.order_send.call_args[0][0]
         assert call_args["magic"] == 555000
+
+
+# =============================
+# Test: Close All Positions
+# =============================
+
+
+class TestCloseAllPositions:
+    """Tests for close_all_positions (kill switch)."""
+
+    async def test_close_all_positions_success(self, adapter, mt5_mock):
+        """Multiple positions, all close successfully."""
+        positions = [
+            _make_position(ticket=100, symbol="EURUSD", volume=1.0, type=0),
+            _make_position(ticket=200, symbol="GBPUSD", volume=0.5, type=1),
+        ]
+        mt5_mock.orders_get.return_value = None  # No pending orders
+        mt5_mock.positions_get.return_value = positions
+        mt5_mock.order_send.return_value = _make_send_result(volume=1.0, price=1.10)
+
+        reports = await adapter.close_all_positions()
+
+        assert len(reports) == 2
+        assert all(r.status == OrderStatus.FILLED for r in reports)
+
+    async def test_close_all_positions_empty(self, adapter, mt5_mock):
+        """No positions returns empty list."""
+        mt5_mock.orders_get.return_value = None
+        mt5_mock.positions_get.return_value = None
+
+        reports = await adapter.close_all_positions()
+
+        assert reports == []
+
+    async def test_close_all_positions_pending_orders_cancelled(self, adapter, mt5_mock):
+        """Pending orders cancelled before position close."""
+        pending = [_make_order_info(ticket=555)]
+        mt5_mock.orders_get.return_value = pending
+        mt5_mock.positions_get.return_value = [
+            _make_position(ticket=100, symbol="EURUSD"),
+        ]
+        mt5_mock.order_send.return_value = _make_send_result()
+
+        reports = await adapter.close_all_positions()
+
+        # order_send called twice: once to cancel pending, once to close position
+        assert mt5_mock.order_send.call_count == 2
+        # First call cancels the pending order
+        cancel_req = mt5_mock.order_send.call_args_list[0][0][0]
+        assert cancel_req["action"] == TRADE_ACTION_REMOVE
+        assert cancel_req["order"] == 555
+        # Second call closes the position
+        assert len(reports) == 1
+        assert reports[0].status == OrderStatus.FILLED
+
+    async def test_close_all_positions_one_fails(self, adapter, mt5_mock):
+        """One position close fails, returns mixed FILLED/REJECTED."""
+        positions = [
+            _make_position(ticket=100, symbol="EURUSD", volume=1.0),
+            _make_position(ticket=200, symbol="GBPUSD", volume=0.5),
+        ]
+        mt5_mock.orders_get.return_value = None
+        mt5_mock.positions_get.return_value = positions
+        mt5_mock.order_send.side_effect = [
+            _make_send_result(volume=1.0, price=1.10),  # First succeeds
+            _make_send_result(retcode=TRADE_RETCODE_ERROR, comment="Close rejected"),
+        ]
+
+        reports = await adapter.close_all_positions()
+
+        assert len(reports) == 2
+        assert reports[0].status == OrderStatus.FILLED
+        assert reports[1].status == OrderStatus.REJECTED
+        assert "Close rejected" in reports[1].error_message
+
+    async def test_close_all_positions_exception(self, adapter, mt5_mock):
+        """positions_get raises exception, returns empty list."""
+        mt5_mock.orders_get.return_value = None
+        mt5_mock.positions_get.side_effect = RuntimeError("Terminal crash")
+
+        reports = await adapter.close_all_positions()
+
+        assert reports == []
+
+    async def test_close_all_not_connected(self):
+        """Adapter with no _mt5 raises ConnectionError."""
+        adapter = MetaTraderAdapter()
+        with pytest.raises(ConnectionError):
+            await adapter.close_all_positions()
