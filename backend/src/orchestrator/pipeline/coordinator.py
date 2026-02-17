@@ -82,11 +82,13 @@ class PipelineCoordinator:
         """
         Execute full pipeline.
 
-        Runs each stage sequentially, passing output to the next stage.
-        Collects results and metrics from all stages.
+        Runs each stage sequentially. Each stage receives the original
+        initial_input (e.g. list[OHLCVBar]) and communicates intermediate
+        results via PipelineContext. The final stage's output is returned
+        as CoordinatorResult.output.
 
         Args:
-            initial_input: Input data for first stage
+            initial_input: Input data passed to every stage (e.g. list[OHLCVBar])
             context: Pipeline context with correlation_id, symbol, timeframe
             stop_on_error: Whether to stop pipeline on stage failure
 
@@ -102,10 +104,12 @@ class PipelineCoordinator:
         )
 
         result = CoordinatorResult(success=True)
-        current_input = initial_input
+        last_output: Any = initial_input  # Empty pipeline passes input through
 
         for stage in self._stages:
-            stage_result = await stage.run(current_input, context)
+            # All stages receive the original input (bars). Cross-stage data
+            # is communicated via PipelineContext, not by chaining outputs.
+            stage_result = await stage.run(initial_input, context)
             result.stage_results[stage.name] = stage_result
 
             if not stage_result.success:
@@ -122,11 +126,11 @@ class PipelineCoordinator:
                     result.output = None
                     break
             else:
-                current_input = stage_result.output
+                last_output = stage_result.output
 
-        # Set final output if successful
+        # Set final output to the last successful stage's output
         if result.success:
-            result.output = current_input
+            result.output = last_output
 
         # Calculate total time from context
         result.total_time_ms = context.get_total_time_ms()
