@@ -134,34 +134,20 @@ jobs:
           "
 
       # Story 23.3: Validate backtest baselines exist and are loadable (NFR21)
-      # Note: Actual regression comparison requires running backtests against
-      # current code, which depends on backtest runner infrastructure (future work).
-      # This step validates that baseline files are present and well-formed.
-      - name: Validate backtest baselines exist
+      # Uses check_backtest_regression.py to load all baseline JSON files from
+      # tests/datasets/baselines/backtest/ and verify they parse correctly.
+      # Exit 0 = baselines valid (or not yet established), Exit 1 = corrupt baselines.
+      # Note: Full regression comparison (re-run backtests vs baseline with +/-5%
+      # tolerance) depends on backtest runner infra; the loader and compare_metrics()
+      # functions in backtest_baseline_loader.py are ready for that future step.
+      - name: Validate backtest performance baselines
         id: backtest_baseline_check
         working-directory: backend
-        continue-on-error: true
         run: |
-          poetry run python -c "
-          from pathlib import Path
-          from src.backtesting.backtest_baseline_loader import load_all_backtest_baselines
-          import sys
-
-          baselines_dir = Path('tests/datasets/baselines/backtest')
-          baselines = load_all_backtest_baselines(baselines_dir)
-
-          if not baselines:
-              print('No backtest baselines found - skipping check')
-              sys.exit(0)
-
-          print(f'Loaded {len(baselines)} backtest baselines:')
-          for b in baselines:
-              print(f'  {b.symbol}: win_rate={float(b.metrics.win_rate):.4f}, '
-                    f'pf={float(b.metrics.profit_factor):.4f}, '
-                    f'trades={b.metrics.total_trades}')
-
-          print('Backtest baselines validated successfully')
-          "
+          echo "Checking backtest baseline integrity..."
+          poetry run python scripts/check_backtest_regression.py
+        env:
+          PYTHONPATH: .
 
       - name: Check regression status
         id: check_regression
@@ -192,6 +178,7 @@ jobs:
           path: |
             backend/tests/reports/*.html
             backend/tests/datasets/baselines/*.json
+            backend/tests/datasets/baselines/backtest/*.json
           retention-days: 90  # Keep monthly reports for 90 days
 
       - name: Update baselines if tests passed
@@ -280,18 +267,26 @@ jobs:
           # TODO: Add Slack/email notification here if needed
 
       - name: Fail workflow if regression detected
-        if: steps.check_regression.outputs.regression_detected == 'true'
+        if: |
+          steps.check_regression.outputs.regression_detected == 'true' ||
+          steps.backtest_baseline_check.outcome == 'failure'
         run: |
-          echo "❌ MONTHLY REGRESSION TEST FAILED"
-          echo "Detector accuracy has degraded by more than 5% (NFR21 violation)"
-          echo "A GitHub issue has been created to track this regression"
+          if [ "${{ steps.check_regression.outputs.regression_detected }}" == "true" ]; then
+            echo "❌ Detector accuracy has degraded by more than 5% (NFR21 violation)"
+          fi
+          if [ "${{ steps.backtest_baseline_check.outcome }}" == "failure" ]; then
+            echo "❌ Backtest baseline validation failed (corrupt or unloadable baselines)"
+          fi
+          echo "A GitHub issue has been created to track detector regressions"
           exit 1
 
       - name: Success summary
         if: |
           steps.accuracy_tests.outcome == 'success' &&
-          steps.check_regression.outputs.regression_detected == 'false'
+          steps.check_regression.outputs.regression_detected == 'false' &&
+          steps.backtest_baseline_check.outcome == 'success'
         run: |
           echo "✅ Monthly Regression Test PASSED"
           echo "All detectors maintain accuracy within acceptable range"
+          echo "Backtest baselines validated successfully"
           echo "NFR21 compliance: ✓"
