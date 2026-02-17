@@ -6,10 +6,9 @@ and validates that the engine produces valid results that satisfy acceptance cri
 Also validates the regression detection pipeline via round-trip tests against committed
 baselines.
 
-Note: The committed baselines were generated with a specific PYTHONHASHSEED (hash() is
-randomized per Python process). The engine tests use fixed seeds (no hash()) to ensure
-determinism within the test suite. AC4 regression checks against committed baselines
-use the baseline loader's own data (already validated in test_backtest_baselines_23_3.py).
+All engine tests use the same hashlib.md5-based seed derivation as generate_backtest_baselines.py
+so test data is consistent with the committed baseline JSONs. hashlib.md5 is stable across
+Python processes (unlike hash() which is randomized by PYTHONHASHSEED).
 
 Author: Story 23.3
 """
@@ -45,8 +44,14 @@ SYMBOL_CONFIGS = [
 
 REQUIRED_SYMBOLS = [s[0] for s in SYMBOL_CONFIGS]
 
-# Deterministic seeds per symbol (no hash() to avoid PYTHONHASHSEED issues)
-FIXED_SEEDS = {"SPX500": 100, "US30": 200, "EURUSD": 300}
+# Seed derivation matching generate_backtest_baselines.py (hashlib.md5, not hash())
+# This ensures tests exercise the same data as the committed baselines.
+_RNG_SEED = 42
+
+
+def _symbol_seed(symbol: str) -> int:
+    """Return the deterministic seed for a symbol, matching the generator."""
+    return _RNG_SEED + int(hashlib.md5(symbol.encode()).hexdigest(), 16) % 1000
 
 
 @pytest.fixture
@@ -59,11 +64,12 @@ def baselines_dir():
 def engine_results():
     """Run the backtest engine on all symbols and cache results for the module.
 
-    Uses fixed deterministic seeds (not hash-based) to ensure reproducibility.
+    Uses the same hashlib.md5-based seeds as generate_backtest_baselines.py so
+    test output is consistent with committed baselines.
     """
     results = {}
     for symbol, base_price, base_volume, max_pos_size in SYMBOL_CONFIGS:
-        seed = FIXED_SEEDS[symbol]
+        seed = _symbol_seed(symbol)
         bars = generate_ohlcv_bars(symbol, base_price, base_volume, n_bars=504, seed=seed)
         result = run_backtest(bars, max_position_size=max_pos_size)
         results[symbol] = result
@@ -291,7 +297,7 @@ class TestDeterminism:
     def test_second_run_matches_first(self, engine_results):
         """Running the same config again produces identical results."""
         symbol, base_price, base_volume, max_pos_size = SYMBOL_CONFIGS[0]
-        seed = FIXED_SEEDS[symbol]
+        seed = _symbol_seed(symbol)
         bars = generate_ohlcv_bars(symbol, base_price, base_volume, n_bars=504, seed=seed)
         result2 = run_backtest(bars, max_position_size=max_pos_size)
 
@@ -305,9 +311,6 @@ class TestDeterminism:
 
 
 # --- AC4 CI Script: Re-run with generator seeds and compare against stored baselines ---
-
-# Seed logic matching generate_backtest_baselines.py
-_RNG_SEED = 42
 
 
 class TestAC4RegressionCIScript:
@@ -325,10 +328,7 @@ class TestAC4RegressionCIScript:
         baseline = load_backtest_baseline(symbol, baselines_dir)
         assert baseline is not None, f"No committed baseline for {symbol}"
 
-        # Same seed derivation as generate_backtest_baselines.py
-        symbol_offset = int(hashlib.md5(symbol.encode()).hexdigest(), 16) % 1000
-        seed = _RNG_SEED + symbol_offset
-
+        seed = _symbol_seed(symbol)
         bars = generate_ohlcv_bars(symbol, base_price, base_volume, n_bars=504, seed=seed)
         result = run_backtest(bars, max_position_size=max_pos)
 
