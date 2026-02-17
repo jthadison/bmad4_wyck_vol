@@ -35,6 +35,30 @@
         <i class="pi pi-user placeholder-icon"></i>
         <p>Account settings coming soon in Epic 11</p>
       </div>
+
+      <div v-else-if="activeTab === 'baselines'" class="baselines-section">
+        <h2 class="text-xl font-semibold mb-4">Backtest Baselines</h2>
+        <p class="text-gray-500 mb-4">
+          Regression baselines are established. Automated regression testing is
+          active.
+        </p>
+        <table class="baselines-table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Baseline Version</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="b in baselines" :key="b.symbol">
+              <td>{{ b.symbol }}</td>
+              <td>{{ b.version }}</td>
+              <td class="status-active">Active</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>
@@ -67,6 +91,17 @@ const tabs = [
     label: 'Account',
     icon: 'pi pi-user',
   },
+  {
+    id: 'baselines',
+    label: 'Baselines',
+    icon: 'pi pi-chart-bar',
+  },
+]
+
+const baselines = [
+  { symbol: 'SPX500', version: '23.3.1' },
+  { symbol: 'US30', version: '23.3.1' },
+  { symbol: 'EURUSD', version: '23.3.1' },
 ]
 </script>
 
@@ -138,5 +173,42 @@ const tabs = [
 
 .placeholder-content p {
   font-size: 16px;
+}
+
+.baselines-section {
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.baselines-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.baselines-table th,
+.baselines-table td {
+  text-align: left;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.baselines-table th {
+  font-weight: 600;
+  color: #475569;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.baselines-table td {
+  font-size: 14px;
+  color: #334155;
+}
+
+.status-active {
+  color: #16a34a;
+  font-weight: 500;
 }
 </style>

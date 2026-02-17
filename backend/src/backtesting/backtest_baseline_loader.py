@@ -178,7 +178,15 @@ def compare_metrics(
 
     for metric_name, baseline_value, current_value in metrics_to_check:
         if baseline_value == Decimal("0"):
-            change_pct = Decimal("0")
+            # Zero-baseline guard: percentage comparison is undefined at 0.
+            # For LOWER_IS_BETTER metrics (e.g., max_drawdown), any increase from 0
+            # is a degradation -- flag as 100% change so it exceeds the tolerance.
+            # For HIGHER_IS_BETTER or neutral metrics at baseline=0, treat as no change
+            # (no meaningful regression to detect when baseline is already at floor/zero).
+            if metric_name in LOWER_IS_BETTER and current_value > Decimal("0"):
+                change_pct = Decimal("100")
+            else:
+                change_pct = Decimal("0")
         else:
             change_pct = ((current_value - baseline_value) / baseline_value) * Decimal("100")
 
