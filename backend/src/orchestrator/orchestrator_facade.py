@@ -42,10 +42,16 @@ class _PassThroughSignalGenerator:
 
 
 class _RiskManagerAdapter:
-    """Adapter: wraps RiskManager to satisfy the RiskAssessor protocol."""
+    """Adapter: wraps RiskManager to satisfy the RiskAssessor protocol.
+
+    Currently a pass-through stub. Risk validation is handled by RiskValidator
+    in ValidationStage. Full position sizing and portfolio heat validation is
+    deferred to a follow-up story.
+    """
 
     def __init__(self, risk_manager: Any) -> None:
-        self._risk_manager = risk_manager
+        # risk_manager accepted for API compatibility; not yet used.
+        pass
 
     async def apply_sizing(
         self,
@@ -133,6 +139,11 @@ class MasterOrchestratorFacade:
             stages.append(RangeDetectionStage(self._container.trading_range_detector))
 
         # Stage 3: Phase Detection
+        # PhaseDetector is instantiated directly because OrchestratorContainer
+        # does not yet expose a phase_detector property. This is consistent with
+        # the PhaseDetectionStage requirement but deviates from the container DI
+        # pattern used by other stages.
+        # TODO(23.x): add phase_detector to OrchestratorContainer.
         from src.pattern_engine.phase_detector_v2 import PhaseDetector
 
         stages.append(PhaseDetectionStage(PhaseDetector()))

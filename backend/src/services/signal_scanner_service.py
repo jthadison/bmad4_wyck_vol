@@ -55,6 +55,7 @@ from src.services.session_filter import (
 if TYPE_CHECKING:
     from src.api.websocket import ConnectionManager
     from src.orchestrator.master_orchestrator import MasterOrchestrator, TradeSignal
+    from src.orchestrator.orchestrator_facade import MasterOrchestratorFacade
     from src.repositories.scanner_repository import ScannerRepository
     from src.services.circuit_breaker_service import CircuitBreakerService
 
@@ -203,12 +204,12 @@ class SignalScannerService:
         self._signals_broadcast: int = 0
         self._broadcast_errors: int = 0
 
-    def set_orchestrator(self, orchestrator: MasterOrchestrator) -> None:
+    def set_orchestrator(self, orchestrator: MasterOrchestrator | MasterOrchestratorFacade) -> None:
         """
         Set the orchestrator for symbol analysis.
 
         Args:
-            orchestrator: MasterOrchestrator instance
+            orchestrator: Orchestrator instance (MasterOrchestrator or MasterOrchestratorFacade)
         """
         self._orchestrator = orchestrator
         logger.info("scanner_orchestrator_set")
