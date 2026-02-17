@@ -177,6 +177,13 @@ class ValidationStage(PipelineStage[list[Any], ValidationResults]):
             TypeError: If patterns is not a list
             RuntimeError: If required context keys not found
         """
+        # Read patterns from context if available (set by PatternDetectionStage).
+        # The coordinator passes initial_input (bars) to all stages; cross-stage
+        # data flows through PipelineContext.
+        context_patterns: list[Any] | None = context.get("patterns")
+        if context_patterns is not None:
+            patterns = context_patterns
+
         # Validate input type
         if not isinstance(patterns, list):
             raise TypeError(f"Expected list of patterns, got {type(patterns).__name__}")
