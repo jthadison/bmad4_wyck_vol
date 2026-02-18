@@ -16,6 +16,11 @@ import structlog
 
 from src.campaign_management.campaign_manager import CampaignManager
 from src.models.phase_classification import WyckoffPhase
+from src.models.validation import (
+    StageValidationResult,
+    ValidationContext,
+    ValidationStatus,
+)
 from src.orchestrator.cache import OrchestratorCache, get_orchestrator_cache
 from src.orchestrator.config import OrchestratorConfig
 from src.orchestrator.container import OrchestratorContainer, get_orchestrator_container
@@ -24,6 +29,7 @@ from src.orchestrator.master_orchestrator import TradeSignal
 from src.orchestrator.pipeline import PipelineContextBuilder, PipelineCoordinator
 from src.orchestrator.pipeline.context import PipelineContext
 from src.orchestrator.services import PortfolioMonitor
+from src.signal_generator.validators.base import BaseValidator
 
 logger = structlog.get_logger(__name__)
 
@@ -60,6 +66,30 @@ class _RiskManagerAdapter:
     ) -> Any | None:
         """Pass signal through (risk validation done in ValidationStage)."""
         return signal
+
+
+class _StrategyNoApiFallback(BaseValidator):
+    """WARN-only stub when NEWS_API_KEY is not configured.
+
+    Used in place of the real StrategyValidator when no external news calendar
+    API is available.  Signals still proceed but carry an explicit WARN in the
+    audit trail.  For production deployment, NEWS_API_KEY should be configured
+    so the real StrategyValidator handles FR29 earnings/event blackout checks.
+    """
+
+    @property
+    def validator_id(self) -> str:
+        return "STRATEGY_VALIDATOR"
+
+    @property
+    def stage_name(self) -> str:
+        return "Strategy"
+
+    async def validate(self, context: ValidationContext) -> StageValidationResult:
+        return self.create_result(
+            ValidationStatus.WARN,
+            reason="No news calendar API configured — strategy context skipped",
+        )
 
 
 class NoDataError(Exception):
@@ -198,6 +228,8 @@ class MasterOrchestratorFacade:
         # Wire StrategyValidator: use real implementation if NEWS_API_KEY is
         # configured, otherwise fall back to a WARN-only stub so all 5 stages
         # are present in the pipeline without requiring external services.
+        # NOTE: For production, NEWS_API_KEY should be set so StrategyValidator
+        # enforces FR29 earnings/event blackout windows.
         from src.config import settings
 
         if settings.news_api_key:
@@ -205,26 +237,6 @@ class MasterOrchestratorFacade:
 
             validators.append(StrategyValidator(news_calendar_factory=NewsCalendarFactory()))
         else:
-            from src.models.validation import ValidationStatus as _VS
-            from src.signal_generator.validators.base import BaseValidator
-
-            class _StrategyNoApiFallback(BaseValidator):
-                """WARN-only stub when NEWS_API_KEY is not configured."""
-
-                @property
-                def validator_id(self) -> str:
-                    return "STRATEGY_VALIDATOR"
-
-                @property
-                def stage_name(self) -> str:
-                    return "Strategy"
-
-                async def validate(self, context):  # type: ignore[override]
-                    return self.create_result(
-                        _VS.WARN,
-                        reason="No news calendar API configured — strategy context skipped",
-                    )
-
             validators.append(_StrategyNoApiFallback())
 
         stages.append(ValidationStage(ValidationChainOrchestrator(validators)))
