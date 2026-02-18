@@ -5,6 +5,7 @@ Provides portfolio context building and monitoring for risk validation.
 
 Story 18.10.5: Services Extraction and Orchestrator Facade (AC2)
 Story 23.13: Daily P&L tracking integration
+P2a: Wire portfolio monitor to real PostgreSQL position queries.
 """
 
 from __future__ import annotations
@@ -13,9 +14,14 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
-from src.models.portfolio import PortfolioContext
+from src.models.correlation_campaign import CampaignForCorrelation
+from src.models.portfolio import PortfolioContext, Position
 from src.models.risk import CorrelationConfig
+from src.repositories.models import CampaignModel, PositionModel
 
 if TYPE_CHECKING:
     from src.monitoring.daily_pnl_tracker import DailyPnLTracker
@@ -45,6 +51,95 @@ class AccountService(Protocol):
     async def get_equity(self) -> Decimal:
         """Get current account equity."""
         ...
+
+
+class SqlPositionRepository:
+    """Concrete PositionRepository backed by PostgreSQL via async_session_maker."""
+
+    def __init__(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+        default_equity: Decimal = Decimal("100000.00"),
+    ) -> None:
+        self._session_maker = session_maker
+        self._default_equity = default_equity
+
+    async def get_open_positions(self) -> list[Any]:
+        """Query open positions and convert to domain Position dataclasses."""
+        async with self._session_maker() as session:
+            result = await session.execute(
+                select(PositionModel).where(PositionModel.status == "OPEN")
+            )
+            rows = result.scalars().all()
+
+        equity = self._default_equity
+        positions: list[Position] = []
+        for row in rows:
+            risk_dollars = abs(row.entry_price - row.stop_loss) * row.shares
+            risk_pct = (risk_dollars / equity * 100) if equity > 0 else Decimal("0")
+            positions.append(
+                Position(
+                    symbol=row.symbol,
+                    position_risk_pct=risk_pct,
+                    status=row.status,
+                    campaign_id=row.campaign_id,
+                )
+            )
+        return positions
+
+
+class SqlCampaignRepository:
+    """Concrete CampaignRepository backed by PostgreSQL via async_session_maker."""
+
+    def __init__(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+        default_equity: Decimal = Decimal("100000.00"),
+    ) -> None:
+        self._session_maker = session_maker
+        self._default_equity = default_equity
+
+    async def get_active_campaigns(self) -> list[Any]:
+        """Query active campaigns and convert to CampaignForCorrelation."""
+        async with self._session_maker() as session:
+            result = await session.execute(
+                select(CampaignModel)
+                .where(CampaignModel.status.in_(["ACTIVE", "MARKUP"]))
+                .options(selectinload(CampaignModel.positions))
+            )
+            rows = result.scalars().all()
+
+        equity = self._default_equity
+        campaigns: list[CampaignForCorrelation] = []
+        for row in rows:
+            # Convert child positions to domain Position dataclasses
+            domain_positions: list[Position] = []
+            for p in row.positions:
+                if p.status != "OPEN":
+                    continue
+                risk_dollars = abs(p.entry_price - p.stop_loss) * p.shares
+                risk_pct = (risk_dollars / equity * 100) if equity > 0 else Decimal("0")
+                domain_positions.append(
+                    Position(
+                        symbol=p.symbol,
+                        position_risk_pct=risk_pct,
+                        status=p.status,
+                        campaign_id=p.campaign_id,
+                    )
+                )
+            total_risk = sum(p.position_risk_pct for p in domain_positions)
+            campaigns.append(
+                CampaignForCorrelation(
+                    campaign_id=row.id,
+                    symbol=row.symbol,
+                    sector="unknown",
+                    asset_class="stock",
+                    total_campaign_risk=total_risk,
+                    positions=domain_positions,
+                    status=row.status,
+                )
+            )
+        return campaigns
 
 
 class PortfolioMonitor:
@@ -157,6 +252,11 @@ class PortfolioMonitor:
                 return await self._position_repo.get_open_positions()
             except Exception as e:
                 logger.warning("positions_fetch_failed", error=str(e))
+                return []
+        logger.warning(
+            "no_position_repo_configured",
+            detail="Portfolio heat will read 0% — risk monitoring is inactive",
+        )
         return []
 
     async def _get_active_campaigns(self) -> list[Any]:
@@ -166,25 +266,33 @@ class PortfolioMonitor:
                 return await self._campaign_repo.get_active_campaigns()
             except Exception as e:
                 logger.warning("campaigns_fetch_failed", error=str(e))
+                return []
+        logger.warning(
+            "no_campaign_repo_configured",
+            detail="Active campaigns will read empty — campaign monitoring is inactive",
+        )
         return []
 
     async def get_portfolio_heat(self) -> Decimal:
         """
         Calculate current portfolio heat (total risk exposure).
 
-        Returns sum of risk amounts for all open positions as
-        percentage of account equity.
+        Returns sum of position_risk_pct for all open positions.
+        The SQL repos already convert ORM rows to domain Position
+        dataclasses with position_risk_pct expressed as a percentage
+        of account equity, so we sum directly.
         """
         context = await self.build_context()
         if context.account_equity <= 0:
             return Decimal("0")
 
-        total_risk = sum(getattr(p, "risk_amount", Decimal("0")) for p in context.open_positions)
-        heat = (total_risk / context.account_equity) * 100
+        heat = sum(
+            (getattr(p, "position_risk_pct", Decimal("0")) for p in context.open_positions),
+            Decimal("0"),
+        )
 
         logger.debug(
             "portfolio_heat_calculated",
-            total_risk=str(total_risk),
             equity=str(context.account_equity),
             heat_pct=str(heat),
         )
