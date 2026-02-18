@@ -43,9 +43,9 @@ _ALPACA_STATUS_MAP: dict[str, OrderStatus] = {
     "canceled": OrderStatus.CANCELLED,
     "expired": OrderStatus.EXPIRED,
     "rejected": OrderStatus.REJECTED,
-    "pending_cancel": OrderStatus.SUBMITTED,
-    "pending_replace": OrderStatus.SUBMITTED,
-    "stopped": OrderStatus.FILLED,
+    "pending_cancel": OrderStatus.PENDING,
+    "pending_replace": OrderStatus.PENDING,
+    "stopped": OrderStatus.PARTIAL_FILL,  # Exchange stopped; treat as partial, log warning
     "suspended": OrderStatus.PENDING,
     "calculated": OrderStatus.PENDING,
 }
@@ -472,7 +472,7 @@ class AlpacaAdapter(TradingPlatformAdapter):
                             "qty": str(abs(Decimal(qty))),
                             "side": close_side,
                             "type": "market",
-                            "time_in_force": "day",
+                            "time_in_force": "gtc",
                         },
                     )
                     close_response.raise_for_status()
@@ -765,5 +765,5 @@ class AlpacaAdapter(TradingPlatformAdapter):
             filled_quantity=filled_qty,
             remaining_quantity=remaining_qty,
             average_fill_price=avg_price,
-            commission=None,  # Alpaca reports commission separately via account activity
+            commission=Decimal("0"),  # Alpaca charges $0 commission for US equities
         )

@@ -929,8 +929,8 @@ class TestCommissionTracking:
         report = await connected_adapter.place_order(order)
 
         assert report.status == OrderStatus.FILLED
-        # Commission is None or Decimal("0") for commission-free stocks
-        assert report.commission is None or report.commission == Decimal("0")
+        # Commission is Decimal("0") for commission-free US equities
+        assert report.commission == Decimal("0")
 
 
 # =============================
@@ -1603,3 +1603,382 @@ class TestStatusMapping:
             connected_adapter, mock_client, "some_unknown_status"
         )
         assert report.status == OrderStatus.PENDING
+
+    async def test_stopped_maps_to_partial_fill(self, connected_adapter, mock_client):
+        """'stopped' means exchange specialist stopped the order; treat as partial fill."""
+        report = await self._place_with_status(connected_adapter, mock_client, "stopped")
+        assert report.status == OrderStatus.PARTIAL_FILL
+
+    async def test_pending_cancel_maps_to_pending(self, connected_adapter, mock_client):
+        """'pending_cancel' means order is about to be cancelled; maps to PENDING."""
+        report = await self._place_with_status(connected_adapter, mock_client, "pending_cancel")
+        assert report.status == OrderStatus.PENDING
+
+    async def test_pending_replace_maps_to_pending(self, connected_adapter, mock_client):
+        """'pending_replace' means order is being replaced; maps to PENDING."""
+        report = await self._place_with_status(connected_adapter, mock_client, "pending_replace")
+        assert report.status == OrderStatus.PENDING
+
+
+# =============================
+# Test: Additional Branch Coverage
+# =============================
+
+
+class TestAdditionalBranchCoverage:
+    """Tests for uncovered branches in place_order, place_oco_order, and get_open_orders."""
+
+    async def test_oco_place_generic_exception(self, connected_adapter, mock_client):
+        """Non-HTTP exception during place_oco_order POST returns REJECTED report."""
+        mock_client.post = AsyncMock(side_effect=RuntimeError("Unexpected error"))
+
+        primary = _make_market_buy_order()
+        sl_order = Order(
+            platform="Alpaca",
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            order_type=OrderType.STOP,
+            quantity=Decimal("100"),
+            stop_price=Decimal("145.00"),
+        )
+        oco = OCOOrder(primary_order=primary, stop_loss_order=sl_order)
+
+        reports = await connected_adapter.place_oco_order(oco)
+
+        assert len(reports) == 1
+        assert reports[0].status == OrderStatus.REJECTED
+        assert "Unexpected error" in (reports[0].error_message or "")
+
+    async def test_oco_primary_sl_from_primary_order(self, connected_adapter, mock_client):
+        """OCO where SL price comes from primary.stop_loss field (no stop_loss_order)."""
+        primary_resp = _make_mock_response(
+            200,
+            _make_alpaca_order_response(
+                status="filled",
+                filled_qty="100",
+                filled_avg_price="150.50",
+            ),
+        )
+        mock_client.post = AsyncMock(return_value=primary_resp)
+
+        # Primary order carries stop_loss and take_profit directly
+        primary = Order(
+            platform="Alpaca",
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=Decimal("100"),
+            stop_loss=Decimal("145.00"),
+        )
+        oco = OCOOrder(primary_order=primary)
+
+        reports = await connected_adapter.place_oco_order(oco)
+
+        # Should succeed and the payload should have stop_loss from primary.stop_loss
+        assert len(reports) >= 1
+        assert reports[0].status == OrderStatus.FILLED
+        json_body = mock_client.post.call_args[1].get(
+            "json"
+        ) or mock_client.post.call_args.kwargs.get("json")
+        assert json_body.get("stop_loss", {}).get("stop_price") == "145.00"
+
+    async def test_oco_primary_tp_from_primary_order(self, connected_adapter, mock_client):
+        """OCO where TP price comes from primary.take_profit field (no take_profit_order)."""
+        primary_resp = _make_mock_response(
+            200,
+            _make_alpaca_order_response(
+                status="filled",
+                filled_qty="100",
+                filled_avg_price="150.50",
+            ),
+        )
+        mock_client.post = AsyncMock(return_value=primary_resp)
+
+        primary = Order(
+            platform="Alpaca",
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=Decimal("100"),
+            take_profit=Decimal("160.00"),
+        )
+        oco = OCOOrder(primary_order=primary)
+
+        reports = await connected_adapter.place_oco_order(oco)
+
+        assert len(reports) >= 1
+        assert reports[0].status == OrderStatus.FILLED
+        json_body = mock_client.post.call_args[1].get(
+            "json"
+        ) or mock_client.post.call_args.kwargs.get("json")
+        assert json_body.get("take_profit", {}).get("limit_price") == "160.00"
+
+    async def test_oco_leg_unknown_type(self, connected_adapter, mock_client):
+        """OCO response with a leg of unknown type generates a report with a fresh uuid."""
+        response_data = _make_alpaca_order_response(
+            order_id="entry-order",
+            status="filled",
+            filled_qty="100",
+            filled_avg_price="150.50",
+        )
+        response_data["legs"] = [
+            {
+                "id": "unknown-leg-id",
+                "status": "new",
+                "type": "trailing_stop",  # Unknown leg type
+                "filled_qty": "0",
+                "qty": "100",
+                "filled_avg_price": None,
+            }
+        ]
+        primary_resp = _make_mock_response(200, response_data)
+        mock_client.post = AsyncMock(return_value=primary_resp)
+
+        primary = _make_market_buy_order()
+        sl_order = Order(
+            platform="Alpaca",
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            order_type=OrderType.STOP,
+            quantity=Decimal("100"),
+            stop_price=Decimal("145.00"),
+        )
+        oco = OCOOrder(primary_order=primary, stop_loss_order=sl_order)
+
+        reports = await connected_adapter.place_oco_order(oco)
+
+        # Primary + unknown leg = 2 reports
+        assert len(reports) == 2
+        assert reports[0].status == OrderStatus.FILLED
+        # Unknown leg gets a fresh UUID (not sl_order.id)
+        assert reports[1].order_id != sl_order.id
+
+    async def test_place_order_connection_error_reraise(self, connected_adapter, mock_client):
+        """ConnectionError raised inside place_order try block is re-raised."""
+        mock_client.post = AsyncMock(side_effect=ConnectionError("Lost connection"))
+
+        order = _make_market_buy_order()
+        with pytest.raises(ConnectionError, match="Lost connection"):
+            await connected_adapter.place_order(order)
+
+    async def test_cancel_server_error_reraise(self, connected_adapter, mock_client):
+        """Non-404/422 HTTP error from cancel_order raises (not returns REJECTED)."""
+        response = _make_mock_response(500, text="Internal Server Error")
+        mock_client.delete = AsyncMock(return_value=response)
+
+        with pytest.raises(Exception):
+            await connected_adapter.cancel_order("order-123")
+
+    async def test_get_open_orders_connection_error(self, connected_adapter, mock_client):
+        """ConnectionError from get_open_orders is re-raised."""
+        mock_client.get = AsyncMock(side_effect=ConnectionError("No connection"))
+
+        with pytest.raises(ConnectionError):
+            await connected_adapter.get_open_orders()
+
+    async def test_get_open_orders_generic_exception(self, connected_adapter, mock_client):
+        """Generic exception from get_open_orders is re-raised."""
+        mock_client.get = AsyncMock(side_effect=RuntimeError("Something broke"))
+
+        with pytest.raises(RuntimeError):
+            await connected_adapter.get_open_orders()
+
+
+# =============================
+# Test: Close All Positions
+# =============================
+
+
+class TestCloseAllPositions:
+    """Tests for the kill-switch close_all_positions method."""
+
+    async def test_close_all_positions_success(self, connected_adapter, mock_client):
+        """Normal close of two positions returns two SUBMITTED/FILLED reports."""
+        # cancel all orders: DELETE /v2/orders returns 207
+        cancel_resp = _make_mock_response(207)
+
+        # GET /v2/positions returns two positions
+        positions_resp = _make_mock_response(
+            200,
+            [
+                {"symbol": "AAPL", "qty": "100", "side": "long"},
+                {"symbol": "TSLA", "qty": "50", "side": "long"},
+            ],
+        )
+
+        # POST /v2/orders for each close (sell market order)
+        close_resp_aapl = _make_mock_response(
+            200,
+            _make_alpaca_order_response(
+                order_id="close-aapl",
+                symbol="AAPL",
+                status="new",
+                qty="100",
+                filled_qty="0",
+                side="sell",
+            ),
+        )
+        close_resp_tsla = _make_mock_response(
+            200,
+            _make_alpaca_order_response(
+                order_id="close-tsla",
+                symbol="TSLA",
+                status="new",
+                qty="50",
+                filled_qty="0",
+                side="sell",
+            ),
+        )
+
+        mock_client.delete = AsyncMock(return_value=cancel_resp)
+        mock_client.get = AsyncMock(return_value=positions_resp)
+        mock_client.post = AsyncMock(side_effect=[close_resp_aapl, close_resp_tsla])
+
+        reports = await connected_adapter.close_all_positions()
+
+        assert len(reports) == 2
+        assert reports[0].platform_order_id == "close-aapl"
+        assert reports[1].platform_order_id == "close-tsla"
+        assert all(r.platform == "Alpaca" for r in reports)
+
+    async def test_close_all_positions_no_positions(self, connected_adapter, mock_client):
+        """When no positions exist, returns empty list."""
+        cancel_resp = _make_mock_response(207)
+        positions_resp = _make_mock_response(200, [])
+
+        mock_client.delete = AsyncMock(return_value=cancel_resp)
+        mock_client.get = AsyncMock(return_value=positions_resp)
+
+        reports = await connected_adapter.close_all_positions()
+
+        assert reports == []
+        # No POST calls should have been made
+        mock_client.post.assert_not_awaited()
+
+    async def test_close_all_positions_close_fails(self, connected_adapter, mock_client):
+        """When closing a specific position fails with HTTP error, a REJECTED report is returned."""
+        cancel_resp = _make_mock_response(207)
+        positions_resp = _make_mock_response(
+            200,
+            [{"symbol": "AAPL", "qty": "100", "side": "long"}],
+        )
+        error_resp = _make_mock_response(422, {"message": "insufficient funds"})
+
+        mock_client.delete = AsyncMock(return_value=cancel_resp)
+        mock_client.get = AsyncMock(return_value=positions_resp)
+        mock_client.post = AsyncMock(return_value=error_resp)
+
+        reports = await connected_adapter.close_all_positions()
+
+        assert len(reports) == 1
+        assert reports[0].status == OrderStatus.REJECTED
+        assert reports[0].error_message is not None
+        assert "422" in (reports[0].error_message or "")
+
+    async def test_close_all_positions_cancel_orders_fails(self, connected_adapter, mock_client):
+        """When cancel all orders step fails, we still try to close positions."""
+        # cancel raises an exception
+        mock_client.delete = AsyncMock(side_effect=Exception("cancel failed"))
+
+        positions_resp = _make_mock_response(
+            200,
+            [{"symbol": "AAPL", "qty": "100", "side": "long"}],
+        )
+        close_resp = _make_mock_response(
+            200,
+            _make_alpaca_order_response(
+                order_id="close-aapl",
+                symbol="AAPL",
+                status="new",
+                qty="100",
+                filled_qty="0",
+                side="sell",
+            ),
+        )
+        mock_client.get = AsyncMock(return_value=positions_resp)
+        mock_client.post = AsyncMock(return_value=close_resp)
+
+        # Should not raise; the cancel failure is swallowed and we proceed
+        reports = await connected_adapter.close_all_positions()
+
+        assert len(reports) == 1
+        assert reports[0].platform_order_id == "close-aapl"
+
+    async def test_close_all_positions_uses_gtc(self, connected_adapter, mock_client):
+        """close_all_positions uses 'gtc' time_in_force, not 'day'."""
+        cancel_resp = _make_mock_response(207)
+        positions_resp = _make_mock_response(
+            200,
+            [{"symbol": "AAPL", "qty": "100", "side": "long"}],
+        )
+        close_resp = _make_mock_response(
+            200,
+            _make_alpaca_order_response(
+                order_id="close-aapl",
+                symbol="AAPL",
+                status="new",
+                qty="100",
+                filled_qty="0",
+                side="sell",
+            ),
+        )
+        mock_client.delete = AsyncMock(return_value=cancel_resp)
+        mock_client.get = AsyncMock(return_value=positions_resp)
+        mock_client.post = AsyncMock(return_value=close_resp)
+
+        await connected_adapter.close_all_positions()
+
+        json_body = mock_client.post.call_args[1].get(
+            "json"
+        ) or mock_client.post.call_args.kwargs.get("json")
+        assert json_body["time_in_force"] == "gtc"
+
+    async def test_close_all_positions_short_uses_buy(self, connected_adapter, mock_client):
+        """Short positions are closed with a 'buy' side order."""
+        cancel_resp = _make_mock_response(207)
+        positions_resp = _make_mock_response(
+            200,
+            [{"symbol": "TSLA", "qty": "-50", "side": "short"}],
+        )
+        close_resp = _make_mock_response(
+            200,
+            _make_alpaca_order_response(
+                order_id="close-tsla",
+                symbol="TSLA",
+                status="new",
+                qty="50",
+                filled_qty="0",
+                side="buy",
+            ),
+        )
+        mock_client.delete = AsyncMock(return_value=cancel_resp)
+        mock_client.get = AsyncMock(return_value=positions_resp)
+        mock_client.post = AsyncMock(return_value=close_resp)
+
+        reports = await connected_adapter.close_all_positions()
+
+        assert len(reports) == 1
+        json_body = mock_client.post.call_args[1].get(
+            "json"
+        ) or mock_client.post.call_args.kwargs.get("json")
+        assert json_body["side"] == "buy"
+
+    async def test_close_all_positions_generic_exception_per_position(
+        self, connected_adapter, mock_client
+    ):
+        """Generic exception when closing a position results in REJECTED report."""
+        cancel_resp = _make_mock_response(207)
+        positions_resp = _make_mock_response(
+            200,
+            [{"symbol": "AAPL", "qty": "100", "side": "long"}],
+        )
+
+        mock_client.delete = AsyncMock(return_value=cancel_resp)
+        mock_client.get = AsyncMock(return_value=positions_resp)
+        mock_client.post = AsyncMock(side_effect=RuntimeError("network dropped"))
+
+        reports = await connected_adapter.close_all_positions()
+
+        assert len(reports) == 1
+        assert reports[0].status == OrderStatus.REJECTED
+        assert "network dropped" in (reports[0].error_message or "")

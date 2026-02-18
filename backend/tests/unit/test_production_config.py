@@ -67,6 +67,7 @@ class TestProductionConfigValidation:
             jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
             database_url="postgresql+psycopg://user:strongpass@localhost:5432/db",
             cors_origins=["https://example.com"],
+            polygon_api_key="test-polygon-key",
         )
         assert s.environment == "production"
         assert s.debug is False
@@ -95,6 +96,7 @@ class TestProductionConfigValidation:
                 jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
                 database_url="postgresql+psycopg://user:changeme@localhost:5432/db",
                 cors_origins=["https://example.com"],
+                polygon_api_key="test-polygon-key",
             )
 
     def test_wildcard_cors_rejected_in_production(self):
@@ -110,6 +112,7 @@ class TestProductionConfigValidation:
                 jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
                 database_url="postgresql+psycopg://user:strongpass@localhost:5432/db",
                 cors_origins=["*"],
+                polygon_api_key="test-polygon-key",
             )
 
     def test_explicit_cors_origins_accepted_in_production(self):
@@ -122,6 +125,7 @@ class TestProductionConfigValidation:
             jwt_secret_key="a-secure-production-key-that-is-long-enough-to-pass-validation",
             database_url="postgresql+psycopg://user:strongpass@localhost:5432/db",
             cors_origins=["https://example.com"],
+            polygon_api_key="test-polygon-key",
         )
         assert s.cors_origins == ["https://example.com"]
 
@@ -173,6 +177,7 @@ class TestProductionConfigValidation:
                 cors_origins=["https://example.com"],
                 auto_execute_orders=True,
                 paper_trading_validated=True,
+                polygon_api_key="test-polygon-key",
                 # No MT5 or Alpaca credentials provided
             )
 
@@ -191,6 +196,7 @@ class TestProductionConfigValidation:
             mt5_account=12345,
             mt5_password="secure-password",
             mt5_server="MetaQuotes-Demo",
+            polygon_api_key="test-polygon-key",
         )
         assert s.auto_execute_orders is True
         assert s.mt5_account == 12345
@@ -209,6 +215,7 @@ class TestProductionConfigValidation:
             paper_trading_validated=True,
             alpaca_trading_api_key="test-api-key",
             alpaca_trading_secret_key="test-secret-key",
+            polygon_api_key="test-polygon-key",
         )
         assert s.auto_execute_orders is True
         assert s.alpaca_trading_api_key == "test-api-key"
