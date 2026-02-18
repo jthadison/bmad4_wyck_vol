@@ -150,8 +150,20 @@ class _TradeSignalGenerator:
             )
             return None
 
-        # Normalise phase to single char; infer from pattern_type if absent
-        phase: str = str(getattr(pattern, "phase", "") or "")
+        # NOTE: UTAD price field mapping not yet implemented. UTADDetector output
+        # has breakout_price/failure_price/ice_level fields that don't match the
+        # duck-typed extraction chain. UTAD signals return None until this is wired.
+        # TODO(Story 23.x): implement UTAD → TradeSignal conversion.
+
+        # Normalise phase; handle WyckoffPhase enum (.value) and plain strings
+        raw_phase = getattr(pattern, "phase", None)
+        if raw_phase is None:
+            phase = ""
+        elif hasattr(raw_phase, "value"):
+            phase = str(raw_phase.value)  # WyckoffPhase.E → "E"
+        else:
+            phase = str(raw_phase)
+
         if not phase:
             phase = {"SPRING": "C", "SOS": "D", "UTAD": "D", "LPS": "E"}.get(pattern_type, "C")
         if len(phase) > 1:
@@ -240,6 +252,11 @@ class _TradeSignalGenerator:
                 confidence_score=confidence_score,
                 confidence_components=components,
                 validation_chain=chain,
+                campaign_id=(
+                    str(getattr(pattern, "campaign_id", None))
+                    if getattr(pattern, "campaign_id", None) is not None
+                    else None
+                ),
                 status="PENDING",
                 timestamp=now,
                 created_at=now,

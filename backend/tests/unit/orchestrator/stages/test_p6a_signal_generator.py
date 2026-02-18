@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 
+from src.models.phase_classification import WyckoffPhase
 from src.models.signal import TradeSignal
 from src.models.validation import ValidationChain
 from src.orchestrator.orchestrator_facade import _TradeSignalGenerator
@@ -519,3 +520,69 @@ class TestTradeSignalGeneratorPhaseInference:
 
         assert signal is not None
         assert signal.phase == "D"
+
+    @pytest.mark.asyncio
+    async def test_wyckoff_phase_enum_extracted_correctly(self):
+        """WyckoffPhase.E enum → phase string 'E', not 'WyckoffPhase.E'."""
+        gen = _TradeSignalGenerator()
+        pattern = SimpleNamespace(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            entry_price=Decimal("100"),
+            stop_loss=Decimal("95"),
+            target_price=Decimal("120"),
+            confidence=85,
+            pattern_type="LPS",
+            phase=WyckoffPhase.E,
+            recommended_position_size=Decimal("100"),
+        )
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+        assert signal.phase == "E"
+
+    @pytest.mark.asyncio
+    async def test_wyckoff_phase_enum_c(self):
+        """WyckoffPhase.C enum → phase string 'C'."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern()
+        # Override phase with the actual enum
+        pattern.phase = WyckoffPhase.C
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+        assert signal.phase == "C"
+
+
+class TestTradeSignalGeneratorCampaignId:
+    """Test campaign_id threading from pattern to signal."""
+
+    @pytest.mark.asyncio
+    async def test_campaign_id_threaded_from_pattern(self):
+        """Pattern with campaign_id → signal carries it."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern()
+        pattern.campaign_id = "AAPL-2024-03-13-C"
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+        assert signal.campaign_id == "AAPL-2024-03-13-C"
+
+    @pytest.mark.asyncio
+    async def test_campaign_id_none_when_absent(self):
+        """Pattern without campaign_id → signal.campaign_id is None."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern()
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+        assert signal.campaign_id is None
