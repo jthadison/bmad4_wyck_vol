@@ -586,3 +586,39 @@ class TestTradeSignalGeneratorCampaignId:
 
         assert signal is not None
         assert signal.campaign_id is None
+
+    async def test_non_tradeable_pattern_rejected(self):
+        """Pattern with is_tradeable=False is rejected before price extraction."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern()
+        pattern.is_tradeable = False
+        pattern.rejection_reason = "session filter: outside London session"
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is None
+
+    async def test_tradeable_true_pattern_accepted(self):
+        """Pattern with is_tradeable=True proceeds normally."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern()
+        pattern.is_tradeable = True
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+
+    async def test_pattern_without_is_tradeable_accepted(self):
+        """Pattern with no is_tradeable attribute defaults to tradeable (True)."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern()
+        # Ensure is_tradeable is absent (SimpleNamespace doesn't have it by default)
+        if hasattr(pattern, "is_tradeable"):
+            del pattern.is_tradeable
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None

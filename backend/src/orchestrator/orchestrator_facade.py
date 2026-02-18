@@ -69,6 +69,16 @@ class _TradeSignalGenerator:
         context: PipelineContext,
     ) -> TradeSignalModel | None:
         """Generate a TradeSignal from a validated pattern object."""
+        # Reject patterns that have been flagged as non-tradeable (e.g. session-filtered Springs)
+        if getattr(pattern, "is_tradeable", True) is False:
+            logger.warning(
+                "signal_generator_pattern_not_tradeable",
+                pattern_type=type(pattern).__name__,
+                symbol=getattr(pattern, "symbol", context.symbol),
+                rejection_reason=getattr(pattern, "rejection_reason", None),
+            )
+            return None
+
         # 1. Extract price fields via duck typing
         entry_price = getattr(pattern, "entry_price", None)
         stop_loss = getattr(pattern, "stop_loss", None)
