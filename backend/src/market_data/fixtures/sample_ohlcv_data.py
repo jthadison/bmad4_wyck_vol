@@ -17,10 +17,22 @@ Volume profile follows Wyckoff rules:
 All prices are representative of SPY (S&P 500 ETF) in a realistic range.
 """
 
+from typing import TypedDict
+
+
+class BarDict(TypedDict):
+    timestamp: str
+    open: str
+    high: str
+    low: str
+    close: str
+    volume: int
+
+
 # 50 daily bars for SPY, representing a Wyckoff accumulation pattern.
 # Each bar: (timestamp_iso, open, high, low, close, volume)
 # Timestamps are ISO 8601 UTC strings starting 2025-06-02 (Mon).
-SAMPLE_BARS: list[dict] = [
+SAMPLE_BARS: list[BarDict] = [
     # ========================================================================
     # Phase A: Selling Climax & Automatic Rally (bars 0-7)
     # ========================================================================

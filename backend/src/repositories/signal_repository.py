@@ -25,7 +25,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.signal import TradeSignal
@@ -171,6 +171,7 @@ class SignalRepository:
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         status: str | None = None,
+        limit: int = 500,
     ) -> list[TradeSignal]:
         """
         Query signals by symbol with optional filters.
@@ -180,6 +181,7 @@ class SignalRepository:
             start_date: Filter by timestamp >= start_date
             end_date: Filter by timestamp <= end_date
             status: Filter by signal status
+            limit: Maximum number of signals to return (default 500)
 
         Returns:
             List of matching TradeSignals
@@ -198,6 +200,7 @@ class SignalRepository:
                 select(TradeSignalModel)
                 .where(and_(*conditions))
                 .order_by(TradeSignalModel.generated_at.desc())
+                .limit(limit)
             )
             result = await self.db_session.execute(stmt)
             models = result.scalars().all()
@@ -211,7 +214,7 @@ class SignalRepository:
             signals = [s for s in signals if s.timestamp <= end_date]
         if status:
             signals = [s for s in signals if s.status == status]
-        return signals
+        return signals[:limit]
 
     async def update_signal_status(
         self,
@@ -294,6 +297,80 @@ class SignalRepository:
             signals = [s for s in signals if s.timestamp >= since]
         return signals[:limit]
 
+    async def count_signals(
+        self,
+        status: str | None = None,
+        since: datetime | None = None,
+    ) -> int:
+        """
+        Count signals matching filters via SELECT COUNT(*).
+
+        Args:
+            status: Filter by signal status
+            since: Filter by generated_at >= since
+
+        Returns:
+            Total count of matching signals
+        """
+        if self.db_session is not None:
+            conditions = []
+            if status:
+                conditions.append(TradeSignalModel.status == status)
+            if since:
+                conditions.append(TradeSignalModel.generated_at >= since)
+
+            stmt = select(func.count()).select_from(TradeSignalModel)
+            if conditions:
+                stmt = stmt.where(and_(*conditions))
+
+            result = await self.db_session.execute(stmt)
+            return result.scalar_one()
+
+        # In-memory fallback
+        signals = list(self._signals.values())
+        if status:
+            signals = [s for s in signals if s.status == status]
+        if since:
+            signals = [s for s in signals if s.timestamp >= since]
+        return len(signals)
+
+    async def count_signals_by_symbol(
+        self,
+        symbol: str,
+        status: str | None = None,
+        since: datetime | None = None,
+    ) -> int:
+        """
+        Count signals for a specific symbol via SELECT COUNT(*).
+
+        Args:
+            symbol: Trading symbol
+            status: Filter by signal status
+            since: Filter by generated_at >= since
+
+        Returns:
+            Total count of matching signals
+        """
+        if self.db_session is not None:
+            conditions = [TradeSignalModel.symbol == symbol]
+            if status:
+                conditions.append(TradeSignalModel.status == status)
+            if since:
+                conditions.append(TradeSignalModel.generated_at >= since)
+
+            stmt = select(func.count()).select_from(TradeSignalModel).where(and_(*conditions))
+
+            result = await self.db_session.execute(stmt)
+            return result.scalar_one()
+
+        # In-memory fallback
+        signals = [s for s in self._signals.values() if s.symbol == symbol]
+        if status:
+            signals = [s for s in signals if s.status == status]
+        if since:
+            signals = [s for s in signals if s.timestamp >= since]
+        return len(signals)
+
     @staticmethod
     def _model_to_signal(model: TradeSignalModel) -> TradeSignal:
         """
@@ -366,6 +443,9 @@ class SignalRepository:
             pattern_type = model.pattern_type
         else:
             signal_type = model.signal_type or "LONG"
+            # Pre-migration fallback: LONG signals without stored pattern_type default
+            # to SPRING. LPS/SOS signals created before this migration will be
+            # misclassified. Acceptable for v0.1.0.
             pattern_type = "UTAD" if signal_type == "SHORT" else "SPRING"
 
         # Use stored phase; fall back to "C"

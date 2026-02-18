@@ -28,6 +28,7 @@ async def main() -> None:
 
     async with async_session_maker() as session:
         try:
+            # OHLCVRepository.insert_bars() commits internally — do not call session.commit() here.
             inserted = await seed_ohlcv(session)
         except Exception:
             await session.rollback()
