@@ -953,7 +953,12 @@ class TestGetOrderStatus:
     """Tests for order status queries."""
 
     async def test_get_order_status(self, adapter, mt5_mock):
-        """orders_get only returns pending orders, so status is always PENDING."""
+        """orders_get only returns pending orders, so status is always PENDING.
+
+        MT5 volume semantics: volume_current = remaining unfilled lots,
+        volume_initial = original order size.
+        filled = volume_initial - volume_current.
+        """
         mt5_mock.orders_get.return_value = [
             _make_order_info(ticket=12345, volume_current=0.3, volume_initial=1.0)
         ]
@@ -962,8 +967,8 @@ class TestGetOrderStatus:
 
         assert report.platform_order_id == "12345"
         assert report.status == OrderStatus.PENDING
-        assert report.filled_quantity == Decimal("0.3")
-        assert report.remaining_quantity == Decimal("0.7")
+        assert report.filled_quantity == Decimal("0.7")   # volume_initial - volume_current
+        assert report.remaining_quantity == Decimal("0.3")  # volume_current
 
     async def test_get_order_not_found(self, adapter, mt5_mock):
         mt5_mock.orders_get.return_value = None
@@ -997,6 +1002,17 @@ class TestGetOpenOrders:
         assert len(reports) == 2
         assert reports[0].platform_order_id == "111"
         assert reports[1].platform_order_id == "222"
+
+    async def test_get_open_orders_volume_semantics(self, adapter, mt5_mock):
+        """volume_current is remaining unfilled lots; filled = initial - current."""
+        mt5_mock.orders_get.return_value = [
+            _make_order_info(ticket=111, volume_current=0.4, volume_initial=1.0)
+        ]
+
+        reports = await adapter.get_open_orders()
+
+        assert reports[0].filled_quantity == Decimal("0.6")   # volume_initial - volume_current
+        assert reports[0].remaining_quantity == Decimal("0.4")  # volume_current
 
     async def test_get_open_orders_filtered(self, adapter, mt5_mock):
         mt5_mock.orders_get.return_value = [_make_order_info(ticket=111)]

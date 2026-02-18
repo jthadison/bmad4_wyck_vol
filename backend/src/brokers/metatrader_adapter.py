@@ -877,8 +877,9 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             # orders_get only returns pending orders; filled/cancelled orders
             # are not returned (see docstring above)
             status=OrderStatus.PENDING,
-            filled_quantity=Decimal(str(order_info.volume_current)),
-            remaining_quantity=Decimal(str(order_info.volume_initial - order_info.volume_current)),
+            # volume_current is the REMAINING unfilled volume; filled = initial - current
+            filled_quantity=Decimal(str(order_info.volume_initial - order_info.volume_current)),
+            remaining_quantity=Decimal(str(order_info.volume_current)),
             average_fill_price=Decimal(str(order_info.price_current)),
         )
 
@@ -911,8 +912,9 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 platform_order_id=str(order.ticket),
                 platform="MetaTrader5",
                 status=OrderStatus.PENDING,
-                filled_quantity=Decimal(str(order.volume_current)),
-                remaining_quantity=Decimal(str(order.volume_initial - order.volume_current)),
+                # volume_current is the REMAINING unfilled volume; filled = initial - current
+                filled_quantity=Decimal(str(order.volume_initial - order.volume_current)),
+                remaining_quantity=Decimal(str(order.volume_current)),
                 average_fill_price=Decimal(str(order.price_current)),
             )
             execution_reports.append(report)
