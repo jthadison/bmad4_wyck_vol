@@ -5,6 +5,7 @@ Provides portfolio context building and monitoring for risk validation.
 
 Story 18.10.5: Services Extraction and Orchestrator Facade (AC2)
 Story 23.13: Daily P&L tracking integration
+P2a: Wire portfolio monitor to real PostgreSQL position queries.
 """
 
 from __future__ import annotations
@@ -13,9 +14,12 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.models.portfolio import PortfolioContext
 from src.models.risk import CorrelationConfig
+from src.repositories.models import CampaignModel, PositionModel
 
 if TYPE_CHECKING:
     from src.monitoring.daily_pnl_tracker import DailyPnLTracker
@@ -45,6 +49,36 @@ class AccountService(Protocol):
     async def get_equity(self) -> Decimal:
         """Get current account equity."""
         ...
+
+
+class SqlPositionRepository:
+    """Concrete PositionRepository backed by PostgreSQL via async_session_maker."""
+
+    def __init__(self, session_maker: async_sessionmaker[AsyncSession]) -> None:
+        self._session_maker = session_maker
+
+    async def get_open_positions(self) -> list[Any]:
+        """Query all open positions from the positions table."""
+        async with self._session_maker() as session:
+            result = await session.execute(
+                select(PositionModel).where(PositionModel.status == "OPEN")
+            )
+            return list(result.scalars().all())
+
+
+class SqlCampaignRepository:
+    """Concrete CampaignRepository backed by PostgreSQL via async_session_maker."""
+
+    def __init__(self, session_maker: async_sessionmaker[AsyncSession]) -> None:
+        self._session_maker = session_maker
+
+    async def get_active_campaigns(self) -> list[Any]:
+        """Query all active/markup campaigns from the campaigns table."""
+        async with self._session_maker() as session:
+            result = await session.execute(
+                select(CampaignModel).where(CampaignModel.status.in_(["ACTIVE", "MARKUP"]))
+            )
+            return list(result.scalars().all())
 
 
 class PortfolioMonitor:

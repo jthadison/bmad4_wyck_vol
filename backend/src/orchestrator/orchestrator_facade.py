@@ -101,8 +101,8 @@ class MasterOrchestratorFacade:
         # Pipeline coordinator
         self._coordinator = self._build_coordinator()
 
-        # Services
-        self._portfolio_monitor = PortfolioMonitor()
+        # Services — wire PortfolioMonitor to real DB repos when available (P2a)
+        self._portfolio_monitor = self._build_portfolio_monitor()
 
         # Concurrency control
         self._semaphore = asyncio.Semaphore(self._config.max_concurrent_symbols)
@@ -114,6 +114,25 @@ class MasterOrchestratorFacade:
         self._error_count = 0
 
         logger.info("orchestrator_facade_initialized")
+
+    @staticmethod
+    def _build_portfolio_monitor() -> PortfolioMonitor:
+        """Build PortfolioMonitor wired to real DB repos when available (P2a)."""
+        from src.database import async_session_maker
+        from src.orchestrator.services.portfolio_monitor import (
+            SqlCampaignRepository,
+            SqlPositionRepository,
+        )
+
+        if async_session_maker is not None:
+            position_repo = SqlPositionRepository(async_session_maker)
+            campaign_repo = SqlCampaignRepository(async_session_maker)
+            return PortfolioMonitor(
+                position_repo=position_repo,
+                campaign_repo=campaign_repo,
+            )
+        # Fallback: no DB available (tests, dev without DB)
+        return PortfolioMonitor()
 
     def _build_coordinator(self) -> PipelineCoordinator:
         """Build pipeline coordinator with stages."""
