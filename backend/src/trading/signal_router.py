@@ -7,13 +7,16 @@ Subscribes to SignalGeneratedEvent from orchestrator and executes signals approp
 Author: Story 12.8
 """
 
+from __future__ import annotations
+
 from decimal import Decimal
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.brokers.paper_broker_adapter import PaperBrokerAdapter
+from src.models.order import OrderType
 from src.models.paper_trading import PaperTradingConfig
 from src.models.signal import TradeSignal
 from src.repositories.paper_account_repository import PaperAccountRepository
@@ -27,6 +30,9 @@ from src.trading.exceptions import (
 )
 from src.trading.paper_trading_service import PaperTradingService
 
+if TYPE_CHECKING:
+    from src.brokers.broker_router import BrokerRouter
+
 logger = structlog.get_logger(__name__)
 
 
@@ -38,17 +44,19 @@ class SignalRouter:
     execution path (paper broker or live broker).
     """
 
-    def __init__(self, db_session_factory):
+    def __init__(self, db_session_factory, broker_router: BrokerRouter | None = None):
         """
         Initialize signal router.
 
         Args:
             db_session_factory: Factory function to create database sessions
+            broker_router: Optional BrokerRouter for live order execution
         """
         self.db_session_factory = db_session_factory
-        logger.info("signal_router_initialized")
+        self.broker_router = broker_router
+        logger.info("signal_router_initialized", has_broker_router=broker_router is not None)
 
-    async def route_signal(self, signal: TradeSignal, market_price: Decimal) -> Optional[str]:
+    async def route_signal(self, signal: TradeSignal, market_price: Decimal) -> str | None:
         """
         Route a trade signal to paper trading or live trading.
 
@@ -87,10 +95,8 @@ class SignalRouter:
                     symbol=signal.symbol,
                     pattern_type=signal.pattern_type,
                 )
-                # TODO: Route to live broker when live trading is implemented
-                # await self._execute_live_signal(session, signal, market_price)
-                logger.warning("live_trading_not_implemented_signal_skipped")
-                return None
+                executed = await self._execute_live_signal(session, signal, market_price)
+                return "live" if executed else "skipped"
 
     async def _is_paper_trading_enabled(self, session: AsyncSession) -> bool:
         """
@@ -200,17 +206,87 @@ class SignalRouter:
             await session.rollback()
             raise
 
+    async def _execute_live_signal(
+        self, session: AsyncSession, signal: TradeSignal, market_price: Decimal
+    ) -> bool:
+        """
+        Execute signal through live broker via BrokerRouter.
+
+        Args:
+            session: Database session
+            signal: TradeSignal to execute
+            market_price: Current market price
+
+        Returns:
+            True if signal was executed, False if skipped or failed
+        """
+        from src.brokers.order_builder import OrderBuilder
+        from src.config import settings
+        from src.risk_management.execution_risk_gate import PortfolioState
+
+        if not self.broker_router:
+            logger.warning("live_trading_broker_router_not_configured")
+            return False
+
+        # Build order from signal
+        order_builder = OrderBuilder(default_platform="LiveBroker")
+        order = order_builder.build_entry_order(signal, order_type=OrderType.MARKET)
+
+        # Calculate trade risk from stop loss distance
+        account_equity = settings.account_equity
+        if signal.stop_loss and signal.entry_price and account_equity > 0:
+            risk_per_unit = abs(signal.entry_price - signal.stop_loss)
+            trade_risk_pct = (signal.position_size * risk_per_unit / account_equity) * Decimal(
+                "100"
+            )
+        else:
+            trade_risk_pct = Decimal("100")  # Fail-closed
+            logger.warning("live_signal_risk_unknown_fail_closed", signal_id=str(signal.id))
+
+        portfolio_state = PortfolioState(account_equity=account_equity)
+
+        # Route order through broker
+        try:
+            report = await self.broker_router.route_order(
+                order,
+                portfolio_state=portfolio_state,
+                trade_risk_pct=trade_risk_pct,
+            )
+
+            logger.info(
+                "live_signal_executed",
+                signal_id=str(signal.id),
+                order_id=str(order.id),
+                status=report.status,
+                platform=report.platform,
+                error=report.error_message,
+            )
+        except Exception as e:
+            logger.error(
+                "live_signal_execution_failed",
+                signal_id=str(signal.id),
+                symbol=signal.symbol,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return False
+
+        return True
+
 
 # Global signal router instance
-_signal_router: Optional[SignalRouter] = None
+_signal_router: SignalRouter | None = None
 
 
-def get_signal_router(db_session_factory) -> SignalRouter:
+def get_signal_router(
+    db_session_factory, broker_router: BrokerRouter | None = None
+) -> SignalRouter:
     """
     Get or create global signal router instance.
 
     Args:
         db_session_factory: Factory function to create database sessions
+        broker_router: Optional BrokerRouter for live order execution
 
     Returns:
         SignalRouter instance
@@ -218,7 +294,10 @@ def get_signal_router(db_session_factory) -> SignalRouter:
     global _signal_router
 
     if _signal_router is None:
-        _signal_router = SignalRouter(db_session_factory)
+        _signal_router = SignalRouter(db_session_factory, broker_router=broker_router)
+    elif broker_router is not None:
+        _signal_router.broker_router = broker_router
+        logger.info("signal_router_broker_router_updated")
 
     return _signal_router
 

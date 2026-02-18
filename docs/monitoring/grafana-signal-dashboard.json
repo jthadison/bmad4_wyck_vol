@@ -337,6 +337,110 @@
           "noDataState": "ok",
           "notifications": []
         }
+      },
+      {
+        "id": 11,
+        "title": "Entry Type Distribution (Story 13.10)",
+        "type": "piechart",
+        "gridPos": {"x": 0, "y": 36, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "sum(entries_by_type_total) by (entry_type)",
+            "legendFormat": "{{entry_type}}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "legend": {"displayMode": "list", "placement": "bottom"},
+          "pieType": "pie",
+          "displayLabels": ["name", "percent"]
+        }
+      },
+      {
+        "id": 12,
+        "title": "Entry Type Win Rate (Story 13.10)",
+        "type": "gauge",
+        "gridPos": {"x": 8, "y": 36, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "entry_type_win_rate",
+            "legendFormat": "{{entry_type}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.5, "color": "yellow"},
+                {"value": 0.6, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 13,
+        "title": "BMAD Workflow Stage Completions (Story 13.10)",
+        "type": "graph",
+        "gridPos": {"x": 16, "y": 36, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(bmad_stage_completions_total[5m])",
+            "legendFormat": "{{stage}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Completions/min", "format": "short"},
+          {"format": "short", "show": false}
+        ],
+        "xaxis": {"mode": "time", "show": true},
+        "legend": {"show": true, "values": true, "current": true},
+        "stack": true
+      },
+      {
+        "id": 14,
+        "title": "Entry Type Evaluation Latency (Story 13.10)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 44, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(entry_type_evaluation_latency_seconds_bucket[5m]))",
+            "legendFormat": "{{entry_type}} p95",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Latency (s)", "format": "s"},
+          {"format": "short", "show": false}
+        ],
+        "xaxis": {"mode": "time", "show": true},
+        "legend": {"show": true, "values": true, "current": true}
+      },
+      {
+        "id": 15,
+        "title": "Entry Priority Decisions (Story 13.10)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 44, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(entry_priority_decisions_total[5m])",
+            "legendFormat": "Chose {{chosen_type}} over {{competing_types}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Decisions/min", "format": "short"},
+          {"format": "short", "show": false}
+        ],
+        "xaxis": {"mode": "time", "show": true},
+        "legend": {"show": true, "values": false, "current": false}
       }
     ],
     "time": {

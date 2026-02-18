@@ -24,6 +24,15 @@ from src.models.ohlcv import OHLCVBar
 
 logger = structlog.get_logger(__name__)
 
+# Symbol mapping for Yahoo Finance special cases
+# Yahoo Finance uses different ticker formats for some instruments
+SYMBOL_MAP = {
+    # Metals (Yahoo uses futures contracts)
+    "XAUUSD": "GC=F",  # Gold futures
+    "XAGUSD": "SI=F",  # Silver futures
+    # Can add other special mappings as needed
+}
+
 
 class YahooAdapter(MarketDataProvider):
     """
@@ -221,7 +230,14 @@ class YahooAdapter(MarketDataProvider):
         Yahoo requires: =X suffix for forex, ^ prefix for indices,
         dash-separated for crypto (e.g. BTC-USD).
         Stocks use the bare symbol.
+
+        Special mappings (e.g., XAUUSD -> GC=F) take precedence over standard formatting.
         """
+        # Check explicit symbol map first (handles special cases like metals)
+        if symbol in SYMBOL_MAP:
+            logger.debug("using_symbol_map", original=symbol, mapped=SYMBOL_MAP[symbol])
+            return SYMBOL_MAP[symbol]
+
         if asset_class is None or asset_class == "stock":
             return symbol
         if asset_class == "forex":

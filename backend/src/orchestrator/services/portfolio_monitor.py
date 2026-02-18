@@ -4,15 +4,21 @@ Portfolio Monitor Service.
 Provides portfolio context building and monitoring for risk validation.
 
 Story 18.10.5: Services Extraction and Orchestrator Facade (AC2)
+Story 23.13: Daily P&L tracking integration
 """
 
+from __future__ import annotations
+
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
 
 from src.models.portfolio import PortfolioContext
 from src.models.risk import CorrelationConfig
+
+if TYPE_CHECKING:
+    from src.monitoring.daily_pnl_tracker import DailyPnLTracker
 
 logger = structlog.get_logger(__name__)
 
@@ -69,6 +75,7 @@ class PortfolioMonitor:
         max_sector_correlation: Decimal = DEFAULT_MAX_SECTOR_CORRELATION,
         max_asset_class_correlation: Decimal = DEFAULT_MAX_ASSET_CLASS_CORRELATION,
         enforcement_mode: str = DEFAULT_ENFORCEMENT_MODE,
+        pnl_tracker: DailyPnLTracker | None = None,
     ) -> None:
         """
         Initialize portfolio monitor with optional dependencies.
@@ -81,6 +88,7 @@ class PortfolioMonitor:
             max_sector_correlation: Max allowed sector correlation (default 6.0%)
             max_asset_class_correlation: Max allowed asset class correlation (default 15.0%)
             enforcement_mode: Correlation enforcement mode (default "strict")
+            pnl_tracker: Optional daily P&L tracker (Story 23.13)
         """
         self._position_repo = position_repo
         self._campaign_repo = campaign_repo
@@ -89,6 +97,7 @@ class PortfolioMonitor:
         self._max_sector_correlation = max_sector_correlation
         self._max_asset_class_correlation = max_asset_class_correlation
         self._enforcement_mode = enforcement_mode
+        self._pnl_tracker = pnl_tracker
 
     async def build_context(self) -> PortfolioContext:
         """
@@ -181,3 +190,25 @@ class PortfolioMonitor:
         )
 
         return heat
+
+    async def record_pnl_update(self, symbol: str, pnl_change: Decimal) -> bool:
+        """
+        Record a position P&L change and check daily threshold.
+
+        Delegates to the DailyPnLTracker if configured. Returns whether
+        the daily P&L threshold has been breached.
+
+        Args:
+            symbol: Trading symbol.
+            pnl_change: Dollar P&L change (negative for loss).
+
+        Returns:
+            True if daily P&L threshold was breached, False otherwise.
+            Always returns False if no P&L tracker is configured.
+        """
+        if not self._pnl_tracker:
+            return False
+
+        await self._pnl_tracker.update_pnl(symbol, pnl_change)
+        equity = await self._get_equity()
+        return await self._pnl_tracker.check_and_notify(equity)

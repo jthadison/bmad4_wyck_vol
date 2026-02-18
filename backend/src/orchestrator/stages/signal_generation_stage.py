@@ -125,6 +125,16 @@ class SignalGenerationStage(PipelineStage[ValidationResults, list[Any]]):
         Raises:
             TypeError: If validation_results is not ValidationResults
         """
+        # Read validation results from context if available (set by ValidationStage).
+        # The coordinator passes initial_input (bars) to all stages; cross-stage
+        # data flows through PipelineContext.
+        context_results: Any = context.get("validation_results")
+        if isinstance(context_results, ValidationResults):
+            validation_results = context_results
+        elif isinstance(validation_results, list):
+            # Received bars instead of ValidationResults (coordinator broadcasting)
+            validation_results = ValidationResults()
+
         # Validate input type
         if not isinstance(validation_results, ValidationResults):
             raise TypeError(f"Expected ValidationResults, got {type(validation_results).__name__}")

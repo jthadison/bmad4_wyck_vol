@@ -1,3 +1,16 @@
+# Deploy to Production
+#
+# Required secrets:
+#   DOCKER_USERNAME    - Docker Hub username for image push
+#   DOCKER_PASSWORD    - Docker Hub password/token for image push
+#   TEST_DB_PASSWORD   - PostgreSQL test database password (pre-deployment checks)
+#   DEPLOY_HOST        - Production server hostname/IP
+#   DEPLOY_USER        - SSH username for deployment
+#   DEPLOY_SSH_KEY     - SSH private key for deployment
+#
+# Optional secrets:
+#   SLACK_WEBHOOK_URL  - Slack webhook for deployment notifications
+
 name: Deploy to Production
 
 on:
@@ -175,14 +188,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
 
-      # Non-critical: External service (Docker Hub) may fail transiently - allow retry
-      # If login fails, build steps will still complete, images can be pushed on retry
       - name: Log in to Docker Hub
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-        continue-on-error: true
 
       - name: Extract version tag
         id: version
@@ -194,80 +204,132 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build backend Docker image
+      - name: Build and push backend Docker image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5
         with:
           context: ./backend
-          push: false
+          push: true
           tags: |
-            bmad-wyckoff-backend:${{ steps.version.outputs.version }}
-            bmad-wyckoff-backend:latest
+            ${{ secrets.DOCKER_USERNAME }}/bmad-wyckoff-backend:${{ steps.version.outputs.version }}
+            ${{ secrets.DOCKER_USERNAME }}/bmad-wyckoff-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build frontend Docker image
+      - name: Build and push frontend Docker image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5
         with:
           context: ./frontend
-          push: false
+          push: true
           tags: |
-            bmad-wyckoff-frontend:${{ steps.version.outputs.version }}
-            bmad-wyckoff-frontend:latest
+            ${{ secrets.DOCKER_USERNAME }}/bmad-wyckoff-frontend:${{ steps.version.outputs.version }}
+            ${{ secrets.DOCKER_USERNAME }}/bmad-wyckoff-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Tag images for registry
+      - name: Image push summary
         run: |
-          echo "Images built successfully with tag: ${{ steps.version.outputs.version }}"
-          echo "Backend: bmad-wyckoff-backend:${{ steps.version.outputs.version }}"
-          echo "Frontend: bmad-wyckoff-frontend:${{ steps.version.outputs.version }}"
+          echo "Images pushed successfully with tag: ${{ steps.version.outputs.version }}"
+          echo "Backend: ${{ secrets.DOCKER_USERNAME }}/bmad-wyckoff-backend:${{ steps.version.outputs.version }}"
+          echo "Frontend: ${{ secrets.DOCKER_USERNAME }}/bmad-wyckoff-frontend:${{ steps.version.outputs.version }}"
 
-  # Deploy to production (placeholder for Phase 2)
-  deploy-to-production:
-    name: Deploy to Production
+  # Create pre-deployment snapshot tag before deploying
+  create-pre-deploy-tag:
+    name: Create Pre-Deploy Tag
     runs-on: ubuntu-latest
     needs: build-and-push
-    environment:
-      name: ${{ github.event.inputs.environment || 'production' }}
-    steps:
-      - name: Deployment placeholder
-        run: |
-          echo "=== Deployment to ${{ github.event.inputs.environment || 'production' }} ==="
-          echo "This is a placeholder for actual deployment steps"
-          echo "Phase 2 scope: Deploy to VPS via Docker Compose"
-          echo ""
-          echo "Deployment steps would include:"
-          echo "1. SSH to production server"
-          echo "2. Pull Docker images"
-          echo "3. Run database migrations"
-          echo "4. Update docker-compose.yml"
-          echo "5. Restart services with zero downtime"
-          echo "6. Run health checks"
-          echo "7. Verify deployment success"
-
-      - name: Deployment summary
-        run: |
-          echo "Deployment completed successfully"
-          echo "Version: ${{ github.ref_name }}"
-          echo "Environment: ${{ github.event.inputs.environment || 'production' }}"
-          echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-  # Create rollback tag
-  create-rollback-tag:
-    name: Create Rollback Tag
-    runs-on: ubuntu-latest
-    needs: deploy-to-production
     if: success()
     steps:
       - name: Checkout code
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
 
-      # Non-critical: Rollback tag creation is informational/operational - doesn't affect deployment success
-      - name: Create rollback tag
+      # Non-critical: Pre-deploy tag creation is informational/operational - doesn't affect deployment success
+      - name: Create pre-deploy tag
         run: |
-          ROLLBACK_TAG="rollback-$(date +%Y%m%d-%H%M%S)"
-          echo "Creating rollback tag: $ROLLBACK_TAG"
-          git tag -a "$ROLLBACK_TAG" -m "Rollback point before deployment of ${{ github.ref_name }}"
-          echo "Rollback tag created: $ROLLBACK_TAG"
-          echo "To rollback, trigger deployment with tag: $ROLLBACK_TAG"
+          PRE_DEPLOY_TAG="pre-deploy-$(date +%Y%m%d-%H%M%S)"
+          echo "Creating pre-deploy tag: $PRE_DEPLOY_TAG"
+          git tag -a "$PRE_DEPLOY_TAG" -m "Pre-deployment snapshot"
+          git push origin "$PRE_DEPLOY_TAG"
+          echo "Pre-deploy tag created and pushed: $PRE_DEPLOY_TAG"
+          echo "To rollback, trigger deployment with tag: $PRE_DEPLOY_TAG"
         continue-on-error: true
+
+  deploy-to-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-and-push, create-pre-deploy-tag]
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.2.2
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@25ce8cbbcb08177468c7ff7ec5cbfa236f9341e1  # v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /opt/bmad-wyckoff
+
+            # Pull latest images
+            docker compose -f docker-compose.prod.yml pull
+
+            # Run database migrations
+            docker compose -f docker-compose.prod.yml run --rm backend \
+              poetry run alembic upgrade head
+
+            # Restart services with zero-downtime
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Wait for services to be healthy with retry polling
+            echo "Waiting for services to be healthy..."
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "Backend healthy after $((i * 2)) seconds"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "ERROR: Backend health check failed after 60 seconds"
+                docker compose -f docker-compose.prod.yml logs backend --tail 50
+                exit 1
+              fi
+              sleep 2
+            done
+
+            # Verify frontend is also healthy
+            curl -f http://localhost/health || {
+              echo "ERROR: Frontend health check failed"
+              exit 1
+            }
+
+            echo "Deployment successful!"
+
+      - name: Verify deployment health
+        uses: appleboy/ssh-action@25ce8cbbcb08177468c7ff7ec5cbfa236f9341e1  # v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            # Check all containers are running
+            docker compose -f /opt/bmad-wyckoff/docker-compose.prod.yml ps --format json
+
+            # Check detailed health
+            curl -s http://localhost:8000/api/v1/health | python3 -m json.tool
+
+      - name: Deployment notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          echo "Deployment to ${{ github.event.inputs.environment || 'production' }}: ${STATUS}"
+          echo "Version: ${{ github.ref_name }}"
+          echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Send Slack notification if webhook is configured
+          if [ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            curl -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"Deployment ${STATUS}: ${{ github.ref_name }} to ${{ github.event.inputs.environment || 'production' }}\"}" \
+              ${{ secrets.SLACK_WEBHOOK_URL }} || true
+          fi
+

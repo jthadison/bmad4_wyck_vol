@@ -22,6 +22,24 @@ from src.models.ohlcv import OHLCVBar
 
 logger = structlog.get_logger(__name__)
 
+# Maps user-facing symbols to Polygon.io API tickers.
+# Symbols not in this map are passed through to _format_symbol unchanged.
+SYMBOL_MAP: dict[str, str] = {
+    # Indices (Polygon uses I: prefix)
+    "US30": "I:DJI",
+    "NAS100": "I:NDX",
+    "SPX500": "I:SPX",
+    # Forex / Commodities (Polygon uses C: prefix)
+    "XAUUSD": "C:XAUUSD",
+    "EURUSD": "C:EURUSD",
+    "GBPUSD": "C:GBPUSD",
+    "USDJPY": "C:USDJPY",
+    "AUDUSD": "C:AUDUSD",
+    "USDCAD": "C:USDCAD",
+    "USDCHF": "C:USDCHF",
+    "NZDUSD": "C:NZDUSD",
+}
+
 
 class PolygonAdapter(MarketDataProvider):
     """
@@ -257,9 +275,14 @@ class PolygonAdapter(MarketDataProvider):
     def _format_symbol(self, symbol: str, asset_class: str | None) -> str:
         """Format symbol for Polygon.io API based on asset class.
 
-        Polygon requires prefixes: C: for forex, I: for indices, X: for crypto.
+        First checks SYMBOL_MAP for known user-facing aliases (e.g. US30 -> I:DJI).
+        Then applies Polygon prefixes: C: for forex, I: for indices, X: for crypto.
         Stocks use the bare symbol.
         """
+        # Check explicit symbol map first (handles US30, NAS100, XAUUSD, etc.)
+        mapped = SYMBOL_MAP.get(symbol)
+        if mapped is not None:
+            return mapped
         if asset_class is None or asset_class == "stock":
             return symbol
         # Guard: if symbol already carries a known Polygon prefix, return as-is

@@ -124,6 +124,19 @@ const PREDEFINED_SYMBOLS: PredefinedSymbol[] = [
     type: 'forex',
     group: 'Forex - Crosses',
   },
+  // Metals (traded as forex pairs on most platforms)
+  {
+    symbol: 'XAUUSD',
+    name: 'Gold / US Dollar',
+    type: 'forex',
+    group: 'Forex - Metals',
+  },
+  {
+    symbol: 'XAGUSD',
+    name: 'Silver / US Dollar',
+    type: 'forex',
+    group: 'Forex - Metals',
+  },
   // Major Indices
   { symbol: 'SPX', name: 'S&P 500', type: 'index', group: 'Indices - US' },
   { symbol: 'NDX', name: 'Nasdaq 100', type: 'index', group: 'Indices - US' },

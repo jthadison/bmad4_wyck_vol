@@ -83,7 +83,15 @@ class WalkForwardEngine:
             market_data: Pre-fetched OHLCV bars covering the full date range.
                 When provided, bars are sliced per window and run through
                 UnifiedBacktestEngine with Wyckoff detection.
-                When None, the engine falls back to mock/placeholder results.
+                When None, the engine falls back to mock/placeholder results
+                and emits a WARNING. Placeholder results are flagged with
+                is_placeholder=True so callers can distinguish them from
+                real backtest output.
+
+        Bug C-2 note (verified 2026-02):
+            All API callers (walk_forward.py, walk_forward_suite.py) now fetch
+            real market_data and pass it here. The placeholder fallback only
+            triggers in unit tests or when data fetching fails.
         """
         self.backtest_engine = backtest_engine
         self.strategy_func = strategy_func
@@ -181,7 +189,9 @@ class WalkForwardEngine:
                 )
 
                 # Determine if this window used placeholder results
-                window_is_placeholder = train_result.is_placeholder or validate_result.is_placeholder
+                window_is_placeholder = (
+                    train_result.is_placeholder or validate_result.is_placeholder
+                )
 
                 # Create validation window
                 window = ValidationWindow(
@@ -381,11 +391,16 @@ class WalkForwardEngine:
         if self.market_data is not None:
             return self._run_real_backtest(symbol, start_date, end_date, base_config)
 
-        # Fallback: return placeholder result when no market data provided
+        # Fallback: return placeholder result when no market data provided.
+        # Bug C-2: This produces UNRELIABLE hardcoded metrics. All production
+        # callers MUST provide market_data. The placeholder exists only for
+        # backward compatibility in tests.
         self.logger.warning(
-            "using_placeholder_result",
+            "using_placeholder_result_UNRELIABLE",
             symbol=symbol,
-            reason="no market_data provided",
+            start_date=str(start_date),
+            end_date=str(end_date),
+            reason="no market_data provided -- results are fabricated, not from real backtesting",
         )
         return self._create_placeholder_result(symbol, start_date, end_date, base_config)
 
@@ -429,7 +444,10 @@ class WalkForwardEngine:
         validated_detector = ValidatedSignalDetector(detector)
         cost_model = ZeroCostModel()
         position_manager = PositionManager(base_config.initial_capital)
-        engine_config = EngineConfig(initial_capital=base_config.initial_capital)
+        engine_config = EngineConfig(
+            initial_capital=base_config.initial_capital,
+            timeframe=base_config.timeframe,  # Story 13.5 C-2 Fix: Pass timeframe for Sharpe calculation
+        )
         risk_manager = BacktestRiskManager(initial_capital=base_config.initial_capital)
 
         engine = UnifiedBacktestEngine(
@@ -467,8 +485,14 @@ class WalkForwardEngine:
     ) -> BacktestResult:
         """Create a placeholder BacktestResult for backward compatibility.
 
-        Used when no market_data is provided (e.g., in tests that mock
-        _run_backtest_for_window or when running without real data).
+        WARNING: These results contain HARDCODED FABRICATED metrics and are
+        NOT from real backtesting. They are identical for every window, which
+        makes walk-forward analysis meaningless. Results are flagged with
+        is_placeholder=True so callers can detect and handle them.
+
+        Bug C-2: All production callers (API endpoints, suite runner) MUST
+        provide market_data to get real results. This fallback exists only
+        for unit tests that mock _run_backtest_for_window.
 
         Args:
             symbol: Trading symbol
@@ -477,7 +501,7 @@ class WalkForwardEngine:
             base_config: Base backtest configuration
 
         Returns:
-            BacktestResult with placeholder metrics
+            BacktestResult with placeholder metrics (is_placeholder=True)
         """
         placeholder_metrics = BacktestMetrics(
             total_signals=10,
@@ -637,9 +661,7 @@ class WalkForwardEngine:
 
         return Decimal(str(cv)).quantize(Decimal("0.0001"))
 
-    def _calculate_statistical_significance(
-        self, windows: list[ValidationWindow]
-    ) -> dict:
+    def _calculate_statistical_significance(self, windows: list[ValidationWindow]) -> dict:
         """Calculate statistical significance of train vs validate differences.
 
         AC6: Statistical significance testing (paired t-test)

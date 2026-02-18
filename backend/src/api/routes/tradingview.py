@@ -12,6 +12,7 @@ import asyncio
 import json
 import time
 from collections import deque
+from decimal import Decimal
 from typing import Any, Optional
 
 import structlog
@@ -23,6 +24,7 @@ from src.brokers.order_builder import OrderBuilder
 from src.brokers.tradingview_adapter import TradingViewAdapter
 from src.config import settings
 from src.models.order import OrderStatus
+from src.risk_management.execution_risk_gate import PortfolioState
 
 logger = structlog.get_logger(__name__)
 
@@ -31,9 +33,7 @@ router = APIRouter(prefix="/api/v1/tradingview", tags=["TradingView"])
 
 # Initialize TradingView adapter
 # Webhook secret should be configured in settings
-tradingview_adapter = TradingViewAdapter(
-    webhook_secret=getattr(settings, "TRADINGVIEW_WEBHOOK_SECRET", None)
-)
+tradingview_adapter = TradingViewAdapter(webhook_secret=settings.tradingview_webhook_secret or None)
 
 order_builder = OrderBuilder(default_platform="TradingView")
 
@@ -229,7 +229,44 @@ async def receive_webhook(
         execution_failed = False
         if settings.auto_execute_orders:
             try:
-                execution_report = await broker_router.route_order(order)
+                # Build portfolio state and compute trade risk for risk gate (Story 23.11).
+                # Trade risk is calculated from stop_loss distance and order quantity
+                # relative to a configured account equity. If risk cannot be determined,
+                # use a fail-closed default that will block the order.
+                account_equity = settings.account_equity
+                if order.stop_loss and order.limit_price and account_equity > 0:
+                    risk_per_unit = abs(order.limit_price - order.stop_loss)
+                    trade_risk_pct = (order.quantity * risk_per_unit / account_equity) * Decimal(
+                        "100"
+                    )
+                elif order.stop_loss and order.stop_price and account_equity > 0:
+                    risk_per_unit = abs(order.stop_price - order.stop_loss)
+                    trade_risk_pct = (order.quantity * risk_per_unit / account_equity) * Decimal(
+                        "100"
+                    )
+                else:
+                    # Fail-closed: cannot compute trade risk, use maximum to trigger block
+                    trade_risk_pct = Decimal("100")
+                    logger.warning(
+                        "tradingview_risk_unknown_fail_closed",
+                        order_id=str(order.id),
+                        reason="Cannot compute trade risk without stop_loss and entry price",
+                    )
+
+                portfolio_state = PortfolioState(
+                    account_equity=account_equity,
+                    # NOTE: Current portfolio heat is not tracked in the webhook path.
+                    # This defaults to 0, meaning only trade_risk_pct is enforced here.
+                    # Full portfolio heat tracking requires a portfolio state service
+                    # (future enhancement).
+                    current_heat_pct=Decimal("0"),
+                )
+
+                execution_report = await broker_router.route_order(
+                    order,
+                    portfolio_state=portfolio_state,
+                    trade_risk_pct=trade_risk_pct,
+                )
                 order_record["status"] = execution_report.status
                 order_record["platform_order_id"] = execution_report.platform_order_id
                 order_record["platform"] = execution_report.platform

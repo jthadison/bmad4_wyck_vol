@@ -55,6 +55,7 @@ from src.services.session_filter import (
 if TYPE_CHECKING:
     from src.api.websocket import ConnectionManager
     from src.orchestrator.master_orchestrator import MasterOrchestrator, TradeSignal
+    from src.orchestrator.orchestrator_facade import MasterOrchestratorFacade
     from src.repositories.scanner_repository import ScannerRepository
     from src.services.circuit_breaker_service import CircuitBreakerService
 
@@ -90,6 +91,7 @@ class ScanCycleResult:
     symbols_skipped_session: int = 0  # Story 20.4: forex session filtering
     symbols_skipped_rate_limit: int = 0  # Story 20.4: rate limiting
     kill_switch_triggered: bool = False  # Story 20.4: kill switch was activated
+    correlation_ids: list[str] = field(default_factory=list)  # Task #25: Signal correlation IDs
 
 
 class ScannerState(str, Enum):
@@ -202,12 +204,12 @@ class SignalScannerService:
         self._signals_broadcast: int = 0
         self._broadcast_errors: int = 0
 
-    def set_orchestrator(self, orchestrator: MasterOrchestrator) -> None:
+    def set_orchestrator(self, orchestrator: MasterOrchestrator | MasterOrchestratorFacade) -> None:
         """
         Set the orchestrator for symbol analysis.
 
         Args:
-            orchestrator: MasterOrchestrator instance
+            orchestrator: Orchestrator instance (MasterOrchestrator or MasterOrchestratorFacade)
         """
         self._orchestrator = orchestrator
         logger.info("scanner_orchestrator_set")
@@ -781,6 +783,9 @@ class SignalScannerService:
                 status=status.value,
             )
 
+            # Extract correlation IDs from signals for audit trail (Task #25)
+            correlation_ids = [str(signal.correlation_id) for signal in all_signals]
+
             # Record cycle in history
             result = ScanCycleResult(
                 cycle_started_at=cycle_started_at,
@@ -793,6 +798,7 @@ class SignalScannerService:
                 symbols_no_data=symbols_no_data,
                 symbols_skipped_session=symbols_skipped_session,
                 symbols_skipped_rate_limit=symbols_skipped_rate_limit,
+                correlation_ids=correlation_ids,
             )
 
             await self._record_cycle_history(result)
@@ -923,6 +929,10 @@ class SignalScannerService:
         if symbols_total > 0 and errors_count == symbols_total:
             return ScanCycleStatus.FAILED
 
+        # Partial completion if some (but not all) symbols had errors
+        if errors_count > 0 and errors_count < symbols_total:
+            return ScanCycleStatus.PARTIAL
+
         # Story 20.4 PR review: account for skipped symbols
         total_skipped = symbols_skipped_session + symbols_skipped_rate_limit
         if symbols_total > 0 and total_skipped == symbols_total and symbols_processed == 0:
@@ -934,6 +944,10 @@ class SignalScannerService:
     async def _record_cycle_history(self, result: ScanCycleResult) -> None:
         """
         Record scan cycle in history table.
+
+        NOTE (L-3): History is ALWAYS recorded after every scan cycle, regardless
+        of outcome (COMPLETED, PARTIAL, FAILED, SKIPPED). This ensures we have a
+        complete audit trail of all scanner activity, including failures.
 
         Args:
             result: Completed scan cycle result

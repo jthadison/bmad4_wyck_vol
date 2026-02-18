@@ -161,6 +161,18 @@ class TradingPlatformAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    async def close_all_positions(self) -> list[ExecutionReport]:
+        """
+        Close all open positions on the trading platform.
+
+        Used by kill switch for emergency liquidation of all positions.
+
+        Returns:
+            List of ExecutionReports for each position closure attempt
+        """
+        pass
+
     def is_connected(self) -> bool:
         """
         Check if adapter is connected to the platform.

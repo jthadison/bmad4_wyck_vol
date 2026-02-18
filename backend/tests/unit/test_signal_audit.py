@@ -13,6 +13,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# All tests in this file require a PostgreSQL database (JSONB columns).
+pytestmark = pytest.mark.database
+
 from src.models.signal_audit import (
     SignalAuditLogEntry,
     SignalHistoryQuery,

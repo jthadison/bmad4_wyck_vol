@@ -955,3 +955,277 @@ async def test_service_failure_does_not_crash_pipeline():
 
     # Assert
     assert result == []  # Graceful degradation
+
+
+# ============================================================================
+# Test: _get_trading_ranges (Story 23.2 wiring)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_trading_ranges_returns_ranges():
+    """Test _get_trading_ranges() returns ranges from service."""
+    mock_service = Mock()
+    mock_ranges = [Mock(), Mock()]
+    mock_service.get_ranges = AsyncMock(return_value=mock_ranges)
+
+    orchestrator = MasterOrchestrator(trading_range_service=mock_service)
+
+    result = await orchestrator._get_trading_ranges("AAPL")
+
+    assert result == mock_ranges
+    mock_service.get_ranges.assert_called_once_with("AAPL")
+
+
+@pytest.mark.asyncio
+async def test_get_trading_ranges_returns_empty_when_not_configured():
+    """Test _get_trading_ranges() returns [] when service is None."""
+    orchestrator = MasterOrchestrator(trading_range_service=None)
+
+    result = await orchestrator._get_trading_ranges("AAPL")
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_trading_ranges_handles_service_error():
+    """Test _get_trading_ranges() returns [] when service raises exception."""
+    mock_service = Mock()
+    mock_service.get_ranges = AsyncMock(side_effect=Exception("Service error"))
+
+    orchestrator = MasterOrchestrator(trading_range_service=mock_service)
+
+    result = await orchestrator._get_trading_ranges("AAPL")
+
+    assert result == []
+
+
+# ============================================================================
+# Test: _run_pattern_detection (Story 23.2 wiring)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_run_pattern_detection_calls_all_detectors():
+    """Test _run_pattern_detection() runs all detectors and flattens results."""
+    detector1 = Mock()
+    detector1.detect = Mock(return_value=[{"id": "p1", "pattern_type": "SPRING"}])
+
+    detector2 = Mock()
+    detector2.detect = Mock(return_value=[{"id": "p2", "pattern_type": "SOS"}])
+
+    orchestrator = MasterOrchestrator(pattern_detectors=[detector1, detector2])
+
+    bars = [Mock()]
+    ranges = [Mock()]
+    result = await orchestrator._run_pattern_detection(bars, ranges, "test-corr")
+
+    assert len(result) == 2
+    assert result[0]["pattern_type"] == "SPRING"
+    assert result[1]["pattern_type"] == "SOS"
+    detector1.detect.assert_called_once_with(bars, ranges)
+    detector2.detect.assert_called_once_with(bars, ranges)
+
+
+@pytest.mark.asyncio
+async def test_run_pattern_detection_handles_detector_failure():
+    """Test _run_pattern_detection() continues when one detector fails."""
+    good_detector = Mock()
+    good_detector.detect = Mock(return_value=[{"id": "p1", "pattern_type": "SPRING"}])
+
+    bad_detector = Mock()
+    bad_detector.detect = Mock(side_effect=Exception("Detector crashed"))
+
+    orchestrator = MasterOrchestrator(pattern_detectors=[good_detector, bad_detector])
+
+    bars = [Mock()]
+    ranges = [Mock()]
+    result = await orchestrator._run_pattern_detection(bars, ranges, "test-corr")
+
+    # Good detector's patterns should still be returned
+    assert len(result) == 1
+    assert result[0]["pattern_type"] == "SPRING"
+
+
+@pytest.mark.asyncio
+async def test_run_pattern_detection_returns_empty_when_no_detectors():
+    """Test _run_pattern_detection() returns [] when no detectors configured."""
+    orchestrator = MasterOrchestrator(pattern_detectors=[])
+
+    result = await orchestrator._run_pattern_detection([], [], "test-corr")
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_run_pattern_detection_handles_none_result():
+    """Test _run_pattern_detection() handles detector returning None."""
+    detector = Mock()
+    detector.detect = Mock(return_value=None)
+
+    orchestrator = MasterOrchestrator(pattern_detectors=[detector])
+
+    result = await orchestrator._run_pattern_detection([Mock()], [], "test-corr")
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_run_pattern_detection_handles_single_pattern_result():
+    """Test _run_pattern_detection() handles detector returning single pattern (not list)."""
+    detector = Mock()
+    detector.detect = Mock(return_value={"id": "p1", "pattern_type": "SPRING"})
+
+    orchestrator = MasterOrchestrator(pattern_detectors=[detector])
+
+    result = await orchestrator._run_pattern_detection([Mock()], [], "test-corr")
+
+    assert len(result) == 1
+    assert result[0]["pattern_type"] == "SPRING"
+
+
+# ============================================================================
+# Test: _process_pattern (Story 23.2 wiring)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_process_pattern_full_pipeline(mock_validators, mock_repositories):
+    """Test _process_pattern() chains build_context -> validate -> generate."""
+    # Set up non-risk validators to pass with generic stage
+    for name, validator in mock_validators.items():
+        if name != "risk":
+            validator.validate = AsyncMock(
+                return_value=StageValidationResult(
+                    stage=name.upper(),
+                    status=ValidationStatus.PASS,
+                    validator_id=f"{name.upper()}_VALIDATOR",
+                )
+            )
+
+    # Risk validator must return stage="Risk" with position sizing metadata
+    mock_validators["risk"].validate = AsyncMock(
+        return_value=StageValidationResult(
+            stage="Risk",
+            status=ValidationStatus.PASS,
+            validator_id="RISK_VALIDATOR",
+            metadata={
+                "position_size": Decimal("100"),
+                "position_size_unit": "SHARES",
+                "notional_value": Decimal("15000"),
+                "risk_amount": Decimal("200"),
+                "r_multiple": Decimal("3.0"),
+            },
+        )
+    )
+
+    mock_repositories["signal"].save_signal = AsyncMock(side_effect=lambda s: s)
+    mock_repositories["rejection"].log_rejection = AsyncMock(side_effect=lambda r: r)
+
+    # Create volume service that returns mock analysis
+    mock_volume_service = Mock()
+    mock_volume_service.get_analysis = AsyncMock(return_value=Mock())
+
+    orchestrator = MasterOrchestrator(
+        volume_validator=mock_validators["volume"],
+        phase_validator=mock_validators["phase"],
+        level_validator=mock_validators["level"],
+        risk_validator=mock_validators["risk"],
+        strategy_validator=mock_validators["strategy"],
+        signal_repository=mock_repositories["signal"],
+        rejection_repository=mock_repositories["rejection"],
+        volume_service=mock_volume_service,
+    )
+
+    pattern = {
+        "id": uuid4(),
+        "pattern_type": "SPRING",
+        "symbol": "AAPL",
+        "timeframe": "1h",
+        "phase": "C",
+        "confidence_score": 85,
+        "entry_price": Decimal("150.00"),
+        "stop_loss": Decimal("148.00"),
+        "target_price": Decimal("156.00"),
+        "bar_timestamp": datetime(2024, 1, 1, 9, 0, tzinfo=UTC),
+    }
+
+    result = await orchestrator._process_pattern(pattern, "test-corr")
+
+    assert isinstance(result, TradeSignal)
+    assert result.symbol == "AAPL"
+    assert result.status == "APPROVED"
+
+
+@pytest.mark.asyncio
+async def test_process_pattern_returns_none_when_context_fails():
+    """Test _process_pattern() returns None when context cannot be built."""
+    orchestrator = MasterOrchestrator()
+
+    # Pattern without bar_timestamp will fail volume analysis fetch
+    pattern = {
+        "id": uuid4(),
+        "pattern_type": "SPRING",
+        "symbol": "AAPL",
+        "timeframe": "1h",
+    }
+
+    result = await orchestrator._process_pattern(pattern, "test-corr")
+
+    # Should return None since volume analysis is required but unavailable
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_process_pattern_returns_rejected_on_validation_fail(
+    mock_validators, mock_repositories
+):
+    """Test _process_pattern() returns RejectedSignal when validation fails."""
+    # Volume validator fails
+    mock_validators["volume"].validate = AsyncMock(
+        return_value=StageValidationResult(
+            stage="VOLUME",
+            status=ValidationStatus.FAIL,
+            reason="Spring volume too high",
+            validator_id="VOLUME_VALIDATOR",
+        )
+    )
+
+    # Other validators should not be called (early exit)
+    for name, validator in mock_validators.items():
+        if name != "volume":
+            validator.validate = AsyncMock(side_effect=AssertionError("Should not be called"))
+
+    mock_repositories["rejection"].log_rejection = AsyncMock(side_effect=lambda r: r)
+
+    # Create volume service
+    mock_volume_service = Mock()
+    mock_volume_service.get_analysis = AsyncMock(return_value=Mock())
+
+    orchestrator = MasterOrchestrator(
+        volume_validator=mock_validators["volume"],
+        phase_validator=mock_validators["phase"],
+        level_validator=mock_validators["level"],
+        risk_validator=mock_validators["risk"],
+        strategy_validator=mock_validators["strategy"],
+        rejection_repository=mock_repositories["rejection"],
+        volume_service=mock_volume_service,
+    )
+
+    pattern = {
+        "id": uuid4(),
+        "pattern_type": "SPRING",
+        "symbol": "AAPL",
+        "timeframe": "1h",
+        "phase": "C",
+        "confidence_score": 85,
+        "entry_price": Decimal("150.00"),
+        "stop_loss": Decimal("148.00"),
+        "target_price": Decimal("156.00"),
+        "bar_timestamp": datetime(2024, 1, 1, 9, 0, tzinfo=UTC),
+    }
+
+    result = await orchestrator._process_pattern(pattern, "test-corr")
+
+    assert isinstance(result, RejectedSignal)
+    assert result.rejection_stage == "VOLUME"

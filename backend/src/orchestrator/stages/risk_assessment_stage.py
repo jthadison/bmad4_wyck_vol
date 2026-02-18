@@ -128,6 +128,13 @@ class RiskAssessmentStage(PipelineStage[list[Any], list[Any]]):
         Raises:
             TypeError: If signals is not a list
         """
+        # Read signals from context if available (set by SignalGenerationStage).
+        # The coordinator passes initial_input (bars) to all stages; cross-stage
+        # data flows through PipelineContext.
+        context_signals: list[Any] | None = context.get("generated_signals")
+        if context_signals is not None:
+            signals = context_signals
+
         # Validate input type
         if not isinstance(signals, list):
             raise TypeError(f"Expected list of signals, got {type(signals).__name__}")

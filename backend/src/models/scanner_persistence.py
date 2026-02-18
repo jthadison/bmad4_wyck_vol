@@ -218,6 +218,11 @@ class ScannerHistory(BaseModel):
     symbols_skipped_rate_limit: Annotated[
         int, Field(ge=0, description="Symbols skipped due to rate limiting")
     ] = 0
+    # Task #25: Correlation ID tracking for signal traceability
+    correlation_ids: list[str] | None = Field(
+        default=None,
+        description="UUID strings of signals generated during this cycle",
+    )
 
 
 class ScannerHistoryCreate(BaseModel):
@@ -243,6 +248,11 @@ class ScannerHistoryCreate(BaseModel):
     symbols_skipped_rate_limit: Annotated[
         int, Field(ge=0, description="Symbols skipped due to rate limiting")
     ] = 0
+    # Task #25: Correlation ID tracking for signal traceability
+    correlation_ids: list[str] | None = Field(
+        default=None,
+        description="UUID strings of signals generated during this cycle",
+    )
 
 
 # =========================================

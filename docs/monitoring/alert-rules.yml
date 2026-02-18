@@ -156,3 +156,48 @@ groups:
             - Pattern detection logic generating false positives
             - Data quality issues
             Monitor signal quality and rejection rates.
+
+  # Story 13.10: Entry Type Monitoring
+  - name: entry_type_monitoring
+    interval: 60s
+    rules:
+      # Alert when Spring entry win rate drops below expected threshold
+      - alert: LowSpringEntryWinRate
+        expr: entry_type_win_rate{entry_type="spring"} < 0.55
+        for: 30m
+        labels:
+          severity: warning
+          component: entry_types
+        annotations:
+          summary: "Spring entry win rate below 55%"
+          description: |
+            Spring entry win rate is {{ $value | humanizePercentage }}.
+            Springs should have the highest win rate among entry types.
+            Review volume validation thresholds and phase detection accuracy.
+
+      # Alert when entry type evaluation is slow
+      - alert: HighEntryTypeEvaluationLatency
+        expr: histogram_quantile(0.95, rate(entry_type_evaluation_latency_seconds_bucket[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: entry_types
+        annotations:
+          summary: "Entry type evaluation p95 latency > 50ms"
+          description: |
+            Entry type evaluation is taking longer than expected. Current p95: {{ $value }}s
+            This may add overhead to the signal generation pipeline.
+
+      # Alert when no Spring entries are detected over a long period
+      - alert: NoSpringEntriesDetected
+        expr: increase(entries_by_type_total{entry_type="spring"}[24h]) == 0
+        for: 10m
+        labels:
+          severity: info
+          component: entry_types
+        annotations:
+          summary: "No Spring entries detected in 24 hours"
+          description: |
+            No Spring pattern entries have been detected in the past 24 hours.
+            This may be normal during non-volatile markets, but could indicate
+            issues with Spring detection logic or volume validation thresholds.

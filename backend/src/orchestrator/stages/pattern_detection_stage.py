@@ -175,6 +175,16 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
         Raises:
             RuntimeError: If required context keys not found
         """
+        # Read phase_info from context if available (set by PhaseDetectionStage).
+        # The coordinator passes initial_input (bars) to all stages; cross-stage
+        # data flows through PipelineContext.
+        context_phase_info: PhaseInfo | None = context.get("phase_info")
+        if context_phase_info is not None:
+            phase_info = context_phase_info
+        elif isinstance(phase_info, list):
+            # Received bars instead of PhaseInfo (coordinator broadcasting initial_input)
+            phase_info = None
+
         # Handle None phase_info (no active trading range)
         if phase_info is None:
             logger.debug(
@@ -419,7 +429,7 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                     ice_level = trading_range.ice_level
                     if ice_level is not None:
                         try:
-                            utad = utad_det.detect_utad(trading_range, bars, ice_level)
+                            utad = utad_det.detect_utad(trading_range, bars, ice_level, phase=phase)
                             if utad is not None:
                                 patterns.append(utad)
                         # Catch domain-level errors only; let programming errors

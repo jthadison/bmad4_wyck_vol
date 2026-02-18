@@ -151,7 +151,12 @@ class TestPipelineCoordinator:
 
     @pytest.mark.asyncio
     async def test_run_multiple_stages(self, context: PipelineContext):
-        """Test running multiple stages in sequence."""
+        """Test running multiple stages in sequence.
+
+        Each stage receives the original initial_input (not the previous
+        stage's output). Cross-stage data is passed via PipelineContext.
+        The coordinator result.output is the final stage's output.
+        """
         coordinator = PipelineCoordinator(
             [
                 MockStage("stage1", "_A"),
@@ -163,7 +168,8 @@ class TestPipelineCoordinator:
         result = await coordinator.run("test", context)
 
         assert result.success is True
-        assert result.output == "test_A_B_C"
+        # Each stage receives "test" (initial_input), so the last stage outputs "test_C"
+        assert result.output == "test_C"
         assert len(result.stage_results) == 3
 
     @pytest.mark.asyncio
@@ -232,9 +238,9 @@ class TestPipelineCoordinator:
 
         result = await coordinator.run_partial("test", context, start_stage="stage2")
 
-        # Should only run stage2 and stage3
+        # Should only run stage2 and stage3 (each receives "test"), last stage outputs "test_C"
         assert result.success is True
-        assert result.output == "test_B_C"
+        assert result.output == "test_C"
         assert "stage1" not in result.stage_results
 
     @pytest.mark.asyncio
@@ -250,9 +256,9 @@ class TestPipelineCoordinator:
 
         result = await coordinator.run_partial("test", context, end_stage="stage2")
 
-        # Should only run stage1 and stage2
+        # Should only run stage1 and stage2 (each receives "test"), last stage outputs "test_B"
         assert result.success is True
-        assert result.output == "test_A_B"
+        assert result.output == "test_B"
         assert "stage3" not in result.stage_results
 
     @pytest.mark.asyncio

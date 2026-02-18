@@ -314,6 +314,8 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 "magic": self.magic_number,  # EA magic number for order identification
                 "comment": f"BMAD_{order.id}",
                 "type_time": self._mt5.ORDER_TIME_GTC,
+                # TODO: ORDER_FILLING_IOC is broker-dependent; query
+                # symbol_info.filling_mode for production robustness.
                 "type_filling": self._mt5.ORDER_FILLING_IOC,
             }
 
@@ -460,7 +462,12 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                     message="SL/TP failed - attempting to close unprotected position",
                 )
                 # Attempt to close the unprotected position for safety
-                await self._emergency_close_position(primary.symbol)
+                emergency_closed = await self._emergency_close_position(primary.symbol)
+                emergency_suffix = (
+                    ""
+                    if emergency_closed
+                    else " - Emergency close also failed - MANUAL INTERVENTION REQUIRED"
+                )
                 # Create error reports for the failed SL/TP legs
                 if oco_order.stop_loss_order:
                     reports.append(
@@ -471,7 +478,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                             status=OrderStatus.REJECTED,
                             filled_quantity=Decimal("0"),
                             remaining_quantity=oco_order.stop_loss_order.quantity,
-                            error_message="Failed to set stop loss on position",
+                            error_message=f"Failed to set stop loss on position{emergency_suffix}",
                         )
                     )
                 if oco_order.take_profit_order:
@@ -483,7 +490,7 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                             status=OrderStatus.REJECTED,
                             filled_quantity=Decimal("0"),
                             remaining_quantity=oco_order.take_profit_order.quantity,
-                            error_message="Failed to set take profit on position",
+                            error_message=f"Failed to set take profit on position{emergency_suffix}",
                         )
                     )
             else:
@@ -645,6 +652,142 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             )
             return False
 
+    async def close_all_positions(self) -> list[ExecutionReport]:
+        """
+        Close all open positions on MetaTrader (kill switch).
+
+        Iterates all open positions and submits closing orders for each.
+        Intentionally does NOT filter by magic number -- this is a safety kill
+        switch that closes everything in the account.
+
+        Returns:
+            List of ExecutionReports for each position closure attempt
+        """
+        await self._ensure_connected()
+
+        reports: list[ExecutionReport] = []
+
+        # Cancel all pending orders first to prevent fills during liquidation
+        try:
+            pending_orders = await asyncio.to_thread(self._mt5.orders_get)
+            if pending_orders:
+                for order in pending_orders:
+                    try:
+                        cancel_request = {
+                            "action": self._mt5.TRADE_ACTION_REMOVE,
+                            "order": order.ticket,
+                        }
+                        await asyncio.to_thread(self._mt5.order_send, cancel_request)
+                    except Exception as e:
+                        logger.error(
+                            "metatrader_kill_switch_cancel_order_failed",
+                            ticket=order.ticket,
+                            error=str(e),
+                        )
+                logger.info(
+                    "metatrader_kill_switch_pending_orders_cancelled",
+                    count=len(pending_orders),
+                )
+        except Exception as e:
+            logger.error("metatrader_cancel_all_orders_failed", error=str(e))
+
+        try:
+            positions = await asyncio.to_thread(self._mt5.positions_get)
+            if not positions:
+                logger.info("metatrader_close_all_no_positions")
+                return reports
+
+            for position in positions:
+                symbol = position.symbol
+                ticket = position.ticket
+                volume = position.volume
+
+                # Determine close direction (opposite of position type)
+                close_type = (
+                    self._mt5.ORDER_TYPE_SELL
+                    if getattr(position, "type", 0) == 0  # 0 = BUY position
+                    else self._mt5.ORDER_TYPE_BUY
+                )
+
+                request = {
+                    "action": self._mt5.TRADE_ACTION_DEAL,
+                    "symbol": symbol,
+                    "volume": volume,
+                    "type": close_type,
+                    "position": ticket,
+                    "magic": self.magic_number,
+                    "comment": "BMAD_kill_switch_close_all",
+                    "type_filling": self._mt5.ORDER_FILLING_IOC,
+                }
+
+                try:
+                    result = await asyncio.to_thread(self._mt5.order_send, request)
+
+                    if result and result.retcode == self._mt5.TRADE_RETCODE_DONE:
+                        reports.append(
+                            ExecutionReport(
+                                order_id=uuid4(),
+                                platform_order_id=str(result.order),
+                                platform="MetaTrader5",
+                                status=OrderStatus.FILLED,
+                                filled_quantity=Decimal(str(volume)),
+                                remaining_quantity=Decimal("0"),
+                                average_fill_price=Decimal(str(result.price)),
+                            )
+                        )
+                        logger.info(
+                            "metatrader_kill_switch_position_closed",
+                            symbol=symbol,
+                            ticket=ticket,
+                        )
+                    else:
+                        comment = result.comment if result else "No result"
+                        reports.append(
+                            ExecutionReport(
+                                order_id=uuid4(),
+                                platform_order_id=str(result.order) if result else "",
+                                platform="MetaTrader5",
+                                status=OrderStatus.REJECTED,
+                                filled_quantity=Decimal("0"),
+                                remaining_quantity=Decimal(str(volume)),
+                                error_message=f"Close failed: {comment}",
+                            )
+                        )
+                        logger.error(
+                            "metatrader_kill_switch_close_failed",
+                            symbol=symbol,
+                            ticket=ticket,
+                            comment=comment,
+                        )
+                except Exception as e:
+                    reports.append(
+                        ExecutionReport(
+                            order_id=uuid4(),
+                            platform_order_id="",
+                            platform="MetaTrader5",
+                            status=OrderStatus.REJECTED,
+                            filled_quantity=Decimal("0"),
+                            remaining_quantity=Decimal(str(volume)),
+                            error_message=str(e),
+                        )
+                    )
+                    logger.error(
+                        "metatrader_kill_switch_close_error",
+                        symbol=symbol,
+                        ticket=ticket,
+                        error=str(e),
+                    )
+
+        except Exception as e:
+            logger.error("metatrader_close_all_positions_error", error=str(e))
+
+        logger.info(
+            "metatrader_close_all_positions_complete",
+            total=len(reports),
+            closed=sum(1 for r in reports if r.status == OrderStatus.FILLED),
+        )
+        return reports
+
     async def cancel_order(self, order_id: str) -> ExecutionReport:
         """
         Cancel a pending order on MetaTrader.
@@ -700,14 +843,20 @@ class MetaTraderAdapter(TradingPlatformAdapter):
         """
         Get current status of an order.
 
+        Note: MT5's orders_get only returns pending (working) orders. Filled
+        orders are removed from the active orders list and appear only in deal
+        history. Therefore any order returned here is genuinely PENDING. If the
+        order has been fully filled or cancelled, orders_get returns nothing and
+        we raise ValueError("not found").
+
         Args:
             order_id: Platform-specific order ID
 
         Returns:
-            ExecutionReport with current status
+            ExecutionReport with current status (always PENDING for found orders)
 
         Raises:
-            ValueError: If order not found
+            ValueError: If order not found (may have been filled or cancelled)
         """
         await self._ensure_connected()
 
@@ -725,9 +874,12 @@ class MetaTraderAdapter(TradingPlatformAdapter):
             order_id=uuid4(),
             platform_order_id=order_id,
             platform="MetaTrader5",
-            status=OrderStatus.PENDING,  # Simplification
-            filled_quantity=Decimal(str(order_info.volume_current)),
-            remaining_quantity=Decimal(str(order_info.volume_initial - order_info.volume_current)),
+            # orders_get only returns pending orders; filled/cancelled orders
+            # are not returned (see docstring above)
+            status=OrderStatus.PENDING,
+            # volume_current is the REMAINING unfilled volume; filled = initial - current
+            filled_quantity=Decimal(str(order_info.volume_initial - order_info.volume_current)),
+            remaining_quantity=Decimal(str(order_info.volume_current)),
             average_fill_price=Decimal(str(order_info.price_current)),
         )
 
@@ -760,8 +912,9 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 platform_order_id=str(order.ticket),
                 platform="MetaTrader5",
                 status=OrderStatus.PENDING,
-                filled_quantity=Decimal(str(order.volume_current)),
-                remaining_quantity=Decimal(str(order.volume_initial - order.volume_current)),
+                # volume_current is the REMAINING unfilled volume; filled = initial - current
+                filled_quantity=Decimal(str(order.volume_initial - order.volume_current)),
+                remaining_quantity=Decimal(str(order.volume_current)),
                 average_fill_price=Decimal(str(order.price_current)),
             )
             execution_reports.append(report)

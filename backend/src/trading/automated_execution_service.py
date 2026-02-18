@@ -44,6 +44,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from src.models.campaign_event import CampaignEvent, CampaignEventType
+from src.risk_management.execution_risk_gate import ExecutionRiskGate
 
 logger = structlog.get_logger(__name__)
 
@@ -304,6 +305,7 @@ class AutomatedExecutionService:
         self,
         adapter: TradingPlatformAdapter | None = None,
         config: ExecutionConfig | None = None,
+        risk_gate: ExecutionRiskGate | None = None,
     ):
         """
         Initialize automated execution service.
@@ -311,9 +313,11 @@ class AutomatedExecutionService:
         Args:
             adapter: Trading platform adapter (optional, can be set later)
             config: Execution configuration
+            risk_gate: Pre-flight risk gate (Story 23.11). If None, a default is created.
         """
         self._adapter = adapter
         self._config = config or ExecutionConfig()
+        self._risk_gate = risk_gate or ExecutionRiskGate()
         self._mode = ExecutionMode.DISABLED
         self._kill_switch_active = False
 
@@ -570,6 +574,77 @@ class AutomatedExecutionService:
                 )
 
             try:
+                # Final risk gate enforcement (Story 23.11)
+                # Compute actual trade risk from position size and stop loss,
+                # then query portfolio state from adapter for heat/campaign/correlated.
+                try:
+                    current_heat = await self._adapter.get_portfolio_heat()
+                except AttributeError:
+                    # Fail-closed: can't determine heat, block the order
+                    current_heat = Decimal("100")
+                    logger.warning(
+                        "portfolio_heat_unknown_fail_closed",
+                        order_id=str(order.id),
+                        reason="Adapter does not support get_portfolio_heat",
+                    )
+
+                # Compute actual trade risk from order details
+                if order.stop_loss and entry_price > 0:
+                    try:
+                        acct_balance = await self._adapter.get_account_balance()
+                    except Exception:
+                        acct_balance = Decimal("0")
+                    risk_per_unit = abs(entry_price - order.stop_loss)
+                    if acct_balance > 0:
+                        actual_trade_risk = (
+                            order.quantity * risk_per_unit / acct_balance
+                        ) * Decimal("100")
+                    else:
+                        # Fail-closed: no balance info
+                        actual_trade_risk = Decimal("100")
+                else:
+                    # Fail-closed: can't compute risk without stop loss
+                    actual_trade_risk = Decimal("100")
+
+                # Query campaign risk if available
+                campaign_risk: Decimal | None = None
+                try:
+                    if order.campaign_id:
+                        campaign_risk = await self._adapter.get_campaign_risk(order.campaign_id)
+                except AttributeError:
+                    pass
+
+                # Query correlated risk if available
+                correlated_risk: Decimal | None = None
+                try:
+                    correlated_risk = await self._adapter.get_correlated_risk(order.symbol)
+                except AttributeError:
+                    pass
+
+                preflight = self._risk_gate.check_risk_values(
+                    order_id=str(order.id),
+                    symbol=order.symbol,
+                    trade_risk_pct=actual_trade_risk,
+                    portfolio_heat_pct=current_heat,
+                    campaign_risk_pct=campaign_risk,
+                    correlated_risk_pct=correlated_risk,
+                )
+                if preflight.blocked:
+                    violation_msgs = "; ".join(v.message for v in preflight.violations)
+                    logger.warning(
+                        "execution_blocked_by_risk_gate",
+                        order_id=str(order.id),
+                        violations=violation_msgs,
+                    )
+                    order.update_state(OrderState.REJECTED)
+                    return ExecutionReport(
+                        order_id=order.id,
+                        success=False,
+                        error_message=f"Risk gate blocked: {violation_msgs}",
+                        retry_count=retry_count,
+                        final_state=OrderState.REJECTED,
+                    )
+
                 order.update_state(OrderState.SUBMITTED)
 
                 logger.info(

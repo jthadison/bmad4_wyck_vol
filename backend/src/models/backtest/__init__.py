@@ -28,9 +28,19 @@ from .metrics import (
     BacktestMetrics,
     CampaignPerformance,
     DrawdownPeriod,
+    EntryTypeMetrics,
     MonthlyReturn,
     PatternPerformance,
     RiskMetrics,
+)
+from .phase_analysis import (
+    CampaignPhaseProgression,
+    CampaignPhaseTransition,
+    PatternPhaseAlignment,
+    PhaseAnalysisReport,
+    PhaseDetectionQuality,
+    PhaseDistribution,
+    WyckoffInsight,
 )
 from .regression import (
     MetricComparison,
@@ -73,6 +83,7 @@ __all__ = [
     "BacktestMetrics",
     "CampaignPerformance",
     "DrawdownPeriod",
+    "EntryTypeMetrics",
     "LabeledPattern",
     "MonthlyReturn",
     "PatternPerformance",
@@ -98,4 +109,12 @@ __all__ = [
     "RegressionComparison",
     "RegressionTestConfig",
     "RegressionTestResult",
+    # Phase Analysis (Story 13.7)
+    "CampaignPhaseProgression",
+    "CampaignPhaseTransition",
+    "PatternPhaseAlignment",
+    "PhaseAnalysisReport",
+    "PhaseDetectionQuality",
+    "PhaseDistribution",
+    "WyckoffInsight",
 ]

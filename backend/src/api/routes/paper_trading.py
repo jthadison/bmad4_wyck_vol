@@ -25,11 +25,21 @@ from src.repositories.paper_config_repository import PaperConfigRepository
 from src.repositories.paper_position_repository import PaperPositionRepository
 from src.repositories.paper_session_repository import PaperSessionRepository
 from src.repositories.paper_trade_repository import PaperTradeRepository
+from src.trading.paper_trading_comparison import generate_comparison_report
 from src.trading.paper_trading_service import PaperTradingService
+from src.trading.paper_trading_validator import (
+    PaperTradingValidator,
+    ValidationRunConfig,
+    ValidationSymbolConfig,
+)
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/paper-trading", tags=["Paper Trading"])
+
+# NOTE: In-memory state; requires single-worker deployment (--workers 1).
+# For multi-worker deployments, persist validation state to Redis/PostgreSQL.
+_validator = PaperTradingValidator()
 
 
 # Request/Response Models
@@ -189,6 +199,7 @@ async def enable_paper_trading(
             starting_capital=request.starting_capital,
             current_capital=request.starting_capital,
             equity=request.starting_capital,
+            peak_equity=request.starting_capital,
             paper_trading_start_date=datetime.now(UTC),
         )
 
@@ -744,3 +755,110 @@ async def get_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get session",
         ) from e
+
+
+# --- Validation Endpoints (Story 23.8b) ---
+
+
+class StartValidationRequest(BaseModel):
+    """Request to start a paper trading validation run."""
+
+    symbols: list[str] = Field(
+        default=["EURUSD", "SPX500"],
+        description="Symbols to validate (at least 1 forex, 1 stock recommended)",
+    )
+    duration_days: int = Field(default=14, ge=1, le=90, description="Duration in days")
+    tolerance_pct: float = Field(default=10.0, ge=0, le=100, description="Deviation tolerance %")
+
+
+@router.get("/validation/status", response_model=dict)
+async def get_validation_status(
+    _user_id: UUID = Depends(get_current_user_id),
+) -> dict:
+    """
+    Get the current validation run status.
+
+    Returns information about whether a validation run is active,
+    how many signals have been generated and executed, and elapsed time.
+    """
+    return _validator.get_status()
+
+
+@router.post("/validation/start", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def start_validation_run(
+    request: StartValidationRequest,
+    _user_id: UUID = Depends(get_current_user_id),
+) -> dict:
+    """
+    Start a paper trading validation run.
+
+    Configures a new validation run with the specified symbols and duration.
+    Results are accumulated and can be retrieved via the report endpoint.
+    """
+    try:
+        config = ValidationRunConfig(
+            symbols=[ValidationSymbolConfig(symbol=s) for s in request.symbols],
+            duration_days=request.duration_days,
+            tolerance_pct=Decimal(str(request.tolerance_pct)),
+        )
+        run = _validator.start_run(config)
+        return {
+            "success": True,
+            "message": "Validation run started",
+            "run_id": str(run.id),
+            "symbols": request.symbols,
+            "duration_days": request.duration_days,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    except Exception as e:
+        logger.error("start_validation_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start validation run",
+        ) from e
+
+
+@router.post("/validation/stop", response_model=dict)
+async def stop_validation_run(
+    _user_id: UUID = Depends(get_current_user_id),
+) -> dict:
+    """Stop the current validation run."""
+    run = _validator.stop_run()
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No active validation run"
+        )
+    return {
+        "success": True,
+        "message": "Validation run stopped",
+        "run_id": str(run.id),
+        "signals_generated": run.signals_generated,
+        "signals_executed": run.signals_executed,
+    }
+
+
+@router.get("/validation/report", response_model=dict)
+def get_validation_report(
+    _user_id: UUID = Depends(get_current_user_id),
+) -> dict:
+    """
+    Get the comparison report for the current or most recent validation run.
+
+    Compares paper trading results against backtest baselines and returns
+    per-symbol deviation metrics with severity classification.
+
+    Note: This is a sync endpoint because generate_comparison_report performs
+    synchronous file I/O (loading baseline JSON files). FastAPI automatically
+    runs sync endpoints in a threadpool to avoid blocking the event loop.
+    """
+    run_state = _validator.current_run
+    if not run_state:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No validation run found. Start one first.",
+        )
+
+    tolerance = float(run_state.config.tolerance_pct)
+    report = generate_comparison_report(run_state, tolerance_pct=tolerance)
+    return report.model_dump()

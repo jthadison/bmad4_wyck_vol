@@ -762,3 +762,166 @@ class TestScanCycleResultWithSkips:
 
         assert result.symbols_skipped_session == 0
         assert result.symbols_skipped_rate_limit == 0
+
+
+# =========================================================================
+# History Recording on Failures (Task #26 - Audit Trail Enhancements)
+# =========================================================================
+
+
+class TestHistoryRecordingOnFailures:
+    """Test that scan history is recorded even when failures occur."""
+
+    @pytest.mark.asyncio
+    async def test_history_recorded_on_partial_failure(self, mock_repository, mock_orchestrator):
+        """History should be recorded when some symbols succeed and some fail."""
+        # Setup: 3 symbols, 2 succeed, 1 fails
+        symbols = [
+            create_mock_symbol("AAPL", asset_class=AssetClass.STOCK),
+            create_mock_symbol("MSFT", asset_class=AssetClass.STOCK),
+            create_mock_symbol("FAIL", asset_class=AssetClass.STOCK),
+        ]
+        mock_repository.get_enabled_symbols = AsyncMock(return_value=symbols)
+
+        # AAPL and MSFT succeed, FAIL raises exception
+        async def mock_analyze(symbol: str, timeframe: str):
+            if symbol == "FAIL":
+                raise Exception("Analysis failed")
+            return []  # No signals but successful analysis
+
+        mock_orchestrator.analyze_symbol = AsyncMock(side_effect=mock_analyze)
+
+        scanner = SignalScannerService(
+            repository=mock_repository,
+            orchestrator=mock_orchestrator,
+        )
+
+        # Run scan cycle
+        result = await scanner._scan_cycle()
+
+        # Verify partial completion
+        assert result.status == ScanCycleStatus.PARTIAL
+        assert result.symbols_scanned == 3  # All symbols analyzed (including failed)
+        assert result.errors_count == 1  # FAIL failed
+
+        # Verify history was recorded
+        mock_repository.add_history.assert_called_once()
+        history_call = mock_repository.add_history.call_args[0][0]  # First positional arg
+        assert history_call.status == ScanCycleStatus.PARTIAL
+        assert history_call.errors_count == 1
+
+    @pytest.mark.asyncio
+    async def test_history_recorded_on_complete_failure(self, mock_repository, mock_orchestrator):
+        """History should be recorded when all symbols fail."""
+        symbols = [
+            create_mock_symbol("FAIL1", asset_class=AssetClass.STOCK),
+            create_mock_symbol("FAIL2", asset_class=AssetClass.STOCK),
+        ]
+        mock_repository.get_enabled_symbols = AsyncMock(return_value=symbols)
+
+        # All symbols fail
+        mock_orchestrator.analyze_symbol = AsyncMock(side_effect=Exception("Analysis failed"))
+
+        scanner = SignalScannerService(
+            repository=mock_repository,
+            orchestrator=mock_orchestrator,
+        )
+
+        result = await scanner._scan_cycle()
+
+        # Verify complete failure
+        assert result.status == ScanCycleStatus.FAILED
+        assert result.symbols_scanned == 2  # All symbols analyzed (both failed)
+        assert result.errors_count == 2  # Both failed
+
+        # Verify history was recorded even on complete failure
+        mock_repository.add_history.assert_called_once()
+        history_call = mock_repository.add_history.call_args[0][0]  # First positional arg
+        assert history_call.status == ScanCycleStatus.FAILED
+        assert history_call.errors_count == 2
+
+    @pytest.mark.asyncio
+    async def test_history_recorded_on_kill_switch_abort(self, mock_repository, mock_orchestrator):
+        """History should record SKIPPED status when kill switch aborts scan."""
+        symbols = [
+            create_mock_symbol("AAPL", asset_class=AssetClass.STOCK),
+            create_mock_symbol("MSFT", asset_class=AssetClass.STOCK),
+        ]
+        mock_repository.get_enabled_symbols = AsyncMock(return_value=symbols)
+        mock_orchestrator.analyze_symbol = AsyncMock(return_value=[])
+
+        # Mock kill switch checker that is active from the start
+        mock_kill_switch = AsyncMock()
+        mock_kill_switch.is_kill_switch_active = AsyncMock(return_value=True)
+
+        scanner = SignalScannerService(
+            repository=mock_repository,
+            orchestrator=mock_orchestrator,
+            kill_switch_checker=mock_kill_switch,
+            user_id=uuid4(),
+        )
+
+        result = await scanner._scan_cycle()
+
+        # Verify kill switch stopped the scan
+        assert result.status == ScanCycleStatus.SKIPPED
+        assert result.kill_switch_triggered is True
+
+        # Note: When kill switch triggers before scan starts, history is NOT recorded
+        # (returns early at line 569-580)
+        mock_repository.add_history.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_error_count_matches_actual_failures(self, mock_repository, mock_orchestrator):
+        """Error count in history should match actual number of failures."""
+        symbols = [create_mock_symbol(f"SYM{i}", asset_class=AssetClass.STOCK) for i in range(10)]
+        mock_repository.get_enabled_symbols = AsyncMock(return_value=symbols)
+
+        # Fail symbols 3, 5, 7 (3 failures out of 10)
+        async def mock_analyze(symbol: str, timeframe: str):
+            if symbol in ["SYM3", "SYM5", "SYM7"]:
+                raise Exception("Analysis failed")
+            return []
+
+        mock_orchestrator.analyze_symbol = AsyncMock(side_effect=mock_analyze)
+
+        scanner = SignalScannerService(
+            repository=mock_repository,
+            orchestrator=mock_orchestrator,
+        )
+
+        result = await scanner._scan_cycle()
+
+        # Verify error count accuracy
+        assert result.errors_count == 3
+        assert result.symbols_scanned == 10  # All symbols analyzed
+
+        # Verify history recorded accurate count
+        mock_repository.add_history.assert_called_once()
+        history_call = mock_repository.add_history.call_args[0][0]  # First positional arg
+        assert history_call.errors_count == 3
+
+    @pytest.mark.asyncio
+    async def test_failure_history_queryable(self, mock_repository, mock_orchestrator):
+        """Failed scan cycles should be queryable from history."""
+        symbols = [create_mock_symbol("FAIL", asset_class=AssetClass.STOCK)]
+        mock_repository.get_enabled_symbols = AsyncMock(return_value=symbols)
+        mock_orchestrator.analyze_symbol = AsyncMock(side_effect=Exception("Analysis failed"))
+
+        scanner = SignalScannerService(
+            repository=mock_repository,
+            orchestrator=mock_orchestrator,
+        )
+
+        await scanner._scan_cycle()
+
+        # Verify add_history was called with queryable data
+        mock_repository.add_history.assert_called_once()
+        history_call = mock_repository.add_history.call_args[0][0]  # First positional arg
+
+        # All required fields present
+        assert history_call.cycle_started_at is not None
+        assert history_call.cycle_ended_at is not None
+        assert history_call.status == ScanCycleStatus.FAILED
+        assert history_call.symbols_scanned == 1  # Symbol was analyzed (but failed)
+        assert history_call.errors_count == 1

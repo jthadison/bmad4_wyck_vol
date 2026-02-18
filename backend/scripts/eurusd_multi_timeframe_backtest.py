@@ -29,7 +29,8 @@ Author: Wyckoff Mentor Analysis
 
 import asyncio
 import sys
-from datetime import date, timedelta
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -51,10 +52,13 @@ from src.backtesting.intraday_campaign_detector import create_timeframe_optimize
 from src.backtesting.risk_integration import BacktestRiskManager
 from src.market_data.adapters.polygon_adapter import PolygonAdapter
 from src.models.backtest import BacktestConfig, BacktestResult
+from src.models.backtest.results import BmadStageStats, EntryTypeAnalysis, EntryTypePerformance
 from src.models.creek_level import CreekLevel
 from src.models.forex import ForexSession, get_forex_session
+from src.models.lps import LPS
 from src.models.ohlcv import OHLCVBar
-from src.models.phase_classification import PhaseClassification, WyckoffPhase
+from src.models.phase_classification import PhaseClassification, PhaseEvents, WyckoffPhase
+from src.models.spring import Spring
 from src.models.trading_range import RangeStatus, TradingRange
 from src.pattern_engine.detectors.lps_detector import detect_lps
 from src.pattern_engine.detectors.sos_detector import detect_sos_breakout
@@ -68,8 +72,68 @@ from src.pattern_engine.phase_validator import (
 )
 from src.pattern_engine.volume_analyzer import VolumeAnalyzer, calculate_volume_ratio
 from src.pattern_engine.volume_logger import VolumeLogger
+from src.signal_generator.spring_signal_generator import calculate_adaptive_stop_buffer
 
 logger = structlog.get_logger(__name__)
+
+
+# =============================================================================
+# Story 13.10: Entry Constants and Type Tracking (FR10.4, AC10.8)
+# =============================================================================
+
+# Blocker 3 fix: Cap on LPS adds to prevent unlimited escalation
+MAX_LPS_ADDS = 2
+
+# Minimum confidence threshold for Spring entries (devil's advocate recommendation)
+MIN_SPRING_CONFIDENCE = 75
+
+# Default LPS add sizing as fraction of initial position (configurable)
+# Phase D: Full add (50%) - primary markup opportunity
+# Phase E: Reduced add (25%) - late retest, higher risk
+LPS_ADD_SIZE_FRACTION_PHASE_D = Decimal("0.50")
+LPS_ADD_SIZE_FRACTION_PHASE_E = Decimal("0.25")
+MIN_CONFIDENCE_PHASE_E = 80  # Higher confidence threshold for Phase E adds
+
+
+@dataclass
+class EntryTypeMetrics:
+    """Track entry performance by type (Spring, SOS, LPS)."""
+
+    entry_type: str  # "SPRING", "SOS", "LPS"
+    total_entries: int = 0
+    wins: int = 0
+    losses: int = 0
+    total_pnl_pct: Decimal = field(default_factory=lambda: Decimal("0"))
+    avg_risk_pct: Decimal = field(default_factory=lambda: Decimal("0"))
+    avg_reward_pct: Decimal = field(default_factory=lambda: Decimal("0"))
+    _risk_sum: Decimal = field(default_factory=lambda: Decimal("0"))
+    _reward_sum: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    @property
+    def win_rate(self) -> float:
+        if self.total_entries == 0:
+            return 0.0
+        return self.wins / self.total_entries * 100
+
+    @property
+    def avg_pnl(self) -> Decimal:
+        if self.total_entries == 0:
+            return Decimal("0")
+        return self.total_pnl_pct / self.total_entries
+
+    @property
+    def risk_reward_ratio(self) -> float:
+        if self.total_entries == 0:
+            return 0.0
+        actual_avg_risk = (
+            self._risk_sum / self.total_entries if self.total_entries else Decimal("0")
+        )
+        actual_avg_reward = (
+            self._reward_sum / self.total_entries if self.total_entries else Decimal("0")
+        )
+        if actual_avg_risk == 0:
+            return 0.0
+        return float(actual_avg_reward / actual_avg_risk)
 
 
 class EURUSDMultiTimeframeBacktest:
@@ -257,6 +321,11 @@ class EURUSDMultiTimeframeBacktest:
         if self.risk_manager:
             self.risk_manager.print_risk_management_report()
 
+        # Story 13.10 (AC10.8): Print entry type analysis report and populate result
+        if hasattr(engine, "strategy_context") and "entry_metrics" in engine.strategy_context:
+            self._print_entry_type_report(engine.strategy_context)
+            result.entry_type_analysis = self._build_entry_type_analysis(engine.strategy_context)
+
         return result
 
     def _intraday_wyckoff_strategy(self, bar: OHLCVBar, context: dict) -> Optional[str]:
@@ -292,6 +361,16 @@ class EURUSDMultiTimeframeBacktest:
             context["volume_analysis_list"] = []  # Story 13.7: For PhaseDetector
             context["exit_reasons"] = []  # FR6.7: Track exit reasons for analysis
             context["current_phase"] = None  # Story 13.7: Track detected phase
+            # Story 13.10: Entry type tracking (FR10.4)
+            context["entry_type"] = None  # "SPRING", "SOS", "LPS"
+            context["entry_phase"] = None  # "C", "D", "E"
+            context["add_count"] = 0  # Number of LPS adds
+            context["last_add_lps"] = None  # Last LPS timestamp used for add
+            context["entry_metrics"] = {
+                "SPRING": EntryTypeMetrics(entry_type="SPRING"),
+                "SOS": EntryTypeMetrics(entry_type="SOS"),
+                "LPS": EntryTypeMetrics(entry_type="LPS"),
+            }
             context["phase_info"] = None  # Story 13.7: PhaseInfo from PhaseDetector
             context["phase_transitions"] = []  # Story 13.7: Campaign phase history (AC7.5)
 
@@ -373,6 +452,10 @@ class EURUSDMultiTimeframeBacktest:
         # Build dynamic trading range from recent 50 bars
         trading_range = self._build_trading_range(bars_list, current_index)
 
+        # Story 13.7 (AC7.11, AC7.15, FR7.5): Update campaign lifecycle on each bar
+        # CRITICAL FIX: Previously campaigns stuck in FORMING state forever
+        self._update_campaign_lifecycle(context, bar.timestamp, current_index)
+
         # Story 13.7 (AC7.2): Use PhaseDetector.detect_phase() instead of hardcoded phases
         detected_phase_classification = None
         try:
@@ -402,6 +485,15 @@ class EURUSDMultiTimeframeBacktest:
                 detected_phase_classification = PhaseClassification(
                     phase=phase_info.phase,
                     confidence=phase_info.confidence,
+                    duration=getattr(phase_info, "duration", 0),
+                    events_detected=getattr(phase_info, "events", PhaseEvents()),
+                    trading_allowed=getattr(phase_info, "trading_allowed", True),
+                    phase_start_index=getattr(phase_info, "phase_start_index", current_index),
+                    phase_start_timestamp=getattr(
+                        phase_info,
+                        "phase_start_timestamp",
+                        datetime.fromtimestamp(bar.timestamp.timestamp(), tz=UTC),
+                    ),
                 )
         except Exception:
             pass  # PhaseDetector may fail if conditions aren't met
@@ -412,7 +504,25 @@ class EURUSDMultiTimeframeBacktest:
             detected_phase_classification = PhaseClassification(
                 phase=WyckoffPhase.B,  # Default to Phase B (building cause)
                 confidence=50,  # Low confidence when not detected
+                duration=0,  # Unknown duration for fallback
+                events_detected=PhaseEvents(),  # No events detected
+                trading_allowed=False,  # Conservative: don't trade on fallback phase
+                phase_start_index=current_index,  # Current bar as start
+                phase_start_timestamp=datetime.fromtimestamp(bar.timestamp.timestamp(), tz=UTC),
             )
+
+        # Story 13.7 (AC7.2): Skip pattern detection if phase confidence < 60% (Task #41)
+        if detected_phase_classification.confidence < 60:
+            logger.debug(
+                "low_phase_confidence_skip_patterns",
+                confidence=detected_phase_classification.confidence,
+                phase=detected_phase_classification.phase.name
+                if detected_phase_classification.phase
+                else "UNKNOWN",
+                bar_index=current_index,
+                reason="Phase confidence below 60% threshold - ambiguous market structure",
+            )
+            return None  # Skip pattern detection entirely
 
         # Detect patterns using real detectors with detected phase
         # 1. Spring Detection - requires Phase C
@@ -580,96 +690,19 @@ class EURUSDMultiTimeframeBacktest:
             except Exception:
                 pass
 
-        # Trading Logic: Enter on Phase D SOS in active campaign
+        # Story 13.10 (FR10.3): Entry priority system (Spring > SOS > LPS)
         active_campaigns = self.campaign_detector.get_active_campaigns()
 
-        if not context["position"] and active_campaigns:
-            for campaign in active_campaigns:
-                if campaign.current_phase == WyckoffPhase.D:
-                    # Check if we have a fresh SOS in last 5 bars
-                    if context["last_sos"] and (
-                        current_index
-                        - bars_list.index(
-                            next(
-                                (
-                                    b
-                                    for b in bars_list
-                                    if b.timestamp == context["last_sos"].timestamp
-                                ),
-                                bars_list[-1],
-                            )
-                        )
-                        < 5
-                    ):
-                        # Story 13.9 (AC9.6): Risk validation before entry
-                        entry_price = Decimal(str(bar.close))
-                        # Calculate stop loss from trading range support (Creek)
-                        stop_loss = (
-                            trading_range.creek.price
-                            if trading_range.creek
-                            else (
-                                entry_price * Decimal("0.995")  # 0.5% fallback
-                            )
-                        )
-                        # Calculate target from Jump level if available
-                        target_price = (
-                            campaign.jump_level
-                            if hasattr(campaign, "jump_level") and campaign.jump_level
-                            else entry_price * Decimal("1.02")  # 2% fallback
-                        )
-
-                        # Validate risk limits (FR9.6)
-                        if self.risk_manager:
-                            (
-                                can_trade,
-                                position_size,
-                                rejection_reason,
-                            ) = self.risk_manager.validate_and_size_position(
-                                symbol=self.symbol,
-                                entry_price=entry_price,
-                                stop_loss=stop_loss,
-                                campaign_id=str(campaign.campaign_id),
-                                target_price=target_price,
-                            )
-
-                            if not can_trade:
-                                # Story 13.9 (AC9.7): Log rejection
-                                logger.warning(
-                                    "[RISK REJECTION] Entry rejected",
-                                    reason=rejection_reason,
-                                    symbol=self.symbol,
-                                    entry=float(entry_price),
-                                    stop=float(stop_loss),
-                                )
-                                continue  # Skip this entry
-
-                            # Register position with risk manager
-                            self.risk_manager.register_position(
-                                symbol=self.symbol,
-                                campaign_id=str(campaign.campaign_id),
-                                entry_price=entry_price,
-                                stop_loss=stop_loss,
-                                position_size=position_size,
-                                timestamp=bar.timestamp,
-                            )
-
-                            # Store position size in context for exit P&L calculation
-                            context["position_size"] = position_size
-
-                        context["position"] = True
-                        context["entry_price"] = bar.close
-                        context["entry_bar_index"] = current_index
-                        context["stop_loss"] = stop_loss  # Track for exit logic
-
-                        # Story 13.6.1: Initialize campaign entry_atr and timeframe
-                        if active_campaigns:
-                            campaign = active_campaigns[0]
-                            campaign.entry_atr = calculate_atr(bars_list, period=14) or Decimal(
-                                "0.0001"
-                            )
-                            campaign.timeframe = self.current_timeframe
-
-                        return "BUY"
+        entry_signal = self._determine_entry_signal(
+            bar=bar,
+            context=context,
+            active_campaigns=active_campaigns,
+            trading_range=trading_range,
+            bars_list=bars_list,
+            current_index=current_index,
+        )
+        if entry_signal:
+            return entry_signal
 
         # Story 13.6.1: Dynamic Jump Level Updates
         if context["position"] and active_campaigns:
@@ -687,21 +720,763 @@ class EURUSDMultiTimeframeBacktest:
 
             if should_exit:
                 # Story 13.9 (AC9.7): Close position in risk manager
+                exit_price = Decimal(str(bar.close))
+                entry_price = Decimal(str(context["entry_price"]))
+
                 if self.risk_manager:
-                    exit_price = Decimal(str(bar.close))
                     self.risk_manager.close_all_positions_for_symbol(
                         symbol=self.symbol,
                         exit_price=exit_price,
                     )
 
+                # Story 13.7 (AC7.12, AC7.13, FR7.6): Mark campaign as COMPLETED/FAILED
+                if context.get("active_campaign_id"):
+                    self._handle_campaign_exit(
+                        campaign_id=context["active_campaign_id"],
+                        exit_price=exit_price,
+                        entry_price=entry_price,
+                        exit_reason=exit_reason,
+                    )
+
+                # Story 13.10 (FR10.4): Update entry type metrics on exit
+                self._update_entry_metrics_on_exit(context, exit_price, entry_price)
+
                 context["position"] = False
                 context["entry_price"] = None
                 context["stop_loss"] = None
                 context["position_size"] = None
+                context["active_campaign_id"] = None  # Clear active campaign
+                context["entry_type"] = None
+                context["entry_phase"] = None
+                context["add_count"] = 0
+                context["last_add_lps"] = None
                 context["exit_reasons"].append(exit_reason)  # FR6.7: Track exit reason
                 return "SELL"
 
         return None
+
+    # =========================================================================
+    # Story 13.10: Spring/LPS Entry Logic and Priority System
+    # =========================================================================
+
+    def _get_bar_index(self, timestamp: datetime, bars: list[OHLCVBar]) -> int:
+        """
+        Find bar index by timestamp (Task #7).
+
+        Args:
+            timestamp: Bar timestamp to find
+            bars: List of bars to search
+
+        Returns:
+            Index of bar with matching timestamp, or -1 if not found
+        """
+        for i in range(len(bars) - 1, max(len(bars) - 20, -1), -1):
+            if bars[i].timestamp == timestamp:
+                return i
+        return -1
+
+    def _determine_entry_signal(
+        self,
+        bar: OHLCVBar,
+        context: dict,
+        active_campaigns: list,
+        trading_range: TradingRange,
+        bars_list: list[OHLCVBar],
+        current_index: int,
+    ) -> Optional[str]:
+        """
+        Determine entry signal based on priority system (FR10.3, AC10.5, AC10.6).
+
+        Priority:
+        1. Spring entry (Phase C) - if available and no position
+        2. LPS add (Phase D) - if position exists, scale in on retest
+        3. SOS entry (Phase D) - if Spring missed and no position
+
+        Args:
+            bar: Current bar
+            context: Strategy context
+            active_campaigns: List of active campaigns
+            trading_range: Current trading range
+            bars_list: Full bar history
+            current_index: Current bar index
+
+        Returns:
+            "BUY" if entry criteria met, None otherwise
+        """
+        if not active_campaigns:
+            return None
+
+        for campaign in active_campaigns:
+            # PRIORITY 1: Spring Entry (Phase C) - No existing position
+            if not context["position"]:
+                spring_patterns = [p for p in campaign.patterns if isinstance(p, Spring)]
+                if spring_patterns:
+                    latest_spring = max(spring_patterns, key=lambda s: s.detection_timestamp)
+                    signal = self._evaluate_spring_entry(
+                        spring=latest_spring,
+                        campaign=campaign,
+                        bar=bar,
+                        context=context,
+                        trading_range=trading_range,
+                        bars_list=bars_list,
+                        current_index=current_index,
+                    )
+                    if signal:
+                        return signal
+
+            # PRIORITY 2: LPS Add (Phase D primary, Phase E reduced - per Wyckoff mentor)
+            if context["position"] and campaign.current_phase in [WyckoffPhase.D, WyckoffPhase.E]:
+                lps_patterns = [p for p in campaign.patterns if isinstance(p, LPS)]
+                if lps_patterns:
+                    latest_lps = max(lps_patterns, key=lambda p: p.detection_timestamp)
+                    signal = self._evaluate_lps_add_entry(
+                        lps=latest_lps,
+                        campaign=campaign,
+                        bar=bar,
+                        context=context,
+                        trading_range=trading_range,
+                        bars_list=bars_list,
+                        current_index=current_index,
+                    )
+                    if signal:
+                        return signal
+
+            # PRIORITY 3: SOS Entry (Phase D) - Fallback if Spring missed
+            if not context["position"] and campaign.current_phase == WyckoffPhase.D:
+                # BLOCKER 1 FIX: Only check RECENT Springs (within 5 bars),
+                # not all Springs ever detected. A stale Spring from weeks ago
+                # must not permanently block SOS entries.
+                recent_springs = [
+                    p
+                    for p in campaign.patterns
+                    if isinstance(p, Spring)
+                    and self._get_bar_index(p.detection_timestamp, bars_list) >= 0
+                    and (current_index - self._get_bar_index(p.detection_timestamp, bars_list)) <= 5
+                ]
+                if not recent_springs:
+                    # No recent Spring - OK to enter on SOS as fallback
+                    if context["last_sos"]:
+                        signal = self._evaluate_sos_entry(
+                            sos=context["last_sos"],
+                            campaign=campaign,
+                            bar=bar,
+                            context=context,
+                            trading_range=trading_range,
+                            bars_list=bars_list,
+                            current_index=current_index,
+                        )
+                        if signal:
+                            return signal
+                else:
+                    logger.info(
+                        "[ENTRY PRIORITY] Skipping SOS - recent Spring entry available",
+                        campaign_id=campaign.campaign_id,
+                        rationale="Spring offers better R:R than SOS",
+                    )
+
+        return None
+
+    def _evaluate_spring_entry(
+        self,
+        spring: Spring,
+        campaign,
+        bar: OHLCVBar,
+        context: dict,
+        trading_range: TradingRange,
+        bars_list: list[OHLCVBar],
+        current_index: int,
+    ) -> Optional[str]:
+        """
+        Evaluate Spring pattern for entry opportunity (FR10.1, AC10.1, AC10.2).
+
+        Spring Entry Logic:
+        1. Spring detected in Phase C
+        2. Wait 1-2 bars for confirmation (hold above Creek)
+        3. Enter on confirmation bar close
+        4. Stop at Creek (tight stop)
+        5. Target at Jump Level
+
+        Returns:
+            "BUY" if entry criteria met, None otherwise
+        """
+        # Minimum confidence threshold (devil's advocate recommendation)
+        spring_confidence = getattr(spring, "confidence", 100)
+        if spring_confidence < MIN_SPRING_CONFIDENCE:
+            logger.debug(
+                "[SPRING ENTRY] Confidence below threshold",
+                confidence=spring_confidence,
+                threshold=MIN_SPRING_CONFIDENCE,
+            )
+            return None
+
+        # Check if Spring is recent (within last 3 bars)
+        spring_bar_index = self._get_bar_index(spring.detection_timestamp, bars_list)
+        if spring_bar_index < 0:
+            return None
+
+        bars_since_spring = current_index - spring_bar_index
+        if bars_since_spring < 1 or bars_since_spring > 3:
+            return None  # Too early or too late
+
+        # Confirmation: Price should hold above Creek
+        creek_price = (
+            trading_range.creek.price
+            if trading_range.creek
+            else (campaign.support_level if campaign.support_level else None)
+        )
+        if creek_price is None:
+            return None
+
+        # Check confirmation bars held above Creek
+        confirmation_bars = bars_list[spring_bar_index + 1 : current_index + 1]
+        for conf_bar in confirmation_bars:
+            if conf_bar.close < creek_price:
+                logger.debug(
+                    "[SPRING ENTRY] Spring invalidated - close below Creek",
+                    creek=float(creek_price),
+                    close=float(conf_bar.close),
+                )
+                return None
+
+        # Calculate stop using adaptive buffer (Wyckoff mentor recommendation)
+        # Uses spring_signal_generator.calculate_adaptive_stop_buffer()
+        # instead of raw Creek to place stop below Spring low with depth-aware buffer
+        entry_price = Decimal(str(bar.close))
+        stop_buffer = calculate_adaptive_stop_buffer(spring.penetration_pct)
+        spring_low = Decimal(str(spring.spring_low))
+        stop_loss = spring_low * (Decimal("1") - stop_buffer)
+        target_price = (
+            campaign.jump_level
+            if hasattr(campaign, "jump_level") and campaign.jump_level
+            else entry_price * Decimal("1.05")  # 5% fallback
+        )
+
+        # Check R:R >= 1:4 (AC10.2)
+        risk = entry_price - stop_loss
+        if risk <= 0:
+            return None
+        reward = target_price - entry_price
+        rr_ratio = float(reward / risk) if risk > 0 else 0
+        if rr_ratio < 4.0:
+            logger.debug(
+                "[SPRING ENTRY] R:R below 1:4 threshold",
+                rr_ratio=rr_ratio,
+                risk=float(risk),
+                reward=float(reward),
+            )
+            return None
+
+        # Risk validation (FR9.6)
+        if self.risk_manager:
+            (
+                can_trade,
+                position_size,
+                rejection_reason,
+            ) = self.risk_manager.validate_and_size_position(
+                symbol=self.symbol,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                campaign_id=str(campaign.campaign_id),
+                target_price=target_price,
+            )
+            if not can_trade:
+                logger.warning(
+                    f"[SPRING ENTRY] Risk validation failed: {rejection_reason}",
+                    campaign_id=campaign.campaign_id,
+                )
+                return None
+
+            self.risk_manager.register_position(
+                symbol=self.symbol,
+                campaign_id=str(campaign.campaign_id),
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                position_size=position_size,
+                timestamp=bar.timestamp,
+            )
+            context["position_size"] = position_size
+
+        logger.info(
+            "[SPRING ENTRY] ENTERING ON SPRING",
+            entry_price=float(entry_price),
+            stop=float(stop_loss),
+            target=float(target_price),
+            rr_ratio=round(rr_ratio, 1),
+            phase="Phase C (Buy phase - BMAD)",
+        )
+
+        # Set context
+        context["position"] = True
+        context["entry_price"] = bar.close
+        context["entry_bar_index"] = current_index
+        context["stop_loss"] = stop_loss
+        context["entry_type"] = "SPRING"
+        context["entry_phase"] = "C"
+        context["entry_risk_pct"] = float(risk / entry_price * 100)
+        context["entry_reward_pct"] = float(reward / entry_price * 100)
+
+        # Initialize campaign entry metadata
+        campaign.entry_atr = calculate_atr(bars_list, period=14) or Decimal("0.0001")
+        campaign.timeframe = self.current_timeframe
+        context["active_campaign_id"] = campaign.campaign_id
+
+        return "BUY"
+
+    def _evaluate_lps_add_entry(
+        self,
+        lps: LPS,
+        campaign,
+        bar: OHLCVBar,
+        context: dict,
+        trading_range: TradingRange,
+        bars_list: list[OHLCVBar],
+        current_index: int,
+    ) -> Optional[str]:
+        """
+        Evaluate LPS pattern for adding to existing position (FR10.2, AC10.3, AC10.4).
+
+        LPS Add Logic (per Wyckoff mentor ruling):
+        Phase D (primary): Full 50% add - classic retest during markup initiation
+        Phase E (optional): Reduced 25% add - late retest, requires higher confidence
+
+        Requirements:
+        1. LPS detected in Phase D or E
+        2. Existing position open (from Spring or SOS)
+        3. Initial position is profitable
+        4. Add phase-appropriate fraction of initial position size
+        5. Max MAX_LPS_ADDS adds per campaign
+        6. Phase E requires confidence >= 80 (vs 70 for Phase D)
+
+        Returns:
+            "BUY" if add criteria met, None otherwise
+        """
+        if not context["position"]:
+            return None
+
+        # Blocker 3 fix: Cap on LPS adds
+        if context.get("add_count", 0) >= MAX_LPS_ADDS:
+            logger.debug(
+                "[LPS ADD] Max adds reached",
+                current_adds=context["add_count"],
+                max_allowed=MAX_LPS_ADDS,
+            )
+            return None
+
+        # Check if LPS is recent (within last 3 bars)
+        lps_bar_index = self._get_bar_index(lps.detection_timestamp, bars_list)
+        if lps_bar_index < 0:
+            return None
+
+        bars_since_lps = current_index - lps_bar_index
+        if bars_since_lps < 1 or bars_since_lps > 3:
+            return None
+
+        # Check if we already added on this LPS
+        if context.get("last_add_lps") == lps.detection_timestamp:
+            return None
+
+        # Check initial position is profitable (AC10.3)
+        entry_price = context["entry_price"]
+        current_pnl_pct = (bar.close - entry_price) / entry_price * 100
+        if current_pnl_pct < 0:
+            logger.debug(
+                "[LPS ADD] Skipping add - initial position not yet profitable",
+                pnl_pct=float(current_pnl_pct),
+            )
+            return None
+
+        # Phase-based sizing (per Wyckoff mentor ruling)
+        current_phase = campaign.current_phase
+        if current_phase == WyckoffPhase.E:
+            # Phase E: Late retest, use reduced sizing and higher confidence bar
+            add_size_fraction = LPS_ADD_SIZE_FRACTION_PHASE_E
+            phase_label = "Phase E (Late retest - reduced size)"
+            # TODO: Add confidence check once LPS has confidence score
+            # For now, rely on profitable position requirement as proxy
+        else:
+            # Phase D: Primary markup opportunity, full sizing
+            add_size_fraction = LPS_ADD_SIZE_FRACTION_PHASE_D
+            phase_label = "Phase D (Add phase - BMAD)"
+
+        # Risk validation for add
+        add_entry_price = Decimal(str(bar.close))
+        stop_loss = (
+            campaign.support_level
+            if campaign.support_level
+            else (
+                trading_range.creek.price
+                if trading_range.creek
+                else add_entry_price * Decimal("0.995")
+            )
+        )
+        target_price = (
+            campaign.jump_level
+            if hasattr(campaign, "jump_level") and campaign.jump_level
+            else add_entry_price * Decimal("1.02")
+        )
+
+        if self.risk_manager:
+            (
+                can_trade,
+                add_position_size,
+                rejection_reason,
+            ) = self.risk_manager.validate_and_size_position(
+                symbol=self.symbol,
+                entry_price=add_entry_price,
+                stop_loss=stop_loss,
+                campaign_id=str(campaign.campaign_id),
+                target_price=target_price,
+            )
+            if not can_trade:
+                logger.warning(
+                    f"[LPS ADD] Risk validation failed: {rejection_reason}",
+                    campaign_id=campaign.campaign_id,
+                )
+                return None
+
+            # Scale add size based on phase (Phase D: 50%, Phase E: 25%)
+            add_size = add_position_size * add_size_fraction
+
+            self.risk_manager.register_position(
+                symbol=self.symbol,
+                campaign_id=str(campaign.campaign_id),
+                entry_price=add_entry_price,
+                stop_loss=stop_loss,
+                position_size=add_size,
+                timestamp=bar.timestamp,
+            )
+
+            # Update total position size and average entry
+            initial_position_size = context.get("position_size") or Decimal("0")
+            context["position_size"] = initial_position_size + add_size
+
+            # Calculate new average entry
+            if initial_position_size > 0:
+                total_cost = (Decimal(str(entry_price)) * initial_position_size) + (
+                    add_entry_price * add_size
+                )
+                context["entry_price"] = total_cost / (initial_position_size + add_size)
+
+        logger.info(
+            "[LPS ADD] ADDING TO POSITION ON LPS",
+            add_price=float(add_entry_price),
+            stop=float(stop_loss),
+            initial_pnl=float(current_pnl_pct),
+            add_size_pct=float(add_size_fraction * 100),
+            phase=phase_label,
+        )
+
+        context["last_add_lps"] = lps.detection_timestamp
+        context["add_count"] = context.get("add_count", 0) + 1
+
+        # Track LPS add in metrics
+        lps_metrics = context["entry_metrics"]["LPS"]
+        lps_metrics.total_entries += 1
+
+        return "BUY"
+
+    def _evaluate_sos_entry(
+        self,
+        sos,
+        campaign,
+        bar: OHLCVBar,
+        context: dict,
+        trading_range: TradingRange,
+        bars_list: list[OHLCVBar],
+        current_index: int,
+    ) -> Optional[str]:
+        """
+        Evaluate SOS for entry (refactored from original inline logic).
+
+        This is the fallback entry when Spring was not detected (AC10.6).
+
+        Returns:
+            "BUY" if SOS entry criteria met, None otherwise
+        """
+        # Check if SOS is fresh (within last 5 bars)
+        sos_ts = getattr(sos, "detection_timestamp", None) or getattr(sos, "timestamp", None)
+        if sos_ts is None:
+            return None
+        sos_bar_index = self._get_bar_index(sos_ts, bars_list)
+        if sos_bar_index < 0:
+            # Fallback: try bar timestamp
+            bar_ts = getattr(getattr(sos, "bar", None), "timestamp", None)
+            if bar_ts:
+                sos_bar_index = self._get_bar_index(bar_ts, bars_list)
+        if sos_bar_index < 0 or (current_index - sos_bar_index) >= 5:
+            return None
+
+        entry_price = Decimal(str(bar.close))
+        stop_loss = (
+            trading_range.creek.price if trading_range.creek else entry_price * Decimal("0.995")
+        )
+        target_price = (
+            campaign.jump_level
+            if hasattr(campaign, "jump_level") and campaign.jump_level
+            else entry_price * Decimal("1.02")
+        )
+
+        # Risk validation (FR9.6)
+        if self.risk_manager:
+            (
+                can_trade,
+                position_size,
+                rejection_reason,
+            ) = self.risk_manager.validate_and_size_position(
+                symbol=self.symbol,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                campaign_id=str(campaign.campaign_id),
+                target_price=target_price,
+            )
+            if not can_trade:
+                logger.warning(
+                    "[RISK REJECTION] SOS entry rejected",
+                    reason=rejection_reason,
+                    symbol=self.symbol,
+                )
+                return None
+
+            self.risk_manager.register_position(
+                symbol=self.symbol,
+                campaign_id=str(campaign.campaign_id),
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                position_size=position_size,
+                timestamp=bar.timestamp,
+            )
+            context["position_size"] = position_size
+
+        risk = entry_price - stop_loss
+        reward = target_price - entry_price
+
+        context["position"] = True
+        context["entry_price"] = bar.close
+        context["entry_bar_index"] = current_index
+        context["stop_loss"] = stop_loss
+        context["entry_type"] = "SOS"
+        context["entry_phase"] = "D"
+        context["entry_risk_pct"] = float(risk / entry_price * 100) if entry_price > 0 else 0
+        context["entry_reward_pct"] = float(reward / entry_price * 100) if entry_price > 0 else 0
+
+        # Initialize campaign entry metadata
+        campaign.entry_atr = calculate_atr(bars_list, period=14) or Decimal("0.0001")
+        campaign.timeframe = self.current_timeframe
+        context["active_campaign_id"] = campaign.campaign_id
+
+        logger.info(
+            "[SOS ENTRY] ENTERING ON SOS (Spring missed)",
+            entry_price=float(entry_price),
+            stop=float(stop_loss),
+            target=float(target_price),
+            phase="Phase D (Monitor phase - BMAD)",
+        )
+
+        return "BUY"
+
+    def _update_entry_metrics_on_exit(
+        self, context: dict, exit_price: Decimal, entry_price: Decimal
+    ) -> None:
+        """
+        Update entry type metrics when position is closed (FR10.4).
+
+        Args:
+            context: Strategy context with entry type info
+            exit_price: Exit price
+            entry_price: Entry price
+        """
+        entry_type = context.get("entry_type")
+        if not entry_type or entry_type not in context.get("entry_metrics", {}):
+            return
+
+        metrics = context["entry_metrics"][entry_type]
+        pnl_pct = float((exit_price - entry_price) / entry_price * 100)
+
+        # Only count initial entries (Spring/SOS), not LPS adds (tracked separately)
+        if entry_type in ("SPRING", "SOS"):
+            metrics.total_entries += 1
+            metrics.total_pnl_pct += Decimal(str(round(pnl_pct, 4)))
+            if pnl_pct > 0:
+                metrics.wins += 1
+            else:
+                metrics.losses += 1
+
+            # Track risk and reward
+            risk_pct = Decimal(str(context.get("entry_risk_pct", 0)))
+            reward_pct = Decimal(str(context.get("entry_reward_pct", 0)))
+            metrics._risk_sum += risk_pct
+            metrics._reward_sum += reward_pct
+
+        # Update LPS add metrics based on trade outcome
+        if context.get("add_count", 0) > 0:
+            lps_metrics = context["entry_metrics"]["LPS"]
+            if pnl_pct > 0:
+                lps_metrics.wins += 1
+            else:
+                lps_metrics.losses += 1
+            lps_metrics.total_pnl_pct += Decimal(str(round(pnl_pct, 4)))
+
+    def _print_entry_type_report(self, context: dict) -> None:
+        """
+        Print entry type analysis after backtest (FR10.4, AC10.8).
+
+        Args:
+            context: Strategy context with entry_metrics
+        """
+        entry_metrics = context.get("entry_metrics", {})
+        spring_m = entry_metrics.get("SPRING", EntryTypeMetrics(entry_type="SPRING"))
+        sos_m = entry_metrics.get("SOS", EntryTypeMetrics(entry_type="SOS"))
+        lps_m = entry_metrics.get("LPS", EntryTypeMetrics(entry_type="LPS"))
+
+        print(f"\n{'=' * 70}")
+        print("[ENTRY TYPE ANALYSIS] - BMAD Execution (Story 13.10)")
+        print("=" * 70)
+
+        print("\n1. SPRING ENTRIES (Buy Phase - Phase C)")
+        print("-" * 70)
+        print(f"  Total Entries:       {spring_m.total_entries}")
+        print(f"  Win Rate:            {spring_m.win_rate:.1f}%")
+        print(f"  Avg Profit:          {spring_m.avg_pnl:+.2f}%")
+        print(f"  Risk/Reward Ratio:   1:{spring_m.risk_reward_ratio:.1f}")
+
+        print("\n2. SOS ENTRIES (Monitor Phase - Phase D)")
+        print("-" * 70)
+        print(f"  Total Entries:       {sos_m.total_entries}")
+        print(f"  Win Rate:            {sos_m.win_rate:.1f}%")
+        print(f"  Avg Profit:          {sos_m.avg_pnl:+.2f}%")
+        print(f"  Risk/Reward Ratio:   1:{sos_m.risk_reward_ratio:.1f}")
+
+        print("\n3. LPS ADDS (Add Phase - Phase D)")
+        print("-" * 70)
+        print(f"  Total Adds:          {lps_m.total_entries}")
+        print(f"  Success Rate:        {lps_m.win_rate:.1f}%")
+        print(f"  Avg Add Profit:      {lps_m.avg_pnl:+.2f}%")
+
+        total_initial = spring_m.total_entries + sos_m.total_entries
+        if total_initial > 0:
+            scale_pct = lps_m.total_entries / total_initial * 100
+            print(f"  Position Scale:      {scale_pct:.1f}% of initial entries")
+
+        # BMAD Completion
+        print("\n4. BMAD WORKFLOW COMPLETION")
+        print("-" * 70)
+        print(f"  Initial Entries (Buy/Monitor): {total_initial}")
+        print(f"  LPS Adds (Add Phase):          {lps_m.total_entries}")
+        if total_initial > 0:
+            bmad_pct = lps_m.total_entries / total_initial * 100
+            print(f"  BMAD Completion Rate:          {bmad_pct:.1f}%")
+
+        # Entry Type Comparison
+        print("\n5. ENTRY TYPE COMPARISON")
+        print("-" * 70)
+        print(f"  Spring R:R: 1:{spring_m.risk_reward_ratio:.1f}")
+        print(f"  SOS R:R:    1:{sos_m.risk_reward_ratio:.1f}")
+        if spring_m.risk_reward_ratio > 0 and sos_m.risk_reward_ratio > 0:
+            advantage = spring_m.risk_reward_ratio - sos_m.risk_reward_ratio
+            print(f"  Spring Advantage: {advantage:.1f}x better R:R")
+        print(f"  Spring Win Rate: {spring_m.win_rate:.1f}%")
+        print(f"  SOS Win Rate:    {sos_m.win_rate:.1f}%")
+
+        # Wyckoff Insight
+        print("\n6. WYCKOFF INSIGHT")
+        print("-" * 70)
+        if spring_m.total_entries > 0:
+            print("  System implements 'Buy at the Spring' (Wyckoff principle)")
+            print(f"  Spring entries show {spring_m.risk_reward_ratio:.1f}x R:R")
+        else:
+            print("  No Spring entries detected - may be missing optimal entry points")
+        if lps_m.total_entries > 0:
+            print("  System scales into positions using LPS (BMAD 'Add' phase)")
+
+    def _build_entry_type_analysis(self, context: dict) -> EntryTypeAnalysis:
+        """
+        Build structured EntryTypeAnalysis for frontend API contract (Story 13.10).
+
+        Converts internal EntryTypeMetrics dataclass data into the Pydantic
+        models expected by the frontend EntryTypeAnalysis Vue component.
+
+        Args:
+            context: Strategy context with entry_metrics
+
+        Returns:
+            EntryTypeAnalysis populated with performance, BMAD stages, and comparison
+        """
+        entry_metrics = context.get("entry_metrics", {})
+        spring_m = entry_metrics.get("SPRING", EntryTypeMetrics(entry_type="SPRING"))
+        sos_m = entry_metrics.get("SOS", EntryTypeMetrics(entry_type="SOS"))
+        lps_m = entry_metrics.get("LPS", EntryTypeMetrics(entry_type="LPS"))
+
+        # Build performance_by_type
+        performance_by_type = []
+        for m in [spring_m, sos_m, lps_m]:
+            performance_by_type.append(
+                EntryTypePerformance(
+                    entry_type=m.entry_type,
+                    count=m.total_entries,
+                    win_rate=m.win_rate,
+                    avg_r_multiple=m.risk_reward_ratio,
+                    profit_factor=m.risk_reward_ratio,  # Use R:R as proxy
+                    total_pnl_pct=float(m.total_pnl_pct),
+                    avg_risk_pct=float(m._risk_sum / m.total_entries)
+                    if m.total_entries > 0
+                    else 0.0,
+                )
+            )
+
+        # Build BMAD stage stats
+        total_initial = spring_m.total_entries + sos_m.total_entries
+        bmad_stages = [
+            BmadStageStats(
+                stage="BUY",
+                count=spring_m.total_entries,
+                completion_pct=spring_m.total_entries / total_initial * 100
+                if total_initial > 0
+                else 0.0,
+            ),
+            BmadStageStats(
+                stage="MONITOR",
+                count=sos_m.total_entries,
+                completion_pct=sos_m.total_entries / total_initial * 100
+                if total_initial > 0
+                else 0.0,
+            ),
+            BmadStageStats(
+                stage="ADD",
+                count=lps_m.total_entries,
+                completion_pct=lps_m.total_entries / total_initial * 100
+                if total_initial > 0
+                else 0.0,
+            ),
+            BmadStageStats(
+                stage="DUMP",
+                count=total_initial,  # All positions eventually exit
+                completion_pct=100.0 if total_initial > 0 else 0.0,
+            ),
+        ]
+
+        # Build Spring vs SOS comparison
+        spring_vs_sos_improvement = {
+            "win_rate_improvement": spring_m.win_rate - sos_m.win_rate,
+            "r_multiple_improvement": spring_m.risk_reward_ratio - sos_m.risk_reward_ratio,
+            "spring_win_rate": spring_m.win_rate,
+            "sos_win_rate": sos_m.win_rate,
+            "spring_avg_r": spring_m.risk_reward_ratio,
+            "sos_avg_r": sos_m.risk_reward_ratio,
+        }
+
+        total_entries = spring_m.total_entries + sos_m.total_entries + lps_m.total_entries
+
+        return EntryTypeAnalysis(
+            performance_by_type=performance_by_type,
+            bmad_stages=bmad_stages,
+            spring_vs_sos_improvement=spring_vs_sos_improvement,
+            total_entries=total_entries,
+            entries_by_type={
+                "SPRING": spring_m.total_entries,
+                "SOS": sos_m.total_entries,
+                "LPS": lps_m.total_entries,
+            },
+        )
 
     def _build_trading_range(self, bars: list[OHLCVBar], current_index: int) -> TradingRange:
         """
@@ -886,6 +1661,122 @@ class EURUSDMultiTimeframeBacktest:
             duration=max(len(lookback_bars), 10),  # Ensure minimum 10 bars
             creek=creek,
             status=RangeStatus.ACTIVE,
+        )
+
+    def _update_campaign_lifecycle(
+        self, context: dict, current_time: datetime, bar_index: int
+    ) -> None:
+        """
+        Update campaign states on each bar (Story 13.7, FR7.5, AC7.11, AC7.15).
+
+        State Transitions:
+        - FORMING (1 pattern) → ACTIVE (2+ patterns) - automatic via add_pattern()
+        - ACTIVE → FAILED (expiration exceeded) - via expire_stale_campaigns()
+
+        Args:
+            context: Strategy context
+            current_time: Current bar timestamp
+            bar_index: Current bar index for logging
+
+        Critical Fix:
+            Previously campaigns stuck in FORMING state forever because
+            expire_stale_campaigns() was never called from strategy loop.
+        """
+        # Initialize campaign state tracking in context
+        if "campaign_states" not in context:
+            context["campaign_states"] = {}
+
+        # Update campaign states (check expiration, FORMING → ACTIVE handled by add_pattern)
+        self.campaign_detector.expire_stale_campaigns(current_time)
+
+        # Log state transitions
+        for campaign in self.campaign_detector._campaigns_by_id.values():
+            campaign_id = campaign.campaign_id
+            old_state = context["campaign_states"].get(campaign_id)
+            new_state = campaign.state
+
+            if old_state != new_state:
+                # State changed - log transition
+                logger.info(
+                    "[CAMPAIGN LIFECYCLE] State transition",
+                    campaign_id=campaign_id,
+                    transition=f"{old_state.name if old_state else 'NEW'} → {new_state.name}",
+                    patterns=len(campaign.patterns),
+                    bar_index=bar_index,
+                    timestamp=current_time,
+                    current_phase=campaign.current_phase.name if campaign.current_phase else None,
+                )
+
+                # Update tracked state
+                context["campaign_states"][campaign_id] = new_state
+
+    def _handle_campaign_exit(
+        self, campaign_id: str, exit_price: Decimal, entry_price: Decimal, exit_reason: str
+    ) -> None:
+        """
+        Mark campaign as COMPLETED or FAILED on position exit (Story 13.7, FR7.6, AC7.12, AC7.13).
+
+        Args:
+            campaign_id: Campaign ID to complete
+            exit_price: Exit price
+            entry_price: Entry price
+            exit_reason: Reason for exit
+
+        Logic:
+            - Calculate P&L percentage
+            - Mark COMPLETED if profit > 0
+            - Mark FAILED if profit <= 0
+            - Log campaign outcome
+        """
+        # Find campaign
+        campaign = next(
+            (
+                c
+                for c in self.campaign_detector._campaigns_by_id.values()
+                if c.campaign_id == campaign_id
+            ),
+            None,
+        )
+
+        if not campaign:
+            logger.warning(
+                "[CAMPAIGN EXIT] Campaign not found",
+                campaign_id=campaign_id,
+                exit_reason=exit_reason,
+            )
+            return
+
+        # Calculate P&L
+        pnl_pct = float((exit_price - entry_price) / entry_price * 100)
+
+        # Determine outcome
+        from src.models.campaign_state import CampaignState
+
+        old_state = campaign.state
+
+        if pnl_pct > 0:
+            campaign.state = CampaignState.COMPLETED
+            campaign.failure_reason = None
+            outcome = "COMPLETED"
+        else:
+            campaign.state = CampaignState.FAILED
+            campaign.failure_reason = exit_reason
+            outcome = "FAILED"
+
+        # Update indexes
+        self.campaign_detector._update_indexes(campaign, old_state)
+
+        # Log campaign outcome
+        logger.info(
+            f"[CAMPAIGN LIFECYCLE] Campaign {outcome}",
+            campaign_id=campaign_id,
+            outcome=outcome,
+            exit_reason=exit_reason,
+            pnl_pct=round(pnl_pct, 2),
+            entry_price=float(entry_price),
+            exit_price=float(exit_price),
+            duration_patterns=len(campaign.patterns),
+            final_phase=campaign.current_phase.name if campaign.current_phase else None,
         )
 
     def _detect_volume_divergence(self, bars: list[OHLCVBar], context: dict) -> bool:

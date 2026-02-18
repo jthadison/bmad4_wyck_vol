@@ -252,7 +252,7 @@ class TestErrorIsolation:
 
         assert result.symbols_scanned == 3
         assert result.errors_count == 1
-        assert result.status == ScanCycleStatus.COMPLETED
+        assert result.status == ScanCycleStatus.PARTIAL
 
     @pytest.mark.asyncio
     async def test_all_failures_returns_failed_status(self, mock_repository, mock_orchestrator):
@@ -383,7 +383,7 @@ class TestScanCycleMetrics:
         assert result.symbols_scanned == 3
         assert result.signals_generated == 2
         assert result.errors_count == 1
-        assert result.status == ScanCycleStatus.COMPLETED
+        assert result.status == ScanCycleStatus.PARTIAL
 
     @pytest.mark.asyncio
     async def test_history_recorded_in_database(self, mock_repository, mock_orchestrator):
@@ -522,11 +522,11 @@ class TestStatusDetermination:
     """Tests for _determine_cycle_status method."""
 
     def test_completed_status(self, scanner):
-        """Test COMPLETED status when all symbols processed."""
+        """Test COMPLETED status when all symbols processed without errors."""
         status = scanner._determine_cycle_status(
             symbols_total=5,
             symbols_processed=5,
-            errors_count=1,
+            errors_count=0,
             was_stopped=False,
         )
         assert status == ScanCycleStatus.COMPLETED

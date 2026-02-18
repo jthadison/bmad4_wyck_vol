@@ -1,0 +1,51 @@
+#!/bin/bash
+# Database backup script for BMAD Wyckoff system
+# Usage: ./scripts/backup-db.sh
+# Runs pg_dump against the production database container
+# Stores timestamped backups in ./backups/ with 30-day retention
+
+set -euo pipefail
+
+# Validate database name contains only safe characters
+DB_NAME="${POSTGRES_DB:-bmad_wyckoff}"
+if ! [[ "$DB_NAME" =~ ^[a-zA-Z0-9_]+$ ]]; then
+  echo "ERROR: POSTGRES_DB contains invalid characters. Only alphanumeric and underscore allowed." >&2
+  exit 1
+fi
+
+if ! [[ "${RETENTION_DAYS:-30}" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: RETENTION_DAYS must be a positive integer." >&2
+  exit 1
+fi
+
+BACKUP_DIR="${BACKUP_DIR:-./backups}"
+RETENTION_DAYS="${RETENTION_DAYS:-30}"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="${BACKUP_DIR}/bmad_wyckoff_${TIMESTAMP}.dump"
+
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
+
+echo "[$(date)] Starting database backup..."
+
+# Run pg_dump inside the postgres container and compress
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  pg_dump -U "${POSTGRES_USER:-bmad}" -d "${POSTGRES_DB:-bmad_wyckoff}" \
+  --format=custom --compress=9 \
+  > "$BACKUP_FILE"
+
+# Verify backup was created and has content
+if [ -s "$BACKUP_FILE" ]; then
+  SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+  echo "[$(date)] Backup successful: $BACKUP_FILE ($SIZE)"
+else
+  echo "[$(date)] ERROR: Backup file is empty or missing!" >&2
+  rm -f "$BACKUP_FILE"
+  exit 1
+fi
+
+# Clean up old backups beyond retention period
+echo "[$(date)] Cleaning up backups older than ${RETENTION_DAYS} days..."
+find "$BACKUP_DIR" -name "bmad_wyckoff_*.dump" -type f -mtime +${RETENTION_DAYS} -delete
+REMAINING=$(find "$BACKUP_DIR" -name "bmad_wyckoff_*.dump" -type f | wc -l)
+echo "[$(date)] Backup complete. ${REMAINING} backup(s) retained."

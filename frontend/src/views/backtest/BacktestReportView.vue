@@ -211,6 +211,35 @@
         />
       </section>
 
+      <!-- Volume Analysis Section (Story 13.8) -->
+      <section v-if="backtestResult.volume_analysis" id="volume-analysis">
+        <h2 class="text-2xl font-semibold text-gray-100 mb-4">
+          Volume Analysis
+        </h2>
+        <VolumeAnalysisPanel
+          :volume-analysis="backtestResult.volume_analysis"
+        />
+      </section>
+
+      <!-- Phase Analysis Section (Story 13.7) -->
+      <section v-if="backtestResult.phase_analysis" id="phase-analysis">
+        <h2 class="text-2xl font-semibold text-gray-100 mb-4">
+          Phase Analysis
+        </h2>
+        <PhaseAnalysisPanel :phase-analysis="backtestResult.phase_analysis" />
+      </section>
+
+      <!-- Entry Type Analysis Section (Story 13.10) -->
+      <section v-if="backtestResult.entry_type_analysis" id="entry-types">
+        <h2 class="text-2xl font-semibold text-gray-100 mb-4">
+          Entry Type Analysis
+        </h2>
+        <EntryTypeAnalysis
+          :entry-type-analysis="backtestResult.entry_type_analysis"
+          :trades="backtestResult.trades"
+        />
+      </section>
+
       <!-- Campaign Performance Section (CRITICAL) -->
       <section
         v-if="backtestResult.campaign_performance?.length > 0"
@@ -273,6 +302,9 @@ import MonthlyReturnsHeatmap from '@/components/backtest/MonthlyReturnsHeatmap.v
 import PatternPerformanceTable from '@/components/backtest/PatternPerformanceTable.vue'
 import CampaignPerformanceTable from '@/components/backtest/CampaignPerformanceTable.vue'
 import TradeListTable from '@/components/backtest/TradeListTable.vue'
+import VolumeAnalysisPanel from '@/components/backtest/VolumeAnalysisPanel.vue'
+import PhaseAnalysisPanel from '@/components/backtest/PhaseAnalysisPanel.vue'
+import EntryTypeAnalysis from '@/components/backtest/EntryTypeAnalysis.vue'
 
 // Skeleton components
 import BacktestSummaryPanelSkeleton from '@/components/backtest/skeletons/BacktestSummaryPanelSkeleton.vue'

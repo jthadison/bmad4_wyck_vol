@@ -22,6 +22,9 @@ if sys.platform == "win32":
 from src.config import settings
 from src.database import Base
 
+# Import all ORM models to register with Base.metadata for autogenerate support
+from src.repositories import paper_trading_orm  # noqa: F401
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

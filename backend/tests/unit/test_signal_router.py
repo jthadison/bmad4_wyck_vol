@@ -13,6 +13,9 @@ from uuid import uuid4
 
 import pytest
 
+# All tests in this file require a PostgreSQL database (JSONB columns).
+pytestmark = pytest.mark.database
+
 from src.models.paper_trading import PaperAccount, PaperPosition
 from src.models.signal import (
     ConfidenceComponents,

@@ -60,3 +60,22 @@ class TestYahooFormatSymbol:
     def test_empty_string_forex_appends_suffix(self):
         """An empty symbol with forex asset class still receives the =X suffix."""
         assert self.adapter._format_symbol("", "forex") == "=X"
+
+    def test_xauusd_maps_to_gold_futures(self):
+        """XAUUSD should map to GC=F (Gold futures) via SYMBOL_MAP."""
+        assert self.adapter._format_symbol("XAUUSD", "forex") == "GC=F"
+        assert self.adapter._format_symbol("XAUUSD", None) == "GC=F"
+        assert self.adapter._format_symbol("XAUUSD", "stock") == "GC=F"
+
+    def test_xagusd_maps_to_silver_futures(self):
+        """XAGUSD should map to SI=F (Silver futures) via SYMBOL_MAP."""
+        assert self.adapter._format_symbol("XAGUSD", "forex") == "SI=F"
+        assert self.adapter._format_symbol("XAGUSD", None) == "SI=F"
+        assert self.adapter._format_symbol("XAGUSD", "stock") == "SI=F"
+
+    def test_symbol_map_takes_precedence_over_asset_class(self):
+        """SYMBOL_MAP should take precedence over asset class formatting rules."""
+        # Even though 'forex' would normally append =X, XAUUSD maps directly to GC=F
+        result = self.adapter._format_symbol("XAUUSD", "forex")
+        assert result == "GC=F"
+        assert result != "XAUUSD=X"  # Should not apply forex formatting

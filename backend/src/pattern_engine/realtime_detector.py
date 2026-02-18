@@ -301,12 +301,20 @@ class RealtimePatternDetector:
             return None
 
         try:
+            # Task #18 (Spring Lookback): Lookback window increased from 5 to 15 bars.
+            # Rationale: Springs often develop over 3-5 bars (shake-out formation), and
+            # a 5-bar window was too narrow, especially on longer timeframes (1H, 4H).
+            # The 15-bar window captures multi-bar spring patterns while maintaining
+            # performance. For 1-minute timeframes this is 15 minutes of history; for
+            # 1-hour timeframes this is 15 hours. Wyckoff springs typically complete
+            # within 10-20 bars on any timeframe.
+            # TODO: Validate via backtest that this doesn't degrade Spring win rates.
             spring = detect_spring(
                 trading_range=trading_range,
                 bars=bars,
                 phase=WyckoffPhase.C,
                 symbol=bar.symbol,
-                start_index=max(20, bar_index - 5),  # Check recent bars only
+                start_index=max(20, bar_index - 15),  # Changed from 5 to 15 (Task #18)
             )
 
             if spring is None:
@@ -372,15 +380,38 @@ class RealtimePatternDetector:
         if trading_range is None or trading_range.ice is None:
             return None
 
+        # Phase must be D for SOS detection (FR15)
+        phase = context.phase_classification
+        if phase is None:
+            return None
+
         # Skip if we already detected an SOS at this index
         if context.last_sos_bar_index == bar_index:
             return None
 
         try:
+            # Build volume analysis dict keyed by timestamp (same format as VolumeAnalyzer)
+            # Task #17 (SOS Bug Fix): Previously volume_analysis and phase were not being
+            # passed to detect_sos_breakout(), causing the 4-gate SOS validation to fail.
+            # This resulted in all SOS patterns being rejected because volume ratio checks
+            # couldn't execute. Now we construct real VolumeAnalysis data from actual bars.
+            volume_analysis: dict = {}
+            if len(bars) >= 20:
+                avg_volume = sum(b.volume for b in bars[-20:]) // 20
+                for b in bars:
+                    vol_ratio = (
+                        Decimal(b.volume) / Decimal(avg_volume)
+                        if avg_volume > 0
+                        else Decimal("1.0")
+                    )
+                    volume_analysis[b.timestamp] = {"volume_ratio": vol_ratio}
+
             sos = detect_sos_breakout(
-                trading_range=trading_range,
+                range=trading_range,
                 bars=bars,
-                start_index=max(20, bar_index - 5),
+                volume_analysis=volume_analysis,  # Now correctly passed (Task #17)
+                phase=phase,  # Now correctly passed (Task #17)
+                symbol=bar.symbol,
             )
 
             if sos is None:
@@ -533,6 +564,7 @@ class RealtimePatternDetector:
                 trading_range=trading_range,
                 bars=bars,
                 ice_level=ice_level,
+                phase=context.get_phase(),
             )
 
             if utad is None:
@@ -701,9 +733,11 @@ class RealtimePatternDetector:
             return None
 
         try:
-            # Build volume analysis list
+            # Build volume analysis list with computed values
             volume_analyses: list[VolumeAnalysis] = []
             avg_volume = sum(b.volume for b in bars[-20:]) // 20
+            spreads = [float(b.high - b.low) for b in bars[-20:]]
+            avg_spread = sum(spreads) / len(spreads) if spreads else 1.0
 
             for b in bars:
                 volume_ratio = (
@@ -711,11 +745,25 @@ class RealtimePatternDetector:
                     if avg_volume > 0
                     else Decimal("1.0000")
                 )
+                bar_spread = float(b.high - b.low)
+                spread_ratio = (
+                    Decimal(str(bar_spread / avg_spread)).quantize(Decimal("0.0001"))
+                    if avg_spread > 0
+                    else Decimal("1.0000")
+                )
+                bar_range = float(b.high - b.low)
+                close_pos = (
+                    Decimal(str((float(b.close) - float(b.low)) / bar_range)).quantize(
+                        Decimal("0.0001")
+                    )
+                    if bar_range > 0
+                    else Decimal("0.5000")
+                )
                 vol_analysis = VolumeAnalysis(
                     bar=b,
                     volume_ratio=volume_ratio,
-                    spread_ratio=Decimal("1.0000"),  # Simplified
-                    close_position=Decimal("0.5000"),  # Simplified
+                    spread_ratio=spread_ratio,
+                    close_position=close_pos,
                 )
                 volume_analyses.append(vol_analysis)
 

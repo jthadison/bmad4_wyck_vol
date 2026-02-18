@@ -111,6 +111,9 @@ BASELINE_METRICS = {
     "api_preview_p95_ms": 50,
     "api_campaign_list_p95_ms": 30,
     "memory_1000_bars_mb": 50,
+    # Story 13.10: Entry type evaluation metrics
+    "entry_type_evaluation_per_bar_ms": 0.5,
+    "entry_priority_sorting_ms": 1.0,
 }
 
 # Performance targets from Story 22.15
@@ -121,6 +124,9 @@ PERFORMANCE_TARGETS = {
     "api_preview_p95_ms": 50,  # AC3: p95 <50ms
     "api_campaign_list_p95_ms": 30,  # AC3: p95 <30ms
     "event_detection_individual_ms": 50,  # Individual event detector target
+    # Story 13.10: Entry type evaluation should not add significant overhead
+    "entry_type_evaluation_per_bar_ms": 0.5,  # Entry type eval per bar
+    "entry_priority_sorting_ms": 1.0,  # Priority sorting for concurrent signals
 }
 
 

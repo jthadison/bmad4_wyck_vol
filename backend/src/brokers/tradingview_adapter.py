@@ -133,6 +133,16 @@ class TradingViewAdapter(TradingPlatformAdapter):
             "TradingView webhook adapter does not support open orders queries"
         )
 
+    async def close_all_positions(self) -> list[ExecutionReport]:
+        """
+        TradingView doesn't support position management via API.
+
+        Returns:
+            Empty list (no positions to close)
+        """
+        logger.warning("tradingview_close_all_not_supported")
+        return []
+
     def validate_order(self, order: Order) -> bool:
         """
         Validate order from TradingView webhook.

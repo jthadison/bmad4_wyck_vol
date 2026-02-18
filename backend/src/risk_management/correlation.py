@@ -44,11 +44,14 @@ Integration:
 Author: Story 7.5
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.audit_trail import AuditTrailCreate
 from src.models.correlation_campaign import CampaignForCorrelation
 from src.models.risk import (
     CorrelatedRisk,
@@ -603,16 +606,18 @@ def check_correlation_proximity_warnings(
     return warnings
 
 
-def override_correlation_limit(
+async def override_correlation_limit(
     signal_id: UUID,
     approver: str,
     reason: str,
+    session: AsyncSession | None = None,
 ) -> bool:
     """
     Manual override of correlation limit with audit logging (AC 10).
 
     Allows manual approval to bypass correlation limit rejection in strict mode.
-    Logs override to audit trail with full context for compliance.
+    Persists override to audit_trail table for compliance. Falls back to
+    structured logging if no database session is provided.
 
     Parameters:
     -----------
@@ -622,19 +627,27 @@ def override_correlation_limit(
         Name/ID of person approving override
     reason : str
         Justification for override
+    session : AsyncSession | None
+        Database session for audit persistence (optional for backward compat)
 
     Returns:
     --------
     bool
-        True (always allows signal approval to proceed)
+        True if override succeeds. False if session is provided but
+        audit write fails (compliance policy: no unaudited overrides).
+
+    Raises:
+    -------
+    No exceptions raised -- returns False on audit write failure.
 
     Example:
     --------
     >>> from uuid import uuid4
-    >>> override_correlation_limit(
+    >>> await override_correlation_limit(
     ...     signal_id=uuid4(),
     ...     approver="john.doe@example.com",
-    ...     reason="Exceptional Wyckoff setup with strong volume confirmation"
+    ...     reason="Exceptional Wyckoff setup with strong volume confirmation",
+    ...     session=db_session,
     ... )
     True
     """
@@ -646,15 +659,33 @@ def override_correlation_limit(
         event_type="CORRELATION_OVERRIDE",
     )
 
-    # TODO: Insert into audit_trail table when database schema is ready (Story 8.x)
-    # audit_trail.insert(
-    #     event_type="CORRELATION_OVERRIDE",
-    #     entity_type="SIGNAL",
-    #     entity_id=signal_id,
-    #     actor=approver,
-    #     action="Manual override of correlation limit",
-    #     metadata={"reason": reason, "timestamp": datetime.utcnow()},
-    #     correlation_id=correlation_id
-    # )
+    if session is not None:
+        # Compliance policy: if a session is provided, the audit write MUST succeed.
+        # An unaudited override is not permitted -- return False to block the override.
+        try:
+            from src.repositories.audit_trail_repository import AuditTrailRepository
+
+            repo = AuditTrailRepository(session)
+            await repo.insert(
+                AuditTrailCreate(
+                    event_type="CORRELATION_OVERRIDE",
+                    entity_type="SIGNAL",
+                    entity_id=str(signal_id),
+                    actor=approver,
+                    action="Manual override of correlation limit",
+                    metadata={
+                        "reason": reason,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    },
+                )
+            )
+        except Exception:
+            logger.error(
+                "correlation_override_audit_write_failed",
+                signal_id=str(signal_id),
+                approver=approver,
+                reason=reason,
+            )
+            return False
 
     return True

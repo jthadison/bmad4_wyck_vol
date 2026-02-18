@@ -410,12 +410,20 @@ class TestFullCampaignProgression:
         assert is_valid_phase_transition(WyckoffPhase.D, WyckoffPhase.E)
 
     def test_campaign_cannot_regress(self):
-        """Campaign should not regress to earlier phases."""
-        # Cannot go backwards
+        """Campaign should not regress to earlier phases (except valid failures).
+
+        Per FR7.3/AC7.22:
+        - D->B and D->C are valid (SOS breakout failure)
+        - E->A is valid (distribution detected, new accumulation)
+        """
+        # D->A is never valid
         assert not is_valid_phase_transition(WyckoffPhase.D, WyckoffPhase.A)
-        assert not is_valid_phase_transition(WyckoffPhase.D, WyckoffPhase.B)
-        assert not is_valid_phase_transition(WyckoffPhase.D, WyckoffPhase.C)
-        assert not is_valid_phase_transition(WyckoffPhase.E, WyckoffPhase.A)
+        # D->B and D->C are valid (failed breakout returns to accumulation)
+        assert is_valid_phase_transition(WyckoffPhase.D, WyckoffPhase.B)
+        assert is_valid_phase_transition(WyckoffPhase.D, WyckoffPhase.C)
+        # E->A is valid (distribution, new accumulation starting)
+        assert is_valid_phase_transition(WyckoffPhase.E, WyckoffPhase.A)
+        # E cannot go to B, C, or D
         assert not is_valid_phase_transition(WyckoffPhase.E, WyckoffPhase.B)
         assert not is_valid_phase_transition(WyckoffPhase.E, WyckoffPhase.C)
         assert not is_valid_phase_transition(WyckoffPhase.E, WyckoffPhase.D)

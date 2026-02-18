@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 # --- In-memory run tracking with TTL-based eviction ---
 # Entries older than ENTRY_TTL_SECONDS are eligible for cleanup.
 # Cleanup runs before each new insertion to keep dictionaries bounded.
+#
+# M-2 verification (2026-02): Memory leak is prevented by:
+# 1. TTL eviction: non-RUNNING entries older than 1 hour are removed
+# 2. Max cap: if store exceeds MAX_ENTRIES after TTL eviction, oldest
+#    non-RUNNING entries are dropped until within limit
+# 3. cleanup_stale_entries() is called before every new insertion
 MAX_ENTRIES = 1000
 ENTRY_TTL_SECONDS = 3600  # 1 hour
 
@@ -76,8 +82,8 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
 
     Args:
         days: Number of days of historical data
-        symbol: Stock symbol (e.g., "SPY", "PLTR")
-        timeframe: Bar timeframe (e.g., "1d", "4h", "1h")
+        symbol: Stock symbol (e.g., "SPY", "PLTR") or forex pair (e.g., "EURUSD", "GBPUSD")
+        timeframe: Bar timeframe (e.g., "1d", "4h", "1h", "15m")
 
     Returns:
         List of OHLCV bar dictionaries
@@ -98,10 +104,16 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
         end_date = datetime.now(UTC).date()
         start_date = end_date - timedelta(days=days)
 
+        # Detect asset class from symbol format
+        # Forex pairs are 6 characters (EURUSD, GBPUSD, etc.)
+        # Stocks are typically 1-5 characters (AAPL, SPY, PLTR, etc.)
+        asset_class = "forex" if len(symbol) == 6 and symbol.isalpha() else None
+
         logger.info(
             "Fetching real market data from Polygon.io",
             extra={
                 "symbol": symbol,
+                "asset_class": asset_class,
                 "start_date": str(start_date),
                 "end_date": str(end_date),
                 "timeframe": timeframe,
@@ -114,6 +126,7 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
             start_date=start_date,
             end_date=end_date,
             timeframe=timeframe,
+            asset_class=asset_class,
         )
 
         # Convert OHLCVBar objects to dictionaries
