@@ -7,6 +7,7 @@
   "avg_validate_profit_factor": "1.6500",
   "avg_validate_sharpe": "1.0500",
   "avg_validate_max_drawdown": "0.0700",
+  "avg_validate_avg_r": "1.8000",
   "stability_score": "0.1200",
   "degradation_count": 2,
   "notes": "Initial estimated walk-forward baselines. EURUSD daily, 2-year lookback, 6mo train / 2mo validate (75/25 split), 2mo step, 9 windows."

@@ -363,7 +363,10 @@ class TestSignatureEnforcement:
             {"symbol": "AAPL", "action": "buy", "order_type": "market", "quantity": 100}
         )
 
-        with patch.object(tv_module, "settings") as mock_settings:
+        with (
+            patch.object(tv_module, "settings") as mock_settings,
+            patch.object(tv_module.tradingview_adapter, "webhook_secret", "test-secret"),
+        ):
             mock_settings.auto_execute_orders = True
             mock_settings.TRADINGVIEW_WEBHOOK_SECRET = None
 
