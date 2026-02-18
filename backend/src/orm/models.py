@@ -399,7 +399,7 @@ class Signal(Base):
 
     # Signal identification
     signal_type: Mapped[str] = mapped_column(String(10), nullable=False, server_default="LONG")
-    pattern_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    pattern_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     phase: Mapped[str | None] = mapped_column(String(1), nullable=True)
     pattern_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
