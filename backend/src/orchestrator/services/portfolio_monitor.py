@@ -191,6 +191,11 @@ class PortfolioMonitor:
                 return await self._position_repo.get_open_positions()
             except Exception as e:
                 logger.warning("positions_fetch_failed", error=str(e))
+                return []
+        logger.warning(
+            "no_position_repo_configured",
+            detail="Portfolio heat will read 0% — risk monitoring is inactive",
+        )
         return []
 
     async def _get_active_campaigns(self) -> list[Any]:
@@ -200,7 +205,31 @@ class PortfolioMonitor:
                 return await self._campaign_repo.get_active_campaigns()
             except Exception as e:
                 logger.warning("campaigns_fetch_failed", error=str(e))
+                return []
+        logger.warning(
+            "no_campaign_repo_configured",
+            detail="Active campaigns will read empty — campaign monitoring is inactive",
+        )
         return []
+
+    @staticmethod
+    def _position_risk(p: Any) -> Decimal:
+        """Extract or compute risk_amount for a position-like object.
+
+        Uses ``risk_amount`` if present (e.g. Signal ORM). Otherwise
+        computes ``abs(entry_price - stop_loss) * shares`` from the
+        PositionModel fields.  Returns ``Decimal("0")`` when neither
+        path is available.
+        """
+        risk = getattr(p, "risk_amount", None)
+        if risk is not None:
+            return Decimal(str(risk))
+        entry = getattr(p, "entry_price", None)
+        stop = getattr(p, "stop_loss", None)
+        shares = getattr(p, "shares", None)
+        if entry is not None and stop is not None and shares is not None:
+            return abs(Decimal(str(entry)) - Decimal(str(stop))) * Decimal(str(shares))
+        return Decimal("0")
 
     async def get_portfolio_heat(self) -> Decimal:
         """
@@ -213,7 +242,10 @@ class PortfolioMonitor:
         if context.account_equity <= 0:
             return Decimal("0")
 
-        total_risk = sum(getattr(p, "risk_amount", Decimal("0")) for p in context.open_positions)
+        total_risk = sum(
+            (self._position_risk(p) for p in context.open_positions),
+            Decimal("0"),
+        )
         heat = (total_risk / context.account_equity) * 100
 
         logger.debug(
