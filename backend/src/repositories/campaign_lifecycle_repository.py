@@ -17,7 +17,7 @@ Key Methods (AC: 9):
 
 Database Schema:
 ----------------
-campaigns table:
+campaigns table (CampaignModel ORM):
 - id (UUID, PK)
 - campaign_id (VARCHAR(50), UNIQUE) - Human-readable: "AAPL-2024-10-15"
 - symbol, timeframe, trading_range_id
@@ -27,18 +27,18 @@ campaigns table:
 - weighted_avg_entry, total_shares, total_pnl (NUMERIC)
 - start_date, completed_at (TIMESTAMPTZ)
 - invalidation_reason (TEXT, nullable)
+- entries (JSONB) - EntryDetails tracking
 - version (INT, optimistic locking)
 - created_at, updated_at (TIMESTAMPTZ)
 
-campaign_positions table:
-- position_id (UUID, PK)
+positions table (PositionModel ORM):
+- id (UUID, PK)
 - campaign_id (UUID, FK to campaigns)
 - signal_id (UUID, FK to signals)
 - pattern_type (VARCHAR: SPRING, SOS, LPS)
-- entry_date, entry_price, shares, stop_loss, target_price (NUMERIC)
+- entry_date, entry_price, shares, stop_loss (NUMERIC)
 - current_price, current_pnl (NUMERIC)
-- status (VARCHAR: OPEN, CLOSED, PARTIAL)
-- allocation_percent, risk_amount (NUMERIC)
+- status (VARCHAR: OPEN, CLOSED)
 - created_at, updated_at (TIMESTAMPTZ)
 
 Integration:
@@ -51,13 +51,19 @@ Integration:
 Author: Story 9.1
 """
 
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 import structlog
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.models.campaign_lifecycle import Campaign, CampaignPosition, CampaignStatus
+from src.repositories.models import CampaignModel, PositionModel
 
 logger = structlog.get_logger(__name__)
 
@@ -80,6 +86,68 @@ class CampaignRepositoryError(Exception):
     pass
 
 
+def _position_model_to_domain(pos_model: PositionModel) -> CampaignPosition:
+    """Convert PositionModel ORM to CampaignPosition Pydantic domain model.
+
+    Note: CampaignPosition has fields (target_price, allocation_percent, risk_amount)
+    that are not stored in the positions table. These are set to computed defaults.
+    """
+    entry_price = pos_model.entry_price or Decimal("0")
+    shares = pos_model.shares or Decimal("0")
+    stop_loss = pos_model.stop_loss or Decimal("0")
+    current_price = pos_model.current_price or entry_price
+    current_pnl = pos_model.current_pnl or (current_price - entry_price) * shares
+
+    # risk_amount is not stored on PositionModel; compute from entry/stop
+    risk_amount = abs(entry_price - stop_loss) * shares
+
+    return CampaignPosition(
+        position_id=pos_model.id,
+        signal_id=pos_model.signal_id,
+        pattern_type=pos_model.pattern_type,
+        entry_date=pos_model.entry_date,
+        entry_price=entry_price,
+        shares=shares,
+        stop_loss=stop_loss,
+        target_price=entry_price,  # Not stored in DB; caller should override
+        current_price=current_price,
+        current_pnl=current_pnl,
+        status=pos_model.status or "OPEN",
+        allocation_percent=Decimal("0.00"),  # Not stored in positions table
+        risk_amount=risk_amount,
+        created_at=pos_model.created_at or datetime.now(UTC),
+        updated_at=pos_model.updated_at or datetime.now(UTC),
+    )
+
+
+def _campaign_model_to_domain(
+    campaign_model: CampaignModel,
+    positions: list[CampaignPosition] | None = None,
+) -> Campaign:
+    """Convert CampaignModel ORM to Campaign Pydantic domain model."""
+    return Campaign(
+        id=campaign_model.id,
+        campaign_id=campaign_model.campaign_id,
+        symbol=campaign_model.symbol,
+        timeframe=campaign_model.timeframe,
+        trading_range_id=campaign_model.trading_range_id,
+        status=campaign_model.status,
+        phase=campaign_model.phase,
+        positions=positions or [],
+        entries=campaign_model.entries or {},
+        total_risk=campaign_model.total_risk or Decimal("0.00"),
+        total_allocation=campaign_model.total_allocation or Decimal("0.00"),
+        current_risk=campaign_model.current_risk or Decimal("0.00"),
+        weighted_avg_entry=campaign_model.weighted_avg_entry,
+        total_shares=campaign_model.total_shares or Decimal("0.00"),
+        total_pnl=campaign_model.total_pnl or Decimal("0.00"),
+        start_date=campaign_model.start_date,
+        completed_at=campaign_model.completed_at,
+        invalidation_reason=campaign_model.invalidation_reason,
+        version=campaign_model.version or 1,
+    )
+
+
 class CampaignLifecycleRepository:
     """
     Repository for campaign lifecycle database operations (AC: 9).
@@ -87,8 +155,8 @@ class CampaignLifecycleRepository:
     Provides async methods for creating, fetching, and updating campaigns
     with full optimistic locking support to prevent race conditions.
 
-    Note: This is a domain-model-based repository. Database ORM models
-    need to be mapped separately (see database migration Story 9.1).
+    Uses CampaignModel and PositionModel ORM models from repositories/models.py,
+    converting to/from Campaign and CampaignPosition domain models.
     """
 
     def __init__(self, session: AsyncSession):
@@ -131,22 +199,70 @@ class CampaignLifecycleRepository:
         >>> logger.info("campaign_created", campaign_id=created.campaign_id)
         """
         try:
-            # TODO: Map to SQLAlchemy ORM model and insert
-            # For now, this is a placeholder that logs the operation
+            now = datetime.now(UTC)
+
+            campaign_model = CampaignModel(
+                id=campaign.id,
+                campaign_id=campaign.campaign_id,
+                symbol=campaign.symbol,
+                timeframe=campaign.timeframe,
+                trading_range_id=campaign.trading_range_id,
+                status=campaign.status.value,
+                phase=campaign.phase,
+                entries=campaign.entries if isinstance(campaign.entries, dict) else {},
+                total_risk=campaign.total_risk,
+                total_allocation=campaign.total_allocation,
+                current_risk=campaign.current_risk,
+                weighted_avg_entry=campaign.weighted_avg_entry,
+                total_shares=campaign.total_shares,
+                total_pnl=campaign.total_pnl,
+                start_date=campaign.start_date,
+                completed_at=campaign.completed_at,
+                invalidation_reason=campaign.invalidation_reason,
+                version=campaign.version,
+                created_at=now,
+                updated_at=now,
+            )
+
+            self.session.add(campaign_model)
+
+            # Insert positions if any
+            for pos in campaign.positions:
+                pos_model = PositionModel(
+                    id=pos.position_id,
+                    campaign_id=campaign.id,
+                    signal_id=pos.signal_id,
+                    symbol=campaign.symbol,
+                    timeframe=campaign.timeframe,
+                    pattern_type=pos.pattern_type,
+                    entry_date=pos.entry_date,
+                    entry_price=pos.entry_price,
+                    shares=pos.shares,
+                    stop_loss=pos.stop_loss,
+                    current_price=pos.current_price,
+                    current_pnl=pos.current_pnl,
+                    status=pos.status,
+                    created_at=now,
+                    updated_at=now,
+                )
+                self.session.add(pos_model)
+
+            await self.session.commit()
+            await self.session.refresh(campaign_model)
+
             logger.info(
-                "campaign_create_placeholder",
+                "campaign_created",
                 campaign_id=campaign.campaign_id,
                 symbol=campaign.symbol,
                 status=campaign.status.value,
                 position_count=len(campaign.positions),
                 total_allocation=str(campaign.total_allocation),
-                message="Database ORM mapping not yet implemented (Story 9.1 migration)",
             )
 
-            # Return the campaign as-is (in real impl, would return DB-persisted version)
             return campaign
 
-        except Exception as e:
+        except SQLAlchemyError as e:
+            await self.session.rollback()
             logger.error(
                 "campaign_create_failed",
                 campaign_id=campaign.campaign_id,
@@ -159,7 +275,7 @@ class CampaignLifecycleRepository:
         """
         Fetch campaign by primary key with all positions loaded (AC: 9).
 
-        Performs JOIN with campaign_positions to load complete campaign state.
+        Performs JOIN with positions to load complete campaign state.
 
         Parameters:
         -----------
@@ -179,15 +295,21 @@ class CampaignLifecycleRepository:
         ...     print(f"Found {len(campaign.positions)} positions")
         """
         try:
-            # TODO: Implement SQLAlchemy query with selectinload(positions)
-            logger.warning(
-                "get_campaign_by_id_not_implemented",
-                campaign_id=str(campaign_id),
-                message="Database schema not yet implemented (Story 9.1 migration)",
+            result = await self.session.execute(
+                select(CampaignModel)
+                .where(CampaignModel.id == campaign_id)
+                .options(selectinload(CampaignModel.positions))
             )
-            return None
+            campaign_model = result.scalar_one_or_none()
 
-        except Exception as e:
+            if not campaign_model:
+                return None
+
+            positions = [_position_model_to_domain(p) for p in (campaign_model.positions or [])]
+
+            return _campaign_model_to_domain(campaign_model, positions)
+
+        except SQLAlchemyError as e:
             logger.error("get_campaign_by_id_failed", campaign_id=str(campaign_id), error=str(e))
             raise CampaignRepositoryError(f"Failed to fetch campaign: {e}") from e
 
@@ -224,20 +346,31 @@ class CampaignLifecycleRepository:
         ...     new_campaign = await create_campaign(...)
         """
         try:
-            # TODO: Implement query:
-            # SELECT * FROM campaigns
-            # WHERE trading_range_id = $1
-            #   AND status IN ('ACTIVE', 'MARKUP')
-            # ORDER BY created_at DESC
-            # LIMIT 1
-            logger.warning(
-                "get_campaign_by_trading_range_not_implemented",
-                trading_range_id=str(trading_range_id),
-                message="Database schema not yet implemented (Story 9.1 migration)",
+            result = await self.session.execute(
+                select(CampaignModel)
+                .where(
+                    CampaignModel.trading_range_id == trading_range_id,
+                    CampaignModel.status.in_(
+                        [
+                            CampaignStatus.ACTIVE.value,
+                            CampaignStatus.MARKUP.value,
+                        ]
+                    ),
+                )
+                .options(selectinload(CampaignModel.positions))
+                .order_by(CampaignModel.created_at.desc())
+                .limit(1)
             )
-            return None
+            campaign_model = result.scalar_one_or_none()
 
-        except Exception as e:
+            if not campaign_model:
+                return None
+
+            positions = [_position_model_to_domain(p) for p in (campaign_model.positions or [])]
+
+            return _campaign_model_to_domain(campaign_model, positions)
+
+        except SQLAlchemyError as e:
             logger.error(
                 "get_campaign_by_trading_range_failed",
                 trading_range_id=str(trading_range_id),
@@ -277,16 +410,34 @@ class CampaignLifecycleRepository:
         ...     print(f"{campaign.campaign_id}: {campaign.total_allocation}% allocated")
         """
         try:
-            # TODO: Implement query with filters
-            logger.warning(
-                "get_campaigns_by_symbol_not_implemented",
+            stmt = (
+                select(CampaignModel)
+                .where(CampaignModel.symbol == symbol)
+                .options(selectinload(CampaignModel.positions))
+            )
+
+            if status:
+                stmt = stmt.where(CampaignModel.status == status.value)
+
+            stmt = stmt.order_by(CampaignModel.start_date.desc()).limit(limit).offset(offset)
+
+            result = await self.session.execute(stmt)
+            campaign_models = result.scalars().all()
+
+            campaigns = []
+            for cm in campaign_models:
+                positions = [_position_model_to_domain(p) for p in (cm.positions or [])]
+                campaigns.append(_campaign_model_to_domain(cm, positions))
+
+            logger.info(
+                "campaigns_by_symbol_retrieved",
                 symbol=symbol,
                 status=status.value if status else None,
-                message="Database schema not yet implemented (Story 9.1 migration)",
+                count=len(campaigns),
             )
-            return []
+            return campaigns
 
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger.error("get_campaigns_by_symbol_failed", symbol=symbol, error=str(e))
             raise CampaignRepositoryError(f"Failed to list campaigns: {e}") from e
 
@@ -335,23 +486,37 @@ class CampaignLifecycleRepository:
         ...     print(f"{c.campaign_id}: Phase {c.phase}")
         """
         try:
-            # TODO: Implement query:
-            # SELECT * FROM campaigns
-            # WHERE timeframe = $1
-            #   AND ($2 IS NULL OR symbol = $2)
-            #   AND ($3 IS NULL OR status = $3)
-            # ORDER BY start_date DESC
-            # LIMIT $4 OFFSET $5
-            logger.warning(
-                "get_campaigns_by_timeframe_not_implemented",
+            stmt = (
+                select(CampaignModel)
+                .where(CampaignModel.timeframe == timeframe)
+                .options(selectinload(CampaignModel.positions))
+            )
+
+            if symbol:
+                stmt = stmt.where(CampaignModel.symbol == symbol)
+            if status:
+                stmt = stmt.where(CampaignModel.status == status.value)
+
+            stmt = stmt.order_by(CampaignModel.start_date.desc()).limit(limit).offset(offset)
+
+            result = await self.session.execute(stmt)
+            campaign_models = result.scalars().all()
+
+            campaigns = []
+            for cm in campaign_models:
+                positions = [_position_model_to_domain(p) for p in (cm.positions or [])]
+                campaigns.append(_campaign_model_to_domain(cm, positions))
+
+            logger.info(
+                "campaigns_by_timeframe_retrieved",
                 timeframe=timeframe,
                 symbol=symbol,
                 status=status.value if status else None,
-                message="Database schema not yet implemented (Story 9.1 migration)",
+                count=len(campaigns),
             )
-            return []
+            return campaigns
 
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger.error(
                 "get_campaigns_by_timeframe_failed",
                 timeframe=timeframe,
@@ -387,26 +552,40 @@ class CampaignLifecycleRepository:
         >>> print(f"Active daily campaigns: {stats.get('ACTIVE', 0)}")
         """
         try:
-            # TODO: Implement query:
-            # SELECT status, COUNT(*) as count
-            # FROM campaigns
-            # WHERE timeframe = $1
-            #   AND ($2 IS NULL OR symbol = $2)
-            # GROUP BY status
-            logger.warning(
-                "get_timeframe_statistics_not_implemented",
-                timeframe=timeframe,
-                symbol=symbol,
-                message="Database schema not yet implemented (Story 9.1 migration)",
+            stmt = (
+                select(
+                    CampaignModel.status,
+                    func.count().label("count"),
+                )
+                .where(CampaignModel.timeframe == timeframe)
+                .group_by(CampaignModel.status)
             )
-            return {
+
+            if symbol:
+                stmt = stmt.where(CampaignModel.symbol == symbol)
+
+            result = await self.session.execute(stmt)
+            rows = result.all()
+
+            # Build dict with all statuses defaulted to 0
+            stats: dict[str, int] = {
                 "ACTIVE": 0,
                 "MARKUP": 0,
                 "COMPLETED": 0,
                 "INVALIDATED": 0,
             }
+            for status_val, count in rows:
+                stats[status_val] = count
 
-        except Exception as e:
+            logger.info(
+                "timeframe_statistics_retrieved",
+                timeframe=timeframe,
+                symbol=symbol,
+                stats=stats,
+            )
+            return stats
+
+        except SQLAlchemyError as e:
             logger.error(
                 "get_timeframe_statistics_failed",
                 timeframe=timeframe,
@@ -459,23 +638,61 @@ class CampaignLifecycleRepository:
         ...     campaign = await repo.get_campaign_by_id(campaign.id)
         """
         try:
-            # TODO: Implement optimistic locking update:
-            # UPDATE campaigns
-            # SET total_allocation = $1, version = version + 1, updated_at = NOW()
-            # WHERE id = $2 AND version = $3
-            # RETURNING *
-            logger.warning(
-                "update_campaign_not_implemented",
-                campaign_id=campaign.campaign_id,
-                version=campaign.version,
-                message="Database schema not yet implemented (Story 9.1 migration)",
+            now = datetime.now(UTC)
+
+            # Optimistic locking: UPDATE only if version matches
+            stmt = (
+                update(CampaignModel)
+                .where(
+                    CampaignModel.id == campaign.id,
+                    CampaignModel.version == campaign.version,
+                )
+                .values(
+                    status=campaign.status.value,
+                    phase=campaign.phase,
+                    entries=campaign.entries if isinstance(campaign.entries, dict) else {},
+                    total_risk=campaign.total_risk,
+                    total_allocation=campaign.total_allocation,
+                    current_risk=campaign.current_risk,
+                    weighted_avg_entry=campaign.weighted_avg_entry,
+                    total_shares=campaign.total_shares,
+                    total_pnl=campaign.total_pnl,
+                    completed_at=campaign.completed_at,
+                    invalidation_reason=campaign.invalidation_reason,
+                    version=campaign.version + 1,
+                    updated_at=now,
+                )
             )
 
-            # Return campaign with incremented version (placeholder)
-            campaign.version += 1
-            return campaign
+            result = await self.session.execute(stmt)
+            await self.session.commit()
 
-        except Exception as e:
+            if result.rowcount == 0:  # type: ignore[union-attr]
+                # Check if campaign exists at all
+                check = await self.session.execute(
+                    select(CampaignModel.version).where(CampaignModel.id == campaign.id)
+                )
+                existing = check.scalar_one_or_none()
+                if existing is None:
+                    raise CampaignNotFoundError(f"Campaign {campaign.id} not found")
+                raise OptimisticLockError(
+                    f"Version conflict: expected {campaign.version}, " f"database has {existing}"
+                )
+
+            logger.info(
+                "campaign_updated",
+                campaign_id=campaign.campaign_id,
+                version=campaign.version + 1,
+                status=campaign.status.value,
+            )
+
+            # Return a fresh copy with incremented version (never mutate input)
+            return campaign.model_copy(update={"version": campaign.version + 1})
+
+        except (OptimisticLockError, CampaignNotFoundError):
+            raise
+        except SQLAlchemyError as e:
+            await self.session.rollback()
             logger.error(
                 "update_campaign_failed",
                 campaign_id=campaign.campaign_id,
@@ -491,7 +708,7 @@ class CampaignLifecycleRepository:
 
         Workflow:
         ---------
-        1. Insert position into campaign_positions table
+        1. Insert position into positions table
         2. Update campaign totals:
            - total_risk += position.risk_amount
            - total_allocation += position.allocation_percent
@@ -516,6 +733,8 @@ class CampaignLifecycleRepository:
         -------
         CampaignNotFoundError
             If campaign not found
+        OptimisticLockError
+            If version mismatch (concurrent update detected)
         CampaignRepositoryError
             If database operation fails
 
@@ -526,25 +745,95 @@ class CampaignLifecycleRepository:
         >>> assert len(updated_campaign.positions) == 2  # Spring + SOS
         """
         try:
-            # TODO: Implement position insert + campaign update in transaction
-            logger.warning(
-                "add_position_to_campaign_not_implemented",
-                campaign_id=str(campaign_id),
-                pattern_type=position.pattern_type,
-                message="Database schema not yet implemented (Story 9.1 migration)",
+            # Fetch campaign to verify existence and read current version
+            result = await self.session.execute(
+                select(CampaignModel).where(CampaignModel.id == campaign_id)
             )
+            campaign_model = result.scalar_one_or_none()
 
-            # Placeholder: fetch campaign and add position
-            campaign = await self.get_campaign_by_id(campaign_id)
-            if campaign is None:
+            if not campaign_model:
                 raise CampaignNotFoundError(f"Campaign {campaign_id} not found")
 
-            # In real implementation, this would be done in database transaction
-            return campaign
+            now = datetime.now(UTC)
+            current_version = campaign_model.version or 0
 
-        except CampaignNotFoundError:
+            # Insert position
+            pos_model = PositionModel(
+                id=position.position_id,
+                campaign_id=campaign_id,
+                signal_id=position.signal_id,
+                symbol=campaign_model.symbol,
+                timeframe=campaign_model.timeframe,
+                pattern_type=position.pattern_type,
+                entry_date=position.entry_date,
+                entry_price=position.entry_price,
+                shares=position.shares,
+                stop_loss=position.stop_loss,
+                current_price=position.current_price,
+                current_pnl=position.current_pnl,
+                status=position.status,
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(pos_model)
+
+            # Compute new totals
+            new_total_risk = (campaign_model.total_risk or Decimal("0")) + position.risk_amount
+            new_total_allocation = (
+                campaign_model.total_allocation or Decimal("0")
+            ) + position.allocation_percent
+            new_total_shares = (campaign_model.total_shares or Decimal("0")) + position.shares
+
+            # Recalculate weighted average entry
+            existing_shares = campaign_model.total_shares or Decimal("0")
+            existing_cost = (campaign_model.weighted_avg_entry or Decimal("0")) * existing_shares
+            new_cost = position.entry_price * position.shares
+            new_weighted_avg = None
+            if new_total_shares > Decimal("0"):
+                new_weighted_avg = (existing_cost + new_cost) / new_total_shares
+
+            # Optimistic locking: UPDATE only if version matches
+            upd = (
+                update(CampaignModel)
+                .where(
+                    CampaignModel.id == campaign_id,
+                    CampaignModel.version == current_version,
+                )
+                .values(
+                    total_risk=new_total_risk,
+                    total_allocation=new_total_allocation,
+                    total_shares=new_total_shares,
+                    weighted_avg_entry=new_weighted_avg,
+                    version=current_version + 1,
+                    updated_at=now,
+                )
+            )
+            upd_result = await self.session.execute(upd)
+
+            if upd_result.rowcount == 0:  # type: ignore[union-attr]
+                await self.session.rollback()
+                raise OptimisticLockError(
+                    f"Version conflict on campaign {campaign_id}: "
+                    f"expected {current_version}, row was modified concurrently"
+                )
+
+            await self.session.commit()
+
+            logger.info(
+                "position_added_to_campaign",
+                campaign_id=str(campaign_id),
+                pattern_type=position.pattern_type,
+                shares=str(position.shares),
+                new_version=current_version + 1,
+            )
+
+            # Re-fetch to return complete state with all positions loaded
+            return await self.get_campaign_by_id(campaign_id)  # type: ignore[return-value]
+
+        except (CampaignNotFoundError, OptimisticLockError):
             raise
-        except Exception as e:
+        except SQLAlchemyError as e:
+            await self.session.rollback()
             logger.error(
                 "add_position_to_campaign_failed",
                 campaign_id=str(campaign_id),
