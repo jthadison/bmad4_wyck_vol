@@ -134,8 +134,9 @@ const stopDistance = computed(() => {
   }
 })
 
-// TODO: Temporary heuristic - replace with backend asset_class field when available
+// Use backend asset_class when available, fall back to heuristic
 const assetClass = computed(() => {
+  if (props.signal.asset_class) return props.signal.asset_class
   const symbol = props.signal.symbol
   // Forex pairs typically have 6 chars (e.g., EURUSD) or contain /
   if (symbol.includes('/') || /^[A-Z]{6}$/.test(symbol)) return 'Forex'
@@ -315,6 +316,30 @@ const handleKeyPress = (event: KeyboardEvent) => {
             data-testid="asset-class"
           >
             {{ assetClass }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Risk, Phase -->
+      <div class="grid grid-cols-2 gap-2 mb-3 text-sm">
+        <div>
+          <span class="text-gray-600 dark:text-gray-400">Risk:</span>
+          <span
+            class="ml-2 font-semibold text-red-600 dark:text-red-400"
+            data-testid="risk-percent"
+          >
+            {{
+              signal.risk_percent ? signal.risk_percent.toFixed(2) + '%' : 'N/A'
+            }}
+          </span>
+        </div>
+        <div>
+          <span class="text-gray-600 dark:text-gray-400">Phase:</span>
+          <span
+            class="ml-2 font-semibold text-purple-600 dark:text-purple-400"
+            data-testid="wyckoff-phase"
+          >
+            {{ signal.wyckoff_phase || 'N/A' }}
           </span>
         </div>
       </div>

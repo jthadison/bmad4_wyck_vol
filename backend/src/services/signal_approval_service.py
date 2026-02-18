@@ -39,6 +39,7 @@ class SignalApprovalService:
         repository: SignalApprovalRepository,
         config: SignalApprovalConfig | None = None,
         paper_trading_service: Any = None,
+        websocket_manager: Any = None,
     ):
         """
         Initialize signal approval service.
@@ -47,10 +48,12 @@ class SignalApprovalService:
             repository: Repository for queue operations
             config: Optional configuration (uses defaults if not provided)
             paper_trading_service: Optional paper trading service for execution
+            websocket_manager: Optional WebSocket ConnectionManager for real-time events (Story 23.10)
         """
         self.repository = repository
         self.config = config or SignalApprovalConfig()
         self.paper_trading_service = paper_trading_service
+        self.websocket_manager = websocket_manager
 
     async def submit_signal(
         self,
@@ -109,6 +112,14 @@ class SignalApprovalService:
             user_id=str(user_id),
             expires_at=expires_at.isoformat(),
         )
+
+        # Emit WebSocket event for real-time UI update (Story 23.10)
+        if self.websocket_manager:
+            try:
+                view = self._entry_to_view(created_entry)
+                await self.websocket_manager.emit_signal_queue_added(view.model_dump(mode="json"))
+            except Exception as e:
+                logger.warning("websocket_emit_queue_added_failed", error=str(e))
 
         return created_entry
 
@@ -185,6 +196,16 @@ class SignalApprovalService:
             user_id=str(user_id),
         )
 
+        # Emit WebSocket event for real-time UI update (Story 23.10)
+        if self.websocket_manager:
+            try:
+                await self.websocket_manager.emit_signal_queue_approved(
+                    queue_id=str(queue_id),
+                    signal_id=str(entry.signal_id),
+                )
+            except Exception as e:
+                logger.warning("websocket_emit_approved_failed", error=str(e))
+
         return SignalApprovalResult(
             status=QueueEntryStatus.APPROVED,
             approved_at=updated_entry.approved_at,
@@ -244,6 +265,17 @@ class SignalApprovalService:
             user_id=str(user_id),
             reason=reason,
         )
+
+        # Emit WebSocket event for real-time UI update (Story 23.10)
+        if self.websocket_manager:
+            try:
+                await self.websocket_manager.emit_signal_queue_rejected(
+                    queue_id=str(queue_id),
+                    signal_id=str(entry.signal_id),
+                    reason=reason,
+                )
+            except Exception as e:
+                logger.warning("websocket_emit_rejected_failed", error=str(e))
 
         return SignalApprovalResult(
             status=QueueEntryStatus.REJECTED,
@@ -332,6 +364,17 @@ class SignalApprovalService:
         score = snapshot.get("confidence_score", 0)
         grade = self.config.get_confidence_grade(score)
 
+        # Calculate risk_percent from entry/stop/position data if available
+        risk_percent = 0.0
+        try:
+            entry_price = Decimal(snapshot.get("entry_price", "0"))
+            stop_loss = Decimal(snapshot.get("stop_loss", "0"))
+            risk_amount = snapshot.get("risk_amount")
+            if risk_amount:
+                risk_percent = float(risk_amount)  # Already a percentage in snapshot
+        except (ValueError, TypeError, ArithmeticError):
+            pass
+
         return PendingSignalView(
             queue_id=entry.id,
             signal_id=entry.signal_id,
@@ -342,6 +385,9 @@ class SignalApprovalService:
             entry_price=Decimal(snapshot.get("entry_price", "0")),
             stop_loss=Decimal(snapshot.get("stop_loss", "0")),
             target_price=Decimal(snapshot.get("target_price", "0")),
+            risk_percent=risk_percent,
+            wyckoff_phase=snapshot.get("phase", ""),
+            asset_class=snapshot.get("asset_class", ""),
             submitted_at=entry.submitted_at,
             expires_at=entry.expires_at,
             time_remaining_seconds=entry.time_remaining_seconds,

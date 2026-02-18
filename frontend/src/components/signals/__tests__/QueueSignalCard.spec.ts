@@ -30,6 +30,9 @@ const createMockPendingSignal = (
   entry_price: '150.25',
   stop_loss: '149.50',
   target_price: '152.75',
+  risk_percent: 1.5,
+  wyckoff_phase: 'C',
+  asset_class: 'Stock',
   submitted_at: new Date().toISOString(),
   expires_at: new Date(Date.now() + 300000).toISOString(),
   time_remaining_seconds: 272,
@@ -194,18 +197,61 @@ describe('QueueSignalCard.vue', () => {
       expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Stock')
     })
 
-    it('should show Forex for currency pair symbols', () => {
-      const signal = createMockPendingSignal({ symbol: 'EURUSD' })
+    it('should show Forex for currency pair symbols (heuristic fallback)', () => {
+      const signal = createMockPendingSignal({
+        symbol: 'EURUSD',
+        asset_class: '',
+      })
       wrapper = mountComponent({ signal })
 
       expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Forex')
     })
 
-    it('should show Index for index symbols', () => {
-      const signal = createMockPendingSignal({ symbol: 'US30' })
+    it('should show Index for index symbols (heuristic fallback)', () => {
+      const signal = createMockPendingSignal({
+        symbol: 'US30',
+        asset_class: '',
+      })
       wrapper = mountComponent({ signal })
 
       expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Index')
+    })
+
+    it('should use backend asset_class when available', () => {
+      const signal = createMockPendingSignal({ asset_class: 'Crypto' })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Crypto')
+    })
+
+    it('should render risk percentage', () => {
+      const signal = createMockPendingSignal({ risk_percent: 1.5 })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="risk-percent"]').text()).toContain(
+        '1.50%'
+      )
+    })
+
+    it('should show N/A when risk_percent is 0', () => {
+      const signal = createMockPendingSignal({ risk_percent: 0 })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="risk-percent"]').text()).toBe('N/A')
+    })
+
+    it('should render Wyckoff phase', () => {
+      const signal = createMockPendingSignal({ wyckoff_phase: 'C' })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="wyckoff-phase"]').text()).toBe('C')
+    })
+
+    it('should show N/A when wyckoff_phase is empty', () => {
+      const signal = createMockPendingSignal({ wyckoff_phase: '' })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="wyckoff-phase"]').text()).toBe('N/A')
     })
   })
 
