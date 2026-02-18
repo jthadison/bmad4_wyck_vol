@@ -686,9 +686,8 @@ class CampaignLifecycleRepository:
                 status=campaign.status.value,
             )
 
-            # Return updated domain model
-            campaign.version += 1
-            return campaign
+            # Return a fresh copy with incremented version (never mutate input)
+            return campaign.model_copy(update={"version": campaign.version + 1})
 
         except (OptimisticLockError, CampaignNotFoundError):
             raise
@@ -734,6 +733,8 @@ class CampaignLifecycleRepository:
         -------
         CampaignNotFoundError
             If campaign not found
+        OptimisticLockError
+            If version mismatch (concurrent update detected)
         CampaignRepositoryError
             If database operation fails
 
@@ -744,11 +745,9 @@ class CampaignLifecycleRepository:
         >>> assert len(updated_campaign.positions) == 2  # Spring + SOS
         """
         try:
-            # Fetch campaign to verify existence and get current state
+            # Fetch campaign to verify existence and read current version
             result = await self.session.execute(
-                select(CampaignModel)
-                .where(CampaignModel.id == campaign_id)
-                .options(selectinload(CampaignModel.positions))
+                select(CampaignModel).where(CampaignModel.id == campaign_id)
             )
             campaign_model = result.scalar_one_or_none()
 
@@ -756,6 +755,7 @@ class CampaignLifecycleRepository:
                 raise CampaignNotFoundError(f"Campaign {campaign_id} not found")
 
             now = datetime.now(UTC)
+            current_version = campaign_model.version or 0
 
             # Insert position
             pos_model = PositionModel(
@@ -777,29 +777,45 @@ class CampaignLifecycleRepository:
             )
             self.session.add(pos_model)
 
-            # Update campaign totals
-            campaign_model.total_risk = (
-                campaign_model.total_risk or Decimal("0")
-            ) + position.risk_amount
-            campaign_model.total_allocation = (
+            # Compute new totals
+            new_total_risk = (campaign_model.total_risk or Decimal("0")) + position.risk_amount
+            new_total_allocation = (
                 campaign_model.total_allocation or Decimal("0")
             ) + position.allocation_percent
-            campaign_model.total_shares = (
-                campaign_model.total_shares or Decimal("0")
-            ) + position.shares
+            new_total_shares = (campaign_model.total_shares or Decimal("0")) + position.shares
 
             # Recalculate weighted average entry
-            existing_cost = (campaign_model.weighted_avg_entry or Decimal("0")) * (
-                (campaign_model.total_shares or Decimal("0")) - position.shares
-            )
+            existing_shares = campaign_model.total_shares or Decimal("0")
+            existing_cost = (campaign_model.weighted_avg_entry or Decimal("0")) * existing_shares
             new_cost = position.entry_price * position.shares
-            if campaign_model.total_shares and campaign_model.total_shares > Decimal("0"):
-                campaign_model.weighted_avg_entry = (
-                    existing_cost + new_cost
-                ) / campaign_model.total_shares
+            new_weighted_avg = None
+            if new_total_shares > Decimal("0"):
+                new_weighted_avg = (existing_cost + new_cost) / new_total_shares
 
-            campaign_model.version = (campaign_model.version or 0) + 1
-            campaign_model.updated_at = now
+            # Optimistic locking: UPDATE only if version matches
+            upd = (
+                update(CampaignModel)
+                .where(
+                    CampaignModel.id == campaign_id,
+                    CampaignModel.version == current_version,
+                )
+                .values(
+                    total_risk=new_total_risk,
+                    total_allocation=new_total_allocation,
+                    total_shares=new_total_shares,
+                    weighted_avg_entry=new_weighted_avg,
+                    version=current_version + 1,
+                    updated_at=now,
+                )
+            )
+            upd_result = await self.session.execute(upd)
+
+            if upd_result.rowcount == 0:  # type: ignore[union-attr]
+                await self.session.rollback()
+                raise OptimisticLockError(
+                    f"Version conflict on campaign {campaign_id}: "
+                    f"expected {current_version}, row was modified concurrently"
+                )
 
             await self.session.commit()
 
@@ -808,13 +824,13 @@ class CampaignLifecycleRepository:
                 campaign_id=str(campaign_id),
                 pattern_type=position.pattern_type,
                 shares=str(position.shares),
-                new_version=campaign_model.version,
+                new_version=current_version + 1,
             )
 
-            # Re-fetch to return complete state
+            # Re-fetch to return complete state with all positions loaded
             return await self.get_campaign_by_id(campaign_id)  # type: ignore[return-value]
 
-        except CampaignNotFoundError:
+        except (CampaignNotFoundError, OptimisticLockError):
             raise
         except SQLAlchemyError as e:
             await self.session.rollback()
