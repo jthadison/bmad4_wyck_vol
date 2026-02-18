@@ -329,13 +329,15 @@ const handleKeyPress = (event: KeyboardEvent) => {
       <!-- Risk, Phase -->
       <div class="grid grid-cols-2 gap-2 mb-3 text-sm">
         <div>
-          <span class="text-gray-600 dark:text-gray-400">Risk:</span>
+          <span class="text-gray-600 dark:text-gray-400">Risk $:</span>
           <span
             class="ml-2 font-semibold text-red-600 dark:text-red-400"
-            data-testid="risk-percent"
+            data-testid="risk-amount"
           >
             {{
-              signal.risk_percent ? signal.risk_percent.toFixed(2) + '%' : 'N/A'
+              signal.risk_amount > 0
+                ? '$' + signal.risk_amount.toFixed(2)
+                : 'N/A'
             }}
           </span>
         </div>

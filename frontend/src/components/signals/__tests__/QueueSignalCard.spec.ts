@@ -30,7 +30,7 @@ const createMockPendingSignal = (
   entry_price: '150.25',
   stop_loss: '149.50',
   target_price: '152.75',
-  risk_percent: 1.5,
+  risk_amount: 1.5,
   wyckoff_phase: 'C',
   asset_class: 'Stock',
   submitted_at: new Date().toISOString(),
@@ -224,20 +224,20 @@ describe('QueueSignalCard.vue', () => {
       expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Crypto')
     })
 
-    it('should render risk percentage', () => {
-      const signal = createMockPendingSignal({ risk_percent: 1.5 })
+    it('should render risk amount as dollar value', () => {
+      const signal = createMockPendingSignal({ risk_amount: 225.0 })
       wrapper = mountComponent({ signal })
 
-      expect(wrapper.find('[data-testid="risk-percent"]').text()).toContain(
-        '1.50%'
+      expect(wrapper.find('[data-testid="risk-amount"]').text()).toContain(
+        '$225.00'
       )
     })
 
-    it('should show N/A when risk_percent is 0', () => {
-      const signal = createMockPendingSignal({ risk_percent: 0 })
+    it('should show N/A when risk_amount is 0', () => {
+      const signal = createMockPendingSignal({ risk_amount: 0 })
       wrapper = mountComponent({ signal })
 
-      expect(wrapper.find('[data-testid="risk-percent"]').text()).toBe('N/A')
+      expect(wrapper.find('[data-testid="risk-amount"]').text()).toBe('N/A')
     })
 
     it('should render Wyckoff phase', () => {

@@ -19,7 +19,7 @@ const mockPendingSignal = {
   entry_price: '150.25',
   stop_loss: '149.50',
   target_price: '152.75',
-  risk_percent: 1.5,
+  risk_amount: 150.25,
   wyckoff_phase: 'C',
   asset_class: 'Stock',
   submitted_at: new Date().toISOString(),

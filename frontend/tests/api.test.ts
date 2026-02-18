@@ -5,7 +5,7 @@ describe('API Client', () => {
   it('converts Decimal strings to Big.js objects for price fields', () => {
     const response = {
       entry_price: '123.456789',
-      risk_percent: '2.50',
+      risk_amount: '2.50',
       other_field: 'not a decimal',
     }
 
@@ -14,8 +14,8 @@ describe('API Client', () => {
 
     expect(converted.entry_price).toBeInstanceOf(Big)
     expect(converted.entry_price.toString()).toBe('123.456789')
-    expect(converted.risk_percent).toBeInstanceOf(Big)
-    expect(converted.risk_percent.toString()).toBe('2.5') // Big.js normalizes trailing zeros
+    expect(converted.risk_amount).toBeInstanceOf(Big)
+    expect(converted.risk_amount.toString()).toBe('2.5') // Big.js normalizes trailing zeros
     expect(converted.other_field).toBe('not a decimal')
   })
 })

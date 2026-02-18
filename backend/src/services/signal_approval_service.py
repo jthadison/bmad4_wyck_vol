@@ -159,6 +159,11 @@ class SignalApprovalService:
         if entry.is_expired:
             # Auto-expire if time has passed
             await self.repository.update_status(queue_id, QueueEntryStatus.EXPIRED)
+            if self.websocket_manager:
+                try:
+                    await self.websocket_manager.emit_signal_queue_expired(queue_id=str(queue_id))
+                except Exception as e:
+                    logger.warning("websocket_emit_expired_failed", error=str(e))
             return SignalApprovalResult(
                 status=QueueEntryStatus.EXPIRED,
                 message="Signal has expired",
@@ -309,14 +314,31 @@ class SignalApprovalService:
         Mark all expired pending signals as expired.
 
         Called by background task at regular intervals.
+        Emits WebSocket events for each expired signal for real-time UI updates.
 
         Returns:
             Number of signals expired
         """
+        # Fetch stale entries before bulk expiration to get IDs for WS events
+        stale_entries = await self.repository.get_stale_pending_entries()
+
         expired_count = await self.repository.expire_stale_entries()
 
         if expired_count > 0:
             logger.info("stale_signals_expired", count=expired_count)
+
+            if self.websocket_manager:
+                for stale_entry in stale_entries:
+                    try:
+                        await self.websocket_manager.emit_signal_queue_expired(
+                            queue_id=str(stale_entry.id)
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "websocket_emit_expired_failed",
+                            queue_id=str(stale_entry.id),
+                            error=str(e),
+                        )
 
         return expired_count
 
@@ -364,14 +386,12 @@ class SignalApprovalService:
         score = snapshot.get("confidence_score", 0)
         grade = self.config.get_confidence_grade(score)
 
-        # Calculate risk_percent from entry/stop/position data if available
-        risk_percent = 0.0
+        # Extract dollar risk amount from snapshot
+        risk_amount = 0.0
         try:
-            entry_price = Decimal(snapshot.get("entry_price", "0"))
-            stop_loss = Decimal(snapshot.get("stop_loss", "0"))
-            risk_amount = snapshot.get("risk_amount")
-            if risk_amount:
-                risk_percent = float(risk_amount)  # Already a percentage in snapshot
+            raw = snapshot.get("risk_amount")
+            if raw:
+                risk_amount = float(raw)
         except (ValueError, TypeError, ArithmeticError):
             pass
 
@@ -385,7 +405,7 @@ class SignalApprovalService:
             entry_price=Decimal(snapshot.get("entry_price", "0")),
             stop_loss=Decimal(snapshot.get("stop_loss", "0")),
             target_price=Decimal(snapshot.get("target_price", "0")),
-            risk_percent=risk_percent,
+            risk_amount=risk_amount,
             wyckoff_phase=snapshot.get("phase", ""),
             asset_class=snapshot.get("asset_class", ""),
             submitted_at=entry.submitted_at,

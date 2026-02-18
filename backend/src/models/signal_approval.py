@@ -134,8 +134,8 @@ class PendingSignalView(BaseModel):
     entry_price: Decimal = Field(..., description="Entry price")
     stop_loss: Decimal = Field(..., description="Stop loss price")
     target_price: Decimal = Field(..., description="Primary target price")
-    risk_percent: float = Field(
-        default=0.0, description="Risk as percentage of account (Story 23.10 AC2)"
+    risk_amount: float = Field(
+        default=0.0, description="Dollar amount at risk in account currency (Story 23.10 AC2)"
     )
     wyckoff_phase: str = Field(default="", description="Wyckoff phase (A-E) (Story 23.10 AC2)")
     asset_class: str = Field(
