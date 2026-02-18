@@ -92,6 +92,11 @@ class AlpacaAdapter(TradingPlatformAdapter):
         self.max_reconnect_attempts = max_reconnect_attempts
         self._client: Optional[httpx.AsyncClient] = None
         self._reconnect_lock = asyncio.Lock()
+        # Auth headers are immutable after init — build once and reuse.
+        self._auth_headers: dict[str, str] = {
+            "APCA-API-KEY-ID": self._api_key,
+            "APCA-API-SECRET-KEY": self._secret_key,
+        }
 
         masked_key = f"***{api_key[-4:]}" if len(api_key) >= 4 else "***"
         logger.info(
@@ -100,13 +105,6 @@ class AlpacaAdapter(TradingPlatformAdapter):
             base_url=self._base_url,
             max_reconnect_attempts=max_reconnect_attempts,
         )
-
-    def _headers(self) -> dict[str, str]:
-        """Build authentication headers for Alpaca API."""
-        return {
-            "APCA-API-KEY-ID": self._api_key,
-            "APCA-API-SECRET-KEY": self._secret_key,
-        }
 
     async def connect(self) -> bool:
         """
@@ -123,7 +121,7 @@ class AlpacaAdapter(TradingPlatformAdapter):
         try:
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
-                headers=self._headers(),
+                headers=self._auth_headers,
                 timeout=30.0,
             )
 
@@ -156,8 +154,13 @@ class AlpacaAdapter(TradingPlatformAdapter):
         Returns:
             True if disconnection successful
         """
-        await self._close_client()
-        self._set_connected(False)
+        try:
+            await self._close_client()
+        except Exception as e:
+            # Log but don't propagate — _set_connected must always be called.
+            logger.warning("alpaca_close_client_error_during_disconnect", error=str(e))
+        finally:
+            self._set_connected(False)
         logger.info("alpaca_disconnected")
         return True
 
@@ -230,9 +233,6 @@ class AlpacaAdapter(TradingPlatformAdapter):
         await self._ensure_connected()
         self.validate_order(order)
 
-        # NOTE: If a network error occurs after Alpaca receives the POST but before
-        # we read the response, the order may exist on Alpaca while we return REJECTED
-        # locally. Future improvement: use client_order_id=str(order.id) for idempotency.
         try:
             payload = self._build_order_payload(order)
 
@@ -551,16 +551,17 @@ class AlpacaAdapter(TradingPlatformAdapter):
             response = await self._client.delete(f"/v2/orders/{order_id}")  # type: ignore[union-attr]
             response.raise_for_status()
 
-            logger.info("alpaca_order_cancelled", order_id=order_id)
+            # Alpaca DELETE returns 204 No Content.  Fetch the order's final state so
+            # filled_quantity/remaining_quantity reflect any partial fills before cancel.
+            # NOTE: internal order UUID is not recoverable from the platform order ID
+            # alone; order_id in the returned report will be a fresh uuid4().
+            status_response = await self._client.get(f"/v2/orders/{order_id}")  # type: ignore[union-attr]
+            status_response.raise_for_status()
+            data = status_response.json()
+            report = self._parse_order_response(data, order_id=uuid4())
 
-            return ExecutionReport(
-                order_id=uuid4(),
-                platform_order_id=order_id,
-                platform="Alpaca",
-                status=OrderStatus.CANCELLED,
-                filled_quantity=Decimal("0"),
-                remaining_quantity=Decimal("0"),
-            )
+            logger.info("alpaca_order_cancelled", order_id=order_id)
+            return report
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -594,6 +595,8 @@ class AlpacaAdapter(TradingPlatformAdapter):
             response.raise_for_status()
 
             data = response.json()
+            # NOTE: the base class signature accepts only a platform order ID string,
+            # so the internal order UUID cannot be recovered here; order_id is a uuid4().
             return self._parse_order_response(data, order_id=uuid4())
 
         except httpx.HTTPStatusError as e:
@@ -718,6 +721,10 @@ class AlpacaAdapter(TradingPlatformAdapter):
             "side": side_map[order.side],
             "type": type_map[order.order_type],
             "time_in_force": tif_map[order.time_in_force],
+            # Idempotency key: if the network fails after Alpaca receives the POST
+            # but before we read the response, re-submitting the same order.id will
+            # return the existing order rather than creating a duplicate.
+            "client_order_id": str(order.id),
         }
 
         if order.limit_price is not None and order.order_type in (

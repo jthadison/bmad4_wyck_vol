@@ -7,6 +7,7 @@ disconnection handling, reconnection, and error paths.
 All Alpaca REST API interactions are mocked via httpx.AsyncClient.
 """
 
+import json as _json
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -61,7 +62,9 @@ def _make_mock_response(status_code=200, json_data=None, text=""):
     response = MagicMock(spec=httpx.Response)
     response.status_code = status_code
     response.json.return_value = json_data or {}
-    response.text = text
+    # Populate text: explicit text takes precedence; otherwise serialize json_data so
+    # error handlers that read response.text get a meaningful message.
+    response.text = text if text else (_json.dumps(json_data) if json_data else "")
     response.raise_for_status = MagicMock()
     if status_code >= 400:
         response.raise_for_status.side_effect = httpx.HTTPStatusError(
@@ -709,6 +712,8 @@ class TestPlaceMarketOrder:
         assert json_body["side"] == "buy"
         assert json_body["type"] == "market"
         assert json_body["qty"] == "100"
+        # Idempotency key must match the internal order UUID
+        assert json_body["client_order_id"] == str(order.id)
 
     async def test_day_time_in_force(self, connected_adapter, mock_client):
         """Verify DAY time-in-force is sent correctly."""
@@ -1247,16 +1252,32 @@ class TestCancelOrder:
     """Tests for order cancellation."""
 
     async def test_cancel_success(self, connected_adapter, mock_client):
-        response = _make_mock_response(204)
-        mock_client.delete = AsyncMock(return_value=response)
+        delete_response = _make_mock_response(204)
+        mock_client.delete = AsyncMock(return_value=delete_response)
+
+        # After DELETE the adapter fetches the actual order state for fill accuracy.
+        get_response = _make_mock_response(
+            200,
+            _make_alpaca_order_response(
+                order_id="order-123",
+                status="canceled",
+                filled_qty="30",
+                qty="100",
+            ),
+        )
+        mock_client.get = AsyncMock(return_value=get_response)
 
         report = await connected_adapter.cancel_order("order-123")
 
         assert report.status == OrderStatus.CANCELLED
         assert report.platform_order_id == "order-123"
+        # Accurate fill info from the GET response
+        assert report.filled_quantity == Decimal("30")
+        assert report.remaining_quantity == Decimal("70")  # 100 - 30
         mock_client.delete.assert_awaited_once()
+        mock_client.get.assert_awaited_once()
 
-        # Verify the URL includes the order ID
+        # Verify the DELETE URL includes the order ID
         call_args = mock_client.delete.call_args
         url = call_args[0][0] if call_args[0] else call_args[1].get("url", "")
         assert "order-123" in str(url)
