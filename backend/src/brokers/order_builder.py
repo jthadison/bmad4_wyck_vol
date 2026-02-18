@@ -334,19 +334,26 @@ class OrderBuilder:
         if not signal.stop_loss or signal.stop_loss <= 0:
             errors.append(f"Invalid stop_loss: {signal.stop_loss}")
 
+        # Only validate directional relationship when both prices are present and valid
+        if (
+            signal.stop_loss
+            and signal.stop_loss > 0
+            and signal.entry_price
+            and signal.entry_price > 0
+        ):
+            if signal.direction == "SHORT":
+                if signal.stop_loss <= signal.entry_price:
+                    errors.append(
+                        f"Stop loss ({signal.stop_loss}) must be above entry ({signal.entry_price}) for SHORT"
+                    )
+            else:
+                if signal.stop_loss >= signal.entry_price:
+                    errors.append(
+                        f"Stop loss ({signal.stop_loss}) must be below entry ({signal.entry_price})"
+                    )
+
         if not signal.target_levels or not signal.target_levels.primary_target:
             errors.append("Missing target_levels")
-
-        if signal.direction == "SHORT":
-            if signal.stop_loss <= signal.entry_price:
-                errors.append(
-                    f"Stop loss ({signal.stop_loss}) must be above entry ({signal.entry_price}) for SHORT"
-                )
-        else:
-            if signal.stop_loss >= signal.entry_price:
-                errors.append(
-                    f"Stop loss ({signal.stop_loss}) must be below entry ({signal.entry_price})"
-                )
 
         if errors:
             raise ValueError(f"Signal validation failed: {', '.join(errors)}")
