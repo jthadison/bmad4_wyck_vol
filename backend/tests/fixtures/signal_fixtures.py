@@ -8,6 +8,7 @@ Fixtures:
 ---------
 - valid_spring_signal(): STOCK - Spring pattern with all FR22 fields
 - valid_sos_signal(): STOCK - SOS pattern with secondary targets
+- valid_lps_signal(): STOCK - LPS pattern (Phase E retest)
 - valid_forex_signal(): FOREX - EUR/USD Spring with leverage
 - rejected_signal_portfolio_heat(): Rejected at Risk stage
 - rejected_signal_low_r_multiple(): Rejected due to R < minimum
@@ -274,6 +275,72 @@ def valid_sos_signal() -> TradeSignal:
             "average_volume": 30000000,
         },
         timestamp=datetime(2024, 3, 14, 20, 30, 0, tzinfo=UTC),
+        schema_version=1,
+    )
+
+
+def valid_lps_signal() -> TradeSignal:
+    """
+    Valid LPS signal on NVDA (STOCK).
+
+    LPS (Last Point of Support) is a Phase E pullback retest of Ice.
+    LONG direction with entry at 500, stop at 494, target at 518.
+
+    R = (518-500)/(500-494) = 18/6 = 3.0
+
+    Returns:
+    --------
+    TradeSignal
+        Complete LPS signal
+    """
+    pattern_id = uuid4()
+    validation_chain = mock_validation_chain(
+        pattern_id=pattern_id,
+        volume_metadata={"volume_ratio": "0.60", "threshold": "0.70", "pattern_type": "LPS"},
+        phase_metadata={"phase": "E", "confidence": 82},
+        levels_metadata={"entry_price": "500.00", "stop_loss": "494.00", "target_price": "518.00"},
+        risk_metadata={"risk_amount": "600.00"},
+    )
+
+    return TradeSignal(
+        id=uuid4(),
+        asset_class="STOCK",
+        symbol="NVDA",
+        pattern_type="LPS",
+        phase="E",
+        timeframe="1d",
+        entry_price=Decimal("500.00"),
+        stop_loss=Decimal("494.00"),
+        target_levels=TargetLevels(
+            primary_target=Decimal("518.00"),
+            secondary_targets=[Decimal("506.00"), Decimal("512.00")],
+            trailing_stop_activation=Decimal("512.00"),
+            trailing_stop_offset=Decimal("2.00"),
+        ),
+        position_size=Decimal("100"),
+        position_size_unit="SHARES",
+        leverage=None,
+        margin_requirement=None,
+        notional_value=Decimal("50000.00"),  # 100 shares × $500
+        risk_amount=Decimal("600.00"),  # 100 shares × $6 risk
+        r_multiple=Decimal("3.0"),  # (518-500)/(500-494) = 18/6 = 3.0
+        confidence_score=82,
+        confidence_components=ConfidenceComponents(
+            pattern_confidence=85, phase_confidence=80, volume_confidence=78, overall_confidence=82
+        ),
+        campaign_id="NVDA-2024-03-15-E",
+        validation_chain=validation_chain,
+        status="APPROVED",
+        pattern_data={
+            "pattern_bar_timestamp": "2024-03-15T14:00:00Z",
+            "test_bar_timestamp": None,
+            "trading_range_id": str(uuid4()),
+        },
+        volume_analysis={
+            "volume_ratio": "0.60",
+            "average_volume": 45000000,
+        },
+        timestamp=datetime(2024, 3, 15, 14, 30, 0, tzinfo=UTC),
         schema_version=1,
     )
 

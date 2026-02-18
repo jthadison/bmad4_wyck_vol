@@ -11,7 +11,12 @@ import pytest
 
 from src.brokers.order_builder import OrderBuilder
 from src.models.order import OCOOrder, Order, OrderSide, OrderType
-from tests.fixtures.signal_fixtures import valid_sos_signal, valid_spring_signal, valid_utad_signal
+from tests.fixtures.signal_fixtures import (
+    valid_lps_signal,
+    valid_sos_signal,
+    valid_spring_signal,
+    valid_utad_signal,
+)
 
 
 class TestOrderBuilder:
@@ -36,6 +41,11 @@ class TestOrderBuilder:
     def sos_signal(self):
         """Create SOS TradeSignal for testing (LONG)."""
         return valid_sos_signal()
+
+    @pytest.fixture
+    def lps_signal(self):
+        """Create LPS TradeSignal for testing (LONG)."""
+        return valid_lps_signal()
 
     def test_builder_initialization(self, order_builder):
         """Test OrderBuilder initializes correctly."""
@@ -96,6 +106,12 @@ class TestOrderBuilder:
         """Test SOS pattern generates BUY order."""
         assert sos_signal.pattern_type == "SOS"
         order = order_builder.build_entry_order(signal=sos_signal)
+        assert order.side == OrderSide.BUY
+
+    def test_lps_pattern_produces_buy(self, order_builder, lps_signal):
+        """Test LPS pattern generates BUY order."""
+        assert lps_signal.pattern_type == "LPS"
+        order = order_builder.build_entry_order(signal=lps_signal)
         assert order.side == OrderSide.BUY
 
     # ── SHORT (UTAD) entry order tests ───────────────────────────────
@@ -326,9 +342,6 @@ class TestOrderBuilder:
         with pytest.raises(ValueError, match="Invalid entry_price"):
             order_builder.validate_signal_for_order(sample_signal)
 
-    @pytest.mark.skip(
-        reason="Production code bug: validate_signal_for_order compares None before checking"
-    )
     def test_validate_signal_invalid_stop_loss(self, order_builder, sample_signal):
         """Test validation fails for invalid stop loss."""
         sample_signal.stop_loss = None
