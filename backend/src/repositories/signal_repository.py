@@ -92,7 +92,7 @@ class SignalRepository:
             campaign_id=campaign_uuid,
             status=signal.status,
             approval_chain=approval_chain,
-            validation_results=approval_chain,
+            validation_results=None,
             lifecycle_state=signal.status.lower() if signal.status else "generated",
             created_at=signal.created_at or datetime.now(UTC),
             updated_at=datetime.now(UTC),
@@ -253,25 +253,46 @@ class SignalRepository:
             return updated_signal
         return None
 
-    async def get_all_signals(self, limit: int = 100) -> list[TradeSignal]:
+    async def get_all_signals(
+        self,
+        limit: int = 100,
+        status: str | None = None,
+        since: datetime | None = None,
+    ) -> list[TradeSignal]:
         """
-        Get all signals (for testing/debugging).
+        Get all signals with optional SQL-level filters.
 
         Args:
             limit: Maximum number of signals to return
+            status: Filter by signal status (applied at SQL level)
+            since: Filter by generated_at >= since (applied at SQL level)
 
         Returns:
             List of TradeSignals
         """
         if self.db_session is not None:
-            stmt = (
-                select(TradeSignalModel).order_by(TradeSignalModel.created_at.desc()).limit(limit)
-            )
+            conditions = []
+            if status:
+                conditions.append(TradeSignalModel.status == status)
+            if since:
+                conditions.append(TradeSignalModel.generated_at >= since)
+
+            stmt = select(TradeSignalModel)
+            if conditions:
+                stmt = stmt.where(and_(*conditions))
+            stmt = stmt.order_by(TradeSignalModel.created_at.desc()).limit(limit)
+
             result = await self.db_session.execute(stmt)
             models = result.scalars().all()
             return [self._model_to_signal(m) for m in models]
 
-        return list(self._signals.values())[:limit]
+        # In-memory fallback
+        signals = list(self._signals.values())
+        if status:
+            signals = [s for s in signals if s.status == status]
+        if since:
+            signals = [s for s in signals if s.timestamp >= since]
+        return signals[:limit]
 
     @staticmethod
     def _model_to_signal(model: TradeSignalModel) -> TradeSignal:
@@ -288,8 +309,8 @@ class SignalRepository:
         from src.models.signal import ConfidenceComponents, TargetLevels
         from src.models.validation import ValidationChain
 
-        # Reconstruct validation chain from stored JSON
-        chain_data = model.validation_results or model.approval_chain or {}
+        # Reconstruct validation chain from stored JSON (approval_chain is canonical)
+        chain_data = model.approval_chain or {}
         try:
             validation_chain = ValidationChain(**chain_data)
         except Exception:
@@ -302,12 +323,29 @@ class SignalRepository:
                 overall_status="PASS",
             )
 
-        # Reconstruct confidence components (default values if not stored)
+        # Reconstruct confidence components from validation chain metadata if available
         confidence = model.confidence_score or 80
+        volume_conf = confidence
+        phase_conf = confidence
+        pattern_conf = confidence
+
+        # Try to extract per-stage confidence from stored validation results metadata
+        for vr in chain_data.get("validation_results", []):
+            meta = vr.get("metadata") or {}
+            stage = vr.get("stage", "")
+            if stage == "Volume" and "confidence" in meta:
+                volume_conf = meta["confidence"]
+            elif stage == "Phase" and "confidence" in meta:
+                phase_conf = meta["confidence"]
+            elif stage in ("Levels", "Strategy") and "confidence" in meta:
+                pattern_conf = meta["confidence"]
+
+        # Components not individually persisted; using overall score as approximation
+        # when per-stage confidence metadata is not available in the validation chain.
         components = ConfidenceComponents(
-            pattern_confidence=confidence,
-            phase_confidence=confidence,
-            volume_confidence=confidence,
+            pattern_confidence=pattern_conf,
+            phase_confidence=phase_conf,
+            volume_confidence=volume_conf,
             overall_confidence=confidence,
         )
 

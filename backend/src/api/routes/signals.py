@@ -94,7 +94,7 @@ async def _repo_get_signal_by_id(signal_id: UUID, db: AsyncSession) -> TradeSign
         if result is not None:
             return result
     except Exception:
-        logger.debug("repo_get_signal_by_id_fallback", signal_id=str(signal_id))
+        logger.warning("repo_get_signal_by_id_fallback", signal_id=str(signal_id), exc_info=True)
     # Fall back to legacy mock store (supports existing tests / unmigrated DB)
     return _signal_store.get(signal_id)
 
@@ -109,32 +109,43 @@ async def _repo_get_signals_with_filters(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[TradeSignal], int]:
-    """Fetch signals with filters and pagination via SignalRepository."""
+    """Fetch signals with filters and pagination via SignalRepository.
+
+    Pushes symbol/status/since filters to SQL via repo.get_signals_by_symbol()
+    when a symbol is provided, falling back to get_all_signals() otherwise.
+    Remaining filters (min_confidence, min_r_multiple) are applied in Python.
+    """
     repo = _get_signal_repo(db)
     try:
-        all_signals = await repo.get_all_signals(limit=9999)
+        if symbol:
+            # Push symbol + status + since filters to SQL
+            db_signals = await repo.get_signals_by_symbol(
+                symbol=symbol,
+                start_date=since,
+                status=status,
+            )
+        else:
+            # No symbol filter: push status/since to SQL via get_all_signals
+            db_signals = await repo.get_all_signals(
+                status=status,
+                since=since,
+            )
     except Exception:
-        logger.debug("repo_get_signals_with_filters_fallback")
-        all_signals = []
+        logger.warning("repo_get_signals_with_filters_fallback", exc_info=True)
+        db_signals = []
 
     # Merge in legacy mock store signals (supports existing tests / unmigrated DB)
-    db_ids = {s.id for s in all_signals}
+    db_ids = {s.id for s in db_signals}
     for s in _signal_store.values():
         if s.id not in db_ids:
-            all_signals.append(s)
+            db_signals.append(s)
 
-    # Apply filters
-    signals = all_signals
-    if status:
-        signals = [s for s in signals if s.status == status]
-    if symbol:
-        signals = [s for s in signals if s.symbol == symbol]
+    # Apply remaining filters not handled at SQL level
+    signals = db_signals
     if min_confidence:
         signals = [s for s in signals if s.confidence_score >= min_confidence]
     if min_r_multiple:
         signals = [s for s in signals if s.r_multiple >= min_r_multiple]
-    if since:
-        signals = [s for s in signals if s.timestamp >= since]
 
     # Sort by timestamp descending (newest first)
     signals.sort(key=lambda s: s.timestamp, reverse=True)
@@ -155,7 +166,9 @@ async def _repo_update_signal_status(
         if updated:
             return updated
     except Exception:
-        logger.debug("repo_update_signal_status_fallback", signal_id=str(signal_id))
+        logger.warning(
+            "repo_update_signal_status_fallback", signal_id=str(signal_id), exc_info=True
+        )
 
     # Fall back to legacy mock store (supports existing tests / unmigrated DB)
     signal = _signal_store.get(signal_id)
@@ -448,10 +461,10 @@ async def list_signals(
         return SignalListResponse(data=signals, pagination=pagination)
 
     except Exception as e:
-        logger.error("list_signals_error", error=str(e), exc_info=True)
+        logger.error("list_signals_error", exc_info=True)
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching signals: {str(e)}",
+            detail="Error fetching signals",
         ) from e
 
 

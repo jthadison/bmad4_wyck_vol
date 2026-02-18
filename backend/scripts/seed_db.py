@@ -27,7 +27,11 @@ async def main() -> None:
         sys.exit(1)
 
     async with async_session_maker() as session:
-        inserted = await seed_ohlcv(session)
+        try:
+            inserted = await seed_ohlcv(session)
+        except Exception:
+            await session.rollback()
+            raise
 
     print(f"Seed complete: {inserted} bars inserted.")
 

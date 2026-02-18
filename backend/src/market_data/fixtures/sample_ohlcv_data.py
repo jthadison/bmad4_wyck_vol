@@ -43,12 +43,14 @@ SAMPLE_BARS: list[dict] = [
         "volume": 95_000_000,
     },
     # Bar 2: SELLING CLIMAX (SC) - Ultra-high volume down move
+    # close_position = (435.50 - 430.20) / (439.50 - 430.20) ≈ 0.57 (must be >= 0.50)
+    # spread = 439.50 - 430.20 = 9.30, volume_ratio ≈ 2.3x avg
     {
         "timestamp": "2025-06-04T20:00:00+00:00",
         "open": "438.80",
         "high": "439.50",
         "low": "430.20",
-        "close": "431.50",
+        "close": "435.50",
         "volume": 185_000_000,
     },
     # Bar 3: AUTOMATIC RALLY (AR) - Bounce on high volume
