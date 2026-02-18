@@ -91,6 +91,13 @@ class PaperPosition(BaseModel):
 
     id: UUID = Field(default_factory=uuid4, description="Unique identifier")
     signal_id: UUID = Field(description="Reference to Signal that generated this position")
+    pattern_type: Optional[str] = Field(
+        default=None, description="Wyckoff pattern type (Spring, SOS, LPS, UTAD)"
+    )
+    confidence_score: Optional[Decimal] = Field(default=None, description="Signal confidence 0-1")
+    signal_source: Optional[str] = Field(
+        default=None, description="Agent or system that generated signal"
+    )
     symbol: str = Field(description="Ticker symbol", min_length=1, max_length=10)
     entry_time: datetime = Field(description="UTC timestamp when position opened")
     entry_price: Decimal = Field(
@@ -124,6 +131,7 @@ class PaperPosition(BaseModel):
         "unrealized_pnl",
         "commission_paid",
         "slippage_cost",
+        "confidence_score",
     )
     @classmethod
     def validate_decimal_precision(cls, v: Decimal) -> Decimal:
@@ -179,6 +187,13 @@ class PaperTrade(BaseModel):
     id: UUID = Field(default_factory=uuid4, description="Unique identifier")
     position_id: UUID = Field(description="Reference to PaperPosition that was closed")
     signal_id: UUID = Field(description="Reference to originating Signal")
+    pattern_type: Optional[str] = Field(
+        default=None, description="Wyckoff pattern type (Spring, SOS, LPS, UTAD)"
+    )
+    confidence_score: Optional[Decimal] = Field(default=None, description="Signal confidence 0-1")
+    signal_source: Optional[str] = Field(
+        default=None, description="Agent or system that generated signal"
+    )
     symbol: str = Field(description="Ticker symbol", min_length=1, max_length=10)
     entry_time: datetime = Field(description="UTC timestamp of entry")
     entry_price: Decimal = Field(description="Entry fill price", gt=Decimal("0"))
@@ -204,6 +219,7 @@ class PaperTrade(BaseModel):
         "r_multiple_achieved",
         "commission_total",
         "slippage_total",
+        "confidence_score",
     )
     @classmethod
     def validate_decimal_precision(cls, v: Decimal) -> Decimal:
@@ -289,6 +305,11 @@ class PaperAccount(BaseModel):
         ge=Decimal("0"),
         le=Decimal("100"),
     )
+    peak_equity: Decimal = Field(
+        default=Decimal("0"),
+        description="Highest equity reached for drawdown tracking",
+        ge=Decimal("0"),
+    )
     current_heat: Decimal = Field(
         default=Decimal("0"),
         description="Percentage of capital at risk in open positions",
@@ -316,6 +337,7 @@ class PaperAccount(BaseModel):
         "win_rate",
         "average_r_multiple",
         "max_drawdown",
+        "peak_equity",
         "current_heat",
     )
     @classmethod

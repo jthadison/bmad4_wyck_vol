@@ -450,8 +450,9 @@ class PaperTradingService:
         position.updated_at = datetime.now(UTC)
         await self.position_repo.update_position(position)
 
-        # Update account
-        account.current_capital += trade.exit_price * trade.quantity - trade.commission_total
+        # Update account — only deduct exit commission (entry was already deducted on open)
+        exit_commission = trade.commission_total - position.commission_paid
+        account.current_capital += trade.exit_price * trade.quantity - exit_commission
         account.total_realized_pnl += trade.realized_pnl
         account.total_commission_paid += trade.commission_total
         account.total_slippage_cost += trade.slippage_total
@@ -493,8 +494,15 @@ class PaperTradingService:
         # Calculate current heat
         account.current_heat = await self._calculate_current_heat(account)
 
-        # Update max drawdown (simplified - track peak equity)
-        # TODO: Implement proper drawdown tracking with equity curve
+        # Update peak equity and max drawdown
+        if account.equity > account.peak_equity:
+            account.peak_equity = account.equity
+        elif account.peak_equity > Decimal("0"):
+            current_drawdown = (
+                (account.peak_equity - account.equity) / account.peak_equity * Decimal("100")
+            )
+            if current_drawdown > account.max_drawdown:
+                account.max_drawdown = current_drawdown
 
         account.updated_at = datetime.now(UTC)
         await self.account_repo.update_account(account)
@@ -534,6 +542,9 @@ class PaperTradingService:
                     id=trade.id,
                     position_id=trade.position_id,
                     signal_id=trade.signal_id,
+                    pattern_type=trade.pattern_type,
+                    confidence_score=trade.confidence_score,
+                    signal_source=trade.signal_source,
                     symbol=trade.symbol,
                     entry_time=trade.entry_time,
                     entry_price=trade.entry_price,
@@ -562,10 +573,9 @@ class PaperTradingService:
                 )
                 await session.execute(stmt)
 
-                # Update account metrics in-memory
-                account.current_capital += (
-                    trade.exit_price * trade.quantity - trade.commission_total
-                )
+                # Update account metrics in-memory — only deduct exit commission
+                exit_commission = trade.commission_total - position.commission_paid
+                account.current_capital += trade.exit_price * trade.quantity - exit_commission
                 account.total_realized_pnl += trade.realized_pnl
                 account.total_commission_paid += trade.commission_total
                 account.total_slippage_cost += trade.slippage_total
@@ -606,6 +616,17 @@ class PaperTradingService:
         account.total_unrealized_pnl = Decimal("0")
         account.equity = account.current_capital + account.total_unrealized_pnl
         account.current_heat = Decimal("0")
+
+        # Update peak equity and max drawdown
+        if account.equity > account.peak_equity:
+            account.peak_equity = account.equity
+        elif account.peak_equity > Decimal("0"):
+            current_drawdown = (
+                (account.peak_equity - account.equity) / account.peak_equity * Decimal("100")
+            )
+            if current_drawdown > account.max_drawdown:
+                account.max_drawdown = current_drawdown
+
         account.updated_at = datetime.now(UTC)
 
         # Update account in DB (no commit yet)
@@ -625,6 +646,7 @@ class PaperTradingService:
                 win_rate=account.win_rate,
                 average_r_multiple=account.average_r_multiple,
                 max_drawdown=account.max_drawdown,
+                peak_equity=account.peak_equity,
                 current_heat=account.current_heat,
                 updated_at=account.updated_at,
             )

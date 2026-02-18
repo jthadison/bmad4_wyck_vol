@@ -545,3 +545,42 @@ class TestValidationAPIEndpoints:
         with pytest.raises(HTTPException) as exc_info:
             get_validation_report(_user_id=uuid4())
         assert exc_info.value.status_code == 404
+
+
+class TestGenerateComparisonReportOverallStatus:
+    """Tests for overall_status escalation in generate_comparison_report."""
+
+    def test_report_overall_status_warning_when_symbol_has_warning(self) -> None:
+        """Overall status should be WARNING when a symbol report has WARNING severity."""
+        from unittest.mock import patch
+
+        # Create a baseline that will produce WARNING deviations
+        baseline = _make_baseline(
+            symbol="SPX500",
+            win_rate="0.60",  # 60% baseline
+        )
+
+        # Paper metrics with moderate deviation (will trigger WARNING)
+        metrics = {
+            "SPX500": {
+                "win_rate": 48.0,  # ~20% deviation from 60% => WARNING
+                "average_r_multiple": 1.24,
+                "profit_factor": 1.85,
+                "max_drawdown": 8.2,
+                "total_trades": 47,
+            }
+        }
+
+        with (
+            patch(
+                "src.trading.paper_trading_comparison.load_all_backtest_baselines",
+                return_value=[baseline],
+            ),
+            patch(
+                "src.trading.paper_trading_comparison.load_backtest_baseline",
+                return_value=None,
+            ),
+        ):
+            report = generate_comparison_report(None, paper_metrics_by_symbol=metrics)
+
+        assert report.overall_status == DeviationSeverity.WARNING
