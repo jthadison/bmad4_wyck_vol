@@ -134,8 +134,9 @@ const stopDistance = computed(() => {
   }
 })
 
-// TODO: Temporary heuristic - replace with backend asset_class field when available
+// Use backend asset_class when available, fall back to heuristic
 const assetClass = computed(() => {
+  if (props.signal.asset_class) return props.signal.asset_class
   const symbol = props.signal.symbol
   // Forex pairs typically have 6 chars (e.g., EURUSD) or contain /
   if (symbol.includes('/') || /^[A-Z]{6}$/.test(symbol)) return 'Forex'
@@ -146,14 +147,20 @@ const assetClass = computed(() => {
   return 'Stock'
 })
 
-// Format price helper
+// Format price with asset-class-appropriate precision
 const formatPrice = (priceStr: string): string => {
   try {
-    return formatDecimal(priceStr, 2)
+    const decimals = assetClass.value === 'Forex' ? 5 : 2
+    return formatDecimal(priceStr, decimals)
   } catch {
     return '0.00'
   }
 }
+
+// Price prefix: $ for stocks/indices, empty for forex
+const pricePrefix = computed(() => {
+  return assetClass.value === 'Forex' ? '' : '$'
+})
 
 // Computed R-multiple from entry/stop/target prices
 const rMultiple = computed(() => {
@@ -256,7 +263,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
             class="ml-2 font-semibold text-gray-900 dark:text-white"
             data-testid="entry-price"
           >
-            ${{ formatPrice(signal.entry_price) }}
+            {{ pricePrefix }}{{ formatPrice(signal.entry_price) }}
           </span>
         </div>
         <div>
@@ -265,7 +272,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
             class="ml-2 font-semibold text-red-600 dark:text-red-400"
             data-testid="stop-price"
           >
-            ${{ formatPrice(signal.stop_loss) }}
+            {{ pricePrefix }}{{ formatPrice(signal.stop_loss) }}
           </span>
         </div>
         <div>
@@ -274,7 +281,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
             class="ml-2 font-semibold text-green-600 dark:text-green-400"
             data-testid="target-price"
           >
-            ${{ formatPrice(signal.target_price) }}
+            {{ pricePrefix }}{{ formatPrice(signal.target_price) }}
           </span>
         </div>
         <div>
@@ -315,6 +322,32 @@ const handleKeyPress = (event: KeyboardEvent) => {
             data-testid="asset-class"
           >
             {{ assetClass }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Risk, Phase -->
+      <div class="grid grid-cols-2 gap-2 mb-3 text-sm">
+        <div>
+          <span class="text-gray-600 dark:text-gray-400">Risk $:</span>
+          <span
+            class="ml-2 font-semibold text-red-600 dark:text-red-400"
+            data-testid="risk-amount"
+          >
+            {{
+              signal.risk_amount > 0
+                ? '$' + signal.risk_amount.toFixed(2)
+                : 'N/A'
+            }}
+          </span>
+        </div>
+        <div>
+          <span class="text-gray-600 dark:text-gray-400">Phase:</span>
+          <span
+            class="ml-2 font-semibold text-purple-600 dark:text-purple-400"
+            data-testid="wyckoff-phase"
+          >
+            {{ signal.wyckoff_phase || 'N/A' }}
           </span>
         </div>
       </div>

@@ -39,6 +39,7 @@ class SignalApprovalService:
         repository: SignalApprovalRepository,
         config: SignalApprovalConfig | None = None,
         paper_trading_service: Any = None,
+        websocket_manager: Any = None,
     ):
         """
         Initialize signal approval service.
@@ -47,10 +48,12 @@ class SignalApprovalService:
             repository: Repository for queue operations
             config: Optional configuration (uses defaults if not provided)
             paper_trading_service: Optional paper trading service for execution
+            websocket_manager: Optional WebSocket ConnectionManager for real-time events (Story 23.10)
         """
         self.repository = repository
         self.config = config or SignalApprovalConfig()
         self.paper_trading_service = paper_trading_service
+        self.websocket_manager = websocket_manager
 
     async def submit_signal(
         self,
@@ -110,6 +113,14 @@ class SignalApprovalService:
             expires_at=expires_at.isoformat(),
         )
 
+        # Emit WebSocket event for real-time UI update (Story 23.10)
+        if self.websocket_manager:
+            try:
+                view = self._entry_to_view(created_entry)
+                await self.websocket_manager.emit_signal_queue_added(view.model_dump(mode="json"))
+            except Exception as e:
+                logger.warning("websocket_emit_queue_added_failed", error=str(e))
+
         return created_entry
 
     async def approve_signal(self, queue_id: UUID, user_id: UUID) -> SignalApprovalResult:
@@ -148,6 +159,11 @@ class SignalApprovalService:
         if entry.is_expired:
             # Auto-expire if time has passed
             await self.repository.update_status(queue_id, QueueEntryStatus.EXPIRED)
+            if self.websocket_manager:
+                try:
+                    await self.websocket_manager.emit_signal_queue_expired(queue_id=str(queue_id))
+                except Exception as e:
+                    logger.warning("websocket_emit_expired_failed", error=str(e))
             return SignalApprovalResult(
                 status=QueueEntryStatus.EXPIRED,
                 message="Signal has expired",
@@ -184,6 +200,16 @@ class SignalApprovalService:
             signal_id=str(entry.signal_id),
             user_id=str(user_id),
         )
+
+        # Emit WebSocket event for real-time UI update (Story 23.10)
+        if self.websocket_manager:
+            try:
+                await self.websocket_manager.emit_signal_queue_approved(
+                    queue_id=str(queue_id),
+                    signal_id=str(entry.signal_id),
+                )
+            except Exception as e:
+                logger.warning("websocket_emit_approved_failed", error=str(e))
 
         return SignalApprovalResult(
             status=QueueEntryStatus.APPROVED,
@@ -245,6 +271,17 @@ class SignalApprovalService:
             reason=reason,
         )
 
+        # Emit WebSocket event for real-time UI update (Story 23.10)
+        if self.websocket_manager:
+            try:
+                await self.websocket_manager.emit_signal_queue_rejected(
+                    queue_id=str(queue_id),
+                    signal_id=str(entry.signal_id),
+                    reason=reason,
+                )
+            except Exception as e:
+                logger.warning("websocket_emit_rejected_failed", error=str(e))
+
         return SignalApprovalResult(
             status=QueueEntryStatus.REJECTED,
             rejection_reason=reason,
@@ -277,14 +314,31 @@ class SignalApprovalService:
         Mark all expired pending signals as expired.
 
         Called by background task at regular intervals.
+        Emits WebSocket events for each expired signal for real-time UI updates.
 
         Returns:
             Number of signals expired
         """
+        # Fetch stale entries before bulk expiration to get IDs for WS events
+        stale_entries = await self.repository.get_stale_pending_entries()
+
         expired_count = await self.repository.expire_stale_entries()
 
         if expired_count > 0:
             logger.info("stale_signals_expired", count=expired_count)
+
+            if self.websocket_manager:
+                for stale_entry in stale_entries:
+                    try:
+                        await self.websocket_manager.emit_signal_queue_expired(
+                            queue_id=str(stale_entry.id)
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "websocket_emit_expired_failed",
+                            queue_id=str(stale_entry.id),
+                            error=str(e),
+                        )
 
         return expired_count
 
@@ -332,6 +386,15 @@ class SignalApprovalService:
         score = snapshot.get("confidence_score", 0)
         grade = self.config.get_confidence_grade(score)
 
+        # Extract dollar risk amount from snapshot
+        risk_amount = 0.0
+        try:
+            raw = snapshot.get("risk_amount")
+            if raw:
+                risk_amount = float(raw)
+        except (ValueError, TypeError, ArithmeticError):
+            pass
+
         return PendingSignalView(
             queue_id=entry.id,
             signal_id=entry.signal_id,
@@ -342,6 +405,9 @@ class SignalApprovalService:
             entry_price=Decimal(snapshot.get("entry_price", "0")),
             stop_loss=Decimal(snapshot.get("stop_loss", "0")),
             target_price=Decimal(snapshot.get("target_price", "0")),
+            risk_amount=risk_amount,
+            wyckoff_phase=snapshot.get("phase", ""),
+            asset_class=snapshot.get("asset_class", ""),
             submitted_at=entry.submitted_at,
             expires_at=entry.expires_at,
             time_remaining_seconds=entry.time_remaining_seconds,

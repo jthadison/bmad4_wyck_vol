@@ -228,6 +228,24 @@ class SignalApprovalRepository:
 
         return self._to_model(orm_entry)
 
+    async def get_stale_pending_entries(self) -> list[SignalQueueEntry]:
+        """
+        Get pending entries that have passed their expiration time.
+
+        Used to collect IDs before bulk expiration for WebSocket notifications.
+
+        Returns:
+            List of SignalQueueEntry objects that are pending and past expires_at
+        """
+        now = datetime.now(UTC)
+        stmt = select(SignalApprovalQueueORM).where(
+            SignalApprovalQueueORM.status == QueueEntryStatus.PENDING.value,
+            SignalApprovalQueueORM.expires_at <= now,
+        )
+        result = await self.session.execute(stmt)
+        orm_entries = result.scalars().all()
+        return [self._to_model(e) for e in orm_entries]
+
     async def expire_stale_entries(self) -> int:
         """
         Mark all expired pending entries as expired.

@@ -148,8 +148,13 @@ export const useSignalQueueStore = defineStore('signalQueue', () => {
   }
 
   function addSignalToQueue(signal: PendingSignal): void {
-    // Add to front of array (newest first)
-    pendingSignals.value.unshift(signal)
+    // Deduplicate: skip if signal already in queue
+    const exists = pendingSignals.value.some(
+      (s) => s.queue_id === signal.queue_id
+    )
+    if (!exists) {
+      pendingSignals.value.unshift(signal)
+    }
   }
 
   function updateSignalExpiry(queueId: string): void {

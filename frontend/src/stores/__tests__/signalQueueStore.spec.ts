@@ -46,6 +46,9 @@ const createMockPendingSignal = (
   entry_price: '150.25',
   stop_loss: '149.50',
   target_price: '152.75',
+  risk_amount: 1.5,
+  wyckoff_phase: 'C',
+  asset_class: 'Stock',
   submitted_at: new Date().toISOString(),
   expires_at: new Date(Date.now() + 300000).toISOString(),
   time_remaining_seconds: 272,
@@ -146,6 +149,15 @@ describe('signalQueueStore', () => {
 
       expect(store.pendingSignals[0].queue_id).toBe('second')
       expect(store.pendingSignals[1].queue_id).toBe('first')
+    })
+
+    it('should not add duplicate signal with same queue_id', () => {
+      const signal = createMockPendingSignal({ queue_id: 'dedup-test' })
+
+      store.addSignalToQueue(signal)
+      store.addSignalToQueue(signal)
+
+      expect(store.pendingSignals.length).toBe(1)
     })
   })
 

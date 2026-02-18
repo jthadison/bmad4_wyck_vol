@@ -19,6 +19,9 @@ const mockPendingSignal = {
   entry_price: '150.25',
   stop_loss: '149.50',
   target_price: '152.75',
+  risk_amount: 150.25,
+  wyckoff_phase: 'C',
+  asset_class: 'Stock',
   submitted_at: new Date().toISOString(),
   expires_at: new Date(Date.now() + 300000).toISOString(),
   time_remaining_seconds: 272,
@@ -98,6 +101,14 @@ test.describe('Signal Approval Queue', () => {
     await expect(page.locator('[data-testid="stop-distance"]')).toBeVisible()
     await expect(page.locator('[data-testid="asset-class"]')).toContainText(
       'Stock'
+    )
+
+    // AC2: Risk percentage, Wyckoff phase (Story 23.10)
+    await expect(page.locator('[data-testid="risk-percent"]')).toContainText(
+      '1.50%'
+    )
+    await expect(page.locator('[data-testid="wyckoff-phase"]')).toContainText(
+      'C'
     )
   })
 

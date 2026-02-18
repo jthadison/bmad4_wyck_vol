@@ -21,14 +21,17 @@ import QueueSignalCard from './QueueSignalCard.vue'
 import SignalChartPreview from './SignalChartPreview.vue'
 import RejectSignalModal from './RejectSignalModal.vue'
 import { useSignalQueueStore } from '@/stores/signalQueueStore'
+import { useWebSocket } from '@/composables/useWebSocket'
 import type { PendingSignal, RejectSignalRequest } from '@/types'
 
 const toast = useToast()
 const signalQueueStore = useSignalQueueStore()
+const { isConnected } = useWebSocket()
 
 // Local state
 const showRejectModal = ref(false)
 const signalToReject = ref<PendingSignal | null>(null)
+const isApprovingPreview = ref(false)
 
 // Computed
 const pendingSignals = computed(() => signalQueueStore.sortedSignals)
@@ -52,7 +55,7 @@ const handleApproveSignal = async (signal: PendingSignal) => {
     toast.add({
       severity: 'success',
       summary: 'Signal Approved',
-      detail: `Position opened: ${signal.symbol} ${signal.pattern_type}`,
+      detail: `Signal approved: ${signal.symbol} ${signal.pattern_type} — queued for execution`,
       life: 3000,
     })
   } else {
@@ -62,6 +65,16 @@ const handleApproveSignal = async (signal: PendingSignal) => {
       detail: 'Failed to approve signal. Please try again.',
       life: 5000,
     })
+  }
+}
+
+const handlePreviewApprove = async () => {
+  if (!selectedSignal.value || isApprovingPreview.value) return
+  isApprovingPreview.value = true
+  try {
+    await handleApproveSignal(selectedSignal.value)
+  } finally {
+    isApprovingPreview.value = false
   }
 }
 
@@ -129,10 +142,19 @@ onUnmounted(() => {
 
       <!-- Connection Status Indicator -->
       <div
-        class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400"
+        class="flex items-center gap-2 text-sm"
+        :class="
+          isConnected
+            ? 'text-green-600 dark:text-green-400'
+            : 'text-red-500 dark:text-red-400'
+        "
+        data-testid="connection-status"
       >
-        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-        <span>Live</span>
+        <span
+          class="w-2 h-2 rounded-full"
+          :class="isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"
+        ></span>
+        <span>{{ isConnected ? 'Live' : 'Disconnected' }}</span>
       </div>
     </div>
 
@@ -225,14 +247,18 @@ onUnmounted(() => {
             <!-- Quick Action Buttons -->
             <div class="flex gap-2 mt-4">
               <button
-                class="flex-1 py-2 px-4 rounded-lg bg-green-500 hover:bg-green-600 text-white font-medium transition-colors"
-                @click="handleApproveSignal(selectedSignal)"
+                class="flex-1 py-2 px-4 rounded-lg bg-green-500 hover:bg-green-600 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="selectedSignal?.is_expired || isApprovingPreview"
+                data-testid="preview-approve-button"
+                @click="handlePreviewApprove"
               >
                 <i class="pi pi-check mr-2"></i>
-                Approve
+                {{ isApprovingPreview ? 'Approving...' : 'Approve' }}
               </button>
               <button
-                class="flex-1 py-2 px-4 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium transition-colors"
+                class="flex-1 py-2 px-4 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="selectedSignal?.is_expired"
+                data-testid="preview-reject-button"
                 @click="handleRejectClick(selectedSignal)"
               >
                 <i class="pi pi-times mr-2"></i>

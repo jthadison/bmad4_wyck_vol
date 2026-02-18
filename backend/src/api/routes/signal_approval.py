@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user_id, get_db_session
+from src.api.websocket import manager as websocket_manager
 from src.models.signal_approval import (
     PendingSignalsResponse,
     SignalApprovalResult,
@@ -39,10 +40,14 @@ async def get_signal_approval_service(
     Dependency to get signal approval service.
 
     Creates service with repository and configuration.
+    Injects WebSocket manager for real-time signal queue events (Story 23.10).
     """
     repository = SignalApprovalRepository(db)
     # Paper trading service would be injected here in production
-    return SignalApprovalService(repository=repository)
+    return SignalApprovalService(
+        repository=repository,
+        websocket_manager=websocket_manager,
+    )
 
 
 @router.get(

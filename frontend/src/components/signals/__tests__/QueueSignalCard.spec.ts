@@ -30,6 +30,9 @@ const createMockPendingSignal = (
   entry_price: '150.25',
   stop_loss: '149.50',
   target_price: '152.75',
+  risk_amount: 1.5,
+  wyckoff_phase: 'C',
+  asset_class: 'Stock',
   submitted_at: new Date().toISOString(),
   expires_at: new Date(Date.now() + 300000).toISOString(),
   time_remaining_seconds: 272,
@@ -194,18 +197,102 @@ describe('QueueSignalCard.vue', () => {
       expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Stock')
     })
 
-    it('should show Forex for currency pair symbols', () => {
-      const signal = createMockPendingSignal({ symbol: 'EURUSD' })
+    it('should show Forex for currency pair symbols (heuristic fallback)', () => {
+      const signal = createMockPendingSignal({
+        symbol: 'EURUSD',
+        asset_class: '',
+      })
       wrapper = mountComponent({ signal })
 
       expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Forex')
     })
 
-    it('should show Index for index symbols', () => {
-      const signal = createMockPendingSignal({ symbol: 'US30' })
+    it('should show Index for index symbols (heuristic fallback)', () => {
+      const signal = createMockPendingSignal({
+        symbol: 'US30',
+        asset_class: '',
+      })
       wrapper = mountComponent({ signal })
 
       expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Index')
+    })
+
+    it('should use backend asset_class when available', () => {
+      const signal = createMockPendingSignal({ asset_class: 'Crypto' })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="asset-class"]').text()).toBe('Crypto')
+    })
+
+    it('should render risk amount as dollar value', () => {
+      const signal = createMockPendingSignal({ risk_amount: 225.0 })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="risk-amount"]').text()).toContain(
+        '$225.00'
+      )
+    })
+
+    it('should show N/A when risk_amount is 0', () => {
+      const signal = createMockPendingSignal({ risk_amount: 0 })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="risk-amount"]').text()).toBe('N/A')
+    })
+
+    it('should render Wyckoff phase', () => {
+      const signal = createMockPendingSignal({ wyckoff_phase: 'C' })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="wyckoff-phase"]').text()).toBe('C')
+    })
+
+    it('should show N/A when wyckoff_phase is empty', () => {
+      const signal = createMockPendingSignal({ wyckoff_phase: '' })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="wyckoff-phase"]').text()).toBe('N/A')
+    })
+
+    it('should show $ prefix for stock prices', () => {
+      const signal = createMockPendingSignal({ asset_class: 'Stock' })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="entry-price"]').text()).toContain('$')
+    })
+
+    it('should omit $ prefix for forex prices', () => {
+      const signal = createMockPendingSignal({
+        symbol: 'EURUSD',
+        asset_class: 'Forex',
+        entry_price: '1.08765',
+      })
+      wrapper = mountComponent({ signal })
+
+      const text = wrapper.find('[data-testid="entry-price"]').text()
+      expect(text).not.toContain('$')
+      expect(text).toContain('1.08765')
+    })
+
+    it('should show 5 decimal places for forex prices', () => {
+      const signal = createMockPendingSignal({
+        symbol: 'EURUSD',
+        asset_class: 'Forex',
+        entry_price: '1.08765',
+        stop_loss: '1.08500',
+        target_price: '1.09200',
+      })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="entry-price"]').text()).toContain(
+        '1.08765'
+      )
+      expect(wrapper.find('[data-testid="stop-price"]').text()).toContain(
+        '1.08500'
+      )
+      expect(wrapper.find('[data-testid="target-price"]').text()).toContain(
+        '1.09200'
+      )
     })
   })
 

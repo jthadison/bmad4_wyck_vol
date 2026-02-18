@@ -210,6 +210,9 @@ export interface PendingSignal {
   entry_price: string
   stop_loss: string
   target_price: string
+  risk_amount: number
+  wyckoff_phase: string
+  asset_class: string
   submitted_at: string
   expires_at: string
   time_remaining_seconds: number

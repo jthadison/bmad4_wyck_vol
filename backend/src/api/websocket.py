@@ -548,6 +548,75 @@ class ConnectionManager:
 
         await self.broadcast(message)
 
+    async def emit_signal_queue_added(self, pending_signal_data: dict[str, Any]) -> None:
+        """
+        Emit signal:queue_added event when a signal enters the approval queue (Story 23.10).
+
+        Args:
+            pending_signal_data: PendingSignalView as dictionary
+        """
+        message: dict[str, Any] = {
+            "type": "signal:queue_added",
+            "data": pending_signal_data,
+        }
+        await self.broadcast(message)
+
+    async def emit_signal_queue_approved(self, queue_id: str, signal_id: str) -> None:
+        """
+        Emit signal:approved event when a signal is approved (Story 23.10).
+
+        Args:
+            queue_id: Queue entry UUID string
+            signal_id: Signal UUID string
+        """
+        message: dict[str, Any] = {
+            "type": "signal:approved",
+            "data": {
+                "queue_id": queue_id,
+                "signal_id": signal_id,
+                "approved_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        await self.broadcast(message)
+
+    async def emit_signal_queue_rejected(self, queue_id: str, signal_id: str, reason: str) -> None:
+        """
+        Emit signal:queue_rejected event when a signal is rejected (Story 23.10).
+
+        Args:
+            queue_id: Queue entry UUID string
+            signal_id: Signal UUID string
+            reason: Rejection reason
+        """
+        message: dict[str, Any] = {
+            "type": "signal:queue_rejected",
+            "data": {
+                "queue_id": queue_id,
+                "signal_id": signal_id,
+                "reason": reason,
+                "rejected_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        await self.broadcast(message)
+
+    async def emit_signal_queue_expired(self, queue_id: str, signal_id: str) -> None:
+        """
+        Emit signal:expired event when a signal expires (Story 23.10).
+
+        Args:
+            queue_id: Queue entry UUID string
+            signal_id: Signal UUID string
+        """
+        message: dict[str, Any] = {
+            "type": "signal:expired",
+            "data": {
+                "queue_id": queue_id,
+                "signal_id": signal_id,
+                "expired_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        await self.broadcast(message)
+
     async def emit_batch_update(
         self,
         patterns_detected: list[dict[str, Any]],
