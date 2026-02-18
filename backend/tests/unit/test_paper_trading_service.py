@@ -786,3 +786,517 @@ class TestCloseAllPositionsAtomic:
 
         # commit should NOT have been called (error before reaching it)
         mock_session.commit.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Story 23.8a: update_positions tests
+# ---------------------------------------------------------------------------
+
+
+class TestUpdatePositions:
+    """Tests for PaperTradingService.update_positions."""
+
+    @pytest.mark.asyncio
+    async def test_update_positions_no_positions(self):
+        """Returns 0 when no open positions exist."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        result = await service.update_positions()
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_update_positions_no_account(self):
+        """Returns 0 when account is missing during update."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        class NoAccountRepo:
+            async def get_account(self):
+                return None
+
+            async def update_account(self, account):
+                pass
+
+        account_repo = NoAccountRepo()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Add a position so list_open_positions returns something
+        pos = _create_test_position(current_price=Decimal("155.00"))
+        position_repo.positions.append(pos)
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        result = await service.update_positions()
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_update_positions_stop_hit(self):
+        """Position at stop loss should be closed."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Position with current_price at stop_loss
+        pos = _create_test_position(
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("148.00"),
+            current_price=Decimal("147.00"),  # Below stop
+        )
+        position_repo.positions.append(pos)
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        result = await service.update_positions()
+
+        assert result == 1
+        # Trade should have been created
+        assert len(trade_repo.trades) == 1
+
+    @pytest.mark.asyncio
+    async def test_update_positions_target_hit(self):
+        """Position at target should be closed."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Position with current_price above target_1
+        pos = _create_test_position(
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("148.00"),
+            current_price=Decimal("155.00"),  # Above target_1 (154) but below target_2 (156)
+        )
+        position_repo.positions.append(pos)
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        result = await service.update_positions()
+
+        assert result == 1
+        assert len(trade_repo.trades) == 1
+
+    @pytest.mark.asyncio
+    async def test_update_positions_updates_unrealized_pnl(self):
+        """Position between stop and target should have unrealized PnL updated."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Position between stop and target (no hit)
+        pos = _create_test_position(
+            entry_price=Decimal("150.00"),
+            stop_loss=Decimal("148.00"),
+            current_price=Decimal("151.00"),  # Above stop, below target_1 (154)
+        )
+        position_repo.positions.append(pos)
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        result = await service.update_positions()
+
+        assert result == 1
+        # No trade created (position stays open)
+        assert len(trade_repo.trades) == 0
+        # Position should still be open
+        assert position_repo.positions[0].status == "OPEN"
+
+
+# ---------------------------------------------------------------------------
+# Story 23.8a: calculate_performance_metrics with no account
+# ---------------------------------------------------------------------------
+
+
+class TestPerformanceMetricsNoAccount:
+    """Tests for calculate_performance_metrics edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_calculate_performance_metrics_no_account(self):
+        """Returns empty dict when no account exists."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        class NoAccountRepo:
+            async def get_account(self):
+                return None
+
+            async def update_account(self, account):
+                pass
+
+        account_repo = NoAccountRepo()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        metrics = await service.calculate_performance_metrics()
+        assert metrics == {}
+
+    @pytest.mark.asyncio
+    async def test_calculate_performance_metrics_with_trades(self):
+        """Returns correct metrics with winning and losing trades."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        trade_repo.trades = [
+            _create_test_trade(realized_pnl=Decimal("200.00"), r_multiple=Decimal("2.0")),
+            _create_test_trade(realized_pnl=Decimal("100.00"), r_multiple=Decimal("1.0")),
+            _create_test_trade(
+                realized_pnl=Decimal("-50.00"),
+                r_multiple=Decimal("-0.5"),
+                exit_reason="STOP_LOSS",
+            ),
+        ]
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        metrics = await service.calculate_performance_metrics()
+
+        assert metrics["total_trades"] == 3
+        assert metrics["winning_trades"] == 2
+        assert metrics["losing_trades"] == 1
+        assert metrics["win_rate"] == pytest.approx(66.67, rel=0.01)
+        assert metrics["total_realized_pnl"] == pytest.approx(250.0)
+        assert "return_pct" in metrics
+        assert "current_equity" in metrics
+        assert "starting_capital" in metrics
+
+
+# ---------------------------------------------------------------------------
+# Story 23.8a: validate_live_trading_eligibility edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestLiveEligibilityEdgeCases:
+    """Additional tests for validate_live_trading_eligibility."""
+
+    @pytest.mark.asyncio
+    async def test_eligibility_no_account(self):
+        """Returns not eligible when no account exists."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        class NoAccountRepo:
+            async def get_account(self):
+                return None
+
+            async def update_account(self, account):
+                pass
+
+        account_repo = NoAccountRepo()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        result = await service.validate_live_trading_eligibility()
+
+        assert result["eligible"] is False
+        assert result["reason"] == "Paper trading not started"
+        assert result["days_completed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_eligibility_all_criteria_met(self):
+        """Returns eligible when all criteria are met."""
+        from datetime import timedelta
+
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Set up account to meet all criteria
+        account_repo.account.paper_trading_start_date = datetime.now(UTC) - timedelta(days=100)
+        account_repo.account.total_trades = 25
+        account_repo.account.win_rate = Decimal("65.0")
+        account_repo.account.average_r_multiple = Decimal("2.0")
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        result = await service.validate_live_trading_eligibility()
+
+        assert result["eligible"] is True
+        assert result["checks"]["duration"] is True
+        assert result["checks"]["trade_count"] is True
+        assert result["checks"]["win_rate"] is True
+        assert result["checks"]["avg_r_multiple"] is True
+        assert result["progress_pct"] == 100
+
+    @pytest.mark.asyncio
+    async def test_eligibility_duration_under_90_days(self):
+        """Returns not eligible when duration is under 90 days."""
+        from datetime import timedelta
+
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        account_repo.account.paper_trading_start_date = datetime.now(UTC) - timedelta(days=45)
+        account_repo.account.total_trades = 25
+        account_repo.account.win_rate = Decimal("65.0")
+        account_repo.account.average_r_multiple = Decimal("2.0")
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        result = await service.validate_live_trading_eligibility()
+
+        assert result["eligible"] is False
+        assert result["checks"]["duration"] is False
+        assert result["days_remaining"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Story 23.8a: Audit trail fields propagation
+# ---------------------------------------------------------------------------
+
+
+class TestAuditTrailFields:
+    """Tests for AC2 audit trail fields (pattern_type, confidence_score, signal_source)."""
+
+    @pytest.mark.asyncio
+    async def test_execute_signal_populates_audit_fields_on_position(self):
+        """Position should carry pattern_type, confidence_score, signal_source from signal."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        signal = create_test_signal()  # pattern_type="SPRING", confidence_score=80
+        position = await service.execute_signal(signal, Decimal("150.00"))
+
+        assert position is not None
+        assert position.pattern_type == "SPRING"
+        assert position.confidence_score == Decimal("0.80000000")
+        # signal_source defaults to None on TradeSignal
+        assert position.signal_source is None
+
+    @pytest.mark.asyncio
+    async def test_close_position_copies_audit_fields_to_trade(self):
+        """Trade record should carry audit fields from position after close."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Create a position with audit fields set
+        pos = _create_test_position(
+            current_price=Decimal("147.00"),  # Below stop to trigger close
+        )
+        pos.pattern_type = "SOS"
+        pos.confidence_score = Decimal("0.85000000")
+        pos.signal_source = "Wayne"
+        position_repo.positions.append(pos)
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        await service.update_positions()
+
+        assert len(trade_repo.trades) == 1
+        trade = trade_repo.trades[0]
+        assert trade.pattern_type == "SOS"
+        assert trade.confidence_score == Decimal("0.85000000")
+        assert trade.signal_source == "Wayne"
+
+
+# ---------------------------------------------------------------------------
+# Story 23.8a: Commission fix verification
+# ---------------------------------------------------------------------------
+
+
+class TestCommissionFix:
+    """Tests verifying commission double-counting bug is fixed."""
+
+    @pytest.mark.asyncio
+    async def test_close_position_does_not_double_count_commission(self):
+        """Capital should only be reduced by exit commission, not total commission again."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        # Execute a signal: entry commission is deducted from capital
+        signal = create_test_signal(
+            entry_price=Decimal("100.00"),
+            stop_loss=Decimal("98.00"),
+            target=Decimal("104.00"),
+            position_size=Decimal("100"),
+        )
+        position = await service.execute_signal(signal, Decimal("100.00"))
+        capital_after_entry = account_repo.account.current_capital
+
+        # Manually close at stop loss
+        pos = position_repo.positions[0]
+        pos.current_price = Decimal("97.00")  # Below stop
+
+        await service.update_positions()
+
+        # Verify capital: should be entry_capital + (exit_price * qty - exit_commission_only)
+        # NOT entry_capital + (exit_price * qty - total_commission)
+        # total commission = entry_commission + exit_commission
+        # Only exit_commission should be deducted on close
+        trade = trade_repo.trades[0]
+        exit_commission = trade.commission_total - pos.commission_paid
+        expected_capital = capital_after_entry + trade.exit_price * trade.quantity - exit_commission
+        assert account_repo.account.current_capital == expected_capital
+
+
+# ---------------------------------------------------------------------------
+# Story 23.8a: Max drawdown tracking
+# ---------------------------------------------------------------------------
+
+
+class TestMaxDrawdownTracking:
+    """Tests for peak equity and max drawdown tracking."""
+
+    @pytest.mark.asyncio
+    async def test_peak_equity_increases_on_profit(self):
+        """Peak equity should increase when equity rises."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Set initial peak_equity below current capital
+        # _update_account_metrics recalculates equity = current_capital + unrealized_pnl
+        account_repo.account.peak_equity = Decimal("90000.00")
+        account_repo.account.current_capital = Decimal("105000.00")
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        await service._update_account_metrics(account_repo.account)
+
+        # equity = 105k + 0 unrealized = 105k, which exceeds peak of 90k
+        assert account_repo.account.peak_equity == Decimal("105000.00000000")
+
+    @pytest.mark.asyncio
+    async def test_drawdown_recorded_when_equity_drops(self):
+        """Max drawdown should be recorded when equity drops below peak."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+        account_repo = MockPaperAccountRepository()
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        # Set peak equity to $100k, current equity to $90k (10% drawdown)
+        account_repo.account.peak_equity = Decimal("100000.00")
+        account_repo.account.current_capital = Decimal("90000.00")
+        account_repo.account.equity = Decimal("90000.00")
+        account_repo.account.max_drawdown = Decimal("0")
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+        await service._update_account_metrics(account_repo.account)
+
+        # Equity recalculated from current_capital + unrealized = $90k + 0 = $90k
+        # Drawdown = (100k - 90k) / 100k * 100 = 10%
+        assert account_repo.account.max_drawdown >= Decimal("10")
+
+    @pytest.mark.asyncio
+    async def test_close_all_positions_updates_peak_equity(self):
+        """close_all_positions_atomic should update peak_equity in the SQL update."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        # Set peak_equity lower than expected post-close equity
+        account_repo.account.peak_equity = Decimal("50000.00")
+
+        positions = [
+            _create_test_position(symbol="AAPL"),
+        ]
+        account = account_repo.account
+
+        result = await service.close_all_positions_atomic(positions, account)
+
+        assert result == 1
+        mock_session.commit.assert_awaited_once()
+        # Peak equity should have been updated (equity > old peak)
+        assert account.peak_equity > Decimal("50000.00")
+
+    @pytest.mark.asyncio
+    async def test_close_all_positions_drawdown_when_equity_below_peak(self):
+        """close_all_positions_atomic should update max_drawdown when equity < peak."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        # Set high peak equity — after closing losing positions, equity will be lower
+        account_repo.account.peak_equity = Decimal("200000.00")
+        account_repo.account.max_drawdown = Decimal("0")
+
+        positions = [
+            _create_test_position(symbol="AAPL"),
+        ]
+        account = account_repo.account
+
+        result = await service.close_all_positions_atomic(positions, account)
+
+        assert result == 1
+        # Equity after close is current_capital + sale proceeds (~$100k range)
+        # which is below peak of $200k, so drawdown should be recorded
+        assert account.max_drawdown > Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_close_all_with_prior_trades_computes_avg_r(self):
+        """close_all_positions_atomic with original_trade_count > 0 should blend R-multiples."""
+        config = PaperTradingConfig()
+        broker = PaperBrokerAdapter(config)
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        account_repo = MockPaperAccountRepository()
+        account_repo.session = mock_session
+        position_repo = MockPaperPositionRepository()
+        trade_repo = MockPaperTradeRepository()
+
+        service = PaperTradingService(account_repo, position_repo, trade_repo, broker)
+
+        # Account already has 5 trades with avg R of 2.0
+        account_repo.account.total_trades = 5
+        account_repo.account.average_r_multiple = Decimal("2.0")
+        account_repo.account.winning_trades = 4
+        account_repo.account.losing_trades = 1
+        account_repo.account.peak_equity = Decimal("0")
+
+        positions = [
+            _create_test_position(symbol="AAPL"),
+        ]
+        account = account_repo.account
+
+        result = await service.close_all_positions_atomic(positions, account)
+
+        assert result == 1
+        # total_trades should now be 6
+        assert account.total_trades == 6
+        # average_r_multiple should be blended from old (5 trades * 2.0) + new trade R
+        assert account.average_r_multiple != Decimal("0")

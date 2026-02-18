@@ -199,6 +199,7 @@ async def enable_paper_trading(
             starting_capital=request.starting_capital,
             current_capital=request.starting_capital,
             equity=request.starting_capital,
+            peak_equity=request.starting_capital,
             paper_trading_start_date=datetime.now(UTC),
         )
 

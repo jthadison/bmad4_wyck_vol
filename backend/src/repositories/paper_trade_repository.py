@@ -50,6 +50,9 @@ class PaperTradeRepository:
             id=trade.id,
             position_id=trade.position_id,
             signal_id=trade.signal_id,
+            pattern_type=trade.pattern_type,
+            confidence_score=trade.confidence_score,
+            signal_source=trade.signal_source,
             symbol=trade.symbol,
             entry_time=trade.entry_time,
             entry_price=trade.entry_price,
@@ -202,6 +205,13 @@ class PaperTradeRepository:
             id=trade_db.id,
             position_id=trade_db.position_id,
             signal_id=trade_db.signal_id,
+            pattern_type=trade_db.pattern_type,
+            confidence_score=(
+                Decimal(str(trade_db.confidence_score))
+                if trade_db.confidence_score is not None
+                else None
+            ),
+            signal_source=trade_db.signal_source,
             symbol=trade_db.symbol,
             entry_time=trade_db.entry_time,
             entry_price=Decimal(str(trade_db.entry_price)),

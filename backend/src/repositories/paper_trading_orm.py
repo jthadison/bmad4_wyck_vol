@@ -118,6 +118,11 @@ class PaperAccountDB(Base):
         nullable=False,
         server_default="0",
     )
+    peak_equity: Mapped[Decimal] = mapped_column(
+        DECIMAL(precision=20, scale=8),
+        nullable=False,
+        server_default="0",
+    )
 
     # Duration tracking (for 3-month requirement)
     paper_trading_start_date: Mapped[datetime | None] = mapped_column(
@@ -170,6 +175,13 @@ class PaperPositionDB(Base):
         nullable=False,
         index=True,
     )
+
+    # Audit trail (AC2)
+    pattern_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    confidence_score: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(precision=10, scale=8), nullable=True
+    )
+    signal_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Position details
     symbol: Mapped[str] = mapped_column(
@@ -282,6 +294,13 @@ class PaperTradeDB(Base):
         nullable=False,
         index=True,
     )
+
+    # Audit trail (AC2)
+    pattern_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    confidence_score: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(precision=10, scale=8), nullable=True
+    )
+    signal_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Trade details
     symbol: Mapped[str] = mapped_column(
