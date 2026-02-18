@@ -150,6 +150,15 @@ describe('signalQueueStore', () => {
       expect(store.pendingSignals[0].queue_id).toBe('second')
       expect(store.pendingSignals[1].queue_id).toBe('first')
     })
+
+    it('should not add duplicate signal with same queue_id', () => {
+      const signal = createMockPendingSignal({ queue_id: 'dedup-test' })
+
+      store.addSignalToQueue(signal)
+      store.addSignalToQueue(signal)
+
+      expect(store.pendingSignals.length).toBe(1)
+    })
   })
 
   describe('removeSignalFromQueue Action', () => {

@@ -48,6 +48,16 @@ vi.mock('@/stores/signalQueueStore', () => ({
   useSignalQueueStore: vi.fn(() => createMockStore()),
 }))
 
+// Mock WebSocket composable (used by SignalQueuePanel for connection status)
+vi.mock('@/composables/useWebSocket', () => ({
+  useWebSocket: () => ({
+    isConnected: { value: true },
+    connectionStatus: { value: 'connected' },
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+  }),
+}))
+
 // Helper to create mock pending signal (flat structure matching backend)
 const createMockPendingSignal = (
   overrides?: Partial<PendingSignal>
@@ -140,7 +150,7 @@ describe('SignalQueuePanel.vue', () => {
       expect(wrapper.text()).toContain('Signal Queue')
     })
 
-    it('should show connection status indicator', async () => {
+    it('should show connection status indicator based on WebSocket state', async () => {
       const { useSignalQueueStore } = await import('@/stores/signalQueueStore')
       vi.mocked(useSignalQueueStore).mockReturnValue(
         createMockStore() as unknown as SignalQueueStoreType
@@ -149,7 +159,9 @@ describe('SignalQueuePanel.vue', () => {
       wrapper = mountComponent()
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Live')
+      const status = wrapper.find('[data-testid="connection-status"]')
+      expect(status.exists()).toBe(true)
+      expect(status.text()).toContain('Live')
     })
   })
 

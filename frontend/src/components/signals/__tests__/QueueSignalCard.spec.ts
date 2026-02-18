@@ -253,6 +253,47 @@ describe('QueueSignalCard.vue', () => {
 
       expect(wrapper.find('[data-testid="wyckoff-phase"]').text()).toBe('N/A')
     })
+
+    it('should show $ prefix for stock prices', () => {
+      const signal = createMockPendingSignal({ asset_class: 'Stock' })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="entry-price"]').text()).toContain('$')
+    })
+
+    it('should omit $ prefix for forex prices', () => {
+      const signal = createMockPendingSignal({
+        symbol: 'EURUSD',
+        asset_class: 'Forex',
+        entry_price: '1.08765',
+      })
+      wrapper = mountComponent({ signal })
+
+      const text = wrapper.find('[data-testid="entry-price"]').text()
+      expect(text).not.toContain('$')
+      expect(text).toContain('1.08765')
+    })
+
+    it('should show 5 decimal places for forex prices', () => {
+      const signal = createMockPendingSignal({
+        symbol: 'EURUSD',
+        asset_class: 'Forex',
+        entry_price: '1.08765',
+        stop_loss: '1.08500',
+        target_price: '1.09200',
+      })
+      wrapper = mountComponent({ signal })
+
+      expect(wrapper.find('[data-testid="entry-price"]').text()).toContain(
+        '1.08765'
+      )
+      expect(wrapper.find('[data-testid="stop-price"]').text()).toContain(
+        '1.08500'
+      )
+      expect(wrapper.find('[data-testid="target-price"]').text()).toContain(
+        '1.09200'
+      )
+    })
   })
 
   describe('Confidence Grade Calculation', () => {
