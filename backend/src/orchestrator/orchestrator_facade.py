@@ -178,23 +178,55 @@ class MasterOrchestratorFacade:
 
         stages.append(PatternDetectionStage(registry))
 
-        # Stage 5: Validation (FR20 order: Volume -> Phase -> Levels -> Risk)
-        # StrategyValidator omitted: requires NewsCalendarFactory with external services.
-        # Core Wyckoff validation is covered by the first 4 validators.
+        # Stage 5: Validation (FR20 order: Volume -> Phase -> Levels -> Risk -> Strategy)
         from src.signal_generator.validation_chain import ValidationChainOrchestrator
         from src.signal_generator.validators import (
             LevelValidator,
             PhaseValidator,
             RiskValidator,
+            StrategyValidator,
             VolumeValidator,
         )
 
-        validators = [
+        validators: list = [
             VolumeValidator(),
             PhaseValidator(),
             LevelValidator(),
             RiskValidator(),
         ]
+
+        # Wire StrategyValidator: use real implementation if NEWS_API_KEY is
+        # configured, otherwise fall back to a WARN-only stub so all 5 stages
+        # are present in the pipeline without requiring external services.
+        from src.config import settings
+
+        if settings.news_api_key:
+            from src.services.news_calendar_factory import NewsCalendarFactory
+
+            validators.append(StrategyValidator(news_calendar_factory=NewsCalendarFactory()))
+        else:
+            from src.models.validation import ValidationStatus as _VS
+            from src.signal_generator.validators.base import BaseValidator
+
+            class _StrategyNoApiFallback(BaseValidator):
+                """WARN-only stub when NEWS_API_KEY is not configured."""
+
+                @property
+                def validator_id(self) -> str:
+                    return "STRATEGY_VALIDATOR"
+
+                @property
+                def stage_name(self) -> str:
+                    return "Strategy"
+
+                async def validate(self, context):  # type: ignore[override]
+                    return self.create_result(
+                        _VS.WARN,
+                        reason="No news calendar API configured — strategy context skipped",
+                    )
+
+            validators.append(_StrategyNoApiFallback())
+
         stages.append(ValidationStage(ValidationChainOrchestrator(validators)))
 
         # Stage 6: Signal Generation

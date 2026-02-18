@@ -120,6 +120,13 @@ class Settings(BaseSettings):
         description="Alpaca Markets secret key for authentication",
     )
 
+    # News Calendar API Configuration (Strategy Validator - Story 8.7)
+    news_api_key: str = Field(
+        default="",
+        description="News calendar API key for StrategyValidator earnings/event blackout checks. "
+        "Empty string disables news-based validation (WARN fallback).",
+    )
+
     # Twelve Data API Configuration (Story 21.1)
     twelvedata_api_key: str = Field(
         default="",
