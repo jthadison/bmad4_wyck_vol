@@ -142,12 +142,20 @@ class _TradeSignalGenerator:
                     pattern_type = "SPRING"
 
         if pattern_type not in ("SPRING", "SOS", "LPS", "UTAD"):
-            pattern_type = "SPRING"
+            logger.warning(
+                "signal_generator_unknown_pattern_type",
+                pattern_type=pattern_type,
+                symbol=symbol,
+                detail="Rejecting signal — pattern type not in allowed set",
+            )
+            return None
 
-        # Normalise phase to single char
-        phase: str = getattr(pattern, "phase", "C")
-        if len(str(phase)) > 1:
-            phase = str(phase)[0]
+        # Normalise phase to single char; infer from pattern_type if absent
+        phase: str = str(getattr(pattern, "phase", "") or "")
+        if not phase:
+            phase = {"SPRING": "C", "SOS": "D", "UTAD": "D", "LPS": "E"}.get(pattern_type, "C")
+        if len(phase) > 1:
+            phase = phase[0]
 
         # 3. Compute derived fields
         risk = abs(entry_price - stop_loss)
@@ -189,7 +197,16 @@ class _TradeSignalGenerator:
                 raw_confidence = max(70, min(95, int(95 - (float(volume_ratio) / 0.7) * 25)))
             else:
                 raw_confidence = 75
-        confidence_score = max(70, min(95, int(raw_confidence)))
+        confidence_score = int(raw_confidence)
+        if confidence_score < 70:
+            logger.warning(
+                "signal_generator_low_confidence",
+                raw_confidence=raw_confidence,
+                symbol=symbol,
+                detail="Rejecting signal — confidence below 70 threshold",
+            )
+            return None
+        confidence_score = min(95, confidence_score)
 
         # Build ConfidenceComponents that satisfies the weighted-average validator.
         # Use the single confidence value and reverse-engineer valid components:
@@ -460,6 +477,36 @@ class MasterOrchestratorFacade:
 
         logger.info("orchestrator_facade_initialized")
 
+    async def _persist_signals(self, signals: list) -> None:
+        """Persist approved signals to the database (P6b).
+
+        Failures are logged but never raised — persistence must not
+        block signal delivery.
+        """
+        from src.database import async_session_maker
+        from src.models.signal import TradeSignal as PydanticTradeSignal
+        from src.repositories.signal_repository import SignalRepository
+
+        if async_session_maker is None:
+            logger.warning(
+                "persist_signals_no_db",
+                detail="async_session_maker is None — skipping persistence",
+            )
+            return
+
+        pydantic_signals = [s for s in signals if isinstance(s, PydanticTradeSignal)]
+        if not pydantic_signals:
+            return
+
+        try:
+            async with async_session_maker() as session:
+                repo = SignalRepository(db_session=session)
+                for signal in pydantic_signals:
+                    await repo.save_signal(signal)
+            logger.info("signals_persisted", count=len(pydantic_signals))
+        except Exception as exc:
+            logger.error("persist_signals_failed", error=str(exc), count=len(pydantic_signals))
+
     @staticmethod
     def _build_portfolio_monitor() -> PortfolioMonitor:
         """Build PortfolioMonitor wired to real DB repos when available (P2a)."""
@@ -636,6 +683,10 @@ class MasterOrchestratorFacade:
 
             # Extract signals from result
             signals = self._extract_signals(result.output, symbol, timeframe, correlation_id)
+
+            # Persist approved signals (P6b)
+            if signals:
+                await self._persist_signals(signals)
 
             async with self._lock:
                 self._signal_count += len(signals)

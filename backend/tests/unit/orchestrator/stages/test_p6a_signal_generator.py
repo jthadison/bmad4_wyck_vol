@@ -253,19 +253,18 @@ class TestTradeSignalGeneratorRMultiple:
 
 
 class TestTradeSignalGeneratorConfidence:
-    """Test confidence score clamping."""
+    """Test confidence score rejection and capping."""
 
     @pytest.mark.asyncio
-    async def test_confidence_clamped_to_min_70(self):
-        """Confidence below 70 → clamped to 70."""
+    async def test_confidence_below_70_rejected(self):
+        """Confidence below 70 → rejected (returns None)."""
         gen = _TradeSignalGenerator()
         pattern = _make_spring_pattern(confidence=50)
         ctx = _make_context()
 
         signal = await gen.generate_signal(pattern, None, ctx)
 
-        assert signal is not None
-        assert signal.confidence_score == 70
+        assert signal is None
 
     @pytest.mark.asyncio
     async def test_confidence_clamped_to_max_95(self):
@@ -389,19 +388,40 @@ class TestTradeSignalGeneratorTimestamps:
 
 
 class TestTradeSignalGeneratorPatternTypeNormalization:
-    """Test pattern_type normalization."""
+    """Test pattern_type normalization and rejection."""
 
     @pytest.mark.asyncio
-    async def test_unknown_pattern_type_defaults_to_spring(self):
-        """Unknown pattern_type → defaults to SPRING."""
+    async def test_unknown_pattern_type_rejected(self):
+        """Unknown pattern_type → rejected (returns None)."""
         gen = _TradeSignalGenerator()
         pattern = _make_spring_pattern(pattern_type="UNKNOWN_TYPE")
         ctx = _make_context()
 
         signal = await gen.generate_signal(pattern, None, ctx)
 
-        assert signal is not None
-        assert signal.pattern_type == "SPRING"
+        assert signal is None
+
+    @pytest.mark.asyncio
+    async def test_selling_climax_pattern_rejected(self):
+        """SC (Selling Climax) must never become a buy signal."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern(pattern_type="SC")
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is None
+
+    @pytest.mark.asyncio
+    async def test_automatic_rally_pattern_rejected(self):
+        """AR (Automatic Rally) must never become a buy signal."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern(pattern_type="AR")
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is None
 
     @pytest.mark.asyncio
     async def test_lowercase_pattern_type_normalized(self):
@@ -414,3 +434,88 @@ class TestTradeSignalGeneratorPatternTypeNormalization:
 
         assert signal is not None
         assert signal.pattern_type == "SPRING"
+
+
+class TestTradeSignalGeneratorPhaseInference:
+    """Test phase inference from pattern_type when pattern has no phase."""
+
+    @pytest.mark.asyncio
+    async def test_spring_infers_phase_c(self):
+        """Spring with no phase attr → infers phase C."""
+        gen = _TradeSignalGenerator()
+        pattern = SimpleNamespace(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            entry_price=Decimal("100"),
+            stop_loss=Decimal("95"),
+            target_price=Decimal("120"),
+            confidence=85,
+            pattern_type="SPRING",
+            recommended_position_size=Decimal("100"),
+            # no 'phase' attribute
+        )
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+        assert signal.phase == "C"
+
+    @pytest.mark.asyncio
+    async def test_sos_infers_phase_d(self):
+        """SOS with no phase attr → infers phase D."""
+        gen = _TradeSignalGenerator()
+        pattern = SimpleNamespace(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            entry_price=Decimal("100"),
+            stop_loss=Decimal("95"),
+            target=Decimal("120"),
+            confidence=85,
+            pattern_type="SOS",
+            recommended_position_size=Decimal("100"),
+            # no 'phase' attribute
+        )
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+        assert signal.phase == "D"
+
+    @pytest.mark.asyncio
+    async def test_lps_infers_phase_e(self):
+        """LPS with no phase attr → infers phase E."""
+        gen = _TradeSignalGenerator()
+        pattern = SimpleNamespace(
+            id=uuid4(),
+            symbol="AAPL",
+            timeframe="1d",
+            entry_price=Decimal("100"),
+            stop_loss=Decimal("95"),
+            target_price=Decimal("120"),
+            confidence=85,
+            pattern_type="LPS",
+            recommended_position_size=Decimal("100"),
+            # no 'phase' attribute
+        )
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+        assert signal.phase == "E"
+
+    @pytest.mark.asyncio
+    async def test_explicit_phase_not_overridden(self):
+        """Pattern with explicit phase → keeps it, does not infer."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_spring_pattern(phase="D")
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None
+        assert signal.phase == "D"
