@@ -622,6 +622,7 @@ class TestMetricConstants:
         assert "avg_validate_win_rate" in HIGHER_IS_BETTER
         assert "avg_validate_profit_factor" in HIGHER_IS_BETTER
         assert "avg_validate_sharpe" in HIGHER_IS_BETTER
+        assert "avg_validate_avg_r" in HIGHER_IS_BETTER
 
     def test_lower_is_better_metrics(self):
         """Verify LOWER_IS_BETTER contains the right metrics."""
@@ -659,6 +660,7 @@ class TestDefaultBaselinesExist:
         assert "avg_validate_profit_factor" in data
         assert "avg_validate_sharpe" in data
         assert "avg_validate_max_drawdown" in data
+        assert "avg_validate_avg_r" in data
 
 
 class TestSuiteWithDefaultConfig:
@@ -830,6 +832,234 @@ class TestRegressionDetection:
         assert len(comparisons) == 4
         for c in comparisons:
             assert c.change_pct == Decimal("0")
+
+
+class TestPerWindowDrawdownViolation:
+    """Test AC3: per-window drawdown > 20% detection."""
+
+    @patch("src.backtesting.walk_forward_suite.WalkForwardEngine")
+    def test_suite_fails_when_window_exceeds_20pct_drawdown(self, MockEngine):
+        """Suite overall_pass must be False when any window exceeds 20% drawdown."""
+        from src.models.backtest import BacktestMetrics, ValidationWindow, WalkForwardResult
+
+        # Window with 25% drawdown — exceeds the 20% AC3 limit
+        mock_window = MagicMock(spec=ValidationWindow)
+        mock_window.window_number = 1
+        mock_window.train_start_date = date(2024, 1, 1)
+        mock_window.train_end_date = date(2024, 6, 30)
+        mock_window.validate_start_date = date(2024, 7, 1)
+        mock_window.validate_end_date = date(2024, 8, 31)
+        mock_window.train_metrics = BacktestMetrics(
+            win_rate=Decimal("0.60"),
+            profit_factor=Decimal("1.8"),
+            sharpe_ratio=Decimal("1.2"),
+            max_drawdown=Decimal("0.08"),
+        )
+        mock_window.validate_metrics = BacktestMetrics(
+            win_rate=Decimal("0.55"),
+            profit_factor=Decimal("1.5"),
+            sharpe_ratio=Decimal("1.0"),
+            max_drawdown=Decimal("0.25"),  # 25% — violates 20% AC3 limit
+        )
+        mock_window.performance_ratio = Decimal("0.85")
+        mock_window.degradation_detected = False
+        mock_window.is_placeholder = False
+
+        mock_result = MagicMock(spec=WalkForwardResult)
+        mock_result.windows = [mock_window]
+        mock_result.stability_score = Decimal("0.10")
+        mock_result.degradation_windows = []
+        mock_result.total_execution_time_seconds = 1.0
+
+        mock_engine_instance = MagicMock()
+        mock_engine_instance.walk_forward_test.return_value = mock_result
+        MockEngine.return_value = mock_engine_instance
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = WalkForwardSuiteConfig(
+                symbols=[
+                    SymbolSuiteConfig(
+                        symbol="EURUSD",
+                        asset_class="forex",
+                        start_date=date(2024, 1, 1),
+                        end_date=date(2025, 12, 31),
+                    ),
+                ],
+                baselines_dir=tmpdir,
+            )
+            suite = WalkForwardSuite(config)
+            result = suite.run()
+
+        assert result.overall_pass is False
+        assert result.total_drawdown_violations == 1
+        assert len(result.drawdown_violation_details) == 1
+        assert "EURUSD/window-1" in result.drawdown_violation_details[0]
+        assert result.symbol_results[0].drawdown_violation_count == 1
+        assert result.symbol_results[0].drawdown_violation_windows == [1]
+
+    @patch("src.backtesting.walk_forward_suite.WalkForwardEngine")
+    def test_suite_passes_when_all_drawdowns_under_20pct(self, MockEngine):
+        """Suite overall_pass is not affected by drawdown when all windows stay under 20%."""
+        from src.models.backtest import BacktestMetrics, ValidationWindow, WalkForwardResult
+
+        mock_window = MagicMock(spec=ValidationWindow)
+        mock_window.window_number = 1
+        mock_window.train_start_date = date(2024, 1, 1)
+        mock_window.train_end_date = date(2024, 6, 30)
+        mock_window.validate_start_date = date(2024, 7, 1)
+        mock_window.validate_end_date = date(2024, 8, 31)
+        mock_window.train_metrics = BacktestMetrics(
+            win_rate=Decimal("0.65"),
+            profit_factor=Decimal("2.0"),
+            sharpe_ratio=Decimal("1.5"),
+            max_drawdown=Decimal("0.08"),
+        )
+        mock_window.validate_metrics = BacktestMetrics(
+            win_rate=Decimal("0.60"),
+            profit_factor=Decimal("1.8"),
+            sharpe_ratio=Decimal("1.3"),
+            max_drawdown=Decimal("0.19"),  # 19% — just under 20% limit
+        )
+        mock_window.performance_ratio = Decimal("0.90")
+        mock_window.degradation_detected = False
+        mock_window.is_placeholder = False
+
+        mock_result = MagicMock(spec=WalkForwardResult)
+        mock_result.windows = [mock_window]
+        mock_result.stability_score = Decimal("0.10")
+        mock_result.degradation_windows = []
+        mock_result.total_execution_time_seconds = 1.0
+
+        mock_engine_instance = MagicMock()
+        mock_engine_instance.walk_forward_test.return_value = mock_result
+        MockEngine.return_value = mock_engine_instance
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = WalkForwardSuiteConfig(
+                symbols=[
+                    SymbolSuiteConfig(
+                        symbol="EURUSD",
+                        asset_class="forex",
+                        start_date=date(2024, 1, 1),
+                        end_date=date(2025, 12, 31),
+                    ),
+                ],
+                baselines_dir=tmpdir,
+            )
+            suite = WalkForwardSuite(config)
+            result = suite.run()
+
+        assert result.total_drawdown_violations == 0
+        assert result.symbol_results[0].drawdown_violation_count == 0
+        assert result.symbol_results[0].drawdown_violation_windows == []
+
+
+class TestAvgRMultipleTracking:
+    """Test that avg_r_multiple is tracked per symbol and in baseline comparison."""
+
+    @patch("src.backtesting.walk_forward_suite.WalkForwardEngine")
+    def test_avg_r_multiple_computed_correctly(self, MockEngine):
+        """avg_validate_avg_r should be the mean of per-window average_r_multiple."""
+        from src.models.backtest import BacktestMetrics, ValidationWindow, WalkForwardResult
+
+        mock_window = MagicMock(spec=ValidationWindow)
+        mock_window.window_number = 1
+        mock_window.train_start_date = date(2024, 1, 1)
+        mock_window.train_end_date = date(2024, 6, 30)
+        mock_window.validate_start_date = date(2024, 7, 1)
+        mock_window.validate_end_date = date(2024, 8, 31)
+        mock_window.train_metrics = BacktestMetrics(
+            win_rate=Decimal("0.60"),
+            profit_factor=Decimal("1.8"),
+            sharpe_ratio=Decimal("1.2"),
+            max_drawdown=Decimal("0.07"),
+            average_r_multiple=Decimal("2.0"),
+        )
+        mock_window.validate_metrics = BacktestMetrics(
+            win_rate=Decimal("0.58"),
+            profit_factor=Decimal("1.7"),
+            sharpe_ratio=Decimal("1.1"),
+            max_drawdown=Decimal("0.08"),
+            average_r_multiple=Decimal("1.8"),
+        )
+        mock_window.performance_ratio = Decimal("0.95")
+        mock_window.degradation_detected = False
+        mock_window.is_placeholder = False
+
+        mock_result = MagicMock(spec=WalkForwardResult)
+        mock_result.windows = [mock_window]
+        mock_result.stability_score = Decimal("0.10")
+        mock_result.degradation_windows = []
+        mock_result.total_execution_time_seconds = 1.0
+
+        mock_engine_instance = MagicMock()
+        mock_engine_instance.walk_forward_test.return_value = mock_result
+        MockEngine.return_value = mock_engine_instance
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = WalkForwardSuiteConfig(
+                symbols=[
+                    SymbolSuiteConfig(
+                        symbol="EURUSD",
+                        asset_class="forex",
+                        start_date=date(2024, 1, 1),
+                        end_date=date(2025, 12, 31),
+                    ),
+                ],
+                baselines_dir=tmpdir,
+            )
+            suite = WalkForwardSuite(config)
+            result = suite.run()
+
+        assert result.symbol_results[0].avg_validate_avg_r == Decimal("1.8")
+
+    def test_avg_r_included_in_baseline_comparison(self):
+        """avg_validate_avg_r should trigger regression when below tolerance."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            baseline_data = {
+                "symbol": "EURUSD",
+                "avg_validate_win_rate": "0.60",
+                "avg_validate_profit_factor": "1.65",
+                "avg_validate_sharpe": "1.05",
+                "avg_validate_max_drawdown": "0.07",
+                "avg_validate_avg_r": "1.80",
+            }
+            baseline_file = Path(tmpdir) / "EURUSD_wf_baseline.json"
+            with open(baseline_file, "w") as f:
+                json.dump(baseline_data, f)
+
+            config = WalkForwardSuiteConfig(
+                symbols=[
+                    SymbolSuiteConfig(
+                        symbol="EURUSD",
+                        asset_class="forex",
+                        start_date=date(2024, 1, 1),
+                        end_date=date(2025, 12, 31),
+                    ),
+                ],
+                regression_tolerance_pct=Decimal("10.0"),
+                baselines_dir=tmpdir,
+            )
+            suite = WalkForwardSuite(config)
+
+            # avg_r dropped 15% (below 10% tolerance) — should trigger regression
+            symbol_results = [
+                WalkForwardSuiteSymbolResult(
+                    symbol="EURUSD",
+                    asset_class="forex",
+                    window_count=9,
+                    avg_validate_win_rate=Decimal("0.60"),
+                    avg_validate_profit_factor=Decimal("1.65"),
+                    avg_validate_sharpe=Decimal("1.05"),
+                    avg_validate_max_drawdown=Decimal("0.07"),
+                    avg_validate_avg_r=Decimal("1.53"),  # -15% from 1.80
+                ),
+            ]
+            comparisons = suite._compare_to_baselines(symbol_results, Path(tmpdir))
+
+        avg_r_comps = [c for c in comparisons if c.metric_name == "avg_validate_avg_r"]
+        assert len(avg_r_comps) == 1
+        assert avg_r_comps[0].regressed is True
 
 
 class TestWalkForwardSuiteAPIEndpoints:

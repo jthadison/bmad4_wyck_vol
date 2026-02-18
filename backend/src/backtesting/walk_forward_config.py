@@ -107,8 +107,11 @@ class WalkForwardSuiteSymbolResult(BaseModel):
         avg_validate_profit_factor: Average validation profit factor
         avg_validate_sharpe: Average validation Sharpe ratio
         avg_validate_max_drawdown: Average validation max drawdown
+        avg_validate_avg_r: Average validation R-multiple
         stability_score: Coefficient of variation (lower = more stable)
         degradation_count: Number of degraded windows
+        drawdown_violation_count: Number of windows with drawdown > 20% (AC3)
+        drawdown_violation_windows: Window numbers that exceeded the 20% threshold
         total_execution_time_seconds: Time to run all windows
         per_window_metrics: Detailed per-window metrics
     """
@@ -128,8 +131,17 @@ class WalkForwardSuiteSymbolResult(BaseModel):
     avg_validate_max_drawdown: Decimal = Field(
         default=Decimal("0"), description="Average validation max drawdown"
     )
+    avg_validate_avg_r: Decimal = Field(
+        default=Decimal("0"), description="Average validation R-multiple"
+    )
     stability_score: Decimal = Field(default=Decimal("0"), description="Coefficient of variation")
     degradation_count: int = Field(default=0, ge=0, description="Number of degraded windows")
+    drawdown_violation_count: int = Field(
+        default=0, ge=0, description="Number of windows with drawdown > 20% (AC3)"
+    )
+    drawdown_violation_windows: list[int] = Field(
+        default_factory=list, description="Window numbers where drawdown exceeded 20%"
+    )
     total_execution_time_seconds: float = Field(
         default=0.0, ge=0, description="Total execution time"
     )
@@ -168,12 +180,14 @@ class WalkForwardSuiteResult(BaseModel):
         suite_id: Unique suite run identifier
         symbol_results: Per-symbol results
         baseline_comparisons: Baseline comparison results
-        overall_pass: True if no regressions detected
+        overall_pass: True if no regressions and no AC3 drawdown violations
         total_symbols: Number of symbols tested
         total_windows: Total windows across all symbols
         total_execution_time_seconds: Total suite execution time
         regression_count: Number of regressed metrics
         regression_details: List of regression descriptions
+        total_drawdown_violations: Total windows where drawdown exceeded 20% (AC3)
+        drawdown_violation_details: Descriptions of each drawdown violation
     """
 
     suite_id: str = Field(description="Unique suite run ID")
@@ -192,6 +206,12 @@ class WalkForwardSuiteResult(BaseModel):
     regression_count: int = Field(default=0, ge=0, description="Number of regressions")
     regression_details: list[str] = Field(
         default_factory=list, description="Regression descriptions"
+    )
+    total_drawdown_violations: int = Field(
+        default=0, ge=0, description="Total windows with drawdown > 20% (AC3)"
+    )
+    drawdown_violation_details: list[str] = Field(
+        default_factory=list, description="Drawdown violation descriptions"
     )
 
 

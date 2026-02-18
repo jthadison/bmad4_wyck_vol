@@ -294,7 +294,10 @@ class TestSignatureEnforcement:
             {"symbol": "AAPL", "action": "buy", "order_type": "market", "quantity": 100}
         )
 
-        with patch.object(tv_module, "settings") as mock_settings:
+        with (
+            patch.object(tv_module, "settings") as mock_settings,
+            patch.object(tv_module.tradingview_adapter, "webhook_secret", "test-secret"),
+        ):
             mock_settings.auto_execute_orders = True
 
             transport = ASGITransport(app=app)
@@ -347,42 +350,42 @@ class TestSignatureEnforcement:
 class TestRateLimiting:
     """Test M-1: Per-symbol rate limiting."""
 
-    def test_check_rate_limit_allows_within_limit(self):
+    async def test_check_rate_limit_allows_within_limit(self):
         """Test that requests within limit are allowed."""
         from src.api.routes.tradingview import _check_rate_limit, _rate_limit_tracker
 
         _rate_limit_tracker.clear()
 
         for _ in range(10):
-            assert _check_rate_limit("AAPL") is True
+            assert await _check_rate_limit("AAPL") is True
 
         _rate_limit_tracker.clear()
 
-    def test_check_rate_limit_rejects_over_limit(self):
+    async def test_check_rate_limit_rejects_over_limit(self):
         """Test that requests over limit are rejected."""
         from src.api.routes.tradingview import _check_rate_limit, _rate_limit_tracker
 
         _rate_limit_tracker.clear()
 
         for _ in range(10):
-            _check_rate_limit("MSFT")
+            await _check_rate_limit("MSFT")
 
-        assert _check_rate_limit("MSFT") is False
+        assert await _check_rate_limit("MSFT") is False
 
         _rate_limit_tracker.clear()
 
-    def test_rate_limit_per_symbol_isolation(self):
+    async def test_rate_limit_per_symbol_isolation(self):
         """Test that rate limits are tracked per symbol."""
         from src.api.routes.tradingview import _check_rate_limit, _rate_limit_tracker
 
         _rate_limit_tracker.clear()
 
         for _ in range(10):
-            _check_rate_limit("TSLA")
+            await _check_rate_limit("TSLA")
 
         # TSLA is at limit, but GOOGL should still be allowed
-        assert _check_rate_limit("TSLA") is False
-        assert _check_rate_limit("GOOGL") is True
+        assert await _check_rate_limit("TSLA") is False
+        assert await _check_rate_limit("GOOGL") is True
 
         _rate_limit_tracker.clear()
 

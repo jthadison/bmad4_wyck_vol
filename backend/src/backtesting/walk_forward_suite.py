@@ -37,8 +37,16 @@ DEFAULT_WF_BASELINES_DIR = (
     Path(__file__).parent.parent.parent / "tests" / "datasets" / "baselines" / "walk_forward"
 )
 
+# AC3: Hard limit — no single validation window may exceed 20% drawdown
+MAX_WINDOW_DRAWDOWN = Decimal("0.20")
+
 # Metrics where higher is better (decrease = regression)
-HIGHER_IS_BETTER = {"avg_validate_win_rate", "avg_validate_profit_factor", "avg_validate_sharpe"}
+HIGHER_IS_BETTER = {
+    "avg_validate_win_rate",
+    "avg_validate_profit_factor",
+    "avg_validate_sharpe",
+    "avg_validate_avg_r",
+}
 
 # Metrics where lower is better (increase = regression)
 LOWER_IS_BETTER = {"avg_validate_max_drawdown"}
@@ -100,7 +108,19 @@ class WalkForwardSuite:
             if c.regressed
         ]
         regression_count = len(regression_details)
-        overall_pass = regression_count == 0
+
+        # AC3: Collect per-window drawdown violations across all symbols
+        drawdown_violation_details: list[str] = []
+        total_drawdown_violations = 0
+        for sym_result in symbol_results:
+            if sym_result.drawdown_violation_count > 0:
+                total_drawdown_violations += sym_result.drawdown_violation_count
+                for win_num in sym_result.drawdown_violation_windows:
+                    drawdown_violation_details.append(
+                        f"{sym_result.symbol}/window-{win_num}: drawdown > 20% (AC3)"
+                    )
+
+        overall_pass = regression_count == 0 and total_drawdown_violations == 0
 
         total_windows = sum(r.window_count for r in symbol_results)
         total_time = time.time() - suite_start
@@ -115,6 +135,8 @@ class WalkForwardSuite:
             total_execution_time_seconds=total_time,
             regression_count=regression_count,
             regression_details=regression_details,
+            total_drawdown_violations=total_drawdown_violations,
+            drawdown_violation_details=drawdown_violation_details,
         )
 
         self.logger.info(
@@ -187,6 +209,7 @@ class WalkForwardSuite:
                         "validate_sharpe": float(w.validate_metrics.sharpe_ratio),
                         "train_max_drawdown": float(w.train_metrics.max_drawdown),
                         "validate_max_drawdown": float(w.validate_metrics.max_drawdown),
+                        "validate_avg_r": float(w.validate_metrics.average_r_multiple),
                         "performance_ratio": float(w.performance_ratio),
                         "degradation_detected": w.degradation_detected,
                         "is_placeholder": w.is_placeholder,
@@ -200,8 +223,24 @@ class WalkForwardSuite:
                 avg_pf = sum(w.validate_metrics.profit_factor for w in windows) / len(windows)
                 avg_sr = sum(w.validate_metrics.sharpe_ratio for w in windows) / len(windows)
                 avg_dd = sum(w.validate_metrics.max_drawdown for w in windows) / len(windows)
+                avg_r = sum(w.validate_metrics.average_r_multiple for w in windows) / len(windows)
             else:
-                avg_wr = avg_pf = avg_sr = avg_dd = Decimal("0")
+                avg_wr = avg_pf = avg_sr = avg_dd = avg_r = Decimal("0")
+
+            # AC3: Check per-window drawdown against the 20% hard limit
+            drawdown_violation_windows = [
+                w.window_number
+                for w in windows
+                if w.validate_metrics.max_drawdown > MAX_WINDOW_DRAWDOWN
+            ]
+            if drawdown_violation_windows:
+                self.logger.warning(
+                    "walk_forward_drawdown_violation",
+                    symbol=symbol,
+                    violation_count=len(drawdown_violation_windows),
+                    windows=drawdown_violation_windows,
+                    threshold=float(MAX_WINDOW_DRAWDOWN),
+                )
 
             return WalkForwardSuiteSymbolResult(
                 symbol=symbol,
@@ -211,8 +250,11 @@ class WalkForwardSuite:
                 avg_validate_profit_factor=avg_pf,
                 avg_validate_sharpe=avg_sr,
                 avg_validate_max_drawdown=avg_dd,
+                avg_validate_avg_r=avg_r,
                 stability_score=wf_result.stability_score,
                 degradation_count=len(wf_result.degradation_windows),
+                drawdown_violation_count=len(drawdown_violation_windows),
+                drawdown_violation_windows=drawdown_violation_windows,
                 total_execution_time_seconds=wf_result.total_execution_time_seconds,
                 per_window_metrics=per_window,
             )
@@ -286,6 +328,11 @@ class WalkForwardSuite:
                     "avg_validate_max_drawdown",
                     result.avg_validate_max_drawdown,
                     baseline.get("avg_validate_max_drawdown"),
+                ),
+                (
+                    "avg_validate_avg_r",
+                    result.avg_validate_avg_r,
+                    baseline.get("avg_validate_avg_r"),
                 ),
             ]
 
@@ -381,6 +428,7 @@ class WalkForwardSuite:
                 "avg_validate_profit_factor": str(sym_result.avg_validate_profit_factor),
                 "avg_validate_sharpe": str(sym_result.avg_validate_sharpe),
                 "avg_validate_max_drawdown": str(sym_result.avg_validate_max_drawdown),
+                "avg_validate_avg_r": str(sym_result.avg_validate_avg_r),
                 "stability_score": str(sym_result.stability_score),
                 "degradation_count": sym_result.degradation_count,
                 "notes": "Walk-forward validation baseline. Auto-generated by WalkForwardSuite.",

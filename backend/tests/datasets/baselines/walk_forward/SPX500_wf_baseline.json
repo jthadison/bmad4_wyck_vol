@@ -7,6 +7,7 @@
   "avg_validate_profit_factor": "1.8000",
   "avg_validate_sharpe": "1.2800",
   "avg_validate_max_drawdown": "0.0800",
+  "avg_validate_avg_r": "1.9000",
   "stability_score": "0.1100",
   "degradation_count": 1,
   "notes": "Initial estimated walk-forward baselines. SPX500 daily, 2-year lookback, 6mo train / 2mo validate (75/25 split), 2mo step, 9 windows."
