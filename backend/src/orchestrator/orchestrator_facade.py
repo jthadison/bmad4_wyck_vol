@@ -50,21 +50,126 @@ class _PassThroughSignalGenerator:
 class _RiskManagerAdapter:
     """Adapter: wraps RiskManager to satisfy the RiskAssessor protocol.
 
-    Currently a pass-through stub. Risk validation is handled by RiskValidator
-    in ValidationStage. Full position sizing and portfolio heat validation is
-    deferred to a follow-up story.
+    Calls RiskManager.validate_and_size() for each signal, enforcing the full
+    8-step risk pipeline: pattern risk, phase prerequisites, R-multiple,
+    structural stop, position sizing, portfolio heat (10% hard cap), campaign
+    risk (5% max), and correlation limits.
+
+    Falls back to pass-through with a WARNING log when portfolio_context or
+    trading_range are not available in PipelineContext (e.g. unit tests, no DB).
+    The pipeline still produces signals in that case — the warning makes the
+    gap observable in logs.
     """
 
     def __init__(self, risk_manager: Any) -> None:
-        # risk_manager accepted for API compatibility; not yet used.
-        pass
+        self._risk_manager = risk_manager
 
     async def apply_sizing(
         self,
         signal: Any,
         context: PipelineContext,
     ) -> Any | None:
-        """Pass signal through (risk validation done in ValidationStage)."""
+        """Apply full risk validation to a signal via RiskManager.
+
+        Returns the signal unchanged if approved, None if rejected.
+        Falls back to pass-through if required context is missing.
+        """
+        from uuid import UUID as _UUID
+
+        from src.models.risk_allocation import PatternType
+        from src.risk_management.risk_manager import Signal as RiskSignal
+
+        portfolio_context = context.get("portfolio_context")
+        trading_range = context.get("current_trading_range")
+
+        if portfolio_context is None or trading_range is None:
+            logger.warning(
+                "risk_adapter_context_missing",
+                has_portfolio=portfolio_context is not None,
+                has_trading_range=trading_range is not None,
+                symbol=context.symbol,
+                detail="portfolio_context or trading_range absent — passing signal through",
+            )
+            return signal
+
+        # Extract price fields via duck typing.
+        # SpringSignal uses target_price; SOSSignal uses target; TradeSignal
+        # uses target_levels.primary_target.
+        entry = getattr(signal, "entry_price", None)
+        stop = getattr(signal, "stop_loss", None)
+        target = getattr(signal, "target_price", None) or getattr(signal, "target", None)
+        if target is None:
+            tl = getattr(signal, "target_levels", None)
+            if tl is not None:
+                target = getattr(tl, "primary_target", None)
+        symbol = getattr(signal, "symbol", context.symbol)
+
+        if not all([entry, stop, target]):
+            logger.warning(
+                "risk_adapter_signal_incomplete",
+                signal_type=type(signal).__name__,
+                has_entry=entry is not None,
+                has_stop=stop is not None,
+                has_target=target is not None,
+                detail="Cannot validate incomplete signal — passing through",
+            )
+            return signal
+
+        # Resolve PatternType enum.
+        # Most signal models expose pattern_type: str (e.g. "SPRING").
+        # For models that don't, infer from class name: "SpringSignal" → "SPRING".
+        pattern_type_str = getattr(signal, "pattern_type", None)
+        if pattern_type_str is None:
+            pattern_type_str = type(signal).__name__.replace("Signal", "").upper()
+
+        try:
+            pattern_type = PatternType(pattern_type_str)
+        except ValueError:
+            logger.warning(
+                "risk_adapter_unknown_pattern_type",
+                pattern_type=pattern_type_str,
+                signal_type=type(signal).__name__,
+                detail="Unknown pattern type — passing signal through",
+            )
+            return signal
+
+        # Resolve optional campaign_id to UUID.
+        campaign_id: _UUID | None = None
+        raw_id = getattr(signal, "campaign_id", None)
+        if raw_id is not None:
+            try:
+                campaign_id = _UUID(str(raw_id))
+            except (ValueError, AttributeError):
+                pass
+
+        rm_signal = RiskSignal(
+            symbol=symbol,
+            pattern_type=pattern_type,
+            entry=entry,
+            stop=stop,
+            target=target,
+            campaign_id=campaign_id,
+        )
+
+        result = await self._risk_manager.validate_and_size(
+            signal=rm_signal,
+            portfolio_context=portfolio_context,
+            trading_range=trading_range,
+        )
+
+        if result is None:
+            logger.info(
+                "risk_adapter_signal_rejected",
+                symbol=symbol,
+                pattern_type=pattern_type.value,
+            )
+            return None
+
+        logger.debug(
+            "risk_adapter_signal_approved",
+            symbol=symbol,
+            pattern_type=pattern_type.value,
+        )
         return signal
 
 
@@ -307,6 +412,10 @@ class MasterOrchestratorFacade:
                 .with_data("bars", bars)
                 .build()
             )
+
+            # Inject portfolio context so RiskAssessmentStage can enforce limits
+            portfolio_context = await self._portfolio_monitor.build_context()
+            context.set("portfolio_context", portfolio_context)
 
             # Run pipeline
             result = await self._coordinator.run(bars, context)
