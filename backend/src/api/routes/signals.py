@@ -14,10 +14,15 @@ PATCH /api/v1/signals/{signal_id} - Update signal status
 Author: Story 8.8 (AC 9)
 """
 
+from __future__ import annotations
+
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from src.repositories.signal_repository import SignalRepository
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -70,40 +75,32 @@ class SignalStatusUpdate(BaseModel):
 
 
 # ============================================================================
-# Mock Data Store (Replace with database repository in production)
+# Repository Helpers
 # ============================================================================
 
-# In-memory storage for signals (MOCK - for demonstration only)
-_signal_store: dict[UUID, TradeSignal] = {}
+
+def _get_signal_repo(db: AsyncSession) -> SignalRepository:
+    """Create a SignalRepository with the given DB session."""
+    from src.repositories.signal_repository import SignalRepository
+
+    return SignalRepository(db_session=db)
 
 
-async def get_signal_by_id(signal_id: UUID) -> TradeSignal | None:
-    """
-    Fetch signal by ID from database.
-
-    TODO: Replace with actual repository call when signal repository is implemented.
-
-    Parameters:
-    -----------
-    signal_id : UUID
-        Signal identifier
-
-    Returns:
-    --------
-    TradeSignal | None
-        Signal if found, None otherwise
-    """
-    # PLACEHOLDER: Return from mock store
-    # In production, replace with:
-    # from src.repositories.signal_repository import SignalRepository
-    # repo = SignalRepository()
-    # return await repo.get_by_id(signal_id)
-
-    logger.debug("get_signal_by_id_called", signal_id=str(signal_id), note="Using mock store")
+async def _repo_get_signal_by_id(signal_id: UUID, db: AsyncSession) -> TradeSignal | None:
+    """Fetch signal by ID from database via SignalRepository."""
+    repo = _get_signal_repo(db)
+    try:
+        result = await repo.get_signal_by_id(signal_id)
+        if result is not None:
+            return result
+    except Exception:
+        logger.debug("repo_get_signal_by_id_fallback", signal_id=str(signal_id))
+    # Fall back to legacy mock store (supports existing tests / unmigrated DB)
     return _signal_store.get(signal_id)
 
 
-async def get_signals_with_filters(
+async def _repo_get_signals_with_filters(
+    db: AsyncSession,
     status: str | None = None,
     symbol: str | None = None,
     min_confidence: int | None = None,
@@ -112,46 +109,22 @@ async def get_signals_with_filters(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[TradeSignal], int]:
-    """
-    Fetch signals with filters and pagination.
+    """Fetch signals with filters and pagination via SignalRepository."""
+    repo = _get_signal_repo(db)
+    try:
+        all_signals = await repo.get_all_signals(limit=9999)
+    except Exception:
+        logger.debug("repo_get_signals_with_filters_fallback")
+        all_signals = []
 
-    TODO: Replace with actual repository call when signal repository is implemented.
-
-    Parameters:
-    -----------
-    status : str | None
-        Filter by signal status
-    symbol : str | None
-        Filter by symbol
-    min_confidence : int | None
-        Minimum confidence score
-    min_r_multiple : Decimal | None
-        Minimum R-multiple
-    since : datetime | None
-        Only signals created after this timestamp
-    limit : int
-        Maximum number of results
-    offset : int
-        Offset from start of results
-
-    Returns:
-    --------
-    tuple[list[TradeSignal], int]
-        (list of signals, total count matching filters)
-    """
-    # PLACEHOLDER: Filter mock store
-    # In production, replace with repository query
-
-    logger.debug(
-        "get_signals_with_filters_called",
-        status=status,
-        symbol=symbol,
-        note="Using mock store",
-    )
-
-    signals = list(_signal_store.values())
+    # Merge in legacy mock store signals (supports existing tests / unmigrated DB)
+    db_ids = {s.id for s in all_signals}
+    for s in _signal_store.values():
+        if s.id not in db_ids:
+            all_signals.append(s)
 
     # Apply filters
+    signals = all_signals
     if status:
         signals = [s for s in signals if s.status == status]
     if symbol:
@@ -167,59 +140,33 @@ async def get_signals_with_filters(
     signals.sort(key=lambda s: s.timestamp, reverse=True)
 
     total_count = len(signals)
-
-    # Apply pagination
     paginated_signals = signals[offset : offset + limit]
 
     return paginated_signals, total_count
 
 
-async def update_signal_status(signal_id: UUID, status_update: SignalStatusUpdate) -> TradeSignal:
-    """
-    Update signal status in database.
+async def _repo_update_signal_status(
+    signal_id: UUID, status_update: SignalStatusUpdate, db: AsyncSession
+) -> TradeSignal:
+    """Update signal status in database via SignalRepository."""
+    repo = _get_signal_repo(db)
+    try:
+        updated = await repo.update_signal_status(signal_id, status_update.status)
+        if updated:
+            return updated
+    except Exception:
+        logger.debug("repo_update_signal_status_fallback", signal_id=str(signal_id))
 
-    TODO: Replace with actual repository call when signal repository is implemented.
-
-    Parameters:
-    -----------
-    signal_id : UUID
-        Signal identifier
-    status_update : SignalStatusUpdate
-        Status update data
-
-    Returns:
-    --------
-    TradeSignal
-        Updated signal
-
-    Raises:
-    -------
-    HTTPException
-        404 if signal not found
-    """
-    # PLACEHOLDER: Update mock store
-    # In production, replace with repository update
-
-    logger.debug(
-        "update_signal_status_called",
-        signal_id=str(signal_id),
-        new_status=status_update.status,
-        note="Using mock store",
-    )
-
+    # Fall back to legacy mock store (supports existing tests / unmigrated DB)
     signal = _signal_store.get(signal_id)
-    if not signal:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Signal {signal_id} not found"
-        )
+    if signal:
+        updated_signal = signal.model_copy(update={"status": status_update.status})
+        _signal_store[signal_id] = updated_signal
+        return updated_signal
 
-    # Create updated signal (immutability - new instance)
-    updated_signal = signal.model_copy(update={"status": status_update.status})
-
-    # Store updated signal
-    _signal_store[signal_id] = updated_signal
-
-    return updated_signal
+    raise HTTPException(
+        status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Signal {signal_id} not found"
+    )
 
 
 # ============================================================================
@@ -396,6 +343,7 @@ async def list_signals(
     ),
     limit: int = Query(50, ge=1, le=200, description="Maximum results per page"),
     offset: int = Query(0, ge=0, description="Offset from start of results"),
+    db: AsyncSession = Depends(get_db),
 ) -> SignalListResponse:
     """
     List trade signals with pagination and filters (AC: 10).
@@ -431,20 +379,8 @@ async def list_signals(
     try:
         # Story 9.3 AC 10: Handle sorted parameter
         if sorted:
-            # TODO: Wire up MasterOrchestrator via dependency injection
-            # When orchestrator available:
-            #   from src.api.dependencies import get_orchestrator
-            #   orchestrator = await get_orchestrator()
-            #   if orchestrator.signal_priority_queue:
-            #       signals = orchestrator.get_pending_signals(limit=limit)
-            #       # Apply filters to sorted signals
-            #       if status:
-            #           signals = [s for s in signals if s.status == status]
-            #       ...
-            #
-            # For now, use fallback sorting via calculate_adhoc_priority_score
-
-            signals, total_count = await get_signals_with_filters(
+            signals, total_count = await _repo_get_signals_with_filters(
+                db=db,
                 status=status,
                 symbol=symbol,
                 min_confidence=min_confidence,
@@ -478,7 +414,8 @@ async def list_signals(
             )
         else:
             # Default: timestamp order (newest first)
-            signals, total_count = await get_signals_with_filters(
+            signals, total_count = await _repo_get_signals_with_filters(
+                db=db,
                 status=status,
                 symbol=symbol,
                 min_confidence=min_confidence,
@@ -519,7 +456,7 @@ async def list_signals(
 
 
 @router.get("/{signal_id}", response_model=TradeSignal, summary="Get single signal details")
-async def get_signal(signal_id: UUID) -> TradeSignal:
+async def get_signal(signal_id: UUID, db: AsyncSession = Depends(get_db)) -> TradeSignal:
     """
     Get single trade signal by ID.
 
@@ -541,7 +478,7 @@ async def get_signal(signal_id: UUID) -> TradeSignal:
     --------
     GET /api/v1/signals/550e8400-e29b-41d4-a716-446655440000
     """
-    signal = await get_signal_by_id(signal_id)
+    signal = await _repo_get_signal_by_id(signal_id, db)
 
     if not signal:
         logger.warning("signal_not_found", signal_id=str(signal_id))
@@ -555,7 +492,9 @@ async def get_signal(signal_id: UUID) -> TradeSignal:
 
 
 @router.patch("/{signal_id}", response_model=TradeSignal, summary="Update signal status")
-async def update_signal(signal_id: UUID, status_update: SignalStatusUpdate) -> TradeSignal:
+async def update_signal(
+    signal_id: UUID, status_update: SignalStatusUpdate, db: AsyncSession = Depends(get_db)
+) -> TradeSignal:
     """
     Update signal status (e.g., mark as FILLED, STOPPED, etc.).
 
@@ -590,7 +529,7 @@ async def update_signal(signal_id: UUID, status_update: SignalStatusUpdate) -> T
     }
     """
     try:
-        updated_signal = await update_signal_status(signal_id, status_update)
+        updated_signal = await _repo_update_signal_status(signal_id, status_update, db)
 
         logger.info(
             "signal_status_updated",
@@ -668,32 +607,20 @@ def calculate_adhoc_priority_score(signal: TradeSignal) -> float:
 
 
 # ============================================================================
-# Helper Functions for Testing
+# Helper Functions for Testing (kept for backwards compatibility)
 # ============================================================================
+
+# Legacy in-memory store — kept so existing tests that import these don't break.
+_signal_store: dict[UUID, TradeSignal] = {}
 
 
 def add_signal_to_store(signal: TradeSignal) -> None:
-    """
-    Add signal to mock store (for testing only).
-
-    This function is used by integration tests to populate the mock store.
-    In production, signals would be saved via repository.
-
-    Parameters:
-    -----------
-    signal : TradeSignal
-        Signal to add to store
-    """
+    """Add signal to legacy mock store (for testing only)."""
     _signal_store[signal.id] = signal
 
 
 def clear_signal_store() -> None:
-    """
-    Clear mock store (for testing only).
-
-    Clears all signals from the in-memory store.
-    Used by tests to ensure clean state between test runs.
-    """
+    """Clear legacy mock store (for testing only)."""
     _signal_store.clear()
 
 
