@@ -49,6 +49,9 @@ class PaperPositionRepository:
         position_db = PaperPositionDB(
             id=position.id,
             signal_id=position.signal_id,
+            pattern_type=position.pattern_type,
+            confidence_score=position.confidence_score,
+            signal_source=position.signal_source,
             symbol=position.symbol,
             entry_time=position.entry_time,
             entry_price=position.entry_price,
@@ -212,6 +215,13 @@ class PaperPositionRepository:
         return PaperPosition(
             id=position_db.id,
             signal_id=position_db.signal_id,
+            pattern_type=position_db.pattern_type,
+            confidence_score=(
+                Decimal(str(position_db.confidence_score))
+                if position_db.confidence_score is not None
+                else None
+            ),
+            signal_source=position_db.signal_source,
             symbol=position_db.symbol,
             entry_time=position_db.entry_time,
             entry_price=Decimal(str(position_db.entry_price)),
