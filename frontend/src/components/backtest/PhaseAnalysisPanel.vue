@@ -117,8 +117,8 @@ const formatHours = (hours: number): string => {
         Wyckoff Phase Analysis
       </h3>
       <p class="text-sm text-gray-400">
-        Analyzed {{ phaseAnalysis.total_bars_analyzed.toLocaleString() }} bars
-        | Overall alignment:
+        Analyzed {{ phaseAnalysis.total_bars_analyzed.toLocaleString() }} bars |
+        Overall alignment:
         <span :class="alignmentRateClass" class="font-semibold">
           {{ phaseAnalysis.overall_alignment_rate.toFixed(1) }}%
         </span>
@@ -171,9 +171,10 @@ const formatHours = (hours: number): string => {
           <p class="text-sm text-yellow-100 mt-1">
             Only
             {{
-              (100 - phaseAnalysis.detection_quality.fallback_percentage).toFixed(1)
-            }}%
-            of bars had confident phase detection (≥60%).
+              (
+                100 - phaseAnalysis.detection_quality.fallback_percentage
+              ).toFixed(1)
+            }}% of bars had confident phase detection (≥60%).
             {{ phaseAnalysis.detection_quality.low_confidence_bars }} bars used
             fallback/unreliable phase classification.
           </p>
@@ -191,9 +192,7 @@ const formatHours = (hours: number): string => {
         class="w-full flex justify-between items-center text-left focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md p-2 -m-2"
         @click="toggleSection('distribution')"
       >
-        <h4 class="text-lg font-semibold text-gray-200">
-          Phase Distribution
-        </h4>
+        <h4 class="text-lg font-semibold text-gray-200">Phase Distribution</h4>
         <svg
           class="w-5 h-5 transition-transform text-gray-400"
           :class="{ 'rotate-180': expandedSections.distribution }"
@@ -357,10 +356,8 @@ const formatHours = (hours: number): string => {
                 Campaign {{ campaign.campaign_id.slice(0, 8) }}
               </div>
               <div class="text-xs text-gray-400 mt-1">
-                {{ campaign.campaign_type }} |
-                {{ campaign.total_bars }} bars ({{
-                  formatHours(campaign.total_hours)
-                }})
+                {{ campaign.campaign_type }} | {{ campaign.total_bars }} bars
+                ({{ formatHours(campaign.total_hours) }})
               </div>
             </div>
             <div class="text-right">
@@ -381,10 +378,15 @@ const formatHours = (hours: number): string => {
               :key="phase"
               class="bg-gray-800 rounded p-2 text-center"
             >
-              <div :class="getPhaseColor(phase)" class="rounded px-1 py-0.5 text-white text-xs font-bold mb-1">
+              <div
+                :class="getPhaseColor(phase)"
+                class="rounded px-1 py-0.5 text-white text-xs font-bold mb-1"
+              >
                 {{ phase }}
               </div>
-              <div class="text-gray-300 font-semibold">{{ pct.toFixed(0) }}%</div>
+              <div class="text-gray-300 font-semibold">
+                {{ pct.toFixed(0) }}%
+              </div>
               <div class="text-gray-500">
                 {{ campaign.phase_durations[phase] || 0 }} bars
               </div>
@@ -412,7 +414,10 @@ const formatHours = (hours: number): string => {
               </span>
               <span>Stage: {{ campaign.completion_stage }}</span>
             </div>
-            <div v-if="campaign.invalid_transitions > 0" class="text-red-400 mt-1">
+            <div
+              v-if="campaign.invalid_transitions > 0"
+              class="text-red-400 mt-1"
+            >
               {{ campaign.invalid_transitions }} invalid transitions detected
             </div>
           </div>
@@ -460,13 +465,18 @@ const formatHours = (hours: number): string => {
               {{ insight.category }}
             </span>
           </div>
-          <div class="text-sm text-gray-200 mb-1">{{ insight.observation }}</div>
+          <div class="text-sm text-gray-200 mb-1">
+            {{ insight.observation }}
+          </div>
           <div class="text-sm text-gray-400 italic">
             {{ insight.interpretation }}
           </div>
         </div>
 
-        <div v-if="phaseAnalysis.insights.length === 0" class="text-sm text-gray-400 text-center py-4">
+        <div
+          v-if="phaseAnalysis.insights.length === 0"
+          class="text-sm text-gray-400 text-center py-4"
+        >
           No significant insights detected
         </div>
       </div>

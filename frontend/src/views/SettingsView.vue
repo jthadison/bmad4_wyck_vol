@@ -26,6 +26,10 @@
 
       <NotificationPreferences v-else-if="activeTab === 'notifications'" />
 
+      <div v-else-if="activeTab === 'system'" class="system-tab-content">
+        <OrchestratorHealthPanel />
+      </div>
+
       <div v-else-if="activeTab === 'general'" class="placeholder-content">
         <i class="pi pi-cog placeholder-icon"></i>
         <p>General settings coming soon in Epic 11</p>
@@ -67,6 +71,7 @@
 import { ref } from 'vue'
 import NotificationPreferences from '@/components/notifications/NotificationPreferences.vue'
 import WatchlistSettings from '@/components/watchlist/WatchlistSettings.vue'
+import OrchestratorHealthPanel from '@/components/orchestrator/OrchestratorHealthPanel.vue'
 
 const activeTab = ref('watchlist')
 
@@ -80,6 +85,11 @@ const tabs = [
     id: 'notifications',
     label: 'Notifications',
     icon: 'pi pi-bell',
+  },
+  {
+    id: 'system',
+    label: 'System',
+    icon: 'pi pi-server',
   },
   {
     id: 'general',
@@ -173,6 +183,10 @@ const baselines = [
 
 .placeholder-content p {
   font-size: 16px;
+}
+
+.system-tab-content {
+  max-width: 500px;
 }
 
 .baselines-section {
