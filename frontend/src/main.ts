@@ -14,11 +14,8 @@ import 'primeicons/primeicons.css'
 import './style.css'
 
 // Validate required environment variables
-const requiredEnvVars = [
-  'VITE_API_BASE_URL',
-  'VITE_WS_BASE_URL',
-  'VITE_APP_VERSION',
-]
+// VITE_WS_BASE_URL is intentionally optional (empty = auto-detect from page protocol/host)
+const requiredEnvVars = ['VITE_API_BASE_URL', 'VITE_APP_VERSION']
 const missingVars = requiredEnvVars.filter(
   (varName) => !import.meta.env[varName]
 )
