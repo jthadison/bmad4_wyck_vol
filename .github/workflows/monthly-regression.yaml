@@ -17,6 +17,10 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write  # Required for baseline commit/push
+  issues: write    # Required for creating GitHub issues on regression
+
 jobs:
   monthly-regression-test:
     name: Monthly Detector Accuracy Regression Test
@@ -182,18 +186,28 @@ jobs:
 
       - name: Update baselines if tests passed
         if: |
-          (github.event.inputs.update_baseline == 'true' || github.event_name == 'schedule') &&
+          github.event.inputs.update_baseline == 'true' &&
           steps.accuracy_tests.outcome == 'success' &&
+          steps.backtest_baseline_check.outcome == 'success' &&
           steps.check_regression.outputs.regression_detected == 'false'
         working-directory: backend
         run: |
-          echo "✅ All tests passed and no regressions detected"
-          echo "Baselines would be updated here in production"
-          # TODO: Implement baseline update logic when real detectors are available
-          # This would:
-          # 1. Save new metrics as baselines
-          # 2. Commit to repository
-          # 3. Push to main branch
+          echo "Regenerating backtest baselines..."
+          poetry run python scripts/generate_backtest_baselines.py
+
+          git add tests/datasets/baselines/backtest/*.json
+
+          if git diff --cached --quiet; then
+            echo "No baseline changes detected - skipping commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: update backtest baselines [skip ci]"
+            git push origin main
+            echo "Baselines updated and pushed to main"
+          fi
+        env:
+          PYTHONPATH: .
 
       - name: Create GitHub Issue on regression
         if: |
