@@ -129,10 +129,6 @@ jobs:
       - name: Setup Node.js Frontend
         uses: ./.github/actions/setup-node-frontend
 
-      - name: Run Vitest unit tests
-        working-directory: frontend
-        run: npm run test:run
-
       - name: Run Vitest with coverage (90% threshold enforcement)
         working-directory: frontend
         run: npm run coverage
