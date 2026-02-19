@@ -1,7 +1,7 @@
-"""Merge multiple heads: filtered_status, audit_trail, phase_analysis
+"""Merge multiple heads: filtered_status, audit_trail
 
 Revision ID: 947a238728c8
-Revises: 20260204_filtered_status, 20260213_audit_trail, 20260214_phase_analysis
+Revises: 20260204_filtered_status, 20260213_audit_trail
 Create Date: 2026-02-15 01:12:30.515276
 
 """
@@ -13,7 +13,6 @@ revision: str = "947a238728c8"
 down_revision: Union[str, Sequence[str], None] = (
     "20260204_filtered_status",
     "20260213_audit_trail",
-    "20260214_phase_analysis",
 )
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
