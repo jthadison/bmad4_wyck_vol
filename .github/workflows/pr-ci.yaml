@@ -536,9 +536,9 @@ jobs:
     steps:
       - name: Check job results
         run: |
-          # Check if any required job failed
-          if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
-            echo "❌ Some checks failed"
+          # Check if any required job failed or was cancelled
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]; then
+            echo "❌ Some checks failed or were cancelled"
             exit 1
           fi
           echo "✅ All checks passed"
@@ -550,16 +550,16 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend Linting | ${{ needs.backend-linting.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend Type Checking | ${{ needs.backend-type-checking.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend Tests | ${{ needs.backend-tests.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend Linting | ${{ needs.frontend-linting.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend Type Checking | ${{ needs.frontend-type-checking.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend Tests | ${{ needs.frontend-tests.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| E2E Tests | ${{ needs.e2e-tests.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Accuracy Tests | ${{ needs.accuracy-tests.result == 'success' && '✅' || needs.accuracy-tests.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Code Quality | ${{ needs.code-quality.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Security Scan | ${{ needs.security-scan.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend Linting | ${{ needs.backend-linting.result == 'success' && '✅' || needs.backend-linting.result == 'skipped' && '⏭️' || needs.backend-linting.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend Type Checking | ${{ needs.backend-type-checking.result == 'success' && '✅' || needs.backend-type-checking.result == 'skipped' && '⏭️' || needs.backend-type-checking.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend Tests | ${{ needs.backend-tests.result == 'success' && '✅' || needs.backend-tests.result == 'skipped' && '⏭️' || needs.backend-tests.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Linting | ${{ needs.frontend-linting.result == 'success' && '✅' || needs.frontend-linting.result == 'skipped' && '⏭️' || needs.frontend-linting.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Type Checking | ${{ needs.frontend-type-checking.result == 'success' && '✅' || needs.frontend-type-checking.result == 'skipped' && '⏭️' || needs.frontend-type-checking.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Tests | ${{ needs.frontend-tests.result == 'success' && '✅' || needs.frontend-tests.result == 'skipped' && '⏭️' || needs.frontend-tests.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| E2E Tests | ${{ needs.e2e-tests.result == 'success' && '✅' || needs.e2e-tests.result == 'skipped' && '⏭️' || needs.e2e-tests.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Accuracy Tests | ${{ needs.accuracy-tests.result == 'success' && '✅' || needs.accuracy-tests.result == 'skipped' && '⏭️' || needs.accuracy-tests.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Quality | ${{ needs.code-quality.result == 'success' && '✅' || needs.code-quality.result == 'skipped' && '⏭️' || needs.code-quality.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result == 'success' && '✅' || needs.security-scan.result == 'skipped' && '⏭️' || needs.security-scan.result == 'cancelled' && '🚫' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Story 13.10 Entry Type Checks" >> $GITHUB_STEP_SUMMARY
           echo "Entry type metrics and observability are tracked via Prometheus counters" >> $GITHUB_STEP_SUMMARY

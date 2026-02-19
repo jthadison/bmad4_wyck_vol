@@ -216,6 +216,18 @@ jobs:
         working-directory: backend
         run: poetry install --no-interaction --no-root
 
+      - name: Initialize database extensions
+        run: |
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U wyckoff_user -d wyckoff_db_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U wyckoff_user -d wyckoff_db_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
+        run: |
+          poetry run alembic upgrade head
+
       - name: Run walk-forward validation suite tests
         working-directory: backend
         id: walk_forward
