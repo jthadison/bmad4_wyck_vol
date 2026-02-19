@@ -47,7 +47,7 @@ services:
     container_name: bmad-backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://bmad_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/bmad_wyckoff
+      DATABASE_URL: postgresql+psycopg://bmad_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/bmad_wyckoff
       REDIS_HOST: redis
       REDIS_PORT: 6379
       API_HOST: 0.0.0.0
