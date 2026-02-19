@@ -1,6 +1,6 @@
 """add_paper_trading_config_table
 
-Revision ID: 20260209_add_paper_trading_config
+Revision ID: 20260209_paper_cfg
 Revises: 20260209_paper_sessions
 Create Date: 2026-02-09
 
@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "20260209_add_paper_trading_config"
+revision: str = "20260209_paper_cfg"
 down_revision: Union[str, Sequence[str], None] = "20260209_paper_sessions"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

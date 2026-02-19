@@ -28,7 +28,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20260213_audit_trail"
-down_revision: Union[str, Sequence[str], None] = "20260209_add_paper_trading_config"
+down_revision: Union[str, Sequence[str], None] = "20260209_paper_cfg"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
