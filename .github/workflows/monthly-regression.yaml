@@ -213,8 +213,10 @@ jobs:
 
       - name: Create GitHub Issue on regression
         if: |
+          always() &&
           github.event_name == 'schedule' &&
-          steps.check_regression.outputs.regression_detected == 'true'
+          (steps.check_regression.outputs.regression_detected == 'true' ||
+          steps.backtest_baseline_check.outcome == 'failure')
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
         with:
           script: |
@@ -283,8 +285,10 @@ jobs:
 
       - name: Fail workflow if regression detected
         if: |
+          always() && (
           steps.check_regression.outputs.regression_detected == 'true' ||
           steps.backtest_baseline_check.outcome == 'failure'
+          )
         run: |
           if [ "${{ steps.check_regression.outputs.regression_detected }}" == "true" ]; then
             echo "❌ Detector accuracy has degraded by more than 5% (NFR21 violation)"
