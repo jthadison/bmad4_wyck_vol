@@ -10,6 +10,7 @@ export default defineConfig({
   timeout: 30000, // 30 seconds per test (as per Story 12.11)
   use: {
     baseURL: process.env.DEPLOYMENT_URL || 'http://localhost:4173',
+    ignoreHTTPSErrors: !!process.env.DEPLOYMENT_URL, // allow self-signed certs on staging
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure', // Record video on failure (as per Story 12.11)
