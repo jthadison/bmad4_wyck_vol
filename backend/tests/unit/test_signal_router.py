@@ -173,8 +173,8 @@ class TestSignalRouter:
             # Route signal
             result = await router.route_signal(mock_signal, Decimal("150.00"))
 
-            # Verify not routed (live trading not implemented)
-            assert result is None
+            # Verify skipped (no broker router configured for live trading)
+            assert result == "skipped"
 
     @pytest.mark.asyncio
     async def test_risk_validation_failure_raises_error(

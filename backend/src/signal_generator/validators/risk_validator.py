@@ -600,6 +600,8 @@ class RiskValidator(BaseValidator):
         except KeyError:
             pattern_type_enum = PatternType.SPRING  # Default fallback
 
+        asset_class = getattr(context, "asset_class", "STOCK")
+
         position_sizing = calculate_position_size(
             account_equity=portfolio_context.account_equity,
             pattern_type=pattern_type_enum,
@@ -607,6 +609,7 @@ class RiskValidator(BaseValidator):
             stop=stop_loss,
             target=target_price,
             risk_allocator=self.risk_allocator,
+            asset_class=asset_class,
         )
 
         if position_sizing is None:
@@ -616,12 +619,14 @@ class RiskValidator(BaseValidator):
             )
 
         # Step 4: Validate position size
+        # Skip position-value cap for forex (leverage-based, validated via margin instead)
         position_value = Decimal(position_sizing.shares) * entry_price
-        passes, reason = self._validate_position_size(
-            position_sizing.shares, position_value, portfolio_context.account_equity
-        )
-        if not passes:
-            return self.create_result(ValidationStatus.FAIL, reason=reason)
+        if asset_class != "FOREX":
+            passes, reason = self._validate_position_size(
+                position_sizing.shares, position_value, portfolio_context.account_equity
+            )
+            if not passes:
+                return self.create_result(ValidationStatus.FAIL, reason=reason)
 
         # Step 5: Validate R-multiple (FR19)
         passes, reason, r_multiple = self._validate_r_multiple(
@@ -696,30 +701,35 @@ class RiskValidator(BaseValidator):
         #         notional_value, risk_amount, r_multiple
 
         # Determine position size unit based on asset class
-        asset_class = getattr(context, "asset_class", "STOCK")
         position_size_unit = "LOTS" if asset_class == "FOREX" else "SHARES"
 
         # Calculate notional value (total exposure)
         if asset_class == "FOREX":
-            # Forex: notional = lots × contract_size × entry_price
-            # Standard lot = 100,000 units
+            # Forex: position_sizing.shares are raw currency units
+            # Convert to standard lots (1 lot = 100,000 units)
             contract_size = Decimal("100000")
-            notional_value = Decimal(str(position_sizing.shares)) * contract_size * entry_price
+            forex_lots = Decimal(str(position_sizing.shares)) / contract_size
+
+            # Notional = lots × contract_size × entry_price
+            notional_value = forex_lots * contract_size * entry_price
 
             # Forex leverage (50:1 standard)
             leverage = Decimal("50.0")
 
             # Margin requirement = notional_value / leverage
             margin_requirement = notional_value / leverage
+
+            effective_position_size = forex_lots
         else:
             # Stocks: notional = shares × entry_price
             notional_value = position_value
             leverage = None
             margin_requirement = None
+            effective_position_size = Decimal(str(position_sizing.shares))
 
         metadata: dict[str, Any] = {
             # Story 8.10.2: Required fields for signal generation
-            "position_size": Decimal(str(position_sizing.shares)),
+            "position_size": effective_position_size,
             "position_size_unit": position_size_unit,
             "leverage": leverage,
             "margin_requirement": margin_requirement,

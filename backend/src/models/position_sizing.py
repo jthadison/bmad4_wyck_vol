@@ -125,6 +125,12 @@ class PositionSizing(BaseModel):
         description="Total account equity for position sizing calculations",
     )
 
+    asset_class: str = Field(
+        default="STOCK",
+        max_length=10,
+        description="Asset class (STOCK, FOREX, CRYPTO). Forex skips 20% position-value cap.",
+    )
+
     position_value: Decimal = Field(
         ...,
         decimal_places=2,
@@ -214,11 +220,17 @@ class PositionSizing(BaseModel):
         could violate portfolio-level risk limits even if per-trade
         risk is within bounds.
 
+        Forex positions are exempt because they use leverage, so notional
+        value naturally exceeds account equity. Margin-based checks apply instead.
+
         Raises:
         -------
         ValueError
             If position_value > 20% account_equity (concentration limit)
         """
+        # Skip for forex: leveraged products have notional > equity by design
+        if info.data.get("asset_class") == "FOREX":
+            return v
         if "account_equity" in info.data:
             max_position = info.data["account_equity"] * Decimal("0.20")
             if v > max_position:
@@ -244,6 +256,7 @@ class PositionSizing(BaseModel):
             "position_value": str(self.position_value),
             "actual_risk": str(self.actual_risk),
             "pattern_type": self.pattern_type,
+            "asset_class": self.asset_class,
             # Story 7.8 enhanced fields
             "r_multiple": str(self.r_multiple) if self.r_multiple else None,
             "validation_pipeline": (
