@@ -105,7 +105,8 @@ jobs:
         run: |
           poetry run pytest tests/integration/test_detector_accuracy_integration.py \
             -v \
-            --json-report
+            --json-report \
+            --json-report-file=accuracy-report.json
           echo "accuracy_status=$?" >> $GITHUB_OUTPUT
 
       - name: Check accuracy thresholds
@@ -333,8 +334,16 @@ jobs:
             # Check all containers are running
             docker compose -f /opt/bmad-wyckoff/docker-compose.prod.yml ps --format json
 
-            # Check detailed health
-            curl -s http://localhost:8000/health | python3 -m json.tool
+            # Check detailed health with dependency validation
+            HEALTH=$(curl -sf http://localhost:8000/api/v1/health)
+            echo "$HEALTH" | python3 -m json.tool
+            STATUS=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','unknown'))")
+            if [ "$STATUS" = "degraded" ] || [ "$STATUS" = "unhealthy" ]; then
+              echo "ERROR: Backend health check returned status: $STATUS"
+              docker compose -f /opt/bmad-wyckoff/docker-compose.prod.yml logs backend --tail 20
+              exit 1
+            fi
+            echo "Backend health verified: $STATUS"
 
       - name: Deployment notification
         if: always()
