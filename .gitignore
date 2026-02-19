@@ -222,3 +222,4 @@ backend/test_response.json
 frontend/debug-screenshot.png
 .archive/
 .worktrees/
+.worktrees/
