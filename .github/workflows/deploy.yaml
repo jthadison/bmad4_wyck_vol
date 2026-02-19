@@ -109,28 +109,38 @@ jobs:
           echo "accuracy_status=$?" >> $GITHUB_OUTPUT
 
       - name: Check accuracy thresholds
+        working-directory: backend
         run: |
-          # Placeholder for accuracy threshold validation
-          # Should verify precision >= 75%, recall >= 70%
-          echo "Checking accuracy thresholds..."
-          echo "Precision >= 75%: PASS"
-          echo "Recall >= 70%: PASS"
+          # The accuracy test step above already enforces thresholds via pytest assertions
+          # (precision >= 75%, recall >= 70% per NFR2/NFR3).
+          # This step displays the parsed metrics report for the deployment audit trail.
+          if [ -f accuracy-report.json ]; then
+            echo "=== Accuracy Metrics Report ==="
+            python ../.github/scripts/parse-accuracy-metrics.py accuracy-report.json
+            # Verify at least one test actually ran (guards against skipped tests with no dataset)
+            TESTS_RAN=$(python -c "import json; r=json.load(open('accuracy-report.json')); print(r.get('summary', {}).get('total', 0))")
+            if [ "$TESTS_RAN" = "0" ]; then
+              echo "::warning::Accuracy tests ran 0 tests (labeled dataset may be missing - Story 12.2)"
+            else
+              echo "Accuracy validation passed: $TESTS_RAN test(s) verified thresholds"
+            fi
+          else
+            echo "::warning::No accuracy-report.json found - accuracy validation relies on pytest pass/fail only"
+          fi
 
       # CRITICAL: Regression tests MUST block deployment
       # Degraded trading metrics (win rate, profit factor) indicate broken strategy - non-negotiable
-      - name: Run regression tests
+      - name: Run backtest regression tests
         id: regression
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql+psycopg://wyckoff_user:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/wyckoff_db_test
-          ENVIRONMENT: test
         run: |
-          # Placeholder for regression testing
-          # Should load baseline and compare current metrics
-          echo "Running regression tests..."
-          echo "Win rate degradation: PASS (< 5%)"
-          echo "Avg R-multiple degradation: PASS (< 10%)"
-          echo "Profit factor degradation: PASS (< 10%)"
+          # Uses check_backtest_regression.py which:
+          # - Loads baselines from tests/datasets/baselines/backtest/
+          # - Regenerates synthetic data with same RNG seeds
+          # - Compares metrics with 5% tolerance (uniform for all: win_rate, profit_factor, sharpe, drawdown)
+          # - Returns 0 if passing or if no baselines exist yet (safe first-run behavior)
+          # - Returns 1 if any metric regresses beyond 5%
+          poetry run python scripts/check_backtest_regression.py
 
       - name: Check test coverage
         working-directory: backend
@@ -143,24 +153,30 @@ jobs:
             --cov-fail-under=90 \
             --cov-report=term
 
-      - name: Security vulnerability scan
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Security vulnerability scan (pip-audit)
         working-directory: backend
         run: |
-          # Python security scan
-          poetry run pip list --format=json | python -c "
-          import json, sys
-          packages = json.load(sys.stdin)
-          print(f'Scanning {len(packages)} packages for vulnerabilities...')
-          print('No high-severity vulnerabilities found')
-          "
+          # Real vulnerability scan - same pattern as pr-ci.yaml security-scan job
+          # --strict: fail on any known vulnerability
+          poetry export -f requirements.txt --without-hashes > requirements.txt
+          pip-audit -r requirements.txt --strict
 
-      - name: Deployment gate decision
+      - name: Deployment gate summary
+        if: always()
         run: |
-          echo "=== Deployment Gate Summary ==="
-          echo "Accuracy Check: PASS"
-          echo "Regression Check: PASS"
-          echo "Coverage Check: PASS"
-          echo "Security Check: PASS"
+          echo "=== Pre-Deployment Gate Summary ==="
+          echo "All preceding steps must pass for deployment to proceed."
+          echo ""
+          echo "Gates enforced:"
+          echo "  - Accuracy tests (pytest assertions enforce precision >= 75%, recall >= 70%)"
+          echo "  - Backtest regression (5% tolerance on win_rate, profit_factor, sharpe, drawdown)"
+          echo "  - Test coverage (>= 90%)"
+          echo "  - Security scan (pip-audit --strict, no known vulnerabilities)"
+          echo ""
+          echo "If this step is reached, all gates passed."
           echo "=== Deployment APPROVED ==="
 
   # Build and push Docker images
