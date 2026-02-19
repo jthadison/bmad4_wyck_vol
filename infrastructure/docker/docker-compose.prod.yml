@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL + TimescaleDB (matches dev environment and init.sql requirements)
   postgres:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg15
     container_name: bmad-postgres
     restart: unless-stopped
     environment:
@@ -12,6 +12,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
     healthcheck:
@@ -19,6 +20,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - bmad-network
+
+  # Redis (caching layer required by backend)
+  redis:
+    image: redis:7-alpine
+    container_name: bmad-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     networks:
       - bmad-network
 
@@ -31,12 +48,22 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://bmad_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/bmad_wyckoff
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       API_HOST: 0.0.0.0
       API_PORT: 8000
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ORIGINS: http://localhost,http://localhost:80
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      POLYGON_API_KEY: ${POLYGON_API_KEY:-}
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: "false"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -61,6 +88,12 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      # SSL certificates - must exist on host before starting
+      # For self-signed: see infrastructure/docker/README-ssl.md
+      # For Let's Encrypt: mount /etc/letsencrypt/live/<domain>/ here
+      - ${SSL_CERT_DIR:-/etc/ssl/staging}:/etc/nginx/ssl:ro
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/health || exit 1"]
       interval: 30s
@@ -72,6 +105,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:
