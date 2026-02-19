@@ -32,6 +32,13 @@ BEGIN
 END
 $$;
 
+-- Pre-create alembic_version with wider column (alembic default VARCHAR(32) is too
+-- short for revision IDs like '20260209_add_paper_trading_config' which are >32 chars)
+CREATE TABLE IF NOT EXISTS alembic_version (
+    version_num VARCHAR(64) NOT NULL,
+    CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
+);
+
 -- Log initialization
 SELECT 'Database initialized with TimescaleDB extension' AS status;
 SELECT extversion AS timescaledb_version FROM pg_extension WHERE extname = 'timescaledb';
