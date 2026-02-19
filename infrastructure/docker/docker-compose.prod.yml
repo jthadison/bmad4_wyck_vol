@@ -53,12 +53,12 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 8000
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost"]}'
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       POLYGON_API_KEY: ${POLYGON_API_KEY:-}
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
-      ENVIRONMENT: ${ENVIRONMENT:-production}
+      ENVIRONMENT: ${ENVIRONMENT:-staging}
       DEBUG: "false"
     depends_on:
       postgres:

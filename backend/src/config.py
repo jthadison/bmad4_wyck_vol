@@ -5,8 +5,9 @@ This module provides centralized configuration management for the BMAD Wyckoff s
 including database connection settings, API keys, and environment-specific values.
 """
 
+import json
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        env_ignore_empty=True,
     )
 
     # Environment
@@ -404,6 +406,20 @@ class Settings(BaseSettings):
         default="http://localhost:5173",
         description="Base URL for links in email notifications",
     )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return ["*"]
+            if v.startswith("["):
+                return json.loads(v)
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
     @field_validator("database_url", mode="before")
     @classmethod
