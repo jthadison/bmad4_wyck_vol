@@ -450,56 +450,8 @@ def upgrade() -> None:
         ),
     )
 
-    # ==========================================================================
-    # Table 7: audit_trail (Immutable)
-    # ==========================================================================
-    op.create_table(
-        "audit_trail",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
-            primary_key=True,
-        ),
-        sa.Column("event_type", sa.String(length=50), nullable=False),
-        sa.Column("entity_type", sa.String(length=50), nullable=False, comment="Table name"),
-        sa.Column("entity_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("timestamp", sa.TIMESTAMP(timezone=True), nullable=False),
-        sa.Column(
-            "actor",
-            sa.String(length=100),
-            nullable=False,
-            comment="User or service that performed action",
-        ),
-        sa.Column("action", sa.Text(), nullable=False),
-        sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column(
-            "correlation_id",
-            postgresql.UUID(as_uuid=True),
-            nullable=False,
-            comment="Trace entire workflow",
-        ),
-        sa.Column(
-            "created_at",
-            sa.TIMESTAMP(timezone=True),
-            server_default=sa.text("NOW()"),
-            nullable=False,
-        ),
-    )
-
-    # Create index for correlation tracking
-    op.create_index(
-        "idx_audit_correlation",
-        "audit_trail",
-        ["correlation_id"],
-    )
-
-    # Make audit_trail immutable (AC: 9 - prevent UPDATE/DELETE)
-    op.execute(
-        """
-        REVOKE UPDATE, DELETE ON audit_trail FROM PUBLIC;
-    """
-    )
+    # audit_trail is created by migration 20260213_create_audit_trail_table
+    # with the correct production schema (VARCHAR entity_id, proper indexes)
 
 
 def downgrade() -> None:
@@ -514,7 +466,7 @@ def downgrade() -> None:
     )
 
     # Drop tables in reverse dependency order
-    op.drop_table("audit_trail")
+    # audit_trail is dropped by downgrade of 20260213_create_audit_trail_table
     op.drop_table("backtest_results")
     op.drop_table("signals")
     op.drop_table("campaigns")
