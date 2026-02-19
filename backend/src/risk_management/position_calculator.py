@@ -69,6 +69,7 @@ def calculate_position_size(
     stop: Decimal,
     target: Optional[Decimal] = None,
     risk_allocator: Optional[RiskAllocator] = None,
+    asset_class: str = "STOCK",
 ) -> Optional[PositionSizing]:
     """
     Calculate position size using fixed-point arithmetic (AC 1, 2, 3).
@@ -180,25 +181,28 @@ def calculate_position_size(
     position_value = (Decimal(shares) * entry).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
     # AC 6: Maximum position value validation (≤ 20% account equity, FR18)
-    max_position_value = (account_equity * Decimal("0.20")).quantize(
-        Decimal("0.01"), rounding=ROUND_DOWN
-    )
+    # Skip for forex: forex uses leverage so notional value naturally exceeds equity.
+    # The RiskValidator applies margin-based checks for forex instead.
+    if asset_class != "FOREX":
+        max_position_value = (account_equity * Decimal("0.20")).quantize(
+            Decimal("0.01"), rounding=ROUND_DOWN
+        )
 
-    if position_value > max_position_value:
-        logger.warning(
-            "position_value_exceeds_limit",
-            pattern_type=pattern_type.value,
-            shares=shares,
-            entry=float(entry),
-            position_value=float(position_value),
-            max_position_value=float(max_position_value),
-            account_equity=float(account_equity),
-            message=f"Position value ${position_value} exceeds 20% equity limit ${max_position_value} (FR18 violation)",
-        )
-        raise ValueError(
-            f"Position value ${position_value} exceeds 20% of account equity "
-            f"(max: ${max_position_value}, FR18 concentration limit)"
-        )
+        if position_value > max_position_value:
+            logger.warning(
+                "position_value_exceeds_limit",
+                pattern_type=pattern_type.value,
+                shares=shares,
+                entry=float(entry),
+                position_value=float(position_value),
+                max_position_value=float(max_position_value),
+                account_equity=float(account_equity),
+                message=f"Position value ${position_value} exceeds 20% equity limit ${max_position_value} (FR18 violation)",
+            )
+            raise ValueError(
+                f"Position value ${position_value} exceeds 20% of account equity "
+                f"(max: ${max_position_value}, FR18 concentration limit)"
+            )
 
     # AC 7: Calculate actual risk (shares × stop_distance)
     actual_risk = (Decimal(shares) * stop_distance).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
@@ -252,4 +256,5 @@ def calculate_position_size(
         position_value=position_value,
         actual_risk=actual_risk,
         pattern_type=pattern_type.value,
+        asset_class=asset_class,
     )

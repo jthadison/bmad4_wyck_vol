@@ -121,9 +121,10 @@ class TestForexLotSizing:
         expected_margin = expected_notional / Decimal("50.0")
         assert metadata["margin_requirement"] == expected_margin
 
-        # Assert risk amount is approximately 1.5% of $10,000 = $150
+        # Assert risk amount is approximately 0.5% of $100,000 = $500
+        # (SPRING default risk allocation is 0.5%)
         risk_amount = metadata["risk_amount"]
-        assert Decimal("140.00") <= risk_amount <= Decimal("160.00")
+        assert Decimal("490.00") <= risk_amount <= Decimal("510.00")
 
         # Step 4: Build ValidationChain with Risk metadata
         validation_chain = ValidationChain(pattern_id=pattern.id)
@@ -278,5 +279,5 @@ class TestForexLotSizing:
         assert signal.margin_requirement is None
         assert signal.notional_value == expected_notional
 
-        # Assert NOT hardcoded defaults
-        assert signal.position_size != Decimal("100")  # NOT hardcoded 100
+        # Assert position size matches calculated value from risk validator
+        assert signal.position_size == position_size

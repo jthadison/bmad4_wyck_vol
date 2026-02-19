@@ -24,8 +24,13 @@ ALTER SYSTEM SET max_wal_size = '4GB';
 -- Note: Settings above require PostgreSQL restart to take effect
 -- Docker will apply them on container startup
 
--- Grant necessary permissions
-GRANT ALL PRIVILEGES ON DATABASE wyckoff_db TO wyckoff_user;
+-- Grant necessary permissions on the current database to the current user
+-- Uses dynamic SQL so it works regardless of POSTGRES_DB/POSTGRES_USER values
+DO $$
+BEGIN
+  EXECUTE format('GRANT ALL PRIVILEGES ON DATABASE %I TO %I', current_database(), current_user);
+END
+$$;
 
 -- Log initialization
 SELECT 'Database initialized with TimescaleDB extension' AS status;

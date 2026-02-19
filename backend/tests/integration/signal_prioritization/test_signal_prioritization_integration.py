@@ -28,7 +28,7 @@ def create_test_signal(
     r_multiple: Decimal,
     symbol: str = "AAPL",
     entry_price: Decimal = Decimal("150.00"),
-    stop_loss: Decimal = Decimal("148.00"),
+    stop_loss: Decimal | None = None,
 ) -> TradeSignal:
     """
     Helper to create valid test signal with correct R-multiple calculation.
@@ -45,17 +45,26 @@ def create_test_signal(
         Stock symbol (default: AAPL)
     entry_price : Decimal
         Entry price (default: 150.00)
-    stop_loss : Decimal
-        Stop loss (default: 148.00)
+    stop_loss : Decimal | None
+        Stop loss (default: None, auto-calculated based on direction)
 
     Returns:
     --------
     TradeSignal
         Valid test signal
     """
-    # Calculate target from entry/stop/r_multiple
-    risk_per_share = entry_price - stop_loss
-    target_price = entry_price + (r_multiple * risk_per_share)
+    is_short = pattern_type == "UTAD"
+
+    if stop_loss is None:
+        # UTAD (short): stop above entry; LONG: stop below entry
+        stop_loss = entry_price + Decimal("2.00") if is_short else entry_price - Decimal("2.00")
+
+    # Calculate target from entry/stop/r_multiple (direction-aware)
+    risk_per_share = abs(entry_price - stop_loss)
+    if is_short:
+        target_price = entry_price - (r_multiple * risk_per_share)
+    else:
+        target_price = entry_price + (r_multiple * risk_per_share)
 
     return TradeSignal(
         id=uuid4(),

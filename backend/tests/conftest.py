@@ -290,6 +290,10 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "integration: mark test as an integration test")
     config.addinivalue_line("markers", "slow: mark test as slow running")
     config.addinivalue_line("markers", "extended: mark test as extended backtest for CI only")
+    config.addinivalue_line("markers", "benchmark: mark test as a performance benchmark")
+    config.addinivalue_line("markers", "database: mark test as requiring database connection")
+    config.addinivalue_line("markers", "performance: mark test as a performance/load test")
+    config.addinivalue_line("markers", "flaky: mark test as potentially flaky (retried in CI)")
 
 
 # =============================

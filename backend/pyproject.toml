@@ -125,15 +125,28 @@ ignore_errors = true
 [tool.pytest.ini_options]
 testpaths = ["tests", "benchmarks"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+timeout = 300
+timeout_method = "thread"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "benchmark: marks tests as performance benchmarks",
     "slow: marks tests as slow running (deselect with '-m \"not slow\"')",
     "extended: marks tests as extended backtests for CI only (deselect with '-m \"not extended\"')",
     "flaky: marks tests as potentially flaky (will be retried automatically in CI)",
+    "performance: marks tests as performance/load tests",
+    "timeout: marks test with timeout value",
+    "unit: marks tests as unit tests",
+    "database: marks tests requiring database connection",
+    "network: marks tests requiring network access",
 ]
 
 [tool.pytest.benchmark]

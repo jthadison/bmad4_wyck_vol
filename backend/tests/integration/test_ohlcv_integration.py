@@ -10,16 +10,91 @@ They verify end-to-end functionality including:
 """
 
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pandas as pd
 import pytest
+import pytest_asyncio
+from sqlalchemy import String
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 
-from src.database import get_db
+from src.database import Base
 from src.models.converters import bars_to_dataframe, dataframe_to_bars
 from src.models.ohlcv import OHLCVBar
+from src.repositories.models import OHLCVBarModel
 from src.repositories.ohlcv_repository import OHLCVRepository
+
+# ---------------------------------------------------------------------------
+# SQLite compatibility patches for PostgreSQL-specific column types.
+# These allow OHLCVBarModel (which uses PG UUID) to work with in-memory SQLite.
+# ---------------------------------------------------------------------------
+
+
+@compiles(PG_UUID, "sqlite")
+def _compile_uuid_sqlite(type_, compiler, **kw):
+    """Render PostgreSQL UUID as VARCHAR(36) in SQLite DDL."""
+    return compiler.visit_VARCHAR(String(36), **kw)
+
+
+_orig_uuid_bind = PG_UUID.bind_processor
+
+
+def _uuid_bind_processor(self, dialect):
+    if dialect.name == "sqlite":
+        return lambda value: str(value) if value is not None else None
+    return _orig_uuid_bind(self, dialect)
+
+
+PG_UUID.bind_processor = _uuid_bind_processor  # type: ignore[assignment]
+
+
+_orig_uuid_result = PG_UUID.result_processor
+
+
+def _uuid_result_processor(self, dialect, coltype):
+    if dialect.name == "sqlite":
+        as_uuid = getattr(self, "as_uuid", False)
+        if as_uuid:
+            return lambda value: uuid.UUID(value) if value is not None else None
+        return lambda value: value
+    return _orig_uuid_result(self, dialect)
+
+
+PG_UUID.result_processor = _uuid_result_processor  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Fixtures (override parent conftest to create only the OHLCV table)
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture(scope="function")
+async def db_engine():
+    """Create SQLite engine with only the ohlcv_bars table.
+
+    Overrides the parent conftest db_engine to avoid creating
+    PostgreSQL-specific tables (e.g., scanner_history with JSONB).
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[OHLCVBarModel.__table__])
+    yield engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all, tables=[OHLCVBarModel.__table__])
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def db_session(db_engine):
+    """Provide database session for OHLCV tests."""
+    session_maker = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as session:
+        yield session
+        await session.rollback()
 
 
 def generate_test_bars(symbol: str, count: int, timeframe: str = "1d") -> list[OHLCVBar]:
@@ -64,12 +139,10 @@ def generate_test_bars(symbol: str, count: int, timeframe: str = "1d") -> list[O
     return bars
 
 
-@pytest.fixture
-async def repository():
+@pytest_asyncio.fixture
+async def repository(db_session: AsyncSession):
     """Create repository with test database session."""
-    async for session in get_db():
-        yield OHLCVRepository(session)
-        break
+    return OHLCVRepository(db_session)
 
 
 @pytest.mark.integration
@@ -93,9 +166,9 @@ class TestBulkInsertAndQuery:
         bars = generate_test_bars("TEST_FETCH", count=1000)
         await repository.insert_bars(bars)
 
-        # Fetch all bars
+        # Fetch all bars (1000 days from 2024-01-01 extends into 2026)
         start_date = datetime(2024, 1, 1, tzinfo=UTC)
-        end_date = datetime(2024, 12, 31, tzinfo=UTC)
+        end_date = datetime(2027, 1, 1, tzinfo=UTC)
 
         fetched_bars = await repository.get_bars("TEST_FETCH", "1d", start_date, end_date)
 
@@ -144,9 +217,9 @@ class TestDataFrameConversion:
         bars = generate_test_bars("TEST_DF", count=1000)
         await repository.insert_bars(bars)
 
-        # Fetch bars
+        # Fetch bars (1000 days from 2024-01-01 extends into 2026)
         start_date = datetime(2024, 1, 1, tzinfo=UTC)
-        end_date = datetime(2024, 12, 31, tzinfo=UTC)
+        end_date = datetime(2027, 1, 1, tzinfo=UTC)
         fetched_bars = await repository.get_bars("TEST_DF", "1d", start_date, end_date)
 
         # Convert to DataFrame (AC 10)
@@ -203,9 +276,9 @@ class TestLazyLoading:
         bars = generate_test_bars("TEST_LAZY", count=1000)
         await repository.insert_bars(bars)
 
-        # Iterate with batch size 100
+        # Iterate with batch size 100 (1000 days from 2024-01-01 extends into 2026)
         start_date = datetime(2024, 1, 1, tzinfo=UTC)
-        end_date = datetime(2024, 12, 31, tzinfo=UTC)
+        end_date = datetime(2027, 1, 1, tzinfo=UTC)
 
         total_bars = 0
         batch_count = 0
