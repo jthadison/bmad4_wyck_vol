@@ -186,6 +186,7 @@ jobs:
 
       - name: Update baselines if tests passed
         if: |
+          github.ref == 'refs/heads/main' &&
           github.event.inputs.update_baseline == 'true' &&
           steps.accuracy_tests.outcome == 'success' &&
           steps.backtest_baseline_check.outcome == 'success' &&
@@ -195,7 +196,8 @@ jobs:
           echo "Regenerating backtest baselines..."
           poetry run python scripts/generate_backtest_baselines.py
 
-          git add tests/datasets/baselines/backtest/*.json
+          mkdir -p tests/datasets/baselines/backtest
+          git add tests/datasets/baselines/backtest/
 
           if git diff --cached --quiet; then
             echo "No baseline changes detected - skipping commit"
@@ -203,7 +205,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -m "chore: update backtest baselines [skip ci]"
-            git push origin main
+            git push origin HEAD:main
             echo "Baselines updated and pushed to main"
           fi
         env:
