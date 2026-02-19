@@ -95,7 +95,7 @@ services:
       # For Let's Encrypt: mount /etc/letsencrypt/live/<domain>/ here
       - ${SSL_CERT_DIR:-/etc/ssl/staging}:/etc/nginx/ssl:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/health || exit 1"]
       interval: 30s
       timeout: 3s
       retries: 3
