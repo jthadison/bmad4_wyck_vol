@@ -134,6 +134,7 @@ markers = [
     "slow: marks tests as slow running (deselect with '-m \"not slow\"')",
     "extended: marks tests as extended backtests for CI only (deselect with '-m \"not extended\"')",
     "flaky: marks tests as potentially flaky (will be retried automatically in CI)",
+    "database: marks tests requiring PostgreSQL (skipped when using SQLite)",
 ]
 
 [tool.pytest.benchmark]

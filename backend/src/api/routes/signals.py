@@ -156,8 +156,16 @@ async def _repo_get_signals_with_filters(
         db_signals = []
 
     # Merge in legacy mock store signals (supports existing tests / unmigrated DB)
+    # Apply same filters that SQL would apply to keep results consistent
     db_ids = {s.id for s in db_signals}
-    in_memory_extra = [s for s in _signal_store.values() if s.id not in db_ids]
+    in_memory_extra = [
+        s
+        for s in _signal_store.values()
+        if s.id not in db_ids
+        and (status is None or s.status == status)
+        and (symbol is None or s.symbol == symbol)
+        and (since is None or s.timestamp >= since)
+    ]
     db_signals.extend(in_memory_extra)
 
     # Apply remaining filters not handled at SQL level

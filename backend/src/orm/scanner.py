@@ -13,9 +13,10 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON
 
 from src.database import Base
 
@@ -245,9 +246,11 @@ class ScannerHistoryORM(Base):
     )
 
     # Correlation IDs of signals generated during this cycle (Task #25)
-    # Stored as JSONB array of UUID strings: ["uuid1", "uuid2", ...]
+    # Stored as JSON array of UUID strings: ["uuid1", "uuid2", ...]
+    # Note: Uses JSON in ORM for SQLite test compatibility.
+    # Migration specifies JSONB for PostgreSQL production.
     correlation_ids: Mapped[list[str] | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         server_default="[]",
     )

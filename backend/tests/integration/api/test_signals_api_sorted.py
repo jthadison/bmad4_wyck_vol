@@ -38,11 +38,25 @@ def create_test_signal(
     r_multiple: Decimal,
     symbol: str = "AAPL",
     entry_price: Decimal = Decimal("150.00"),
-    stop_loss: Decimal = Decimal("148.00"),
+    stop_loss: Decimal | None = None,
 ) -> TradeSignal:
-    """Create test signal with correct R-multiple calculation."""
-    risk_per_share = entry_price - stop_loss
-    target_price = entry_price + (r_multiple * risk_per_share)
+    """Create test signal with correct R-multiple calculation.
+
+    Handles both LONG (SPRING/SOS/LPS) and SHORT (UTAD) patterns:
+    - LONG: stop below entry, target above entry
+    - SHORT (UTAD): stop above entry, target below entry
+    """
+    is_short = pattern_type == "UTAD"
+
+    if stop_loss is None:
+        stop_loss = Decimal("152.00") if is_short else Decimal("148.00")
+
+    risk_per_share = abs(entry_price - stop_loss)
+
+    if is_short:
+        target_price = entry_price - (r_multiple * risk_per_share)
+    else:
+        target_price = entry_price + (r_multiple * risk_per_share)
 
     return TradeSignal(
         id=uuid4(),
