@@ -14,7 +14,7 @@ import type { BacktestResult, BacktestTrade } from '@/types/backtest'
 test.describe('EURUSD Backtest - Multi-Timeframe', () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to backtest page
-    await page.goto('http://localhost:5173/backtest')
+    await page.goto('/backtest')
     await page.waitForLoadState('domcontentloaded')
   })
 
@@ -89,12 +89,9 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     }
 
     // Start backtest
-    const startResponse = await request.post(
-      'http://localhost:8000/api/v1/backtest/preview',
-      {
-        data: backtestRequest,
-      }
-    )
+    const startResponse = await request.post('/api/v1/backtest/preview', {
+      data: backtestRequest,
+    })
 
     expect(startResponse.ok()).toBeTruthy()
     expect(startResponse.status()).toBe(202)
@@ -119,7 +116,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
       const statusResponse = await request.get(
-        `http://localhost:8000/api/v1/backtest/status/${runId}`
+        `/api/v1/backtest/status/${runId}`
       )
       expect(statusResponse.ok()).toBeTruthy()
 
@@ -147,7 +144,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
 
     // Fetch and verify results
     const resultsResponse = await request.get(
-      `http://localhost:8000/api/v1/backtest/results/${runId}`
+      `/api/v1/backtest/results/${runId}`
     )
     expect(resultsResponse.ok()).toBeTruthy()
 
@@ -189,12 +186,9 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     }
 
     // Start backtest
-    const startResponse = await request.post(
-      'http://localhost:8000/api/v1/backtest/preview',
-      {
-        data: backtestRequest,
-      }
-    )
+    const startResponse = await request.post('/api/v1/backtest/preview', {
+      data: backtestRequest,
+    })
 
     expect(startResponse.ok()).toBeTruthy()
     const startData = await startResponse.json()
@@ -214,7 +208,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
       const statusResponse = await request.get(
-        `http://localhost:8000/api/v1/backtest/status/${runId}`
+        `/api/v1/backtest/status/${runId}`
       )
       const statusData = await statusResponse.json()
       status = statusData.status
@@ -238,7 +232,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
 
     // Fetch results
     const resultsResponse = await request.get(
-      `http://localhost:8000/api/v1/backtest/results/${runId}`
+      `/api/v1/backtest/results/${runId}`
     )
     const results = await resultsResponse.json()
 
@@ -269,10 +263,9 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     }
 
     // Start and wait for completion
-    const startResponse = await request.post(
-      'http://localhost:8000/api/v1/backtest/preview',
-      { data: backtestRequest }
-    )
+    const startResponse = await request.post('/api/v1/backtest/preview', {
+      data: backtestRequest,
+    })
     const startData = await startResponse.json()
     const runId = startData.backtest_run_id
 
@@ -282,7 +275,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     while (status !== 'completed' && status !== 'failed' && attempts < 180) {
       await new Promise((resolve) => setTimeout(resolve, 1000))
       const statusResponse = await request.get(
-        `http://localhost:8000/api/v1/backtest/status/${runId}`
+        `/api/v1/backtest/status/${runId}`
       )
       const statusData = await statusResponse.json()
       status = statusData.status
@@ -293,7 +286,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
 
     // Fetch results
     const resultsResponse = await request.get(
-      `http://localhost:8000/api/v1/backtest/results/${runId}`
+      `/api/v1/backtest/results/${runId}`
     )
     const results = (await resultsResponse.json()) as BacktestResult
 
@@ -339,7 +332,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
 
     const startResponses = await Promise.all(
       backtestRequests.map((req) =>
-        request.post('http://localhost:8000/api/v1/backtest/preview', {
+        request.post('/api/v1/backtest/preview', {
           data: req,
         })
       )
@@ -361,7 +354,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
       while (status !== 'completed' && status !== 'failed' && attempts < 180) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
         const statusResponse = await request.get(
-          `http://localhost:8000/api/v1/backtest/status/${runId}`
+          `/api/v1/backtest/status/${runId}`
         )
         const statusData = await statusResponse.json()
         status = statusData.status
@@ -385,9 +378,7 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     // Fetch both results
     const [results1h, results15m] = await Promise.all(
       runIds.map(async (runId) => {
-        const res = await request.get(
-          `http://localhost:8000/api/v1/backtest/results/${runId}`
-        )
+        const res = await request.get(`/api/v1/backtest/results/${runId}`)
         return res.json()
       })
     )

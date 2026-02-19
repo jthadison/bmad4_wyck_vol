@@ -92,12 +92,11 @@ class WebSocketService {
       return import.meta.env.VITE_WS_BASE_URL
     }
 
-    // Default to localhost:8000 for MVP
+    // Use same host as page - nginx proxies /ws to backend
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.hostname
-    const port = import.meta.env.VITE_API_PORT || '8000'
+    const host = window.location.host // includes port only if non-standard
 
-    return `${protocol}//${host}:${port}/ws`
+    return `${protocol}//${host}/ws`
   }
 
   /**

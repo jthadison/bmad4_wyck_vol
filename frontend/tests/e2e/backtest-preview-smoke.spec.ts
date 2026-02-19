@@ -8,7 +8,7 @@ test.describe('Backtest Preview Smoke Test', () => {
     page,
   }) => {
     // Navigate to backtest page
-    await page.goto('http://localhost:5173/backtest')
+    await page.goto('/backtest')
 
     // Wait for page to load
     await page.waitForLoadState('domcontentloaded')
@@ -35,7 +35,7 @@ test.describe('Backtest Preview Smoke Test', () => {
   test('should display configuration form with default values', async ({
     page,
   }) => {
-    await page.goto('http://localhost:5173/backtest')
+    await page.goto('/backtest')
     await page.waitForLoadState('domcontentloaded')
 
     // Check default values
@@ -61,12 +61,9 @@ test.describe('Backtest Preview Smoke Test', () => {
     }
 
     // Start backtest
-    const startResponse = await request.post(
-      'http://localhost:8000/api/v1/backtest/preview',
-      {
-        data: backtestRequest,
-      }
-    )
+    const startResponse = await request.post('/api/v1/backtest/preview', {
+      data: backtestRequest,
+    })
 
     expect(startResponse.ok()).toBeTruthy()
     expect(startResponse.status()).toBe(202)
@@ -91,7 +88,7 @@ test.describe('Backtest Preview Smoke Test', () => {
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
       const statusResponse = await request.get(
-        `http://localhost:8000/api/v1/backtest/status/${runId}`
+        `/api/v1/backtest/status/${runId}`
       )
       expect(statusResponse.ok()).toBeTruthy()
 

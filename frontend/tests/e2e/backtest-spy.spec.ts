@@ -20,7 +20,7 @@ test.describe('Backtest Functionality - SPY Symbol', () => {
     })
 
     // Navigate to the application
-    await page.goto('http://localhost:5173')
+    await page.goto('/')
 
     // Wait for app to be ready
     await page.waitForLoadState('domcontentloaded')

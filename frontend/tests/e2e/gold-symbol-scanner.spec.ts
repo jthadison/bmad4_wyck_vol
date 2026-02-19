@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Scanner - Gold & Silver Symbol Addition', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('http://localhost:5173/scanner')
+    await page.goto('/scanner')
   })
 
   test('should display Forex - Metals group with Gold and Silver in Add Symbol modal', async ({
