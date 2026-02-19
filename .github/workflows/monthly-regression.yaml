@@ -60,7 +60,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: poetry install --no-interaction --no-root
+        run: poetry install --no-interaction --no-root --with dev
 
       # Testing: Accuracy tests may fail initially, regression status is what matters
       - name: Run comprehensive detector accuracy tests
