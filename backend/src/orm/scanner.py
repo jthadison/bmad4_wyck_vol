@@ -12,10 +12,25 @@ These tables persist scanner state across service restarts.
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy import JSON, Boolean, CheckConstraint, Index, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
+
+
+class PortableJSONB(TypeDecorator):
+    """JSONB on PostgreSQL, JSON on other dialects (e.g. SQLite in tests)."""
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_JSONB())
+        return dialect.type_descriptor(JSON())
+
 
 from src.database import Base
 
@@ -247,7 +262,7 @@ class ScannerHistoryORM(Base):
     # Correlation IDs of signals generated during this cycle (Task #25)
     # Stored as JSONB array of UUID strings: ["uuid1", "uuid2", ...]
     correlation_ids: Mapped[list[str] | None] = mapped_column(
-        JSONB,
+        PortableJSONB,
         nullable=True,
         server_default="[]",
     )
