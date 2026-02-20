@@ -2,9 +2,9 @@
 Tests for Live Position Management API endpoints (P4-I15).
 
 Covers:
-- GET /api/live-positions - returns enriched positions
-- PATCH /api/live-positions/{id}/stop-loss - validation rules
-- POST /api/live-positions/{id}/partial-exit - share calculation
+- GET /api/v1/live-positions - returns enriched positions
+- PATCH /api/v1/live-positions/{id}/stop-loss - validation rules
+- POST /api/v1/live-positions/{id}/partial-exit - share calculation
 
 Uses mocked DB layer to avoid SQLite/JSONB incompatibility issues.
 """
@@ -18,7 +18,15 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from src.api.dependencies import get_current_user_id
 from src.api.main import app
+
+_FAKE_USER_ID = uuid4()
+
+
+async def _override_auth() -> "UUID":  # noqa: F821
+    """Override auth dependency to return a fixed user ID."""
+    return _FAKE_USER_ID
 
 
 def _mock_position_row(
@@ -62,12 +70,12 @@ def _mock_position_row(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/live-positions
+# GET /api/v1/live-positions
 # ---------------------------------------------------------------------------
 
 
 class TestGetLivePositions:
-    """Tests for GET /api/live-positions."""
+    """Tests for GET /api/v1/live-positions."""
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_positions(self) -> None:
@@ -82,10 +90,11 @@ class TestGetLivePositions:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get("/api/live-positions")
+                response = await client.get("/api/v1/live-positions")
             assert response.status_code == 200
             assert response.json() == []
         finally:
@@ -105,10 +114,11 @@ class TestGetLivePositions:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get("/api/live-positions")
+                response = await client.get("/api/v1/live-positions")
             assert response.status_code == 200
             data = response.json()
             assert len(data) == 1
@@ -120,14 +130,23 @@ class TestGetLivePositions:
         finally:
             app.dependency_overrides.clear()
 
+    @pytest.mark.asyncio
+    async def test_rejects_unauthenticated_request(self) -> None:
+        """Endpoints require auth - requests without token get 403."""
+        transport = ASGITransport(app=app)
+        app.dependency_overrides.clear()
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/v1/live-positions")
+        assert response.status_code == 403
+
 
 # ---------------------------------------------------------------------------
-# PATCH /api/live-positions/{id}/stop-loss
+# PATCH /api/v1/live-positions/{id}/stop-loss
 # ---------------------------------------------------------------------------
 
 
 class TestUpdateStopLoss:
-    """Tests for PATCH /api/live-positions/{id}/stop-loss."""
+    """Tests for PATCH /api/v1/live-positions/{id}/stop-loss."""
 
     @pytest.mark.asyncio
     async def test_rejects_stop_above_entry_price(self) -> None:
@@ -147,11 +166,12 @@ class TestUpdateStopLoss:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.patch(
-                    f"/api/live-positions/{pos_id}/stop-loss",
+                    f"/api/v1/live-positions/{pos_id}/stop-loss",
                     json={"new_stop": "160.00"},
                 )
             assert response.status_code == 400
@@ -175,11 +195,12 @@ class TestUpdateStopLoss:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.patch(
-                    f"/api/live-positions/{pos_id}/stop-loss",
+                    f"/api/v1/live-positions/{pos_id}/stop-loss",
                     json={"new_stop": "-5.00"},
                 )
             assert response.status_code == 400
@@ -205,11 +226,12 @@ class TestUpdateStopLoss:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.patch(
-                    f"/api/live-positions/{pos_id}/stop-loss",
+                    f"/api/v1/live-positions/{pos_id}/stop-loss",
                     json={"new_stop": "143.00"},
                 )
             assert response.status_code == 400
@@ -237,11 +259,12 @@ class TestUpdateStopLoss:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.patch(
-                    f"/api/live-positions/{pos_id}/stop-loss",
+                    f"/api/v1/live-positions/{pos_id}/stop-loss",
                     json={"new_stop": "147.00"},
                 )
             assert response.status_code == 200
@@ -267,11 +290,12 @@ class TestUpdateStopLoss:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.patch(
-                    f"/api/live-positions/{fake_id}/stop-loss",
+                    f"/api/v1/live-positions/{fake_id}/stop-loss",
                     json={"new_stop": "147.00"},
                 )
             assert response.status_code == 404
@@ -280,12 +304,12 @@ class TestUpdateStopLoss:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/live-positions/{id}/partial-exit
+# POST /api/v1/live-positions/{id}/partial-exit
 # ---------------------------------------------------------------------------
 
 
 class TestPartialExit:
-    """Tests for POST /api/live-positions/{id}/partial-exit."""
+    """Tests for POST /api/v1/live-positions/{id}/partial-exit."""
 
     @pytest.mark.asyncio
     async def test_calculates_correct_share_quantity(self) -> None:
@@ -303,17 +327,20 @@ class TestPartialExit:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    f"/api/live-positions/{pos_id}/partial-exit",
+                    f"/api/v1/live-positions/{pos_id}/partial-exit",
                     json={"exit_pct": 25},
                 )
             assert response.status_code == 200
             data = response.json()
             assert data["shares_to_exit"] == "25"
             assert data["order_type"] == "MARKET"
+            # No broker configured in test => PENDING status
+            assert data["status"] == "PENDING"
         finally:
             app.dependency_overrides.clear()
 
@@ -329,11 +356,12 @@ class TestPartialExit:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    f"/api/live-positions/{pos_id}/partial-exit",
+                    f"/api/v1/live-positions/{pos_id}/partial-exit",
                     json={"exit_pct": 0},
                 )
             assert response.status_code == 422
@@ -352,11 +380,12 @@ class TestPartialExit:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    f"/api/live-positions/{pos_id}/partial-exit",
+                    f"/api/v1/live-positions/{pos_id}/partial-exit",
                     json={"exit_pct": 150},
                 )
             assert response.status_code == 422
@@ -379,11 +408,12 @@ class TestPartialExit:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    f"/api/live-positions/{pos_id}/partial-exit",
+                    f"/api/v1/live-positions/{pos_id}/partial-exit",
                     json={"exit_pct": 50, "limit_price": "160.00"},
                 )
             assert response.status_code == 200
@@ -409,11 +439,12 @@ class TestPartialExit:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    f"/api/live-positions/{pos_id}/partial-exit",
+                    f"/api/v1/live-positions/{pos_id}/partial-exit",
                     json={"exit_pct": 100},
                 )
             assert response.status_code == 200
@@ -437,11 +468,12 @@ class TestPartialExit:
         from src.database import get_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user_id] = _override_auth
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    f"/api/live-positions/{fake_id}/partial-exit",
+                    f"/api/v1/live-positions/{fake_id}/partial-exit",
                     json={"exit_pct": 50},
                 )
             assert response.status_code == 404

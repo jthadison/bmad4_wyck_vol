@@ -2,9 +2,9 @@
 Live Position Management endpoints (Issue P4-I15).
 
 Action-oriented endpoints for managing open positions:
-- GET /api/live-positions - List all open positions with enriched data
-- PATCH /api/live-positions/{position_id}/stop-loss - Adjust stop loss
-- POST /api/live-positions/{position_id}/partial-exit - Partial exit
+- GET /api/v1/live-positions - List all open positions with enriched data
+- PATCH /api/v1/live-positions/{position_id}/stop-loss - Adjust stop loss
+- POST /api/v1/live-positions/{position_id}/partial-exit - Partial exit
 """
 
 from decimal import Decimal, InvalidOperation
@@ -12,17 +12,18 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies import get_current_user_id
 from src.database import get_db
 from src.models.order import Order, OrderSide, OrderType
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/api/live-positions", tags=["live-positions"])
+router = APIRouter(prefix="/api/v1/live-positions", tags=["live-positions"])
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +144,7 @@ def _enrich_position(pos_model: object) -> EnrichedPosition:
 @router.get("", response_model=list[EnrichedPosition])
 async def get_live_positions(
     db_session: AsyncSession = Depends(get_db),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> list[EnrichedPosition]:
     """
     List all open positions across campaigns with enriched risk data.
@@ -183,6 +185,7 @@ async def update_stop_loss(
     position_id: UUID,
     body: StopLossUpdate,
     db_session: AsyncSession = Depends(get_db),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> EnrichedPosition:
     """
     Adjust stop loss for an open position.
@@ -209,8 +212,9 @@ async def update_stop_loss(
     try:
         from src.repositories.models import PositionModel
 
+        # Row-level lock to prevent concurrent stop-loss updates (Fix 4)
         result = await db_session.execute(
-            select(PositionModel).where(PositionModel.id == position_id)
+            select(PositionModel).where(PositionModel.id == position_id).with_for_update()
         )
         pos = result.scalar_one_or_none()
 
@@ -276,7 +280,9 @@ async def update_stop_loss(
 async def partial_exit(
     position_id: UUID,
     body: PartialExitRequest,
+    request: Request,
     db_session: AsyncSession = Depends(get_db),
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> PartialExitResponse:
     """
     Execute a partial exit on an open position.
@@ -346,12 +352,48 @@ async def partial_exit(
             order_id=str(order.id),
         )
 
+        # Route order through broker if available
+        broker_router = getattr(request.app.state, "broker_router", None)
+        if broker_router is not None:
+            from src.risk_management.execution_risk_gate import PortfolioState
+
+            # Partial exits are risk-reducing; use minimal placeholder risk values
+            portfolio_state = PortfolioState(account_equity=Decimal("100000"))
+            trade_risk_pct = Decimal("0.01")
+
+            execution_report = await broker_router.route_order(
+                order, portfolio_state, trade_risk_pct
+            )
+
+            logger.info(
+                "partial_exit_order_routed",
+                position_id=str(position_id),
+                order_id=str(order.id),
+                broker_status=str(execution_report.status),
+            )
+
+            return PartialExitResponse(
+                order_id=str(order.id),
+                shares_to_exit=str(shares_to_exit),
+                order_type=order_type.value,
+                status=str(execution_report.status.value),
+                message=f"Partial exit order routed for {shares_to_exit} shares ({exit_pct}%) of {pos.symbol}",
+            )
+
+        # No broker configured - order created but not routed
+        logger.warning(
+            "partial_exit_order_not_routed",
+            position_id=str(position_id),
+            order_id=str(order.id),
+            reason="broker_router_not_configured",
+        )
+
         return PartialExitResponse(
             order_id=str(order.id),
             shares_to_exit=str(shares_to_exit),
             order_type=order_type.value,
-            status="SUBMITTED",
-            message=f"Partial exit order created for {shares_to_exit} shares ({exit_pct}%) of {pos.symbol}",
+            status="PENDING",
+            message=f"Partial exit order created for {shares_to_exit} shares ({exit_pct}%) of {pos.symbol} - awaiting broker configuration",
         )
 
     except HTTPException:
