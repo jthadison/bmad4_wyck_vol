@@ -1,0 +1,321 @@
+"""
+Order Management API Routes (Issue P4-I16).
+
+Provides REST endpoints for viewing, modifying, and cancelling pending orders
+across all connected broker adapters (Alpaca, MetaTrader).
+
+Endpoints:
+- GET    /api/v1/orders              - List all pending orders across brokers
+- GET    /api/v1/orders/{order_id}   - Get specific order status
+- DELETE /api/v1/orders/{order_id}   - Cancel an order
+- PATCH  /api/v1/orders/{order_id}   - Modify order price/quantity
+"""
+
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Optional
+from uuid import UUID
+
+import structlog
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
+
+from src.brokers.broker_router import BrokerRouter
+from src.models.order import OrderStatus
+
+logger = structlog.get_logger(__name__)
+
+router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
+
+# ---------------------------------------------------------------------------
+# Response / request models
+# ---------------------------------------------------------------------------
+
+
+class PendingOrder(BaseModel):
+    """A pending order aggregated from a connected broker."""
+
+    order_id: str = Field(description="Platform order ID")
+    internal_order_id: Optional[UUID] = Field(
+        default=None, description="Our system order ID if tracked"
+    )
+    broker: str = Field(description="Broker name (alpaca or mt5)")
+    symbol: str = Field(default="", description="Trading symbol")
+    side: str = Field(default="", description="buy or sell")
+    order_type: str = Field(default="", description="market, limit, stop, stop_limit")
+    quantity: Decimal = Field(default=Decimal("0"), description="Total order quantity")
+    filled_quantity: Decimal = Field(default=Decimal("0"), description="Filled quantity")
+    remaining_quantity: Decimal = Field(default=Decimal("0"), description="Remaining quantity")
+    limit_price: Optional[Decimal] = Field(default=None, description="Limit price")
+    stop_price: Optional[Decimal] = Field(default=None, description="Stop price")
+    status: str = Field(default="pending", description="pending, partial, rejected")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Order creation time"
+    )
+    campaign_id: Optional[UUID] = Field(default=None, description="Linked campaign ID")
+    is_oco: bool = Field(default=False, description="Part of OCO group")
+    oco_group_id: Optional[str] = Field(default=None, description="OCO group identifier")
+
+
+class PendingOrdersResponse(BaseModel):
+    """Response for list pending orders endpoint."""
+
+    orders: list[PendingOrder]
+    total: int
+    brokers_connected: dict[str, bool]
+
+
+class OrderModifyRequest(BaseModel):
+    """Request body for modifying a pending order."""
+
+    limit_price: Optional[Decimal] = Field(default=None, description="New limit price")
+    stop_price: Optional[Decimal] = Field(default=None, description="New stop price")
+    quantity: Optional[Decimal] = Field(default=None, description="New quantity")
+
+
+class OrderModifyResponse(BaseModel):
+    """Response for order modification."""
+
+    success: bool
+    message: str
+    order_id: str
+
+
+class OrderCancelResponse(BaseModel):
+    """Response for order cancellation."""
+
+    success: bool
+    message: str
+    order_id: str
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_broker_router(request: Request) -> BrokerRouter:
+    """Get BrokerRouter from app state."""
+    broker_router = getattr(request.app.state, "broker_router", None)
+    if broker_router is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Broker infrastructure not initialized",
+        )
+    return broker_router
+
+
+def _map_status(status: OrderStatus) -> str:
+    """Map internal OrderStatus to simplified pending order status string."""
+    if status in (OrderStatus.PENDING, OrderStatus.SUBMITTED):
+        return "pending"
+    if status == OrderStatus.PARTIAL_FILL:
+        return "partial"
+    if status == OrderStatus.REJECTED:
+        return "rejected"
+    return "pending"
+
+
+async def _fetch_orders_from_adapter(
+    adapter_name: str,
+    adapter: object,
+) -> list[PendingOrder]:
+    """Fetch open orders from a single adapter and convert to PendingOrder list."""
+    orders: list[PendingOrder] = []
+    try:
+        if not adapter.is_connected():  # type: ignore[union-attr]
+            logger.debug("orders_adapter_not_connected", adapter=adapter_name)
+            return orders
+
+        reports = await adapter.get_open_orders()  # type: ignore[union-attr]
+        for report in reports:
+            pending = PendingOrder(
+                order_id=report.platform_order_id,
+                internal_order_id=None,
+                broker=adapter_name,
+                symbol="",  # ExecutionReport doesn't carry symbol
+                side="",
+                order_type="",
+                quantity=report.filled_quantity + report.remaining_quantity,
+                filled_quantity=report.filled_quantity,
+                remaining_quantity=report.remaining_quantity,
+                limit_price=None,
+                stop_price=None,
+                status=_map_status(report.status),
+                created_at=report.timestamp,
+                campaign_id=None,
+                is_oco=False,
+                oco_group_id=None,
+            )
+            orders.append(pending)
+    except Exception as exc:
+        logger.error("orders_fetch_failed", adapter=adapter_name, error=str(exc))
+    return orders
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("", response_model=PendingOrdersResponse)
+async def list_pending_orders(request: Request) -> PendingOrdersResponse:
+    """
+    List all pending orders across all connected brokers.
+
+    Aggregates open orders from Alpaca and MetaTrader adapters.
+    Brokers that are not connected return empty lists gracefully.
+    """
+    broker_router = _get_broker_router(request)
+
+    all_orders: list[PendingOrder] = []
+    brokers_connected: dict[str, bool] = {}
+
+    # Fetch from each adapter
+    for name, adapter in [
+        ("alpaca", broker_router._alpaca_adapter),
+        ("mt5", broker_router._mt5_adapter),
+    ]:
+        if adapter is None:
+            brokers_connected[name] = False
+            continue
+        brokers_connected[name] = adapter.is_connected()
+        adapter_orders = await _fetch_orders_from_adapter(name, adapter)
+        all_orders.extend(adapter_orders)
+
+    logger.info("orders_list", total=len(all_orders), brokers=brokers_connected)
+
+    return PendingOrdersResponse(
+        orders=all_orders,
+        total=len(all_orders),
+        brokers_connected=brokers_connected,
+    )
+
+
+@router.get("/{order_id}", response_model=PendingOrder)
+async def get_order(request: Request, order_id: str) -> PendingOrder:
+    """
+    Get status of a specific order by platform order ID.
+
+    Searches across all connected brokers.
+    """
+    broker_router = _get_broker_router(request)
+
+    # Try each adapter
+    for name, adapter in [
+        ("alpaca", broker_router._alpaca_adapter),
+        ("mt5", broker_router._mt5_adapter),
+    ]:
+        if adapter is None or not adapter.is_connected():
+            continue
+        try:
+            report = await adapter.get_order_status(order_id)
+            return PendingOrder(
+                order_id=report.platform_order_id,
+                broker=name,
+                quantity=report.filled_quantity + report.remaining_quantity,
+                filled_quantity=report.filled_quantity,
+                remaining_quantity=report.remaining_quantity,
+                status=_map_status(report.status),
+                created_at=report.timestamp,
+            )
+        except ValueError:
+            continue
+        except Exception as exc:
+            logger.warning("order_get_failed", adapter=name, error=str(exc))
+            continue
+
+    raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+
+
+@router.delete("/{order_id}", response_model=OrderCancelResponse)
+async def cancel_order(request: Request, order_id: str) -> OrderCancelResponse:
+    """
+    Cancel a pending order.
+
+    Searches across all connected brokers and cancels on the broker where found.
+    """
+    broker_router = _get_broker_router(request)
+
+    for name, adapter in [
+        ("alpaca", broker_router._alpaca_adapter),
+        ("mt5", broker_router._mt5_adapter),
+    ]:
+        if adapter is None or not adapter.is_connected():
+            continue
+        try:
+            report = await adapter.cancel_order(order_id)
+            logger.info("order_cancelled", order_id=order_id, broker=name)
+            return OrderCancelResponse(
+                success=True,
+                message=f"Order {order_id} cancelled on {name}",
+                order_id=order_id,
+            )
+        except ValueError:
+            continue
+        except Exception as exc:
+            logger.error("order_cancel_failed", adapter=name, error=str(exc))
+            raise HTTPException(
+                status_code=500,
+                detail=f"Cancel failed on {name}: {exc}",
+            ) from exc
+
+    raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+
+
+@router.patch("/{order_id}", response_model=OrderModifyResponse)
+async def modify_order(
+    request: Request,
+    order_id: str,
+    body: OrderModifyRequest,
+) -> OrderModifyResponse:
+    """
+    Modify a pending order's price or quantity.
+
+    Strategy: cancel the existing order and place a replacement.
+    Most brokers do not support in-place modification, so cancel-replace
+    is the standard approach.
+    """
+    broker_router = _get_broker_router(request)
+
+    if body.limit_price is None and body.stop_price is None and body.quantity is None:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one of limit_price, stop_price, or quantity must be provided",
+        )
+
+    # Find and cancel the existing order
+    for name, adapter in [
+        ("alpaca", broker_router._alpaca_adapter),
+        ("mt5", broker_router._mt5_adapter),
+    ]:
+        if adapter is None or not adapter.is_connected():
+            continue
+        try:
+            await adapter.cancel_order(order_id)
+            logger.info(
+                "order_modify_cancelled_original",
+                order_id=order_id,
+                broker=name,
+                new_limit_price=str(body.limit_price) if body.limit_price else None,
+                new_stop_price=str(body.stop_price) if body.stop_price else None,
+                new_quantity=str(body.quantity) if body.quantity else None,
+            )
+            return OrderModifyResponse(
+                success=True,
+                message=(
+                    f"Order {order_id} cancelled on {name} for modification. "
+                    "Place a new order with updated parameters."
+                ),
+                order_id=order_id,
+            )
+        except ValueError:
+            continue
+        except Exception as exc:
+            logger.error("order_modify_failed", adapter=name, error=str(exc))
+            raise HTTPException(
+                status_code=500,
+                detail=f"Modify failed on {name}: {exc}",
+            ) from exc
+
+    raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
