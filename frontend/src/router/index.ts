@@ -235,6 +235,17 @@ const routes: RouteRecordRaw[] = [
       ],
     },
   },
+  // Order Management (Feature P4-I16)
+  {
+    path: '/orders',
+    name: 'orders',
+    component: () => import('@/views/OrderManagementView.vue'),
+    meta: {
+      title: 'Order Management',
+      description: 'View and manage pending orders across all brokers',
+      breadcrumb: [{ label: 'Orders' }],
+    },
+  },
   // Trade Journal (Feature P2-8)
   {
     path: '/journal',
