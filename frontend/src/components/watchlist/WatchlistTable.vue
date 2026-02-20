@@ -14,6 +14,7 @@ import InputSwitch from 'primevue/inputswitch'
 import Button from 'primevue/button'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
+import { useRouter } from 'vue-router'
 import { useWatchlistStore } from '@/stores/watchlistStore'
 import type { WatchlistEntry, WatchlistPriority } from '@/types'
 
@@ -27,6 +28,7 @@ const emit = defineEmits<{
   (e: 'symbol-updated', symbol: string): void
 }>()
 
+const router = useRouter()
 const store = useWatchlistStore()
 const confirm = useConfirm()
 
@@ -78,6 +80,13 @@ async function onEnabledChange(entry: WatchlistEntry, enabled: boolean) {
   if (success) {
     emit('symbol-updated', entry.symbol)
   }
+}
+
+function openChart(entry: WatchlistEntry) {
+  router.push({
+    path: '/chart',
+    query: { symbol: entry.symbol, timeframe: '1D' },
+  })
 }
 
 function confirmRemove(entry: WatchlistEntry) {
@@ -193,16 +202,25 @@ function confirmRemove(entry: WatchlistEntry) {
         </template>
       </Column>
 
-      <Column header="" style="width: 10%">
+      <Column header="" style="width: 15%">
         <template #body="{ data }">
-          <Button
-            icon="pi pi-trash"
-            class="p-button-text p-button-danger remove-button"
-            :disabled="store.isSaving"
-            :aria-label="`Remove ${data.symbol} from watchlist`"
-            :data-testid="`remove-${data.symbol}`"
-            @click="confirmRemove(data)"
-          />
+          <div class="flex gap-1">
+            <Button
+              icon="pi pi-chart-line"
+              class="p-button-text p-button-info"
+              :aria-label="`Open chart for ${data.symbol}`"
+              :data-testid="`chart-${data.symbol}`"
+              @click="openChart(data)"
+            />
+            <Button
+              icon="pi pi-trash"
+              class="p-button-text p-button-danger remove-button"
+              :disabled="store.isSaving"
+              :aria-label="`Remove ${data.symbol} from watchlist`"
+              :data-testid="`remove-${data.symbol}`"
+              @click="confirmRemove(data)"
+            />
+          </div>
         </template>
       </Column>
     </DataTable>
