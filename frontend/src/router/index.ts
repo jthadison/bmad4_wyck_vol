@@ -202,6 +202,16 @@ const routes: RouteRecordRaw[] = [
       ],
     },
   },
+  // Broker Dashboard (Issue P4-I17)
+  {
+    path: '/brokers',
+    name: 'brokers',
+    component: () => import('@/views/BrokerDashboardView.vue'),
+    meta: {
+      title: 'Broker Dashboard',
+      breadcrumb: [{ label: 'Brokers' }],
+    },
+  },
   // Production Monitoring Dashboard (Story 23.13)
   {
     path: '/monitoring',

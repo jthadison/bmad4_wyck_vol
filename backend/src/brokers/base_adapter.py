@@ -8,7 +8,8 @@ Author: Story 16.4a
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from datetime import UTC, datetime
+from typing import Any, Optional
 
 import structlog
 
@@ -38,6 +39,7 @@ class TradingPlatformAdapter(ABC):
         """
         self.platform_name = platform_name
         self._connected = False
+        self._connected_at: datetime | None = None
         logger.info("trading_platform_adapter_initialized", platform=platform_name)
 
     @abstractmethod
@@ -173,6 +175,23 @@ class TradingPlatformAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    async def get_account_info(self) -> dict[str, Any]:
+        """
+        Get account information from the trading platform.
+
+        Returns:
+            Dict with account details. Expected keys:
+            - account_id: str | None
+            - balance: Decimal | None
+            - buying_power: Decimal | None
+            - cash: Decimal | None
+            - margin_used: Decimal | None
+            - margin_available: Decimal | None
+            - margin_level_pct: Decimal | None
+        """
+        pass
+
     def is_connected(self) -> bool:
         """
         Check if adapter is connected to the platform.
@@ -182,6 +201,11 @@ class TradingPlatformAdapter(ABC):
         """
         return self._connected
 
+    @property
+    def connected_at(self) -> datetime | None:
+        """Return the timestamp when the adapter last connected, or None."""
+        return self._connected_at
+
     def _set_connected(self, connected: bool) -> None:
         """
         Set connection status (for subclass use).
@@ -190,6 +214,10 @@ class TradingPlatformAdapter(ABC):
             connected: Connection status
         """
         self._connected = connected
+        if connected:
+            self._connected_at = datetime.now(UTC)
+        else:
+            self._connected_at = None
         logger.info(
             "trading_platform_connection_status_changed",
             platform=self.platform_name,

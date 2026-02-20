@@ -216,6 +216,61 @@ class AlpacaAdapter(TradingPlatformAdapter):
                 f"Failed to reconnect to Alpaca after {self.max_reconnect_attempts} attempts"
             )
 
+    async def get_account_info(self) -> dict[str, Any]:
+        """
+        Get Alpaca account information (balance, buying power, cash).
+
+        Returns:
+            Dict with account details.
+        """
+        if not self.is_connected() or self._client is None:
+            return {
+                "account_id": None,
+                "balance": None,
+                "buying_power": None,
+                "cash": None,
+                "margin_used": None,
+                "margin_available": None,
+                "margin_level_pct": None,
+            }
+
+        try:
+            response = await self._client.get("/v2/account")
+            response.raise_for_status()
+            data = response.json()
+
+            equity = Decimal(data.get("equity", "0"))
+            buying_power = Decimal(data.get("buying_power", "0"))
+            cash = Decimal(data.get("cash", "0"))
+
+            # Alpaca margin fields
+            initial_margin = Decimal(data.get("initial_margin", "0"))
+            maintenance_margin = Decimal(data.get("maintenance_margin", "0"))
+            margin_used = initial_margin if initial_margin else maintenance_margin
+            margin_available = equity - margin_used if margin_used else None
+            margin_level_pct = (equity / margin_used * Decimal("100")) if margin_used else None
+
+            return {
+                "account_id": data.get("account_number", data.get("id")),
+                "balance": equity,
+                "buying_power": buying_power,
+                "cash": cash,
+                "margin_used": margin_used or None,
+                "margin_available": margin_available,
+                "margin_level_pct": margin_level_pct,
+            }
+        except Exception as e:
+            logger.error("alpaca_get_account_info_failed", error=str(e))
+            return {
+                "account_id": None,
+                "balance": None,
+                "buying_power": None,
+                "cash": None,
+                "margin_used": None,
+                "margin_available": None,
+                "margin_level_pct": None,
+            }
+
     async def place_order(self, order: Order) -> ExecutionReport:
         """
         Place an order on Alpaca.

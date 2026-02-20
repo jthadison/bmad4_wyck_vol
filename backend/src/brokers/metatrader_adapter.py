@@ -217,6 +217,64 @@ class MetaTraderAdapter(TradingPlatformAdapter):
                 f"Failed to reconnect to MetaTrader after {self.max_reconnect_attempts} attempts"
             )
 
+    async def get_account_info(self) -> dict[str, Any]:
+        """
+        Get MetaTrader account information (balance, equity, margin).
+
+        Returns:
+            Dict with account details.
+        """
+        if not self.is_connected() or self._mt5 is None:
+            return {
+                "account_id": str(self.account) if self.account else None,
+                "balance": None,
+                "buying_power": None,
+                "cash": None,
+                "margin_used": None,
+                "margin_available": None,
+                "margin_level_pct": None,
+            }
+
+        try:
+            info = await asyncio.to_thread(self._mt5.account_info)
+            if info is None:
+                return {
+                    "account_id": str(self.account) if self.account else None,
+                    "balance": None,
+                    "buying_power": None,
+                    "cash": None,
+                    "margin_used": None,
+                    "margin_available": None,
+                    "margin_level_pct": None,
+                }
+
+            balance = Decimal(str(info.balance))
+            equity = Decimal(str(info.equity))
+            margin_used = Decimal(str(info.margin))
+            margin_free = Decimal(str(info.margin_free))
+            margin_level = Decimal(str(info.margin_level)) if info.margin_level else None
+
+            return {
+                "account_id": str(info.login),
+                "balance": equity,
+                "buying_power": margin_free,
+                "cash": balance,
+                "margin_used": margin_used if margin_used else None,
+                "margin_available": margin_free if margin_free else None,
+                "margin_level_pct": margin_level,
+            }
+        except Exception as e:
+            logger.error("metatrader_get_account_info_failed", error=str(e))
+            return {
+                "account_id": str(self.account) if self.account else None,
+                "balance": None,
+                "buying_power": None,
+                "cash": None,
+                "margin_used": None,
+                "margin_available": None,
+                "margin_level_pct": None,
+            }
+
     async def _query_deal_commission(self, deal_ticket: int) -> Optional[Decimal]:
         """
         Query MT5 deal history for commission, swap, and fee data.

@@ -14,7 +14,7 @@ Author: Story 16.4a
 
 import hashlib
 import hmac
-from typing import Optional
+from typing import Any, Optional
 
 import structlog
 
@@ -132,6 +132,23 @@ class TradingViewAdapter(TradingPlatformAdapter):
         raise NotImplementedError(
             "TradingView webhook adapter does not support open orders queries"
         )
+
+    async def get_account_info(self) -> dict[str, Any]:
+        """
+        TradingView doesn't provide account information.
+
+        Returns:
+            Dict with all None values.
+        """
+        return {
+            "account_id": None,
+            "balance": None,
+            "buying_power": None,
+            "cash": None,
+            "margin_used": None,
+            "margin_available": None,
+            "margin_level_pct": None,
+        }
 
     async def close_all_positions(self) -> list[ExecutionReport]:
         """
