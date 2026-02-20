@@ -73,6 +73,16 @@ const routes: RouteRecordRaw[] = [
       breadcrumb: [{ label: 'Chart' }],
     },
   },
+  // Multi-Timeframe Analysis Panel
+  {
+    path: '/analysis/multi-timeframe',
+    name: 'multi-timeframe',
+    component: () => import('@/views/MultiTimeframeView.vue'),
+    meta: {
+      title: 'Multi-Timeframe Analysis',
+      breadcrumb: [{ label: 'Analysis' }, { label: 'Multi-Timeframe' }],
+    },
+  },
   // Scanner Control UI (Story 20.6)
   {
     path: '/scanner',

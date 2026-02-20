@@ -173,7 +173,7 @@ class ChartRepository:
             List of ChartBar objects
         """
         # Map API timeframe to database timeframe
-        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M"}
+        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M", "1H": "1H", "4H": "4H"}
         db_timeframe = timeframe_map.get(timeframe, "1d")
 
         query = (
@@ -226,7 +226,7 @@ class ChartRepository:
             List of PatternMarker objects
         """
         # Map API timeframe to database timeframe
-        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M"}
+        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M", "1H": "1H", "4H": "4H"}
         db_timeframe = timeframe_map.get(timeframe, "1d")
 
         query = (
@@ -290,7 +290,7 @@ class ChartRepository:
             Tuple of (level_lines, trading_ranges)
         """
         # Map API timeframe to database timeframe
-        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M"}
+        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M", "1H": "1H", "4H": "4H"}
         db_timeframe = timeframe_map.get(timeframe, "1d")
 
         query = (
@@ -392,7 +392,7 @@ class ChartRepository:
             List of PhaseAnnotation objects
         """
         # Map API timeframe to database timeframe
-        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M"}
+        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M", "1H": "1H", "4H": "4H"}
         db_timeframe = timeframe_map.get(timeframe, "1d")
 
         # Query patterns grouped by phase
@@ -449,7 +449,7 @@ class ChartRepository:
             List of PreliminaryEvent objects
         """
         # Map API timeframe to database timeframe
-        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M"}
+        timeframe_map = {"1D": "1d", "1W": "1w", "1M": "1M", "1H": "1H", "4H": "4H"}
         db_timeframe = timeframe_map.get(timeframe, "1d")
 
         # Query for preliminary event patterns
