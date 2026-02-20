@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user_id, get_db_session
-from src.models.order import Order, OrderSide, OrderType
+from src.models.order import Order, OrderSide, OrderStatus, OrderType
 
 logger = structlog.get_logger(__name__)
 
@@ -39,6 +39,9 @@ _DEFAULT_ACCOUNT_EQUITY = Decimal("100000")
 
 # Short patterns - matches TradeSignal.direction convention
 _SHORT_PATTERNS = frozenset({"UTAD"})
+
+# Broker order statuses that indicate the order was NOT accepted
+_BROKER_FAILURE_STATUSES = frozenset({OrderStatus.REJECTED, OrderStatus.CANCELLED, OrderStatus.EXPIRED})
 
 
 # ---------------------------------------------------------------------------
@@ -450,9 +453,10 @@ async def partial_exit(
                         if balance is not None:
                             account_equity = Decimal(str(balance))
                             break
-            except Exception:
+            except Exception as equity_err:
                 logger.warning(
                     "partial_exit_equity_fetch_failed",
+                    error=repr(equity_err),
                     position_id=str(position_id),
                     fallback_equity=str(_DEFAULT_ACCOUNT_EQUITY),
                 )
@@ -472,7 +476,14 @@ async def partial_exit(
                 broker_status=str(execution_report.status),
             )
 
-            # Persist updated share count after successful broker routing
+            # Do NOT persist share decrement if broker rejected/failed the order
+            if execution_report.status in _BROKER_FAILURE_STATUSES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Broker rejected partial exit order: {execution_report.status.value}",
+                )
+
+            # Persist updated share count only after broker accepted the order
             remaining = shares - shares_to_exit
             pos.shares = remaining
             if remaining <= 0:

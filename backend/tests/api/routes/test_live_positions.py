@@ -668,3 +668,45 @@ class TestPartialExit:
             assert response.status_code == 404
         finally:
             app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_broker_rejection_does_not_persist_shares(self) -> None:
+        """If broker rejects the order, shares must NOT be decremented."""
+        from types import SimpleNamespace as _NS
+
+        from src.models.order import OrderStatus
+
+        pos_id = uuid4()
+        pos = _mock_position_row(id=pos_id, shares=Decimal("100"))
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = pos
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
+
+        # Set up a mock broker_router that returns REJECTED
+        mock_execution_report = _NS(status=OrderStatus.REJECTED)
+        mock_broker_router = AsyncMock()
+        mock_broker_router.route_order = AsyncMock(return_value=mock_execution_report)
+
+        _setup_overrides(mock_session)
+        # Attach broker_router to app state
+        app.state.broker_router = mock_broker_router
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    f"/api/v1/live-positions/{pos_id}/partial-exit",
+                    json={"exit_pct": 50},
+                )
+            assert response.status_code == 400
+            assert "rejected" in response.json()["detail"].lower()
+            # Shares must NOT have been decremented
+            assert pos.shares == Decimal("100")
+            assert pos.status == "OPEN"
+            # commit must NOT have been called
+            mock_session.commit.assert_not_awaited()
+        finally:
+            del app.state.broker_router
+            app.dependency_overrides.clear()
