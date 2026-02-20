@@ -318,6 +318,11 @@ const handleCompare = async (runIds: string[]) => {
   }
 }
 
+const resetComparison = () => {
+  comparisonData.value = null
+  comparisonError.value = null
+}
+
 // Proposed config for backtest preview
 const proposedConfig = computed(() => ({
   initial_capital: config.value.initial_capital,
