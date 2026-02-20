@@ -390,3 +390,13 @@ export type {
   TradingRangeHistory,
   TradingRangeListResponse,
 } from './trading-range'
+
+// ============================================================================
+// Volume Profile Types (P3-F13)
+// ============================================================================
+
+export type {
+  VolumeProfileBin,
+  PhaseVolumeData,
+  VolumeProfileResponse,
+} from './volume-profile'

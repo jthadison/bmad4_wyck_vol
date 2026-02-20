@@ -1,5 +1,5 @@
 """
-Pattern API Routes (Story 10.7, P3-F12)
+Pattern API Routes (Story 10.7, P3-F12, P3-F13)
 
 Purpose:
 --------
@@ -10,8 +10,9 @@ Endpoints:
 ----------
 GET /api/v1/patterns/statistics - Get historical pattern performance statistics
 GET /api/v1/patterns/{symbol}/trading-ranges - Get historical trading ranges (P3-F12)
+GET /api/v1/patterns/{symbol}/volume-profile - Volume profile by Wyckoff phase (P3-F13)
 
-Author: Story 10.7 (AC 5), P3-F12 (Historical Trading Range Browser)
+Author: Story 10.7 (AC 5), P3-F12 (Historical Trading Range Browser), P3-F13 (Volume Profile by Phase)
 """
 
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import status as http_status
 
+from src.models.ohlcv import OHLCVBar
 from src.models.pattern_statistics import PatternStatistics
 from src.models.trading_range_history import (
     TradingRangeEvent,
@@ -30,6 +32,8 @@ from src.models.trading_range_history import (
     TradingRangeOutcome,
     TradingRangeType,
 )
+from src.models.volume_profile import VolumeProfileResponse
+from src.pattern_engine.volume_profile import compute_volume_profile_by_phase
 
 logger = structlog.get_logger()
 
@@ -489,3 +493,133 @@ async def get_trading_ranges(
         has_active=response.active_range is not None,
     )
     return response
+
+
+# ============================================================================
+# Volume Profile by Wyckoff Phase (P3-F13)
+# ============================================================================
+
+
+def _generate_mock_bars(symbol: str, timeframe: str, count: int) -> list[OHLCVBar]:
+    """Generate synthetic OHLCV bars for demonstration when no DB is available."""
+    import math
+    import random
+
+    random.seed(42)
+    bars: list[OHLCVBar] = []
+    base_price = 100.0
+    base_volume = 1_000_000
+
+    for i in range(count):
+        # Create a price wave simulating accumulation pattern
+        cycle = math.sin(2 * math.pi * i / count) * 10
+        trend = i * 0.02  # Slight uptrend
+        noise = random.uniform(-2, 2)
+        mid = base_price + cycle + trend + noise
+
+        spread = random.uniform(0.5, 3.0)
+        o = mid + random.uniform(-spread / 2, spread / 2)
+        h = mid + spread / 2 + random.uniform(0, 1)
+        low_p = mid - spread / 2 - random.uniform(0, 1)
+        c = mid + random.uniform(-spread / 2, spread / 2)
+
+        # Volume varies by phase position
+        vol_multiplier = 1.0
+        pct = i / count
+        if pct < 0.15:
+            vol_multiplier = 2.5  # Phase A: high volume (SC)
+        elif pct < 0.50:
+            vol_multiplier = 1.2  # Phase B: moderate
+        elif pct < 0.65:
+            vol_multiplier = 0.6  # Phase C: low volume (Spring)
+        elif pct < 0.85:
+            vol_multiplier = 1.8  # Phase D: rising volume (SOS)
+        else:
+            vol_multiplier = 1.0  # Phase E: normal
+
+        vol = int(base_volume * vol_multiplier * random.uniform(0.7, 1.3))
+
+        ts = datetime(2025, 1, 1, tzinfo=UTC) + __import__("datetime").timedelta(days=i)
+
+        bars.append(
+            OHLCVBar(
+                symbol=symbol,
+                timeframe=timeframe,
+                timestamp=ts,
+                open=Decimal(str(round(o, 2))),
+                high=Decimal(str(round(h, 2))),
+                low=Decimal(str(round(low_p, 2))),
+                close=Decimal(str(round(c, 2))),
+                volume=vol,
+                spread=Decimal(str(round(h - low_p, 2))),
+            )
+        )
+
+    return bars
+
+
+def _assign_mock_phases(count: int) -> list[str]:
+    """Assign Wyckoff phases proportionally across bars."""
+    phases: list[str] = []
+    for i in range(count):
+        pct = i / count
+        if pct < 0.15:
+            phases.append("A")
+        elif pct < 0.50:
+            phases.append("B")
+        elif pct < 0.65:
+            phases.append("C")
+        elif pct < 0.85:
+            phases.append("D")
+        else:
+            phases.append("E")
+    return phases
+
+
+@router.get(
+    "/{symbol}/volume-profile",
+    response_model=VolumeProfileResponse,
+    summary="Get volume profile segmented by Wyckoff phase",
+    description="""
+    Compute VPVR (Volume Profile Visible Range) segmented by Wyckoff phase.
+
+    Shows how volume distributes across price levels for each phase,
+    making it visually obvious where institutions accumulated/distributed.
+
+    Query Parameters:
+    - timeframe: Bar timeframe (default "1d")
+    - bars: Number of bars to analyze (50-1000, default 200)
+    - num_bins: Number of price bins (20-100, default 50)
+
+    Returns volume profile with POC, value area, and per-phase breakdown.
+    """,
+)
+async def get_volume_profile(
+    symbol: str,
+    timeframe: str = Query("1d", description="Bar timeframe"),
+    bars: int = Query(200, ge=50, le=1000, description="Number of bars to analyze"),
+    num_bins: int = Query(50, ge=20, le=100, description="Number of price bins"),
+) -> VolumeProfileResponse:
+    """Get volume profile segmented by Wyckoff phase (P3-F13)."""
+    logger.info(
+        "volume_profile_requested",
+        symbol=symbol,
+        timeframe=timeframe,
+        bars=bars,
+        num_bins=num_bins,
+    )
+
+    # Generate mock data (production: fetch from DB + run PhaseClassifier)
+    mock_bars = _generate_mock_bars(symbol, timeframe, bars)
+    phase_labels = _assign_mock_phases(bars)
+
+    result = compute_volume_profile_by_phase(mock_bars, phase_labels, num_bins)
+
+    logger.info(
+        "volume_profile_computed",
+        symbol=symbol,
+        phases_present=len(result.phases),
+        combined_volume=result.combined.total_volume,
+    )
+
+    return result
