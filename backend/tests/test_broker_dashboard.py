@@ -5,6 +5,7 @@ Tests the broker status, connection test, connect/disconnect,
 and kill switch status endpoints.
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
@@ -28,6 +29,7 @@ def _make_mock_adapter(connected: bool = True, platform_name: str = "MockBroker"
     # is_connected is synchronous on the real adapter
     adapter.is_connected.return_value = connected
     adapter.platform_name = platform_name
+    adapter.connected_at = datetime.now(UTC) if connected else None
     # Async methods need to return coroutines
     adapter.get_account_info = AsyncMock(
         return_value={

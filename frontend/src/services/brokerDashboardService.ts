@@ -68,3 +68,11 @@ export async function disconnectBroker(
 ): Promise<BrokerAccountInfo> {
   return apiClient.post<BrokerAccountInfo>(`/brokers/${broker}/disconnect`)
 }
+
+export async function activateKillSwitch(reason: string): Promise<void> {
+  await apiClient.post('/kill-switch/activate', { reason })
+}
+
+export async function deactivateKillSwitch(): Promise<void> {
+  await apiClient.post('/kill-switch/deactivate')
+}

@@ -9,8 +9,8 @@ Author: Issue P4-I17
 
 from __future__ import annotations
 
+import asyncio
 import time
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 from uuid import UUID
@@ -97,12 +97,6 @@ class ConnectionTestResult(BaseModel):
     error_message: Optional[str] = None
 
 
-class ConnectRequest(BaseModel):
-    """Request to connect/reconnect a broker."""
-
-    pass  # Credentials come from server-side config, not the client
-
-
 # --- Helpers ---
 
 
@@ -124,7 +118,9 @@ async def _build_broker_info(
     account_info: dict = {}
     if adapter and connected:
         try:
-            account_info = await adapter.get_account_info()
+            account_info = await asyncio.wait_for(adapter.get_account_info(), timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.warning("broker_account_info_timeout", broker=broker_key)
         except Exception as e:
             logger.warning(
                 "broker_dashboard_account_info_failed",
@@ -135,7 +131,9 @@ async def _build_broker_info(
     return BrokerAccountInfo(
         broker=broker_key,
         connected=connected,
-        last_connected_at=datetime.now(UTC).isoformat() if connected else None,
+        last_connected_at=adapter.connected_at.isoformat()
+        if adapter and hasattr(adapter, "connected_at") and adapter.connected_at
+        else None,
         platform_name=platform_name,
         account_id=account_info.get("account_id"),
         account_balance=_decimal_to_str(account_info.get("balance")),
@@ -164,15 +162,12 @@ async def get_all_brokers_status(
     """Return connection status and account info for all configured brokers."""
     br = _get_broker_router()
 
-    brokers: list[BrokerAccountInfo] = []
-
-    # MT5
-    mt5_adapter = br._mt5_adapter
-    brokers.append(await _build_broker_info("mt5", mt5_adapter, "MetaTrader 5"))
-
-    # Alpaca
-    alpaca_adapter = br._alpaca_adapter
-    brokers.append(await _build_broker_info("alpaca", alpaca_adapter, "Alpaca"))
+    results = await asyncio.gather(
+        _build_broker_info("mt5", br._mt5_adapter, "MetaTrader 5"),
+        _build_broker_info("alpaca", br._alpaca_adapter, "Alpaca"),
+        return_exceptions=True,
+    )
+    brokers: list[BrokerAccountInfo] = [r for r in results if isinstance(r, BrokerAccountInfo)]
 
     # Kill switch status
     ks = br.get_kill_switch_status()

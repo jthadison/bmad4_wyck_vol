@@ -17,6 +17,8 @@ import {
   testBrokerConnection,
   connectBroker,
   disconnectBroker,
+  activateKillSwitch as activateKillSwitchApi,
+  deactivateKillSwitch as deactivateKillSwitchApi,
 } from '@/services/brokerDashboardService'
 
 export const useBrokerDashboardStore = defineStore('brokerDashboard', () => {
@@ -111,6 +113,28 @@ export const useBrokerDashboardStore = defineStore('brokerDashboard', () => {
     }
   }
 
+  async function activateKillSwitch(reason: string): Promise<void> {
+    error.value = null
+    try {
+      await activateKillSwitchApi(reason)
+      await fetchStatus()
+    } catch (e: unknown) {
+      error.value =
+        e instanceof Error ? e.message : 'Failed to activate kill switch'
+    }
+  }
+
+  async function deactivateKillSwitch(): Promise<void> {
+    error.value = null
+    try {
+      await deactivateKillSwitchApi()
+      await fetchStatus()
+    } catch (e: unknown) {
+      error.value =
+        e instanceof Error ? e.message : 'Failed to deactivate kill switch'
+    }
+  }
+
   return {
     // State
     brokers,
@@ -130,5 +154,7 @@ export const useBrokerDashboardStore = defineStore('brokerDashboard', () => {
     testConnection,
     connect,
     disconnect,
+    activateKillSwitch,
+    deactivateKillSwitch,
   }
 })

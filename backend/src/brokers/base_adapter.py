@@ -8,6 +8,7 @@ Author: Story 16.4a
 """
 
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 import structlog
@@ -38,6 +39,7 @@ class TradingPlatformAdapter(ABC):
         """
         self.platform_name = platform_name
         self._connected = False
+        self._connected_at: datetime | None = None
         logger.info("trading_platform_adapter_initialized", platform=platform_name)
 
     @abstractmethod
@@ -199,6 +201,11 @@ class TradingPlatformAdapter(ABC):
         """
         return self._connected
 
+    @property
+    def connected_at(self) -> datetime | None:
+        """Return the timestamp when the adapter last connected, or None."""
+        return self._connected_at
+
     def _set_connected(self, connected: bool) -> None:
         """
         Set connection status (for subclass use).
@@ -207,6 +214,10 @@ class TradingPlatformAdapter(ABC):
             connected: Connection status
         """
         self._connected = connected
+        if connected:
+            self._connected_at = datetime.now(UTC)
+        else:
+            self._connected_at = None
         logger.info(
             "trading_platform_connection_status_changed",
             platform=self.platform_name,

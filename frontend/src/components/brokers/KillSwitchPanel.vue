@@ -152,7 +152,6 @@
  */
 import { ref } from 'vue'
 import Dialog from 'primevue/dialog'
-import { apiClient } from '@/services/api'
 import { useBrokerDashboardStore } from '@/stores/brokerDashboardStore'
 
 defineProps<{
@@ -176,26 +175,14 @@ function formatTimestamp(iso: string): string {
 
 async function handleActivate(): Promise<void> {
   showActivateConfirm.value = false
-  try {
-    await apiClient.post('/kill-switch/activate', {
-      reason: activateReason.value || 'Manual activation from broker dashboard',
-    })
-    activateReason.value = ''
-    await store.fetchStatus()
-  } catch (e: unknown) {
-    store.error =
-      e instanceof Error ? e.message : 'Failed to activate kill switch'
-  }
+  const reason =
+    activateReason.value || 'Manual activation from broker dashboard'
+  activateReason.value = ''
+  await store.activateKillSwitch(reason)
 }
 
 async function handleDeactivate(): Promise<void> {
   showDeactivateConfirm.value = false
-  try {
-    await apiClient.post('/kill-switch/deactivate')
-    await store.fetchStatus()
-  } catch (e: unknown) {
-    store.error =
-      e instanceof Error ? e.message : 'Failed to deactivate kill switch'
-  }
+  await store.deactivateKillSwitch()
 }
 </script>
