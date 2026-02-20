@@ -26,6 +26,12 @@ vi.mock('date-fns', () => ({
   parseISO: vi.fn((str: string) => new Date(str)),
 }))
 
+// Mock vue-router so router.push() works without a full router install
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => ({ params: {}, query: {} }),
+}))
+
 // Helper to create mock signals
 const createMockSignal = (overrides?: Partial<Signal>): Signal => ({
   id: 'signal-123',

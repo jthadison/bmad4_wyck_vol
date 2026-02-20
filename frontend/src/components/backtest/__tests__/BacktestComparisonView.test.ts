@@ -11,7 +11,7 @@
  * - Trade count included in metrics table
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import BacktestComparisonView from '@/components/backtest/BacktestComparisonView.vue'
 import type {
@@ -122,6 +122,12 @@ describe('BacktestComparisonView', () => {
     })
   })
 
+  afterEach(() => {
+    wrapper.unmount()
+    // Restore any spies (e.g. document.createElement mock from exportCSV test)
+    vi.restoreAllMocks()
+  })
+
   it('renders the comparison heading', () => {
     expect(wrapper.find('h2').text()).toContain('Backtest Comparison')
   })
@@ -183,6 +189,7 @@ describe('BacktestComparisonView', () => {
       global: { stubs: { Line: { template: '<canvas></canvas>' } } },
     })
     expect(localWrapper.text()).not.toContain('Parameter Differences')
+    localWrapper.unmount()
   })
 
   it('green highlight applied to best sharpe ratio run', () => {

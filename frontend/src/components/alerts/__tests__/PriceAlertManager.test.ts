@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import PriceAlertManager from '../PriceAlertManager.vue'
 import { usePriceAlertsStore } from '@/stores/priceAlerts'
 import type { PriceAlert } from '@/services/priceAlertService'
@@ -19,7 +19,8 @@ import type { PriceAlert } from '@/services/priceAlertService'
 // ---------------------------------------------------------------------------
 // Minimal PrimeVue stubs so we don't need a full PrimeVue install
 // ---------------------------------------------------------------------------
-const primevueStubs = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const primevueStubs: Record<string, any> = {
   Button: {
     template:
       '<button :data-loading="loading" :data-icon="icon" @click="$emit(\'click\')"><slot /></button>',
@@ -65,6 +66,18 @@ const primevueStubs = {
   },
 }
 
+// Type for accessing component internals in tests (unexposed Composition API)
+interface ComponentVM {
+  handleCreate: () => Promise<void>
+  form: {
+    symbol: string
+    alert_type: string
+    price_level: number | null
+    direction: string | null
+  }
+  alertTypeOptions: Array<{ value: string; label: string }>
+}
+
 // ---------------------------------------------------------------------------
 // Factory helpers
 // ---------------------------------------------------------------------------
@@ -90,12 +103,14 @@ function makePriceAlert(overrides: Partial<PriceAlert> = {}): PriceAlert {
 // Setup
 // ---------------------------------------------------------------------------
 
+let pinia: Pinia
 let store: ReturnType<typeof usePriceAlertsStore>
 
 function createWrapper(): VueWrapper {
   return mount(PriceAlertManager, {
     global: {
-      plugins: [createPinia()],
+      // Reuse the same pinia instance so store mocks apply to the component
+      plugins: [pinia],
       stubs: primevueStubs,
     },
   })
@@ -103,7 +118,8 @@ function createWrapper(): VueWrapper {
 
 describe('PriceAlertManager', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
+    pinia = createPinia()
+    setActivePinia(pinia)
     store = usePriceAlertsStore()
 
     // Mock store actions to avoid real API calls
@@ -174,7 +190,7 @@ describe('PriceAlertManager', () => {
     // Trigger handleCreate by finding the button with Create Alert label text
     await wrapper.vm.$nextTick()
     // Access internals directly since label is a prop on the stub
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as ComponentVM
     await vm.handleCreate()
     await wrapper.vm.$nextTick()
 
@@ -184,7 +200,7 @@ describe('PriceAlertManager', () => {
 
   it('shows error for price_level alert without price_level', async () => {
     const wrapper = createWrapper()
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as ComponentVM
     vm.form.symbol = 'AAPL'
     vm.form.alert_type = 'price_level'
     vm.form.price_level = null
@@ -198,7 +214,7 @@ describe('PriceAlertManager', () => {
 
   it('shows error for price_level alert without direction', async () => {
     const wrapper = createWrapper()
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as ComponentVM
     vm.form.symbol = 'AAPL'
     vm.form.alert_type = 'price_level'
     vm.form.price_level = 150.0
@@ -212,7 +228,7 @@ describe('PriceAlertManager', () => {
 
   it('allows phase_change alert without price_level', async () => {
     const wrapper = createWrapper()
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as ComponentVM
     vm.form.symbol = 'AAPL'
     vm.form.alert_type = 'phase_change'
     vm.form.price_level = null
@@ -232,7 +248,7 @@ describe('PriceAlertManager', () => {
 
   it('form includes all 5 Wyckoff alert type options', () => {
     const wrapper = createWrapper()
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as ComponentVM
     const types = vm.alertTypeOptions.map((o: { value: string }) => o.value)
     expect(types).toContain('price_level')
     expect(types).toContain('creek')
