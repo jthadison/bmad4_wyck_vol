@@ -1311,3 +1311,95 @@ class UserWatchlistORM(Base):
             name="chk_watchlist_min_confidence",
         ),
     )
+
+
+class PriceAlertORM(Base):
+    """
+    User price alerts for Wyckoff-specific market notifications.
+
+    Table: price_alerts
+    Primary Key: id (UUID)
+    Foreign Keys: user_id -> users.id
+    Indexes: idx_price_alerts_user_active, idx_price_alerts_symbol
+    """
+
+    __tablename__ = "price_alerts"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
+
+    # Alert classification
+    alert_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    # Price level (NULL for phase_change alerts)
+    price_level: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    # Direction for price_level alerts: 'above' | 'below'
+    direction: Mapped[str | None] = mapped_column(
+        String(10),
+        nullable=True,
+    )
+
+    # Wyckoff structural level type (optional context)
+    wyckoff_level_type: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+    )
+
+    # Status
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="true",
+    )
+
+    # Optional trader notes
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    triggered_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "alert_type IN ('price_level', 'creek', 'ice', 'spring', 'phase_change')",
+            name="chk_price_alert_type",
+        ),
+        CheckConstraint(
+            "direction IS NULL OR direction IN ('above', 'below')",
+            name="chk_price_alert_direction",
+        ),
+    )

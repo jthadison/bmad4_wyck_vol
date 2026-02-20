@@ -48,6 +48,7 @@ from src.api.routes import (
     paper_trading,
     patterns,
     portfolio,
+    price_alerts,
     risk,
     rs,
     scanner,
@@ -135,6 +136,7 @@ app.include_router(watchlist.router)  # Watchlist management routes (Story 19.12
 app.include_router(monitoring.router)  # Monitoring & audit routes (Story 23.13)
 app.include_router(kill_switch.router)  # Kill switch routes (Story 23.13)
 app.include_router(rs.router)  # Relative strength routes
+app.include_router(price_alerts.router)  # Price alert CRUD routes (Feature P2-5)
 
 
 # WebSocket endpoint for real-time updates
