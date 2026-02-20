@@ -87,19 +87,19 @@ export const useOrdersStore = defineStore('orders', () => {
     }
   }
 
-  /** Modify a pending order (cancel + replace). */
+  /** Modify a pending order (cancel + replace). Returns the message if successful. */
   async function modifyOrder(
     orderId: string,
     payload: OrderModifyRequest
-  ): Promise<boolean> {
+  ): Promise<string | false> {
     isSaving.value = true
     error.value = null
     try {
-      await ordersService.modify(orderId, payload)
-      // After modification, remove old order from local state.
-      // User should refresh to see the replacement order.
-      orders.value = orders.value.filter((o) => o.order_id !== orderId)
-      return true
+      const response = await ordersService.modify(orderId, payload)
+      // Refresh the full order list instead of just removing the old order,
+      // so the UI stays accurate after the cancel step.
+      await fetchOrders()
+      return response.message
     } catch (err) {
       error.value = 'Failed to modify order'
       logError('modifyOrder', err)

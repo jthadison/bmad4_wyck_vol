@@ -11,15 +11,17 @@ Endpoints:
 - PATCH  /api/v1/orders/{order_id}   - Modify order price/quantity
 """
 
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from src.api.dependencies import get_current_user_id
 from src.brokers.broker_router import BrokerRouter
 from src.models.order import OrderStatus
 
@@ -79,6 +81,10 @@ class OrderModifyResponse(BaseModel):
     success: bool
     message: str
     order_id: str
+    replacement_needed: bool = Field(
+        default=True,
+        description="Whether a replacement order must be placed manually",
+    )
 
 
 class OrderCancelResponse(BaseModel):
@@ -159,7 +165,10 @@ async def _fetch_orders_from_adapter(
 
 
 @router.get("", response_model=PendingOrdersResponse)
-async def list_pending_orders(request: Request) -> PendingOrdersResponse:
+async def list_pending_orders(
+    request: Request,
+    _user_id: UUID = Depends(get_current_user_id),
+) -> PendingOrdersResponse:
     """
     List all pending orders across all connected brokers.
 
@@ -171,7 +180,8 @@ async def list_pending_orders(request: Request) -> PendingOrdersResponse:
     all_orders: list[PendingOrder] = []
     brokers_connected: dict[str, bool] = {}
 
-    # Fetch from each adapter
+    # Build list of connected adapters to fetch concurrently
+    fetch_tasks: list[tuple[str, object]] = []
     for name, adapter in [
         ("alpaca", broker_router._alpaca_adapter),
         ("mt5", broker_router._mt5_adapter),
@@ -180,8 +190,19 @@ async def list_pending_orders(request: Request) -> PendingOrdersResponse:
             brokers_connected[name] = False
             continue
         brokers_connected[name] = adapter.is_connected()
-        adapter_orders = await _fetch_orders_from_adapter(name, adapter)
-        all_orders.extend(adapter_orders)
+        fetch_tasks.append((name, adapter))
+
+    # Fetch from all connected adapters concurrently
+    if fetch_tasks:
+        results = await asyncio.gather(
+            *(_fetch_orders_from_adapter(name, adapter) for name, adapter in fetch_tasks),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning("broker_fetch_error", error=str(result))
+            else:
+                all_orders.extend(result)
 
     logger.info("orders_list", total=len(all_orders), brokers=brokers_connected)
 
@@ -193,7 +214,11 @@ async def list_pending_orders(request: Request) -> PendingOrdersResponse:
 
 
 @router.get("/{order_id}", response_model=PendingOrder)
-async def get_order(request: Request, order_id: str) -> PendingOrder:
+async def get_order(
+    request: Request,
+    order_id: str,
+    _user_id: UUID = Depends(get_current_user_id),
+) -> PendingOrder:
     """
     Get status of a specific order by platform order ID.
 
@@ -229,7 +254,11 @@ async def get_order(request: Request, order_id: str) -> PendingOrder:
 
 
 @router.delete("/{order_id}", response_model=OrderCancelResponse)
-async def cancel_order(request: Request, order_id: str) -> OrderCancelResponse:
+async def cancel_order(
+    request: Request,
+    order_id: str,
+    _user_id: UUID = Depends(get_current_user_id),
+) -> OrderCancelResponse:
     """
     Cancel a pending order.
 
@@ -268,6 +297,7 @@ async def modify_order(
     request: Request,
     order_id: str,
     body: OrderModifyRequest,
+    _user_id: UUID = Depends(get_current_user_id),
 ) -> OrderModifyResponse:
     """
     Modify a pending order's price or quantity.
@@ -304,10 +334,11 @@ async def modify_order(
             return OrderModifyResponse(
                 success=True,
                 message=(
-                    f"Order {order_id} cancelled on {name} for modification. "
-                    "Place a new order with updated parameters."
+                    f"Order {order_id} cancelled on {name}. "
+                    "Place a replacement order with updated parameters."
                 ),
                 order_id=order_id,
+                replacement_needed=True,
             )
         except ValueError:
             continue

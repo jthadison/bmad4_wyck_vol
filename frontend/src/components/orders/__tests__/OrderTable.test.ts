@@ -65,7 +65,9 @@ describe('OrderTable', () => {
 
     // Mock store actions
     vi.spyOn(store, 'cancelOrder').mockResolvedValue(true)
-    vi.spyOn(store, 'modifyOrder').mockResolvedValue(true)
+    vi.spyOn(store, 'modifyOrder').mockResolvedValue(
+      'Order cancelled. Place a replacement order with updated parameters.'
+    )
   })
 
   // -------------------------------------------------------------------------

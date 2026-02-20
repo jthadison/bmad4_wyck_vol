@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.api.dependencies import get_current_user, get_db_session
+from src.api.dependencies import get_current_user, get_current_user_id, get_db_session
 from src.api.main import app
 from src.brokers.broker_router import BrokerRouter
 from src.models.order import ExecutionReport, OrderStatus
@@ -82,13 +82,16 @@ def auth_headers() -> dict[str, str]:
 def client(mock_broker_router):
     """Return an AsyncClient with auth + broker_router mocked."""
 
+    _fake_user_id = uuid4()
+
     async def _mock_current_user():
-        return {"id": str(uuid4()), "email": "test@example.com"}
+        return {"id": str(_fake_user_id), "email": "test@example.com"}
 
     async def _mock_db_session():
         yield MagicMock()
 
     app.dependency_overrides[get_current_user] = _mock_current_user
+    app.dependency_overrides[get_current_user_id] = lambda: _fake_user_id
     app.dependency_overrides[get_db_session] = _mock_db_session
 
     # Inject mock broker_router into app state

@@ -46,6 +46,7 @@ export interface OrderModifyResponse {
   success: boolean
   message: string
   order_id: string
+  replacement_needed: boolean
 }
 
 export interface OrderCancelResponse {

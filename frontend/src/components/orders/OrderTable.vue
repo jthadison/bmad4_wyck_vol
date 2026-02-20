@@ -8,6 +8,20 @@
       {{ store.error }}
     </div>
 
+    <!-- Modify notice banner -->
+    <div
+      v-if="modifyNotice"
+      class="mb-4 p-3 rounded-md bg-yellow-900/30 border border-yellow-700 text-yellow-300 text-sm flex items-center justify-between"
+    >
+      <span>{{ modifyNotice }}</span>
+      <button
+        class="ml-4 text-yellow-400 hover:text-yellow-200 text-xs font-medium"
+        @click="dismissNotice"
+      >
+        Dismiss
+      </button>
+    </div>
+
     <!-- Broker status badges -->
     <div class="flex items-center gap-3 mb-4">
       <span class="text-xs text-gray-500 uppercase tracking-wider"
@@ -244,6 +258,7 @@ const sortedOrders = computed(() => {
 // Inline editing
 const editingOrderId = ref<string | null>(null)
 const editPrice = ref('')
+const modifyNotice = ref<string | null>(null)
 
 function startEdit(order: PendingOrder): void {
   editingOrderId.value = order.order_id
@@ -268,23 +283,36 @@ async function submitModify(order: PendingOrder): Promise<void> {
   } else {
     payload.limit_price = editPrice.value
   }
-  const success = await store.modifyOrder(order.order_id, payload)
-  if (success) {
+  const result = await store.modifyOrder(order.order_id, payload)
+  if (result !== false) {
     cancelEdit()
+    modifyNotice.value = result
   }
+}
+
+function dismissNotice(): void {
+  modifyNotice.value = null
 }
 
 async function handleCancel(orderId: string): Promise<void> {
   await store.cancelOrder(orderId)
 }
 
-// OCO group detection
-const seenOcoGroups = new Set<string>()
+// OCO group detection - computed from sortedOrders so it resets on data change
+const ocoGroupFirstOrderIds = computed(() => {
+  const seen = new Set<string>()
+  const firstIds = new Set<string>()
+  for (const order of sortedOrders.value) {
+    if (order.is_oco && order.oco_group_id && !seen.has(order.oco_group_id)) {
+      seen.add(order.oco_group_id)
+      firstIds.add(order.order_id)
+    }
+  }
+  return firstIds
+})
+
 function isOcoGroupStart(order: PendingOrder): boolean {
-  if (!order.is_oco || !order.oco_group_id) return false
-  if (seenOcoGroups.has(order.oco_group_id)) return false
-  seenOcoGroups.add(order.oco_group_id)
-  return true
+  return ocoGroupFirstOrderIds.value.has(order.order_id)
 }
 
 // Status badge styling
