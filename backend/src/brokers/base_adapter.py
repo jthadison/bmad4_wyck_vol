@@ -8,7 +8,7 @@ Author: Story 16.4a
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 import structlog
 
@@ -170,6 +170,23 @@ class TradingPlatformAdapter(ABC):
 
         Returns:
             List of ExecutionReports for each position closure attempt
+        """
+        pass
+
+    @abstractmethod
+    async def get_account_info(self) -> dict[str, Any]:
+        """
+        Get account information from the trading platform.
+
+        Returns:
+            Dict with account details. Expected keys:
+            - account_id: str | None
+            - balance: Decimal | None
+            - buying_power: Decimal | None
+            - cash: Decimal | None
+            - margin_used: Decimal | None
+            - margin_available: Decimal | None
+            - margin_level_pct: Decimal | None
         """
         pass
 

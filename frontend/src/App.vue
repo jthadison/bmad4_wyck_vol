@@ -119,6 +119,13 @@
               <!-- System group -->
               <div class="flex items-center gap-1">
                 <router-link
+                  to="/brokers"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Brokers
+                </router-link>
+                <router-link
                   to="/scanner"
                   class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
                   active-class="text-blue-400 border-b-2 border-blue-400"
@@ -206,6 +213,12 @@
         class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
         @click="mobileMenuOpen = false"
         >Results</router-link
+      >
+      <router-link
+        to="/brokers"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Brokers</router-link
       >
       <router-link
         to="/scanner"

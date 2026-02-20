@@ -36,6 +36,7 @@ from src.api.routes import (
     audit,
     auth,
     backtest,
+    broker_dashboard,
     campaigns,
     charts,
     config,
@@ -136,6 +137,7 @@ app.include_router(settings_routes.router)  # Settings routes (Story 19.14)
 app.include_router(watchlist.router)  # Watchlist management routes (Story 19.12)
 app.include_router(monitoring.router)  # Monitoring & audit routes (Story 23.13)
 app.include_router(kill_switch.router)  # Kill switch routes (Story 23.13)
+app.include_router(broker_dashboard.router)  # Broker dashboard routes (Issue P4-I17)
 app.include_router(rs.router)  # Relative strength routes
 app.include_router(price_alerts.router)  # Price alert CRUD routes (Feature P2-5)
 app.include_router(journal_router)  # Trade Journal routes (Feature P2-8)
@@ -474,6 +476,7 @@ async def _initialize_broker_infrastructure() -> "BrokerRouter":
     Returns:
         BrokerRouter instance (also stored on app.state.broker_router)
     """
+    from src.api.routes.broker_dashboard import set_broker_router
     from src.api.routes.kill_switch import set_emergency_exit_service
     from src.api.routes.tradingview import configure_broker_router
     from src.brokers.broker_router import BrokerRouter
@@ -532,6 +535,9 @@ async def _initialize_broker_infrastructure() -> "BrokerRouter":
 
     # Wire broker router into TradingView routes
     configure_broker_router(broker_router)
+
+    # Wire broker router into broker dashboard routes (Issue P4-I17)
+    set_broker_router(broker_router)
 
     # Wire kill switch service
     try:
