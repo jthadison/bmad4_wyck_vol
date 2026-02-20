@@ -16,10 +16,17 @@ const route = useRoute()
 const router = useRouter()
 const chartStore = useChartStore()
 
+const VALID_TIMEFRAMES = ['1D', '1W', '1M'] as const
+type ValidTimeframe = (typeof VALID_TIMEFRAMES)[number]
+
+function sanitizeTimeframe(tf: unknown): ValidTimeframe {
+  return VALID_TIMEFRAMES.includes(tf as ValidTimeframe)
+    ? (tf as ValidTimeframe)
+    : '1D'
+}
+
 const symbol = computed(() => (route.query.symbol as string) || 'SPY')
-const timeframe = computed(
-  () => (route.query.timeframe as '1D' | '1W' | '1M') || '1D'
-)
+const timeframe = computed(() => sanitizeTimeframe(route.query.timeframe))
 
 // Current phase from chart data
 const currentPhase = computed(() => {
@@ -33,6 +40,7 @@ const currentPhase = computed(() => {
 const phaseSeverity = computed(() => {
   const phase = currentPhase.value
   if (!phase) return undefined
+  if (phase.includes('A')) return 'danger'
   if (phase.includes('C') || phase.includes('D')) return 'success'
   if (phase.includes('B')) return 'warning'
   return 'info'
@@ -42,14 +50,10 @@ function goBack() {
   router.back()
 }
 
-// Watch for query param changes and reload chart data
-watch(
-  [symbol, timeframe],
-  ([newSymbol, newTimeframe]: [string, '1D' | '1W' | '1M']) => {
-    chartStore.fetchChartData({ symbol: newSymbol, timeframe: newTimeframe })
-  },
-  { immediate: true }
-)
+// Watch for route param changes and reload — PatternChart's onMounted handles initial fetch
+watch([symbol, timeframe], ([newSymbol, newTimeframe]) => {
+  chartStore.fetchChartData({ symbol: newSymbol, timeframe: newTimeframe })
+})
 </script>
 
 <template>
