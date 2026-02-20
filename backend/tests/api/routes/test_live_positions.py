@@ -700,7 +700,7 @@ class TestPartialExit:
                     f"/api/v1/live-positions/{pos_id}/partial-exit",
                     json={"exit_pct": 50},
                 )
-            assert response.status_code == 400
+            assert response.status_code == 502
             assert "rejected" in response.json()["detail"].lower()
             # Shares must NOT have been decremented
             assert pos.shares == Decimal("100")

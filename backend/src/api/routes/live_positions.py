@@ -478,9 +478,15 @@ async def partial_exit(
 
             # Do NOT persist share decrement if broker rejected/failed the order
             if execution_report.status in _BROKER_FAILURE_STATUSES:
+                logger.error(
+                    "partial_exit_broker_rejected",
+                    position_id=str(position_id),
+                    order_id=str(order.id),
+                    broker_status=execution_report.status.value,
+                )
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Broker rejected partial exit order: {execution_report.status.value}",
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Broker rejected partial exit order",
                 )
 
             # Persist updated share count only after broker accepted the order
