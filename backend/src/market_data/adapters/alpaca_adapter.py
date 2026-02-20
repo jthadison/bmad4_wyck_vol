@@ -348,6 +348,8 @@ class AlpacaAdapter(MarketDataProvider):
 
                 if self._should_reconnect:
                     await self._reconnect()
+                    # connect() already spawned a new _receiver_task; exit this stale one
+                    break
                 else:
                     break
 
