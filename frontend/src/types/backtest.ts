@@ -534,6 +534,7 @@ export interface PhaseDistribution {
   bar_count: number // Number of bars in this phase
   hours: number // Duration in hours
   percentage: number // Percentage of total bars (0-100)
+  description?: string // Optional human-readable phase description
 }
 
 /**
@@ -575,6 +576,14 @@ export interface CampaignPhaseProgression {
   transitions: CampaignPhaseTransition[] // Phase transitions with timestamps
   completion_stage: string // Final phase reached
   total_patterns: number // Patterns detected in campaign
+  // Extended fields (returned when backend computes per-campaign stats)
+  total_bars?: number // Total bars in campaign
+  total_hours?: number // Total duration in hours
+  quality_score?: number // Wyckoff sequence quality score (0-100)
+  phase_percentages?: Record<string, number> // Phase → % of campaign bars
+  phase_durations?: Record<string, number> // Phase → bar count
+  followed_wyckoff_sequence?: boolean // True if phases followed A→B→C→D order
+  invalid_transitions?: number // Count of out-of-order phase transitions
 }
 
 /**

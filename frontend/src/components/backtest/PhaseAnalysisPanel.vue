@@ -223,7 +223,9 @@ const formatHours = (hours: number): string => {
               >
                 Phase {{ phase.phase }}
               </span>
-              <span class="text-sm text-gray-300">{{ phase.description }}</span>
+              <span v-if="phase.description" class="text-sm text-gray-300">{{
+                phase.description
+              }}</span>
             </div>
             <div class="text-right">
               <div class="text-sm font-semibold text-gray-100">
@@ -356,13 +358,17 @@ const formatHours = (hours: number): string => {
                 Campaign {{ campaign.campaign_id.slice(0, 8) }}
               </div>
               <div class="text-xs text-gray-400 mt-1">
-                {{ campaign.campaign_type }} | {{ campaign.total_bars }} bars
-                ({{ formatHours(campaign.total_hours) }})
+                {{ campaign.campaign_type
+                }}<template v-if="campaign.total_bars != null">
+                  | {{ campaign.total_bars }} bars ({{
+                    formatHours(campaign.total_hours ?? 0)
+                  }})</template
+                >
               </div>
             </div>
-            <div class="text-right">
+            <div v-if="campaign.quality_score != null" class="text-right">
               <div
-                :class="getQualityScoreClass(campaign.quality_score)"
+                :class="getQualityScoreClass(campaign.quality_score ?? 0)"
                 class="text-lg font-bold"
               >
                 {{ campaign.quality_score }}
@@ -372,7 +378,10 @@ const formatHours = (hours: number): string => {
           </div>
 
           <!-- Phase Breakdown -->
-          <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+          <div
+            v-if="campaign.phase_percentages"
+            class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs"
+          >
             <div
               v-for="(pct, phase) in campaign.phase_percentages"
               :key="phase"
@@ -388,7 +397,7 @@ const formatHours = (hours: number): string => {
                 {{ pct.toFixed(0) }}%
               </div>
               <div class="text-gray-500">
-                {{ campaign.phase_durations[phase] || 0 }} bars
+                {{ campaign.phase_durations?.[phase] ?? 0 }} bars
               </div>
             </div>
           </div>
@@ -397,25 +406,28 @@ const formatHours = (hours: number): string => {
           <div class="text-xs text-gray-400 border-t border-gray-600 pt-2">
             <div class="flex justify-between">
               <span>
-                Transitions: {{ campaign.transitions.length }} |
-                <span
-                  :class="
-                    campaign.followed_wyckoff_sequence
-                      ? 'text-green-400'
-                      : 'text-red-400'
-                  "
-                >
-                  {{
-                    campaign.followed_wyckoff_sequence
-                      ? 'Valid Sequence'
-                      : 'Invalid Sequence'
-                  }}
-                </span>
+                Transitions: {{ campaign.transitions.length }}
+                <template v-if="campaign.followed_wyckoff_sequence != null">
+                  |
+                  <span
+                    :class="
+                      campaign.followed_wyckoff_sequence
+                        ? 'text-green-400'
+                        : 'text-red-400'
+                    "
+                  >
+                    {{
+                      campaign.followed_wyckoff_sequence
+                        ? 'Valid Sequence'
+                        : 'Invalid Sequence'
+                    }}
+                  </span>
+                </template>
               </span>
               <span>Stage: {{ campaign.completion_stage }}</span>
             </div>
             <div
-              v-if="campaign.invalid_transitions > 0"
+              v-if="(campaign.invalid_transitions ?? 0) > 0"
               class="text-red-400 mt-1"
             >
               {{ campaign.invalid_transitions }} invalid transitions detected
