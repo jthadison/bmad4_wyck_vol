@@ -26,6 +26,8 @@
 
       <NotificationPreferences v-else-if="activeTab === 'notifications'" />
 
+      <PriceAlertManager v-else-if="activeTab === 'alerts'" />
+
       <div v-else-if="activeTab === 'system'" class="system-tab-content">
         <OrchestratorHealthPanel />
       </div>
@@ -72,6 +74,7 @@ import { ref } from 'vue'
 import NotificationPreferences from '@/components/notifications/NotificationPreferences.vue'
 import WatchlistSettings from '@/components/watchlist/WatchlistSettings.vue'
 import OrchestratorHealthPanel from '@/components/orchestrator/OrchestratorHealthPanel.vue'
+import PriceAlertManager from '@/components/alerts/PriceAlertManager.vue'
 
 const activeTab = ref('watchlist')
 
@@ -85,6 +88,11 @@ const tabs = [
     id: 'notifications',
     label: 'Notifications',
     icon: 'pi pi-bell',
+  },
+  {
+    id: 'alerts',
+    label: 'Price Alerts',
+    icon: 'pi pi-bell-fill',
   },
   {
     id: 'system',
