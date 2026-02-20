@@ -670,12 +670,13 @@ async def reset_symbol_circuit_breaker(symbol: str):
 
 
 async def _auto_ingest_symbol_data(
-    symbol: str, timeframe: str = "1d", asset_class: str | None = None
+    symbol: str, timeframe: str = "1D", asset_class: str | None = None
 ) -> None:
     """Background task to auto-ingest ~1 year of historical OHLCV data for a new watchlist symbol.
 
     Uses Yahoo Finance adapter for widest symbol coverage (forex, indices, equities).
     Errors are logged but never propagated - this must not affect the watchlist add response.
+    Timeframe default is "1D" (uppercase) to match the scanner_watchlist constraint format.
     """
     try:
         from src.market_data.adapters.yahoo_adapter import YahooAdapter

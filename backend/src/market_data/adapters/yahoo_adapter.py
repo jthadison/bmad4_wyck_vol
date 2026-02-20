@@ -216,13 +216,14 @@ class YahooAdapter(MarketDataProvider):
             "1h" -> "1h"
             "5m" -> "5m"
         """
-        # yfinance uses the same format, so just validate
+        # Normalize to lowercase for yfinance (watchlist stores uppercase e.g. "1D", "1H")
+        normalized = timeframe.lower()
         valid_intervals = {"1m", "5m", "15m", "1h", "1d"}
 
-        if timeframe not in valid_intervals:
+        if normalized not in valid_intervals:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
 
-        return timeframe
+        return normalized
 
     def _format_symbol(self, symbol: str, asset_class: str | None) -> str:
         """Format symbol for Yahoo Finance API based on asset class.
