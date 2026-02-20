@@ -44,7 +44,7 @@ onMounted(() => {
     <button
       :class="['toggle-btn', { active: modelValue === 'table' }]"
       data-testid="toggle-table"
-      aria-pressed="modelValue === 'table'"
+      :aria-pressed="modelValue === 'table'"
       @click="selectView('table')"
     >
       <i class="pi pi-list" aria-hidden="true"></i>
@@ -53,7 +53,7 @@ onMounted(() => {
     <button
       :class="['toggle-btn', { active: modelValue === 'dashboard' }]"
       data-testid="toggle-dashboard"
-      aria-pressed="modelValue === 'dashboard'"
+      :aria-pressed="modelValue === 'dashboard'"
       @click="selectView('dashboard')"
     >
       <i class="pi pi-th-large" aria-hidden="true"></i>

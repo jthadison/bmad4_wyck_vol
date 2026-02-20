@@ -218,8 +218,20 @@ async def get_watchlist_status(
 # ---------------------------------------------------------------------------
 
 _PHASES = ["A", "B", "C", "D", "E"]
-_PATTERNS: list[str | None] = ["Spring", "SOS", "UTAD", "LPS", "SC", "AR", None]
 _DIRECTIONS = ["up", "down", "sideways"]
+
+# Valid patterns per Wyckoff phase — ensures mock data respects methodology.
+# Phase A/B: accumulation beginning (SC/AR events) or no active pattern.
+# Phase C: Spring is the primary shakeout entry signal.
+# Phase D: SOS breakout (accumulation) or UTAD (distribution) are valid.
+# Phase E: LPS last-point-of-support retest; SOS continuation also valid.
+_PHASE_PATTERNS: dict[str, list[str | None]] = {
+    "A": ["SC", "AR", None],
+    "B": ["SC", "AR", None, None],  # extra None → more "no pattern" weight
+    "C": ["Spring", None, None],
+    "D": ["SOS", "UTAD", None],
+    "E": ["LPS", "SOS", None],
+}
 
 
 def _build_mock_status(symbol: str) -> WatchlistSymbolStatus:
@@ -228,7 +240,9 @@ def _build_mock_status(symbol: str) -> WatchlistSymbolStatus:
     seed = sum(ord(c) for c in symbol)
 
     phase = _PHASES[seed % len(_PHASES)]
-    pattern = _PATTERNS[seed % len(_PATTERNS)]
+    # Select pattern from only the valid patterns for this phase
+    valid_patterns = _PHASE_PATTERNS[phase]
+    pattern = valid_patterns[seed % len(valid_patterns)]
     trend = _DIRECTIONS[(seed // 3) % len(_DIRECTIONS)]
 
     phase_confidence = round(0.50 + (seed % 47) / 100, 2)

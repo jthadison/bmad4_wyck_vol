@@ -46,7 +46,7 @@ function phaseLabel(phase: string): string {
   const map: Record<string, string> = {
     A: 'Phase A — Avoid',
     B: 'Phase B — Monitor',
-    C: 'Phase C — Watch',
+    C: 'Phase C — Spring Entry',
     D: 'Phase D — Buy/Add',
     E: 'Phase E — Hold',
   }
