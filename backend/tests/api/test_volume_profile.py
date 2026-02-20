@@ -9,7 +9,7 @@ Key validations:
 - API endpoint returns 200 with valid structure
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -31,7 +31,7 @@ def _make_bar(
     day_offset: int = 0,
 ) -> OHLCVBar:
     """Create a simple bar at a fixed price level."""
-    ts = datetime(2025, 1, 1, tzinfo=UTC) + __import__("datetime").timedelta(days=day_offset)
+    ts = datetime(2025, 1, 1, tzinfo=UTC) + timedelta(days=day_offset)
     p = Decimal(str(round(price, 2)))
     spread = Decimal("1.00")
     return OHLCVBar(
