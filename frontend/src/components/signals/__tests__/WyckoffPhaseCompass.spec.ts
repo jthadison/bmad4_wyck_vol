@@ -29,6 +29,7 @@ const mockPhaseData: PhaseStatusResponse = {
   ],
   bias: 'ACCUMULATION',
   updated_at: '2026-02-20T12:00:00Z',
+  data_source: 'MOCK' as const,
 }
 
 // Track the mock function so tests can configure return values

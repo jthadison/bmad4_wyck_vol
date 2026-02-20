@@ -166,6 +166,16 @@ const biasColor = computed(() => {
       Wyckoff Phase Compass
     </h3>
 
+    <!-- Simulated data banner -->
+    <div
+      v-if="data?.data_source === 'MOCK'"
+      class="mb-3 px-2 py-1 bg-amber-900/40 border border-amber-600/50 rounded text-xs text-amber-400 flex items-center gap-1"
+      data-testid="mock-banner"
+    >
+      <i class="pi pi-info-circle" />
+      Simulated data — not wired to live market data yet
+    </div>
+
     <!-- Loading skeleton -->
     <div
       v-if="loading"

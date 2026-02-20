@@ -6,7 +6,7 @@ Wyckoff Phase Compass / Phase Gauge UI component.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -43,3 +43,7 @@ class PhaseStatusResponse(BaseModel):
     )
     bias: str = Field(..., description="Market bias: ACCUMULATION, DISTRIBUTION, or UNKNOWN")
     updated_at: datetime = Field(..., description="Timestamp of this analysis")
+    data_source: Literal["MOCK", "LIVE"] = Field(
+        "MOCK",
+        description="MOCK until wired to real PhaseClassifier (Epic 23); LIVE when production data.",
+    )

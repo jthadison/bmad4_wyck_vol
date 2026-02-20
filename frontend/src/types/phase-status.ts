@@ -24,4 +24,5 @@ export interface PhaseStatusResponse {
   recent_events: PhaseStatusEvent[]
   bias: 'ACCUMULATION' | 'DISTRIBUTION' | 'UNKNOWN'
   updated_at: string
+  data_source: 'MOCK' | 'LIVE'
 }
