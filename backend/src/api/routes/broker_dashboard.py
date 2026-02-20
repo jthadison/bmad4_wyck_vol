@@ -281,11 +281,11 @@ async def test_broker_connection(
             error_message="Connection timed out after 10 seconds",
         )
     except Exception as e:
-        logger.warning("broker_connection_test_failed", broker=broker, error=str(e))
+        logger.error("broker_connection_test_failed", broker=broker, error=str(e))
         return ConnectionTestResult(
             broker=broker,
             success=False,
-            error_message=str(e),
+            error_message="Connection test failed. Check server logs for details.",
         )
 
 
