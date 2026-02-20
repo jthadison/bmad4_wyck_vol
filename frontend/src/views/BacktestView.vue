@@ -180,10 +180,71 @@
     <!-- Quick Links to Results -->
     <div class="quick-links">
       <h3 class="text-xl font-semibold mb-3">Previous Results</h3>
-      <router-link to="/backtest/results" class="view-results-link">
-        <i class="pi pi-history"></i>
-        View All Backtest Results
-      </router-link>
+      <div class="flex flex-wrap gap-3">
+        <router-link to="/backtest/results" class="view-results-link">
+          <i class="pi pi-history"></i>
+          View All Backtest Results
+        </router-link>
+        <button
+          type="button"
+          class="view-results-link"
+          @click="showComparison = !showComparison"
+        >
+          <i class="pi pi-chart-bar"></i>
+          {{ showComparison ? 'Hide Comparison' : 'Compare Runs' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Backtest Comparison Section -->
+    <div v-if="showComparison" class="comparison-section">
+      <!-- Selector: pick 2-4 runs -->
+      <BacktestSelector v-if="!comparisonData" @compare="handleCompare" />
+
+      <!-- Loading state -->
+      <div
+        v-if="comparisonLoading"
+        class="bg-gray-800 rounded-lg p-8 text-center text-gray-400"
+      >
+        Loading comparison...
+      </div>
+
+      <!-- Error state -->
+      <div
+        v-if="comparisonError"
+        class="bg-red-900/20 border border-red-500/50 rounded-lg p-4 text-red-400 text-sm"
+      >
+        {{ comparisonError }}
+        <button
+          class="ml-3 underline"
+          @click="
+            comparisonData = null
+            comparisonError = null
+          "
+        >
+          Try again
+        </button>
+      </div>
+
+      <!-- Comparison results -->
+      <BacktestComparisonView
+        v-if="comparisonData && !comparisonLoading"
+        :comparison-data="comparisonData"
+      />
+
+      <!-- Reset button -->
+      <div v-if="comparisonData && !comparisonLoading" class="mt-4">
+        <button
+          type="button"
+          class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded-md transition-colors"
+          @click="
+            comparisonData = null
+            comparisonError = null
+          "
+        >
+          Select Different Runs
+        </button>
+      </div>
     </div>
 
     <!-- Walk-Forward Stability Analysis -->
@@ -217,6 +278,12 @@
 import { ref, computed } from 'vue'
 import BacktestPreview from '@/components/configuration/BacktestPreview.vue'
 import WalkForwardStabilityPanel from '@/components/backtest/WalkForwardStabilityPanel.vue'
+import BacktestSelector from '@/components/backtest/BacktestSelector.vue'
+import BacktestComparisonView from '@/components/backtest/BacktestComparisonView.vue'
+import {
+  fetchBacktestComparison,
+  type BacktestComparisonResponse,
+} from '@/services/backtestComparisonService'
 
 // Configuration state
 const config = ref({
@@ -234,6 +301,26 @@ const showAdvanced = ref(false)
 
 // Walk-forward stability section
 const walkForwardId = ref('')
+
+// Comparison state
+const showComparison = ref(false)
+const comparisonData = ref<BacktestComparisonResponse | null>(null)
+const comparisonLoading = ref(false)
+const comparisonError = ref<string | null>(null)
+
+const handleCompare = async (runIds: string[]) => {
+  comparisonLoading.value = true
+  comparisonError.value = null
+  comparisonData.value = null
+  try {
+    comparisonData.value = await fetchBacktestComparison(runIds)
+  } catch (err) {
+    comparisonError.value =
+      err instanceof Error ? err.message : 'Failed to load comparison'
+  } finally {
+    comparisonLoading.value = false
+  }
+}
 
 // Proposed config for backtest preview
 const proposedConfig = computed(() => ({
@@ -392,6 +479,13 @@ const proposedConfig = computed(() => ({
   background: var(--primary-color-dark, var(--primary-color));
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.comparison-section {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 .quick-links .view-results-link i {
