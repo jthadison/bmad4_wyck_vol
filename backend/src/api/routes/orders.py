@@ -119,7 +119,14 @@ def _map_status(status: OrderStatus) -> str:
         return "partial"
     if status == OrderStatus.REJECTED:
         return "rejected"
-    return "pending"
+    if status == OrderStatus.FILLED:
+        return "filled"
+    if status == OrderStatus.CANCELLED:
+        return "cancelled"
+    if status == OrderStatus.EXPIRED:
+        return "expired"
+    logger.warning("unknown_order_status", status=str(status))
+    return "unknown"
 
 
 async def _fetch_orders_from_adapter(
@@ -193,16 +200,13 @@ async def list_pending_orders(
         fetch_tasks.append((name, adapter))
 
     # Fetch from all connected adapters concurrently
+    # _fetch_orders_from_adapter catches exceptions internally and returns empty list
     if fetch_tasks:
         results = await asyncio.gather(
             *(_fetch_orders_from_adapter(name, adapter) for name, adapter in fetch_tasks),
-            return_exceptions=True,
         )
         for result in results:
-            if isinstance(result, Exception):
-                logger.warning("broker_fetch_error", error=str(result))
-            else:
-                all_orders.extend(result)
+            all_orders.extend(result)
 
     logger.info("orders_list", total=len(all_orders), brokers=brokers_connected)
 
@@ -266,6 +270,7 @@ async def cancel_order(
     """
     broker_router = _get_broker_router(request)
 
+    errors: list[str] = []
     for name, adapter in [
         ("alpaca", broker_router._alpaca_adapter),
         ("mt5", broker_router._mt5_adapter),
@@ -273,7 +278,7 @@ async def cancel_order(
         if adapter is None or not adapter.is_connected():
             continue
         try:
-            report = await adapter.cancel_order(order_id)
+            await adapter.cancel_order(order_id)
             logger.info("order_cancelled", order_id=order_id, broker=name)
             return OrderCancelResponse(
                 success=True,
@@ -284,17 +289,19 @@ async def cancel_order(
             continue
         except Exception as exc:
             logger.error("order_cancel_failed", adapter=name, error=str(exc))
-            raise HTTPException(
-                status_code=500,
-                detail=f"Cancel failed on {name}: {exc}",
-            ) from exc
+            errors.append(name)
+
+    if errors:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cancel order operation failed for {', '.join(errors)}. Please try again.",
+        )
 
     raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
 
 
 @router.patch("/{order_id}", response_model=OrderModifyResponse)
 async def modify_order(
-    request: Request,
     order_id: str,
     body: OrderModifyRequest,
     _user_id: UUID = Depends(get_current_user_id),
@@ -302,51 +309,9 @@ async def modify_order(
     """
     Modify a pending order's price or quantity.
 
-    Strategy: cancel the existing order and place a replacement.
-    Most brokers do not support in-place modification, so cancel-replace
-    is the standard approach.
+    Not currently supported. Cancel the order and place a new one instead.
     """
-    broker_router = _get_broker_router(request)
-
-    if body.limit_price is None and body.stop_price is None and body.quantity is None:
-        raise HTTPException(
-            status_code=422,
-            detail="At least one of limit_price, stop_price, or quantity must be provided",
-        )
-
-    # Find and cancel the existing order
-    for name, adapter in [
-        ("alpaca", broker_router._alpaca_adapter),
-        ("mt5", broker_router._mt5_adapter),
-    ]:
-        if adapter is None or not adapter.is_connected():
-            continue
-        try:
-            await adapter.cancel_order(order_id)
-            logger.info(
-                "order_modify_cancelled_original",
-                order_id=order_id,
-                broker=name,
-                new_limit_price=str(body.limit_price) if body.limit_price else None,
-                new_stop_price=str(body.stop_price) if body.stop_price else None,
-                new_quantity=str(body.quantity) if body.quantity else None,
-            )
-            return OrderModifyResponse(
-                success=True,
-                message=(
-                    f"Order {order_id} cancelled on {name}. "
-                    "Place a replacement order with updated parameters."
-                ),
-                order_id=order_id,
-                replacement_needed=True,
-            )
-        except ValueError:
-            continue
-        except Exception as exc:
-            logger.error("order_modify_failed", adapter=name, error=str(exc))
-            raise HTTPException(
-                status_code=500,
-                detail=f"Modify failed on {name}: {exc}",
-            ) from exc
-
-    raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    raise HTTPException(
+        status_code=501,
+        detail="Order modification is not supported. Cancel and place a new order.",
+    )

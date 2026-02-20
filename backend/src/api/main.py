@@ -180,7 +180,10 @@ class CORSExceptionMiddleware(BaseHTTPMiddleware):
 
             return JSONResponse(
                 status_code=500,
-                content={"detail": "Internal server error", "error": str(exc)},
+                content={
+                    "detail": "Internal server error",
+                    "error": _sanitize_health_error(exc),
+                },
                 headers={
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "*",
@@ -227,7 +230,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "error": str(exc)},
+        content={"detail": "Internal server error", "error": _sanitize_health_error(exc)},
         headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "*",

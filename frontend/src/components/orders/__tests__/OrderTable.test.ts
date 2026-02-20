@@ -4,7 +4,6 @@
  * Tests:
  * - Renders order list correctly
  * - Cancel button calls correct store action
- * - Modify flow: click -> inline edit -> submit
  * - OCO groups are visually grouped
  * - Empty state shows helpful message
  */
@@ -65,9 +64,6 @@ describe('OrderTable', () => {
 
     // Mock store actions
     vi.spyOn(store, 'cancelOrder').mockResolvedValue(true)
-    vi.spyOn(store, 'modifyOrder').mockResolvedValue(
-      'Order cancelled. Place a replacement order with updated parameters.'
-    )
   })
 
   // -------------------------------------------------------------------------
@@ -135,61 +131,6 @@ describe('OrderTable', () => {
     await wrapper.vm.$nextTick()
 
     expect(store.cancelOrder).toHaveBeenCalledWith('ORD-001')
-  })
-
-  // -------------------------------------------------------------------------
-  // Modify flow
-  // -------------------------------------------------------------------------
-
-  it('modify button shows inline edit inputs', async () => {
-    store.orders = [makeOrder()]
-    store.brokersConnected = { alpaca: true }
-    const wrapper = createWrapper()
-    await wrapper.vm.$nextTick()
-
-    // Click Modify button
-    const modifyBtn = wrapper
-      .findAll('button')
-      .find((btn) => btn.text().trim() === 'Modify')
-    expect(modifyBtn).toBeDefined()
-    await modifyBtn!.trigger('click')
-    await wrapper.vm.$nextTick()
-
-    // Should show input and Save/Cancel buttons
-    expect(wrapper.find('input[placeholder="New price"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Save')
-  })
-
-  it('submit modify calls modifyOrder with correct params', async () => {
-    store.orders = [makeOrder({ limit_price: '150.50' })]
-    store.brokersConnected = { alpaca: true }
-    const wrapper = createWrapper()
-    await wrapper.vm.$nextTick()
-
-    // Click Modify
-    const modifyBtn = wrapper
-      .findAll('button')
-      .find((btn) => btn.text().trim() === 'Modify')
-    expect(modifyBtn).toBeDefined()
-    await modifyBtn!.trigger('click')
-    await wrapper.vm.$nextTick()
-
-    // Set new price value
-    const input = wrapper.find('input[placeholder="New price"]')
-    await input.setValue('155.00')
-    await wrapper.vm.$nextTick()
-
-    // Click Save
-    const saveBtn = wrapper
-      .findAll('button')
-      .find((btn) => btn.text().trim() === 'Save')
-    expect(saveBtn).toBeDefined()
-    await saveBtn!.trigger('click')
-    await wrapper.vm.$nextTick()
-
-    expect(store.modifyOrder).toHaveBeenCalledWith('ORD-001', {
-      limit_price: '155.00',
-    })
   })
 
   // -------------------------------------------------------------------------
