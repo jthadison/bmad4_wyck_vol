@@ -8,7 +8,8 @@ portfolio heat, campaign risks, correlated risks, and proximity warnings.
 
 Endpoints:
 ----------
-GET /api/v1/risk/dashboard - Get complete risk dashboard data
+GET /api/v1/risk/dashboard        - Get complete risk dashboard data
+GET /api/v1/risk/correlation-matrix - Get NxN campaign correlation matrix
 
 Integration:
 ------------
@@ -25,10 +26,13 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
+import numpy as np
+import pandas as pd
 import structlog
 from fastapi import APIRouter, HTTPException
 from fastapi import status as http_status
 
+from src.models.correlation_matrix import BlockedPair, CorrelationMatrixResponse
 from src.models.portfolio import Position
 from src.models.risk_dashboard import (
     CampaignRiskSummary,
@@ -478,4 +482,255 @@ async def get_risk_dashboard() -> RiskDashboardData:
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate risk dashboard: {str(e)}",
+        ) from e
+
+
+# ============================================================================
+# Correlation Matrix Support Functions
+# ============================================================================
+
+# Correlation threshold above which Rachel (Risk Manager) blocks entries.
+# Per CLAUDE.md: Max correlated risk = 6.0%; threshold for Pearson correlation
+# is 0.6 (two positions are "highly correlated" if r > 0.6).
+CORRELATION_BLOCK_THRESHOLD = 0.6
+
+
+def _build_mock_price_series(campaigns: list[str]) -> dict[str, list[float]]:
+    """
+    Build synthetic daily price series for active campaigns.
+
+    In a production system this would query historical OHLCV data from the
+    market data service for each campaign's underlying symbol. We stub this
+    with deterministic pseudo-random series that produce realistic correlations:
+
+    - Tech symbols (AAPL, MSFT, GOOGL, META, NVDA, AMZN) are seeded so they
+      yield high pairwise correlations (~0.65-0.82), reflecting real sector
+      co-movement.
+    - Non-tech symbols (JNJ, PFE, XOM, etc.) produce low correlations with tech.
+
+    Returns:
+    --------
+    dict[str, list[float]]
+        Map from campaign name to list of 60 daily closing prices.
+    """
+    # Seed map: symbol abbreviation -> numpy seed.
+    # Tech symbols share a similar base seed so their returns co-vary.
+    tech_seed_base = 42
+    tech_symbols = {"AAPL", "MSFT", "GOOGL", "GOOG", "META", "NVDA", "AMZN", "TSLA"}
+
+    series: dict[str, list[float]] = {}
+    n_days = 60
+
+    # Shared market factor for tech sector (drives co-movement)
+    rng_market = np.random.default_rng(tech_seed_base)
+    market_factor = rng_market.normal(0, 0.01, n_days)
+
+    for campaign in campaigns:
+        # Extract symbol from campaign name (e.g., "AAPL-2024-01" -> "AAPL")
+        symbol = campaign.split("-")[0].upper()
+
+        if symbol in tech_symbols:
+            # Tech: 70% market factor + 30% idiosyncratic -> high correlation
+            seed_offset = sum(ord(c) for c in symbol) % 100
+            rng = np.random.default_rng(tech_seed_base + seed_offset)
+            idio = rng.normal(0, 0.008, n_days)
+            daily_returns = 0.7 * market_factor + 0.3 * idio
+        else:
+            # Non-tech: 10% market factor + 90% idiosyncratic -> low correlation
+            seed_offset = sum(ord(c) for c in symbol) % 1000 + 200
+            rng = np.random.default_rng(seed_offset)
+            idio = rng.normal(0, 0.012, n_days)
+            daily_returns = 0.1 * market_factor + 0.9 * idio
+
+        # Build price series from returns starting at 100.0
+        prices = [100.0]
+        for r in daily_returns:
+            prices.append(prices[-1] * (1.0 + float(r)))
+
+        series[campaign] = prices
+
+    return series
+
+
+def compute_correlation_matrix(
+    campaigns: list[str],
+    price_series: dict[str, list[float]],
+    threshold: float = CORRELATION_BLOCK_THRESHOLD,
+) -> tuple[list[list[float]], list[BlockedPair]]:
+    """
+    Compute pairwise Pearson correlation matrix from daily price return series.
+
+    Why returns, not prices?
+    ------------------------
+    Price series are non-stationary (they have a trend / unit root), which makes
+    Pearson correlation on raw prices spurious. Daily returns (percentage change)
+    are stationary and are the correct input for correlation analysis per standard
+    quantitative finance practice.
+
+    Parameters:
+    -----------
+    campaigns : list[str]
+        Ordered list of campaign names.
+    price_series : dict[str, list[float]]
+        Map from campaign name to list of daily closing prices.
+    threshold : float
+        Pearson correlation above which a pair is flagged as "blocked".
+
+    Returns:
+    --------
+    tuple[list[list[float]], list[BlockedPair]]
+        - NxN correlation matrix (symmetric, diagonal = 1.0)
+        - List of blocked pairs where correlation > threshold
+    """
+    n = len(campaigns)
+
+    if n == 0:
+        return [], []
+
+    if n == 1:
+        return [[1.0]], []
+
+    # Build DataFrame of daily returns for all campaigns
+    returns_data: dict[str, list[float]] = {}
+    for campaign in campaigns:
+        prices = price_series.get(campaign, [100.0, 100.0])
+        prices_series = pd.Series(prices, dtype=float)
+        # pct_change() computes (P_t - P_{t-1}) / P_{t-1}; drop the first NaN
+        returns = prices_series.pct_change().dropna().tolist()
+        returns_data[campaign] = returns
+
+    returns_df = pd.DataFrame(returns_data)
+
+    # Pearson correlation matrix on returns
+    corr_df = returns_df.corr(method="pearson")
+
+    # Build nested list (round to 4 decimal places for clean JSON)
+    matrix: list[list[float]] = []
+    for i in range(n):
+        row = []
+        for j in range(n):
+            val = corr_df.iloc[i, j]
+            # Handle NaN (e.g., constant series) by defaulting to 0.0 or 1.0
+            if pd.isna(val):
+                row.append(1.0 if i == j else 0.0)
+            else:
+                row.append(round(float(val), 4))
+        matrix.append(row)
+
+    # Identify blocked pairs (upper triangle only to avoid duplicates)
+    blocked_pairs: list[BlockedPair] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            corr_val = matrix[i][j]
+            if corr_val > threshold:
+                blocked_pairs.append(
+                    BlockedPair(
+                        campaign_a=campaigns[i],
+                        campaign_b=campaigns[j],
+                        correlation=corr_val,
+                        reason=(
+                            f"Correlation {corr_val:.2f} exceeds {threshold:.1f} threshold. "
+                            f"Rachel (Risk Manager) blocks {campaigns[j]} entry because "
+                            f"{campaigns[i]} is already in portfolio and combined correlated "
+                            f"risk would exceed the 6% limit."
+                        ),
+                    )
+                )
+
+    return matrix, blocked_pairs
+
+
+# ============================================================================
+# Correlation Matrix Endpoint
+# ============================================================================
+
+
+@router.get(
+    "/correlation-matrix",
+    response_model=CorrelationMatrixResponse,
+    status_code=http_status.HTTP_200_OK,
+)
+async def get_correlation_matrix() -> CorrelationMatrixResponse:
+    """
+    Get NxN pairwise correlation matrix for active campaigns.
+
+    Returns Pearson correlation coefficients computed on daily return series
+    (not prices - returns are stationary and the correct input for correlation).
+
+    Color interpretation for UI heatmap:
+    - Green  (< 0.3):  Low correlation - safe to hold both positions
+    - Yellow (0.3-0.6): Moderate - monitor combined sector exposure
+    - Red    (> 0.6):  HIGH - Rachel (Risk Manager) blocks new entry due to
+                       correlated risk exceeding the 6% portfolio limit
+
+    Returns:
+    --------
+    CorrelationMatrixResponse
+        - campaigns: ordered list of active campaign names
+        - matrix: NxN float matrix (symmetric, diagonal = 1.0)
+        - blocked_pairs: pairs where correlation > 0.6
+        - heat_threshold: 0.6 (the blocking threshold)
+        - last_updated: computation timestamp
+
+    Raises:
+    -------
+    HTTPException (500)
+        If correlation computation fails.
+    """
+    logger.info("correlation_matrix_requested")
+
+    try:
+        # 1. Fetch active campaigns from mock positions
+        positions = await get_open_positions()
+
+        # Build unique campaign labels (one per symbol for this feature)
+        # In production, this would come from the campaign repository
+        campaign_labels: list[str] = []
+        seen: set[str] = set()
+        for pos in positions:
+            label = f"{pos.symbol}-2024-01"
+            if label not in seen:
+                campaign_labels.append(label)
+                seen.add(label)
+
+        # If no positions, return an empty matrix
+        if not campaign_labels:
+            logger.info("correlation_matrix_no_campaigns")
+            return CorrelationMatrixResponse(
+                campaigns=[],
+                matrix=[],
+                blocked_pairs=[],
+                heat_threshold=CORRELATION_BLOCK_THRESHOLD,
+                last_updated=datetime.now(UTC),
+            )
+
+        # 2. Build synthetic price series (stub - replace with real market data in production)
+        price_series = _build_mock_price_series(campaign_labels)
+
+        # 3. Compute Pearson correlation on returns
+        matrix, blocked_pairs = compute_correlation_matrix(
+            campaign_labels, price_series, CORRELATION_BLOCK_THRESHOLD
+        )
+
+        response = CorrelationMatrixResponse(
+            campaigns=campaign_labels,
+            matrix=matrix,
+            blocked_pairs=blocked_pairs,
+            heat_threshold=CORRELATION_BLOCK_THRESHOLD,
+            last_updated=datetime.now(UTC),
+        )
+
+        logger.info(
+            "correlation_matrix_generated",
+            campaign_count=len(campaign_labels),
+            blocked_pairs=len(blocked_pairs),
+        )
+
+        return response
+
+    except Exception as e:
+        logger.error("correlation_matrix_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to compute correlation matrix: {str(e)}",
         ) from e
