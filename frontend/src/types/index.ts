@@ -400,3 +400,9 @@ export type {
   PhaseVolumeData,
   VolumeProfileResponse,
 } from './volume-profile'
+
+// ============================================================================
+// Phase Status Types (P3-F11)
+// ============================================================================
+
+export type { PhaseStatusEvent, PhaseStatusResponse } from './phase-status'

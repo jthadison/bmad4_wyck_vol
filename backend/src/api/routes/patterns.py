@@ -1,5 +1,5 @@
 """
-Pattern API Routes (Story 10.7, P3-F12, P3-F13)
+Pattern API Routes (Story 10.7, P3-F11, P3-F12, P3-F13)
 
 Purpose:
 --------
@@ -11,8 +11,9 @@ Endpoints:
 GET /api/v1/patterns/statistics - Get historical pattern performance statistics
 GET /api/v1/patterns/{symbol}/trading-ranges - Get historical trading ranges (P3-F12)
 GET /api/v1/patterns/{symbol}/volume-profile - Volume profile by Wyckoff phase (P3-F13)
+GET /api/v1/patterns/{symbol}/phase-status - Get current Wyckoff phase status (P3-F11)
 
-Author: Story 10.7 (AC 5), P3-F12 (Historical Trading Range Browser), P3-F13 (Volume Profile by Phase)
+Author: Story 10.7 (AC 5), P3-F11 (Wyckoff Cycle Compass), P3-F12 (Historical Trading Range Browser), P3-F13 (Volume Profile by Phase)
 """
 
 import asyncio
@@ -26,6 +27,7 @@ from fastapi import status as http_status
 
 from src.models.ohlcv import OHLCVBar
 from src.models.pattern_statistics import PatternStatistics
+from src.models.phase_status import PhaseStatusEvent, PhaseStatusResponse
 from src.models.trading_range_history import (
     TradingRangeEvent,
     TradingRangeHistory,
@@ -643,3 +645,141 @@ async def get_volume_profile(
     )
 
     return result
+
+
+# ============================================================================
+# Phase Status Endpoint (P3-F11: Wyckoff Cycle Compass)
+# ============================================================================
+
+# Expected phase durations in bars for progression calculation
+_EXPECTED_PHASE_DURATION: dict[str, tuple[int, int]] = {
+    "A": (5, 15),
+    "B": (20, 50),
+    "C": (3, 10),
+    "D": (10, 30),
+    "E": (30, 100),
+}
+
+
+def _calculate_progression(phase: str, duration_bars: int) -> float:
+    """Calculate progression percentage within a phase.
+
+    Uses expected phase duration ranges. Caps at 0.95 so the gauge
+    never shows 100% unless a confirmed transition has occurred.
+    """
+    min_dur, max_dur = _EXPECTED_PHASE_DURATION.get(phase, (10, 50))
+    if max_dur <= min_dur:
+        return 0.5
+    pct = (duration_bars - min_dur) / (max_dur - min_dur)
+    return max(0.0, min(0.95, pct))
+
+
+def _determine_bias(events: list[PhaseStatusEvent]) -> str:
+    """Determine accumulation vs distribution bias from event types."""
+    accum_events = {"SC", "AR", "ST", "SPRING", "SOS", "LPS"}
+    dist_events = {"BC", "UTAD", "SOW", "LPSY"}
+    accum_count = sum(1 for e in events if e.event_type in accum_events)
+    dist_count = sum(1 for e in events if e.event_type in dist_events)
+    if accum_count > dist_count:
+        return "ACCUMULATION"
+    if dist_count > accum_count:
+        return "DISTRIBUTION"
+    return "UNKNOWN"
+
+
+@router.get(
+    "/{symbol}/phase-status",
+    response_model=PhaseStatusResponse,
+    summary="Get current Wyckoff phase status for a symbol",
+    description="""
+    Returns the current Wyckoff phase classification for a given symbol,
+    including confidence, progression within the phase, and recent events.
+
+    Used by the Wyckoff Phase Compass UI component.
+
+    TODO: Wire to real PhaseClassifier with live market data (Story 23.x).
+    Currently returns mock data for UI development.
+    """,
+)
+async def get_phase_status(
+    symbol: str,
+    timeframe: str = Query(
+        "1d",
+        description="Analysis timeframe",
+        pattern=r"^(1m|5m|15m|1h|1d|1M|5M|15M|1H|1D|4H|1W)$",
+    ),
+    bars: int = Query(200, ge=20, le=500, description="Number of bars to analyze"),
+) -> PhaseStatusResponse:
+    """
+    Get current Wyckoff phase status for a symbol (Feature 11).
+
+    TODO: Replace mock data with real PhaseClassifier analysis once
+    market data service integration is complete. The PhaseClassifier
+    exists at pattern_engine.phase_detection.PhaseClassifier but requires
+    OHLCV data from the market data service which is not yet wired here.
+    """
+    logger.info(
+        "phase_status_requested",
+        symbol=symbol,
+        timeframe=timeframe,
+        bars=bars,
+    )
+
+    # --- Mock implementation for UI development ---
+    # In production, this will:
+    # 1. Fetch OHLCV data via market data service
+    # 2. Run PhaseClassifier.classify(ohlcv_data)
+    # 3. Extract events, calculate progression
+    mock_events = [
+        PhaseStatusEvent(
+            event_type="SC",
+            bar_index=145,
+            price=148.50,
+            confidence=0.82,
+        ),
+        PhaseStatusEvent(
+            event_type="AR",
+            bar_index=138,
+            price=155.20,
+            confidence=0.78,
+        ),
+        PhaseStatusEvent(
+            event_type="ST",
+            bar_index=95,
+            price=149.10,
+            confidence=0.75,
+        ),
+        PhaseStatusEvent(
+            event_type="SPRING",
+            bar_index=22,
+            price=147.80,
+            confidence=0.85,
+        ),
+    ]
+
+    phase = "C"
+    duration = 22
+    progression = _calculate_progression(phase, duration)
+    bias = _determine_bias(mock_events)
+    dominant = mock_events[-1].event_type if mock_events else None  # Most recent event
+
+    response = PhaseStatusResponse(
+        symbol=symbol.upper(),
+        timeframe=timeframe,
+        phase=phase,
+        confidence=0.78,
+        phase_duration_bars=duration,
+        progression_pct=progression,
+        dominant_event=dominant,
+        recent_events=mock_events,
+        bias=bias,
+        updated_at=datetime.now(UTC),
+    )
+    logger.info(
+        "phase_status_returned",
+        symbol=response.symbol,
+        phase=response.phase,
+        confidence=response.confidence,
+        bias=response.bias,
+    )
+    return response
