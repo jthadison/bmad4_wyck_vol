@@ -4,12 +4,13 @@ Provides RS score comparison of a symbol vs SPY and its sector ETF.
 Uses the existing RelativeStrengthCalculator service.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_db_session
@@ -94,7 +95,7 @@ async def get_relative_strength(
             is_sector_leader = (
                 bool(row.is_sector_leader) if row.is_sector_leader is not None else False
             )
-    except Exception:
+    except ProgrammingError:
         # sector_mapping table might not exist; continue without sector info
         logger.debug("sector_mapping_lookup_skipped", symbol=symbol)
 
@@ -102,8 +103,6 @@ async def get_relative_strength(
     calc = RelativeStrengthCalculator(session, period_days=period_days)
 
     end_date = datetime.now(UTC)
-    from datetime import timedelta
-
     start_date = end_date - timedelta(days=period_days)
 
     # Get stock prices
@@ -114,7 +113,8 @@ async def get_relative_strength(
             detail=f"Insufficient price history for {symbol} over {period_days} days",
         )
 
-    stock_return = float(calc.calculate_return(stock_prices[0], stock_prices[1]))
+    stock_return_decimal = calc.calculate_return(stock_prices[0], stock_prices[1])
+    stock_return = float(stock_return_decimal)
 
     # Build benchmarks list
     benchmarks: list[RSBenchmark] = []
@@ -122,13 +122,9 @@ async def get_relative_strength(
     # SPY benchmark
     spy_prices = await calc._get_price_history("SPY", start_date, end_date)
     if spy_prices is not None:
-        spy_return = float(calc.calculate_return(spy_prices[0], spy_prices[1]))
-        rs_vs_spy = float(
-            calc.calculate_rs_score(
-                calc.calculate_return(stock_prices[0], stock_prices[1]),
-                calc.calculate_return(spy_prices[0], spy_prices[1]),
-            )
-        )
+        spy_return_decimal = calc.calculate_return(spy_prices[0], spy_prices[1])
+        spy_return = float(spy_return_decimal)
+        rs_vs_spy = float(calc.calculate_rs_score(stock_return_decimal, spy_return_decimal))
         benchmarks.append(
             RSBenchmark(
                 benchmark_symbol="SPY",
@@ -145,13 +141,9 @@ async def get_relative_strength(
         etf_symbol = RelativeStrengthCalculator.SECTOR_ETF_MAP[sector_name]
         etf_prices = await calc._get_price_history(etf_symbol, start_date, end_date)
         if etf_prices is not None:
-            etf_return = float(calc.calculate_return(etf_prices[0], etf_prices[1]))
-            rs_vs_sector = float(
-                calc.calculate_rs_score(
-                    calc.calculate_return(stock_prices[0], stock_prices[1]),
-                    calc.calculate_return(etf_prices[0], etf_prices[1]),
-                )
-            )
+            etf_return_decimal = calc.calculate_return(etf_prices[0], etf_prices[1])
+            etf_return = float(etf_return_decimal)
+            rs_vs_sector = float(calc.calculate_rs_score(stock_return_decimal, etf_return_decimal))
             benchmarks.append(
                 RSBenchmark(
                     benchmark_symbol=etf_symbol,

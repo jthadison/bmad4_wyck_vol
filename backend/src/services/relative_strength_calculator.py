@@ -8,7 +8,7 @@ sector ETFs). RS scores identify sector leaders for high-probability trade setup
 
 RS Calculation:
 ---------------
-rs_score = (stock_return - benchmark_return) * 100
+rs_score = stock_return - benchmark_return  (both in percentage points)
 
 Example:
     Stock +10%, SPY +5% → RS = +5.0 (outperforming)
@@ -173,18 +173,18 @@ class RelativeStrengthCalculator:
         """
         Calculate RS score.
 
-        Formula: (stock_return - benchmark_return) * 100
+        Formula: stock_return - benchmark_return
 
         Args:
-            stock_return: Stock percentage return
-            benchmark_return: Benchmark percentage return
+            stock_return: Stock percentage return (already in percentage points)
+            benchmark_return: Benchmark percentage return (already in percentage points)
 
         Returns:
-            RS score (positive = outperforming, negative = underperforming)
+            RS score in percentage points (positive = outperforming, negative = underperforming)
 
         Example:
             >>> rs = calc.calculate_rs_score(Decimal("10.00"), Decimal("5.00"))
-            >>> print(rs)  # 5.00 (outperforming by 5%)
+            >>> print(rs)  # 5.00 (outperforming by 5 percentage points)
         """
         rs_score = stock_return - benchmark_return
         return rs_score.quantize(Decimal("0.0001"))

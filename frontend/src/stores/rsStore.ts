@@ -28,6 +28,7 @@ export const useRSStore = defineStore('rs', () => {
   async function fetchRS(symbol: string, periodDays = 30) {
     isLoading.value = true
     error.value = null
+    data.value = null
     try {
       data.value = await apiClient.get<RSData>(`/rs/${symbol}`, {
         period_days: periodDays,
