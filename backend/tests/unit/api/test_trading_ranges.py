@@ -75,9 +75,9 @@ def test_get_trading_ranges_limit_parameter():
 
 def test_get_trading_ranges_custom_timeframe():
     """Test timeframe parameter is respected."""
-    response = client.get("/api/v1/patterns/AAPL/trading-ranges", params={"timeframe": "4h"})
+    response = client.get("/api/v1/patterns/AAPL/trading-ranges", params={"timeframe": "4H"})
     data = response.json()
-    assert data["timeframe"] == "4h"
+    assert data["timeframe"] == "4H"
 
 
 def test_get_trading_ranges_symbol_uppercased():

@@ -447,7 +447,11 @@ def _build_mock_trading_ranges(symbol: str, timeframe: str) -> list[TradingRange
 )
 async def get_trading_ranges(
     symbol: str,
-    timeframe: str = Query("1d", description="Bar timeframe (e.g. 1d, 4h, 1h)"),
+    timeframe: str = Query(
+        "1d",
+        description="Bar timeframe",
+        pattern=r"^(1m|5m|15m|1h|1d|1M|5M|15M|1H|1D|4H|1W)$",
+    ),
     limit: int = Query(10, ge=1, le=50, description="Maximum ranges to return"),
 ) -> TradingRangeListResponse:
     """Get historical trading ranges for a symbol (P3-F12)."""
@@ -472,10 +476,17 @@ async def get_trading_ranges(
     # Apply limit to historical only (active is always shown)
     historical = historical[:limit]
 
-    return TradingRangeListResponse(
+    response = TradingRangeListResponse(
         symbol=symbol.upper(),
         timeframe=timeframe,
         ranges=historical,
         active_range=active_range,
         total_count=len(historical) + (1 if active_range else 0),
     )
+    logger.info(
+        "trading_ranges_returned",
+        symbol=response.symbol,
+        total_count=response.total_count,
+        has_active=response.active_range is not None,
+    )
+    return response
