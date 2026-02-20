@@ -4,7 +4,7 @@ Tests for Live Position Management API endpoints (P4-I15).
 Covers:
 - GET /api/v1/live-positions - returns enriched positions
 - PATCH /api/v1/live-positions/{id}/stop-loss - validation rules
-- POST /api/v1/live-positions/{id}/partial-exit - share calculation
+- POST /api/v1/live-positions/{id}/partial-exit - share calculation, DB persist, row lock
 
 Uses mocked DB layer to avoid SQLite/JSONB incompatibility issues.
 """
@@ -18,7 +18,7 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src.api.dependencies import get_current_user_id
+from src.api.dependencies import get_current_user_id, get_db_session
 from src.api.main import app
 
 _FAKE_USER_ID = uuid4()
@@ -69,6 +69,16 @@ def _mock_position_row(
     )
 
 
+def _setup_overrides(mock_session):
+    """Set up common dependency overrides for tests."""
+
+    async def override_get_db_session():
+        yield mock_session
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_current_user_id] = _override_auth
+
+
 # ---------------------------------------------------------------------------
 # GET /api/v1/live-positions
 # ---------------------------------------------------------------------------
@@ -84,13 +94,7 @@ class TestGetLivePositions:
         mock_result.scalars.return_value.all.return_value = []
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -108,13 +112,7 @@ class TestGetLivePositions:
         mock_result.scalars.return_value.all.return_value = [pos]
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -127,6 +125,58 @@ class TestGetLivePositions:
             assert data[0]["stop_distance_pct"] is not None
             assert data[0]["r_multiple"] is not None
             assert data[0]["dollars_at_risk"] is not None
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_dollars_at_risk_uses_current_price(self) -> None:
+        """dollars_at_risk should reflect current exposure, not initial risk."""
+        pos = _mock_position_row(
+            entry_price=Decimal("100.00"),
+            stop_loss=Decimal("90.00"),
+            shares=Decimal("10"),
+            current_price=Decimal("120.00"),
+            current_pnl=Decimal("200.00"),
+        )
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [pos]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/api/v1/live-positions")
+            data = response.json()
+            # Current risk: (120 - 90) * 10 = 300, not initial (100 - 90) * 10 = 100
+            assert data[0]["dollars_at_risk"] == "300.00"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_dollars_at_risk_falls_back_to_entry_when_no_current_price(self) -> None:
+        """When current_price is None, fall back to entry_price for risk calc."""
+        pos = _mock_position_row(
+            entry_price=Decimal("100.00"),
+            stop_loss=Decimal("90.00"),
+            shares=Decimal("10"),
+            current_price=None,
+            current_pnl=None,
+        )
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [pos]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/api/v1/live-positions")
+            data = response.json()
+            # Fallback: (100 - 90) * 10 = 100
+            assert data[0]["dollars_at_risk"] == "100.00"
         finally:
             app.dependency_overrides.clear()
 
@@ -160,13 +210,7 @@ class TestUpdateStopLoss:
         mock_result.scalar_one_or_none.return_value = pos
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -189,13 +233,7 @@ class TestUpdateStopLoss:
         mock_result.scalar_one_or_none.return_value = pos
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -220,13 +258,7 @@ class TestUpdateStopLoss:
         mock_result.scalar_one_or_none.return_value = pos
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -253,13 +285,7 @@ class TestUpdateStopLoss:
         mock_session.commit = AsyncMock()
         mock_session.refresh = AsyncMock()
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -284,13 +310,7 @@ class TestUpdateStopLoss:
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -320,14 +340,9 @@ class TestPartialExit:
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = pos
         mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -345,18 +360,70 @@ class TestPartialExit:
             app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
+    async def test_partial_exit_persists_shares_to_db(self) -> None:
+        """After partial exit, shares should be decremented and committed."""
+        pos_id = uuid4()
+        pos = _mock_position_row(id=pos_id, shares=Decimal("100"))
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = pos
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    f"/api/v1/live-positions/{pos_id}/partial-exit",
+                    json={"exit_pct": 25},
+                )
+            assert response.status_code == 200
+            # Verify shares were decremented on the position object
+            assert pos.shares == Decimal("75")
+            assert pos.status == "OPEN"
+            # Verify commit was called to persist
+            mock_session.commit.assert_awaited_once()
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_full_exit_closes_position(self) -> None:
+        """100% exit should set status to CLOSED."""
+        pos_id = uuid4()
+        pos = _mock_position_row(id=pos_id, shares=Decimal("100"))
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = pos
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    f"/api/v1/live-positions/{pos_id}/partial-exit",
+                    json={"exit_pct": 100},
+                )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["shares_to_exit"] == "100"
+            # Full exit should close position
+            assert pos.shares == Decimal("0")
+            assert pos.status == "CLOSED"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
     async def test_rejects_zero_percent(self) -> None:
         pos_id = uuid4()
 
         mock_session = AsyncMock()
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -374,13 +441,7 @@ class TestPartialExit:
 
         mock_session = AsyncMock()
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -401,14 +462,9 @@ class TestPartialExit:
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = pos
         mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -432,14 +488,9 @@ class TestPartialExit:
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = pos
         mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -462,13 +513,7 @@ class TestPartialExit:
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        async def override_get_db():
-            yield mock_session
-
-        from src.database import get_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_current_user_id] = _override_auth
+        _setup_overrides(mock_session)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:

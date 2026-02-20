@@ -5,6 +5,14 @@ Action-oriented endpoints for managing open positions:
 - GET /api/v1/live-positions - List all open positions with enriched data
 - PATCH /api/v1/live-positions/{position_id}/stop-loss - Adjust stop loss
 - POST /api/v1/live-positions/{position_id}/partial-exit - Partial exit
+
+Note: Currently long-only. PositionModel has no `side` field and pattern_type
+is constrained to SPRING/SOS/LPS (all long entries). UTAD short support
+requires adding a `side` column to the positions table first.
+
+Note: Single-tenant system. PositionModel and CampaignModel have no user_id
+field, so positions are not filtered by user. All authenticated users see
+all positions. Multi-tenant filtering requires schema changes.
 """
 
 from decimal import Decimal, InvalidOperation
@@ -17,13 +25,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import get_current_user_id
-from src.database import get_db
+from src.api.dependencies import get_current_user_id, get_db_session
 from src.models.order import Order, OrderSide, OrderType
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/live-positions", tags=["live-positions"])
+
+# Default account equity used when broker is not connected.
+# TODO: Replace with real account equity from broker adapter once
+# broker connectivity is guaranteed in all partial-exit paths.
+_DEFAULT_ACCOUNT_EQUITY = Decimal("100000")
 
 
 # ---------------------------------------------------------------------------
@@ -99,16 +111,24 @@ def _enrich_position(pos_model: object) -> EnrichedPosition:
     r_multiple: Optional[str] = None
     pnl_pct: Optional[str] = None
 
-    risk_per_share = entry_price - stop_loss
+    # Use current price for dollars_at_risk (current exposure),
+    # falling back to entry price when current price is unavailable.
+    risk_reference_price = current_price if current_price is not None else entry_price
+    risk_per_share = risk_reference_price - stop_loss
     dollars_at_risk = risk_per_share * shares
+
+    # Initial risk per share for R-multiple calculation
+    initial_risk_per_share = entry_price - stop_loss
 
     if current_price is not None and current_price > 0:
         stop_distance_pct = str(
             ((current_price - stop_loss) / current_price * Decimal("100")).quantize(Decimal("0.01"))
         )
 
-    if current_pnl is not None and risk_per_share > 0 and shares > 0:
-        r_multiple = str((current_pnl / (risk_per_share * shares)).quantize(Decimal("0.01")))
+    if current_pnl is not None and initial_risk_per_share > 0 and shares > 0:
+        r_multiple = str(
+            (current_pnl / (initial_risk_per_share * shares)).quantize(Decimal("0.01"))
+        )
 
     if current_pnl is not None and entry_price > 0 and shares > 0:
         pnl_pct = str(
@@ -143,7 +163,7 @@ def _enrich_position(pos_model: object) -> EnrichedPosition:
 
 @router.get("", response_model=list[EnrichedPosition])
 async def get_live_positions(
-    db_session: AsyncSession = Depends(get_db),
+    db_session: AsyncSession = Depends(get_db_session),
     _user_id: UUID = Depends(get_current_user_id),
 ) -> list[EnrichedPosition]:
     """
@@ -152,8 +172,11 @@ async def get_live_positions(
     Returns positions with computed fields:
     - stop_distance_pct: distance from current price to stop
     - r_multiple: unrealised R-multiple
-    - dollars_at_risk: absolute dollar risk
+    - dollars_at_risk: absolute dollar risk (based on current price)
     - pnl_pct: unrealized P&L as percentage
+
+    Note: Single-tenant - returns all open positions regardless of user.
+    See module docstring for multi-tenant considerations.
     """
     try:
         from src.repositories.models import PositionModel
@@ -184,16 +207,16 @@ async def get_live_positions(
 async def update_stop_loss(
     position_id: UUID,
     body: StopLossUpdate,
-    db_session: AsyncSession = Depends(get_db),
+    db_session: AsyncSession = Depends(get_db_session),
     _user_id: UUID = Depends(get_current_user_id),
 ) -> EnrichedPosition:
     """
     Adjust stop loss for an open position.
 
-    Wyckoff rules enforced:
+    Wyckoff rules enforced (long positions only):
     - Stop must be above zero
-    - Stop must be below entry price (long positions)
-    - Stop can only move up (never move stop down for longs)
+    - Stop must be below entry price
+    - Stop can only move up (never move stop down)
     """
     try:
         new_stop = Decimal(body.new_stop)
@@ -212,7 +235,7 @@ async def update_stop_loss(
     try:
         from src.repositories.models import PositionModel
 
-        # Row-level lock to prevent concurrent stop-loss updates (Fix 4)
+        # Row-level lock to prevent concurrent stop-loss updates
         result = await db_session.execute(
             select(PositionModel).where(PositionModel.id == position_id).with_for_update()
         )
@@ -281,19 +304,21 @@ async def partial_exit(
     position_id: UUID,
     body: PartialExitRequest,
     request: Request,
-    db_session: AsyncSession = Depends(get_db),
+    db_session: AsyncSession = Depends(get_db_session),
     _user_id: UUID = Depends(get_current_user_id),
 ) -> PartialExitResponse:
     """
     Execute a partial exit on an open position.
 
-    Calculates shares to exit based on exit_pct, creates a sell order.
+    Calculates shares to exit based on exit_pct, creates a sell order,
+    and persists the updated share count to the database.
     """
     try:
         from src.repositories.models import PositionModel
 
+        # Row-level lock to prevent concurrent partial exits from over-exiting
         result = await db_session.execute(
-            select(PositionModel).where(PositionModel.id == position_id)
+            select(PositionModel).where(PositionModel.id == position_id).with_for_update()
         )
         pos = result.scalar_one_or_none()
 
@@ -317,6 +342,12 @@ async def partial_exit(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Calculated shares to exit is zero. Position too small for this percentage.",
+            )
+
+        if shares_to_exit > shares:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot exit {shares_to_exit} shares; only {shares} remaining.",
             )
 
         # Determine order type
@@ -357,8 +388,28 @@ async def partial_exit(
         if broker_router is not None:
             from src.risk_management.execution_risk_gate import PortfolioState
 
+            # Try to fetch real account equity from broker
+            account_equity = _DEFAULT_ACCOUNT_EQUITY
+            try:
+                for adapter in [
+                    getattr(broker_router, "_alpaca_adapter", None),
+                    getattr(broker_router, "_mt5_adapter", None),
+                ]:
+                    if adapter is not None and adapter.is_connected():
+                        account_info = await adapter.get_account_info()
+                        balance = account_info.get("balance")
+                        if balance is not None:
+                            account_equity = Decimal(str(balance))
+                            break
+            except Exception:
+                logger.warning(
+                    "partial_exit_equity_fetch_failed",
+                    position_id=str(position_id),
+                    fallback_equity=str(_DEFAULT_ACCOUNT_EQUITY),
+                )
+
             # Partial exits are risk-reducing; use minimal placeholder risk values
-            portfolio_state = PortfolioState(account_equity=Decimal("100000"))
+            portfolio_state = PortfolioState(account_equity=account_equity)
             trade_risk_pct = Decimal("0.01")
 
             execution_report = await broker_router.route_order(
@@ -372,6 +423,13 @@ async def partial_exit(
                 broker_status=str(execution_report.status),
             )
 
+            # Persist updated share count after successful broker routing
+            remaining = shares - shares_to_exit
+            pos.shares = remaining
+            if remaining <= 0:
+                pos.status = "CLOSED"
+            await db_session.commit()
+
             return PartialExitResponse(
                 order_id=str(order.id),
                 shares_to_exit=str(shares_to_exit),
@@ -380,7 +438,13 @@ async def partial_exit(
                 message=f"Partial exit order routed for {shares_to_exit} shares ({exit_pct}%) of {pos.symbol}",
             )
 
-        # No broker configured - order created but not routed
+        # No broker configured - still persist the share decrement
+        remaining = shares - shares_to_exit
+        pos.shares = remaining
+        if remaining <= 0:
+            pos.status = "CLOSED"
+        await db_session.commit()
+
         logger.warning(
             "partial_exit_order_not_routed",
             position_id=str(position_id),
