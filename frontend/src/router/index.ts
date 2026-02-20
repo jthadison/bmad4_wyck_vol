@@ -235,6 +235,17 @@ const routes: RouteRecordRaw[] = [
       ],
     },
   },
+  // Trade Journal (Feature P2-8)
+  {
+    path: '/journal',
+    name: 'journal',
+    component: () => import('@/views/journal/JournalView.vue'),
+    meta: {
+      title: 'Trade Journal',
+      description: 'Record pre/post trade reasoning with Wyckoff checklist',
+      breadcrumb: [{ label: 'Journal' }],
+    },
+  },
   // Audit Trail Admin Dashboard (Task #2)
   {
     path: '/admin/audit-trail',

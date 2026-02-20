@@ -71,6 +71,13 @@
                 >
                   Campaigns
                 </router-link>
+                <router-link
+                  to="/journal"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Journal
+                </router-link>
               </div>
               <div class="w-px h-5 bg-[#2a3a5c] mx-2" aria-hidden="true"></div>
               <!-- Analysis group -->
@@ -181,6 +188,12 @@
         class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
         @click="mobileMenuOpen = false"
         >MTF</router-link
+      >
+      <router-link
+        to="/journal"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Journal</router-link
       >
       <router-link
         to="/backtest"

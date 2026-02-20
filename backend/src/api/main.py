@@ -60,6 +60,7 @@ from src.api.routes import (
     watchlist,
 )
 from src.api.routes import settings as settings_routes
+from src.api.routes.journal import router as journal_router
 from src.api.websocket import websocket_endpoint
 from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
@@ -137,6 +138,7 @@ app.include_router(monitoring.router)  # Monitoring & audit routes (Story 23.13)
 app.include_router(kill_switch.router)  # Kill switch routes (Story 23.13)
 app.include_router(rs.router)  # Relative strength routes
 app.include_router(price_alerts.router)  # Price alert CRUD routes (Feature P2-5)
+app.include_router(journal_router)  # Trade Journal routes (Feature P2-8)
 
 
 # WebSocket endpoint for real-time updates
