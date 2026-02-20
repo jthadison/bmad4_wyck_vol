@@ -73,10 +73,10 @@ const isProfitable = computed(() => totalReturn.value.gte(0))
 
 // Chart color based on profitability
 const lineColor = computed(() =>
-  isProfitable.value ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'
+  isProfitable.value ? 'rgb(52, 211, 153)' : 'rgb(248, 113, 113)'
 )
 const fillColor = computed(() =>
-  isProfitable.value ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)'
+  isProfitable.value ? 'rgba(52, 211, 153, 0.08)' : 'rgba(248, 113, 113, 0.08)'
 )
 
 // Prepare chart data
@@ -113,6 +113,13 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
       display: false,
     },
     tooltip: {
+      backgroundColor: '#111827',
+      titleColor: '#f3f4f6',
+      bodyColor: '#d1d5db',
+      borderColor: '#374151',
+      borderWidth: 1,
+      cornerRadius: 8,
+      padding: 12,
       callbacks: {
         label: (context) => {
           const value = context.parsed.y
@@ -139,22 +146,20 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
   },
   scales: {
     x: {
-      grid: {
-        display: false,
-      },
-      ticks: {
-        maxTicksLimit: 10,
-      },
+      grid: { display: false },
+      ticks: { color: '#6b7280', maxTicksLimit: 10, font: { size: 11 } },
+      border: { color: '#374151' },
     },
     y: {
-      grid: {
-        color: 'rgba(0, 0, 0, 0.05)',
-      },
+      grid: { color: 'rgba(75, 85, 99, 0.3)', lineWidth: 0.5 },
       ticks: {
+        color: '#6b7280',
+        font: { size: 11 },
         callback: (value) => {
           return `$${(value as number).toLocaleString('en-US')}`
         },
       },
+      border: { display: false },
     },
   },
 }))

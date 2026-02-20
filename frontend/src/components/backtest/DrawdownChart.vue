@@ -119,8 +119,8 @@ const chartData = computed<ChartData<'line'>>(() => ({
     {
       label: 'Drawdown',
       data: drawdownData.value.map((point) => point.drawdownPct),
-      borderColor: 'rgb(239, 68, 68)',
-      backgroundColor: 'rgba(239, 68, 68, 0.2)',
+      borderColor: 'rgb(248, 113, 113)',
+      backgroundColor: 'rgba(248, 113, 113, 0.08)',
       fill: true,
       tension: 0.1,
       pointRadius: 0,
@@ -138,6 +138,13 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
       display: false,
     },
     tooltip: {
+      backgroundColor: '#111827',
+      titleColor: '#f3f4f6',
+      bodyColor: '#d1d5db',
+      borderColor: '#374151',
+      borderWidth: 1,
+      cornerRadius: 8,
+      padding: 12,
       callbacks: {
         title: (context) => {
           const index = context[0].dataIndex
@@ -161,22 +168,20 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
   },
   scales: {
     x: {
-      grid: {
-        display: false,
-      },
-      ticks: {
-        maxTicksLimit: 10,
-      },
+      grid: { display: false },
+      ticks: { color: '#6b7280', maxTicksLimit: 10, font: { size: 11 } },
+      border: { color: '#374151' },
     },
     y: {
-      grid: {
-        color: 'rgba(0, 0, 0, 0.05)',
-      },
+      grid: { color: 'rgba(75, 85, 99, 0.3)', lineWidth: 0.5 },
       ticks: {
+        color: '#6b7280',
+        font: { size: 11 },
         callback: (value) => {
           return `${(value as number).toFixed(0)}%`
         },
       },
+      border: { display: false },
       min: Math.min(...drawdownData.value.map((p) => p.drawdownPct), -5),
       max: 0,
     },
