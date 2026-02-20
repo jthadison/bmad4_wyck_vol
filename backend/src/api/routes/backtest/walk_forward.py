@@ -295,6 +295,47 @@ async def start_walk_forward_suite():
 
 
 @router.get(
+    "/walk-forward/suite/results",
+)
+async def get_walk_forward_suite_results(
+    suite_id: UUID | None = None,
+):
+    """
+    Get walk-forward suite results (Story 23.9).
+
+    Args:
+        suite_id: Optional suite UUID. If not provided, returns the latest result.
+
+    Returns:
+        Suite results or status if still running
+    """
+    if suite_id:
+        if suite_id not in _suite_runs:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Suite run {suite_id} not found",
+            )
+        run = _suite_runs[suite_id]
+    else:
+        # Return the latest result
+        if not _suite_runs:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No suite runs found",
+            )
+        latest_id = max(_suite_runs.keys(), key=lambda k: _suite_runs[k]["created_at"])
+        suite_id = latest_id
+        run = _suite_runs[suite_id]
+
+    if run["status"] == "RUNNING":
+        return {"suite_id": str(suite_id), "status": "RUNNING"}
+    elif run["status"] == "FAILED":
+        return {"suite_id": str(suite_id), "status": "FAILED", "error": run.get("error")}
+    else:
+        return {"suite_id": str(suite_id), "status": "COMPLETED", "result": run.get("result")}
+
+
+@router.get(
     "/walk-forward/{walk_forward_id}/stability",
 )
 async def get_walk_forward_stability(
@@ -338,7 +379,7 @@ async def get_walk_forward_stability(
             detail=f"Walk-forward test {walk_forward_id} not found",
         )
 
-    windows_data = []
+    windows_data: list[dict] = []
     for w in result.windows:
         # Extract Sharpe, return, drawdown from train/validate metrics
         is_sharpe = float(w.train_metrics.sharpe_ratio)
@@ -409,44 +450,3 @@ async def get_walk_forward_stability(
         "parameter_stability": parameter_stability,
         "robustness_score": robustness_score,
     }
-
-
-@router.get(
-    "/walk-forward/suite/results",
-)
-async def get_walk_forward_suite_results(
-    suite_id: UUID | None = None,
-):
-    """
-    Get walk-forward suite results (Story 23.9).
-
-    Args:
-        suite_id: Optional suite UUID. If not provided, returns the latest result.
-
-    Returns:
-        Suite results or status if still running
-    """
-    if suite_id:
-        if suite_id not in _suite_runs:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Suite run {suite_id} not found",
-            )
-        run = _suite_runs[suite_id]
-    else:
-        # Return the latest result
-        if not _suite_runs:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No suite runs found",
-            )
-        latest_id = max(_suite_runs.keys(), key=lambda k: _suite_runs[k]["created_at"])
-        suite_id = latest_id
-        run = _suite_runs[suite_id]
-
-    if run["status"] == "RUNNING":
-        return {"suite_id": str(suite_id), "status": "RUNNING"}
-    elif run["status"] == "FAILED":
-        return {"suite_id": str(suite_id), "status": "FAILED", "error": run.get("error")}
-    else:
-        return {"suite_id": str(suite_id), "status": "COMPLETED", "result": run.get("result")}

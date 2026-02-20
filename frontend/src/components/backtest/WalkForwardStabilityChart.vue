@@ -182,7 +182,7 @@ const chartData = computed((): ChartData | null => {
             text-anchor="middle"
             font-size="11"
             fill="#9ca3af"
-            transform="rotate(-90, 12, 140)"
+            :transform="`rotate(-90, 12, ${PADDING.top + INNER_H / 2})`"
           >
             Sharpe Ratio
           </text>
