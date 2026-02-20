@@ -6,11 +6,7 @@
 
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import {
-  ordersService,
-  type PendingOrder,
-  type OrderModifyRequest,
-} from '@/services/ordersService'
+import { ordersService, type PendingOrder } from '@/services/ordersService'
 
 const LOG_PREFIX = '[OrdersStore]'
 function logError(action: string, err: unknown): void {
@@ -87,28 +83,6 @@ export const useOrdersStore = defineStore('orders', () => {
     }
   }
 
-  /** Modify a pending order (cancel + replace). Returns the message if successful. */
-  async function modifyOrder(
-    orderId: string,
-    payload: OrderModifyRequest
-  ): Promise<string | false> {
-    isSaving.value = true
-    error.value = null
-    try {
-      const response = await ordersService.modify(orderId, payload)
-      // Refresh the full order list instead of just removing the old order,
-      // so the UI stays accurate after the cancel step.
-      await fetchOrders()
-      return response.message
-    } catch (err) {
-      error.value = 'Failed to modify order'
-      logError('modifyOrder', err)
-      return false
-    } finally {
-      isSaving.value = false
-    }
-  }
-
   return {
     // State
     orders,
@@ -124,6 +98,5 @@ export const useOrdersStore = defineStore('orders', () => {
     // Actions
     fetchOrders,
     cancelOrder,
-    modifyOrder,
   }
 })

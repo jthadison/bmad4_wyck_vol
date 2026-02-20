@@ -8,20 +8,6 @@
       {{ store.error }}
     </div>
 
-    <!-- Modify notice banner -->
-    <div
-      v-if="modifyNotice"
-      class="mb-4 p-3 rounded-md bg-yellow-900/30 border border-yellow-700 text-yellow-300 text-sm flex items-center justify-between"
-    >
-      <span>{{ modifyNotice }}</span>
-      <button
-        class="ml-4 text-yellow-400 hover:text-yellow-200 text-xs font-medium"
-        @click="dismissNotice"
-      >
-        Dismiss
-      </button>
-    </div>
-
     <!-- Broker status badges -->
     <div class="flex items-center gap-3 mb-4">
       <span class="text-xs text-gray-500 uppercase tracking-wider"
@@ -163,40 +149,7 @@
                 {{ formatAge(order.created_at) }}
               </td>
               <td class="px-3 py-3">
-                <!-- Inline edit mode -->
-                <div
-                  v-if="editingOrderId === order.order_id"
-                  class="flex items-center gap-2"
-                >
-                  <input
-                    v-model="editPrice"
-                    type="text"
-                    placeholder="New price"
-                    class="w-24 px-2 py-1 rounded bg-[#1a2236] border border-[#2a3a5c] text-gray-200 text-xs focus:border-blue-500 focus:outline-none"
-                  />
-                  <button
-                    class="px-2 py-1 rounded text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
-                    :disabled="store.isSaving"
-                    @click="submitModify(order)"
-                  >
-                    Save
-                  </button>
-                  <button
-                    class="px-2 py-1 rounded text-xs font-medium text-gray-400 hover:text-gray-200"
-                    @click="cancelEdit()"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                <!-- Normal actions -->
-                <div v-else class="flex items-center gap-2">
-                  <button
-                    class="px-2 py-1 rounded text-xs font-medium text-blue-400 hover:bg-blue-900/30 transition-colors"
-                    :disabled="store.isSaving"
-                    @click="startEdit(order)"
-                  >
-                    Modify
-                  </button>
+                <div class="flex items-center gap-2">
                   <button
                     class="px-2 py-1 rounded text-xs font-medium text-red-400 hover:bg-red-900/30 transition-colors"
                     :disabled="store.isSaving"
@@ -215,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useOrdersStore } from '@/stores/orders'
 import type { PendingOrder } from '@/services/ordersService'
 
@@ -254,45 +207,6 @@ const sortedOrders = computed(() => {
     return aVal.localeCompare(bVal) * dir
   })
 })
-
-// Inline editing
-const editingOrderId = ref<string | null>(null)
-const editPrice = ref('')
-const modifyNotice = ref<string | null>(null)
-
-function startEdit(order: PendingOrder): void {
-  editingOrderId.value = order.order_id
-  editPrice.value = order.limit_price ?? order.stop_price ?? ''
-}
-
-function cancelEdit(): void {
-  editingOrderId.value = null
-  editPrice.value = ''
-}
-
-async function submitModify(order: PendingOrder): Promise<void> {
-  if (!editPrice.value.trim()) {
-    cancelEdit()
-    return
-  }
-  const payload: Record<string, string> = {}
-  if (order.limit_price !== null) {
-    payload.limit_price = editPrice.value
-  } else if (order.stop_price !== null) {
-    payload.stop_price = editPrice.value
-  } else {
-    payload.limit_price = editPrice.value
-  }
-  const result = await store.modifyOrder(order.order_id, payload)
-  if (result !== false) {
-    cancelEdit()
-    modifyNotice.value = result
-  }
-}
-
-function dismissNotice(): void {
-  modifyNotice.value = null
-}
 
 async function handleCancel(orderId: string): Promise<void> {
   await store.cancelOrder(orderId)

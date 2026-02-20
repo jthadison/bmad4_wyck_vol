@@ -84,6 +84,9 @@ async def test_connect_success(alpaca_adapter):
         assert auth_message["key"] == "test_api_key"
         assert auth_message["secret"] == "test_secret_key"
 
+        # Clean up background tasks spawned by connect()
+        await alpaca_adapter.disconnect()
+
 
 @pytest.mark.asyncio
 async def test_connect_authentication_failure(alpaca_adapter):
@@ -105,7 +108,7 @@ async def test_connect_authentication_failure(alpaca_adapter):
         return mock_ws
 
     with patch("websockets.connect", side_effect=mock_connect):
-        with pytest.raises(RuntimeError, match="authentication failed"):
+        with pytest.raises(ConnectionError, match="authentication failed"):
             await alpaca_adapter.connect()
 
         assert alpaca_adapter._is_connected is False
@@ -250,9 +253,9 @@ async def test_latency_warning(alpaca_adapter, caplog):
 @pytest.mark.asyncio
 async def test_reconnect_exponential_backoff(alpaca_adapter):
     """Test reconnection with exponential backoff on failure."""
-    # Setup initial state
+    # Setup initial state - use tiny delays to keep tests fast
     alpaca_adapter._should_reconnect = True
-    alpaca_adapter._reconnect_delay = 1.0
+    alpaca_adapter._reconnect_delay = 0.01
     alpaca_adapter._consecutive_disconnects = 2
 
     # Mock connect to fail (which triggers backoff)
@@ -262,29 +265,31 @@ async def test_reconnect_exponential_backoff(alpaca_adapter):
     # Test 1: Failed reconnection doubles delay
     with patch.object(alpaca_adapter, "connect", side_effect=mock_connect_fail):
         await alpaca_adapter._reconnect()
-        assert alpaca_adapter._reconnect_delay == 2.0
+        assert alpaca_adapter._reconnect_delay == 0.02
 
     # Test 2: Another failure doubles again
     with patch.object(alpaca_adapter, "connect", side_effect=mock_connect_fail):
         await alpaca_adapter._reconnect()
-        assert alpaca_adapter._reconnect_delay == 4.0
+        assert alpaca_adapter._reconnect_delay == 0.04
 
     # Test 3: Another failure doubles again
     with patch.object(alpaca_adapter, "connect", side_effect=mock_connect_fail):
         await alpaca_adapter._reconnect()
-        assert alpaca_adapter._reconnect_delay == 8.0
+        assert alpaca_adapter._reconnect_delay == 0.08
 
-    # Test 4: Verify max delay cap
-    alpaca_adapter._reconnect_delay = 50.0
+    # Test 4: Verify max delay cap (use small values to avoid real sleeps)
+    alpaca_adapter._reconnect_delay = 0.50
+    alpaca_adapter._max_reconnect_delay = 0.60
     with patch.object(alpaca_adapter, "connect", side_effect=mock_connect_fail):
         await alpaca_adapter._reconnect()
-        assert alpaca_adapter._reconnect_delay == 60.0  # Max cap
+        assert alpaca_adapter._reconnect_delay == 0.60  # Max cap
 
 
 @pytest.mark.asyncio
 async def test_reconnect_resubscribes_to_watchlist(alpaca_adapter, mock_settings):
     """Test that reconnection resubscribes to watchlist symbols."""
     alpaca_adapter._should_reconnect = True
+    alpaca_adapter._reconnect_delay = 0.01  # Tiny delay for fast tests
 
     # Mock connect and subscribe
     mock_connect = AsyncMock()
@@ -399,17 +404,39 @@ async def test_get_provider_name(alpaca_adapter):
 
 
 @pytest.mark.asyncio
-async def test_fetch_historical_bars_not_implemented(alpaca_adapter):
-    """Test that historical data fetch raises NotImplementedError."""
+async def test_fetch_historical_bars_returns_bars(alpaca_adapter):
+    """Test that historical data fetch returns parsed bars from Alpaca REST API."""
     from datetime import date
 
-    with pytest.raises(NotImplementedError):
-        await alpaca_adapter.fetch_historical_bars(
-            symbol="AAPL",
-            start_date=date(2024, 1, 1),
-            end_date=date(2024, 12, 31),
-            timeframe="1d",
-        )
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_response.json.return_value = {
+        "bars": [
+            {
+                "t": "2024-01-02T05:00:00Z",
+                "o": 150.0,
+                "h": 152.0,
+                "l": 149.0,
+                "c": 151.0,
+                "v": 5000000,
+            }
+        ]
+    }
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    alpaca_adapter._http_client = mock_client
+
+    bars = await alpaca_adapter.fetch_historical_bars(
+        symbol="AAPL",
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 12, 31),
+        timeframe="1d",
+    )
+
+    assert len(bars) == 1
+    assert bars[0].symbol == "AAPL"
+    assert bars[0].volume == 5000000
 
 
 @pytest.mark.asyncio

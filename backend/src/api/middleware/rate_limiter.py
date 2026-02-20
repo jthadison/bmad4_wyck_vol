@@ -60,8 +60,11 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
             "/api/v1/paper-trading/enable",
             "/api/v1/paper-trading/disable",
             "/api/v1/paper-trading/reset",
+            "/api/v1/live-positions",
+            "/api/v1/orders",
+            "/api/v1/brokers",
         ]
-        self.rate_limited_methods = rate_limited_methods or {"POST"}
+        self.rate_limited_methods = rate_limited_methods or {"POST", "DELETE", "PATCH"}
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     def _should_rate_limit(self, request: Request) -> bool:

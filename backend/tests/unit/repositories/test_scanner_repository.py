@@ -690,13 +690,14 @@ class TestGetHistory:
 
         created_history = await repository.add_history(history_data)
 
-        # Verify None is handled
-        assert created_history.correlation_ids is None
+        # Verify None/empty is handled gracefully.
+        # server_default="[]" may cause the DB to return [] instead of None.
+        assert created_history.correlation_ids is None or created_history.correlation_ids == []
 
         # Verify retrieval doesn't crash
         history_list = await repository.get_history(limit=1)
         assert len(history_list) == 1
-        assert history_list[0].correlation_ids is None
+        assert history_list[0].correlation_ids is None or history_list[0].correlation_ids == []
 
 
 # =========================================

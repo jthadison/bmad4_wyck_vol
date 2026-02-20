@@ -180,7 +180,10 @@ class CORSExceptionMiddleware(BaseHTTPMiddleware):
 
             return JSONResponse(
                 status_code=500,
-                content={"detail": "Internal server error", "error": str(exc)},
+                content={
+                    "detail": "Internal server error",
+                    "error": _sanitize_health_error(exc),
+                },
                 headers={
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "*",
@@ -227,7 +230,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "error": str(exc)},
+        content={"detail": "Internal server error", "error": _sanitize_health_error(exc)},
         headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "*",
@@ -481,6 +484,9 @@ async def _initialize_broker_infrastructure() -> "BrokerRouter":
         BrokerRouter instance (also stored on app.state.broker_router)
     """
     from src.api.routes.broker_dashboard import set_broker_router
+    from src.api.routes.broker_dashboard import (
+        set_emergency_exit_service as set_dashboard_exit_service,
+    )
     from src.api.routes.kill_switch import set_emergency_exit_service
     from src.api.routes.tradingview import configure_broker_router
     from src.brokers.broker_router import BrokerRouter
@@ -547,6 +553,7 @@ async def _initialize_broker_infrastructure() -> "BrokerRouter":
     try:
         exit_service = EmergencyExitService(broker_router=broker_router)
         set_emergency_exit_service(exit_service)
+        set_dashboard_exit_service(exit_service)
         logger.info("kill_switch_service_initialized")
     except Exception as e:
         logger.error("kill_switch_service_initialization_failed", error=str(e))

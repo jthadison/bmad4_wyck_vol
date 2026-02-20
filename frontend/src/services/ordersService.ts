@@ -36,19 +36,6 @@ export interface PendingOrdersResponse {
   brokers_connected: Record<string, boolean>
 }
 
-export interface OrderModifyRequest {
-  limit_price?: string | null
-  stop_price?: string | null
-  quantity?: string | null
-}
-
-export interface OrderModifyResponse {
-  success: boolean
-  message: string
-  order_id: string
-  replacement_needed: boolean
-}
-
 export interface OrderCancelResponse {
   success: boolean
   message: string
@@ -79,15 +66,5 @@ export const ordersService = {
    */
   async cancel(orderId: string): Promise<OrderCancelResponse> {
     return apiClient.delete<OrderCancelResponse>(`/orders/${orderId}`)
-  },
-
-  /**
-   * Modify a pending order (cancel + replace approach).
-   */
-  async modify(
-    orderId: string,
-    payload: OrderModifyRequest
-  ): Promise<OrderModifyResponse> {
-    return apiClient.patch<OrderModifyResponse>(`/orders/${orderId}`, payload)
   },
 }
