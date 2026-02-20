@@ -50,6 +50,7 @@ services:
       DATABASE_URL: postgresql+psycopg://bmad_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/bmad_wyckoff
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379/0
       API_HOST: 0.0.0.0
       API_PORT: 8000
       LOG_LEVEL: ${LOG_LEVEL:-info}
