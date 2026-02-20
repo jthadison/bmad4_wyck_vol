@@ -13,8 +13,10 @@ test.describe('Backtest Preview Smoke Test', () => {
     // Wait for page to load
     await page.waitForLoadState('domcontentloaded')
 
-    // Check that the page title is visible
-    await expect(page.locator('h1')).toContainText('Backtest')
+    // Check that the page title is visible (use filter to avoid strict mode with multiple h1s)
+    await expect(
+      page.locator('h1').filter({ hasText: 'Backtest' })
+    ).toBeVisible()
 
     // Check that BacktestPreview component is rendered
     await expect(page.locator('.backtest-preview')).toBeVisible()

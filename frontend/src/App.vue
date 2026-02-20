@@ -119,8 +119,12 @@ onMounted(() => {
   websocketService.subscribe('signal:new', signalHandler)
 
   // Expose test helper for E2E tests - allows triggering signals without WebSocket
-  // Only expose in development or test mode, never in production builds
-  if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+  // Expose in development, test mode, or when VITE_E2E_HOOKS is set (e.g. staging)
+  if (
+    import.meta.env.DEV ||
+    import.meta.env.MODE === 'test' ||
+    import.meta.env.VITE_E2E_HOOKS === 'true'
+  ) {
     window.__BMAD_TEST__ = {
       triggerSignal: (signal: unknown) => {
         signalToastService.handleSignalNotification(
@@ -140,8 +144,12 @@ onUnmounted(() => {
   // Unsubscribe from WebSocket events using same handler reference
   websocketService.unsubscribe('signal:new', signalHandler)
 
-  // Clean up test helper (only exists in dev/test mode)
-  if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+  // Clean up test helper (only exists in dev/test/e2e-hooks mode)
+  if (
+    import.meta.env.DEV ||
+    import.meta.env.MODE === 'test' ||
+    import.meta.env.VITE_E2E_HOOKS === 'true'
+  ) {
     delete window.__BMAD_TEST__
   }
 })

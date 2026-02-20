@@ -103,9 +103,9 @@ test.describe('Signal Approval Queue', () => {
       'Stock'
     )
 
-    // AC2: Risk percentage, Wyckoff phase (Story 23.10)
-    await expect(page.locator('[data-testid="risk-percent"]')).toContainText(
-      '1.50%'
+    // AC2: Risk amount, Wyckoff phase (Story 23.10)
+    await expect(page.locator('[data-testid="risk-amount"]')).toContainText(
+      '150.25'
     )
     await expect(page.locator('[data-testid="wyckoff-phase"]')).toContainText(
       'C'

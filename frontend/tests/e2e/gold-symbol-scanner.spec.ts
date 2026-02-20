@@ -23,6 +23,10 @@ test.describe('Scanner - Gold & Silver Symbol Addition', () => {
     // Wait for modal to be visible
     await expect(page.locator('.p-dialog')).toBeVisible()
 
+    // Open the MultiSelect dropdown to reveal symbol groups
+    await page.click('.p-multiselect')
+    await page.waitForTimeout(300)
+
     // Check for "Forex - Metals" group header
     const metalsGroup = page.locator('text=Forex - Metals')
     await expect(metalsGroup).toBeVisible()
@@ -53,6 +57,10 @@ test.describe('Scanner - Gold & Silver Symbol Addition', () => {
     // Wait for modal
     await expect(page.locator('.p-dialog')).toBeVisible()
 
+    // Open the MultiSelect dropdown to reveal symbols
+    await page.click('.p-multiselect')
+    await page.waitForTimeout(300)
+
     // Click on XAUUSD option
     await page.click('text=XAUUSD')
 
@@ -78,6 +86,10 @@ test.describe('Scanner - Gold & Silver Symbol Addition', () => {
     // Wait for modal
     await expect(page.locator('.p-dialog')).toBeVisible()
 
+    // Open the MultiSelect dropdown to reveal symbols
+    await page.click('.p-multiselect')
+    await page.waitForTimeout(300)
+
     // Click on XAGUSD option
     await page.click('text=XAGUSD')
 
@@ -99,6 +111,10 @@ test.describe('Scanner - Gold & Silver Symbol Addition', () => {
 
     // Wait for modal
     await expect(page.locator('.p-dialog')).toBeVisible()
+
+    // Open the MultiSelect dropdown to reveal symbol groups
+    await page.click('.p-multiselect')
+    await page.waitForTimeout(300)
 
     // Verify Forex - Majors group still exists
     await expect(page.locator('text=Forex - Majors')).toBeVisible()

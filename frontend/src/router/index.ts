@@ -74,6 +74,11 @@ const routes: RouteRecordRaw[] = [
       breadcrumb: [{ label: 'Scanner' }],
     },
   },
+  // /signals → redirect to queue (signal-generation tests navigate here)
+  {
+    path: '/signals',
+    redirect: '/signals/queue',
+  },
   // Signal Approval Queue (Story 23.10)
   {
     path: '/signals/queue',
