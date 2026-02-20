@@ -63,6 +63,16 @@ const routes: RouteRecordRaw[] = [
         'Monitor active trading campaigns with progression and health status',
     },
   },
+  // Chart Analysis Page
+  {
+    path: '/chart',
+    name: 'chart',
+    component: () => import('@/views/ChartView.vue'),
+    meta: {
+      title: 'Chart Analysis',
+      breadcrumb: [{ label: 'Chart' }],
+    },
+  },
   // Scanner Control UI (Story 20.6)
   {
     path: '/scanner',

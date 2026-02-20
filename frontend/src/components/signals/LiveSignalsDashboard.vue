@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSignalStore } from '@/stores/signalStore'
 import TabView from 'primevue/tabview'
 import TabPanel from 'primevue/tabpanel'
@@ -14,6 +15,7 @@ import SignalCard from './SignalCard.vue'
 import RejectionDetailDialog from './RejectionDetailDialog.vue'
 import type { Signal } from '@/types'
 
+const router = useRouter()
 const signalStore = useSignalStore()
 
 // Tab state
@@ -193,8 +195,13 @@ function handleViewRejection(signal: Signal) {
 
 // Handle chart view from rejection dialog
 function handleViewChartFromDialog(signalId: string) {
-  // Future: Navigate to chart view with pattern overlay
-  console.log('View chart for signal:', signalId)
+  const signal = signalStore.signals.find((s) => s.id === signalId)
+  if (signal) {
+    router.push({
+      path: '/chart',
+      query: { symbol: signal.symbol, timeframe: signal.timeframe },
+    })
+  }
   rejectionDialogVisible.value = false
 }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import Card from 'primevue/card'
 import Badge from 'primevue/badge'
@@ -24,6 +25,8 @@ const emit = defineEmits<{
   viewStats: []
   viewRejection: []
 }>()
+
+const router = useRouter()
 
 // Local expanded state
 const localExpanded = ref(props.isExpanded)
@@ -211,6 +214,10 @@ const handleKeyPress = (event: KeyboardEvent) => {
 // Quick action handlers (AC: 4)
 const handleViewChart = (event: Event) => {
   event.stopPropagation()
+  router.push({
+    path: '/chart',
+    query: { symbol: props.signal.symbol, timeframe: props.signal.timeframe },
+  })
   emit('viewChart')
 }
 

@@ -39,6 +39,13 @@
                 Tutorials
               </router-link>
               <router-link
+                to="/chart"
+                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
+                active-class="bg-gray-700 text-blue-400"
+              >
+                Charts
+              </router-link>
+              <router-link
                 to="/scanner"
                 class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
                 active-class="bg-gray-700 text-blue-400"
