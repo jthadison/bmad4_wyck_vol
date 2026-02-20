@@ -28,7 +28,9 @@ class OHLCVBar(BaseModel):
 
     id: UUID = Field(default_factory=uuid4, description="Unique identifier")
     symbol: str = Field(..., max_length=20, description="Stock symbol (e.g., AAPL)")
-    timeframe: Literal["1m", "5m", "15m", "1h", "1d"] = Field(..., description="Bar timeframe")
+    timeframe: Literal[
+        "1m", "5m", "15m", "1h", "1d", "1M", "5M", "15M", "1H", "1D", "4H", "1W"
+    ] = Field(..., description="Bar timeframe")
     timestamp: datetime = Field(..., description="Bar timestamp (UTC)")
     open: Decimal = Field(..., description="Opening price", decimal_places=8)
     high: Decimal = Field(..., description="High price", decimal_places=8)
@@ -87,8 +89,10 @@ class OHLCVBar(BaseModel):
             Decimal value
         """
         if isinstance(v, Decimal):
-            return v
-        return Decimal(str(v))
+            return round(v, 8)
+        # Float -> str -> Decimal avoids binary representation artifacts,
+        # but str(float) can still produce 15+ significant digits. Round to 8.
+        return round(Decimal(str(v)), 8)
 
     @field_serializer("open", "high", "low", "close", "spread", "spread_ratio", "volume_ratio")
     def serialize_decimal(self, value: Decimal) -> str:
