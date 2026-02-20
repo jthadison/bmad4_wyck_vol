@@ -192,13 +192,13 @@ test.describe('Add Symbol Modal', () => {
     const addButton = hasEmptyButton ? emptyButton : headerButton
     await addButton.click()
 
-    // Modal should have input field (filter input in MultiSelect dropdown)
+    // Modal should have MultiSelect control with filter input
     const modal = page.locator('[role="dialog"]')
     await expect(modal.first()).toBeVisible({ timeout: 5000 })
 
-    // Open MultiSelect dropdown to reveal the filter input
+    // Open MultiSelect dropdown (panel is a portal outside dialog DOM, use page scope)
     await modal.locator('.p-multiselect').click()
-    const input = modal.locator('input').first()
+    const input = page.locator('.p-multiselect-filter').first()
     await expect(input).toBeVisible({ timeout: 3000 })
   })
 
