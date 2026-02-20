@@ -5,18 +5,27 @@
     :aria-label="`Portfolio heat gauge showing ${heatPercentage}% capacity used`"
   >
     <!-- PrimeVue Knob Component for circular gauge -->
-    <Knob
-      v-model="displayValue"
-      :size="size"
-      :stroke-width="strokeWidth"
-      :min="0"
-      :max="100"
-      :value-color="valueColor"
-      :range-color="rangeColor"
-      :text-color="textColor"
-      :readonly="true"
-      :value-template="(val: number) => `${val}%`"
-    />
+    <div :class="{ 'animate-pulse-glow': heatPercentage >= 80 }">
+      <Knob
+        v-model="displayValue"
+        :size="size"
+        :stroke-width="strokeWidth"
+        :min="0"
+        :max="100"
+        :value-color="valueColor"
+        :range-color="rangeColor"
+        :text-color="textColor"
+        :readonly="true"
+        :value-template="(val: number) => `${val}%`"
+      />
+    </div>
+
+    <!-- Zone labels -->
+    <div class="flex justify-between w-full px-4 mt-1 text-[10px]">
+      <span class="text-emerald-600/60">SAFE</span>
+      <span class="text-amber-600/60">CAUTION</span>
+      <span class="text-red-600/60">DANGER</span>
+    </div>
 
     <!-- Label below gauge -->
     <div class="heat-gauge-label text-center mt-3">
@@ -112,7 +121,7 @@ const valueColor = computed(() => {
 /**
  * Background ring color (dark gray).
  */
-const rangeColor = computed(() => '#374151') // gray-700
+const rangeColor = computed(() => '#1e293b') // slate-800
 
 /**
  * Text color for percentage display.

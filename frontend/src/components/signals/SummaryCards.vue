@@ -16,6 +16,8 @@ interface CardData {
   value: string | number
   icon: string
   iconColor: string
+  iconBgColor: string
+  accentBorder: string
   trend?: number
   trendLabel?: string
 }
@@ -28,24 +30,32 @@ const cards = computed<CardData[]>(() => {
         value: '-',
         icon: 'pi-chart-bar',
         iconColor: 'text-blue-400',
+        iconBgColor: 'bg-blue-500/10',
+        accentBorder: 'border-t-2 border-t-blue-500',
       },
       {
         label: 'Win Rate',
         value: '-',
         icon: 'pi-trending-up',
         iconColor: 'text-green-400',
+        iconBgColor: 'bg-emerald-500/10',
+        accentBorder: 'border-t-2 border-t-emerald-500',
       },
       {
         label: 'Avg Confidence',
         value: '-',
         icon: 'pi-bullseye',
         iconColor: 'text-yellow-400',
+        iconBgColor: 'bg-amber-500/10',
+        accentBorder: 'border-t-2 border-t-amber-500',
       },
       {
         label: 'Avg R-Multiple',
         value: '-',
         icon: 'pi-dollar',
         iconColor: 'text-purple-400',
+        iconBgColor: 'bg-purple-500/10',
+        accentBorder: 'border-t-2 border-t-purple-500',
       },
     ]
   }
@@ -57,6 +67,8 @@ const cards = computed<CardData[]>(() => {
       value: s.total_signals,
       icon: 'pi-chart-bar',
       iconColor: 'text-blue-400',
+      iconBgColor: 'bg-blue-500/10',
+      accentBorder: 'border-t-2 border-t-blue-500',
       trend: s.signals_today,
       trendLabel: 'today',
     },
@@ -67,6 +79,8 @@ const cards = computed<CardData[]>(() => {
         : '-',
       icon: 'pi-trending-up',
       iconColor: 'text-green-400',
+      iconBgColor: 'bg-emerald-500/10',
+      accentBorder: 'border-t-2 border-t-emerald-500',
     },
     {
       label: 'Avg Confidence',
@@ -75,6 +89,8 @@ const cards = computed<CardData[]>(() => {
         : '-',
       icon: 'pi-bullseye',
       iconColor: 'text-yellow-400',
+      iconBgColor: 'bg-amber-500/10',
+      accentBorder: 'border-t-2 border-t-amber-500',
     },
     {
       label: 'Avg R-Multiple',
@@ -83,6 +99,8 @@ const cards = computed<CardData[]>(() => {
         : '-',
       icon: 'pi-dollar',
       iconColor: 'text-purple-400',
+      iconBgColor: 'bg-purple-500/10',
+      accentBorder: 'border-t-2 border-t-purple-500',
     },
   ]
 })
@@ -105,11 +123,21 @@ function getTrendColor(trend: number | undefined): string {
     <div
       v-for="card in cards"
       :key="card.label"
-      class="summary-card bg-gray-800 rounded-lg p-4 border border-gray-700"
+      :class="[
+        'summary-card bg-gray-800/80 rounded-xl p-5 border border-gray-700/50 hover:border-gray-600/50 hover:bg-gray-800 transition-all duration-200',
+        card.accentBorder,
+      ]"
     >
-      <div class="flex items-center justify-between mb-2">
+      <div class="flex items-center justify-between mb-3">
         <span class="text-gray-400 text-sm">{{ card.label }}</span>
-        <i :class="['pi', card.icon, card.iconColor, 'text-xl']"></i>
+        <div
+          :class="[
+            'w-10 h-10 rounded-lg flex items-center justify-center',
+            card.iconBgColor,
+          ]"
+        >
+          <i :class="['pi', card.icon, card.iconColor, 'text-lg']"></i>
+        </div>
       </div>
 
       <div v-if="loading" class="animate-pulse">
@@ -118,7 +146,7 @@ function getTrendColor(trend: number | undefined): string {
       </div>
 
       <template v-else>
-        <div class="text-3xl font-bold text-white mb-1">
+        <div class="text-3xl font-bold tabular-nums text-white mb-1">
           {{ card.value }}
         </div>
 

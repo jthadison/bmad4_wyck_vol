@@ -39,6 +39,22 @@ const patternIcon = computed(() => {
   return iconMap[props.signal.pattern_type] || 'pi pi-circle'
 })
 
+// Pattern badge color classes
+const patternBadgeClasses = computed(() => {
+  const map: Record<string, string> = {
+    SPRING: 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30',
+    SOS: 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30',
+    LPS: 'bg-cyan-500/20 text-cyan-400 ring-1 ring-cyan-500/30',
+    UTAD: 'bg-red-500/20 text-red-400 ring-1 ring-red-500/30',
+    SC: 'bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/30',
+    AR: 'bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30',
+  }
+  return (
+    map[props.signal?.pattern_type] ||
+    'bg-gray-500/20 text-gray-400 ring-1 ring-gray-500/30'
+  )
+})
+
 // Pattern type tooltip
 const patternTooltip = computed(() => {
   const tooltipMap: Record<string, string> = {
@@ -51,21 +67,6 @@ const patternTooltip = computed(() => {
   return tooltipMap[props.signal.pattern_type] || props.signal.pattern_type
 })
 
-// Status severity for badge
-const statusSeverity = computed(() => {
-  const severityMap: Record<string, 'success' | 'info' | 'warning' | 'danger'> =
-    {
-      FILLED: 'success',
-      TARGET_HIT: 'success',
-      STOPPED: 'success',
-      APPROVED: 'warning',
-      PENDING: 'warning',
-      REJECTED: 'danger',
-      EXPIRED: 'info',
-    }
-  return severityMap[props.signal.status] || 'info'
-})
-
 // Border and background color based on status (AC: 2)
 const cardColorClasses = computed(() => {
   const executedStates = ['FILLED', 'TARGET_HIT']
@@ -74,32 +75,32 @@ const cardColorClasses = computed(() => {
 
   if (executedStates.includes(props.signal.status)) {
     return {
-      border: 'border-green-500',
-      bg: 'bg-green-50 dark:bg-green-900/20',
+      border: 'border-emerald-500',
+      bg: 'bg-gradient-to-r from-emerald-950/40 to-gray-900/80',
     }
   }
   if (props.signal.status === 'REJECTED') {
     return {
       border: 'border-red-500',
-      bg: 'bg-red-50 dark:bg-red-900/20',
+      bg: 'bg-gradient-to-r from-red-950/40 to-gray-900/80',
     }
   }
   if (pendingStates.includes(props.signal.status)) {
     return {
-      border: 'border-yellow-500',
-      bg: 'bg-yellow-50 dark:bg-yellow-900/20',
+      border: 'border-amber-500',
+      bg: 'bg-gradient-to-r from-amber-950/30 to-gray-900/80',
     }
   }
   if (historicalStates.includes(props.signal.status)) {
     return {
       border: 'border-gray-500',
-      bg: 'bg-gray-50 dark:bg-gray-900/20',
+      bg: 'bg-gray-900/50',
     }
   }
   // Default to gray for unknown states
   return {
     border: 'border-gray-600',
-    bg: 'bg-gray-50 dark:bg-gray-800',
+    bg: 'bg-gray-900/80',
   }
 })
 
@@ -279,11 +280,14 @@ const handleViewRejection = (event: Event) => {
             signal.symbol
           }}</span>
           <!-- Pattern Type Badge -->
-          <Badge
-            :value="signal.pattern_type"
-            :severity="statusSeverity"
-            class="text-xs"
-          />
+          <span
+            :class="[
+              'px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide',
+              patternBadgeClasses,
+            ]"
+          >
+            {{ signal.pattern_type }}
+          </span>
         </div>
         <div class="text-right">
           <div class="text-xs text-gray-600 dark:text-gray-400">

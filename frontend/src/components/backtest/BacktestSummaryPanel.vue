@@ -32,8 +32,8 @@ const totalReturnPct = computed(() =>
 )
 const totalReturnClass = computed(() =>
   new Big(props.summary.total_return_pct || 0).gte(0)
-    ? 'text-green-600'
-    : 'text-red-600'
+    ? 'text-emerald-400'
+    : 'text-red-400'
 )
 
 const cagrPct = computed(() => new Big(props.summary.cagr || 0).toFixed(2))
@@ -51,9 +51,9 @@ const sharpeLabel = computed(() => {
 })
 const sharpeClass = computed(() => {
   const sharpe = new Big(props.summary.sharpe_ratio || 0)
-  if (sharpe.gte(2)) return 'text-green-600'
-  if (sharpe.gte(1)) return 'text-blue-600'
-  return 'text-yellow-600'
+  if (sharpe.gte(2)) return 'text-emerald-400'
+  if (sharpe.gte(1)) return 'text-blue-400'
+  return 'text-amber-400'
 })
 
 const maxDrawdownPct = computed(() =>
@@ -72,8 +72,8 @@ const avgRMultiple = computed(() =>
 )
 const avgRClass = computed(() =>
   new Big(props.summary.avg_r_multiple || 0).gte(1)
-    ? 'text-green-600'
-    : 'text-red-600'
+    ? 'text-emerald-400'
+    : 'text-red-400'
 )
 
 const profitFactor = computed(() =>
@@ -89,10 +89,10 @@ const profitFactorLabel = computed(() => {
 })
 const profitFactorClass = computed(() => {
   const pf = new Big(props.summary.profit_factor || 0)
-  if (pf.gte(1.5)) return 'text-green-600'
-  if (pf.gt(1)) return 'text-blue-600'
-  if (pf.eq(1)) return 'text-yellow-600'
-  return 'text-red-600'
+  if (pf.gte(1.5)) return 'text-emerald-400'
+  if (pf.gt(1)) return 'text-blue-400'
+  if (pf.eq(1)) return 'text-amber-400'
+  return 'text-red-400'
 })
 
 const campaignCompletionPct = computed(() =>
@@ -100,9 +100,9 @@ const campaignCompletionPct = computed(() =>
 )
 const campaignCompletionClass = computed(() => {
   const rate = new Big(props.summary.campaign_completion_rate || 0).times(100)
-  if (rate.gte(60)) return 'text-green-600'
-  if (rate.gte(40)) return 'text-yellow-600'
-  return 'text-red-600'
+  if (rate.gte(60)) return 'text-emerald-400'
+  if (rate.gte(40)) return 'text-amber-400'
+  return 'text-red-400'
 })
 const campaignCompletionProgress = computed(() =>
   new Big(props.summary.campaign_completion_rate || 0).times(100).toNumber()
@@ -118,7 +118,9 @@ const campaignCompletionProgress = computed(() =>
     <!-- Metrics Grid: 4 cols desktop, 2 cols tablet, 1 col mobile -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <!-- Total Return Card -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">Total Return</p>
@@ -134,11 +136,13 @@ const campaignCompletionProgress = computed(() =>
       </div>
 
       <!-- CAGR Card -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">CAGR</p>
-            <p class="text-2xl font-bold mt-1 text-blue-600">{{ cagrPct }}%</p>
+            <p class="text-2xl font-bold mt-1 text-blue-400">{{ cagrPct }}%</p>
             <p class="text-xs text-gray-500 mt-1">Annualized Return</p>
           </div>
           <i class="pi pi-percentage text-2xl text-gray-400"></i>
@@ -146,7 +150,9 @@ const campaignCompletionProgress = computed(() =>
       </div>
 
       <!-- Sharpe Ratio Card -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">Sharpe Ratio</p>
@@ -160,11 +166,13 @@ const campaignCompletionProgress = computed(() =>
       </div>
 
       <!-- Max Drawdown Card -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">Max Drawdown</p>
-            <p class="text-2xl font-bold mt-1 text-red-600">
+            <p class="text-2xl font-bold mt-1 text-red-400">
               -{{ maxDrawdownPct }}%
             </p>
             <p class="text-xs text-gray-500 mt-1">Worst Peak-to-Trough</p>
@@ -174,7 +182,9 @@ const campaignCompletionProgress = computed(() =>
       </div>
 
       <!-- Win Rate Card -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">Win Rate</p>
@@ -182,9 +192,9 @@ const campaignCompletionProgress = computed(() =>
               {{ winRatePct }}%
             </p>
             <!-- Progress bar -->
-            <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+            <div class="w-full bg-gray-700/50 rounded-full h-2 mt-2">
               <div
-                class="bg-green-600 h-2 rounded-full"
+                class="bg-emerald-500 h-2 rounded-full"
                 :style="{ width: `${winRateProgress}%` }"
               ></div>
             </div>
@@ -194,7 +204,9 @@ const campaignCompletionProgress = computed(() =>
       </div>
 
       <!-- Avg R-Multiple Card -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">
@@ -210,7 +222,9 @@ const campaignCompletionProgress = computed(() =>
       </div>
 
       <!-- Profit Factor Card -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">
@@ -226,7 +240,9 @@ const campaignCompletionProgress = computed(() =>
       </div>
 
       <!-- Total Trades Card -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">Total Trades</p>
@@ -242,7 +258,9 @@ const campaignCompletionProgress = computed(() =>
       </div>
 
       <!-- Campaign Completion Rate Card (CRITICAL) -->
-      <div class="metric-card bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div
+        class="metric-card bg-gray-800/80 rounded-lg shadow p-4 border border-gray-700/50"
+      >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <p class="text-sm text-gray-600 dark:text-gray-400">
@@ -252,7 +270,7 @@ const campaignCompletionProgress = computed(() =>
               {{ campaignCompletionPct }}%
             </p>
             <!-- Progress bar -->
-            <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+            <div class="w-full bg-gray-700/50 rounded-full h-2 mt-2">
               <div
                 :class="campaignCompletionClass.replace('text-', 'bg-')"
                 class="h-2 rounded-full"
