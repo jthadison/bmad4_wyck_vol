@@ -1,5 +1,5 @@
 """
-Pattern API Routes (Story 10.7)
+Pattern API Routes (Story 10.7, P3-F12)
 
 Purpose:
 --------
@@ -9,17 +9,27 @@ Supports educational features showing historical pattern performance.
 Endpoints:
 ----------
 GET /api/v1/patterns/statistics - Get historical pattern performance statistics
+GET /api/v1/patterns/{symbol}/trading-ranges - Get historical trading ranges (P3-F12)
 
-Author: Story 10.7 (AC 5)
+Author: Story 10.7 (AC 5), P3-F12 (Historical Trading Range Browser)
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import uuid4
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import status as http_status
 
 from src.models.pattern_statistics import PatternStatistics
+from src.models.trading_range_history import (
+    TradingRangeEvent,
+    TradingRangeHistory,
+    TradingRangeListResponse,
+    TradingRangeOutcome,
+    TradingRangeType,
+)
 
 logger = structlog.get_logger()
 
@@ -243,3 +253,229 @@ async def get_statistics(
     )
 
     return stats
+
+
+# ============================================================================
+# Trading Range History Endpoint (P3-F12)
+# ============================================================================
+
+
+def _build_mock_trading_ranges(symbol: str, timeframe: str) -> list[TradingRangeHistory]:
+    """
+    Build mock trading range data for demonstration.
+
+    TODO: Replace with real TradingRangeDetector pipeline once market data
+    repository is wired up. The real implementation would:
+    1. Fetch OHLCV bars from OHLCVRepository
+    2. Run VolumeAnalyzer on bars
+    3. Run TradingRangeDetector.detect_ranges(bars, volume_analysis)
+    4. Classify each range type and outcome from event_history and post-range price
+    """
+    now = datetime.now(UTC)
+    return [
+        TradingRangeHistory(
+            id=str(uuid4()),
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=datetime(2025, 11, 15, tzinfo=UTC),
+            end_date=None,
+            duration_bars=23,
+            low=100.0,
+            high=115.0,
+            range_pct=(115.0 - 100.0) / 100.0 * 100,
+            creek_level=101.50,
+            ice_level=113.80,
+            range_type=TradingRangeType.ACCUMULATION,
+            outcome=TradingRangeOutcome.ACTIVE,
+            key_events=[
+                TradingRangeEvent(
+                    event_type="SC",
+                    timestamp=datetime(2025, 11, 16, tzinfo=UTC),
+                    price=100.50,
+                    volume=2500000.0,
+                    significance=0.9,
+                ),
+                TradingRangeEvent(
+                    event_type="AR",
+                    timestamp=datetime(2025, 11, 18, tzinfo=UTC),
+                    price=112.00,
+                    volume=1800000.0,
+                    significance=0.7,
+                ),
+                TradingRangeEvent(
+                    event_type="ST",
+                    timestamp=datetime(2025, 11, 25, tzinfo=UTC),
+                    price=101.20,
+                    volume=900000.0,
+                    significance=0.6,
+                ),
+            ],
+            avg_bar_volume=1200000.0,
+            total_volume=1200000.0 * 23,
+            price_change_pct=None,
+        ),
+        TradingRangeHistory(
+            id=str(uuid4()),
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=datetime(2025, 8, 1, tzinfo=UTC),
+            end_date=datetime(2025, 10, 15, tzinfo=UTC),
+            duration_bars=45,
+            low=95.0,
+            high=108.0,
+            range_pct=(108.0 - 95.0) / 95.0 * 100,
+            creek_level=96.20,
+            ice_level=107.00,
+            range_type=TradingRangeType.ACCUMULATION,
+            outcome=TradingRangeOutcome.MARKUP,
+            key_events=[
+                TradingRangeEvent(
+                    event_type="SC",
+                    timestamp=datetime(2025, 8, 3, tzinfo=UTC),
+                    price=95.50,
+                    volume=3100000.0,
+                    significance=0.95,
+                ),
+                TradingRangeEvent(
+                    event_type="SPRING",
+                    timestamp=datetime(2025, 9, 20, tzinfo=UTC),
+                    price=94.80,
+                    volume=500000.0,
+                    significance=0.9,
+                ),
+                TradingRangeEvent(
+                    event_type="SOS",
+                    timestamp=datetime(2025, 10, 10, tzinfo=UTC),
+                    price=109.00,
+                    volume=2800000.0,
+                    significance=0.85,
+                ),
+            ],
+            avg_bar_volume=1400000.0,
+            total_volume=1400000.0 * 45,
+            price_change_pct=12.5,
+        ),
+        TradingRangeHistory(
+            id=str(uuid4()),
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=datetime(2025, 4, 10, tzinfo=UTC),
+            end_date=datetime(2025, 6, 20, tzinfo=UTC),
+            duration_bars=38,
+            low=78.0,
+            high=91.0,
+            range_pct=(91.0 - 78.0) / 78.0 * 100,
+            creek_level=89.50,
+            ice_level=79.20,
+            range_type=TradingRangeType.DISTRIBUTION,
+            outcome=TradingRangeOutcome.MARKDOWN,
+            key_events=[
+                TradingRangeEvent(
+                    event_type="BC",
+                    timestamp=datetime(2025, 4, 12, tzinfo=UTC),
+                    price=90.50,
+                    volume=2900000.0,
+                    significance=0.9,
+                ),
+                TradingRangeEvent(
+                    event_type="UTAD",
+                    timestamp=datetime(2025, 5, 28, tzinfo=UTC),
+                    price=91.50,
+                    volume=600000.0,
+                    significance=0.85,
+                ),
+                TradingRangeEvent(
+                    event_type="SOW",
+                    timestamp=datetime(2025, 6, 15, tzinfo=UTC),
+                    price=77.00,
+                    volume=2600000.0,
+                    significance=0.8,
+                ),
+            ],
+            avg_bar_volume=1100000.0,
+            total_volume=1100000.0 * 38,
+            price_change_pct=-15.2,
+        ),
+        TradingRangeHistory(
+            id=str(uuid4()),
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=datetime(2025, 1, 5, tzinfo=UTC),
+            end_date=datetime(2025, 3, 1, tzinfo=UTC),
+            duration_bars=30,
+            low=82.0,
+            high=90.0,
+            range_pct=(90.0 - 82.0) / 82.0 * 100,
+            creek_level=83.00,
+            ice_level=89.00,
+            range_type=TradingRangeType.ACCUMULATION,
+            outcome=TradingRangeOutcome.FAILED,
+            key_events=[
+                TradingRangeEvent(
+                    event_type="SC",
+                    timestamp=datetime(2025, 1, 8, tzinfo=UTC),
+                    price=82.50,
+                    volume=2200000.0,
+                    significance=0.85,
+                ),
+                TradingRangeEvent(
+                    event_type="SPRING",
+                    timestamp=datetime(2025, 2, 15, tzinfo=UTC),
+                    price=81.50,
+                    volume=1500000.0,
+                    significance=0.5,
+                ),
+            ],
+            avg_bar_volume=1000000.0,
+            total_volume=1000000.0 * 30,
+            price_change_pct=-8.3,
+        ),
+    ]
+
+
+@router.get(
+    "/{symbol}/trading-ranges",
+    response_model=TradingRangeListResponse,
+    summary="Get historical trading ranges for a symbol",
+    description="""
+    Retrieve historical and active trading ranges (accumulation/distribution zones)
+    for a given symbol. Each range includes Wyckoff events, creek/ice levels,
+    outcome classification, and volume data.
+
+    Used by the Historical Trading Range Browser component.
+    """,
+)
+async def get_trading_ranges(
+    symbol: str,
+    timeframe: str = Query("1d", description="Bar timeframe (e.g. 1d, 4h, 1h)"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum ranges to return"),
+) -> TradingRangeListResponse:
+    """Get historical trading ranges for a symbol (P3-F12)."""
+    logger.info(
+        "trading_ranges_requested",
+        symbol=symbol,
+        timeframe=timeframe,
+        limit=limit,
+    )
+
+    # TODO: Wire to real TradingRangeDetector pipeline.
+    # For now, return mock data that demonstrates realistic Wyckoff ranges.
+    all_ranges = _build_mock_trading_ranges(symbol.upper(), timeframe)
+
+    # Separate active from historical
+    active_range = next((r for r in all_ranges if r.outcome == TradingRangeOutcome.ACTIVE), None)
+    historical = [r for r in all_ranges if r.outcome != TradingRangeOutcome.ACTIVE]
+
+    # Sort historical by start_date descending
+    historical.sort(key=lambda r: r.start_date, reverse=True)
+
+    # Apply limit to historical only (active is always shown)
+    historical = historical[:limit]
+
+    return TradingRangeListResponse(
+        symbol=symbol.upper(),
+        timeframe=timeframe,
+        ranges=historical,
+        active_range=active_range,
+        total_count=len(historical) + (1 if active_range else 0),
+    )

@@ -378,3 +378,15 @@ export type {
   KillSwitchDeactivateResult,
   DashboardData,
 } from './monitoring'
+
+// ============================================================================
+// Trading Range History Types (P3-F12)
+// ============================================================================
+
+export type {
+  TradingRangeType,
+  TradingRangeOutcome,
+  TradingRangeEvent,
+  TradingRangeHistory,
+  TradingRangeListResponse,
+} from './trading-range'
