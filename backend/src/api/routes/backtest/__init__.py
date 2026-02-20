@@ -17,6 +17,7 @@ All routes are aggregated under the /api/v1/backtest prefix.
 from fastapi import APIRouter
 
 from .baseline import router as baseline_router
+from .compare import router as compare_router
 from .full import router as full_router
 from .preview import router as preview_router
 from .regression import router as regression_router
@@ -33,6 +34,7 @@ router.include_router(reports_router)
 router.include_router(walk_forward_router)
 router.include_router(regression_router)
 router.include_router(baseline_router)
+router.include_router(compare_router)
 
 # Export in-memory tracking dicts for backwards compatibility
 from .utils import backtest_runs, cleanup_stale_entries, regression_test_runs, walk_forward_runs
