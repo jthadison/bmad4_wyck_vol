@@ -215,13 +215,7 @@
         class="bg-red-900/20 border border-red-500/50 rounded-lg p-4 text-red-400 text-sm"
       >
         {{ comparisonError }}
-        <button
-          class="ml-3 underline"
-          @click="
-            comparisonData = null
-            comparisonError = null
-          "
-        >
+        <button class="ml-3 underline" @click="resetComparison">
           Try again
         </button>
       </div>
@@ -237,10 +231,7 @@
         <button
           type="button"
           class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded-md transition-colors"
-          @click="
-            comparisonData = null
-            comparisonError = null
-          "
+          @click="resetComparison"
         >
           Select Different Runs
         </button>
@@ -307,6 +298,11 @@ const showComparison = ref(false)
 const comparisonData = ref<BacktestComparisonResponse | null>(null)
 const comparisonLoading = ref(false)
 const comparisonError = ref<string | null>(null)
+
+const resetComparison = () => {
+  comparisonData.value = null
+  comparisonError.value = null
+}
 
 const handleCompare = async (runIds: string[]) => {
   comparisonLoading.value = true
