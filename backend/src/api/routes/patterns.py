@@ -271,7 +271,6 @@ def _build_mock_trading_ranges(symbol: str, timeframe: str) -> list[TradingRange
     3. Run TradingRangeDetector.detect_ranges(bars, volume_analysis)
     4. Classify each range type and outcome from event_history and post-range price
     """
-    now = datetime.now(UTC)
     return [
         TradingRangeHistory(
             id=str(uuid4()),
@@ -365,8 +364,8 @@ def _build_mock_trading_ranges(symbol: str, timeframe: str) -> list[TradingRange
             low=78.0,
             high=91.0,
             range_pct=(91.0 - 78.0) / 78.0 * 100,
-            creek_level=89.50,
-            ice_level=79.20,
+            creek_level=79.20,  # Creek = support floor (near low=78.0)
+            ice_level=89.50,  # Ice = resistance ceiling (near high=91.0)
             range_type=TradingRangeType.DISTRIBUTION,
             outcome=TradingRangeOutcome.MARKDOWN,
             key_events=[
