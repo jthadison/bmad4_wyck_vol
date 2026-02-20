@@ -13,8 +13,13 @@ import PatternWinRateChart from '@/components/signals/PatternWinRateChart.vue'
 import SignalsOverTimeChart from '@/components/signals/SignalsOverTimeChart.vue'
 import RejectionPieChart from '@/components/signals/RejectionPieChart.vue'
 import SymbolPerformanceTable from '@/components/signals/SymbolPerformanceTable.vue'
+import HistoricalRangeBrowser from '@/components/signals/HistoricalRangeBrowser.vue'
 
 const store = useSignalStatisticsStore()
+
+// Trading range browser state
+const rangeBrowserSymbol = ref('AAPL')
+const showRangeBrowser = ref(false)
 
 const dateRangeOptions = [
   { label: 'Today', value: 'today' },
@@ -185,7 +190,7 @@ async function refreshData() {
       </div>
 
       <!-- Bottom Row -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <RejectionPieChart
           :data="store.rejectionBreakdown"
           :loading="store.loading"
@@ -194,6 +199,27 @@ async function refreshData() {
           :data="store.symbolPerformance"
           :loading="store.loading"
         />
+      </div>
+
+      <!-- Historical Trading Range Browser (P3-F12) -->
+      <div class="border border-gray-700 rounded-lg overflow-hidden">
+        <button
+          class="w-full flex items-center justify-between p-4 bg-gray-800/50 hover:bg-gray-800 transition-colors text-left"
+          @click="showRangeBrowser = !showRangeBrowser"
+        >
+          <span class="text-sm font-semibold text-gray-300">
+            Historical Trading Ranges
+          </span>
+          <i
+            :class="[
+              'pi text-gray-400 transition-transform',
+              showRangeBrowser ? 'pi-chevron-up' : 'pi-chevron-down',
+            ]"
+          ></i>
+        </button>
+        <div v-if="showRangeBrowser" class="p-0">
+          <HistoricalRangeBrowser :symbol="rangeBrowserSymbol" />
+        </div>
       </div>
     </template>
   </div>
