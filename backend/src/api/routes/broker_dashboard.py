@@ -179,7 +179,12 @@ async def get_all_brokers_status(
         _build_broker_info("alpaca", br._alpaca_adapter, "Alpaca"),
         return_exceptions=True,
     )
-    brokers: list[BrokerAccountInfo] = [r for r in results if isinstance(r, BrokerAccountInfo)]
+    brokers: list[BrokerAccountInfo] = []
+    for r in results:
+        if isinstance(r, Exception):
+            logger.warning("broker_info_fetch_failed", error=str(r))
+        elif isinstance(r, BrokerAccountInfo):
+            brokers.append(r)
 
     # Kill switch status - read from EmergencyExitService (authoritative source)
     # to stay in sync with the kill_switch.py endpoints that write through it
@@ -248,8 +253,8 @@ async def test_broker_connection(
 
     try:
         start = time.monotonic()
-        # Use get_account_info as a lightweight ping
-        await adapter.get_account_info()
+        # Use get_account_info as a lightweight ping, with timeout matching _build_broker_info
+        await asyncio.wait_for(adapter.get_account_info(), timeout=10.0)
         elapsed_ms = int((time.monotonic() - start) * 1000)
 
         connected = adapter.is_connected()
@@ -266,6 +271,14 @@ async def test_broker_connection(
             success=connected,
             latency_ms=elapsed_ms,
             error_message=None if connected else "Adapter reports disconnected",
+        )
+    except asyncio.TimeoutError:
+        logger.warning("broker_connection_test_timeout", broker=broker)
+        return ConnectionTestResult(
+            broker=broker,
+            success=False,
+            latency_ms=None,
+            error_message="Connection timed out after 10 seconds",
         )
     except Exception as e:
         logger.warning("broker_connection_test_failed", broker=broker, error=str(e))
@@ -305,10 +318,10 @@ async def connect_broker(
         await adapter.connect()
         logger.info("broker_dashboard_connect_success", broker=broker)
     except Exception as e:
-        logger.warning("broker_dashboard_connect_failed", broker=broker, error=str(e))
+        logger.error("broker_dashboard_connect_failed", broker=broker, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to connect to {broker}: {e}",
+            detail=f"Failed to connect to {broker}. Check server credentials and configuration.",
         ) from e
 
     return await _build_broker_info(broker, adapter, platform_name)
