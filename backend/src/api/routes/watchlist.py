@@ -9,6 +9,7 @@ Enables users to configure which symbols the system monitors.
 Endpoints:
 ----------
 GET    /api/v1/watchlist           - Get user's watchlist
+GET    /api/v1/watchlist/status    - Get enriched Wyckoff status per symbol (Feature 6)
 POST   /api/v1/watchlist           - Add symbol to watchlist
 DELETE /api/v1/watchlist/{symbol}  - Remove symbol from watchlist
 PATCH  /api/v1/watchlist/{symbol}  - Update symbol settings
@@ -23,7 +24,9 @@ Features:
 Author: Story 19.12
 """
 
+import random
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -33,9 +36,12 @@ from fastapi import status as http_status
 from src.database import async_session_maker
 from src.models.watchlist import (
     AddSymbolRequest,
+    OHLCVBar,
     UpdateSymbolRequest,
     WatchlistEntry,
     WatchlistResponse,
+    WatchlistStatusResponse,
+    WatchlistSymbolStatus,
 )
 from src.repositories.watchlist_repository import WatchlistRepository
 from src.services.watchlist_service import WatchlistService
@@ -141,6 +147,140 @@ async def get_watchlist(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve watchlist",
         ) from e
+
+
+@router.get(
+    "/status",
+    response_model=WatchlistStatusResponse,
+    summary="Get Wyckoff status for watchlist symbols",
+    description=(
+        "Returns enriched Wyckoff phase, pattern, sparkline, and cause-building "
+        "progress for every symbol in the user's watchlist. Used by the dashboard card view."
+    ),
+)
+async def get_watchlist_status(
+    user_id: UUID = Depends(get_current_user_id),
+    service: WatchlistService = Depends(get_watchlist_service),
+) -> WatchlistStatusResponse:
+    """
+    Get Wyckoff dashboard status for all watchlist symbols.
+
+    For each symbol the response includes:
+    - current_phase (A/B/C/D/E) with confidence
+    - active_pattern (Spring / SOS / UTAD / LPS / SC / AR) with confidence
+    - cause_progress_pct (0-100)
+    - recent_bars (last 8 OHLCV bars) for sparkline rendering
+    - trend_direction (up / down / sideways)
+
+    NOTE: When a live pattern-engine integration is not yet available this
+    endpoint returns deterministic mock data derived from the symbol name so
+    the API contract and UI can be developed and tested independently.
+
+    Returns:
+        WatchlistStatusResponse
+
+    Raises:
+        500: Internal server error
+    """
+    try:
+        watchlist = await service.get_watchlist(user_id)
+
+        statuses: list[WatchlistSymbolStatus] = []
+        for entry in watchlist.symbols:
+            statuses.append(_build_mock_status(entry.symbol))
+
+        logger.info(
+            "watchlist_status_retrieved",
+            user_id=str(user_id),
+            count=len(statuses),
+        )
+
+        return WatchlistStatusResponse(symbols=statuses)
+
+    except Exception as e:
+        logger.error(
+            "watchlist_status_failed",
+            user_id=str(user_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve watchlist status",
+        ) from e
+
+
+# ---------------------------------------------------------------------------
+# Mock status builder
+# ---------------------------------------------------------------------------
+# Phases, patterns, and progress are derived deterministically from the symbol
+# string so results are stable between calls (good for UI development/tests)
+# while still covering the full range of possible values.
+# ---------------------------------------------------------------------------
+
+_PHASES = ["A", "B", "C", "D", "E"]
+_DIRECTIONS = ["up", "down", "sideways"]
+
+# Valid patterns per Wyckoff phase — ensures mock data respects methodology.
+# Phase A/B: accumulation beginning (SC/AR events) or no active pattern.
+# Phase C: Spring is the primary shakeout entry signal.
+# Phase D: SOS breakout (accumulation) or UTAD (distribution) are valid.
+# Phase E: LPS last-point-of-support retest; SOS continuation also valid.
+_PHASE_PATTERNS: dict[str, list[str | None]] = {
+    "A": ["SC", "AR", None],
+    "B": ["SC", "AR", None, None],  # extra None → more "no pattern" weight
+    "C": ["Spring", None, None],
+    "D": ["SOS", "UTAD", None],
+    "E": ["LPS", "SOS", None],
+}
+
+
+def _build_mock_status(symbol: str) -> WatchlistSymbolStatus:
+    """Build a deterministic mock WatchlistSymbolStatus for a given symbol."""
+    # Seed from symbol so output is stable
+    seed = sum(ord(c) for c in symbol)
+
+    phase = _PHASES[seed % len(_PHASES)]
+    # Select pattern from only the valid patterns for this phase
+    valid_patterns = _PHASE_PATTERNS[phase]
+    pattern = valid_patterns[seed % len(valid_patterns)]
+    trend = _DIRECTIONS[(seed // 3) % len(_DIRECTIONS)]
+
+    phase_confidence = round(0.50 + (seed % 47) / 100, 2)
+    pattern_confidence = round(0.60 + (seed % 38) / 100, 2) if pattern else None
+    cause_progress = round(float((seed * 7) % 100), 1)
+
+    # Generate 8 bars of plausible OHLCV data
+    base_price = 100.0 + (seed % 400)
+    bars: list[OHLCVBar] = []
+    rng = random.Random(seed)  # noqa: S311  (deterministic mock, not crypto)
+    price = base_price
+    for _ in range(8):
+        move = rng.uniform(-2.0, 2.0)
+        open_ = round(price, 2)
+        close = round(price + move, 2)
+        high = round(max(open_, close) + abs(rng.uniform(0, 1.0)), 2)
+        low = round(min(open_, close) - abs(rng.uniform(0, 1.0)), 2)
+        volume = round(base_price * 1_000 * rng.uniform(0.5, 2.0))
+        bars.append(OHLCVBar(o=open_, h=high, low=low, c=close, v=volume))
+        price = close
+
+    # Wyckoff phase determines the trend override
+    if phase in ("D", "E"):
+        trend = "up"
+    elif phase == "A":
+        trend = "down"
+
+    return WatchlistSymbolStatus(
+        symbol=symbol,
+        current_phase=phase,
+        phase_confidence=phase_confidence,
+        active_pattern=pattern,
+        pattern_confidence=pattern_confidence,
+        cause_progress_pct=cause_progress,
+        recent_bars=bars,
+        trend_direction=trend,
+        last_updated=datetime.now(UTC),
+    )
 
 
 @router.post(
