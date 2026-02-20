@@ -31,7 +31,9 @@ class PhaseStatusResponse(BaseModel):
 
     symbol: str = Field(..., description="Trading symbol")
     timeframe: str = Field(..., description="Analysis timeframe")
-    phase: Optional[str] = Field(None, description="Current phase: A, B, C, D, E, or null")
+    phase: Optional[Literal["A", "B", "C", "D", "E"]] = Field(
+        None, description="Current phase: A, B, C, D, E, or null if unknown"
+    )
     confidence: float = Field(..., ge=0.0, le=1.0, description="Phase classification confidence")
     phase_duration_bars: int = Field(..., ge=0, description="Number of bars in current phase")
     progression_pct: float = Field(
@@ -41,7 +43,9 @@ class PhaseStatusResponse(BaseModel):
     recent_events: list[PhaseStatusEvent] = Field(
         default_factory=list, description="Recent detected events"
     )
-    bias: str = Field(..., description="Market bias: ACCUMULATION, DISTRIBUTION, or UNKNOWN")
+    bias: Literal["ACCUMULATION", "DISTRIBUTION", "UNKNOWN"] = Field(
+        ..., description="Market bias: ACCUMULATION, DISTRIBUTION, or UNKNOWN"
+    )
     updated_at: datetime = Field(..., description="Timestamp of this analysis")
     data_source: Literal["MOCK", "LIVE"] = Field(
         "MOCK",
