@@ -15,7 +15,8 @@ GET /api/v1/patterns/{symbol}/volume-profile - Volume profile by Wyckoff phase (
 Author: Story 10.7 (AC 5), P3-F12 (Historical Trading Range Browser), P3-F13 (Volume Profile by Phase)
 """
 
-from datetime import UTC, datetime
+import asyncio
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -539,7 +540,7 @@ def _generate_mock_bars(symbol: str, timeframe: str, count: int) -> list[OHLCVBa
 
         vol = int(base_volume * vol_multiplier * random.uniform(0.7, 1.3))
 
-        ts = datetime(2025, 1, 1, tzinfo=UTC) + __import__("datetime").timedelta(days=i)
+        ts = datetime(2025, 1, 1, tzinfo=UTC) + timedelta(days=i)
 
         bars.append(
             OHLCVBar(
@@ -596,7 +597,11 @@ def _assign_mock_phases(count: int) -> list[str]:
 )
 async def get_volume_profile(
     symbol: str,
-    timeframe: str = Query("1d", description="Bar timeframe"),
+    timeframe: str = Query(
+        "1d",
+        description="Bar timeframe",
+        pattern=r"^(1m|5m|15m|1h|1d|1M|5M|15M|1H|1D|4H|1W)$",
+    ),
     bars: int = Query(200, ge=50, le=1000, description="Number of bars to analyze"),
     num_bins: int = Query(50, ge=20, le=100, description="Number of price bins"),
 ) -> VolumeProfileResponse:
@@ -613,7 +618,14 @@ async def get_volume_profile(
     mock_bars = _generate_mock_bars(symbol, timeframe, bars)
     phase_labels = _assign_mock_phases(bars)
 
-    result = compute_volume_profile_by_phase(mock_bars, phase_labels, num_bins)
+    try:
+        # Run CPU-bound computation off the event loop to avoid blocking
+        result = await asyncio.to_thread(
+            compute_volume_profile_by_phase, mock_bars, phase_labels, num_bins
+        )
+    except ValueError as exc:
+        logger.warning("volume_profile_invalid_input", symbol=symbol, error=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     logger.info(
         "volume_profile_computed",
