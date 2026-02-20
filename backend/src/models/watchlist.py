@@ -233,3 +233,76 @@ DEFAULT_WATCHLIST_SYMBOLS = ["AAPL", "TSLA", "SPY", "QQQ", "NVDA", "MSFT", "AMZN
 
 # Maximum symbols per user
 MAX_WATCHLIST_SYMBOLS = 100
+
+
+# ============================================================================
+# Watchlist Status Models (Feature 6: Wyckoff Status Dashboard)
+# ============================================================================
+
+
+class OHLCVBar(BaseModel):
+    """OHLCV bar for sparkline display."""
+
+    o: float = Field(..., description="Open price")
+    h: float = Field(..., description="High price")
+    low: float = Field(..., alias="l", description="Low price")
+    c: float = Field(..., description="Close price")
+    v: float = Field(..., description="Volume")
+
+    model_config = {"populate_by_name": True}
+
+
+class WatchlistSymbolStatus(BaseModel):
+    """
+    Enriched Wyckoff status for a single watchlist symbol.
+
+    Fields:
+    -------
+    - symbol: Trading symbol
+    - current_phase: Wyckoff phase (A/B/C/D/E)
+    - phase_confidence: Confidence score for phase detection (0-1)
+    - active_pattern: Most recent detected pattern (Spring, SOS, UTAD, LPS, SC, AR)
+    - pattern_confidence: Confidence score for pattern (0-1)
+    - cause_progress_pct: Estimated cause building progress (0-100%)
+    - recent_bars: Last N OHLCV bars for sparkline
+    - trend_direction: Overall trend direction (up/down/sideways)
+    - last_updated: Timestamp of last update (UTC ISO)
+    """
+
+    symbol: str = Field(..., description="Trading symbol")
+    current_phase: str = Field(..., description="Wyckoff phase (A/B/C/D/E)")
+    phase_confidence: float = Field(..., ge=0.0, le=1.0, description="Phase detection confidence")
+    active_pattern: str | None = Field(None, description="Most recent detected pattern")
+    pattern_confidence: float | None = Field(
+        None, ge=0.0, le=1.0, description="Pattern confidence score"
+    )
+    cause_progress_pct: float = Field(
+        0.0, ge=0.0, le=100.0, description="Cause building progress percentage"
+    )
+    recent_bars: list[OHLCVBar] = Field(
+        default_factory=list, description="Recent OHLCV bars for sparkline"
+    )
+    trend_direction: str = Field("sideways", description="Trend direction (up/down/sideways)")
+    last_updated: datetime = Field(..., description="Last update timestamp (UTC)")
+
+    model_config = {
+        "json_encoders": {
+            datetime: lambda v: v.isoformat(),
+        }
+    }
+
+
+class WatchlistStatusResponse(BaseModel):
+    """
+    Response for GET /api/v1/watchlist/status.
+
+    Returns enriched Wyckoff status for all symbols in the watchlist.
+    """
+
+    symbols: list[WatchlistSymbolStatus] = Field(..., description="Enriched symbol statuses")
+
+    model_config = {
+        "json_encoders": {
+            datetime: lambda v: v.isoformat(),
+        }
+    }

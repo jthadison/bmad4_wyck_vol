@@ -1,8 +1,10 @@
 <script setup lang="ts">
 /**
- * WatchlistSettings Component (Story 19.13)
+ * WatchlistSettings Component (Story 19.13, 19.24 + Feature 6)
  *
- * Main watchlist management page with search, table, and count display
+ * Main watchlist management page with search, table, and count display.
+ * Feature 6: Adds a Table/Dashboard view toggle and the Wyckoff status
+ * dashboard card grid.
  */
 
 import { ref, onMounted, onUnmounted } from 'vue'
@@ -11,10 +13,48 @@ import { useToast } from 'primevue/usetoast'
 import { useWatchlistStore } from '@/stores/watchlistStore'
 import SymbolSearch from './SymbolSearch.vue'
 import WatchlistTable from './WatchlistTable.vue'
+import WatchlistViewToggle from './WatchlistViewToggle.vue'
+import WatchlistStatusDashboard from './WatchlistStatusDashboard.vue'
+import type { ViewMode } from './WatchlistViewToggle.vue'
+import {
+  getWatchlistStatus,
+  type WatchlistSymbolStatus,
+} from '@/services/watchlistStatusService'
 
 const store = useWatchlistStore()
 const toast = useToast()
 const searchRef = ref<InstanceType<typeof SymbolSearch> | null>(null)
+
+// View toggle state — default to table; WatchlistViewToggle restores from localStorage
+const viewMode = ref<ViewMode>('table')
+
+// Dashboard data
+const dashboardSymbols = ref<WatchlistSymbolStatus[]>([])
+const dashboardLoading = ref(false)
+
+async function loadDashboardData(): Promise<void> {
+  dashboardLoading.value = true
+  try {
+    const response = await getWatchlistStatus()
+    dashboardSymbols.value = response.symbols
+  } catch {
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Failed to load Wyckoff status data',
+      life: 4000,
+    })
+  } finally {
+    dashboardLoading.value = false
+  }
+}
+
+async function onViewModeChange(mode: ViewMode): Promise<void> {
+  viewMode.value = mode
+  if (mode === 'dashboard') {
+    await loadDashboardData()
+  }
+}
 
 function onSymbolAdded(symbol: string) {
   toast.add({
@@ -44,7 +84,8 @@ function onSymbolUpdated(symbol: string) {
 }
 
 // Watch for errors and show toast
-const unsubscribe = store.$subscribe((_mutation, state) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unsubscribe = store.$subscribe((_mutation: any, state: any) => {
   if (state.error) {
     toast.add({
       severity: 'error',
@@ -88,19 +129,32 @@ onMounted(async () => {
           <i class="pi pi-spin pi-spinner"></i>
           Saving...
         </span>
+        <!-- View toggle -->
+        <WatchlistViewToggle
+          :model-value="viewMode"
+          @update:model-value="onViewModeChange"
+        />
       </div>
     </div>
 
-    <!-- Search input -->
+    <!-- Search input (always visible) -->
     <div class="search-section">
       <SymbolSearch ref="searchRef" @symbol-added="onSymbolAdded" />
     </div>
 
-    <!-- Watchlist table -->
-    <div class="table-section">
+    <!-- Table view -->
+    <div v-if="viewMode === 'table'" class="table-section">
       <WatchlistTable
         @symbol-removed="onSymbolRemoved"
         @symbol-updated="onSymbolUpdated"
+      />
+    </div>
+
+    <!-- Dashboard card view -->
+    <div v-else class="dashboard-section">
+      <WatchlistStatusDashboard
+        :symbols="dashboardSymbols"
+        :is-loading="dashboardLoading"
       />
     </div>
   </div>
@@ -121,6 +175,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+  gap: 12px;
 }
 
 .header-left {
@@ -148,6 +203,7 @@ onMounted(async () => {
 .header-right {
   display: flex;
   align-items: center;
+  gap: 16px;
 }
 
 .saving-indicator {
@@ -167,6 +223,10 @@ onMounted(async () => {
 }
 
 .table-section {
+  margin-top: 16px;
+}
+
+.dashboard-section {
   margin-top: 16px;
 }
 </style>
