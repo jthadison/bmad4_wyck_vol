@@ -78,6 +78,7 @@ def client(test_user_id: UUID, mock_repository: MagicMock):
     - get_current_user returns a dict with the test user id.
     - get_db_session is overridden (not used; repository is injected directly).
     - The price_alerts router's get_price_alert_repository is overridden.
+    - Uses yield + cleanup to prevent dependency overrides leaking between tests.
     """
     from src.api.routes.price_alerts import get_price_alert_repository
 
@@ -98,7 +99,9 @@ def client(test_user_id: UUID, mock_repository: MagicMock):
     from httpx import ASGITransport
 
     transport = ASGITransport(app=app)
-    return httpx.AsyncClient(transport=transport, base_url="http://test")
+    yield httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    app.dependency_overrides.clear()
 
 
 # ---------------------------------------------------------------------------

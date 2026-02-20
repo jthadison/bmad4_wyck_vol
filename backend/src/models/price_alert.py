@@ -6,11 +6,11 @@ Supports Wyckoff-specific alert types aligned with accumulation/distribution met
 """
 
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
-from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AlertType(StrEnum):
@@ -58,9 +58,9 @@ class PriceAlertCreate(BaseModel):
 
     symbol: str = Field(..., min_length=1, max_length=20, description="Trading symbol (e.g., AAPL)")
     alert_type: AlertType = Field(..., description="Type of alert")
-    price_level: float | None = Field(
+    price_level: Decimal | None = Field(
         None,
-        gt=0,
+        ge=Decimal("0"),
         description="Price level to trigger at (required for PRICE_LEVEL, CREEK, ICE, SPRING)",
     )
     direction: AlertDirection | None = Field(
@@ -77,7 +77,7 @@ class PriceAlertCreate(BaseModel):
 class PriceAlertUpdate(BaseModel):
     """Request model for updating an existing price alert (all fields optional)."""
 
-    price_level: float | None = Field(None, gt=0)
+    price_level: Decimal | None = Field(None, ge=Decimal("0"))
     direction: AlertDirection | None = None
     wyckoff_level_type: WyckoffLevelType | None = None
     is_active: bool | None = None
@@ -91,7 +91,7 @@ class PriceAlert(BaseModel):
     user_id: UUID
     symbol: str
     alert_type: AlertType
-    price_level: float | None
+    price_level: Decimal | None
     direction: AlertDirection | None
     wyckoff_level_type: WyckoffLevelType | None
     is_active: bool
@@ -99,11 +99,13 @@ class PriceAlert(BaseModel):
     created_at: datetime
     triggered_at: datetime | None
 
-    class Config:
-        json_encoders = {
+    model_config = ConfigDict(
+        json_encoders={
+            Decimal: str,
             datetime: lambda v: v.isoformat(),
             UUID: lambda v: str(v),
         }
+    )
 
 
 class PriceAlertListResponse(BaseModel):
@@ -113,8 +115,10 @@ class PriceAlertListResponse(BaseModel):
     total: int
     active_count: int
 
-    class Config:
-        json_encoders: dict[Any, Any] = {
+    model_config = ConfigDict(
+        json_encoders={
+            Decimal: str,
             datetime: lambda v: v.isoformat(),
             UUID: lambda v: str(v),
         }
+    )

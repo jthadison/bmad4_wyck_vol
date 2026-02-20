@@ -51,7 +51,7 @@ async def create_price_alert(
     - **spring**: Notify when price dips below Spring support (Phase C shakeout)
     - **phase_change**: Notify when the Wyckoff phase changes for the symbol
     """
-    user_id = UUID(str(current_user["id"]))
+    user_id = current_user["id"]
 
     # Validate required fields per alert type
     price_required_types = {"price_level", "creek", "ice", "spring"}
@@ -87,7 +87,7 @@ async def list_price_alerts(
     Returns all alerts ordered by creation date (newest first).
     Use active_only=true to filter to only un-triggered active alerts.
     """
-    user_id = UUID(str(current_user["id"]))
+    user_id = current_user["id"]
 
     alerts = await repository.list_for_user(user_id=user_id, active_only=active_only)
 
@@ -113,7 +113,7 @@ async def update_price_alert(
     Only the owning user can update their alerts.
     All fields are optional - only provided fields will be updated.
     """
-    user_id = UUID(str(current_user["id"]))
+    user_id = current_user["id"]
 
     alert = await repository.update(alert_id=alert_id, user_id=user_id, data=payload)
 
@@ -135,7 +135,7 @@ async def delete_price_alert(
     Only the owning user can delete their alerts.
     Returns 204 No Content on success.
     """
-    user_id = UUID(str(current_user["id"]))
+    user_id = current_user["id"]
 
     deleted = await repository.delete(alert_id=alert_id, user_id=user_id)
 
