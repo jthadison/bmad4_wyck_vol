@@ -231,6 +231,12 @@
         </div>
       </div>
 
+      <!-- Correlation Matrix (Feature P2-7) -->
+      <CorrelationMatrix />
+
+      <!-- Rachel's Blocked Entries (Feature P2-7) -->
+      <CorrelationBlockedPanel />
+
       <!-- Footer: Connection Status -->
       <div
         class="flex items-center justify-between text-xs text-gray-500 pt-4 border-t border-gray-700"
@@ -267,6 +273,8 @@ import HeatGauge from './HeatGauge.vue'
 import HeatSparkline from './HeatSparkline.vue'
 import CampaignRiskList from './CampaignRiskList.vue'
 import ProximityWarningsBanner from './ProximityWarningsBanner.vue'
+import CorrelationMatrix from './risk/CorrelationMatrix.vue'
+import CorrelationBlockedPanel from './risk/CorrelationBlockedPanel.vue'
 
 /**
  * RiskDashboard Component (Story 10.6)
