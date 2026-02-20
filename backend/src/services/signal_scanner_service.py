@@ -1064,13 +1064,13 @@ class SignalScannerService:
             logger.info(
                 "scanner_status_broadcast",
                 is_running=is_running,
-                event=event,
+                event_type=event,
             )
 
         except Exception as e:
             logger.error(
                 "scanner_status_broadcast_failed",
-                event=event,
+                event_type=event,
                 error=str(e),
             )
             # Don't re-raise - scanner operation should continue
