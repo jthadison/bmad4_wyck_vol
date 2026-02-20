@@ -28,6 +28,12 @@
             <!-- Mobile hamburger -->
             <button
               class="lg:hidden p-2 text-gray-400 hover:text-gray-200"
+              :aria-label="
+                mobileMenuOpen
+                  ? 'Close navigation menu'
+                  : 'Open navigation menu'
+              "
+              :aria-expanded="mobileMenuOpen"
               @click="mobileMenuOpen = !mobileMenuOpen"
             >
               <i
@@ -47,7 +53,7 @@
                 <router-link
                   to="/"
                   class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
-                  active-class="text-blue-400 border-b-2 border-blue-400"
+                  exact-active-class="text-blue-400 border-b-2 border-blue-400"
                 >
                   Dashboard
                 </router-link>
@@ -66,7 +72,7 @@
                   Campaigns
                 </router-link>
               </div>
-              <div class="w-px h-5 bg-[#2a3a5c] mx-2"></div>
+              <div class="w-px h-5 bg-[#2a3a5c] mx-2" aria-hidden="true"></div>
               <!-- Analysis group -->
               <div class="flex items-center gap-1">
                 <span
@@ -88,7 +94,7 @@
                   Results
                 </router-link>
               </div>
-              <div class="w-px h-5 bg-[#2a3a5c] mx-2"></div>
+              <div class="w-px h-5 bg-[#2a3a5c] mx-2" aria-hidden="true"></div>
               <!-- System group -->
               <div class="flex items-center gap-1">
                 <router-link
@@ -190,13 +196,26 @@
         <div class="flex items-center gap-1.5">
           <span class="relative flex h-2 w-2">
             <span
+              v-if="statusColor === 'green'"
               class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-green-400"
             ></span>
             <span
-              class="relative inline-flex rounded-full h-2 w-2 bg-green-500"
+              class="relative inline-flex rounded-full h-2 w-2"
+              :class="{
+                'bg-green-500': statusColor === 'green',
+                'bg-yellow-500': statusColor === 'yellow',
+                'bg-red-500': statusColor === 'red',
+              }"
             ></span>
           </span>
-          <span class="text-green-400">Live</span>
+          <span
+            :class="{
+              'text-green-400': statusColor === 'green',
+              'text-yellow-400': statusColor === 'yellow',
+              'text-red-400': statusColor === 'red',
+            }"
+            >{{ statusLabel }}</span
+          >
         </div>
       </div>
     </div>
@@ -216,7 +235,7 @@
  * Story 19.8: Frontend Signal Toast Notifications
  * Story 19.22: Emergency Kill Switch
  */
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Toast from 'primevue/toast'
 import KillSwitchButton from '@/components/layout/KillSwitchButton.vue'
@@ -227,6 +246,34 @@ import { isSignalNewMessage } from '@/types/websocket'
 
 // Mobile menu state
 const mobileMenuOpen = ref(false)
+
+// WebSocket connection status (reactive binding for status ribbon)
+const wsStatus = computed(() => websocketService.connectionStatus.value)
+const statusLabel = computed(() => {
+  switch (wsStatus.value) {
+    case 'connected':
+      return 'Live'
+    case 'connecting':
+      return 'Connecting'
+    case 'reconnecting':
+      return 'Reconnecting'
+    case 'error':
+      return 'Error'
+    default:
+      return 'Disconnected'
+  }
+})
+const statusColor = computed(() => {
+  switch (wsStatus.value) {
+    case 'connected':
+      return 'green'
+    case 'connecting':
+    case 'reconnecting':
+      return 'yellow'
+    default:
+      return 'red'
+  }
+})
 
 // Initialize PrimeVue toast
 const toast = useToast()

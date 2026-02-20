@@ -16,7 +16,7 @@
     <!-- Kill Switch Active Banner -->
     <div
       v-if="killSwitchActive"
-      class="kill-switch-banner fixed top-16 left-0 right-0 bg-red-600 text-white py-2 px-4 text-center text-sm font-medium z-50 flex items-center justify-center gap-2"
+      class="kill-switch-banner fixed top-[88px] left-0 right-0 bg-red-600 text-white py-2 px-4 text-center text-sm font-medium z-50 flex items-center justify-center gap-2"
     >
       <i class="pi pi-exclamation-triangle animate-pulse"></i>
       <span>KILL SWITCH ACTIVE - Auto-execution stopped</span>
