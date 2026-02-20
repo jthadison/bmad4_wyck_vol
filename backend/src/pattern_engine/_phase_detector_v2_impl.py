@@ -819,7 +819,7 @@ class PhaseDetector:
     def _generate_risk_rationale(self, invalidation, confirmation) -> Optional[str]:
         """Generate risk rationale explanation."""
         if invalidation:
-            return invalidation.rationale
+            return invalidation.invalidation_reason
         if confirmation:
             return f"Phase confirmed: {confirmation.confirmation_reason}"
         return None

@@ -75,9 +75,10 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     console.log('✅ EURUSD 15m backtest initiated via UI')
   })
 
-  test('should complete EURUSD 1h backtest via API and verify results', async ({
+  test.skip('should complete EURUSD 1h backtest via API and verify results', async ({
     request,
   }) => {
+    // SKIP: /api/v1/backtest/preview returns 501 — deliberately disabled (Story 13.5)
     console.log('🧪 Running EURUSD 1h backtest via API...')
 
     // Configure backtest request
@@ -173,9 +174,10 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     console.log(`  Trades Executed: ${results.trades.length}`)
   })
 
-  test('should complete EURUSD 15m backtest via API and verify results', async ({
+  test.skip('should complete EURUSD 15m backtest via API and verify results', async ({
     request,
   }) => {
+    // SKIP: /api/v1/backtest/preview returns 501 — deliberately disabled (Story 13.5)
     console.log('🧪 Running EURUSD 15m backtest via API...')
 
     const backtestRequest = {
@@ -250,9 +252,10 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     console.log(`  Trades Executed: ${results.trades.length}`)
   })
 
-  test('should verify Wyckoff pattern detection in EURUSD backtest', async ({
+  test.skip('should verify Wyckoff pattern detection in EURUSD backtest', async ({
     request,
   }) => {
+    // SKIP: /api/v1/backtest/preview returns 501 — deliberately disabled (Story 13.5)
     console.log('🧪 Testing Wyckoff pattern detection in EURUSD backtest...')
 
     const backtestRequest = {
@@ -311,7 +314,10 @@ test.describe('EURUSD Backtest - Multi-Timeframe', () => {
     console.log(`✅ Wyckoff patterns detected: ${hasWyckoffPatterns}`)
   })
 
-  test('should compare 1h vs 15m backtest results', async ({ request }) => {
+  test.skip('should compare 1h vs 15m backtest results', async ({
+    request,
+  }) => {
+    // SKIP: /api/v1/backtest/preview returns 501 — deliberately disabled (Story 13.5)
     console.log('🧪 Comparing EURUSD 1h vs 15m backtest results...')
 
     // Run both backtests in parallel

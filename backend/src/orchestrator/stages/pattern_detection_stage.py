@@ -241,6 +241,26 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
 
         detector = self._registry.get_detector(phase)
         if detector is None:
+            # Phase B (trading_allowed) has no direct detector. The Phase Detector's
+            # Epic 5 event stubs (spring=None, sos=None, lps=None) prevent Phase C/D/E
+            # classification, so pattern detectors for those phases never run.
+            # Bridge the gap: if in Phase B with adequate duration, try Phase C
+            # Spring detection. The Spring detector validates its own pattern conditions
+            # (price below Creek, low volume, recovery) independently of phase_info.
+            if phase == WyckoffPhase.B and phase_info.is_trading_allowed():
+                spring_detector = self._registry.get_detector(WyckoffPhase.C)
+                if spring_detector is not None:
+                    phase = WyckoffPhase.C
+                    detector = spring_detector
+                    logger.info(
+                        "phase_b_spring_detection_attempted",
+                        symbol=context.symbol,
+                        phase_b_duration=phase_info.duration,
+                        reason="Epic 5 spring events not yet in PhaseDetector; running Spring detector",
+                        correlation_id=str(context.correlation_id),
+                    )
+
+        if detector is None:
             logger.debug(
                 "pattern_detection_skipped",
                 reason=f"No detector registered for phase {phase.value}",

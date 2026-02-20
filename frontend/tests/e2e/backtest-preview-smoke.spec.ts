@@ -53,7 +53,11 @@ test.describe('Backtest Preview Smoke Test', () => {
     console.log('✅ Configuration form has correct default values!')
   })
 
-  test('should complete backtest via direct API call', async ({ request }) => {
+  test.skip('should complete backtest via direct API call', async ({
+    request,
+  }) => {
+    // SKIP: /api/v1/backtest/preview returns 501 — deliberately disabled (Story 13.5)
+    // Re-enable when preview mode is restored with proper multi-bar simulation
     // This test bypasses the UI and directly tests the API to verify backend functionality
     const backtestRequest = {
       proposed_config: {},

@@ -11,29 +11,23 @@
 
 <template>
   <div class="monthly-returns-heatmap-skeleton">
-    <div
-      class="h-7 w-40 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-4"
-    ></div>
+    <div class="h-7 w-40 bg-gray-800 skeleton-shimmer rounded mb-4"></div>
 
-    <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+    <div class="overflow-x-auto bg-gray-800/80 rounded-lg shadow">
       <table class="min-w-full">
         <!-- Header -->
-        <thead class="bg-gray-50 dark:bg-gray-700">
+        <thead class="bg-gray-900/50">
           <tr>
             <th class="px-4 py-3">
-              <div
-                class="h-4 w-12 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"
-              ></div>
+              <div class="h-4 w-12 bg-gray-700 skeleton-shimmer rounded"></div>
             </th>
             <th v-for="month in 12" :key="month" class="px-4 py-3">
               <div
-                class="h-4 w-8 bg-gray-200 dark:bg-gray-600 rounded animate-pulse mx-auto"
+                class="h-4 w-8 bg-gray-700 skeleton-shimmer rounded mx-auto"
               ></div>
             </th>
             <th class="px-4 py-3">
-              <div
-                class="h-4 w-12 bg-gray-200 dark:bg-gray-600 rounded animate-pulse"
-              ></div>
+              <div class="h-4 w-12 bg-gray-700 skeleton-shimmer rounded"></div>
             </th>
           </tr>
         </thead>
@@ -41,19 +35,15 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
           <tr v-for="row in 3" :key="row">
             <td class="px-4 py-3">
-              <div
-                class="h-4 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"
-              ></div>
+              <div class="h-4 w-12 bg-gray-800 skeleton-shimmer rounded"></div>
             </td>
             <td v-for="col in 12" :key="col" class="px-4 py-3">
               <div
-                class="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mx-auto"
+                class="h-8 w-16 bg-gray-800 skeleton-shimmer rounded mx-auto"
               ></div>
             </td>
             <td class="px-4 py-3">
-              <div
-                class="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"
-              ></div>
+              <div class="h-4 w-16 bg-gray-800 skeleton-shimmer rounded"></div>
             </td>
           </tr>
         </tbody>

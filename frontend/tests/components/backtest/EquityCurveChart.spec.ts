@@ -168,8 +168,8 @@ describe('EquityCurveChart', () => {
       const lineColor = chartData.datasets[0].borderColor
       const fillColor = chartData.datasets[0].backgroundColor
 
-      expect(lineColor).toBe('rgb(34, 197, 94)') // Green
-      expect(fillColor).toBe('rgba(34, 197, 94, 0.1)') // Green with transparency
+      expect(lineColor).toBe('rgb(52, 211, 153)') // Emerald-400 (dark theme)
+      expect(fillColor).toBe('rgba(52, 211, 153, 0.08)') // Emerald-400 with transparency
     })
 
     it('should use red color for unprofitable equity curve', () => {
@@ -184,8 +184,8 @@ describe('EquityCurveChart', () => {
       const lineColor = chartData.datasets[0].borderColor
       const fillColor = chartData.datasets[0].backgroundColor
 
-      expect(lineColor).toBe('rgb(239, 68, 68)') // Red
-      expect(fillColor).toBe('rgba(239, 68, 68, 0.1)') // Red with transparency
+      expect(lineColor).toBe('rgb(248, 113, 113)') // Red-400 (dark theme)
+      expect(fillColor).toBe('rgba(248, 113, 113, 0.08)') // Red-400 with transparency
     })
 
     it('should use green color for breakeven equity curve', () => {
@@ -206,7 +206,7 @@ describe('EquityCurveChart', () => {
       const chartData = (wrapper.vm as unknown).chartData
       const lineColor = chartData.datasets[0].borderColor
 
-      expect(lineColor).toBe('rgb(34, 197, 94)') // Green (>= 0)
+      expect(lineColor).toBe('rgb(52, 211, 153)') // Emerald-400 (>= 0)
     })
   })
 
@@ -436,7 +436,7 @@ describe('EquityCurveChart', () => {
       const chartData = (wrapper.vm as unknown).chartData
       const lineColor = chartData.datasets[0].borderColor
 
-      expect(lineColor).toBe('rgb(34, 197, 94)') // Still green
+      expect(lineColor).toBe('rgb(52, 211, 153)') // Still green (emerald-400)
     })
 
     it('should handle very large portfolio values', () => {

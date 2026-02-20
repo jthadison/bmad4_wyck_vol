@@ -34,7 +34,34 @@ async function waitForConsentModal(page: Page) {
   return modal
 }
 
+// Mock auto-execution config returned for all tests
+const MOCK_AUTO_EXECUTION_CONFIG = {
+  enabled: false,
+  min_confidence: 70,
+  max_trades_per_day: 5,
+  max_risk_per_day: null,
+  circuit_breaker_losses: 3,
+  enabled_patterns: ['spring', 'sos', 'lps'],
+  symbol_whitelist: null,
+  symbol_blacklist: null,
+  kill_switch_active: false,
+  consent_given_at: null,
+  trades_today: 0,
+  risk_today: 0,
+}
+
 test.describe('Auto-Execution Settings', () => {
+  // Mock the auto-execution API — staging returns 403 without JWT auth
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/settings/auto-execution', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_AUTO_EXECUTION_CONFIG),
+      })
+    })
+  })
+
   /**
    * Test Scenario 1: View settings page in disabled state
    * Story 19.15 - Acceptance Criteria 1
@@ -44,11 +71,9 @@ test.describe('Auto-Execution Settings', () => {
   }) => {
     await navigateToSettings(page)
 
-    // Verify page title
-    const heading = page
-      .locator('h1, h2')
-      .filter({ hasText: /Auto.?Execution/i })
-    await expect(heading.first()).toBeVisible({ timeout: 10000 })
+    // Verify page title — rendered inside PrimeVue Panel title slot, not h1/h2
+    const heading = page.locator('text=Auto-Execution').first()
+    await expect(heading).toBeVisible({ timeout: 10000 })
 
     // Verify master toggle is OFF (not checked)
     const toggle = page
