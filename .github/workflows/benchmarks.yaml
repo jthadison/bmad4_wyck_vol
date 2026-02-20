@@ -60,7 +60,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: poetry install --no-interaction --no-root
+        run: poetry install --no-interaction --no-root --with dev
 
       - name: Initialize database extensions
         run: |
@@ -151,7 +151,7 @@ jobs:
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
-              repo: context.repo.name,
+              repo: context.repo.repo,
               body: comment
             });
 
@@ -214,7 +214,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: poetry install --no-interaction --no-root
+        run: poetry install --no-interaction --no-root --with dev
 
       - name: Initialize database extensions
         run: |
