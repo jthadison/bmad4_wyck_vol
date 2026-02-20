@@ -103,26 +103,26 @@ const getMonthAverage = (month: number): string => {
 
 // Get color class for a cell based on return percentage
 const getCellColorClass = (returnPct: string | null): string => {
-  if (returnPct === null) return 'bg-gray-200 dark:bg-gray-700'
+  if (returnPct === null) return 'heatmap-cell-empty'
 
   const ret = new Big(returnPct)
 
-  if (ret.eq(0)) return 'bg-gray-200 dark:bg-gray-700'
+  if (ret.eq(0)) return 'heatmap-cell-empty'
 
-  // Positive returns: shades of green
+  // Positive returns: shades of green (dark-optimized)
   if (ret.gt(0)) {
-    if (ret.gte(10)) return 'bg-green-700 text-white'
-    if (ret.gte(5)) return 'bg-green-600 text-white'
-    if (ret.gte(2)) return 'bg-green-500 text-white'
-    return 'bg-green-300 text-gray-900'
+    if (ret.gte(10)) return 'heatmap-cell-gain-strong'
+    if (ret.gte(5)) return 'heatmap-cell-gain-high'
+    if (ret.gte(2)) return 'heatmap-cell-gain-moderate'
+    return 'heatmap-cell-gain-low'
   }
 
-  // Negative returns: shades of red
+  // Negative returns: shades of red (dark-optimized)
   const absRet = ret.abs()
-  if (absRet.gte(10)) return 'bg-red-700 text-white'
-  if (absRet.gte(5)) return 'bg-red-600 text-white'
-  if (absRet.gte(2)) return 'bg-red-500 text-white'
-  return 'bg-red-300 text-gray-900'
+  if (absRet.gte(10)) return 'heatmap-cell-loss-strong'
+  if (absRet.gte(5)) return 'heatmap-cell-loss-high'
+  if (absRet.gte(2)) return 'heatmap-cell-loss-moderate'
+  return 'heatmap-cell-loss-low'
 }
 
 // Get color class for annual return
@@ -167,19 +167,19 @@ const tooltipData = computed(() => {
         <thead>
           <tr>
             <th
-              class="sticky left-0 z-10 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm p-2 border border-gray-300 dark:border-gray-600"
+              class="sticky left-0 z-10 bg-gray-900/50 text-gray-400 font-semibold text-sm p-2 border border-gray-800/50"
             >
               Year
             </th>
             <th
               v-for="month in MONTHS"
               :key="month"
-              class="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm p-2 border border-gray-300 dark:border-gray-600 min-w-[60px]"
+              class="bg-gray-900/50 text-gray-400 font-semibold text-sm p-2 border border-gray-800/50 min-w-[60px]"
             >
               {{ month }}
             </th>
             <th
-              class="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm p-2 border border-gray-300 dark:border-gray-600"
+              class="bg-gray-900/50 text-gray-400 font-semibold text-sm p-2 border border-gray-800/50"
             >
               Annual
             </th>
@@ -190,7 +190,7 @@ const tooltipData = computed(() => {
           <tr v-for="year in years" :key="year">
             <!-- Year label (sticky on mobile) -->
             <td
-              class="sticky left-0 z-10 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-sm p-2 border border-gray-300 dark:border-gray-600"
+              class="sticky left-0 z-10 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-sm p-2 border border-gray-800/50"
             >
               {{ year }}
             </td>
@@ -204,7 +204,7 @@ const tooltipData = computed(() => {
                   getCellData(year, monthNum)?.return_pct || null
                 )
               "
-              class="text-center text-sm p-2 border border-gray-300 dark:border-gray-600 cursor-pointer transition-all hover:opacity-80"
+              class="text-center text-sm p-2 border border-gray-800/50 cursor-pointer transition-all hover:opacity-80"
               @mouseenter="handleCellHover(year, monthNum, $event)"
               @mousemove="handleCellHover(year, monthNum, $event)"
               @mouseleave="handleCellLeave"
@@ -221,7 +221,7 @@ const tooltipData = computed(() => {
 
             <!-- Annual return cell -->
             <td
-              class="text-center text-sm p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800"
+              class="text-center text-sm p-2 border border-gray-800/50 bg-gray-50 dark:bg-gray-800"
               :class="getAnnualReturnColorClass(getAnnualReturn(year))"
             >
               {{ getAnnualReturn(year) }}%
@@ -229,22 +229,22 @@ const tooltipData = computed(() => {
           </tr>
 
           <!-- Summary row: Average monthly return -->
-          <tr class="bg-gray-100 dark:bg-gray-700 font-semibold">
+          <tr class="bg-gray-900/50 font-semibold">
             <td
-              class="sticky left-0 z-10 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm p-2 border border-gray-300 dark:border-gray-600"
+              class="sticky left-0 z-10 bg-gray-900/50 text-gray-400 text-sm p-2 border border-gray-800/50"
             >
               Avg
             </td>
             <td
               v-for="monthNum in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]"
               :key="monthNum"
-              class="text-center text-sm p-2 border border-gray-300 dark:border-gray-600"
+              class="text-center text-sm p-2 border border-gray-800/50"
               :class="getAnnualReturnColorClass(getMonthAverage(monthNum))"
             >
               {{ getMonthAverage(monthNum) }}%
             </td>
             <td
-              class="text-center text-sm p-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+              class="text-center text-sm p-2 border border-gray-800/50 text-gray-400"
             >
               -
             </td>
@@ -295,31 +295,39 @@ const tooltipData = computed(() => {
     >
       <span class="font-semibold">Legend:</span>
       <div class="flex items-center gap-1">
-        <div class="w-4 h-4 bg-green-700 rounded"></div>
+        <div class="w-4 h-4 rounded heatmap-cell-gain-strong"></div>
         <span>Strong Gain (10%+)</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="w-4 h-4 bg-green-500 rounded"></div>
-        <span>Moderate Gain (2-10%)</span>
+        <div class="w-4 h-4 rounded heatmap-cell-gain-high"></div>
+        <span>High Gain (5-10%)</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="w-4 h-4 bg-green-300 rounded"></div>
-        <span>Small Gain (0-2%)</span>
+        <div class="w-4 h-4 rounded heatmap-cell-gain-moderate"></div>
+        <span>Moderate Gain (2-5%)</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="w-4 h-4 bg-gray-200 dark:bg-gray-700 rounded"></div>
+        <div class="w-4 h-4 rounded heatmap-cell-gain-low"></div>
+        <span>Low Gain (0-2%)</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="w-4 h-4 rounded heatmap-cell-empty"></div>
         <span>Flat / No Data</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="w-4 h-4 bg-red-300 rounded"></div>
+        <div class="w-4 h-4 rounded heatmap-cell-loss-low"></div>
         <span>Small Loss (0-2%)</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="w-4 h-4 bg-red-500 rounded"></div>
-        <span>Moderate Loss (2-10%)</span>
+        <div class="w-4 h-4 rounded heatmap-cell-loss-moderate"></div>
+        <span>Moderate Loss (2-5%)</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="w-4 h-4 bg-red-700 rounded"></div>
+        <div class="w-4 h-4 rounded heatmap-cell-loss-high"></div>
+        <span>High Loss (5-10%)</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="w-4 h-4 rounded heatmap-cell-loss-strong"></div>
         <span>Large Loss (10%+)</span>
       </div>
     </div>
@@ -347,6 +355,82 @@ const tooltipData = computed(() => {
 .sticky {
   position: sticky;
   left: 0;
+}
+
+/* Default (light mode) */
+.heatmap-cell-empty {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.heatmap-cell-gain-low {
+  background: #dcfce7;
+  color: #166534;
+}
+.heatmap-cell-gain-moderate {
+  background: #86efac;
+  color: #14532d;
+}
+.heatmap-cell-gain-high {
+  background: #22c55e;
+  color: #ffffff;
+}
+.heatmap-cell-gain-strong {
+  background: #16a34a;
+  color: #ffffff;
+}
+.heatmap-cell-loss-low {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.heatmap-cell-loss-moderate {
+  background: #fca5a5;
+  color: #7f1d1d;
+}
+.heatmap-cell-loss-high {
+  background: #ef4444;
+  color: #ffffff;
+}
+.heatmap-cell-loss-strong {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+/* Dark mode overrides */
+:global(.dark) .heatmap-cell-empty {
+  background: #1f2937;
+  color: #6b7280;
+}
+:global(.dark) .heatmap-cell-gain-low {
+  background: #064e3b;
+  color: #6ee7b7;
+}
+:global(.dark) .heatmap-cell-gain-moderate {
+  background: #047857;
+  color: #ecfdf5;
+}
+:global(.dark) .heatmap-cell-gain-high {
+  background: #059669;
+  color: #ffffff;
+}
+:global(.dark) .heatmap-cell-gain-strong {
+  background: #047857;
+  color: #ffffff;
+}
+:global(.dark) .heatmap-cell-loss-low {
+  background: #450a0a;
+  color: #fca5a5;
+}
+:global(.dark) .heatmap-cell-loss-moderate {
+  background: #7f1d1d;
+  color: #fef2f2;
+}
+:global(.dark) .heatmap-cell-loss-high {
+  background: #b91c1c;
+  color: #ffffff;
+}
+:global(.dark) .heatmap-cell-loss-strong {
+  background: #991b1b;
+  color: #ffffff;
 }
 
 /* Mobile optimization */

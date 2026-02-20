@@ -178,8 +178,7 @@ describe('SignalCard.vue', () => {
       wrapper = mountComponent({ signal })
 
       const card = wrapper.find('.signal-card')
-      expect(card.classes()).toContain('border-green-500')
-      expect(card.classes()).toContain('bg-green-50')
+      expect(card.classes()).toContain('border-emerald-500')
     })
 
     it('should apply green styling for TARGET_HIT status', () => {
@@ -187,7 +186,7 @@ describe('SignalCard.vue', () => {
       wrapper = mountComponent({ signal })
 
       const card = wrapper.find('.signal-card')
-      expect(card.classes()).toContain('border-green-500')
+      expect(card.classes()).toContain('border-emerald-500')
     })
 
     it('should apply red styling for REJECTED status', () => {
@@ -196,7 +195,6 @@ describe('SignalCard.vue', () => {
 
       const card = wrapper.find('.signal-card')
       expect(card.classes()).toContain('border-red-500')
-      expect(card.classes()).toContain('bg-red-50')
     })
 
     it('should apply yellow styling for PENDING status', () => {
@@ -204,8 +202,7 @@ describe('SignalCard.vue', () => {
       wrapper = mountComponent({ signal })
 
       const card = wrapper.find('.signal-card')
-      expect(card.classes()).toContain('border-yellow-500')
-      expect(card.classes()).toContain('bg-yellow-50')
+      expect(card.classes()).toContain('border-amber-500')
     })
 
     it('should apply yellow styling for APPROVED status', () => {
@@ -213,7 +210,7 @@ describe('SignalCard.vue', () => {
       wrapper = mountComponent({ signal })
 
       const card = wrapper.find('.signal-card')
-      expect(card.classes()).toContain('border-yellow-500')
+      expect(card.classes()).toContain('border-amber-500')
     })
 
     it('should apply gray styling for STOPPED status', () => {
@@ -222,7 +219,6 @@ describe('SignalCard.vue', () => {
 
       const card = wrapper.find('.signal-card')
       expect(card.classes()).toContain('border-gray-500')
-      expect(card.classes()).toContain('bg-gray-50')
     })
 
     it('should apply gray styling for EXPIRED status', () => {
