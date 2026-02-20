@@ -15,7 +15,6 @@ Endpoints:
 Author: Feature P2-8 (Trade Journal)
 """
 
-from typing import Optional
 from uuid import UUID
 
 import structlog
@@ -76,8 +75,8 @@ async def create_journal_entry(
 
 @router.get("", response_model=JournalListResponse)
 async def list_journal_entries(
-    symbol: Optional[str] = Query(None, description="Filter by trading symbol"),
-    entry_type: Optional[str] = Query(
+    symbol: str | None = Query(None, description="Filter by trading symbol"),
+    entry_type: str | None = Query(
         None, description="Filter by entry type: pre_trade, post_trade, observation"
     ),
     limit: int = Query(50, ge=1, le=100, description="Number of entries to return"),

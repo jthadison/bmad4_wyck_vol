@@ -8,7 +8,6 @@ Author: Feature P2-8 (Trade Journal)
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID, uuid4
 
 import structlog
@@ -31,11 +30,11 @@ class JournalRepository:
         user_id: UUID,
         symbol: str,
         entry_type: str,
-        notes: Optional[str],
-        campaign_id: Optional[UUID],
-        signal_id: Optional[UUID],
-        emotional_state: Optional[str],
-        wyckoff_checklist: Optional[dict],
+        notes: str | None,
+        campaign_id: UUID | None,
+        signal_id: UUID | None,
+        emotional_state: str | None,
+        wyckoff_checklist: dict | None,
     ) -> JournalEntryModel:
         """Create a new journal entry."""
         entry = JournalEntryModel(
@@ -63,7 +62,7 @@ class JournalRepository:
         logger.info("journal_entry_created", entry_id=str(entry.id), user_id=str(user_id))
         return entry
 
-    async def get_by_id(self, entry_id: UUID, user_id: UUID) -> Optional[JournalEntryModel]:
+    async def get_by_id(self, entry_id: UUID, user_id: UUID) -> JournalEntryModel | None:
         """Fetch a single journal entry by ID, enforcing user isolation."""
         result = await self.db.execute(
             select(JournalEntryModel).where(
@@ -78,8 +77,8 @@ class JournalRepository:
     async def list_entries(
         self,
         user_id: UUID,
-        symbol: Optional[str] = None,
-        entry_type: Optional[str] = None,
+        symbol: str | None = None,
+        entry_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[JournalEntryModel], int]:
@@ -133,11 +132,11 @@ class JournalRepository:
     async def update(
         self,
         entry: JournalEntryModel,
-        symbol: Optional[str] = None,
-        entry_type: Optional[str] = None,
-        notes: Optional[str] = None,
-        emotional_state: Optional[str] = None,
-        wyckoff_checklist: Optional[dict] = None,
+        symbol: str | None = None,
+        entry_type: str | None = None,
+        notes: str | None = None,
+        emotional_state: str | None = None,
+        wyckoff_checklist: dict | None = None,
     ) -> JournalEntryModel:
         """Update fields on an existing journal entry."""
         if symbol is not None:

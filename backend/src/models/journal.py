@@ -17,8 +17,8 @@ Author: Feature P2-8 (Trade Journal)
 """
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -34,7 +34,7 @@ from src.database import Base
 # =====================
 
 
-class EntryType(str, Enum):
+class EntryType(StrEnum):
     """Type of journal entry."""
 
     PRE_TRADE = "pre_trade"
@@ -42,7 +42,7 @@ class EntryType(str, Enum):
     OBSERVATION = "observation"
 
 
-class EmotionalState(str, Enum):
+class EmotionalState(StrEnum):
     """Trader emotional state at time of entry."""
 
     CONFIDENT = "confident"
@@ -80,14 +80,14 @@ class JournalEntryModel(Base):
     )
 
     # Optional campaign linkage (no FK constraint to avoid migration complexity)
-    campaign_id: Mapped[Optional[UUID]] = mapped_column(
+    campaign_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         nullable=True,
         index=True,
     )
 
     # Optional signal linkage (no FK constraint - signals may be ephemeral)
-    signal_id: Mapped[Optional[UUID]] = mapped_column(
+    signal_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         nullable=True,
     )
@@ -104,12 +104,12 @@ class JournalEntryModel(Base):
         default=EntryType.OBSERVATION.value,
     )
 
-    notes: Mapped[Optional[str]] = mapped_column(
+    notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
 
-    emotional_state: Mapped[Optional[str]] = mapped_column(
+    emotional_state: Mapped[str | None] = mapped_column(
         String(20),
         nullable=True,
         default=EmotionalState.NEUTRAL.value,
@@ -122,7 +122,7 @@ class JournalEntryModel(Base):
     #   "creek_identified": bool,
     #   "pattern_confirmed": bool
     # }
-    wyckoff_checklist: Mapped[Optional[dict]] = mapped_column(
+    wyckoff_checklist: Mapped[dict | None] = mapped_column(
         JSON,
         nullable=True,
         default=lambda: {
@@ -182,13 +182,13 @@ class JournalEntryCreate(BaseModel):
     entry_type: EntryType = Field(
         default=EntryType.OBSERVATION, description="Type of journal entry"
     )
-    notes: Optional[str] = Field(None, description="Full text notes")
-    campaign_id: Optional[UUID] = Field(None, description="Linked campaign ID (optional)")
-    signal_id: Optional[UUID] = Field(None, description="Linked signal ID (optional)")
-    emotional_state: Optional[EmotionalState] = Field(
+    notes: str | None = Field(None, description="Full text notes")
+    campaign_id: UUID | None = Field(None, description="Linked campaign ID (optional)")
+    signal_id: UUID | None = Field(None, description="Linked signal ID (optional)")
+    emotional_state: EmotionalState | None = Field(
         default=EmotionalState.NEUTRAL, description="Trader emotional state"
     )
-    wyckoff_checklist: Optional[WyckoffChecklist] = Field(
+    wyckoff_checklist: WyckoffChecklist | None = Field(
         default=None, description="Wyckoff 4-point criteria checklist"
     )
 
@@ -198,11 +198,11 @@ class JournalEntryUpdate(BaseModel):
 
     model_config = ConfigDict(use_enum_values=True)
 
-    symbol: Optional[str] = Field(None, min_length=1, max_length=20)
-    entry_type: Optional[EntryType] = None
-    notes: Optional[str] = None
-    emotional_state: Optional[EmotionalState] = None
-    wyckoff_checklist: Optional[WyckoffChecklist] = None
+    symbol: str | None = Field(None, min_length=1, max_length=20)
+    entry_type: EntryType | None = None
+    notes: str | None = None
+    emotional_state: EmotionalState | None = None
+    wyckoff_checklist: WyckoffChecklist | None = None
 
 
 class JournalEntryResponse(BaseModel):
@@ -212,13 +212,13 @@ class JournalEntryResponse(BaseModel):
 
     id: UUID
     user_id: UUID
-    campaign_id: Optional[UUID]
-    signal_id: Optional[UUID]
+    campaign_id: UUID | None
+    signal_id: UUID | None
     symbol: str
     entry_type: str
-    notes: Optional[str]
-    emotional_state: Optional[str]
-    wyckoff_checklist: Optional[dict[str, Any]]
+    notes: str | None
+    emotional_state: str | None
+    wyckoff_checklist: dict[str, Any] | None
     checklist_score: int = Field(default=0, description="Number of Wyckoff criteria met (0-4)")
     created_at: datetime
     updated_at: datetime

@@ -140,9 +140,11 @@ function formatDate(iso: string): string {
       class="flex items-center gap-2 bg-[#0a0e1a] border border-[#1e2d4a] rounded-md px-3 py-2"
     >
       <span class="text-xs text-gray-500">Linked campaign:</span>
-      <code class="text-xs text-blue-400 font-mono">{{
-        entry.campaign_id
-      }}</code>
+      <router-link
+        :to="{ path: '/campaigns', query: { id: entry.campaign_id } }"
+        class="text-xs text-blue-400 font-mono hover:text-blue-300 underline transition-colors"
+        >{{ entry.campaign_id }}</router-link
+      >
     </div>
 
     <!-- Notes -->

@@ -171,9 +171,13 @@ function handleSubmit(): void {
           type="button"
           class="px-3 py-1.5 rounded-full text-sm border transition-colors"
           :class="
-            emotionalState === opt.value
-              ? 'bg-blue-600 border-blue-500 text-white'
-              : 'bg-[#0d1322] border-[#1e2d4a] text-gray-400 hover:border-blue-600 hover:text-gray-200'
+            emotionalState === opt.value && opt.value === 'fomo'
+              ? 'bg-orange-700 border-orange-500 text-white'
+              : emotionalState === opt.value
+                ? 'bg-blue-600 border-blue-500 text-white'
+                : opt.value === 'fomo'
+                  ? 'bg-[#0d1322] border-orange-900 text-orange-400 hover:border-orange-600 hover:text-orange-200'
+                  : 'bg-[#0d1322] border-[#1e2d4a] text-gray-400 hover:border-blue-600 hover:text-gray-200'
           "
           @click="emotionalState = opt.value"
         >
