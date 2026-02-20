@@ -524,16 +524,16 @@ def _generate_mock_bars(symbol: str, timeframe: str, count: int) -> list[OHLCVBa
         low_p = mid - spread / 2 - random.uniform(0, 1)
         c = mid + random.uniform(-spread / 2, spread / 2)
 
-        # Volume varies by phase position
+        # Volume varies by phase position (realistic Wyckoff proportions)
         vol_multiplier = 1.0
         pct = i / count
-        if pct < 0.15:
+        if pct < 0.05:
             vol_multiplier = 2.5  # Phase A: high volume (SC)
-        elif pct < 0.50:
-            vol_multiplier = 1.2  # Phase B: moderate
-        elif pct < 0.65:
+        elif pct < 0.70:
+            vol_multiplier = 1.2  # Phase B: moderate (long cause-building)
+        elif pct < 0.75:
             vol_multiplier = 0.6  # Phase C: low volume (Spring)
-        elif pct < 0.85:
+        elif pct < 0.90:
             vol_multiplier = 1.8  # Phase D: rising volume (SOS)
         else:
             vol_multiplier = 1.0  # Phase E: normal
@@ -560,17 +560,25 @@ def _generate_mock_bars(symbol: str, timeframe: str, count: int) -> list[OHLCVBa
 
 
 def _assign_mock_phases(count: int) -> list[str]:
-    """Assign Wyckoff phases proportionally across bars."""
+    """Assign Wyckoff phases with realistic proportions.
+
+    Realistic durations per Wyckoff methodology:
+      A:  ~5%  - Stopping action (SC, AR, ST) — brief
+      B: ~65%  - Cause building — longest phase by far
+      C:  ~5%  - Testing (Spring/UTAD) — very brief
+      D: ~15%  - Markup/markdown (SOS/LPS)
+      E: ~10%  - Trend continuation
+    """
     phases: list[str] = []
     for i in range(count):
         pct = i / count
-        if pct < 0.15:
+        if pct < 0.05:
             phases.append("A")
-        elif pct < 0.50:
+        elif pct < 0.70:
             phases.append("B")
-        elif pct < 0.65:
+        elif pct < 0.75:
             phases.append("C")
-        elif pct < 0.85:
+        elif pct < 0.90:
             phases.append("D")
         else:
             phases.append("E")

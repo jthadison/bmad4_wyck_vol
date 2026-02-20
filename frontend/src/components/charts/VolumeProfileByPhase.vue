@@ -1,5 +1,13 @@
 <template>
   <div class="volume-profile">
+    <!-- Simulated data banner -->
+    <div
+      v-if="data?.data_source === 'MOCK'"
+      class="vp-mock-banner"
+      data-testid="mock-banner"
+    >
+      ⚠ Simulated data — not wired to live market data yet
+    </div>
     <div class="vp-header">
       <h3 class="vp-title">Volume Profile by Phase</h3>
       <div class="vp-controls">
@@ -328,6 +336,16 @@ watch(
 </script>
 
 <style scoped>
+.vp-mock-banner {
+  margin-bottom: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(120, 53, 15, 0.4);
+  border: 1px solid rgba(217, 119, 6, 0.5);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #fbbf24;
+}
+
 .volume-profile {
   width: 100%;
   background: var(--surface-card, #ffffff);

@@ -83,6 +83,7 @@ function createMockResponse(
       value_area_high: 109,
     },
     current_price: 106.5,
+    data_source: 'MOCK' as const,
     ...overrides,
   }
 }

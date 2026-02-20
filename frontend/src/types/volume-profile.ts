@@ -35,4 +35,5 @@ export interface VolumeProfileResponse {
   phases: PhaseVolumeData[]
   combined: PhaseVolumeData
   current_price: number | null
+  data_source: 'MOCK' | 'LIVE'
 }

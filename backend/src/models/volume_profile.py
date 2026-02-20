@@ -7,7 +7,7 @@ segmented by Wyckoff phase. Used by the volume-profile API endpoint.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -52,3 +52,7 @@ class VolumeProfileResponse(BaseModel):
     )
     combined: PhaseVolumeData = Field(..., description="All phases combined")
     current_price: Optional[float] = None
+    data_source: Literal["MOCK", "LIVE"] = Field(
+        "MOCK",
+        description="MOCK until wired to real PhaseClassifier + market data (Epic 23); LIVE in production.",
+    )
