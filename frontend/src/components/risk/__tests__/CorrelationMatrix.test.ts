@@ -20,27 +20,33 @@ import CorrelationMatrix from '@/components/risk/CorrelationMatrix.vue'
 
 // ============================================================================
 // Mock the correlationService module
+// vi.mock is hoisted to the top of the file by Vitest, so the mock data must
+// be defined via vi.hoisted() to ensure it is initialized before the factory runs.
 // ============================================================================
 
-const mockMatrixData = {
-  campaigns: ['AAPL-2024-01', 'MSFT-2024-01', 'JNJ-2024-01'],
-  matrix: [
-    [1.0, 0.78, 0.12],
-    [0.78, 1.0, 0.21],
-    [0.12, 0.21, 1.0],
-  ],
-  blocked_pairs: [
-    {
-      campaign_a: 'AAPL-2024-01',
-      campaign_b: 'MSFT-2024-01',
-      correlation: 0.78,
-      reason:
-        'Correlation 0.78 exceeds 0.6 threshold. Rachel (Risk Manager) blocks...',
+const { mockMatrixData } = vi.hoisted(() => {
+  return {
+    mockMatrixData: {
+      campaigns: ['AAPL-2024-01', 'MSFT-2024-01', 'JNJ-2024-01'],
+      matrix: [
+        [1.0, 0.78, 0.12],
+        [0.78, 1.0, 0.21],
+        [0.12, 0.21, 1.0],
+      ],
+      blocked_pairs: [
+        {
+          campaign_a: 'AAPL-2024-01',
+          campaign_b: 'MSFT-2024-01',
+          correlation: 0.78,
+          reason:
+            'Correlation 0.78 exceeds 0.6 threshold. Rachel (Risk Manager) blocks...',
+        },
+      ],
+      heat_threshold: 0.6,
+      last_updated: '2024-03-15T14:30:00Z',
     },
-  ],
-  heat_threshold: 0.6,
-  last_updated: '2024-03-15T14:30:00Z',
-}
+  }
+})
 
 vi.mock('@/services/correlationService', async () => {
   // Re-export the real module but override getCorrelationMatrix

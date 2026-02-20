@@ -590,13 +590,27 @@ def compute_correlation_matrix(
     if n == 1:
         return [[1.0]], []
 
-    # Build DataFrame of daily returns for all campaigns
+    # Build DataFrame of daily returns for all campaigns.
+    # Determine the expected return length from the first available price series
+    # so all columns have equal length (required by pd.DataFrame).
+    first_prices = next(iter(price_series.values())) if price_series else []
+    expected_len = max(len(first_prices) - 1, 1)
+
     returns_data: dict[str, list[float]] = {}
     for campaign in campaigns:
-        prices = price_series.get(campaign, [100.0, 100.0])
+        prices = price_series.get(campaign, [])
+        if len(prices) < 2:
+            # Fallback for missing or single-price series: flat (zero) returns
+            returns_data[campaign] = [0.0] * expected_len
+            continue
         prices_series = pd.Series(prices, dtype=float)
         # pct_change() computes (P_t - P_{t-1}) / P_{t-1}; drop the first NaN
         returns = prices_series.pct_change().dropna().tolist()
+        # Pad or trim to expected length to ensure rectangular DataFrame
+        if len(returns) < expected_len:
+            returns = returns + [0.0] * (expected_len - len(returns))
+        elif len(returns) > expected_len:
+            returns = returns[:expected_len]
         returns_data[campaign] = returns
 
     returns_df = pd.DataFrame(returns_data)

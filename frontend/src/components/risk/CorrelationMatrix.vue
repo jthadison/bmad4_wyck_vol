@@ -73,9 +73,9 @@
                 :class="[i === j ? 'diagonal-cell' : '', 'w-10 h-10']"
                 :style="{ backgroundColor: cellBackground(val, i === j) }"
                 :title="cellTooltip(i, j, val)"
+                :aria-label="cellTooltip(i, j, val)"
                 @mouseenter="hoveredCell = { i, j }"
                 @mouseleave="hoveredCell = null"
-                :aria-label="cellTooltip(i, j, val)"
               >
                 <span
                   class="text-xs font-semibold"
@@ -155,7 +155,7 @@ import {
 // Props
 // ============================================================================
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** If true, the component fetches data itself on mount. */
     autoFetch?: boolean
@@ -275,7 +275,9 @@ defineExpose({ fetchData })
 // ============================================================================
 
 onMounted(() => {
-  fetchData()
+  if (props.autoFetch) {
+    fetchData()
+  }
 })
 </script>
 
