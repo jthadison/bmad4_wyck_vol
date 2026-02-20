@@ -208,7 +208,7 @@ test.describe('Live Position Management', () => {
 
     if (hasNavLink > 0) {
       await navLink.first().click()
-      await page.waitForLoadState('domcontentloaded')
+      await page.waitForURL('**/live-positions', { timeout: 10000 })
 
       // Verify navigation occurred
       expect(page.url()).toContain('/live-positions')
