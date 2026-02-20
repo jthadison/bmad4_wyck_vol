@@ -26,9 +26,10 @@ test.describe('Backtest Functionality - SPY Symbol', () => {
     await page.waitForLoadState('domcontentloaded')
   })
 
-  test('should execute backtest for SPY and display results', async ({
+  test.skip('should execute backtest for SPY and display results', async ({
     page,
   }) => {
+    // SKIP: /api/v1/backtest/preview returns 501 — deliberately disabled (Story 13.5)
     // Step 1: Navigate to backtest page
     await page.click('text=Backtest')
     await expect(page).toHaveURL(/.*backtest/)
@@ -88,7 +89,8 @@ test.describe('Backtest Functionality - SPY Symbol', () => {
     console.log('✓ Backtest executed successfully and results displayed')
   })
 
-  test('should handle backtest cancellation', async ({ page }) => {
+  test.skip('should handle backtest cancellation', async ({ page }) => {
+    // SKIP: /api/v1/backtest/preview returns 501 — deliberately disabled (Story 13.5)
     // Navigate to backtest page
     await page.click('text=Backtest')
 

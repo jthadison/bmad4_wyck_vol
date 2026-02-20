@@ -17,6 +17,18 @@ test.describe('Scanner - Gold & Silver Symbol Addition', () => {
   test('should display Forex - Metals group with Gold and Silver in Add Symbol modal', async ({
     page,
   }) => {
+    // Mock the watchlist to be empty so all symbols (including XAUUSD/XAGUSD)
+    // appear in the Add Symbol dropdown — live watchlist may already contain metals
+    await page.route('**/api/v1/scanner/watchlist', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '[]',
+      })
+    })
+    // Reload to pick up mocked empty watchlist
+    await page.goto('/scanner')
+
     // Click the "Add Symbol" button to open modal
     await page.click('button:has-text("Add Symbol")')
 
