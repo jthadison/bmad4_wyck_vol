@@ -35,6 +35,9 @@ const patternIcon = computed(() => {
     SOS: 'pi pi-bolt',
     LPS: 'pi pi-check-circle',
     UTAD: 'pi pi-exclamation-triangle',
+    SC: 'pi pi-arrow-down-right',
+    AR: 'pi pi-arrow-up-right',
+    ST: 'pi pi-minus',
   }
   return iconMap[props.signal.pattern_type] || 'pi pi-circle'
 })
@@ -64,6 +67,9 @@ const patternTooltip = computed(() => {
     SOS: 'Sign of Strength - Institutional buying commitment breaking resistance',
     LPS: 'Last Point of Support - Successful retest confirming accumulation complete',
     UTAD: 'Upthrust After Distribution - Failed breakout indicating distribution',
+    SC: 'Selling Climax - High volume capitulation',
+    AR: 'Automatic Rally - Post-climax bounce',
+    ST: 'Secondary Test - Retest of climax low',
   }
   return tooltipMap[props.signal.pattern_type] || props.signal.pattern_type
 })

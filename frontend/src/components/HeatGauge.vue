@@ -21,10 +21,9 @@
     </div>
 
     <!-- Zone labels -->
-    <div class="flex justify-between w-full px-4 mt-1 text-[10px]">
-      <span class="text-emerald-600/60">SAFE</span>
-      <span class="text-amber-600/60">CAUTION</span>
-      <span class="text-red-600/60">DANGER</span>
+    <div class="flex justify-between w-full px-2 mt-1 text-[10px]">
+      <span class="text-emerald-600/60">LOW</span>
+      <span class="text-red-600/60">HIGH</span>
     </div>
 
     <!-- Label below gauge -->
