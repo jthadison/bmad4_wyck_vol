@@ -120,7 +120,7 @@ const chartData = computed<ChartData<'line'>>(() => ({
       label: 'Drawdown',
       data: drawdownData.value.map((point) => point.drawdownPct),
       borderColor: 'rgb(248, 113, 113)',
-      backgroundColor: 'rgba(248, 113, 113, 0.08)',
+      backgroundColor: 'rgba(248, 113, 113, 0.15)',
       fill: true,
       tension: 0.1,
       pointRadius: 0,

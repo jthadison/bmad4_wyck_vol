@@ -300,11 +300,15 @@ const tooltipData = computed(() => {
       </div>
       <div class="flex items-center gap-1">
         <div class="w-4 h-4 rounded heatmap-cell-gain-high"></div>
-        <span>Moderate Gain (2-10%)</span>
+        <span>High Gain (5-10%)</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="w-4 h-4 rounded heatmap-cell-gain-moderate"></div>
+        <span>Moderate Gain (2-5%)</span>
       </div>
       <div class="flex items-center gap-1">
         <div class="w-4 h-4 rounded heatmap-cell-gain-low"></div>
-        <span>Small Gain (0-2%)</span>
+        <span>Low Gain (0-2%)</span>
       </div>
       <div class="flex items-center gap-1">
         <div class="w-4 h-4 rounded heatmap-cell-empty"></div>
@@ -315,8 +319,12 @@ const tooltipData = computed(() => {
         <span>Small Loss (0-2%)</span>
       </div>
       <div class="flex items-center gap-1">
+        <div class="w-4 h-4 rounded heatmap-cell-loss-moderate"></div>
+        <span>Moderate Loss (2-5%)</span>
+      </div>
+      <div class="flex items-center gap-1">
         <div class="w-4 h-4 rounded heatmap-cell-loss-high"></div>
-        <span>Moderate Loss (2-10%)</span>
+        <span>High Loss (5-10%)</span>
       </div>
       <div class="flex items-center gap-1">
         <div class="w-4 h-4 rounded heatmap-cell-loss-strong"></div>
@@ -349,41 +357,79 @@ const tooltipData = computed(() => {
   left: 0;
 }
 
-/* Dark-optimized heatmap cell colors */
+/* Default (light mode) */
 .heatmap-cell-empty {
-  background: #1f2937;
+  background: #f3f4f6;
   color: #6b7280;
 }
 .heatmap-cell-gain-low {
-  background: #064e3b;
-  color: #6ee7b7;
+  background: #dcfce7;
+  color: #166534;
 }
 .heatmap-cell-gain-moderate {
-  background: #047857;
-  color: #ecfdf5;
+  background: #86efac;
+  color: #14532d;
 }
 .heatmap-cell-gain-high {
-  background: #059669;
+  background: #22c55e;
   color: #ffffff;
 }
 .heatmap-cell-gain-strong {
-  background: #10b981;
+  background: #16a34a;
   color: #ffffff;
 }
 .heatmap-cell-loss-low {
-  background: #450a0a;
-  color: #fca5a5;
+  background: #fee2e2;
+  color: #991b1b;
 }
 .heatmap-cell-loss-moderate {
-  background: #7f1d1d;
-  color: #fef2f2;
+  background: #fca5a5;
+  color: #7f1d1d;
 }
 .heatmap-cell-loss-high {
-  background: #b91c1c;
+  background: #ef4444;
   color: #ffffff;
 }
 .heatmap-cell-loss-strong {
-  background: #ef4444;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+/* Dark mode overrides */
+:global(.dark) .heatmap-cell-empty {
+  background: #1f2937;
+  color: #6b7280;
+}
+:global(.dark) .heatmap-cell-gain-low {
+  background: #064e3b;
+  color: #6ee7b7;
+}
+:global(.dark) .heatmap-cell-gain-moderate {
+  background: #047857;
+  color: #ecfdf5;
+}
+:global(.dark) .heatmap-cell-gain-high {
+  background: #059669;
+  color: #ffffff;
+}
+:global(.dark) .heatmap-cell-gain-strong {
+  background: #047857;
+  color: #ffffff;
+}
+:global(.dark) .heatmap-cell-loss-low {
+  background: #450a0a;
+  color: #fca5a5;
+}
+:global(.dark) .heatmap-cell-loss-moderate {
+  background: #7f1d1d;
+  color: #fef2f2;
+}
+:global(.dark) .heatmap-cell-loss-high {
+  background: #b91c1c;
+  color: #ffffff;
+}
+:global(.dark) .heatmap-cell-loss-strong {
+  background: #991b1b;
   color: #ffffff;
 }
 
