@@ -99,6 +99,13 @@
                   Scanner
                 </router-link>
                 <router-link
+                  to="/tutorials"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Tutorials
+                </router-link>
+                <router-link
                   to="/settings"
                   class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
                   active-class="text-blue-400 border-b-2 border-blue-400"
@@ -160,6 +167,12 @@
         class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
         @click="mobileMenuOpen = false"
         >Scanner</router-link
+      >
+      <router-link
+        to="/tutorials"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Tutorials</router-link
       >
       <router-link
         to="/settings"
