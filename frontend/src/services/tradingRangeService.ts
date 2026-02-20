@@ -20,7 +20,7 @@ export async function fetchTradingRanges(
   limit = 10
 ): Promise<TradingRangeListResponse> {
   return apiClient.get<TradingRangeListResponse>(
-    `/patterns/${symbol}/trading-ranges`,
+    `/patterns/${encodeURIComponent(symbol)}/trading-ranges`,
     { timeframe, limit }
   )
 }

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -78,3 +79,7 @@ class TradingRangeListResponse(BaseModel):
         None, description="Currently active range (if any)"
     )
     total_count: int = Field(..., description="Total number of ranges returned")
+    data_source: Literal["MOCK", "LIVE"] = Field(
+        "MOCK",
+        description="MOCK until wired to real TradingRangeDetector (Epic 23); LIVE in production.",
+    )

@@ -103,6 +103,16 @@ function typeBadgeClass(rangeType: string): string {
 
 <template>
   <div class="bg-gray-900/80 border border-gray-700 rounded-lg p-4">
+    <!-- Simulated data banner -->
+    <div
+      v-if="data?.data_source === 'MOCK'"
+      class="mb-3 px-2 py-1 bg-amber-900/40 border border-amber-600/50 rounded text-xs text-amber-400 flex items-center gap-1"
+      data-testid="mock-banner"
+    >
+      <i class="pi pi-info-circle" />
+      Simulated data — ranges not yet detected from live market data
+    </div>
+
     <!-- Header -->
     <div class="flex items-center justify-between mb-4">
       <h3 class="text-lg font-semibold text-white">

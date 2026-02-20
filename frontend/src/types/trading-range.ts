@@ -42,4 +42,5 @@ export interface TradingRangeListResponse {
   ranges: TradingRangeHistory[]
   active_range: TradingRangeHistory | null
   total_count: number
+  data_source: 'MOCK' | 'LIVE'
 }

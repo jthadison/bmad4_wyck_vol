@@ -109,6 +109,7 @@ vi.mock('@/services/tradingRangeService', () => ({
         price_change_pct: null,
       },
       total_count: 3,
+      data_source: 'MOCK' as const,
     })
   }),
 }))
