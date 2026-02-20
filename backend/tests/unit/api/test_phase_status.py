@@ -38,13 +38,13 @@ def test_get_phase_status_with_timeframe():
     """Test endpoint respects timeframe query parameter."""
     response = client.get(
         "/api/v1/patterns/TSLA/phase-status",
-        params={"timeframe": "4h"},
+        params={"timeframe": "4H"},
     )
 
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert data["symbol"] == "TSLA"
-    assert data["timeframe"] == "4h"
+    assert data["timeframe"] == "4H"
 
 
 def test_get_phase_status_invalid_bars_too_low():
