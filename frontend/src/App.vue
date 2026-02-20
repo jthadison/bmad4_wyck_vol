@@ -72,6 +72,13 @@
                   Campaigns
                 </router-link>
                 <router-link
+                  to="/live-positions"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Positions
+                </router-link>
+                <router-link
                   to="/journal"
                   class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
                   active-class="text-blue-400 border-b-2 border-blue-400"
@@ -188,6 +195,12 @@
         class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
         @click="mobileMenuOpen = false"
         >MTF</router-link
+      >
+      <router-link
+        to="/live-positions"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Positions</router-link
       >
       <router-link
         to="/journal"

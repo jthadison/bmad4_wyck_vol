@@ -246,6 +246,17 @@ const routes: RouteRecordRaw[] = [
       breadcrumb: [{ label: 'Journal' }],
     },
   },
+  // Live Position Management (P4-I15)
+  {
+    path: '/live-positions',
+    name: 'live-positions',
+    component: () => import('@/views/LivePositionsView.vue'),
+    meta: {
+      title: 'Live Positions',
+      description: 'Manage open positions: adjust stops, take partial exits',
+      breadcrumb: [{ label: 'Live Positions' }],
+    },
+  },
   // Audit Trail Admin Dashboard (Task #2)
   {
     path: '/admin/audit-trail',

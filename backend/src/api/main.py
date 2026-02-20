@@ -42,6 +42,7 @@ from src.api.routes import (
     feedback,
     help,
     kill_switch,
+    live_positions,
     monitoring,
     notifications,
     orchestrator,
@@ -139,6 +140,7 @@ app.include_router(kill_switch.router)  # Kill switch routes (Story 23.13)
 app.include_router(rs.router)  # Relative strength routes
 app.include_router(price_alerts.router)  # Price alert CRUD routes (Feature P2-5)
 app.include_router(journal_router)  # Trade Journal routes (Feature P2-8)
+app.include_router(live_positions.router)  # Live Position Management (P4-I15)
 
 
 # WebSocket endpoint for real-time updates
