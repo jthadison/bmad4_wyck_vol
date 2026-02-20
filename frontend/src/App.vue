@@ -1,66 +1,192 @@
 <template>
-  <div class="min-h-screen bg-gray-900 text-gray-100">
+  <div class="min-h-screen bg-[#0a0e1a] text-gray-100">
     <!-- Toast notifications -->
     <Toast position="top-right" />
 
     <!-- Navigation -->
-    <nav class="bg-gray-800 border-b border-gray-700">
+    <nav
+      class="border-b border-[#1e2d4a] shadow-[0_1px_12px_rgba(0,0,0,0.5)]"
+      style="background: linear-gradient(90deg, #0f1729, #131d33, #0f1729)"
+    >
       <div class="container mx-auto px-4">
         <div class="flex items-center justify-between h-16">
-          <div class="flex items-center space-x-8">
-            <h1 class="text-xl font-bold text-blue-400">BMAD Wyckoff</h1>
-            <div class="flex space-x-4">
-              <router-link
-                to="/"
-                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
-                active-class="bg-gray-700 text-blue-400"
+          <div class="flex items-center space-x-6">
+            <!-- Brand mark -->
+            <div class="flex items-center gap-2">
+              <div
+                class="w-7 h-7 rounded bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-bold text-xs shadow-lg shadow-blue-500/20"
               >
-                Dashboard
-              </router-link>
-              <router-link
-                to="/backtest"
-                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
-                active-class="bg-gray-700 text-blue-400"
+                BW
+              </div>
+              <span
+                class="text-base font-semibold tracking-tight text-gray-100"
               >
-                Backtest
-              </router-link>
-              <router-link
-                to="/backtest/results"
-                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
-                active-class="bg-gray-700 text-blue-400"
-              >
-                Backtest Results
-              </router-link>
-              <router-link
-                to="/tutorials"
-                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
-                active-class="bg-gray-700 text-blue-400"
-              >
-                Tutorials
-              </router-link>
-              <router-link
-                to="/scanner"
-                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
-                active-class="bg-gray-700 text-blue-400"
-              >
-                Scanner
-              </router-link>
-              <router-link
-                to="/settings"
-                class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
-                active-class="bg-gray-700 text-blue-400"
-              >
-                Settings
-              </router-link>
+                BMAD <span class="text-blue-400">Wyckoff</span>
+              </span>
+            </div>
+
+            <!-- Mobile hamburger -->
+            <button
+              class="lg:hidden p-2 text-gray-400 hover:text-gray-200"
+              @click="mobileMenuOpen = !mobileMenuOpen"
+            >
+              <i
+                :class="mobileMenuOpen ? 'pi pi-times' : 'pi pi-bars'"
+                class="text-lg"
+              ></i>
+            </button>
+
+            <!-- Desktop nav links (grouped) -->
+            <div class="hidden lg:flex items-center">
+              <!-- Trading group -->
+              <div class="flex items-center gap-1">
+                <span
+                  class="text-[10px] text-gray-600 uppercase tracking-widest pr-1 hidden xl:inline"
+                  >Trading</span
+                >
+                <router-link
+                  to="/"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Dashboard
+                </router-link>
+                <router-link
+                  to="/signals/queue"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Signals
+                </router-link>
+                <router-link
+                  to="/campaigns"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Campaigns
+                </router-link>
+              </div>
+              <div class="w-px h-5 bg-[#2a3a5c] mx-2"></div>
+              <!-- Analysis group -->
+              <div class="flex items-center gap-1">
+                <span
+                  class="text-[10px] text-gray-600 uppercase tracking-widest pr-1 hidden xl:inline"
+                  >Analysis</span
+                >
+                <router-link
+                  to="/backtest"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Backtest
+                </router-link>
+                <router-link
+                  to="/backtest/results"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Results
+                </router-link>
+              </div>
+              <div class="w-px h-5 bg-[#2a3a5c] mx-2"></div>
+              <!-- System group -->
+              <div class="flex items-center gap-1">
+                <router-link
+                  to="/scanner"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Scanner
+                </router-link>
+                <router-link
+                  to="/settings"
+                  class="px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent hover:text-gray-200 hover:bg-white/5 transition-colors"
+                  active-class="text-blue-400 border-b-2 border-blue-400"
+                >
+                  Settings
+                </router-link>
+              </div>
             </div>
           </div>
           <!-- Kill Switch Button (Story 19.22) -->
-          <div class="flex items-center">
+          <div class="flex items-center gap-3 pl-4 border-l border-[#2a3a5c]">
+            <span
+              class="text-xs text-gray-600 uppercase tracking-widest hidden xl:inline"
+              >Emergency</span
+            >
             <KillSwitchButton />
           </div>
         </div>
       </div>
     </nav>
+
+    <!-- Mobile menu -->
+    <div
+      v-if="mobileMenuOpen"
+      class="lg:hidden bg-[#0f1729] border-b border-[#1e2d4a] px-4 py-3 flex flex-col space-y-1"
+    >
+      <router-link
+        to="/"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Dashboard</router-link
+      >
+      <router-link
+        to="/signals/queue"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Signal Queue</router-link
+      >
+      <router-link
+        to="/campaigns"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Campaigns</router-link
+      >
+      <router-link
+        to="/backtest"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Backtest</router-link
+      >
+      <router-link
+        to="/backtest/results"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Results</router-link
+      >
+      <router-link
+        to="/scanner"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Scanner</router-link
+      >
+      <router-link
+        to="/settings"
+        class="px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+        @click="mobileMenuOpen = false"
+        >Settings</router-link
+      >
+    </div>
+
+    <!-- Status ribbon -->
+    <div
+      class="bg-[#0d1322] border-b border-[#1a2236] px-4 py-1 flex items-center justify-between text-xs text-gray-600"
+    >
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-1.5">
+          <span class="relative flex h-2 w-2">
+            <span
+              class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-green-400"
+            ></span>
+            <span
+              class="relative inline-flex rounded-full h-2 w-2 bg-green-500"
+            ></span>
+          </span>
+          <span class="text-green-400">Live</span>
+        </div>
+      </div>
+    </div>
 
     <!-- Main Content -->
     <main class="container mx-auto px-4 py-8">
@@ -77,7 +203,7 @@
  * Story 19.8: Frontend Signal Toast Notifications
  * Story 19.22: Emergency Kill Switch
  */
-import { onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Toast from 'primevue/toast'
 import KillSwitchButton from '@/components/layout/KillSwitchButton.vue'
@@ -85,6 +211,9 @@ import { websocketService } from '@/services/websocketService'
 import { signalToastService } from '@/services/SignalToastService'
 import type { SignalNewMessage, WebSocketMessage } from '@/types/websocket'
 import { isSignalNewMessage } from '@/types/websocket'
+
+// Mobile menu state
+const mobileMenuOpen = ref(false)
 
 // Initialize PrimeVue toast
 const toast = useToast()

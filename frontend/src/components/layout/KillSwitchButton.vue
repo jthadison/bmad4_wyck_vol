@@ -82,7 +82,7 @@ const error = ref<string | null>(null)
 // Computed
 const buttonClasses = computed(() => [
   'kill-switch-button',
-  killSwitchActive.value ? 'active' : '',
+  killSwitchActive.value ? 'active' : 'kill-switch-btn',
 ])
 
 const buttonIcon = computed(() =>
@@ -235,6 +235,20 @@ onUnmounted(() => {
 
 .kill-switch-button.active {
   animation: pulse-red 2s infinite;
+}
+
+.kill-switch-btn {
+  background: linear-gradient(135deg, #7f1d1d, #991b1b) !important;
+  border: 1px solid #dc2626 !important;
+  color: #fca5a5 !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.15);
+  transition: all 0.2s ease;
+}
+
+.kill-switch-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.35) !important;
+  border-color: #ef4444 !important;
 }
 
 .kill-switch-banner {
