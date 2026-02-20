@@ -109,7 +109,7 @@ describe('SignalCard', () => {
       },
     })
 
-    expect(wrapper.classes()).toContain('border-green-500')
+    expect(wrapper.classes()).toContain('border-emerald-500')
   })
 
   it('applies green border for STOPPED status', () => {
@@ -134,7 +134,7 @@ describe('SignalCard', () => {
       },
     })
 
-    expect(wrapper.classes()).toContain('border-green-500')
+    expect(wrapper.classes()).toContain('border-emerald-500')
   })
 
   it('applies red border for REJECTED status', () => {
@@ -157,7 +157,7 @@ describe('SignalCard', () => {
       },
     })
 
-    expect(wrapper.classes()).toContain('border-yellow-500')
+    expect(wrapper.classes()).toContain('border-amber-500')
   })
 
   it('applies yellow border for APPROVED status', () => {
@@ -169,7 +169,7 @@ describe('SignalCard', () => {
       },
     })
 
-    expect(wrapper.classes()).toContain('border-yellow-500')
+    expect(wrapper.classes()).toContain('border-amber-500')
   })
 
   it('displays rejection reasons for rejected signals', () => {

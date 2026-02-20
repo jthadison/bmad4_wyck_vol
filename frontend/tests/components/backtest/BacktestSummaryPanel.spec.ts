@@ -129,7 +129,7 @@ describe('BacktestSummaryPanel', () => {
       })
 
       const totalReturnElement = wrapper.find('.total-return')
-      expect(totalReturnElement.classes()).toContain('text-green-600')
+      expect(totalReturnElement.classes()).toContain('text-emerald-400')
       expect(totalReturnElement.text()).toBe('25.50%')
     })
 
@@ -139,7 +139,7 @@ describe('BacktestSummaryPanel', () => {
       })
 
       const totalReturnElement = wrapper.find('.total-return')
-      expect(totalReturnElement.classes()).toContain('text-red-600')
+      expect(totalReturnElement.classes()).toContain('text-red-400')
       expect(totalReturnElement.text()).toBe('-15.25%')
     })
 
@@ -154,7 +154,7 @@ describe('BacktestSummaryPanel', () => {
       })
 
       const totalReturnElement = wrapper.find('.total-return')
-      expect(totalReturnElement.classes()).toContain('text-green-600')
+      expect(totalReturnElement.classes()).toContain('text-emerald-400')
       expect(totalReturnElement.text()).toBe('0.00%')
     })
   })
@@ -237,7 +237,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(sharpeCard).toBeDefined()
       const sharpeValue = sharpeCard!.find('.text-2xl')
-      expect(sharpeValue.classes()).toContain('text-green-600')
+      expect(sharpeValue.classes()).toContain('text-emerald-400')
     })
 
     it('should display blue for good sharpe ratio (>= 1, < 2)', () => {
@@ -257,7 +257,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(sharpeCard).toBeDefined()
       const sharpeValue = sharpeCard!.find('.text-2xl')
-      expect(sharpeValue.classes()).toContain('text-blue-600')
+      expect(sharpeValue.classes()).toContain('text-blue-400')
     })
 
     it('should display yellow for low sharpe ratio (< 1)', () => {
@@ -277,7 +277,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(sharpeCard).toBeDefined()
       const sharpeValue = sharpeCard!.find('.text-2xl')
-      expect(sharpeValue.classes()).toContain('text-yellow-600')
+      expect(sharpeValue.classes()).toContain('text-amber-400')
     })
   })
 
@@ -350,7 +350,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(pfCard).toBeDefined()
       const pfValue = pfCard!.find('.text-2xl')
-      expect(pfValue.classes()).toContain('text-green-600')
+      expect(pfValue.classes()).toContain('text-emerald-400')
     })
 
     it('should display blue for good profit factor (> 1, < 1.5)', () => {
@@ -370,7 +370,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(pfCard).toBeDefined()
       const pfValue = pfCard!.find('.text-2xl')
-      expect(pfValue.classes()).toContain('text-blue-600')
+      expect(pfValue.classes()).toContain('text-blue-400')
     })
 
     it('should display yellow for breakeven profit factor (= 1)', () => {
@@ -390,7 +390,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(pfCard).toBeDefined()
       const pfValue = pfCard!.find('.text-2xl')
-      expect(pfValue.classes()).toContain('text-yellow-600')
+      expect(pfValue.classes()).toContain('text-amber-400')
     })
 
     it('should display red for unprofitable profit factor (< 1)', () => {
@@ -405,7 +405,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(pfCard).toBeDefined()
       const pfValue = pfCard!.find('.text-2xl')
-      expect(pfValue.classes()).toContain('text-red-600')
+      expect(pfValue.classes()).toContain('text-red-400')
     })
   })
 
@@ -422,7 +422,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(rCard).toBeDefined()
       const rValue = rCard!.find('.text-2xl')
-      expect(rValue.classes()).toContain('text-green-600')
+      expect(rValue.classes()).toContain('text-emerald-400')
     })
 
     it('should display red for negative R-multiple', () => {
@@ -437,7 +437,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(rCard).toBeDefined()
       const rValue = rCard!.find('.text-2xl')
-      expect(rValue.classes()).toContain('text-red-600')
+      expect(rValue.classes()).toContain('text-red-400')
     })
   })
 
@@ -454,7 +454,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(campaignCard).toBeDefined()
       const campaignValue = campaignCard!.find('.text-2xl')
-      expect(campaignValue.classes()).toContain('text-green-600')
+      expect(campaignValue.classes()).toContain('text-emerald-400')
     })
 
     it('should display yellow for completion rate 40-60%', () => {
@@ -476,7 +476,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(campaignCard).toBeDefined()
       const campaignValue = campaignCard!.find('.text-2xl')
-      expect(campaignValue.classes()).toContain('text-yellow-600')
+      expect(campaignValue.classes()).toContain('text-amber-400')
     })
 
     it('should display red for completion rate < 40%', () => {
@@ -491,7 +491,7 @@ describe('BacktestSummaryPanel', () => {
 
       expect(campaignCard).toBeDefined()
       const campaignValue = campaignCard!.find('.text-2xl')
-      expect(campaignValue.classes()).toContain('text-red-600')
+      expect(campaignValue.classes()).toContain('text-red-400')
     })
   })
 
@@ -501,7 +501,7 @@ describe('BacktestSummaryPanel', () => {
         props: { summary: mockSummaryProfitable },
       })
 
-      const winRateBar = wrapper.findAll('.bg-green-600.h-2').find((el) => {
+      const winRateBar = wrapper.findAll('.bg-emerald-500.h-2').find((el) => {
         const style = el.attributes('style')
         return style?.includes('width: 65%')
       })
