@@ -1351,8 +1351,9 @@ class PriceAlertORM(Base):
     )
 
     # Price level (NULL for phase_change alerts)
-    price_level: Mapped[float | None] = mapped_column(
-        Float,
+    # Use NUMERIC for financial precision (avoids floating-point rounding)
+    price_level: Mapped[Decimal | None] = mapped_column(
+        NUMERIC(18, 8),
         nullable=True,
     )
 

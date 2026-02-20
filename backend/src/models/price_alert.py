@@ -46,9 +46,9 @@ class WyckoffLevelType(StrEnum):
     structural level to monitor.
     """
 
-    CREEK = "creek"  # Resistance line above accumulation
-    ICE = "ice"  # Support line after distribution
-    SPRING = "spring"  # Below-support shakeout level
+    CREEK = "creek"  # Resistance line above accumulation range
+    ICE = "ice"  # Resistance/support line within accumulation range (becomes support after SOS breakout)
+    SPRING = "spring"  # Below-support shakeout level (Phase C)
     SUPPLY = "supply"  # Supply zone / selling pressure
     DEMAND = "demand"  # Demand zone / buying pressure
 
