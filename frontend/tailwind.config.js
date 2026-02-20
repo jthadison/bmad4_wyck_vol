@@ -4,6 +4,8 @@ export default {
     './index.html',
     './src/**/*.{vue,js,ts,jsx,tsx}'
   ],
+  // Note: dark class must be applied to <html> to activate dark: variants.
+  // App is currently always-dark via CSS custom properties in :root.
   darkMode: 'class',
   theme: {
     extend: {
@@ -18,7 +20,7 @@ export default {
           border:   '#2e3a50',
           'border-light': '#3d4d6a',
         },
-        content: {
+        fg: {
           DEFAULT:  '#e2e8f0',
           muted:    '#94a3b8',
           subtle:   '#64748b',
