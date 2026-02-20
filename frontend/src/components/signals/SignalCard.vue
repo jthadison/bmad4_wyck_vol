@@ -42,12 +42,13 @@ const patternIcon = computed(() => {
 // Pattern badge color classes
 const patternBadgeClasses = computed(() => {
   const map: Record<string, string> = {
-    SPRING: 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30',
+    SPRING: 'bg-green-500/20 text-green-400 ring-1 ring-green-500/30',
     SOS: 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30',
     LPS: 'bg-cyan-500/20 text-cyan-400 ring-1 ring-cyan-500/30',
     UTAD: 'bg-red-500/20 text-red-400 ring-1 ring-red-500/30',
     SC: 'bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/30',
     AR: 'bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30',
+    ST: 'bg-violet-500/20 text-violet-400 ring-1 ring-violet-500/30',
   }
   return (
     map[props.signal?.pattern_type] ||

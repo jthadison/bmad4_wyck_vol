@@ -107,6 +107,12 @@ const campaignCompletionClass = computed(() => {
 const campaignCompletionProgress = computed(() =>
   new Big(props.summary.campaign_completion_rate || 0).times(100).toNumber()
 )
+const campaignCompletionBarClass = computed(() => {
+  const rate = new Big(props.summary.campaign_completion_rate || 0).times(100)
+  if (rate.gte(60)) return 'bg-emerald-400'
+  if (rate.gte(40)) return 'bg-amber-400'
+  return 'bg-red-400'
+})
 </script>
 
 <template>
@@ -272,7 +278,7 @@ const campaignCompletionProgress = computed(() =>
             <!-- Progress bar -->
             <div class="w-full bg-gray-700/50 rounded-full h-2 mt-2">
               <div
-                :class="campaignCompletionClass.replace('text-', 'bg-')"
+                :class="campaignCompletionBarClass"
                 class="h-2 rounded-full"
                 :style="{ width: `${campaignCompletionProgress}%` }"
               ></div>
