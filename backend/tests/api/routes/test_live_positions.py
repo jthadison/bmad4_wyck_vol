@@ -2,8 +2,8 @@
 Tests for Live Position Management API endpoints (P4-I15).
 
 Covers:
-- GET /api/v1/live-positions - returns enriched positions
-- PATCH /api/v1/live-positions/{id}/stop-loss - validation rules
+- GET /api/v1/live-positions - returns enriched positions (long + short)
+- PATCH /api/v1/live-positions/{id}/stop-loss - direction-aware validation
 - POST /api/v1/live-positions/{id}/partial-exit - share calculation, DB persist, row lock
 
 Uses mocked DB layer to avoid SQLite/JSONB incompatibility issues.
@@ -181,6 +181,60 @@ class TestGetLivePositions:
             app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
+    async def test_short_utad_dollars_at_risk(self) -> None:
+        """UTAD short: dollars_at_risk = (stop_loss - current_price) * shares."""
+        pos = _mock_position_row(
+            pattern_type="UTAD",
+            entry_price=Decimal("200.00"),
+            stop_loss=Decimal("210.00"),  # stop ABOVE entry for shorts
+            shares=Decimal("50"),
+            current_price=Decimal("190.00"),  # price dropped (profitable)
+            current_pnl=Decimal("500.00"),
+        )
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [pos]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/api/v1/live-positions")
+            data = response.json()
+            # Short risk: (210 - 190) * 50 = 1000
+            assert data[0]["dollars_at_risk"] == "1000.00"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_short_utad_stop_distance_pct(self) -> None:
+        """UTAD short: stop_distance_pct = (stop - current) / current * 100."""
+        pos = _mock_position_row(
+            pattern_type="UTAD",
+            entry_price=Decimal("200.00"),
+            stop_loss=Decimal("210.00"),
+            shares=Decimal("50"),
+            current_price=Decimal("190.00"),
+            current_pnl=Decimal("500.00"),
+        )
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [pos]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/api/v1/live-positions")
+            data = response.json()
+            # (210 - 190) / 190 * 100 = 10.526... -> "10.53"
+            assert data[0]["stop_distance_pct"] == "10.53"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
     async def test_rejects_unauthenticated_request(self) -> None:
         """Endpoints require auth - requests without token get 403."""
         transport = ASGITransport(app=app)
@@ -295,8 +349,6 @@ class TestUpdateStopLoss:
                 )
             assert response.status_code == 200
             data = response.json()
-            # After the endpoint sets pos.stop_loss = Decimal("147.00"),
-            # the mock object will have the new value
             assert data["stop_loss"] == "147.00"
         finally:
             app.dependency_overrides.clear()
@@ -319,6 +371,98 @@ class TestUpdateStopLoss:
                     json={"new_stop": "147.00"},
                 )
             assert response.status_code == 404
+        finally:
+            app.dependency_overrides.clear()
+
+    # --- Short/UTAD stop-loss tests ---
+
+    @pytest.mark.asyncio
+    async def test_short_rejects_stop_below_entry(self) -> None:
+        """UTAD short: stop must be ABOVE entry price."""
+        pos_id = uuid4()
+        pos = _mock_position_row(
+            id=pos_id,
+            pattern_type="UTAD",
+            entry_price=Decimal("200.00"),
+            stop_loss=Decimal("210.00"),
+        )
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = pos
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.patch(
+                    f"/api/v1/live-positions/{pos_id}/stop-loss",
+                    json={"new_stop": "195.00"},
+                )
+            assert response.status_code == 400
+            assert "above entry price" in response.json()["detail"]
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_short_rejects_stop_widen_up(self) -> None:
+        """UTAD short: stop cannot move UP (that widens risk)."""
+        pos_id = uuid4()
+        pos = _mock_position_row(
+            id=pos_id,
+            pattern_type="UTAD",
+            entry_price=Decimal("200.00"),
+            stop_loss=Decimal("210.00"),
+        )
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = pos
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.patch(
+                    f"/api/v1/live-positions/{pos_id}/stop-loss",
+                    json={"new_stop": "215.00"},
+                )
+            assert response.status_code == 400
+            assert "trail down" in response.json()["detail"]
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_short_accepts_valid_stop_trail_down(self) -> None:
+        """UTAD short: stop can trail DOWN (reduce risk)."""
+        pos_id = uuid4()
+        pos = _mock_position_row(
+            id=pos_id,
+            pattern_type="UTAD",
+            entry_price=Decimal("200.00"),
+            stop_loss=Decimal("210.00"),
+        )
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = pos
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
+
+        _setup_overrides(mock_session)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.patch(
+                    f"/api/v1/live-positions/{pos_id}/stop-loss",
+                    json={"new_stop": "205.00"},
+                )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["stop_loss"] == "205.00"
         finally:
             app.dependency_overrides.clear()
 

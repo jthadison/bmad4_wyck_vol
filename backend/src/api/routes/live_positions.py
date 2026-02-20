@@ -6,9 +6,9 @@ Action-oriented endpoints for managing open positions:
 - PATCH /api/v1/live-positions/{position_id}/stop-loss - Adjust stop loss
 - POST /api/v1/live-positions/{position_id}/partial-exit - Partial exit
 
-Note: Currently long-only. PositionModel has no `side` field and pattern_type
-is constrained to SPRING/SOS/LPS (all long entries). UTAD short support
-requires adding a `side` column to the positions table first.
+Supports both long (SPRING/SOS/LPS) and short (UTAD) positions with
+direction-aware risk math and stop-loss validation. Direction is derived
+from pattern_type, matching TradeSignal.direction convention.
 
 Note: Single-tenant system. PositionModel and CampaignModel have no user_id
 field, so positions are not filtered by user. All authenticated users see
@@ -36,6 +36,9 @@ router = APIRouter(prefix="/api/v1/live-positions", tags=["live-positions"])
 # TODO: Replace with real account equity from broker adapter once
 # broker connectivity is guaranteed in all partial-exit paths.
 _DEFAULT_ACCOUNT_EQUITY = Decimal("100000")
+
+# Short patterns - matches TradeSignal.direction convention
+_SHORT_PATTERNS = frozenset({"UTAD"})
 
 
 # ---------------------------------------------------------------------------
@@ -95,34 +98,60 @@ class PartialExitResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _is_short(pattern_type: str) -> bool:
+    """Derive trade direction from pattern_type.
+
+    UTAD is a distribution (SHORT) pattern. All others are LONG.
+    Matches TradeSignal.direction convention.
+    """
+    return pattern_type.upper() in _SHORT_PATTERNS
+
+
 def _enrich_position(pos_model: object) -> EnrichedPosition:
     """Build an EnrichedPosition from a DB model row."""
     entry_price = Decimal(str(pos_model.entry_price))  # type: ignore[union-attr]
     stop_loss = Decimal(str(pos_model.stop_loss))  # type: ignore[union-attr]
     shares = Decimal(str(pos_model.shares))  # type: ignore[union-attr]
+    pattern_type: str = pos_model.pattern_type  # type: ignore[union-attr]
     current_price_raw = pos_model.current_price  # type: ignore[union-attr]
     current_pnl_raw = pos_model.current_pnl  # type: ignore[union-attr]
 
     current_price = Decimal(str(current_price_raw)) if current_price_raw is not None else None
     current_pnl = Decimal(str(current_pnl_raw)) if current_pnl_raw is not None else None
 
+    short = _is_short(pattern_type)
+
     # Computed fields
     stop_distance_pct: Optional[str] = None
     r_multiple: Optional[str] = None
     pnl_pct: Optional[str] = None
 
-    # Use current price for dollars_at_risk (current exposure),
-    # falling back to entry price when current price is unavailable.
+    # Direction-aware risk calculation.
+    # dollars_at_risk = current dollars lost if stopped out NOW.
+    #   Long:  (current_price - stop_loss) * shares
+    #   Short: (stop_loss - current_price) * shares
+    # Falls back to entry_price when current_price is unavailable.
     risk_reference_price = current_price if current_price is not None else entry_price
-    risk_per_share = risk_reference_price - stop_loss
+    if short:
+        risk_per_share = stop_loss - risk_reference_price
+    else:
+        risk_per_share = risk_reference_price - stop_loss
     dollars_at_risk = risk_per_share * shares
 
-    # Initial risk per share for R-multiple calculation
-    initial_risk_per_share = entry_price - stop_loss
+    # Initial risk per share for R-multiple calculation.
+    # TODO: R-multiple ideally uses initial_stop_loss (at entry), not the
+    # current trailing stop. Tracking initial_stop_loss requires a data model
+    # change (new column on PositionModel). For now we use the current stop,
+    # which may understate R when the stop has trailed significantly.
+    initial_risk_per_share = abs(entry_price - stop_loss)
 
     if current_price is not None and current_price > 0:
+        if short:
+            stop_dist = stop_loss - current_price
+        else:
+            stop_dist = current_price - stop_loss
         stop_distance_pct = str(
-            ((current_price - stop_loss) / current_price * Decimal("100")).quantize(Decimal("0.01"))
+            (stop_dist / current_price * Decimal("100")).quantize(Decimal("0.01"))
         )
 
     if current_pnl is not None and initial_risk_per_share > 0 and shares > 0:
@@ -141,7 +170,7 @@ def _enrich_position(pos_model: object) -> EnrichedPosition:
         signal_id=str(pos_model.signal_id),  # type: ignore[union-attr]
         symbol=pos_model.symbol,  # type: ignore[union-attr]
         timeframe=pos_model.timeframe,  # type: ignore[union-attr]
-        pattern_type=pos_model.pattern_type,  # type: ignore[union-attr]
+        pattern_type=pattern_type,
         entry_price=str(entry_price),
         current_price=str(current_price) if current_price is not None else None,
         stop_loss=str(stop_loss),
@@ -213,10 +242,10 @@ async def update_stop_loss(
     """
     Adjust stop loss for an open position.
 
-    Wyckoff rules enforced (long positions only):
+    Wyckoff rules enforced:
     - Stop must be above zero
-    - Stop must be below entry price
-    - Stop can only move up (never move stop down)
+    - Long: stop must be below entry, can only trail UP
+    - Short (UTAD): stop must be above entry, can only trail DOWN
     """
     try:
         new_stop = Decimal(body.new_stop)
@@ -255,21 +284,36 @@ async def update_stop_loss(
 
         entry_price = Decimal(str(pos.entry_price))
         current_stop = Decimal(str(pos.stop_loss))
+        short = _is_short(pos.pattern_type)
 
-        # Wyckoff rule: stop must be below entry price for longs
-        if new_stop >= entry_price:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Stop loss ({new_stop}) must be below entry price ({entry_price}).",
-            )
-
-        # Wyckoff rule: never move stop down for long positions
-        if new_stop < current_stop:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot move stop down from {current_stop} to {new_stop}. "
-                "Stops can only trail up for long positions.",
-            )
+        if short:
+            # UTAD short: stop must be ABOVE entry price
+            if new_stop <= entry_price:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Stop loss ({new_stop}) must be above entry price ({entry_price}) for short positions.",
+                )
+            # Short: stop can only trail DOWN (reduce risk), never widen upward
+            if new_stop > current_stop:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot move stop up from {current_stop} to {new_stop}. "
+                    "Stops can only trail down for short positions.",
+                )
+        else:
+            # Long: stop must be BELOW entry price
+            if new_stop >= entry_price:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Stop loss ({new_stop}) must be below entry price ({entry_price}).",
+                )
+            # Long: stop can only trail UP (reduce risk), never widen downward
+            if new_stop < current_stop:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot move stop down from {current_stop} to {new_stop}. "
+                    "Stops can only trail up for long positions.",
+                )
 
         pos.stop_loss = new_stop
         await db_session.commit()
@@ -310,8 +354,8 @@ async def partial_exit(
     """
     Execute a partial exit on an open position.
 
-    Calculates shares to exit based on exit_pct, creates a sell order,
-    and persists the updated share count to the database.
+    Calculates shares to exit based on exit_pct, creates a sell order
+    (or buy-to-cover for shorts), and persists the updated share count.
     """
     try:
         from src.repositories.models import PositionModel
@@ -363,10 +407,14 @@ async def partial_exit(
                     detail=f"Invalid limit price: {body.limit_price}",
                 ) from e
 
-        # Build the sell order
+        # Exit side: SELL to close longs, BUY to cover shorts
+        short = _is_short(pos.pattern_type)
+        exit_side = OrderSide.BUY if short else OrderSide.SELL
+
+        # Build the exit order
         order = Order(
             symbol=pos.symbol,
-            side=OrderSide.SELL,
+            side=exit_side,
             order_type=order_type,
             quantity=shares_to_exit,
             limit_price=limit_price,
@@ -381,6 +429,7 @@ async def partial_exit(
             shares_to_exit=str(shares_to_exit),
             order_type=order_type.value,
             order_id=str(order.id),
+            side=exit_side.value,
         )
 
         # Route order through broker if available
