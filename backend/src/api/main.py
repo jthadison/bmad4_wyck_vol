@@ -481,6 +481,9 @@ async def _initialize_broker_infrastructure() -> "BrokerRouter":
         BrokerRouter instance (also stored on app.state.broker_router)
     """
     from src.api.routes.broker_dashboard import set_broker_router
+    from src.api.routes.broker_dashboard import (
+        set_emergency_exit_service as set_dashboard_exit_service,
+    )
     from src.api.routes.kill_switch import set_emergency_exit_service
     from src.api.routes.tradingview import configure_broker_router
     from src.brokers.broker_router import BrokerRouter
@@ -547,6 +550,7 @@ async def _initialize_broker_infrastructure() -> "BrokerRouter":
     try:
         exit_service = EmergencyExitService(broker_router=broker_router)
         set_emergency_exit_service(exit_service)
+        set_dashboard_exit_service(exit_service)
         logger.info("kill_switch_service_initialized")
     except Exception as e:
         logger.error("kill_switch_service_initialization_failed", error=str(e))

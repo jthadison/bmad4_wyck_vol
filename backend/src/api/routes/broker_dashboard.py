@@ -25,15 +25,22 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/brokers", tags=["Broker Dashboard"])
 
-# --- Singleton holder for BrokerRouter ---
+# --- Singleton holders ---
 
 _broker_router = None
+_emergency_exit_service = None
 
 
 def set_broker_router(br: object) -> None:
     """Register the BrokerRouter singleton for route handlers."""
     global _broker_router
     _broker_router = br
+
+
+def set_emergency_exit_service(service: object) -> None:
+    """Register the EmergencyExitService singleton for kill switch status."""
+    global _emergency_exit_service
+    _emergency_exit_service = service
 
 
 def _get_broker_router():
@@ -44,6 +51,11 @@ def _get_broker_router():
             detail="Broker infrastructure not configured",
         )
     return _broker_router
+
+
+def _get_emergency_exit_service():
+    """Get the EmergencyExitService, or None if not configured."""
+    return _emergency_exit_service
 
 
 # --- Response Models ---
@@ -169,8 +181,14 @@ async def get_all_brokers_status(
     )
     brokers: list[BrokerAccountInfo] = [r for r in results if isinstance(r, BrokerAccountInfo)]
 
-    # Kill switch status
-    ks = br.get_kill_switch_status()
+    # Kill switch status - read from EmergencyExitService (authoritative source)
+    # to stay in sync with the kill_switch.py endpoints that write through it
+    exit_svc = _get_emergency_exit_service()
+    if exit_svc is not None:
+        ks = exit_svc.get_kill_switch_status()
+    else:
+        # Fallback to BrokerRouter if EmergencyExitService not wired
+        ks = br.get_kill_switch_status()
 
     logger.info("broker_dashboard_status_requested", broker_count=len(brokers))
 
