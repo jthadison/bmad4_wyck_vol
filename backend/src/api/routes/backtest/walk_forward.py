@@ -295,6 +295,123 @@ async def start_walk_forward_suite():
 
 
 @router.get(
+    "/walk-forward/{walk_forward_id}/stability",
+)
+async def get_walk_forward_stability(
+    walk_forward_id: UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Get per-window stability data for a walk-forward test (Feature 10).
+
+    Returns IS vs OOS metrics per window, parameter stability across windows,
+    and a robustness score summary used by quants to detect overfitting.
+
+    Args:
+        walk_forward_id: UUID of the walk-forward test
+        session: Database session
+
+    Returns:
+        Stability data with per-window breakdown, parameter stability, and robustness score
+
+    Raises:
+        404 Not Found: Walk-forward test not found or still running
+    """
+    import statistics
+
+    # Check in-memory storage first (still running or recently completed)
+    if walk_forward_id in walk_forward_runs:
+        run_info = walk_forward_runs[walk_forward_id]
+        if run_info["status"] == "RUNNING":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Walk-forward test {walk_forward_id} is still running",
+            )
+
+    # Query database for the result
+    repository = WalkForwardRepository(session)
+    result = await repository.get_result(walk_forward_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Walk-forward test {walk_forward_id} not found",
+        )
+
+    windows_data = []
+    for w in result.windows:
+        # Extract Sharpe, return, drawdown from train/validate metrics
+        is_sharpe = float(w.train_metrics.sharpe_ratio)
+        oos_sharpe = float(w.validate_metrics.sharpe_ratio)
+        is_return = float(w.train_metrics.total_return_pct)
+        oos_return = float(w.validate_metrics.total_return_pct)
+        is_drawdown = float(w.train_metrics.max_drawdown)
+        oos_drawdown = float(w.validate_metrics.max_drawdown)
+
+        windows_data.append(
+            {
+                "window_index": w.window_number,
+                "is_start": w.train_start_date.isoformat(),
+                "is_end": w.train_end_date.isoformat(),
+                "oos_start": w.validate_start_date.isoformat(),
+                "oos_end": w.validate_end_date.isoformat(),
+                "is_sharpe": round(is_sharpe, 4),
+                "oos_sharpe": round(oos_sharpe, 4),
+                "is_return": round(is_return, 4),
+                "oos_return": round(oos_return, 4),
+                "is_drawdown": round(is_drawdown, 4),
+                "oos_drawdown": round(oos_drawdown, 4),
+                # optimal_params are derived from WalkForwardConfig backtest_config fields
+                "optimal_params": {
+                    "lookback_days": result.config.train_period_months * 21,
+                    "validate_months": result.config.validate_period_months,
+                },
+            }
+        )
+
+    # Build parameter stability: track config-level params per window
+    # Since the stored model holds a single config, we show stable params across windows
+    n_windows = len(result.windows)
+    train_months_list = [result.config.train_period_months] * n_windows
+    validate_months_list = [result.config.validate_period_months] * n_windows
+    parameter_stability = {
+        "train_period_months": train_months_list,
+        "validate_period_months": validate_months_list,
+    }
+
+    # Robustness score calculations
+    profitable_windows = sum(1 for w in windows_data if w["oos_return"] > 0)
+    profitable_window_pct = profitable_windows / n_windows if n_windows > 0 else 0.0
+
+    oos_drawdowns = [w["oos_drawdown"] for w in windows_data]
+    worst_oos_drawdown = max(oos_drawdowns) if oos_drawdowns else 0.0
+
+    # IS/OOS Sharpe ratio: avg(IS Sharpe) / avg(OOS Sharpe) — lower is better
+    is_sharpes = [w["is_sharpe"] for w in windows_data]
+    oos_sharpes = [w["oos_sharpe"] for w in windows_data]
+    avg_is_sharpe = statistics.mean(is_sharpes) if is_sharpes else 0.0
+    avg_oos_sharpe = statistics.mean(oos_sharpes) if oos_sharpes else 0.0
+
+    if avg_oos_sharpe != 0:
+        avg_is_oos_sharpe_ratio = round(avg_is_sharpe / avg_oos_sharpe, 4)
+    else:
+        avg_is_oos_sharpe_ratio = float("inf") if avg_is_sharpe > 0 else 1.0
+
+    robustness_score = {
+        "profitable_window_pct": round(profitable_window_pct, 4),
+        "worst_oos_drawdown": round(worst_oos_drawdown, 4),
+        "avg_is_oos_sharpe_ratio": round(avg_is_oos_sharpe_ratio, 4),
+    }
+
+    return {
+        "walk_forward_id": str(walk_forward_id),
+        "windows": windows_data,
+        "parameter_stability": parameter_stability,
+        "robustness_score": robustness_score,
+    }
+
+
+@router.get(
     "/walk-forward/suite/results",
 )
 async def get_walk_forward_suite_results(

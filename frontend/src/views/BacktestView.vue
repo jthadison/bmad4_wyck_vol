@@ -185,12 +185,38 @@
         View All Backtest Results
       </router-link>
     </div>
+
+    <!-- Walk-Forward Stability Analysis -->
+    <div class="walkforward-section">
+      <h2 class="text-2xl font-semibold mb-4">
+        Walk-Forward Stability Analysis
+      </h2>
+      <div class="form-field mb-4">
+        <label for="wf-id" class="form-label">Walk-Forward Run ID</label>
+        <input
+          id="wf-id"
+          v-model="walkForwardId"
+          type="text"
+          placeholder="Enter walk-forward UUID..."
+          class="form-input"
+        />
+        <small class="form-help">
+          Enter a walk-forward run ID to view per-window IS vs OOS performance,
+          parameter stability heatmap, and robustness score.
+        </small>
+      </div>
+      <WalkForwardStabilityPanel
+        v-if="walkForwardId.trim()"
+        :walk-forward-id="walkForwardId.trim()"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import BacktestPreview from '@/components/configuration/BacktestPreview.vue'
+import WalkForwardStabilityPanel from '@/components/backtest/WalkForwardStabilityPanel.vue'
 
 // Configuration state
 const config = ref({
@@ -205,6 +231,9 @@ const config = ref({
 })
 
 const showAdvanced = ref(false)
+
+// Walk-forward stability section
+const walkForwardId = ref('')
 
 // Proposed config for backtest preview
 const proposedConfig = computed(() => ({
@@ -369,13 +398,26 @@ const proposedConfig = computed(() => ({
   font-size: 1.125rem;
 }
 
+.walkforward-section {
+  background: var(--surface-card);
+  border-radius: 8px;
+  padding: 2rem;
+  margin-top: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.walkforward-section h2 {
+  color: var(--text-color);
+}
+
 @media (max-width: 768px) {
   .backtest-view {
     padding: 1rem;
   }
 
   .config-section,
-  .quick-links {
+  .quick-links,
+  .walkforward-section {
     padding: 1.5rem;
   }
 
