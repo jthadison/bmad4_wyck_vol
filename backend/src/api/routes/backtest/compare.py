@@ -53,19 +53,22 @@ def _index_equity_curve(
     if not equity_curve:
         return []
 
-    first_value = float(equity_curve[0].get("portfolio_value", base_value))
-    if first_value == 0:
-        first_value = base_value
+    first_raw = float(equity_curve[0].get("portfolio_value", base_value))
+    # Guard against zero initial equity to avoid division by zero
+    first_value = first_raw if first_raw != 0 else base_value
 
-    return [
-        {
-            "date": point.get("timestamp", ""),
-            "equity": round(
-                base_value * float(point.get("portfolio_value", first_value)) / first_value, 2
-            ),
-        }
-        for point in equity_curve
-    ]
+    result = []
+    for point in equity_curve:
+        raw = float(point.get("portfolio_value", first_value))
+        # Treat a zero point value as the first_value so the curve starts at base_value
+        effective = raw if raw != 0 else first_value
+        result.append(
+            {
+                "date": point.get("timestamp", ""),
+                "equity": round(base_value * effective / first_value, 2),
+            }
+        )
+    return result
 
 
 def _extract_param_diff(
