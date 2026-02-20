@@ -40,8 +40,8 @@ router = APIRouter(prefix="/api/v1/charts", tags=["charts"])
 )
 async def get_chart_data(
     symbol: str = Query(..., description="Ticker symbol", max_length=20),
-    timeframe: Literal["1D", "1W", "1M"] = Query(
-        "1D", description="Bar interval: 1 Day, 1 Week, or 1 Month"
+    timeframe: Literal["1D", "1W", "1M", "1H", "4H"] = Query(
+        "1D", description="Bar interval: 1 Hour, 4 Hour, 1 Day, 1 Week, or 1 Month"
     ),
     start_date: Optional[datetime] = Query(None, description="Start date (default: 90 days ago)"),
     end_date: Optional[datetime] = Query(None, description="End date (default: now)"),
@@ -54,7 +54,7 @@ async def get_chart_data(
 
     Args:
         symbol: Ticker symbol
-        timeframe: Bar interval (1D/1W/1M)
+        timeframe: Bar interval (1H/4H/1D/1W/1M)
         start_date: Optional start date
         end_date: Optional end date
         limit: Max number of bars (50-2000)
