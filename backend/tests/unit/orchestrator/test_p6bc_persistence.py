@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.models.signal import ConfidenceComponents, TargetLevels, TradeSignal
 from src.models.validation import ValidationChain
@@ -121,6 +122,76 @@ class TestPersistSignals:
         ):
             # Must not raise
             await facade._persist_signals(signals)
+
+
+# ---------------------------------------------------------------------------
+# P0-4: _persist_signals returns failed signals with PERSISTENCE_FAILED
+# ---------------------------------------------------------------------------
+
+
+class TestPersistSignalsFailureVisibility:
+    """Tests for P0-4: _persist_signals surfaces failures."""
+
+    @pytest.mark.asyncio
+    async def test_persist_signals_marks_failed_on_db_error(self):
+        """When save_signal raises, signal returned with PERSISTENCE_FAILED status."""
+        facade = MasterOrchestratorFacade()
+        signal = _make_trade_signal()
+
+        mock_repo = MagicMock()
+        mock_repo.save_signal = AsyncMock(side_effect=SQLAlchemyError("DB down"))
+
+        mock_session = AsyncMock()
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("src.database.async_session_maker", mock_session_maker),
+            patch(
+                "src.repositories.signal_repository.SignalRepository",
+                return_value=mock_repo,
+            ),
+        ):
+            failed = await facade._persist_signals([signal])
+
+        assert len(failed) == 1
+        assert failed[0].status == "PERSISTENCE_FAILED"
+
+    @pytest.mark.asyncio
+    async def test_persist_signals_empty_on_success(self):
+        """On success, returned failed list is empty."""
+        facade = MasterOrchestratorFacade()
+        signal = _make_trade_signal()
+
+        mock_repo = MagicMock()
+        mock_repo.save_signal = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("src.database.async_session_maker", mock_session_maker),
+            patch(
+                "src.repositories.signal_repository.SignalRepository",
+                return_value=mock_repo,
+            ),
+        ):
+            failed = await facade._persist_signals([signal])
+
+        assert failed == []
+
+    @pytest.mark.asyncio
+    async def test_persist_signals_no_crash_when_no_db(self):
+        """No exception when async_session_maker is None."""
+        facade = MasterOrchestratorFacade()
+
+        with patch("src.database.async_session_maker", None):
+            failed = await facade._persist_signals([_make_trade_signal()])
+
+        assert failed == []
 
 
 # ---------------------------------------------------------------------------

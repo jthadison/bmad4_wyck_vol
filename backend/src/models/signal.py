@@ -278,7 +278,14 @@ class TradeSignal(BaseModel):
 
     # Status tracking
     status: Literal[
-        "PENDING", "APPROVED", "REJECTED", "FILLED", "STOPPED", "TARGET_HIT", "EXPIRED"
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        "FILLED",
+        "STOPPED",
+        "TARGET_HIT",
+        "EXPIRED",
+        "PERSISTENCE_FAILED",
     ] = Field(default="PENDING", description="Current signal status")
     rejection_reasons: list[str] = Field(
         default_factory=list, description="Reasons for rejection if status=REJECTED"
