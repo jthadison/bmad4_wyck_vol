@@ -20,8 +20,20 @@ from src.models.volume_analysis import VolumeAnalysis
 from src.orchestrator.pipeline.context import PipelineContext
 from src.orchestrator.stages.base import PipelineStage
 from src.pattern_engine.phase_detection import PhaseClassifier
-from src.pattern_engine.phase_detection._converters import PHASE_TYPE_TO_WYCKOFF
-from src.pattern_engine.phase_detection.types import PhaseResult
+from src.pattern_engine.phase_detection._converters import (
+    PHASE_TYPE_TO_WYCKOFF,
+    events_to_phase_events,
+)
+from src.pattern_engine.phase_detection.event_detectors import (
+    AutomaticRallyDetector,
+    SecondaryTestDetector,
+    SellingClimaxDetector,
+)
+from src.pattern_engine.phase_detection.types import (
+    DetectionConfig,
+    PhaseEvent,
+    PhaseResult,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -87,10 +99,13 @@ def _phase_result_to_info(
     # Only pass trading_range if it's a real TradingRange (not a mock/proxy)
     safe_range = trading_range if isinstance(trading_range, TradingRange) else None
 
+    # Convert facade PhaseEvents to real PhaseEvents for downstream stages (MF-3 fix)
+    phase_events = events_to_phase_events(result.events) if result.events else PhaseEvents()
+
     return PhaseInfo(
         phase=wyckoff_phase,
         confidence=confidence,
-        events=PhaseEvents(),
+        events=phase_events,
         duration=duration,
         trading_range=safe_range,
         phase_start_bar_index=phase_start,
@@ -141,6 +156,11 @@ class PhaseDetectionStage(PipelineStage[list[OHLCVBar], PhaseInfo | None]):
             phase_classifier: Configured PhaseClassifier instance
         """
         self._classifier = phase_classifier
+        # Event detectors for SC/AR/ST (can detect from DataFrame alone)
+        config = DetectionConfig()
+        self._sc_detector = SellingClimaxDetector(config)
+        self._ar_detector = AutomaticRallyDetector(config)
+        self._st_detector = SecondaryTestDetector(config)
 
     @property
     def name(self) -> str:
@@ -211,9 +231,18 @@ class PhaseDetectionStage(PipelineStage[list[OHLCVBar], PhaseInfo | None]):
             context.set(self.CONTEXT_KEY, None)
             return None
 
-        # Convert bars to DataFrame and classify using PhaseClassifier
+        # Convert bars to DataFrame and detect Wyckoff events
         df = _bars_to_dataframe(bars)
-        phase_result = self._classifier.classify(df)
+        detected_events: list[PhaseEvent] = []
+        try:
+            detected_events.extend(self._sc_detector.detect(df))
+            detected_events.extend(self._ar_detector.detect(df))
+            detected_events.extend(self._st_detector.detect(df))
+        except (ValueError, TypeError) as e:
+            logger.warning("phase_detection_event_error", error=str(e))
+
+        # Classify phase using detected events (MF-1 fix: pass events to classifier)
+        phase_result = self._classifier.classify(df, events=detected_events or None)
 
         # Convert PhaseResult to PhaseInfo for downstream stages
         phase_info = _phase_result_to_info(phase_result, bars, current_range)
