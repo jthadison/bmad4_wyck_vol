@@ -319,14 +319,14 @@ class _RiskManagerAdapter:
         trading_range = context.get("current_trading_range")
 
         if portfolio_context is None or trading_range is None:
-            logger.warning(
-                "risk_adapter_context_missing",
+            logger.error(
+                "risk_adapter_context_missing_signal_rejected",
                 has_portfolio=portfolio_context is not None,
                 has_trading_range=trading_range is not None,
                 symbol=context.symbol,
-                detail="portfolio_context or trading_range absent — passing signal through",
+                detail="REJECTING signal — cannot validate risk without portfolio/range context",
             )
-            return signal
+            return None
 
         # Extract price fields via duck typing.
         # SpringSignal uses target_price; SOSSignal uses target; TradeSignal
