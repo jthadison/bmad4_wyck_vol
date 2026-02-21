@@ -53,15 +53,15 @@ class TestSOSDetectorVolumeThresholdConstant:
     """Test Suite for SOS volume threshold consistency across timeframes."""
 
     def test_sos_detector_volume_threshold_constant_across_timeframes(self):
-        """Verify SOS volume threshold (2.0x) remains constant (AC1.7)."""
+        """Verify SOS volume threshold (1.5x per FR12) remains constant (AC1.7)."""
         detector_15m = SOSDetector(timeframe="15m")
         detector_1h = SOSDetector(timeframe="1h")
         detector_1d = SOSDetector(timeframe="1d")
 
-        # All timeframes use same SOS volume threshold (2.0x)
-        assert detector_15m.volume_threshold == Decimal("2.0")
-        assert detector_1h.volume_threshold == Decimal("2.0")
-        assert detector_1d.volume_threshold == Decimal("2.0")
+        # All timeframes use same SOS volume threshold (1.5x per FR12)
+        assert detector_15m.volume_threshold == Decimal("1.5")
+        assert detector_1h.volume_threshold == Decimal("1.5")
+        assert detector_1d.volume_threshold == Decimal("1.5")
 
 
 class TestSOSDetectorBackwardCompatibility:
@@ -112,8 +112,8 @@ class TestSOSDetectorAllTimeframes:
 
         assert detector.ice_threshold == expected_ice
         assert detector.creek_min_rally == expected_creek
-        # Volume threshold constant for all
-        assert detector.volume_threshold == Decimal("2.0")
+        # Volume threshold constant for all (1.5x per FR12)
+        assert detector.volume_threshold == Decimal("1.5")
 
 
 class TestSOSDetectorAttributeStorage:

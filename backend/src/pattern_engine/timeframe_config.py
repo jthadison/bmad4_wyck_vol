@@ -31,7 +31,7 @@ Important Notes:
 ----------------
 - Multipliers are empirically derived for EUR/USD and similar forex majors
 - Future stories will add asset-class-specific configuration
-- Volume thresholds (0.7x, 2.0x) do NOT scale - they are ratios and remain meaningful
+- Volume thresholds (0.7x, 1.5x) do NOT scale - they are ratios and remain meaningful
   across all timeframes
 
 Author: Story 13.1
@@ -59,7 +59,7 @@ TIMEFRAME_MULTIPLIERS: Final[dict[str, Decimal]] = {
 # Volume thresholds - CONSTANT across all timeframes (Story 13.1 AC1.7)
 # These are ratios and do NOT scale by timeframe
 SPRING_VOLUME_THRESHOLD: Final[Decimal] = Decimal("0.7")  # <0.7x for Spring patterns
-SOS_VOLUME_THRESHOLD: Final[Decimal] = Decimal("2.0")  # >2.0x for SOS patterns
+SOS_VOLUME_THRESHOLD: Final[Decimal] = Decimal("1.5")  # >=1.5x for SOS patterns (FR12)
 
 
 def get_scaled_threshold(base_threshold: Decimal, timeframe: str) -> Decimal:

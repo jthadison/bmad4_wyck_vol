@@ -69,8 +69,8 @@ class TestBaseConstants:
         assert SPRING_VOLUME_THRESHOLD == Decimal("0.7")
 
     def test_sos_volume_threshold_value(self):
-        """Verify SOS_VOLUME_THRESHOLD is 2.0x."""
-        assert SOS_VOLUME_THRESHOLD == Decimal("2.0")
+        """Verify SOS_VOLUME_THRESHOLD is 1.5x (FR12)."""
+        assert SOS_VOLUME_THRESHOLD == Decimal("1.5")
 
     def test_all_base_constants_use_decimal(self):
         """Verify all base constants use Decimal type."""
@@ -219,4 +219,4 @@ class TestVolumeThresholdConstants:
         # This is a design verification test - volume thresholds are
         # separate constants, not subject to get_scaled_threshold()
         assert SPRING_VOLUME_THRESHOLD == Decimal("0.7")
-        assert SOS_VOLUME_THRESHOLD == Decimal("2.0")
+        assert SOS_VOLUME_THRESHOLD == Decimal("1.5")
