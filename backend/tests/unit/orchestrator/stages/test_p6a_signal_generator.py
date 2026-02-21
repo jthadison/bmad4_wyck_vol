@@ -8,6 +8,7 @@ risk calculations, confidence scoring, and ValidationChain attachment.
 
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -622,3 +623,136 @@ class TestTradeSignalGeneratorCampaignId:
         signal = await gen.generate_signal(pattern, None, ctx)
 
         assert signal is not None
+
+
+# =============================
+# UTAD Tests (P0-1)
+# =============================
+
+
+def _make_utad_pattern(
+    *,
+    symbol: str = "AAPL",
+    timeframe: str = "1d",
+    breakout_price: Decimal | None = Decimal("155.00"),
+    ice_level: Decimal | None = Decimal("150.00"),
+    failure_price: Decimal | None = Decimal("145.00"),
+    volume_ratio: float = 2.5,
+    confidence: int = 85,
+    phase: str = "D",
+    pattern_type: str = "UTAD",
+    is_tradeable: bool = True,
+) -> SimpleNamespace:
+    """Create a minimal UTAD-like pattern object matching UTADDetector output shape."""
+    return SimpleNamespace(
+        id=uuid4(),
+        symbol=symbol,
+        timeframe=timeframe,
+        breakout_price=breakout_price,
+        ice_level=ice_level,
+        failure_price=failure_price,
+        volume_ratio=volume_ratio,
+        confidence=confidence,
+        phase=phase,
+        pattern_type=pattern_type,
+        is_tradeable=is_tradeable,
+    )
+
+
+class TestTradeSignalGeneratorUTAD:
+    """Test UTAD pattern -> TradeSignal conversion (P0-1 fix)."""
+
+    @pytest.mark.asyncio
+    async def test_utad_field_mapping_produces_signal(self):
+        """UTAD output fields map to entry/stop/target correctly.
+
+        UTAD short setup:
+          entry  = failure_price (145) — short entry after price fails below Ice
+          stop   = ice_level * 1.01 (151.50) — must be above entry for SHORT
+          target = failure_price - (breakout_price - failure_price) = 145 - 10 = 135
+        """
+        gen = _TradeSignalGenerator()
+        pattern = _make_utad_pattern()
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+
+        assert signal is not None, "UTAD must produce a TradeSignal (not None)"
+        assert signal.pattern_type == "UTAD"
+        assert signal.entry_price == Decimal("145.00")
+        assert signal.stop_loss == Decimal("150.00") * Decimal("1.01")
+        # target = 145 - (155 - 145) = 135
+        assert signal.target_levels.primary_target == Decimal("135.00")
+
+    @pytest.mark.asyncio
+    async def test_utad_without_failure_price_returns_none(self):
+        """UTAD missing failure_price cannot produce a signal."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_utad_pattern(failure_price=None)
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+        assert signal is None
+
+    @pytest.mark.asyncio
+    async def test_utad_confidence_meets_minimum(self):
+        """UTAD confidence_score >= 70."""
+        gen = _TradeSignalGenerator()
+        pattern = _make_utad_pattern()
+        ctx = _make_context()
+
+        signal = await gen.generate_signal(pattern, None, ctx)
+        assert signal is not None
+        assert signal.confidence_score >= 70
+
+    @pytest.mark.asyncio
+    async def test_utad_with_mock_trading_range_still_produces_signal(self):
+        """UTAD signal is produced even when trading_range has calculate_jump_level()."""
+        gen = _TradeSignalGenerator()
+        context = MagicMock()
+        context.symbol = "AAPL"
+        context.timeframe = "1d"
+        context.get = MagicMock(return_value=None)
+
+        # Mock trading_range with calculate_jump_level() — this previously could bypass UTAD block
+        mock_tr = MagicMock()
+        mock_tr.calculate_jump_level.return_value = Decimal("160.00")  # long-biased wrong value
+
+        pattern = _make_utad_pattern()  # uses the existing helper
+        signal = await gen.generate_signal(pattern, mock_tr, context)
+
+        assert (
+            signal is not None
+        ), "UTAD signal must be produced even when trading_range has calculate_jump_level"
+        assert signal.entry_price == Decimal("145.00")  # failure_price, not jump_level
+        assert signal.pattern_type == "UTAD"
+
+    @pytest.mark.asyncio
+    async def test_utad_with_ice_level_none_returns_none(self):
+        """UTAD with ice_level=None cannot produce a valid signal (no stop can be computed)."""
+        gen = _TradeSignalGenerator()
+        context = MagicMock()
+        context.symbol = "AAPL"
+        context.timeframe = "1d"
+        context.get = MagicMock(return_value=None)
+
+        pattern = _make_utad_pattern()
+        pattern.ice_level = None
+
+        signal = await gen.generate_signal(pattern, None, context)
+        assert signal is None
+
+    @pytest.mark.asyncio
+    async def test_utad_with_breakout_price_none_returns_none(self):
+        """UTAD with breakout_price=None cannot produce a valid signal (no target can be computed)."""
+        gen = _TradeSignalGenerator()
+        context = MagicMock()
+        context.symbol = "AAPL"
+        context.timeframe = "1d"
+        context.get = MagicMock(return_value=None)
+
+        pattern = _make_utad_pattern()
+        pattern.breakout_price = None
+
+        signal = await gen.generate_signal(pattern, None, context)
+        assert signal is None

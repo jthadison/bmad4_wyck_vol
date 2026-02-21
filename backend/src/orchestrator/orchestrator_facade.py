@@ -79,10 +79,38 @@ class _TradeSignalGenerator:
             )
             return None
 
-        # 1. Extract price fields via duck typing
-        entry_price = getattr(pattern, "entry_price", None)
-        stop_loss = getattr(pattern, "stop_loss", None)
-        target = getattr(pattern, "target_price", None) or getattr(pattern, "target", None)
+        # P0-1: UTAD-specific field extraction — MUST run BEFORE generic fallbacks.
+        # UTADDetector outputs breakout_price/ice_level/failure_price, not the
+        # standard entry_price/stop_loss/target_price used by other detectors.
+        # Wyckoff UTAD short setup:
+        #   entry  = failure_price (short entry after price fails back below Ice)
+        #   stop   = ice_level * 1.01 (1% above Ice — re-entry above Ice = invalid UTAD)
+        #   target = failure_price - (breakout_price - failure_price)
+        #            (project distribution range below entry)
+        # We check pattern_type explicitly here so that generic fallbacks below
+        # (e.g. trading_range.calculate_jump_level()) cannot pre-populate target
+        # and cause the UTAD block to be skipped.
+        _raw_pattern_type = getattr(pattern, "pattern_type", None) or type(pattern).__name__
+        entry_price: Decimal | None = None
+        stop_loss: Decimal | None = None
+        target: Decimal | None = None
+        if str(_raw_pattern_type).upper() == "UTAD":
+            bp = getattr(pattern, "breakout_price", None)
+            il = getattr(pattern, "ice_level", None)
+            fp = getattr(pattern, "failure_price", None)
+            if bp is not None and il is not None and fp is not None:
+                entry_price = Decimal(str(fp))
+                stop_loss = Decimal(str(il)) * Decimal("1.01")
+                target = entry_price - (Decimal(str(bp)) - entry_price)
+            # else: UTAD with missing fields — fall through to null-guard rejection below
+
+        # 1. Extract price fields via duck typing (non-UTAD patterns)
+        if entry_price is None:
+            entry_price = getattr(pattern, "entry_price", None)
+        if stop_loss is None:
+            stop_loss = getattr(pattern, "stop_loss", None)
+        if target is None:
+            target = getattr(pattern, "target_price", None) or getattr(pattern, "target", None)
 
         # Fallback for Spring.recovery_price (Spring objects have no entry_price)
         if entry_price is None:
@@ -160,10 +188,7 @@ class _TradeSignalGenerator:
             )
             return None
 
-        # NOTE: UTAD price field mapping not yet implemented. UTADDetector output
-        # has breakout_price/failure_price/ice_level fields that don't match the
-        # duck-typed extraction chain. UTAD signals return None until this is wired.
-        # TODO(Story 23.x): implement UTAD → TradeSignal conversion.
+        # UTAD field mapping is handled above (P0-1 fix).
 
         # Normalise phase; handle WyckoffPhase enum (.value) and plain strings
         raw_phase = getattr(pattern, "phase", None)
