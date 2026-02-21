@@ -523,6 +523,16 @@ class PhaseInfo(BaseModel):
             return v.replace(tzinfo=UTC)
         return v.astimezone(UTC)
 
+    @property
+    def trading_allowed(self) -> bool:
+        """FR14 enforcement property for compatibility with PhaseClassification interface.
+
+        PhaseValidator reads phase_classification.trading_allowed (line 183).
+        PhaseInfo is set in pipeline context as phase_info, which PhaseValidator
+        casts to PhaseClassification. This property bridges the interface gap.
+        """
+        return self.is_trading_allowed()
+
     def is_trading_allowed(self) -> bool:
         """
         Check if trading is allowed based on current phase (FR14).
