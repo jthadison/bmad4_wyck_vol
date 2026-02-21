@@ -131,16 +131,15 @@ class _TradeSignalGenerator:
             and hasattr(trading_range, "calculate_jump_level")
         ):
             target = trading_range.calculate_jump_level()
-        if target is None:
-            # Last resort: 12% above creek_reference
-            creek = getattr(pattern, "creek_reference", None)
-            if creek is not None:
-                target = Decimal(str(creek)) * Decimal("1.12")
-
         if entry_price is None or stop_loss is None or target is None:
             logger.warning(
                 "signal_generator_missing_price_fields",
                 pattern_type=type(pattern).__name__,
+                searched_entry_fields="entry_price, recovery_price",
+                searched_stop_fields="stop_loss, spring_low",
+                searched_target_fields=(
+                    "target_price, target, jump_level, trading_range.calculate_jump_level()"
+                ),
                 has_entry=entry_price is not None,
                 has_stop=stop_loss is not None,
                 has_target=target is not None,
