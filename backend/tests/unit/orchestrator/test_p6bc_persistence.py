@@ -210,8 +210,8 @@ class TestPositionSizingMapping:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_missing_context_passes_signal_through(self):
-        """When portfolio_context is missing, signal passes through unchanged."""
+    async def test_missing_context_rejects_signal(self):
+        """When portfolio_context is missing, signal is REJECTED (returns None). P0-2 fix."""
         risk_manager = MagicMock()
         adapter = _RiskManagerAdapter(risk_manager)
         signal = _make_trade_signal()
@@ -226,5 +226,5 @@ class TestPositionSizingMapping:
         # Intentionally NOT setting portfolio_context or trading_range
 
         result = await adapter.apply_sizing(signal, ctx)
-        assert result is signal
+        assert result is None, "Signal must be rejected when portfolio_context is missing"
         risk_manager.validate_and_size.assert_not_called()
