@@ -8,6 +8,7 @@ risk calculations, confidence scoring, and ValidationChain attachment.
 
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -703,3 +704,55 @@ class TestTradeSignalGeneratorUTAD:
         signal = await gen.generate_signal(pattern, None, ctx)
         assert signal is not None
         assert signal.confidence_score >= 70
+
+    @pytest.mark.asyncio
+    async def test_utad_with_mock_trading_range_still_produces_signal(self):
+        """UTAD signal is produced even when trading_range has calculate_jump_level()."""
+        gen = _TradeSignalGenerator()
+        context = MagicMock()
+        context.symbol = "AAPL"
+        context.timeframe = "1d"
+        context.get = MagicMock(return_value=None)
+
+        # Mock trading_range with calculate_jump_level() — this previously could bypass UTAD block
+        mock_tr = MagicMock()
+        mock_tr.calculate_jump_level.return_value = Decimal("160.00")  # long-biased wrong value
+
+        pattern = _make_utad_pattern()  # uses the existing helper
+        signal = await gen.generate_signal(pattern, mock_tr, context)
+
+        assert (
+            signal is not None
+        ), "UTAD signal must be produced even when trading_range has calculate_jump_level"
+        assert signal.entry_price == Decimal("145.00")  # failure_price, not jump_level
+        assert signal.pattern_type == "UTAD"
+
+    @pytest.mark.asyncio
+    async def test_utad_with_ice_level_none_returns_none(self):
+        """UTAD with ice_level=None cannot produce a valid signal (no stop can be computed)."""
+        gen = _TradeSignalGenerator()
+        context = MagicMock()
+        context.symbol = "AAPL"
+        context.timeframe = "1d"
+        context.get = MagicMock(return_value=None)
+
+        pattern = _make_utad_pattern()
+        pattern.ice_level = None
+
+        signal = await gen.generate_signal(pattern, None, context)
+        assert signal is None
+
+    @pytest.mark.asyncio
+    async def test_utad_with_breakout_price_none_returns_none(self):
+        """UTAD with breakout_price=None cannot produce a valid signal (no target can be computed)."""
+        gen = _TradeSignalGenerator()
+        context = MagicMock()
+        context.symbol = "AAPL"
+        context.timeframe = "1d"
+        context.get = MagicMock(return_value=None)
+
+        pattern = _make_utad_pattern()
+        pattern.breakout_price = None
+
+        signal = await gen.generate_signal(pattern, None, context)
+        assert signal is None
