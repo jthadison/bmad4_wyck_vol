@@ -19,6 +19,7 @@ from src.orchestrator.pipeline.context import PipelineContextBuilder
 from src.orchestrator.stages.phase_detection_stage import PhaseDetectionStage
 from src.orchestrator.stages.range_detection_stage import RangeDetectionStage
 from src.orchestrator.stages.volume_analysis_stage import VolumeAnalysisStage
+from src.pattern_engine.phase_detection.types import PhaseResult, PhaseType
 
 # =============================
 # Test Fixtures
@@ -100,15 +101,16 @@ def mock_range_detector():
 
 @pytest.fixture
 def mock_phase_detector():
-    """Create mock PhaseDetector."""
+    """Create mock PhaseClassifier (Story 23.1: replaces deprecated PhaseDetector)."""
     detector = MagicMock()
-    # Mock will return a basic PhaseInfo mock by default
-    mock_phase_info = MagicMock()
-    mock_phase_info.phase = WyckoffPhase.B
-    mock_phase_info.confidence = 75
-    mock_phase_info.duration = 30
-    mock_phase_info.current_risk_level = "normal"
-    detector.detect_phase.return_value = mock_phase_info
+    # classify() returns a proper PhaseResult so _phase_result_to_info can build PhaseInfo
+    detector.classify.return_value = PhaseResult(
+        phase=PhaseType.B,
+        confidence=0.75,
+        events=[],
+        duration_bars=30,
+        start_bar=0,
+    )
     return detector
 
 
@@ -325,7 +327,6 @@ class TestPhaseDetectionStage:
         """Test stage uses correct context keys."""
         stage = PhaseDetectionStage(mock_phase_detector)
         assert stage.CONTEXT_KEY == "phase_info"
-        assert stage.VOLUME_CONTEXT_KEY == "volume_analysis"
         assert stage.RANGES_CONTEXT_KEY == "trading_ranges"
         assert stage.CURRENT_RANGE_KEY == "current_trading_range"
 
@@ -355,7 +356,7 @@ class TestPhaseDetectionStage:
         assert result.output is not None
         assert result.output.phase == WyckoffPhase.B
         assert result.stage_name == "phase_detection"
-        mock_phase_detector.detect_phase.assert_called_once()
+        mock_phase_detector.classify.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_stores_in_context(
@@ -410,7 +411,7 @@ class TestPhaseDetectionStage:
 
         assert result.success is True
         assert result.output is None
-        mock_phase_detector.detect_phase.assert_not_called()
+        mock_phase_detector.classify.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_execute_empty_ranges_returns_none(
@@ -434,7 +435,7 @@ class TestPhaseDetectionStage:
 
         assert result.success is True
         assert result.output is None
-        mock_phase_detector.detect_phase.assert_not_called()
+        mock_phase_detector.classify.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_execute_empty_bars_raises(
@@ -461,12 +462,12 @@ class TestPhaseDetectionStage:
         assert "empty bars" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_execute_missing_volume_analysis_raises(
+    async def test_execute_without_volume_analysis_succeeds(
         self,
         mock_phase_detector,
         sample_bars,
     ):
-        """Test that missing volume_analysis raises RuntimeError."""
+        """Test that volume_analysis is not required (Story 23.1: PhaseClassifier does not need it)."""
         mock_ranges = [create_mock_trading_range()]
 
         stage = PhaseDetectionStage(mock_phase_detector)
@@ -480,8 +481,8 @@ class TestPhaseDetectionStage:
 
         result = await stage.run(sample_bars, context)
 
-        assert result.success is False
-        assert "volume_analysis" in result.error.lower()
+        # PhaseClassifier doesn't require volume_analysis in context
+        assert result.success is True
 
     @pytest.mark.asyncio
     async def test_execute_missing_trading_ranges_raises(
@@ -667,11 +668,11 @@ class TestExceptionPropagation:
     async def test_phase_detector_exception_propagates(
         self, mock_volume_analyzer, mock_range_detector, sample_bars
     ):
-        """Test that PhaseDetector exceptions are captured in result."""
+        """Test that PhaseClassifier exceptions are captured in result."""
         mock_range_detector.detect_ranges.return_value = [create_mock_trading_range()]
 
         mock_phase = MagicMock()
-        mock_phase.detect_phase.side_effect = RuntimeError("Phase detection failed")
+        mock_phase.classify.side_effect = RuntimeError("Phase detection failed")
 
         volume_stage = VolumeAnalysisStage(mock_volume_analyzer)
         range_stage = RangeDetectionStage(mock_range_detector)

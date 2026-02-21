@@ -633,15 +633,10 @@ class MasterOrchestratorFacade:
         if hasattr(self._container, "trading_range_detector"):
             stages.append(RangeDetectionStage(self._container.trading_range_detector))
 
-        # Stage 3: Phase Detection
-        # PhaseDetector is instantiated directly because OrchestratorContainer
-        # does not yet expose a phase_detector property. This is consistent with
-        # the PhaseDetectionStage requirement but deviates from the container DI
-        # pattern used by other stages.
-        # TODO(23.x): add phase_detector to OrchestratorContainer.
-        from src.pattern_engine.phase_detector_v2 import PhaseDetector
+        # Stage 3: Phase Detection (Story 23.1: wired to real PhaseClassifier)
+        from src.pattern_engine.phase_detection import PhaseClassifier
 
-        stages.append(PhaseDetectionStage(PhaseDetector()))
+        stages.append(PhaseDetectionStage(PhaseClassifier()))
 
         # Stage 4: Pattern Detection
         from src.orchestrator.stages.pattern_detection_stage import (
