@@ -75,6 +75,7 @@ from src.models.phase_classification import PhaseClassification, WyckoffPhase
 from src.models.sos_breakout import SOSBreakout
 from src.models.trading_range import TradingRange
 from src.pattern_engine.scoring.scorer_factory import detect_asset_class, get_scorer
+from src.pattern_engine.timeframe_config import SOS_VOLUME_THRESHOLD
 
 logger = structlog.get_logger(__name__)
 
@@ -326,7 +327,7 @@ def detect_sos_breakout(
         # FR12: Volume expansion confirms breakout legitimacy
         # Low-volume breakouts are false breakouts (absorption at resistance)
 
-        if volume_ratio < Decimal("1.5"):
+        if volume_ratio < SOS_VOLUME_THRESHOLD:
             # Story 13.2 AC2.4: Enhanced logging with session information
             rejection_log_data = {
                 "symbol": bar.symbol,

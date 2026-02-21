@@ -59,7 +59,7 @@ TIMEFRAME_MULTIPLIERS: Final[dict[str, Decimal]] = {
 # Volume thresholds - CONSTANT across all timeframes (Story 13.1 AC1.7)
 # These are ratios and do NOT scale by timeframe
 SPRING_VOLUME_THRESHOLD: Final[Decimal] = Decimal("0.7")  # <0.7x for Spring patterns
-SOS_VOLUME_THRESHOLD: Final[Decimal] = Decimal("2.0")  # >2.0x for SOS patterns
+SOS_VOLUME_THRESHOLD: Final[Decimal] = Decimal("1.5")  # >1.5x for SOS patterns
 
 
 def get_scaled_threshold(base_threshold: Decimal, timeframe: str) -> Decimal:

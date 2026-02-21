@@ -50,19 +50,19 @@ class TestSOSDetectorVolumeThresholdConstant:
     """Test Suite for volume threshold consistency (AC2.8)."""
 
     def test_sos_volume_threshold_constant_for_session_relative(self):
-        """Verify SOS volume threshold remains 2.0x for session-relative (AC2.8)."""
+        """Verify SOS volume threshold remains 1.5x for session-relative (AC2.8, FR6/FR12)."""
         intraday_analyzer = IntradayVolumeAnalyzer(asset_type="forex")
         detector = SOSDetector(timeframe="15m", intraday_volume_analyzer=intraday_analyzer)
 
-        # Volume threshold should still be 2.0x
-        assert detector.volume_threshold == Decimal("2.0")
+        # Volume threshold should be 1.5x (FR12: non-negotiable minimum)
+        assert detector.volume_threshold == Decimal("1.5")
 
     def test_sos_volume_threshold_constant_for_global_average(self):
-        """Verify SOS volume threshold remains 2.0x for global average (AC2.8)."""
+        """Verify SOS volume threshold remains 1.5x for global average (AC2.8, FR6/FR12)."""
         detector = SOSDetector(timeframe="15m")
 
-        # Volume threshold should still be 2.0x (same as session-relative)
-        assert detector.volume_threshold == Decimal("2.0")
+        # Volume threshold should be 1.5x (same for session-relative and global)
+        assert detector.volume_threshold == Decimal("1.5")
 
 
 class TestSOSDetectorBackwardCompatibility:
@@ -74,7 +74,7 @@ class TestSOSDetectorBackwardCompatibility:
 
         assert detector.timeframe == "1d"
         assert detector.intraday_volume_analyzer is None
-        assert detector.volume_threshold == Decimal("2.0")
+        assert detector.volume_threshold == Decimal("1.5")
 
     def test_backward_compatible_timeframe_no_analyzer(self):
         """Verify backward compatibility: timeframe without analyzer works (AC2.3)."""
