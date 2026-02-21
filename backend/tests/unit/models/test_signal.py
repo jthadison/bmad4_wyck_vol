@@ -541,6 +541,33 @@ def test_signal_without_campaign_id():
     assert "Campaign:" not in output
 
 
+def test_trade_signal_accepts_persistence_failed_status():
+    """TradeSignal must accept PERSISTENCE_FAILED as a valid status."""
+    from src.models.validation import ValidationChain
+
+    signal = TradeSignal(
+        symbol="AAPL",
+        pattern_type="SPRING",
+        phase="C",
+        timeframe="1d",
+        entry_price=Decimal("100.00"),
+        stop_loss=Decimal("95.00"),
+        target_levels=TargetLevels(primary_target=Decimal("115.00")),
+        position_size=Decimal("100"),
+        risk_amount=Decimal("500.00"),
+        r_multiple=Decimal("3.0"),
+        notional_value=Decimal("10000.00"),
+        confidence_score=80,
+        confidence_components=ConfidenceComponents(
+            pattern_confidence=80, phase_confidence=80, volume_confidence=80, overall_confidence=80
+        ),
+        validation_chain=ValidationChain(pattern_id=uuid4()),
+        status="PERSISTENCE_FAILED",
+        timestamp="2024-03-13T14:30:00Z",
+    )
+    assert signal.status == "PERSISTENCE_FAILED"
+
+
 def test_signal_status_transitions():
     """Test different signal status values."""
     signal = valid_spring_signal()

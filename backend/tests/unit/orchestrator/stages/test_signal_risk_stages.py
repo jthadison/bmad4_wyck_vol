@@ -650,6 +650,78 @@ class TestSignalRiskStageChaining:
 # =============================
 
 
+class TestRiskAdapterRejectsWhenContextMissing:
+    """P0-2: _RiskManagerAdapter must reject signals when risk context is absent."""
+
+    @pytest.mark.asyncio
+    async def test_risk_adapter_rejects_when_portfolio_context_missing(self):
+        """Signal REJECTED (None) when portfolio_context not in context."""
+        from decimal import Decimal
+
+        from src.orchestrator.orchestrator_facade import _RiskManagerAdapter
+
+        adapter = _RiskManagerAdapter(MagicMock())
+        ctx = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+        ctx.set("current_trading_range", MagicMock())
+        # portfolio_context intentionally NOT set
+
+        sig = MagicMock()
+        sig.entry_price = Decimal("100.00")
+        sig.stop_loss = Decimal("95.00")
+        sig.target_price = Decimal("115.00")
+        sig.symbol = "AAPL"
+        sig.pattern_type = "SPRING"
+        sig.campaign_id = None
+
+        result = await adapter.apply_sizing(sig, ctx)
+        assert result is None, "Must reject signal when portfolio_context is missing"
+
+    @pytest.mark.asyncio
+    async def test_risk_adapter_rejects_when_trading_range_missing(self):
+        """Signal REJECTED (None) when trading_range not in context."""
+        from decimal import Decimal
+
+        from src.orchestrator.orchestrator_facade import _RiskManagerAdapter
+
+        adapter = _RiskManagerAdapter(MagicMock())
+        ctx = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+        ctx.set("portfolio_context", MagicMock())
+        # current_trading_range intentionally NOT set
+
+        sig = MagicMock()
+        sig.entry_price = Decimal("100.00")
+        sig.stop_loss = Decimal("95.00")
+        sig.target_price = Decimal("115.00")
+        sig.symbol = "AAPL"
+        sig.pattern_type = "SPRING"
+        sig.campaign_id = None
+
+        result = await adapter.apply_sizing(sig, ctx)
+        assert result is None, "Must reject signal when trading_range is missing"
+
+    @pytest.mark.asyncio
+    async def test_risk_adapter_rejects_when_both_missing(self):
+        """Signal REJECTED (None) when both context fields are missing."""
+        from decimal import Decimal
+
+        from src.orchestrator.orchestrator_facade import _RiskManagerAdapter
+
+        adapter = _RiskManagerAdapter(MagicMock())
+        ctx = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
+        # Neither portfolio_context nor current_trading_range set
+
+        sig = MagicMock()
+        sig.entry_price = Decimal("100.00")
+        sig.stop_loss = Decimal("95.00")
+        sig.target_price = Decimal("115.00")
+        sig.symbol = "AAPL"
+        sig.pattern_type = "SPRING"
+        sig.campaign_id = None
+
+        result = await adapter.apply_sizing(sig, ctx)
+        assert result is None
+
+
 class TestProtocolCompliance:
     """Tests for protocol compliance."""
 

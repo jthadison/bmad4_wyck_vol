@@ -79,10 +79,38 @@ class _TradeSignalGenerator:
             )
             return None
 
-        # 1. Extract price fields via duck typing
-        entry_price = getattr(pattern, "entry_price", None)
-        stop_loss = getattr(pattern, "stop_loss", None)
-        target = getattr(pattern, "target_price", None) or getattr(pattern, "target", None)
+        # P0-1: UTAD-specific field extraction — MUST run BEFORE generic fallbacks.
+        # UTADDetector outputs breakout_price/ice_level/failure_price, not the
+        # standard entry_price/stop_loss/target_price used by other detectors.
+        # Wyckoff UTAD short setup:
+        #   entry  = failure_price (short entry after price fails back below Ice)
+        #   stop   = ice_level * 1.01 (1% above Ice — re-entry above Ice = invalid UTAD)
+        #   target = failure_price - (breakout_price - failure_price)
+        #            (project distribution range below entry)
+        # We check pattern_type explicitly here so that generic fallbacks below
+        # (e.g. trading_range.calculate_jump_level()) cannot pre-populate target
+        # and cause the UTAD block to be skipped.
+        _raw_pattern_type = getattr(pattern, "pattern_type", None) or type(pattern).__name__
+        entry_price: Decimal | None = None
+        stop_loss: Decimal | None = None
+        target: Decimal | None = None
+        if str(_raw_pattern_type).upper() == "UTAD":
+            bp = getattr(pattern, "breakout_price", None)
+            il = getattr(pattern, "ice_level", None)
+            fp = getattr(pattern, "failure_price", None)
+            if bp is not None and il is not None and fp is not None:
+                entry_price = Decimal(str(fp))
+                stop_loss = Decimal(str(il)) * Decimal("1.01")
+                target = entry_price - (Decimal(str(bp)) - entry_price)
+            # else: UTAD with missing fields — fall through to null-guard rejection below
+
+        # 1. Extract price fields via duck typing (non-UTAD patterns)
+        if entry_price is None:
+            entry_price = getattr(pattern, "entry_price", None)
+        if stop_loss is None:
+            stop_loss = getattr(pattern, "stop_loss", None)
+        if target is None:
+            target = getattr(pattern, "target_price", None) or getattr(pattern, "target", None)
 
         # Fallback for Spring.recovery_price (Spring objects have no entry_price)
         if entry_price is None:
@@ -160,10 +188,7 @@ class _TradeSignalGenerator:
             )
             return None
 
-        # NOTE: UTAD price field mapping not yet implemented. UTADDetector output
-        # has breakout_price/failure_price/ice_level fields that don't match the
-        # duck-typed extraction chain. UTAD signals return None until this is wired.
-        # TODO(Story 23.x): implement UTAD → TradeSignal conversion.
+        # UTAD field mapping is handled above (P0-1 fix).
 
         # Normalise phase; handle WyckoffPhase enum (.value) and plain strings
         raw_phase = getattr(pattern, "phase", None)
@@ -319,14 +344,14 @@ class _RiskManagerAdapter:
         trading_range = context.get("current_trading_range")
 
         if portfolio_context is None or trading_range is None:
-            logger.warning(
-                "risk_adapter_context_missing",
+            logger.error(
+                "risk_adapter_context_missing_signal_rejected",
                 has_portfolio=portfolio_context is not None,
                 has_trading_range=trading_range is not None,
                 symbol=context.symbol,
-                detail="portfolio_context or trading_range absent — passing signal through",
+                detail="REJECTING signal — cannot validate risk without portfolio/range context",
             )
-            return signal
+            return None
 
         # Extract price fields via duck typing.
         # SpringSignal uses target_price; SOSSignal uses target; TradeSignal
@@ -504,11 +529,14 @@ class MasterOrchestratorFacade:
 
         logger.info("orchestrator_facade_initialized")
 
-    async def _persist_signals(self, signals: list) -> None:
-        """Persist approved signals to the database (P6b).
+    async def _persist_signals(self, signals: list) -> list:
+        """Persist approved signals to the database.
 
-        Failures are logged but never raised — persistence must not
-        block signal delivery.
+        Returns list of signals that failed persistence, each marked with
+        status='PERSISTENCE_FAILED'. Callers should merge these back into
+        their output so the failure state is visible to API clients.
+
+        Never raises — persistence must not block signal delivery.
         """
         from src.database import async_session_maker
         from src.models.signal import TradeSignal as PydanticTradeSignal
@@ -519,20 +547,50 @@ class MasterOrchestratorFacade:
                 "persist_signals_no_db",
                 detail="async_session_maker is None — skipping persistence",
             )
-            return
+            return []
 
         pydantic_signals = [s for s in signals if isinstance(s, PydanticTradeSignal)]
         if not pydantic_signals:
-            return
+            return []
 
+        failed: list = []
         try:
             async with async_session_maker() as session:
                 repo = SignalRepository(db_session=session)
                 for signal in pydantic_signals:
-                    await repo.save_signal(signal)
-            logger.info("signals_persisted", count=len(pydantic_signals))
+                    try:
+                        await repo.save_signal(signal)
+                    except Exception as exc:
+                        logger.error(
+                            "persist_signal_failed",
+                            symbol=signal.symbol,
+                            pattern_type=signal.pattern_type,
+                            error=str(exc),
+                        )
+                        try:
+                            failed.append(
+                                signal.model_copy(update={"status": "PERSISTENCE_FAILED"})
+                            )
+                        except Exception:
+                            failed.append(signal)
+            logger.info(
+                "signals_persisted",
+                saved=len(pydantic_signals) - len(failed),
+                failed=len(failed),
+            )
         except Exception as exc:
-            logger.error("persist_signals_failed", error=str(exc), count=len(pydantic_signals))
+            logger.error(
+                "persist_signals_session_failed",
+                error=str(exc),
+                count=len(pydantic_signals),
+            )
+            for signal in pydantic_signals:
+                try:
+                    failed.append(signal.model_copy(update={"status": "PERSISTENCE_FAILED"}))
+                except Exception:
+                    failed.append(signal)
+
+        return failed
 
     @staticmethod
     def _build_portfolio_monitor() -> PortfolioMonitor:
@@ -711,9 +769,21 @@ class MasterOrchestratorFacade:
             # Extract signals from result
             signals = self._extract_signals(result.output, symbol, timeframe, correlation_id)
 
-            # Persist approved signals (P6b)
+            # Persist approved signals (P6b). Failed signals are returned with
+            # status=PERSISTENCE_FAILED so API callers can see the failure state.
             if signals:
-                await self._persist_signals(signals)
+                failed_persist = await self._persist_signals(signals)
+                for failed_signal in failed_persist:
+                    for idx, s in enumerate(signals):
+                        if (
+                            hasattr(s, "symbol")
+                            and hasattr(failed_signal, "symbol")
+                            and s.symbol == failed_signal.symbol
+                            and getattr(s, "pattern_type", None)
+                            == getattr(failed_signal, "pattern_type", None)
+                        ):
+                            signals[idx] = failed_signal
+                            break
 
             async with self._lock:
                 self._signal_count += len(signals)
