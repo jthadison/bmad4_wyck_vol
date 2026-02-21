@@ -68,7 +68,7 @@ from src.api.websocket import websocket_endpoint
 from src.config import settings
 from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
 from src.market_data.service import MarketDataCoordinator
-from src.orchestrator.service import get_orchestrator
+from src.orchestrator.service import get_orchestrator, trigger_analysis
 from src.pattern_engine.realtime_scanner import (
     ScannerHealthResponse,
     get_scanner,
@@ -295,10 +295,11 @@ async def startup_event() -> None:
             # Create Alpaca adapter
             adapter = AlpacaAdapter(settings=feed_settings, use_paper=False)
 
-            # Create coordinator
+            # Create coordinator with live analysis trigger
             _coordinator = MarketDataCoordinator(
                 adapter=adapter,
                 settings=feed_settings,
+                on_bar_analyzed=trigger_analysis,
             )
 
             # Store on app.state for shutdown access

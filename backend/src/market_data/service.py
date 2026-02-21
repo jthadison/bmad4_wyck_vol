@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -314,6 +315,8 @@ class MarketDataCoordinator:
         self,
         adapter: MarketDataProvider,
         settings: Settings,
+        on_bar_analyzed: Callable[[str, str], Awaitable[None]] | None = None,
+        analysis_cooldown_secs: int = 60,
     ):
         """
         Initialize coordinator with adapter and settings.
@@ -321,11 +324,21 @@ class MarketDataCoordinator:
         Args:
             adapter: MarketDataProvider implementation (AlpacaAdapter, etc.)
             settings: Application settings
+            on_bar_analyzed: Optional async callback(symbol, timeframe) fired
+                after a new bar is successfully inserted. Used to trigger
+                orchestrator analysis without a direct import dependency.
+            analysis_cooldown_secs: Minimum seconds between analysis triggers
+                for the same symbol+timeframe pair (default 60).
         """
         self.adapter = adapter
         self.settings = settings
         self._is_running: bool = False
         self._start_time: datetime | None = None
+
+        # Live analysis trigger
+        self._on_bar_analyzed = on_bar_analyzed
+        self._analysis_cooldown_secs = analysis_cooldown_secs
+        self._analysis_cooldowns: dict[str, float] = {}
 
         # Insertion failure tracking (REL-002)
         self._insertion_failures: int = 0
@@ -337,6 +350,7 @@ class MarketDataCoordinator:
         logger.info(
             "market_data_coordinator_initialized",
             provider=adapter.__class__.__name__,
+            analysis_trigger_enabled=on_bar_analyzed is not None,
         )
 
     async def start(self) -> None:
@@ -470,6 +484,15 @@ class MarketDataCoordinator:
                         total_successes=self._insertion_successes,
                         total_failures=self._insertion_failures,
                     )
+
+                    # Trigger orchestrator analysis (non-blocking)
+                    if self._on_bar_analyzed is not None:
+                        cooldown_key = f"{bar.symbol}:{bar.timeframe}"
+                        now = asyncio.get_running_loop().time()
+                        last = self._analysis_cooldowns.get(cooldown_key, 0.0)
+                        if now - last >= self._analysis_cooldown_secs:
+                            self._analysis_cooldowns[cooldown_key] = now
+                            asyncio.create_task(self._safe_analyze(bar.symbol, bar.timeframe))
                 else:
                     # Duplicate bar (already exists)
                     logger.debug(
@@ -503,6 +526,18 @@ class MarketDataCoordinator:
                     failed_queue_size=len(self._failed_bars),
                     action_required="Check database connection and health",
                 )
+
+    async def _safe_analyze(self, symbol: str, timeframe: str) -> None:
+        """Fire orchestrator analysis without blocking bar insertion."""
+        try:
+            await self._on_bar_analyzed(symbol, timeframe)  # type: ignore[misc]
+        except Exception as exc:
+            logger.warning(
+                "live_analysis_trigger_failed",
+                symbol=symbol,
+                timeframe=timeframe,
+                error=str(exc),
+            )
 
     async def health_check(self) -> dict:
         """
