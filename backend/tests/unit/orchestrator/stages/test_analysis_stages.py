@@ -100,16 +100,21 @@ def mock_range_detector():
 
 @pytest.fixture
 def mock_phase_detector():
-    """Create mock PhaseDetector."""
-    detector = MagicMock()
-    # Mock will return a basic PhaseInfo mock by default
-    mock_phase_info = MagicMock()
-    mock_phase_info.phase = WyckoffPhase.B
-    mock_phase_info.confidence = 75
-    mock_phase_info.duration = 30
-    mock_phase_info.current_risk_level = "normal"
-    detector.detect_phase.return_value = mock_phase_info
-    return detector
+    """Create mock PhaseClassifier."""
+    from src.pattern_engine.phase_detection.types import PhaseResult, PhaseType
+
+    classifier = MagicMock()
+    # Mock will return a basic PhaseResult by default
+    mock_result = PhaseResult(
+        phase=PhaseType.B,
+        confidence=0.75,
+        events=[],
+        start_bar=0,
+        duration_bars=30,
+        metadata={"trading_allowed": True, "rejection_reason": None},
+    )
+    classifier.classify.return_value = mock_result
+    return classifier
 
 
 def create_mock_trading_range(is_active: bool = True, end_index: int = 49) -> MagicMock:
@@ -355,7 +360,7 @@ class TestPhaseDetectionStage:
         assert result.output is not None
         assert result.output.phase == WyckoffPhase.B
         assert result.stage_name == "phase_detection"
-        mock_phase_detector.detect_phase.assert_called_once()
+        mock_phase_detector.classify.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_stores_in_context(
@@ -410,7 +415,7 @@ class TestPhaseDetectionStage:
 
         assert result.success is True
         assert result.output is None
-        mock_phase_detector.detect_phase.assert_not_called()
+        mock_phase_detector.classify.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_execute_empty_ranges_returns_none(
@@ -434,7 +439,7 @@ class TestPhaseDetectionStage:
 
         assert result.success is True
         assert result.output is None
-        mock_phase_detector.detect_phase.assert_not_called()
+        mock_phase_detector.classify.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_execute_empty_bars_raises(
@@ -667,11 +672,11 @@ class TestExceptionPropagation:
     async def test_phase_detector_exception_propagates(
         self, mock_volume_analyzer, mock_range_detector, sample_bars
     ):
-        """Test that PhaseDetector exceptions are captured in result."""
+        """Test that PhaseClassifier exceptions are captured in result."""
         mock_range_detector.detect_ranges.return_value = [create_mock_trading_range()]
 
         mock_phase = MagicMock()
-        mock_phase.detect_phase.side_effect = RuntimeError("Phase detection failed")
+        mock_phase.classify.side_effect = RuntimeError("Phase detection failed")
 
         volume_stage = VolumeAnalysisStage(mock_volume_analyzer)
         range_stage = RangeDetectionStage(mock_range_detector)
