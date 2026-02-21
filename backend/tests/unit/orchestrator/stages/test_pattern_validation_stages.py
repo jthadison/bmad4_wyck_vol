@@ -20,6 +20,7 @@ from src.orchestrator.pipeline.context import PipelineContextBuilder
 from src.orchestrator.stages.pattern_detection_stage import (
     DetectorRegistry,
     PatternDetectionStage,
+    PhaseDCompositeDetector,
 )
 from src.orchestrator.stages.validation_stage import ValidationResults, ValidationStage
 
@@ -963,3 +964,93 @@ class TestExceptionPropagation:
 
         assert result.success is False
         assert "Validation error" in result.error
+
+
+# =============================
+# P0-3: LPS in Phase D Tests
+# =============================
+
+
+def _phase_info_mock(phase: WyckoffPhase, duration: int = 15) -> MagicMock:
+    """Create mock PhaseInfo for P0-3 tests."""
+    pi = MagicMock()
+    pi.phase = phase
+    pi.duration = duration
+    pi.confidence = 80
+    pi.events = PhaseEvents()
+    pi.phase_start_bar_index = 0
+    pi.last_updated = datetime(2024, 1, 15, 9, 30, tzinfo=UTC)
+    pi.is_trading_allowed.return_value = True
+    return pi
+
+
+@pytest.mark.asyncio
+async def test_lps_detected_in_phase_d_when_prior_sos_available():
+    """LPS must be detected in Phase D when a prior SOS is in context."""
+    sos_mock = MagicMock()
+    sos_result = MagicMock()
+    sos_result.sos_detected = False  # No NEW SOS this run
+    sos_mock.detect.return_value = sos_result
+
+    lps_mock = MagicMock()
+    lps_result = MagicMock()
+    lps_result.lps_detected = True
+    lps_result.lps = MagicMock()
+    lps_mock.detect.return_value = lps_result
+
+    registry = DetectorRegistry()
+    registry.register(WyckoffPhase.D, PhaseDCompositeDetector(sos_detector=sos_mock))
+    registry.register(WyckoffPhase.E, lps_mock)
+
+    stage = PatternDetectionStage(registry)
+    ctx = (
+        PipelineContextBuilder()
+        .with_symbol("AAPL")
+        .with_timeframe("1d")
+        .with_data("bars", [MagicMock()])
+        .build()
+    )
+    ctx.set("last_sos_pattern", MagicMock())  # Prior SOS available
+    ctx.set("volume_analysis", [])
+    ctx.set("current_trading_range", MagicMock())
+
+    pi = _phase_info_mock(WyckoffPhase.D)
+    ctx.set("phase_info", pi)
+
+    result = await stage.execute(pi, ctx)
+
+    lps_mock.detect.assert_called_once()
+    assert len(result) >= 1  # LPS pattern returned
+
+
+@pytest.mark.asyncio
+async def test_lps_not_attempted_in_phase_d_without_prior_sos():
+    """LPS must NOT run in Phase D when no prior SOS in context."""
+    sos_mock = MagicMock()
+    sos_result = MagicMock()
+    sos_result.sos_detected = False
+    sos_mock.detect.return_value = sos_result
+
+    lps_mock = MagicMock()
+
+    registry = DetectorRegistry()
+    registry.register(WyckoffPhase.D, PhaseDCompositeDetector(sos_detector=sos_mock))
+    registry.register(WyckoffPhase.E, lps_mock)
+
+    stage = PatternDetectionStage(registry)
+    ctx = (
+        PipelineContextBuilder()
+        .with_symbol("AAPL")
+        .with_timeframe("1d")
+        .with_data("bars", [MagicMock()])
+        .build()
+    )
+    ctx.set("volume_analysis", [])
+    ctx.set("current_trading_range", MagicMock())
+    # No last_sos_pattern in context
+
+    pi = _phase_info_mock(WyckoffPhase.D)
+    ctx.set("phase_info", pi)
+
+    await stage.execute(pi, ctx)
+    lps_mock.detect.assert_not_called()

@@ -462,6 +462,37 @@ class PatternDetectionStage(PipelineStage[PhaseInfo | None, list[Any]]):
                                 correlation_id=str(context.correlation_id),
                             )
 
+            # P0-3: LPS detection in Phase D
+            # Wyckoff: After the initial SOS, price may retest the broken Ice from above
+            # (LPS) before full markup begins. This is a Phase D entry, not just Phase E.
+            # Reuse the Phase E LPS detector — same pattern, different phase context.
+            lps_detector_phase_d = self._registry.get_detector(WyckoffPhase.E)
+            last_sos_d = context.get(self.LAST_SOS_CONTEXT_KEY)
+            if (
+                lps_detector_phase_d is not None
+                and last_sos_d is not None
+                and trading_range is not None
+                and hasattr(lps_detector_phase_d, "detect")
+            ):
+                lps_result_d = lps_detector_phase_d.detect(
+                    range=trading_range,
+                    sos=last_sos_d,
+                    bars=bars,
+                    volume_analysis=volume_dict,
+                )
+                if hasattr(lps_result_d, "lps_detected") and lps_result_d.lps_detected:
+                    if hasattr(lps_result_d, "lps"):
+                        patterns.append(lps_result_d.lps)
+                elif (
+                    lps_result_d
+                    and not hasattr(lps_result_d, "sos_detected")
+                    and not hasattr(lps_result_d, "lps_detected")
+                ):
+                    if isinstance(lps_result_d, list):
+                        patterns.extend(lps_result_d)
+                    else:
+                        patterns.append(lps_result_d)
+
         elif phase == WyckoffPhase.E:
             # Phase E: LPS detection (requires prior SOS from Phase D)
             # C-1 fix: LPSDetector.detect() requires a mandatory `sos` parameter
