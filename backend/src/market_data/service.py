@@ -488,7 +488,7 @@ class MarketDataCoordinator:
                     # Trigger orchestrator analysis (non-blocking)
                     if self._on_bar_analyzed is not None:
                         cooldown_key = f"{bar.symbol}:{bar.timeframe}"
-                        now = asyncio.get_event_loop().time()
+                        now = asyncio.get_running_loop().time()
                         last = self._analysis_cooldowns.get(cooldown_key, 0.0)
                         if now - last >= self._analysis_cooldown_secs:
                             self._analysis_cooldowns[cooldown_key] = now
