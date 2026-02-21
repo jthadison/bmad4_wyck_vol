@@ -529,11 +529,14 @@ class MasterOrchestratorFacade:
 
         logger.info("orchestrator_facade_initialized")
 
-    async def _persist_signals(self, signals: list) -> None:
-        """Persist approved signals to the database (P6b).
+    async def _persist_signals(self, signals: list) -> list:
+        """Persist approved signals to the database.
 
-        Failures are logged but never raised — persistence must not
-        block signal delivery.
+        Returns list of signals that failed persistence, each marked with
+        status='PERSISTENCE_FAILED'. Callers should merge these back into
+        their output so the failure state is visible to API clients.
+
+        Never raises — persistence must not block signal delivery.
         """
         from src.database import async_session_maker
         from src.models.signal import TradeSignal as PydanticTradeSignal
@@ -544,20 +547,50 @@ class MasterOrchestratorFacade:
                 "persist_signals_no_db",
                 detail="async_session_maker is None — skipping persistence",
             )
-            return
+            return []
 
         pydantic_signals = [s for s in signals if isinstance(s, PydanticTradeSignal)]
         if not pydantic_signals:
-            return
+            return []
 
+        failed: list = []
         try:
             async with async_session_maker() as session:
                 repo = SignalRepository(db_session=session)
                 for signal in pydantic_signals:
-                    await repo.save_signal(signal)
-            logger.info("signals_persisted", count=len(pydantic_signals))
+                    try:
+                        await repo.save_signal(signal)
+                    except Exception as exc:
+                        logger.error(
+                            "persist_signal_failed",
+                            symbol=signal.symbol,
+                            pattern_type=signal.pattern_type,
+                            error=str(exc),
+                        )
+                        try:
+                            failed.append(
+                                signal.model_copy(update={"status": "PERSISTENCE_FAILED"})
+                            )
+                        except Exception:
+                            failed.append(signal)
+            logger.info(
+                "signals_persisted",
+                saved=len(pydantic_signals) - len(failed),
+                failed=len(failed),
+            )
         except Exception as exc:
-            logger.error("persist_signals_failed", error=str(exc), count=len(pydantic_signals))
+            logger.error(
+                "persist_signals_session_failed",
+                error=str(exc),
+                count=len(pydantic_signals),
+            )
+            for signal in pydantic_signals:
+                try:
+                    failed.append(signal.model_copy(update={"status": "PERSISTENCE_FAILED"}))
+                except Exception:
+                    failed.append(signal)
+
+        return failed
 
     @staticmethod
     def _build_portfolio_monitor() -> PortfolioMonitor:
@@ -736,9 +769,21 @@ class MasterOrchestratorFacade:
             # Extract signals from result
             signals = self._extract_signals(result.output, symbol, timeframe, correlation_id)
 
-            # Persist approved signals (P6b)
+            # Persist approved signals (P6b). Failed signals are returned with
+            # status=PERSISTENCE_FAILED so API callers can see the failure state.
             if signals:
-                await self._persist_signals(signals)
+                failed_persist = await self._persist_signals(signals)
+                for failed_signal in failed_persist:
+                    for idx, s in enumerate(signals):
+                        if (
+                            hasattr(s, "symbol")
+                            and hasattr(failed_signal, "symbol")
+                            and s.symbol == failed_signal.symbol
+                            and getattr(s, "pattern_type", None)
+                            == getattr(failed_signal, "pattern_type", None)
+                        ):
+                            signals[idx] = failed_signal
+                            break
 
             async with self._lock:
                 self._signal_count += len(signals)
