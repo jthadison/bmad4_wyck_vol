@@ -75,6 +75,7 @@ from src.models.phase_classification import PhaseClassification, WyckoffPhase
 from src.models.sos_breakout import SOSBreakout
 from src.models.trading_range import TradingRange
 from src.pattern_engine.scoring.scorer_factory import detect_asset_class, get_scorer
+from src.pattern_engine.timeframe_config import SOS_VOLUME_THRESHOLD
 
 logger = structlog.get_logger(__name__)
 
@@ -326,13 +327,13 @@ def detect_sos_breakout(
         # FR12: Volume expansion confirms breakout legitimacy
         # Low-volume breakouts are false breakouts (absorption at resistance)
 
-        if volume_ratio < Decimal("1.5"):
+        if volume_ratio < SOS_VOLUME_THRESHOLD:
             # Story 13.2 AC2.4: Enhanced logging with session information
             rejection_log_data = {
                 "symbol": bar.symbol,
                 "bar_timestamp": bar.timestamp.isoformat(),
                 "volume_ratio": float(volume_ratio),
-                "threshold": 1.5,
+                "threshold": float(SOS_VOLUME_THRESHOLD),
                 "close_price": float(close_price),
                 "ice_level": float(ice_level),
                 "breakout_pct": float(breakout_pct),
@@ -350,7 +351,7 @@ def detect_sos_breakout(
                 "sos_invalid_low_volume",
                 **rejection_log_data,
                 message=(
-                    f"SOS INVALID: Volume {float(volume_ratio):.2f}x < 1.5x "
+                    f"SOS INVALID: Volume {float(volume_ratio):.2f}x < {float(SOS_VOLUME_THRESHOLD)}x "
                     f"({calculation_method + ' ' + session_name if session_name else calculation_method}) "
                     f"- insufficient confirmation (FR12 - LOW VOLUME = FALSE BREAKOUT)"
                 ),
@@ -363,7 +364,7 @@ def detect_sos_breakout(
             "symbol": bar.symbol,
             "bar_timestamp": bar.timestamp.isoformat(),
             "volume_ratio": float(volume_ratio),
-            "threshold": 1.5,  # SOS threshold (FR12: >=1.5x)
+            "threshold": float(SOS_VOLUME_THRESHOLD),
             "result": "PASS",
         }
 
@@ -381,7 +382,7 @@ def detect_sos_breakout(
             message=(
                 f"Volume: {float(volume_ratio):.2f}x "
                 f"({calculation_method + ' ' + session_name if session_name else calculation_method}) "
-                f"(threshold: >=1.5x) ✅ [FR12]"
+                f"(threshold: >={float(SOS_VOLUME_THRESHOLD)}x) [FR12]"
             ),
         )
 
