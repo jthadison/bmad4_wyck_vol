@@ -333,7 +333,7 @@ def detect_sos_breakout(
                 "symbol": bar.symbol,
                 "bar_timestamp": bar.timestamp.isoformat(),
                 "volume_ratio": float(volume_ratio),
-                "threshold": 1.5,
+                "threshold": float(SOS_VOLUME_THRESHOLD),
                 "close_price": float(close_price),
                 "ice_level": float(ice_level),
                 "breakout_pct": float(breakout_pct),
@@ -351,7 +351,7 @@ def detect_sos_breakout(
                 "sos_invalid_low_volume",
                 **rejection_log_data,
                 message=(
-                    f"SOS INVALID: Volume {float(volume_ratio):.2f}x < 1.5x "
+                    f"SOS INVALID: Volume {float(volume_ratio):.2f}x < {float(SOS_VOLUME_THRESHOLD)}x "
                     f"({calculation_method + ' ' + session_name if session_name else calculation_method}) "
                     f"- insufficient confirmation (FR12 - LOW VOLUME = FALSE BREAKOUT)"
                 ),
@@ -364,7 +364,7 @@ def detect_sos_breakout(
             "symbol": bar.symbol,
             "bar_timestamp": bar.timestamp.isoformat(),
             "volume_ratio": float(volume_ratio),
-            "threshold": 1.5,  # SOS threshold (FR12: >=1.5x)
+            "threshold": float(SOS_VOLUME_THRESHOLD),
             "result": "PASS",
         }
 
@@ -382,7 +382,7 @@ def detect_sos_breakout(
             message=(
                 f"Volume: {float(volume_ratio):.2f}x "
                 f"({calculation_method + ' ' + session_name if session_name else calculation_method}) "
-                f"(threshold: >=1.5x) ✅ [FR12]"
+                f"(threshold: >={float(SOS_VOLUME_THRESHOLD)}x) [FR12]"
             ),
         )
 

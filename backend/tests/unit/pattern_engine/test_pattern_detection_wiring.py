@@ -580,34 +580,36 @@ class TestSOSLoggingThreshold:
     """Verify SOS logging uses 1.5x threshold, not 2.0x."""
 
     def test_sos_volume_pass_log_uses_1_5x(self) -> None:
-        """The 'sos_volume_validated' log message should reference 1.5x, not 2.0x."""
+        """The 'sos_volume_validated' log message should reference SOS_VOLUME_THRESHOLD, not hardcoded 2.0x."""
         import inspect
 
         from src.pattern_engine.detectors import sos_detector
 
         source = inspect.getsource(sos_detector.detect_sos_breakout)
 
-        # The volume-pass log should use 1.5x threshold
-        assert "threshold: >=1.5x" in source or '"threshold": 1.5' in source
+        # The volume-pass log should use the SOS_VOLUME_THRESHOLD constant
+        assert "SOS_VOLUME_THRESHOLD" in source
 
-        # The threshold value in volume_log_data should be 1.5, not 2.0
-        assert '"threshold": 2.0' not in source or "threshold.*2\\.0" not in source
+        # The threshold value in volume_log_data should not be hardcoded 2.0
+        assert '"threshold": 2.0' not in source
 
     def test_detection_config_sos_threshold_is_1_5(self) -> None:
         """DetectionConfig.volume_threshold_sos should be 1.5."""
         config = DetectionConfig()
         assert config.volume_threshold_sos == 1.5
 
-    def test_sos_rejection_log_uses_1_5x(self) -> None:
-        """The rejection log references 1.5x threshold correctly."""
+    def test_sos_rejection_log_uses_threshold_constant(self) -> None:
+        """The rejection log references SOS_VOLUME_THRESHOLD constant, not hardcoded value."""
         import inspect
 
         from src.pattern_engine.detectors import sos_detector
 
         source = inspect.getsource(sos_detector.detect_sos_breakout)
 
-        # Rejection message should reference 1.5x
-        assert "< 1.5x" in source
+        # Rejection message should use the constant dynamically
+        assert "SOS_VOLUME_THRESHOLD" in source
+        # Should not have hardcoded "< 1.5x" string anymore
+        assert "< 1.5x" not in source
 
 
 # ===========================================================================
