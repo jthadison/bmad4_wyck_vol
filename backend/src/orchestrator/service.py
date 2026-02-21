@@ -85,6 +85,33 @@ async def analyze_symbol(symbol: str, timeframe: str = "1d") -> list[TradeSignal
     return await orchestrator.analyze_symbol(symbol, timeframe)
 
 
+async def trigger_analysis(symbol: str, timeframe: str) -> None:
+    """
+    Called by MarketDataCoordinator when a new bar is inserted.
+
+    Runs orchestrator analysis and logs any generated signals.
+    Exceptions are caught and logged so they never propagate
+    back to the bar-insertion path.
+    """
+    orchestrator = get_orchestrator()
+    try:
+        signals = await orchestrator.analyze_symbol(symbol, timeframe)
+        if signals:
+            logger.info(
+                "live_signals_generated",
+                symbol=symbol,
+                timeframe=timeframe,
+                count=len(signals),
+            )
+    except Exception as exc:
+        logger.warning(
+            "live_analysis_failed",
+            symbol=symbol,
+            timeframe=timeframe,
+            error=str(exc),
+        )
+
+
 async def analyze_symbols(
     symbols: list[str], timeframe: str = "1d"
 ) -> dict[str, list[TradeSignal]]:
