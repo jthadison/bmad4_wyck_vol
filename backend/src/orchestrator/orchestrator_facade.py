@@ -109,6 +109,24 @@ class _TradeSignalGenerator:
             if creek is not None:
                 target = Decimal(str(creek)) * Decimal("1.12")
 
+        # P0-1: UTAD-specific field extraction
+        # UTADDetector outputs breakout_price/ice_level/failure_price, not the
+        # standard entry_price/stop_loss/target_price used by other detectors.
+        # Wyckoff UTAD short setup:
+        #   entry  = failure_price (short entry after price fails back below Ice)
+        #   stop   = ice_level * 1.01 (1% above Ice — re-entry above Ice = invalid UTAD)
+        #   target = failure_price - (breakout_price - failure_price)
+        #            (project distribution range below entry)
+        if entry_price is None and stop_loss is None and target is None:
+            bp = getattr(pattern, "breakout_price", None)
+            il = getattr(pattern, "ice_level", None)
+            fp = getattr(pattern, "failure_price", None)
+            if fp is not None and il is not None:
+                entry_price = Decimal(str(fp))
+                stop_loss = Decimal(str(il)) * Decimal("1.01")
+                if bp is not None:
+                    target = entry_price - (Decimal(str(bp)) - entry_price)
+
         if entry_price is None or stop_loss is None or target is None:
             logger.warning(
                 "signal_generator_missing_price_fields",
@@ -160,10 +178,7 @@ class _TradeSignalGenerator:
             )
             return None
 
-        # NOTE: UTAD price field mapping not yet implemented. UTADDetector output
-        # has breakout_price/failure_price/ice_level fields that don't match the
-        # duck-typed extraction chain. UTAD signals return None until this is wired.
-        # TODO(Story 23.x): implement UTAD → TradeSignal conversion.
+        # UTAD field mapping is handled above (P0-1 fix).
 
         # Normalise phase; handle WyckoffPhase enum (.value) and plain strings
         raw_phase = getattr(pattern, "phase", None)
