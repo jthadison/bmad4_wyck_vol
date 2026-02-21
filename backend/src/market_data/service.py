@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -314,6 +315,7 @@ class MarketDataCoordinator:
         self,
         adapter: MarketDataProvider,
         settings: Settings,
+        on_bar_analyzed: Callable[[str, str], Awaitable[None]] | None = None,
     ):
         """
         Initialize coordinator with adapter and settings.
@@ -321,6 +323,9 @@ class MarketDataCoordinator:
         Args:
             adapter: MarketDataProvider implementation (AlpacaAdapter, etc.)
             settings: Application settings
+            on_bar_analyzed: Optional async callback invoked after each bar is
+                successfully inserted. Receives (symbol, timeframe). Fired via
+                asyncio.create_task so bar insertion latency is unaffected.
         """
         self.adapter = adapter
         self.settings = settings
@@ -334,9 +339,15 @@ class MarketDataCoordinator:
         self._failure_alert_threshold: int = 10  # Alert after N consecutive failures
         self._consecutive_failures: int = 0
 
+        # Live analysis trigger (Fix 2: connect bar arrivals to orchestrator)
+        self._on_bar_analyzed = on_bar_analyzed
+        self._analysis_cooldowns: dict[str, datetime] = {}
+        self._analysis_cooldown_secs: int = 60  # Max one analysis per symbol per minute
+
         logger.info(
             "market_data_coordinator_initialized",
             provider=adapter.__class__.__name__,
+            analysis_callback=on_bar_analyzed is not None,
         )
 
     async def start(self) -> None:
@@ -470,6 +481,18 @@ class MarketDataCoordinator:
                         total_successes=self._insertion_successes,
                         total_failures=self._insertion_failures,
                     )
+
+                    # Fire analysis callback (non-blocking, throttled per symbol)
+                    if self._on_bar_analyzed is not None:
+                        cooldown_key = f"{bar.symbol}:{bar.timeframe}"
+                        last = self._analysis_cooldowns.get(cooldown_key)
+                        now = datetime.now(UTC)
+                        if (
+                            last is None
+                            or (now - last).total_seconds() >= self._analysis_cooldown_secs
+                        ):
+                            self._analysis_cooldowns[cooldown_key] = now
+                            asyncio.create_task(self._fire_analysis(bar.symbol, bar.timeframe))
                 else:
                     # Duplicate bar (already exists)
                     logger.debug(
@@ -503,6 +526,27 @@ class MarketDataCoordinator:
                     failed_queue_size=len(self._failed_bars),
                     action_required="Check database connection and health",
                 )
+
+    async def _fire_analysis(self, symbol: str, timeframe: str) -> None:
+        """
+        Invoke the on_bar_analyzed callback with error isolation.
+
+        Any exception from the callback is logged and swallowed so that
+        a failed analysis never propagates back to bar insertion.
+
+        Args:
+            symbol: Symbol to analyze
+            timeframe: Bar timeframe
+        """
+        try:
+            await self._on_bar_analyzed(symbol, timeframe)  # type: ignore[misc]
+        except Exception as e:
+            logger.error(
+                "bar_analysis_trigger_failed",
+                symbol=symbol,
+                timeframe=timeframe,
+                error=str(e),
+            )
 
     async def health_check(self) -> dict:
         """

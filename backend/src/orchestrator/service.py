@@ -68,6 +68,21 @@ def reset_orchestrator() -> None:
     reset_orchestrator_container()
 
 
+async def trigger_analysis(symbol: str, timeframe: str) -> None:
+    """
+    Trigger analysis for a symbol after a new bar arrives.
+
+    Intended for use as a callback from MarketDataCoordinator so that live
+    bar arrivals automatically drive signal generation without blocking
+    bar insertion.
+
+    Args:
+        symbol: Symbol to analyze
+        timeframe: Bar timeframe (e.g. "1m", "1d")
+    """
+    await analyze_symbol(symbol, timeframe)
+
+
 async def analyze_symbol(symbol: str, timeframe: str = "1d") -> list[TradeSignal]:
     """
     Analyze a single symbol for trade signals.
