@@ -100,7 +100,12 @@ class MarketDataService:
 
         Example:
             ```python
-            service = MarketDataService(PolygonAdapter())
+            from src.market_data.factory import MarketDataProviderFactory
+            from src.config import settings
+
+            factory = MarketDataProviderFactory(settings)
+            provider = factory.get_historical_provider()
+            service = MarketDataService(provider)
             result = await service.ingest_historical_data(
                 "AAPL",
                 date(2020, 1, 1),

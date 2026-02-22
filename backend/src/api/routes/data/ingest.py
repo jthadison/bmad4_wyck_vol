@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from src.config import settings
-from src.market_data.adapters.polygon_adapter import PolygonAdapter
+from src.market_data.factory import MarketDataProviderFactory
 from src.market_data.service import MarketDataService
 
 logger = structlog.get_logger(__name__)
@@ -129,9 +129,10 @@ async def ingest_historical_data(request: IngestRequest) -> IngestResponse:
     log.info("ingest_request_received")
 
     try:
-        # Create market data provider (Polygon.io by default)
-        # NOTE: Story 25.5 uses Polygon as default. Future stories may add provider selection.
-        provider = PolygonAdapter(api_key=settings.polygon_api_key)
+        # Create market data provider via factory (Story 25.6)
+        # Uses DEFAULT_PROVIDER from settings (defaults to Polygon)
+        factory = MarketDataProviderFactory(settings)
+        provider = factory.get_historical_provider()
 
         # Create market data service
         service = MarketDataService(provider=provider)

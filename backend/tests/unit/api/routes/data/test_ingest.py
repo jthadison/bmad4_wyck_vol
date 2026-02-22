@@ -37,10 +37,12 @@ class TestIngestEndpoint:
             success=True,
         )
 
-        # Mock both PolygonAdapter and MarketDataService
-        with patch("src.api.routes.data.ingest.PolygonAdapter") as mock_adapter_class:
+        # Mock MarketDataProviderFactory and MarketDataService (Story 25.6)
+        with patch("src.api.routes.data.ingest.MarketDataProviderFactory") as mock_factory_class:
             mock_adapter = MagicMock()
-            mock_adapter_class.return_value = mock_adapter
+            mock_factory = MagicMock()
+            mock_factory.get_historical_provider.return_value = mock_adapter
+            mock_factory_class.return_value = mock_factory
 
             with patch("src.api.routes.data.ingest.MarketDataService") as mock_service_class:
                 mock_service = MagicMock()
@@ -97,7 +99,10 @@ class TestIngestEndpoint:
             success=True,
         )
 
-        with patch("src.api.routes.data.ingest.PolygonAdapter"):
+        with patch("src.api.routes.data.ingest.MarketDataProviderFactory") as mock_factory_class:
+            mock_factory = MagicMock()
+            mock_factory.get_historical_provider.return_value = MagicMock()
+            mock_factory_class.return_value = mock_factory
             with patch("src.api.routes.data.ingest.MarketDataService") as mock_service_class:
                 mock_service = MagicMock()
                 mock_service.ingest_historical_data = AsyncMock(return_value=mock_result)
@@ -130,7 +135,10 @@ class TestIngestEndpoint:
         Test that provider authentication failures return 422 with provider info.
         """
         # Mock adapter and service to raise RuntimeError (provider auth failure)
-        with patch("src.api.routes.data.ingest.PolygonAdapter"):
+        with patch("src.api.routes.data.ingest.MarketDataProviderFactory") as mock_factory_class:
+            mock_factory = MagicMock()
+            mock_factory.get_historical_provider.return_value = MagicMock()
+            mock_factory_class.return_value = mock_factory
             with patch("src.api.routes.data.ingest.MarketDataService") as mock_service_class:
                 mock_service = MagicMock()
                 mock_service.ingest_historical_data = AsyncMock(
@@ -176,7 +184,10 @@ class TestIngestEndpoint:
             success=True,
         )
 
-        with patch("src.api.routes.data.ingest.PolygonAdapter"):
+        with patch("src.api.routes.data.ingest.MarketDataProviderFactory") as mock_factory_class:
+            mock_factory = MagicMock()
+            mock_factory.get_historical_provider.return_value = MagicMock()
+            mock_factory_class.return_value = mock_factory
             with patch("src.api.routes.data.ingest.MarketDataService") as mock_service_class:
                 mock_service = MagicMock()
                 mock_service.ingest_historical_data = AsyncMock(return_value=mock_result)
@@ -322,7 +333,10 @@ class TestIntegrationScenarios:
             success=True,
         )
 
-        with patch("src.api.routes.data.ingest.PolygonAdapter"):
+        with patch("src.api.routes.data.ingest.MarketDataProviderFactory") as mock_factory_class:
+            mock_factory = MagicMock()
+            mock_factory.get_historical_provider.return_value = MagicMock()
+            mock_factory_class.return_value = mock_factory
             with patch("src.api.routes.data.ingest.MarketDataService") as mock_service_class:
                 mock_service = MagicMock()
                 mock_service.ingest_historical_data = AsyncMock(return_value=mock_result)
