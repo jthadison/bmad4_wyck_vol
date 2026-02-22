@@ -417,6 +417,74 @@ class CampaignManager:
             positions=positions,
         )
 
+    async def get_active_campaigns(self, symbol: str) -> list[Campaign]:
+        """
+        Get all active campaigns for a symbol (Story 25.10).
+
+        Parameters
+        ----------
+        symbol : str
+            Ticker symbol
+
+        Returns
+        -------
+        list[Campaign]
+            List of active campaigns for the symbol
+        """
+        campaigns = await self._campaign_repo.get_campaigns_by_symbol(symbol, status="ACTIVE")
+        return campaigns
+
+    async def add_signal_to_campaign(self, campaign_id_str: str, signal: TradeSignal) -> None:
+        """
+        Add a signal to an existing campaign (Story 25.10, AC2/AC3).
+
+        Updates campaign phase based on signal pattern type:
+        - SOS: Phase C → Phase D (Markup)
+        - LPS: Phase C/D → Phase E (Distribution)
+
+        Parameters
+        ----------
+        campaign_id_str : str
+            Campaign ID in format "SYMBOL-YYYY-MM-DD"
+        signal : TradeSignal
+            Signal to add to campaign
+
+        Raises
+        ------
+        CampaignNotFoundError
+            If campaign does not exist
+        """
+        async with self._operation_lock:
+            # Find campaign by campaign_id string
+            campaigns = await self._campaign_repo.get_campaigns_by_symbol(signal.symbol)
+            campaign = None
+            for c in campaigns:
+                if c.campaign_id == campaign_id_str:
+                    campaign = c
+                    break
+
+            if not campaign:
+                raise CampaignNotFoundError(f"Campaign {campaign_id_str} not found")
+
+            # Update campaign phase based on signal pattern type
+            old_phase = campaign.phase
+            if signal.pattern_type == "SOS" and campaign.phase == "C":
+                campaign.phase = "D"  # Move to Markup phase
+            elif signal.pattern_type == "LPS" and campaign.phase in ("C", "D"):
+                campaign.phase = "E"  # Move to Distribution/profit-taking phase
+
+            # Persist phase transition to database
+            if campaign.phase != old_phase:
+                await self._campaign_repo.update_campaign(campaign)
+
+            self.logger.info(
+                "signal_added_to_campaign",
+                campaign_id=campaign_id_str,
+                pattern_type=signal.pattern_type,
+                old_phase=old_phase,
+                new_phase=campaign.phase,
+            )
+
 
 # =============================================================================
 # Thread-Safe Factory Functions (Story 18.2)

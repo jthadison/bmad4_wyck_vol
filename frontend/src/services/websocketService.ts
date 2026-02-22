@@ -85,18 +85,28 @@ class WebSocketService {
 
   /**
    * Get default WebSocket URL based on current window location.
+   * Appends JWT token as query parameter for authentication (Story 25.17).
    */
   private getDefaultWebSocketUrl(): string {
-    // Use environment variable if available
+    // Get base URL
+    let baseUrl: string
     if (import.meta.env.VITE_WS_BASE_URL) {
-      return import.meta.env.VITE_WS_BASE_URL
+      baseUrl = import.meta.env.VITE_WS_BASE_URL
+    } else {
+      // Use same host as page - nginx proxies /ws to backend
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const host = window.location.host // includes port only if non-standard
+      baseUrl = `${protocol}//${host}/ws`
     }
 
-    // Use same host as page - nginx proxies /ws to backend
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host // includes port only if non-standard
+    // Append JWT token from localStorage (Story 25.17)
+    const token = localStorage.getItem('auth_token')
+    if (token) {
+      const separator = baseUrl.includes('?') ? '&' : '?'
+      return `${baseUrl}${separator}token=${token}`
+    }
 
-    return `${protocol}//${host}/ws`
+    return baseUrl
   }
 
   /**
