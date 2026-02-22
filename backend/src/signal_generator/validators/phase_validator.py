@@ -17,7 +17,7 @@ FR15: Phase-pattern alignment rules:
     - Spring: Only Phase C allowed
     - SOS: Phase D primary, late Phase C if confidence ≥85%
     - LPS: Phase D or E only
-    - UTAD: Distribution Phase C or D
+    - UTAD: Phase D or E only
 
 Integration:
 ------------
@@ -45,7 +45,7 @@ class PhaseValidator(BaseValidator):
     - AC7.2: Phase confidence ≥60% (minimum for pattern detection)
     - FR3: Phase confidence ≥70% (signal generation requirement)
     - FR14: No trading in Phase A or early Phase B (<10 bars)
-    - FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→Distribution C/D)
+    - FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→D/E)
 
     Properties:
     -----------
@@ -174,6 +174,30 @@ class PhaseValidator(BaseValidator):
             )
             return self.create_result(ValidationStatus.FAIL, reason=reason)
 
+        # Step 5: Check for SOS in late Phase C (AC4 warning)
+        # This is allowed by FR15 but should include a warning that we're using
+        # elevated confidence override rather than the ideal Phase D context
+        if pattern_type == "SOS" and phase == WyckoffPhase.C and confidence >= 85:
+            warning_msg = "SOS in Phase C: elevated confidence override"
+            logger.info(
+                "phase_validation_warning",
+                pattern_type=pattern_type,
+                phase=phase.value,
+                confidence=confidence,
+                warning=warning_msg,
+            )
+            metadata = {
+                "phase": phase.value,
+                "phase_confidence": confidence,
+                "pattern_type": pattern_type,
+                "phase_duration": phase_classification.duration,
+                "trading_allowed": phase_classification.trading_allowed,
+                "ac7_2_confidence_check": "PASS",
+                "fr3_confidence_check": "PASS",
+                "fr14_check": "PASS",
+                "fr15_check": "PASS",
+            }
+            return self.create_result(ValidationStatus.WARN, reason=warning_msg, metadata=metadata)
         # All validations passed
         metadata = {
             "phase": phase.value if phase else "None",
@@ -272,6 +296,9 @@ class PhaseValidator(BaseValidator):
             )
 
         # Phase B: Check duration
+        # NOTE (AC7 Limitation): This only checks Phase B duration when CURRENT phase is B.
+        # AC7 requires checking historical Phase B duration when in Phase C, but PhaseResult.phase_durations
+        # dict does not exist in the data model. This would require PhaseClassifier to track phase history.
         if phase == WyckoffPhase.B:
             if duration < 10:
                 return (
@@ -292,7 +319,7 @@ class PhaseValidator(BaseValidator):
         - SPRING: Only Phase C allowed
         - SOS: Phase D primary, late Phase C if confidence ≥85%
         - LPS: Phase D or E only
-        - UTAD: Distribution Phase C or D
+        - UTAD: Phase D or E only
 
         Parameters:
         -----------
@@ -374,17 +401,17 @@ class PhaseValidator(BaseValidator):
 
         # UTAD Pattern Rules
         elif pattern_type == "UTAD":
-            if phase not in [WyckoffPhase.C, WyckoffPhase.D]:
+            if phase not in [WyckoffPhase.D, WyckoffPhase.E]:
                 logger.debug(
                     "fr15_alignment_check",
                     pattern_type=pattern_type,
-                    required_phase="C or D (Distribution)",
+                    required_phase="D or E",
                     actual_phase=phase.value if phase else "None",
                     valid=False,
                 )
                 return (
                     False,
-                    f"UTAD pattern detected in Phase {phase.value if phase else 'None'} - UTAD only valid in Distribution Phase C or D (FR15)",
+                    f"UTAD pattern detected in Phase {phase.value if phase else 'None'} - UTAD only valid in Phase D or E (FR15)",
                 )
 
         # Unknown pattern type - log warning but don't block

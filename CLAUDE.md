@@ -198,7 +198,7 @@ npm run test:smoke                # Playwright E2E
 ### Pattern Detection (6 Primary Patterns)
 
 1. **Spring** (Long) - Shakeout below Creek → test hold (Phase C)
-2. **UTAD** (Short) - Upthrust above Ice → failure (Phase D)
+2. **UTAD** (Short) - Upthrust above Ice → failure (Phase D or E)
 3. **SOS** (Long) - Decisive break above Ice (Phase D)
 4. **LPS** (Long) - Pullback retest of Ice (Phase E)
 5. **Selling Climax (SC)** - Ultra-high volume down move (Phase A start)
