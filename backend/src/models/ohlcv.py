@@ -48,6 +48,10 @@ class OHLCVBar(BaseModel):
         description="Current volume / 20-bar average volume",
         decimal_places=4,
     )
+    low_history_flag: bool | None = Field(
+        default=None,
+        description="True if ratio computed from < 20 bars (informational only, never blocks signals)",
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         description="Record creation timestamp",
