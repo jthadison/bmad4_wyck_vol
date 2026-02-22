@@ -63,6 +63,7 @@ from src.api.routes import (
     watchlist,
 )
 from src.api.routes import settings as settings_routes
+from src.api.routes.data import router as data_router
 from src.api.routes.journal import router as journal_router
 from src.api.websocket import websocket_endpoint
 from src.config import settings
@@ -145,6 +146,7 @@ app.include_router(price_alerts.router)  # Price alert CRUD routes (Feature P2-5
 app.include_router(orders.router)  # Order management routes (Feature P4-I16)
 app.include_router(journal_router)  # Trade Journal routes (Feature P2-8)
 app.include_router(live_positions.router)  # Live Position Management (P4-I15)
+app.include_router(data_router)  # Historical data ingestion routes (Story 25.5)
 
 
 # WebSocket endpoint for real-time updates
@@ -376,6 +378,9 @@ async def startup_event() -> None:
     # Initialize symbol search service (Story 21.4)
     await _initialize_search_service()
 
+    # Check for missing historical data (Story 25.5)
+    await _check_historical_data_warnings()
+
 
 async def _initialize_signal_scanner_service() -> None:
     """
@@ -569,6 +574,77 @@ async def _initialize_broker_infrastructure() -> "BrokerRouter":
     )
 
     return broker_router
+
+
+async def _check_historical_data_warnings() -> None:
+    """
+    Check for missing historical data at startup (Story 25.5).
+
+    Queries the database for bar count for each watchlist symbol.
+    Logs WARNING for any symbol with zero bars.
+    Server continues to start even if warnings are present.
+    """
+    try:
+        from src.database import async_session_maker
+        from src.repositories.ohlcv_repository import OHLCVRepository
+
+        # Get watchlist symbols from settings
+        watchlist_symbols = settings.watchlist_symbols
+        if not watchlist_symbols:
+            logger.info("no_watchlist_symbols_configured_skipping_data_check")
+            return
+
+        # Check bar count for each symbol
+        async with async_session_maker() as session:
+            repo = OHLCVRepository(session)
+
+            # Default timeframe from settings
+            timeframe = settings.bar_timeframe
+
+            symbols_with_no_data = []
+            for symbol in watchlist_symbols:
+                try:
+                    bar_count = await repo.count_bars(symbol, timeframe)
+                    if bar_count == 0:
+                        symbols_with_no_data.append(symbol)
+                except Exception as e:
+                    logger.error(
+                        "bar_count_check_failed",
+                        symbol=symbol,
+                        error=str(e),
+                    )
+
+        # Log warnings for symbols with no data
+        if symbols_with_no_data:
+            for symbol in symbols_with_no_data:
+                logger.warning(
+                    "no_historical_data_for_symbol",
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    message=f"No historical data for {symbol} — run ingest before starting analysis",
+                    action_required=f"Run: python scripts/ingest_historical.py --symbol {symbol} --days 365",
+                )
+
+            logger.warning(
+                "missing_historical_data_summary",
+                symbols_without_data=symbols_with_no_data,
+                total_count=len(symbols_with_no_data),
+                message="Some watchlist symbols have no historical data. Use POST /api/v1/data/ingest or scripts/ingest_historical.py to load data.",
+            )
+        else:
+            logger.info(
+                "historical_data_check_passed",
+                symbols_checked=watchlist_symbols,
+                message="All watchlist symbols have historical data",
+            )
+
+    except Exception as e:
+        logger.error(
+            "historical_data_check_failed",
+            error=str(e),
+            message="Failed to check historical data at startup",
+        )
+        # Don't crash the server - this is just a warning check
 
 
 async def shutdown_event() -> None:
