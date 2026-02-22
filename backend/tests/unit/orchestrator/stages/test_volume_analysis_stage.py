@@ -5,10 +5,11 @@ Tests verify that VolumeAnalysisStage correctly returns volume analysis data
 for input bars and makes that data available to downstream validators.
 """
 
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
+
+import pytest
 
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
@@ -17,7 +18,9 @@ from src.orchestrator.stages.volume_analysis_stage import VolumeAnalysisStage
 from src.pattern_engine.volume_analyzer import VolumeAnalyzer
 
 
-def create_test_bars(count: int, base_volume: int = 1000, vary_volume: bool = False) -> list[OHLCVBar]:
+def create_test_bars(
+    count: int, base_volume: int = 1000, vary_volume: bool = False
+) -> list[OHLCVBar]:
     """
     Create test OHLCV bars with configurable volume.
 
@@ -73,9 +76,7 @@ def volume_analysis_stage():
 
 
 @pytest.mark.asyncio
-async def test_stage_returns_non_empty_list_for_30_bars(
-    volume_analysis_stage, pipeline_context
-):
+async def test_stage_returns_non_empty_list_for_30_bars(volume_analysis_stage, pipeline_context):
     """
     AC1: Given 30 bars, VolumeAnalysisStage returns non-empty list.
 
@@ -91,14 +92,13 @@ async def test_stage_returns_non_empty_list_for_30_bars(
     assert result is not None, "Stage returned None instead of list"
     assert isinstance(result, list), f"Expected list, got {type(result)}"
     assert len(result) == 30, f"Expected 30 results, got {len(result)}"
-    assert all(isinstance(r, VolumeAnalysis) for r in result), \
-        "Not all results are VolumeAnalysis instances"
+    assert all(
+        isinstance(r, VolumeAnalysis) for r in result
+    ), "Not all results are VolumeAnalysis instances"
 
 
 @pytest.mark.asyncio
-async def test_each_result_contains_volume_ratio(
-    volume_analysis_stage, pipeline_context
-):
+async def test_each_result_contains_volume_ratio(volume_analysis_stage, pipeline_context):
     """
     AC1: Each VolumeAnalysis result contains volume_ratio field.
 
@@ -114,15 +114,16 @@ async def test_each_result_contains_volume_ratio(
     # Assert
     # First 20 bars: volume_ratio should be None (insufficient history)
     for i in range(20):
-        assert result[i].volume_ratio is None, \
-            f"Bar {i} should have volume_ratio=None (< 20 bars history)"
+        assert (
+            result[i].volume_ratio is None
+        ), f"Bar {i} should have volume_ratio=None (< 20 bars history)"
 
     # Bars 20+: volume_ratio should be calculated
     for i in range(20, 30):
-        assert result[i].volume_ratio is not None, \
-            f"Bar {i} should have calculated volume_ratio"
-        assert isinstance(result[i].volume_ratio, Decimal), \
-            f"volume_ratio should be Decimal, got {type(result[i].volume_ratio)}"
+        assert result[i].volume_ratio is not None, f"Bar {i} should have calculated volume_ratio"
+        assert isinstance(
+            result[i].volume_ratio, Decimal
+        ), f"volume_ratio should be Decimal, got {type(result[i].volume_ratio)}"
 
 
 # ============================================================================
@@ -131,9 +132,7 @@ async def test_each_result_contains_volume_ratio(
 
 
 @pytest.mark.asyncio
-async def test_stage_stores_results_in_context(
-    volume_analysis_stage, pipeline_context
-):
+async def test_stage_stores_results_in_context(volume_analysis_stage, pipeline_context):
     """
     AC2: VolumeAnalysisStage stores results in pipeline context.
 
@@ -148,10 +147,8 @@ async def test_stage_stores_results_in_context(
     # Assert
     context_data = pipeline_context.get("volume_analysis")
     assert context_data is not None, "volume_analysis not found in context"
-    assert isinstance(context_data, list), \
-        f"Context data should be list, got {type(context_data)}"
-    assert len(context_data) == 30, \
-        f"Context should have 30 entries, got {len(context_data)}"
+    assert isinstance(context_data, list), f"Context data should be list, got {type(context_data)}"
+    assert len(context_data) == 30, f"Context should have 30 entries, got {len(context_data)}"
 
 
 # ============================================================================
@@ -160,9 +157,7 @@ async def test_stage_stores_results_in_context(
 
 
 @pytest.mark.asyncio
-async def test_empty_bars_returns_empty_list_not_raises(
-    volume_analysis_stage, pipeline_context
-):
+async def test_empty_bars_returns_empty_list_not_raises(volume_analysis_stage, pipeline_context):
     """
     Story 25.16 - Test 1: Empty bars returns empty list, not raises.
 
@@ -181,9 +176,7 @@ async def test_empty_bars_returns_empty_list_not_raises(
 
 
 @pytest.mark.asyncio
-async def test_30_bars_returns_nonempty_list(
-    volume_analysis_stage, pipeline_context
-):
+async def test_30_bars_returns_nonempty_list(volume_analysis_stage, pipeline_context):
     """
     Story 25.16 - Test 2: 30 bars returns non-empty list.
 
@@ -198,14 +191,13 @@ async def test_30_bars_returns_nonempty_list(
     # Assert
     assert len(result) > 0, "Expected non-empty list for 30 bars"
     assert len(result) == 30, f"Expected 30 results, got {len(result)}"
-    assert all(isinstance(r, VolumeAnalysis) for r in result), \
-        "All results should be VolumeAnalysis instances"
+    assert all(
+        isinstance(r, VolumeAnalysis) for r in result
+    ), "All results should be VolumeAnalysis instances"
 
 
 @pytest.mark.asyncio
-async def test_volume_ratio_values_correct(
-    volume_analysis_stage, pipeline_context
-):
+async def test_volume_ratio_values_correct(volume_analysis_stage, pipeline_context):
     """
     Story 25.16 - Test 3: Volume ratio calculation produces correct values.
 
@@ -237,8 +229,9 @@ async def test_volume_ratio_values_correct(
     # Assert
     # First 20 bars should have None for volume_ratio (insufficient history)
     for i in range(20):
-        assert result[i].volume_ratio is None, \
-            f"Bar {i} should have volume_ratio=None (insufficient history)"
+        assert (
+            result[i].volume_ratio is None
+        ), f"Bar {i} should have volume_ratio=None (insufficient history)"
 
     # Bar 20 should have correct volume_ratio
     bar_20_ratio = result[20].volume_ratio
@@ -246,12 +239,13 @@ async def test_volume_ratio_values_correct(
 
     expected_ratio = Decimal("1.5")
     tolerance = Decimal("0.01")
-    assert abs(bar_20_ratio - expected_ratio) < tolerance, \
-        f"Expected volume_ratio ~{expected_ratio}, got {bar_20_ratio}"
+    assert (
+        abs(bar_20_ratio - expected_ratio) < tolerance
+    ), f"Expected volume_ratio ~{expected_ratio}, got {bar_20_ratio}"
 
 
 @pytest.mark.asyncio
-async def test_spring_08x_volume_fails_validation_not_crashes():
+async def test_spring_08x_volume_fails_validation_not_crashes(mock_news_calendar_factory):
     """
     Story 25.16 - Test 4: Spring with volume_ratio=0.8 fails validation (not crashes).
 
@@ -260,41 +254,37 @@ async def test_spring_08x_volume_fails_validation_not_crashes():
     - After fix: ValidationStage returns FAIL (Spring volume_ratio 0.8 > 0.7 threshold)
 
     Tests the full pipeline:
-    1. Create Spring pattern with volume_ratio=0.8 (above 0.7 threshold)
+    1. Create mock Spring pattern with volume_ratio=0.8 (above 0.7 threshold)
     2. Create matching VolumeAnalysis with single entry
     3. Pass through ValidationStage
     4. Assert result is FAIL (not AttributeError crash)
     """
-    from src.models.spring import Spring
+    from unittest.mock import MagicMock
+
     from src.models.validation import ValidationStatus
     from src.orchestrator.stages.validation_stage import ValidationStage
     from src.signal_generator.validation_chain import create_default_validation_chain
 
-    # Arrange: Create Spring pattern with volume_ratio=0.8 (should FAIL)
+    # Arrange: Create mock Spring pattern with volume_ratio=0.8
+    # Note: We use a mock because real Spring enforces volume_ratio < 0.7 via Pydantic
     spring_bar = OHLCVBar(
         symbol="TEST",
         timeframe="1d",
         timestamp=datetime(2024, 1, 21, tzinfo=UTC),
         open=Decimal("100.00"),
         high=Decimal("110.00"),
-        low=Decimal("98.00"),  # Penetrates below creek
+        low=Decimal("98.00"),
         close=Decimal("105.00"),
-        volume=Decimal("800"),  # 0.8x average volume
-        spread=Decimal("12.00"),  # high - low
+        volume=Decimal("800"),
+        spread=Decimal("12.00"),
     )
 
-    spring_pattern = Spring(
-        bar=spring_bar,
-        bar_index=20,
-        penetration_pct=Decimal("0.02"),  # 2% below creek
-        volume_ratio=Decimal("0.8"),  # ABOVE 0.7 threshold → should FAIL
-        recovery_bars=1,
-        creek_reference=Decimal("100.00"),
-        spring_low=Decimal("98.00"),
-        recovery_price=Decimal("105.00"),
-        detection_timestamp=datetime(2024, 1, 21, tzinfo=UTC),
-        trading_range_id=uuid4(),
-    )
+    # Create mock pattern that behaves like a Spring but allows volume_ratio=0.8
+    spring_pattern = MagicMock()
+    spring_pattern.bar = spring_bar
+    spring_pattern.volume_ratio = Decimal("0.8")  # ABOVE 0.7 threshold → should FAIL
+    spring_pattern.id = uuid4()
+    spring_pattern.__class__.__name__ = "Spring"
 
     # Create matching VolumeAnalysis (single entry matching the spring bar)
     volume_analysis = VolumeAnalysis(
@@ -306,7 +296,7 @@ async def test_spring_08x_volume_fails_validation_not_crashes():
     )
 
     # Create ValidationStage with default validation chain
-    orchestrator = create_default_validation_chain()
+    orchestrator = create_default_validation_chain(mock_news_calendar_factory)
     validation_stage = ValidationStage(orchestrator)
 
     # Create pipeline context with volume_analysis
@@ -328,13 +318,15 @@ async def test_spring_08x_volume_fails_validation_not_crashes():
     assert len(result.results) == 1, f"Expected 1 validation result, got {len(result.results)}"
 
     validation_chain = result.results[0]
-    assert validation_chain.overall_status == ValidationStatus.FAIL, \
-        f"Expected FAIL for Spring with volume_ratio=0.8, got {validation_chain.overall_status}"
+    assert (
+        validation_chain.overall_status == ValidationStatus.FAIL
+    ), f"Expected FAIL for Spring with volume_ratio=0.8, got {validation_chain.overall_status}"
 
     # Verify it failed at volume validation stage (not later stages)
     assert validation_chain.rejection_stage is not None, "rejection_stage should be set"
-    assert "volume" in validation_chain.rejection_stage.lower(), \
-        f"Expected failure at volume stage, got {validation_chain.rejection_stage}"
+    assert (
+        "volume" in validation_chain.rejection_stage.lower()
+    ), f"Expected failure at volume stage, got {validation_chain.rejection_stage}"
 
 
 # ============================================================================
@@ -343,9 +335,7 @@ async def test_spring_08x_volume_fails_validation_not_crashes():
 
 
 @pytest.mark.asyncio
-async def test_volume_ratio_calculation_accuracy(
-    volume_analysis_stage, pipeline_context
-):
+async def test_volume_ratio_calculation_accuracy(volume_analysis_stage, pipeline_context):
     """
     Test volume_ratio calculation accuracy with known values.
 
@@ -379,14 +369,13 @@ async def test_volume_ratio_calculation_accuracy(
     assert bar_20_ratio is not None, "Bar 20 should have volume_ratio"
 
     expected_ratio = Decimal("1.5")
-    assert abs(bar_20_ratio - expected_ratio) < Decimal("0.01"), \
-        f"Expected volume_ratio ~{expected_ratio}, got {bar_20_ratio}"
+    assert abs(bar_20_ratio - expected_ratio) < Decimal(
+        "0.01"
+    ), f"Expected volume_ratio ~{expected_ratio}, got {bar_20_ratio}"
 
 
 @pytest.mark.asyncio
-async def test_low_volume_ratio_below_spring_threshold(
-    volume_analysis_stage, pipeline_context
-):
+async def test_low_volume_ratio_below_spring_threshold(volume_analysis_stage, pipeline_context):
     """
     Test low volume scenario (Spring pattern).
 
@@ -418,16 +407,16 @@ async def test_low_volume_ratio_below_spring_threshold(
     # Assert
     bar_20_ratio = result[20].volume_ratio
     assert bar_20_ratio is not None
-    assert bar_20_ratio < Decimal("0.7"), \
-        f"Low volume bar should have ratio < 0.7, got {bar_20_ratio}"
-    assert abs(bar_20_ratio - Decimal("0.5")) < Decimal("0.01"), \
-        f"Expected volume_ratio ~0.5, got {bar_20_ratio}"
+    assert bar_20_ratio < Decimal(
+        "0.7"
+    ), f"Low volume bar should have ratio < 0.7, got {bar_20_ratio}"
+    assert abs(bar_20_ratio - Decimal("0.5")) < Decimal(
+        "0.01"
+    ), f"Expected volume_ratio ~0.5, got {bar_20_ratio}"
 
 
 @pytest.mark.asyncio
-async def test_high_volume_ratio_above_sos_threshold(
-    volume_analysis_stage, pipeline_context
-):
+async def test_high_volume_ratio_above_sos_threshold(volume_analysis_stage, pipeline_context):
     """
     Test high volume scenario (SOS pattern).
 
@@ -459,10 +448,12 @@ async def test_high_volume_ratio_above_sos_threshold(
     # Assert
     bar_20_ratio = result[20].volume_ratio
     assert bar_20_ratio is not None
-    assert bar_20_ratio > Decimal("1.5"), \
-        f"High volume bar should have ratio > 1.5, got {bar_20_ratio}"
-    assert abs(bar_20_ratio - Decimal("2.0")) < Decimal("0.01"), \
-        f"Expected volume_ratio ~2.0, got {bar_20_ratio}"
+    assert bar_20_ratio > Decimal(
+        "1.5"
+    ), f"High volume bar should have ratio > 1.5, got {bar_20_ratio}"
+    assert abs(bar_20_ratio - Decimal("2.0")) < Decimal(
+        "0.01"
+    ), f"Expected volume_ratio ~2.0, got {bar_20_ratio}"
 
 
 # ============================================================================
@@ -471,9 +462,7 @@ async def test_high_volume_ratio_above_sos_threshold(
 
 
 @pytest.mark.asyncio
-async def test_zero_volume_bars_handled(
-    volume_analysis_stage, pipeline_context
-):
+async def test_zero_volume_bars_handled(volume_analysis_stage, pipeline_context):
     """
     Test handling of zero-volume bars.
 
@@ -492,6 +481,7 @@ async def test_zero_volume_bars_handled(
             low=Decimal("90.00"),
             close=Decimal("105.00"),
             volume=Decimal("0"),
+            spread=Decimal("20.00"),
         )
         bars.append(bar)
 
@@ -500,14 +490,13 @@ async def test_zero_volume_bars_handled(
 
     # Assert: All volume_ratios should be None (division by zero protection)
     for i, analysis in enumerate(result):
-        assert analysis.volume_ratio is None, \
-            f"Bar {i} with zero volume history should have volume_ratio=None"
+        assert (
+            analysis.volume_ratio is None
+        ), f"Bar {i} with zero volume history should have volume_ratio=None"
 
 
 @pytest.mark.asyncio
-async def test_single_bar_insufficient_history(
-    volume_analysis_stage, pipeline_context
-):
+async def test_single_bar_insufficient_history(volume_analysis_stage, pipeline_context):
     """
     Test single bar (insufficient history for 20-bar average).
 
@@ -521,8 +510,9 @@ async def test_single_bar_insufficient_history(
 
     # Assert
     assert len(result) == 1
-    assert result[0].volume_ratio is None, \
-        "Single bar should have volume_ratio=None (insufficient history)"
+    assert (
+        result[0].volume_ratio is None
+    ), "Single bar should have volume_ratio=None (insufficient history)"
 
 
 # ============================================================================
@@ -531,18 +521,14 @@ async def test_single_bar_insufficient_history(
 
 
 @pytest.mark.asyncio
-async def test_invalid_bars_type_raises_type_error(
-    volume_analysis_stage, pipeline_context
-):
+async def test_invalid_bars_type_raises_type_error(volume_analysis_stage, pipeline_context):
     """Test that non-list input raises TypeError."""
     with pytest.raises(TypeError, match="Expected list\\[OHLCVBar\\]"):
         await volume_analysis_stage.execute("not a list", pipeline_context)
 
 
 @pytest.mark.asyncio
-async def test_invalid_bar_items_raises_type_error(
-    volume_analysis_stage, pipeline_context
-):
+async def test_invalid_bar_items_raises_type_error(volume_analysis_stage, pipeline_context):
     """Test that list with non-OHLCVBar items raises TypeError."""
     invalid_bars = ["not", "ohlcv", "bars"]
 
