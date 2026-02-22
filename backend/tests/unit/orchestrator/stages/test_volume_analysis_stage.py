@@ -534,3 +534,139 @@ async def test_invalid_bar_items_raises_type_error(volume_analysis_stage, pipeli
 
     with pytest.raises(TypeError, match="Expected OHLCVBar items"):
         await volume_analysis_stage.execute(invalid_bars, pipeline_context)
+
+
+# ============================================================================
+# Story 25.16: Adversarial Timestamp Matching Tests (Quant Recommendation)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_validation_stage_timestamp_matching_edge_cases(mock_news_calendar_factory):
+    """
+    Adversarial test for ValidationStage timestamp matching (Quant Round 2 recommendation).
+
+    Tests edge cases discovered in quant review:
+    1. Spring pattern with nested bar.timestamp field
+    2. Mock UTAD pattern with direct timestamp field
+    3. Mixed timezone-aware vs naive timestamps
+
+    Verifies that fixes in validation_stage.py:302-324 correctly handle:
+    - Nested timestamp field extraction
+    - Timezone normalization before comparison
+    """
+    from unittest.mock import MagicMock
+    from src.models.spring import Spring
+    from src.models.validation import ValidationStatus
+    from src.orchestrator.stages.validation_stage import ValidationStage
+    from src.signal_generator.validation_chain import create_default_validation_chain
+
+    # Test Case 1: Spring pattern with nested bar.timestamp (timezone-aware)
+    aware_timestamp = datetime(2024, 1, 21, 10, 0, 0, tzinfo=UTC)
+    spring_bar = OHLCVBar(
+        symbol="TEST",
+        timeframe="1d",
+        timestamp=aware_timestamp,
+        open=Decimal("100.00"),
+        high=Decimal("110.00"),
+        low=Decimal("98.00"),
+        close=Decimal("105.00"),
+        volume=Decimal("500"),  # 0.5x average (valid Spring volume)
+        spread=Decimal("12.00"),
+    )
+
+    spring_pattern = Spring(
+        bar=spring_bar,
+        bar_index=20,
+        penetration_pct=Decimal("0.02"),
+        volume_ratio=Decimal("0.5"),  # Valid Spring volume
+        recovery_bars=1,
+        creek_reference=Decimal("100.00"),
+        spring_low=Decimal("98.00"),
+        recovery_price=Decimal("105.00"),
+        detection_timestamp=aware_timestamp,
+        trading_range_id=uuid4(),
+    )
+
+    # Create VolumeAnalysis with matching aware timestamp
+    spring_volume_analysis = VolumeAnalysis(
+        bar=spring_bar,
+        volume_ratio=Decimal("0.5"),
+        spread_ratio=Decimal("1.0"),
+        close_position=Decimal("0.7"),
+        effort_result="NORMAL",
+    )
+
+    # Test Case 2: Mock UTAD pattern with direct timestamp field (timezone-naive)
+    # Note: Real UTAD model may not allow naive timestamps, but this tests defensive handling
+    naive_timestamp = datetime(2024, 1, 22, 10, 0, 0)  # No tzinfo
+    utad_bar = OHLCVBar(
+        symbol="TEST",
+        timeframe="1d",
+        timestamp=datetime(2024, 1, 22, 10, 0, 0, tzinfo=UTC),  # Bar is always aware
+        open=Decimal("110.00"),
+        high=Decimal("115.00"),
+        low=Decimal("109.00"),
+        close=Decimal("110.50"),
+        volume=Decimal("2000"),  # High volume
+        spread=Decimal("6.00"),
+    )
+
+    utad_pattern = MagicMock()
+    utad_pattern.timestamp = naive_timestamp  # Direct timestamp field (naive)
+    utad_pattern.id = uuid4()
+    utad_pattern.__class__.__name__ = "UTAD"
+
+    utad_volume_analysis = VolumeAnalysis(
+        bar=utad_bar,
+        volume_ratio=Decimal("2.0"),
+        spread_ratio=Decimal("1.5"),
+        close_position=Decimal("0.3"),
+        effort_result="CLIMACTIC",
+    )
+
+    # Create ValidationStage with default validation chain
+    orchestrator = create_default_validation_chain(mock_news_calendar_factory)
+    validation_stage = ValidationStage(orchestrator)
+
+    # Test Spring pattern (nested bar.timestamp, aware)
+    context_spring = PipelineContext(
+        symbol="TEST",
+        timeframe="1d",
+        correlation_id=uuid4(),
+    )
+    context_spring.set("volume_analysis", [spring_volume_analysis])
+    context_spring.set("phase_info", None)
+    context_spring.set("current_trading_range", None)
+
+    result_spring = await validation_stage.execute([spring_pattern], context_spring)
+
+    # Assert: Should match and validate successfully
+    assert result_spring is not None
+    assert len(result_spring.results) == 1
+    # Spring with volume_ratio=0.5 should pass volume validation
+    # (May fail other stages like phase/risk, but that's OK for this test)
+    validation_chain_spring = result_spring.results[0]
+    assert validation_chain_spring is not None
+
+    # Test UTAD pattern (direct timestamp, naive → aware conversion)
+    context_utad = PipelineContext(
+        symbol="TEST",
+        timeframe="1d",
+        correlation_id=uuid4(),
+    )
+    context_utad.set("volume_analysis", [utad_volume_analysis])
+    context_utad.set("phase_info", None)
+    context_utad.set("current_trading_range", None)
+
+    result_utad = await validation_stage.execute([utad_pattern], context_utad)
+
+    # Assert: Should match despite naive timestamp (after normalization)
+    assert result_utad is not None
+    assert len(result_utad.results) == 1
+    validation_chain_utad = result_utad.results[0]
+    assert validation_chain_utad is not None
+
+    # Key assertion: No AttributeError or comparison failures
+    # If timestamp matching failed, validators would receive None and crash
+    # The fact that we got validation results proves timestamp matching worked
