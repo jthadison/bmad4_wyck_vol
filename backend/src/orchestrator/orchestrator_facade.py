@@ -808,6 +808,10 @@ class MasterOrchestratorFacade:
                             signals[idx] = failed_signal
                             break
 
+            # Associate signals with campaigns (Story 25.10)
+            if signals:
+                await self._associate_campaigns(signals, symbol)
+
             async with self._lock:
                 self._signal_count += len(signals)
 
@@ -855,6 +859,140 @@ class MasterOrchestratorFacade:
         if isinstance(output, list):
             return [s for s in output if isinstance(s, TradeSignal | TradeSignalModel)]
         return []
+
+    async def _associate_campaigns(self, signals: list[TradeSignalModel], symbol: str) -> None:
+        """
+        Associate signals with campaigns (Story 25.10).
+
+        For each signal:
+        - Spring + no existing campaign → create new campaign
+        - Spring + existing campaign → associate with existing (no duplicate)
+        - SOS/LPS + existing campaign → add to campaign
+        - SOS/LPS + no campaign → log warning, proceed without campaign
+
+        Parameters
+        ----------
+        signals : list[TradeSignalModel]
+            Signals to associate with campaigns
+        symbol : str
+            Symbol being analyzed
+        """
+        if self._campaign_manager is None:
+            return  # Graceful degradation (AC7)
+
+        for signal in signals:
+            # Only process Pydantic TradeSignalModel instances with campaign_id field
+            if not isinstance(signal, TradeSignalModel):
+                continue
+
+            try:
+                # Find existing active campaign for this symbol
+                existing_campaign = await self._find_existing_campaign(symbol)
+
+                if signal.pattern_type == "SPRING":
+                    if existing_campaign is None:
+                        # AC1: Create new campaign
+                        campaign = await self._create_campaign_for_signal(signal)
+                        signal.campaign_id = campaign.campaign_id
+                        logger.info(
+                            "campaign_created_from_spring",
+                            campaign_id=campaign.campaign_id,
+                            symbol=symbol,
+                        )
+                    else:
+                        # AC4: Duplicate Spring - use existing campaign
+                        signal.campaign_id = existing_campaign.campaign_id
+                        logger.info(
+                            "spring_associated_with_existing_campaign",
+                            campaign_id=existing_campaign.campaign_id,
+                            symbol=symbol,
+                        )
+
+                elif signal.pattern_type in ("SOS", "LPS"):
+                    if existing_campaign is not None:
+                        # AC2/AC3: Add to existing campaign
+                        await self._campaign_manager.add_signal_to_campaign(
+                            existing_campaign.campaign_id, signal
+                        )
+                        signal.campaign_id = existing_campaign.campaign_id
+                        logger.info(
+                            "signal_added_to_campaign",
+                            pattern_type=signal.pattern_type,
+                            campaign_id=existing_campaign.campaign_id,
+                            symbol=symbol,
+                        )
+                    else:
+                        # No existing campaign - proceed without campaign association
+                        logger.warning(
+                            "no_campaign_for_sos_lps",
+                            pattern_type=signal.pattern_type,
+                            symbol=symbol,
+                            detail="SOS/LPS signal generated without prior Spring campaign",
+                        )
+
+            except Exception as exc:
+                logger.error(
+                    "campaign_association_error",
+                    symbol=symbol,
+                    pattern_type=signal.pattern_type,
+                    error=str(exc),
+                )
+                # Continue processing other signals even if one fails
+
+    async def _find_existing_campaign(self, symbol: str) -> Any | None:
+        """
+        Find existing active campaign for symbol (Story 25.10).
+
+        Simplified approach: Returns first active campaign for the symbol.
+        Future enhancement: Add precise range-matching logic using support/resistance.
+
+        Parameters
+        ----------
+        symbol : str
+            Symbol to search campaigns for
+
+        Returns
+        -------
+        Campaign | None
+            First active campaign if found, None otherwise
+        """
+        if self._campaign_manager is None:
+            return None
+
+        campaigns = await self._campaign_manager.get_active_campaigns(symbol)
+        return campaigns[0] if campaigns else None
+
+    async def _create_campaign_for_signal(self, signal: TradeSignalModel) -> Any:
+        """
+        Create a new campaign from a Spring signal (Story 25.10, AC1).
+
+        Parameters
+        ----------
+        signal : TradeSignalModel
+            Spring signal initiating the campaign
+
+        Returns
+        -------
+        Campaign
+            Created campaign
+        """
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        # Generate trading_range_id (placeholder - in real implementation
+        # this would come from pattern detection)
+        trading_range_id = uuid4()
+
+        # Use current date for campaign_id format: "SYMBOL-YYYY-MM-DD"
+        range_start_date = datetime.now(UTC).strftime("%Y-%m-%d")
+
+        campaign = await self._campaign_manager.create_campaign(
+            signal=signal,
+            trading_range_id=trading_range_id,
+            range_start_date=range_start_date,
+        )
+
+        return campaign
 
     async def analyze_symbols(
         self,
