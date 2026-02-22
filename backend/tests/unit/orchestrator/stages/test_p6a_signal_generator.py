@@ -294,7 +294,7 @@ class TestTradeSignalGeneratorConfidence:
 
     @pytest.mark.asyncio
     async def test_confidence_default_when_none(self):
-        """Pattern with no confidence attr → default 75."""
+        """Pattern with no confidence attr but valid volume_ratio → derives confidence."""
         gen = _TradeSignalGenerator()
         pattern = SimpleNamespace(
             id=uuid4(),
@@ -306,6 +306,7 @@ class TestTradeSignalGeneratorConfidence:
             phase="C",
             pattern_type="SPRING",
             recommended_position_size=Decimal("100"),
+            volume_ratio=0.35,  # Mid-range Spring volume → confidence ~75
             # no 'confidence' field
         )
         ctx = _make_context()
@@ -313,7 +314,8 @@ class TestTradeSignalGeneratorConfidence:
         signal = await gen.generate_signal(pattern, None, ctx)
 
         assert signal is not None
-        assert signal.confidence_score == 75
+        # Confidence derived from volume_ratio: 95 - (0.35/0.7)*25 = 95 - 12.5 = 82.5 → 82
+        assert signal.confidence_score == 82
 
 
 class TestTradeSignalGeneratorValidationChain:
