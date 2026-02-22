@@ -679,13 +679,17 @@ async def _auto_ingest_symbol_data(
     Timeframe default is "1D" (uppercase) to match the scanner_watchlist constraint format.
     """
     try:
-        from src.market_data.adapters.yahoo_adapter import YahooAdapter
+        from src.config import settings
+        from src.market_data.factory import MarketDataProviderFactory
         from src.market_data.service import MarketDataService
 
         end_date = date.today()
         start_date = end_date - timedelta(days=365)
 
-        service = MarketDataService(YahooAdapter())
+        # Story 25.6: Use factory to get provider (defaults to Polygon with Yahoo fallback)
+        factory = MarketDataProviderFactory(settings)
+        provider = factory.get_historical_provider()
+        service = MarketDataService(provider)
         result = await service.ingest_historical_data(
             symbol=symbol,
             start_date=start_date,

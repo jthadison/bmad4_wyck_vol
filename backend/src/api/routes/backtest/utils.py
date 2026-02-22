@@ -77,8 +77,10 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
     """
     Fetch historical OHLCV data for backtest.
 
-    Fetches real market data from Polygon.io API. Falls back to synthetic data
-    if symbol is None or if Polygon API fails.
+    Fetches real market data using provider factory with automatic fallback.
+    Raises explicit error if symbol is missing or all providers fail.
+
+    Story 25.6: Removed synthetic data generation - all failures are explicit errors.
 
     Args:
         days: Number of days of historical data
@@ -87,41 +89,45 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
 
     Returns:
         List of OHLCV bar dictionaries
+
+    Raises:
+        ValueError: If symbol is None or empty
+        RuntimeError: If all providers fail to fetch data
     """
-    # If no symbol provided, generate synthetic data
+    # AC3: Raise error instead of synthetic data
     if not symbol:
-        logger.warning("No symbol provided, generating synthetic data")
-        return _generate_synthetic_data(days)
+        raise ValueError("Symbol is required for fetching historical data")
+
+    from src.config import settings
+    from src.market_data.exceptions import DataProviderError
+    from src.market_data.factory import MarketDataProviderFactory
+
+    factory = MarketDataProviderFactory(settings)
+
+    # Calculate date range
+    end_date = datetime.now(UTC).date()
+    start_date = end_date - timedelta(days=days)
+
+    # Detect asset class from symbol format
+    # Forex pairs are 6 characters (EURUSD, GBPUSD, etc.)
+    # Stocks are typically 1-5 characters (AAPL, SPY, PLTR, etc.)
+    asset_class = "forex" if len(symbol) == 6 and symbol.isalpha() else None
+
+    logger.info(
+        "Fetching real market data with fallback chain",
+        extra={
+            "symbol": symbol,
+            "asset_class": asset_class,
+            "start_date": str(start_date),
+            "end_date": str(end_date),
+            "timeframe": timeframe,
+            "default_provider": settings.default_provider,
+        },
+    )
 
     try:
-        # Import Polygon adapter
-        from src.market_data.adapters.polygon_adapter import PolygonAdapter
-
-        # Initialize adapter
-        adapter = PolygonAdapter()
-
-        # Calculate date range
-        end_date = datetime.now(UTC).date()
-        start_date = end_date - timedelta(days=days)
-
-        # Detect asset class from symbol format
-        # Forex pairs are 6 characters (EURUSD, GBPUSD, etc.)
-        # Stocks are typically 1-5 characters (AAPL, SPY, PLTR, etc.)
-        asset_class = "forex" if len(symbol) == 6 and symbol.isalpha() else None
-
-        logger.info(
-            "Fetching real market data from Polygon.io",
-            extra={
-                "symbol": symbol,
-                "asset_class": asset_class,
-                "start_date": str(start_date),
-                "end_date": str(end_date),
-                "timeframe": timeframe,
-            },
-        )
-
-        # Fetch bars from Polygon.io
-        ohlcv_bars = await adapter.fetch_historical_bars(
+        # AC2/AC3: Use fallback chain
+        ohlcv_bars = await factory.fetch_historical_with_fallback(
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
@@ -130,68 +136,25 @@ async def fetch_historical_data(days: int, symbol: str | None, timeframe: str = 
         )
 
         # Convert OHLCVBar objects to dictionaries
-        bars = []
-        for bar in ohlcv_bars:
-            bars.append(
-                {
-                    "timestamp": bar.timestamp,
-                    "open": float(bar.open),
-                    "high": float(bar.high),
-                    "low": float(bar.low),
-                    "close": float(bar.close),
-                    "volume": bar.volume,
-                }
-            )
+        bars = [
+            {
+                "timestamp": bar.timestamp,
+                "open": float(bar.open),
+                "high": float(bar.high),
+                "low": float(bar.low),
+                "close": float(bar.close),
+                "volume": bar.volume,
+            }
+            for bar in ohlcv_bars
+        ]
 
-        logger.info(f"Fetched {len(bars)} bars from Polygon.io for {symbol}")
+        logger.info(f"Fetched {len(bars)} bars for {symbol}")
         return bars
 
-    except ValueError as e:
-        # Missing API key or configuration error
-        logger.error(f"Polygon.io configuration error: {e}, falling back to synthetic data")
-        return _generate_synthetic_data(days)
-
-    except Exception as e:
-        # Any other error (network, API limit, etc.)
-        logger.error(
-            f"Failed to fetch data from Polygon.io: {e}, falling back to synthetic data",
-            exc_info=True,
-        )
-        return _generate_synthetic_data(days)
-
-
-def _generate_synthetic_data(days: int) -> list[dict]:
-    """
-    Generate synthetic OHLCV data for testing.
-
-    Args:
-        days: Number of days of data to generate
-
-    Returns:
-        List of OHLCV bar dictionaries
-    """
-    bars = []
-    start_date = datetime.now(UTC) - timedelta(days=days)
-
-    for i in range(days):
-        timestamp = start_date + timedelta(days=i)
-
-        # Generate realistic-looking OHLCV data
-        base_price = Decimal("150.00") + Decimal(str(i * 0.5))  # Trending upward
-        daily_range = Decimal("5.00")
-
-        bars.append(
-            {
-                "timestamp": timestamp,
-                "open": float(base_price),
-                "high": float(base_price + daily_range),
-                "low": float(base_price - daily_range),
-                "close": float(base_price + (daily_range * Decimal("0.3"))),
-                "volume": 1000000 + (i * 10000),
-            }
-        )
-
-    return bars
+    except DataProviderError as e:
+        # AC3: Explicit error, no synthetic data
+        logger.error(f"All providers failed for {symbol}: {e}")
+        raise RuntimeError(f"Failed to fetch data for {symbol}: {e}") from e
 
 
 async def get_current_configuration(session: AsyncSession) -> dict:

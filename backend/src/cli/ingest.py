@@ -14,8 +14,8 @@ import click
 import structlog
 
 from src.config import settings
-from src.market_data.adapters.polygon_adapter import PolygonAdapter
-from src.market_data.adapters.yahoo_adapter import YahooAdapter
+from src.market_data.exceptions import ConfigurationError
+from src.market_data.factory import MarketDataProviderFactory
 from src.market_data.service import MarketDataService
 
 logger = structlog.get_logger(__name__)
@@ -120,13 +120,18 @@ async def ingest_async(symbols, start, end, timeframe, provider, asset_class):
     click.echo(f"Timeframe: {timeframe}")
     click.echo(f"{'='*60}\n")
 
-    # Create provider
-    if provider_name == "polygon":
-        data_provider = PolygonAdapter()
-    elif provider_name == "yahoo":
-        data_provider = YahooAdapter()
-    else:
-        click.echo(f"Error: Unsupported provider '{provider_name}'", err=True)
+    # Create provider via factory (Story 25.6)
+    # Temporarily override settings with selected provider
+    temp_settings = settings.model_copy(update={"default_provider": provider_name})
+    factory = MarketDataProviderFactory(temp_settings)
+
+    try:
+        data_provider = factory.get_historical_provider()
+    except ConfigurationError as e:
+        click.echo(f"Error: {e}", err=True)
+        return
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
         return
 
     # Create service

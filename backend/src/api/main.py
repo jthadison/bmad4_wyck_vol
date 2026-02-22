@@ -67,7 +67,8 @@ from src.api.routes.data import router as data_router
 from src.api.routes.journal import router as journal_router
 from src.api.websocket import websocket_endpoint
 from src.config import settings
-from src.market_data.adapters.alpaca_adapter import AlpacaAdapter
+from src.market_data.exceptions import ConfigurationError
+from src.market_data.factory import MarketDataProviderFactory
 from src.market_data.service import MarketDataCoordinator
 from src.orchestrator.service import get_orchestrator, trigger_analysis
 from src.pattern_engine.realtime_scanner import (
@@ -254,6 +255,23 @@ async def startup_event() -> None:
     """
     global _coordinator
 
+    # AC4: Fail-fast validation for auto-execution
+    # If AUTO_EXECUTE_ORDERS is enabled, Alpaca credentials are required
+    # This prevents orders from being generated without execution capability
+    if settings.auto_execute_orders:
+        if not settings.alpaca_api_key or not settings.alpaca_secret_key:
+            # List missing credentials for actionable error message
+            missing_vars = []
+            if not settings.alpaca_api_key:
+                missing_vars.append("ALPACA_API_KEY")
+            if not settings.alpaca_secret_key:
+                missing_vars.append("ALPACA_SECRET_KEY")
+
+            raise ConfigurationError(
+                provider="Alpaca",
+                missing_vars=missing_vars,
+            )
+
     # Only start real-time feed if API keys are configured
     if settings.alpaca_api_key and settings.alpaca_secret_key:
         try:
@@ -294,8 +312,9 @@ async def startup_event() -> None:
                     symbols=settings.watchlist_symbols,
                 )
 
-            # Create Alpaca adapter
-            adapter = AlpacaAdapter(settings=feed_settings, use_paper=False)
+            # Create Alpaca adapter via factory (Story 25.6)
+            factory = MarketDataProviderFactory(settings=feed_settings)
+            adapter = factory.get_streaming_provider()
 
             # Create coordinator (wired to orchestrator for live signal generation)
             _coordinator = MarketDataCoordinator(
