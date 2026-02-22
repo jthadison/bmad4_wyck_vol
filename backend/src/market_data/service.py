@@ -480,9 +480,20 @@ class MarketDataCoordinator:
             This method matches the lookback window used by the pattern engine's
             volume_analyzer.calculate_volume_ratio() function (20 bars).
         """
-        async with async_session_maker() as session:
-            repo = OHLCVRepository(session)
-            recent_bars = await repo.get_latest_bars(symbol, timeframe, count=20)
+        try:
+            async with async_session_maker() as session:
+                repo = OHLCVRepository(session)
+                recent_bars = await asyncio.wait_for(
+                    repo.get_latest_bars(symbol, timeframe, count=20),
+                    timeout=5.0,
+                )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "volume_ratio_query_timeout",
+                symbol=symbol,
+                timeframe=timeframe,
+            )
+            return (Decimal("1.0"), Decimal("1.0"), True)
 
         # Handle edge case: no historical data
         if len(recent_bars) == 0:
@@ -574,46 +585,57 @@ class MarketDataCoordinator:
             )
 
             # Insert bar with computed ratios
-            async with async_session_maker() as session:
-                repo = OHLCVRepository(session)
-                inserted_count = await repo.insert_bars([bar])
-
-                # Calculate insertion latency
-                end_time = datetime.now(UTC)
-                insertion_latency = (end_time - start_time).total_seconds()
-
-                if inserted_count > 0:
-                    # Track successful insertion (REL-002)
-                    self._insertion_successes += 1
-                    self._consecutive_failures = 0
-
-                    logger.info(
-                        "realtime_bar_inserted",
-                        symbol=bar.symbol,
-                        timestamp=bar.timestamp.isoformat(),
-                        insertion_latency_ms=insertion_latency * 1000,
-                        total_successes=self._insertion_successes,
-                        total_failures=self._insertion_failures,
+            try:
+                async with async_session_maker() as session:
+                    repo = OHLCVRepository(session)
+                    inserted_count = await asyncio.wait_for(
+                        repo.insert_bars([bar]),
+                        timeout=5.0,
                     )
 
-                    # Fire analysis callback (non-blocking, throttled per symbol)
-                    if self._on_bar_analyzed is not None:
-                        cooldown_key = f"{bar.symbol}:{bar.timeframe}"
-                        last = self._analysis_cooldowns.get(cooldown_key)
-                        now = datetime.now(UTC)
-                        if (
-                            last is None
-                            or (now - last).total_seconds() >= self._analysis_cooldown_secs
-                        ):
-                            self._analysis_cooldowns[cooldown_key] = now
-                            asyncio.create_task(self._fire_analysis(bar.symbol, bar.timeframe))
-                else:
-                    # Duplicate bar (already exists)
-                    logger.debug(
-                        "realtime_bar_duplicate",
-                        symbol=bar.symbol,
-                        timestamp=bar.timestamp.isoformat(),
-                    )
+                    # Calculate insertion latency
+                    end_time = datetime.now(UTC)
+                    insertion_latency = (end_time - start_time).total_seconds()
+
+                    if inserted_count > 0:
+                        # Track successful insertion (REL-002)
+                        self._insertion_successes += 1
+                        self._consecutive_failures = 0
+
+                        logger.info(
+                            "realtime_bar_inserted",
+                            symbol=bar.symbol,
+                            timestamp=bar.timestamp.isoformat(),
+                            insertion_latency_ms=insertion_latency * 1000,
+                            total_successes=self._insertion_successes,
+                            total_failures=self._insertion_failures,
+                        )
+
+                        # Fire analysis callback (non-blocking, throttled per symbol)
+                        if self._on_bar_analyzed is not None:
+                            cooldown_key = f"{bar.symbol}:{bar.timeframe}"
+                            last = self._analysis_cooldowns.get(cooldown_key)
+                            now = datetime.now(UTC)
+                            if (
+                                last is None
+                                or (now - last).total_seconds() >= self._analysis_cooldown_secs
+                            ):
+                                self._analysis_cooldowns[cooldown_key] = now
+                                asyncio.create_task(self._fire_analysis(bar.symbol, bar.timeframe))
+                    else:
+                        # Duplicate bar (already exists)
+                        logger.debug(
+                            "realtime_bar_duplicate",
+                            symbol=bar.symbol,
+                            timestamp=bar.timestamp.isoformat(),
+                        )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "db_query_timeout",
+                    symbol=bar.symbol,
+                    operation="insert_bar",
+                )
+                return  # Skip bar - prefer data loss over system hang
 
         except Exception as e:
             # Track failure and add to dead letter queue (REL-002)
