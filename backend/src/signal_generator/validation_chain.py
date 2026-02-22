@@ -44,7 +44,7 @@ from src.signal_generator.validators.level_validator import LevelValidator
 from src.signal_generator.validators.phase_validator import PhaseValidator
 from src.signal_generator.validators.risk_validator import RiskValidator
 from src.signal_generator.validators.strategy_validator import StrategyValidator
-from src.signal_generator.validators.volume_validator import VolumeValidator
+from src.signal_generator.validators.volume.strategy_adapter import StrategyBasedVolumeValidator
 
 logger = structlog.get_logger()
 
@@ -264,7 +264,7 @@ def create_default_validation_chain(
     Create validation chain orchestrator with default FR20 validator sequence.
 
     Returns orchestrator configured with all 5 validators in correct order:
-    1. VolumeValidator (Story 8.3)
+    1. StrategyBasedVolumeValidator (Story 25.4 - delegates to pattern-specific validators)
     2. PhaseValidator (Story 8.4)
     3. LevelValidator (Story 8.5)
     4. RiskValidator (Story 8.6)
@@ -286,7 +286,7 @@ def create_default_validation_chain(
     >>> chain = await orchestrator.run_validation_chain(context)
     """
     validators = [
-        VolumeValidator(),
+        StrategyBasedVolumeValidator(),  # Story 25.4: delegates to pattern-specific validators via factory
         PhaseValidator(),
         LevelValidator(),
         RiskValidator(),
