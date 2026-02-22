@@ -46,9 +46,9 @@ A comprehensive end-to-end audit (see [Live Signal Readiness Assessment](../../q
 | [25.6](25.6.data-provider-factory-fallback-chain.md) | Data Provider Factory with Fallback Chain | 5 | P0 Critical | 25.5 | ✅ Done |
 | [25.7](25.7.enforce-confidence-floor.md) | Enforce 70% Confidence Floor Before Signal Emission | 2 | P1 Critical | 25.1, 25.2 | ✅ Done |
 | [25.8](25.8.implement-phase-validator.md) | Implement Phase Validator | 5 | P1 Critical | 25.1, 25.2, 25.15 | ✅ Done |
-| [25.9](25.9.add-missing-pattern-tests.md) | Add Tests for SC, AR, ST, UTAD Pattern Detectors | 5 | P1 Critical | None | 🔴 Not Started |
-| [25.10](25.10.wire-campaign-manager.md) | Wire Campaign Manager into Signal Generation | 5 | P1 Critical | 25.1, 25.2, 25.3 | 🔴 Not Started |
-| [25.17](25.17.websocket-authentication.md) | WebSocket Authentication | 2 | P1 High | None | 🔴 Not Started |
+| [25.9](25.9.add-missing-pattern-tests.md) | Add Tests for SC, AR, ST, UTAD Pattern Detectors | 5 | P1 Critical | None | ✅ Done |
+| [25.10](25.10.wire-campaign-manager.md) | Wire Campaign Manager into Signal Generation | 5 | P1 Critical | 25.1, 25.2, 25.3 | ✅ Done |
+| [25.17](25.17.websocket-authentication.md) | WebSocket Authentication | 2 | P1 High | None | ✅ Done |
 | [25.11](25.11.wire-orchestrator-websocket.md) | Wire Orchestrator Signal Generation to WebSocket | 2 | P2 High | 25.1, 25.2, 25.17 | 🔴 Not Started |
 | [25.12](25.12.live-signal-api-endpoint.md) | Implement Live Signal API Endpoint | 3 | P2 High | 25.11 | 🔴 Not Started |
 | [25.13](25.13.websocket-missed-message-recovery.md) | WebSocket Missed Message Recovery Endpoint | 2 | P2 High | 25.11 | 🔴 Not Started |
@@ -113,11 +113,11 @@ All stories are parallel — no blocking dependencies between them within this s
 |-------|-------|--------|-------|-----------------|--------|
 | 25.7 | Enforce 70% Confidence Floor | 2 | A | 25.1 + 25.2 | ✅ Done |
 | 25.8 | Implement Phase Validator | 5 | A | 25.1 + 25.2 + 25.15 | ✅ Done |
-| 25.9 | Add Tests: SC, AR, ST, UTAD | 5 | B | None (standalone) | 🔴 Not Started |
-| 25.10 | Wire Campaign Manager | 5 | A | 25.1 + 25.2 + 25.3 | 🔴 Not Started |
-| 25.17 | WebSocket Authentication | 2 | C | None (standalone) | 🔴 Not Started |
+| 25.9 | Add Tests: SC, AR, ST, UTAD | 5 | B | None (standalone) | ✅ Done |
+| 25.10 | Wire Campaign Manager | 5 | A | 25.1 + 25.2 + 25.3 | ✅ Done |
+| 25.17 | WebSocket Authentication | 2 | C | None (standalone) | ✅ Done |
 | 25.6 | Data Provider Factory + Fallback Chain | 5 | D | 25.5 | ✅ Done |
-| **Total** | | **24** | | | **12/24 pts done** |
+| **Total** | | **24** | | | **24/24 pts done** |
 
 ### Sprint 3 (10 points) — Live Delivery
 
