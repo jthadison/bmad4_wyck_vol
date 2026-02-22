@@ -9,7 +9,7 @@
 **Priority**: Critical (Production Blocker)
 **Total Story Points**: 55 points (17 stories)
 **Estimated Effort**: 3 Sprints
-**Epic Status**: 🟡 Sprint 2 In Progress (Sprint 1 complete, Sprint 2 partially complete)
+**Epic Status**: 🟡 Sprint 2 In Progress (Sprint 1 ✅ complete — 21/21 pts; Sprint 2 🟡 in progress — 12/24 pts)
 
 ## Problem Statement
 
@@ -36,12 +36,12 @@ A comprehensive end-to-end audit (see [Live Signal Readiness Assessment](../../q
 
 | Story | Title | Points | Priority | Dependencies | Status |
 |-------|-------|--------|----------|--------------|--------|
-| [25.1](25.1.fix-pattern-detection-append-results.md) | Fix Pattern Detection — Append Results to Pipeline | 2 | P0 Critical | None | 🔴 Not Started |
-| [25.2](25.2.fix-portfolio-context-wiring.md) | Fix Portfolio Context Wiring in Risk Assessment | 2 | P0 Critical | None | 🔴 Not Started |
-| [25.3](25.3.fix-signal-price-field-extraction.md) | Fix Signal Price Field Extraction for All Pattern Types | 3 | P0 Critical | None | 🔴 Not Started |
-| [25.4](25.4.implement-concrete-volume-validators.md) | Implement Concrete Volume Validators | 5 | P0 Critical | None | 🔴 Not Started |
+| [25.1](25.1.fix-pattern-detection-append-results.md) | Fix Pattern Detection — Append Results to Pipeline | 2 | P0 Critical | None | ✅ Done |
+| [25.2](25.2.fix-portfolio-context-wiring.md) | Fix Portfolio Context Wiring in Risk Assessment | 2 | P0 Critical | None | ✅ Done |
+| [25.3](25.3.fix-signal-price-field-extraction.md) | Fix Signal Price Field Extraction for All Pattern Types | 3 | P0 Critical | None | ✅ Done |
+| [25.4](25.4.implement-concrete-volume-validators.md) | Implement Concrete Volume Validators | 5 | P0 Critical | None | ✅ Done |
 | [25.5](25.5.historical-data-ingestion-bootstrap.md) | Historical Data Ingestion Bootstrap | 3 | P0 Critical | None | ✅ Done |
-| [25.15](25.15.resolve-dual-phase-detection.md) | Resolve Dual Phase Detection Systems | 3 | P0 Critical | None | 🔴 Not Started |
+| [25.15](25.15.resolve-dual-phase-detection.md) | Resolve Dual Phase Detection Systems | 3 | P0 Critical | None | ✅ Done |
 | [25.16](25.16.fix-volume-analysis-stage-empty-list.md) | Fix VolumeAnalysisStage Empty List | 3 | P0 Critical | None | ✅ Done |
 | [25.6](25.6.data-provider-factory-fallback-chain.md) | Data Provider Factory with Fallback Chain | 5 | P0 Critical | 25.5 | ✅ Done |
 | [25.7](25.7.enforce-confidence-floor.md) | Enforce 70% Confidence Floor Before Signal Emission | 2 | P1 Critical | 25.1, 25.2 | ✅ Done |
@@ -83,21 +83,21 @@ Sprint 3 — Live Delivery (after Sprint 2):
 
 ## Sprint Planning
 
-### Sprint 1 (21 points) — Pipeline Blockers
+### Sprint 1 (21 points) — Pipeline Blockers ✅ Complete
 
 **Sprint Goal**: Any call to `analyze_symbol()` with valid bar data returns at least one validated signal.
 All stories are parallel — no blocking dependencies between them within this sprint.
 
-| Story | Title | Points | Track |
-|-------|-------|--------|-------|
-| 25.1 | Fix Pattern Detection Append | 2 | A |
-| 25.2 | Fix Portfolio Context Wiring | 2 | A |
-| 25.3 | Fix Signal Price Field Extraction | 3 | A |
-| 25.4 | Implement Concrete Volume Validators | 5 | A |
-| 25.16 | Fix VolumeAnalysisStage Empty List | 3 | A (pairs with 25.4) |
-| 25.15 | Resolve Dual Phase Detection Systems | 3 | B |
-| 25.5 | Historical Data Ingestion Bootstrap | 3 | C |
-| **Total** | | **21** | |
+| Story | Title | Points | Track | Status |
+|-------|-------|--------|-------|--------|
+| 25.1 | Fix Pattern Detection Append | 2 | A | ✅ Done |
+| 25.2 | Fix Portfolio Context Wiring | 2 | A | ✅ Done |
+| 25.3 | Fix Signal Price Field Extraction | 3 | A | ✅ Done |
+| 25.4 | Implement Concrete Volume Validators | 5 | A | ✅ Done |
+| 25.16 | Fix VolumeAnalysisStage Empty List | 3 | A (pairs with 25.4) | ✅ Done |
+| 25.15 | Resolve Dual Phase Detection Systems | 3 | B | ✅ Done |
+| 25.5 | Historical Data Ingestion Bootstrap | 3 | C | ✅ Done |
+| **Total** | | **21** | | **21/21 pts** |
 
 **Sprint 1 Exit Criteria**:
 - Integration test: `analyze_symbol()` with Spring-pattern bars returns ≥ 1 signal
