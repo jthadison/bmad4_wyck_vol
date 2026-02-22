@@ -556,15 +556,27 @@ class MarketDataCoordinator:
         start_time = datetime.now(UTC)
 
         try:
-            # Calculate ratios before insertion
+            # Compute volume_ratio and spread_ratio from trailing 20-bar average
+            volume_ratio, spread_ratio, low_history_flag = await self._compute_ratios(
+                bar.symbol,
+                bar.timeframe,
+                bar.volume,
+                bar.spread,
+            )
+
+            # Create updated bar with computed ratios
+            # (Pydantic models are immutable, so we use model_copy)
+            bar = bar.model_copy(
+                update={
+                    "volume_ratio": volume_ratio,
+                    "spread_ratio": spread_ratio,
+                    "low_history_flag": low_history_flag,
+                }
+            )
+
+            # Insert bar with computed ratios
             async with async_session_maker() as session:
                 repo = OHLCVRepository(session)
-
-                # Get recent bars for ratio calculation (last 20 bars)
-                # Note: Spread and volume ratios are calculated by VolumeAnalyzer (Epic 2)
-                # after bar insertion, not during ingestion
-
-                # Insert bar
                 inserted_count = await repo.insert_bars([bar])
 
                 # Calculate insertion latency
