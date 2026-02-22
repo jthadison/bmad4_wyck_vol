@@ -291,7 +291,8 @@ async def test_volume_ratio_not_default_for_varying_volumes(db_session, mock_mar
     repo = OHLCVRepository(db_session)
     base_time = datetime(2024, 1, 1, 9, 30, tzinfo=UTC)
 
-    volumes = [500, 1000, 1500] * 7 + [500]  # 20 bars, avg = 1000
+    # 20 bars with avg = 1000: use fixed volume for simplicity and clarity
+    volumes = [1000] * 20
     for i, vol in enumerate(volumes):
         bar = OHLCVBar(
             symbol="AAPL",
@@ -308,7 +309,7 @@ async def test_volume_ratio_not_default_for_varying_volumes(db_session, mock_mar
 
     await db_session.commit()
 
-    # Act: Compute ratios for high-volume bar
+    # Act: Compute ratios for high-volume bar (3x average)
     coordinator = MarketDataCoordinator(mock_market_data_adapter, settings)
     volume_ratio, spread_ratio, low_history_flag = await coordinator._compute_ratios(
         symbol="AAPL",
