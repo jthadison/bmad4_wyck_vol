@@ -280,9 +280,12 @@ class ValidationStage(PipelineStage[list[Any], ValidationResults]):
         Extracts relevant data from pipeline context and pattern
         to create a ValidationContext suitable for the validation chain.
 
+        Story 25.16: Find matching VolumeAnalysis from list by pattern timestamp.
+        VolumeValidator expects a single VolumeAnalysis object, not a list.
+
         Args:
             pattern: Pattern to validate
-            volume_analysis: Volume analysis from VolumeAnalysisStage
+            volume_analysis: List of VolumeAnalysis from VolumeAnalysisStage
             phase_info: Phase info from PhaseDetectionStage
             trading_range: Trading range from PhaseDetectionStage
             context: Pipeline context for symbol/timeframe
@@ -290,6 +293,22 @@ class ValidationStage(PipelineStage[list[Any], ValidationResults]):
         Returns:
             ValidationContext configured for the pattern
         """
+        # Story 25.16: Find matching VolumeAnalysis by pattern timestamp
+        # VolumeValidator expects single object, not list
+        matched_volume_analysis = None
+        if volume_analysis:
+            # Get pattern timestamp
+            pattern_timestamp = getattr(pattern, "bar_timestamp", None) or getattr(
+                pattern, "timestamp", None
+            )
+
+            if pattern_timestamp:
+                # Find VolumeAnalysis matching pattern bar timestamp
+                matched_volume_analysis = next(
+                    (va for va in volume_analysis if va.bar.timestamp == pattern_timestamp),
+                    None,
+                )
+
         # Extract volume ratio from pattern if available
         # Safely check for Decimal-compatible values only
         test_volume_ratio = None
@@ -310,7 +329,7 @@ class ValidationStage(PipelineStage[list[Any], ValidationResults]):
             pattern=pattern,
             symbol=context.symbol,
             timeframe=context.timeframe,
-            volume_analysis=volume_analysis,
+            volume_analysis=matched_volume_analysis,  # Single object or None
             test_volume_ratio=test_volume_ratio,
             phase_info=phase_info,
             trading_range=trading_range,
