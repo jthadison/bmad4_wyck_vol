@@ -278,6 +278,31 @@ class MasterOrchestrator:
 
         _orch_config = OrchestratorConfig()
 
+        # DEPRECATION WARNING: Direct users to the facade
+        import warnings
+
+        warnings.warn(
+            "MasterOrchestrator is DEPRECATED. Use MasterOrchestratorFacade from "
+            "src.orchestrator.orchestrator_facade instead. "
+            "MasterOrchestrator will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        # HARD GUARD: Prevent silent zero-signal production in production
+        # If called with no services in non-test context, fail loudly
+        if market_data_service is None and trading_range_service is None:
+            import os
+
+            if os.environ.get("PYTEST_CURRENT_TEST") is None:  # not running under pytest
+                raise RuntimeError(
+                    "MasterOrchestrator called with no services configured. "
+                    "This produces zero signals silently. "
+                    "Use MasterOrchestratorFacade from src.orchestrator.orchestrator_facade. "
+                    "If this is intentional for testing, set PYTEST_CURRENT_TEST env var "
+                    "or pass at least one service."
+                )
+
         self.market_data_service = market_data_service
         self.trading_range_service = trading_range_service
         self.volume_service = volume_service  # NEW: Story 8.10.1
@@ -305,14 +330,10 @@ class MasterOrchestrator:
             else _orch_config.max_concurrent_symbols
         )
         self.cache_ttl_seconds = (
-            cache_ttl_seconds
-            if cache_ttl_seconds is not None
-            else _orch_config.cache_ttl_seconds
+            cache_ttl_seconds if cache_ttl_seconds is not None else _orch_config.cache_ttl_seconds
         )
         self.enable_performance_tracking = (
-            enable_performance_tracking
-            if enable_performance_tracking is not None
-            else True
+            enable_performance_tracking if enable_performance_tracking is not None else True
         )
 
         # Caching
