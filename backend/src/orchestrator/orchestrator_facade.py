@@ -675,11 +675,13 @@ class MasterOrchestratorFacade:
             PhaseValidator,
             RiskValidator,
             StrategyValidator,
-            VolumeValidator,
+        )
+        from src.signal_generator.validators.volume.strategy_adapter import (
+            StrategyBasedVolumeValidator,
         )
 
         validators: list = [
-            VolumeValidator(),
+            StrategyBasedVolumeValidator(),  # Story 25.4: strategy-based volume validation
             PhaseValidator(),
             LevelValidator(),
             RiskValidator(),
