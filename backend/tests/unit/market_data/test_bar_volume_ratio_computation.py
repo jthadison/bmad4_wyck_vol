@@ -5,9 +5,10 @@ Tests the _compute_ratios() helper method and end-to-end bar insertion
 with accurate volume_ratio and spread_ratio values.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -379,3 +380,81 @@ async def test_integration_bar_insertion_with_computed_ratios(db_session, mock_m
     assert inserted_bar.spread_ratio == Decimal("1.5"), "spread_ratio should be 3.0 / 2.0 = 1.5"
     assert inserted_bar.low_history_flag is False, "Should have sufficient history"
     assert inserted_bar.volume_ratio != Decimal("1.0"), "Should not have default ratio"
+
+
+@pytest.mark.asyncio
+async def test_compute_ratios_timeout_returns_neutral_fallback(
+    db_session, mock_market_data_adapter, settings
+):
+    """
+    Production Readiness Fix 2: DB timeout protection.
+
+    Given: Database query for 20-bar history times out (> 5 seconds)
+    When: _compute_ratios() is called
+    Then: Returns neutral fallback (1.0, 1.0, True) instead of hanging
+    """
+    # Arrange: Mock the repository to timeout
+    coordinator = MarketDataCoordinator(mock_market_data_adapter, settings)
+
+    # Act & Assert: Timeout on get_latest_bars should return neutral fallback
+    with patch("src.repositories.ohlcv_repository.OHLCVRepository.get_latest_bars") as mock_get:
+        # Simulate DB timeout by making the query sleep longer than timeout
+        async def slow_query(*args, **kwargs):
+            await asyncio.sleep(10)  # Exceeds 5-second timeout
+            return []
+
+        mock_get.side_effect = slow_query
+
+        volume_ratio, spread_ratio, low_history_flag = await coordinator._compute_ratios(
+            symbol="AAPL",
+            timeframe="1m",
+            current_volume=2000,
+            current_spread=Decimal("2.00"),
+        )
+
+        # Assert: Fallback to neutral values
+        assert volume_ratio == Decimal("1.0"), "Should fallback to 1.0 on timeout"
+        assert spread_ratio == Decimal("1.0"), "Should fallback to 1.0 on timeout"
+        assert low_history_flag is True, "Should flag as low confidence on timeout"
+
+
+@pytest.mark.asyncio
+async def test_insert_bar_timeout_skips_bar_gracefully(
+    db_session, mock_market_data_adapter, settings
+):
+    """
+    Production Readiness Fix 2: DB insert timeout protection.
+
+    Given: Database insert operation times out (> 5 seconds)
+    When: _insert_bar() is called
+    Then: Logs warning and skips bar (prefers data loss over system hang)
+    """
+    # Arrange: Create coordinator
+    coordinator = MarketDataCoordinator(mock_market_data_adapter, settings)
+
+    new_bar = OHLCVBar(
+        symbol="AAPL",
+        timeframe="1m",
+        timestamp=datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
+        open=Decimal("150.00"),
+        high=Decimal("151.00"),
+        low=Decimal("149.00"),
+        close=Decimal("150.50"),
+        volume=2000,
+        spread=Decimal("2.00"),
+    )
+
+    # Act & Assert: Timeout on insert_bars should log and return without error
+    with patch("src.repositories.ohlcv_repository.OHLCVRepository.insert_bars") as mock_insert:
+        # Simulate DB timeout
+        async def slow_insert(*args, **kwargs):
+            await asyncio.sleep(10)  # Exceeds 5-second timeout
+            return 1
+
+        mock_insert.side_effect = slow_insert
+
+        # Should not raise, should return gracefully
+        await coordinator._insert_bar(new_bar)
+
+        # Verify failure tracking incremented
+        assert coordinator._insertion_failures > 0, "Should track timeout as insertion failure"
