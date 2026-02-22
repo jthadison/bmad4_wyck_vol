@@ -6,6 +6,7 @@ delegates to PipelineCoordinator for stage execution.
 
 Story 18.10.5: Services Extraction and Orchestrator Facade (AC5)
 Story 23.2: Wire orchestrator pipeline with real detectors
+Story 25.11: Wire orchestrator signal generation to WebSocket broadcast
 """
 
 import asyncio
@@ -16,6 +17,7 @@ from uuid import UUID, uuid4
 
 import structlog
 
+from src.api.websocket import manager as websocket_manager
 from src.campaign_management.campaign_manager import CampaignManager
 from src.models.phase_classification import WyckoffPhase
 from src.models.signal import ConfidenceComponents, TargetLevels
@@ -811,6 +813,31 @@ class MasterOrchestratorFacade:
             # Associate signals with campaigns (Story 25.10)
             if signals:
                 await self._associate_campaigns(signals, symbol)
+
+            # Emit WebSocket events for generated signals (Story 25.11)
+            # Must happen after persistence and campaign association to ensure
+            # frontend receives complete signal data. WebSocket failures are
+            # isolated and never block HTTP response (AC4).
+            if signals:
+                for signal in signals:
+                    try:
+                        # Convert signal to dict for WebSocket transmission
+                        signal_dict = signal.model_dump()
+                        await websocket_manager.emit_signal_generated(signal_dict)
+                        logger.debug(
+                            "websocket_signal_emitted",
+                            signal_id=getattr(signal, "signal_id", None),
+                            symbol=symbol,
+                            pattern_type=getattr(signal, "pattern_type", None),
+                        )
+                    except Exception as ws_error:
+                        # WebSocket failure must never block signal return to HTTP caller (AC4)
+                        logger.warning(
+                            "websocket_emit_failed",
+                            error=str(ws_error),
+                            signal_id=getattr(signal, "signal_id", None),
+                            symbol=symbol,
+                        )
 
             async with self._lock:
                 self._signal_count += len(signals)
