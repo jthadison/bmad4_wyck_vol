@@ -371,6 +371,53 @@ class SignalRepository:
             signals = [s for s in signals if s.timestamp >= since]
         return len(signals)
 
+    async def get_live_signals(
+        self,
+        since: datetime,
+        symbol: str | None = None,
+    ) -> list[TradeSignal]:
+        """
+        Get live signals created after a specific timestamp (Story 25.12).
+
+        Filters on created_at (DB insertion time) rather than generated_at
+        (signal generation time) to support live polling use cases.
+
+        Args:
+            since: Return signals with created_at >= since
+            symbol: Optional symbol filter
+
+        Returns:
+            List of TradeSignals with status=APPROVED and created_at >= since
+        """
+        if self.db_session is not None:
+            conditions = [
+                TradeSignalModel.status == "APPROVED",
+                TradeSignalModel.created_at >= since,
+            ]
+            if symbol:
+                conditions.append(TradeSignalModel.symbol == symbol)
+
+            stmt = (
+                select(TradeSignalModel)
+                .where(and_(*conditions))
+                .order_by(TradeSignalModel.created_at.desc())
+                .limit(1000)  # Safety limit for live polling
+            )
+            result = await self.db_session.execute(stmt)
+            models = result.scalars().all()
+            return [self._model_to_signal(m) for m in models]
+
+        # In-memory fallback
+        signals = [
+            s
+            for s in self._signals.values()
+            if s.status == "APPROVED" and (s.created_at or s.timestamp) >= since
+        ]
+        if symbol:
+            signals = [s for s in signals if s.symbol == symbol]
+        signals.sort(key=lambda s: s.created_at or s.timestamp, reverse=True)
+        return signals[:1000]
+
     @staticmethod
     def _model_to_signal(model: TradeSignalModel) -> TradeSignal:
         """
