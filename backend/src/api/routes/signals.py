@@ -565,6 +565,10 @@ async def get_live_signals(
         )
 
     try:
+        # Normalize since to UTC if naive (prevents TypeError comparing naive/aware datetimes)
+        if since is not None and since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+
         # Compute effective_since timestamp
         now = datetime.now(UTC)
         window_cutoff = now - timedelta(seconds=window_seconds)
