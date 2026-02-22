@@ -143,28 +143,38 @@ class ConnectionManager:
 
     async def send_message(self, connection_id: str, message: dict[str, Any]) -> None:
         """
-        Send message to specific connection with sequence number.
+        Send message to specific connection with global sequence number.
+
+        Story 25.13: Uses GLOBAL sequence numbers for both real-time delivery and recovery.
+        This ensures clients can use the sequence number from real-time messages to query
+        the recovery endpoint after reconnection.
 
         Args:
             connection_id: UUID of target connection
             message: Message dictionary (will be enriched with sequence_number)
 
         Side Effects:
-            - Increments sequence_number for this connection
-            - Adds sequence_number and timestamp to message
+            - Increments GLOBAL sequence number
+            - Adds global sequence_number and timestamp to message
             - Sends JSON message via WebSocket
+            - Buffers message for recovery after successful send
         """
         if connection_id not in self.active_connections:
             return
 
-        ws, seq = self.active_connections[connection_id]
+        ws, per_conn_seq = self.active_connections[connection_id]
 
-        # Increment sequence number (start at 1, since connected message is 0)
-        seq += 1
-        self.active_connections[connection_id] = (ws, seq)
+        # Story 25.13 FIX: Increment GLOBAL sequence FIRST (before send)
+        # This ensures real-time and recovery use the SAME sequence numbers
+        self._global_sequence += 1
+        global_seq = self._global_sequence
 
-        # Add sequence number and timestamp if not present
-        message["sequence_number"] = seq
+        # Increment per-connection sequence for internal tracking (optional)
+        per_conn_seq += 1
+        self.active_connections[connection_id] = (ws, per_conn_seq)
+
+        # Add GLOBAL sequence number and timestamp
+        message["sequence_number"] = global_seq  # Global seq for both real-time AND recovery
         if "timestamp" not in message:
             message["timestamp"] = datetime.now(UTC).isoformat()
 
@@ -172,10 +182,8 @@ class ConnectionManager:
             await ws.send_json(message)
 
             # Story 25.13: Buffer message after successful send for recovery
-            self._global_sequence += 1
-            buffered_message = message.copy()
-            buffered_message["sequence_number"] = self._global_sequence  # Override with global seq
-            self._message_buffer.append((self._global_sequence, time.time(), buffered_message))
+            # Use the SAME global sequence that was sent to the client
+            self._message_buffer.append((global_seq, time.time(), message.copy()))
 
         except Exception as e:
             print(f"[WebSocket] Failed to send message to {connection_id}: {e}")

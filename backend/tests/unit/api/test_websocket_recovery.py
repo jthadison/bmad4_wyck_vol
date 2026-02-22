@@ -116,6 +116,48 @@ class TestRingBuffer:
         assert len(manager._message_buffer) == 0
         assert manager._global_sequence == 0
 
+    @pytest.mark.asyncio
+    async def test_realtime_and_recovery_use_same_sequence_numbers(self, manager, mock_websocket):
+        """
+        CRITICAL TEST: Verify real-time delivery and recovery use IDENTICAL sequence numbers.
+
+        This is the blocking issue fix verification. Ensures that:
+        1. Messages sent in real-time have global sequence numbers
+        2. The same messages in the buffer have the same sequence numbers
+        3. A client can use the sequence number from real-time to query recovery
+
+        Scenario:
+        - Client connects, receives messages with seq 1, 2, 3 in real-time
+        - Client disconnects
+        - Client reconnects and calls /websocket/messages?since=1
+        - Must receive messages with seq 2, 3 (same as real-time)
+        """
+        connection_id = await manager.connect(mock_websocket, already_accepted=True)
+
+        # Send 3 messages and capture what was sent in real-time
+        realtime_sequences = []
+        for i in range(3):
+            await manager.send_message(connection_id, {"type": "test", "data": {"index": i}})
+            # Get the sequence number that was sent to the client
+            sent_message = mock_websocket.send_json.call_args_list[-1][0][0]
+            realtime_sequences.append(sent_message["sequence_number"])
+
+        # Verify real-time sequences are 1, 2, 3 (global)
+        assert realtime_sequences == [1, 2, 3], "Real-time should use global sequences"
+
+        # Now query the recovery endpoint with the FIRST real-time sequence
+        # Client received seq 1, 2, 3 in real-time. After reconnect, asks for messages > 1
+        recovery_messages = manager.get_messages_since(1)
+
+        # Should get messages with seq 2 and 3 (same as real-time)
+        assert len(recovery_messages) == 2
+        assert recovery_messages[0]["sequence_number"] == 2, "Recovery must use same seq as real-time"
+        assert recovery_messages[1]["sequence_number"] == 3, "Recovery must use same seq as real-time"
+
+        # Verify the sequence numbers match what was delivered in real-time
+        recovery_sequences = [msg["sequence_number"] for msg in recovery_messages]
+        assert recovery_sequences == realtime_sequences[1:], "Recovery and real-time sequences must match"
+
 
 class TestGetMessagesSince:
     """Test get_messages_since() recovery method."""
