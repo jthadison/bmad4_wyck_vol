@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from src.models.ohlcv import OHLCVBar
-from src.pattern_engine.phase_detector import (
+from src.pattern_engine._phase_detector_impl import (
     detect_automatic_rally,
     detect_selling_climax,
     is_phase_a_confirmed,

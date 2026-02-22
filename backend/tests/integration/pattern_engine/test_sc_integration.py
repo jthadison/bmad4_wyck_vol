@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from src.models.ohlcv import OHLCVBar
-from src.pattern_engine.phase_detector import detect_sc_zone, detect_selling_climax
+from src.pattern_engine._phase_detector_impl import detect_sc_zone, detect_selling_climax
 from src.pattern_engine.volume_analyzer import VolumeAnalyzer
 
 

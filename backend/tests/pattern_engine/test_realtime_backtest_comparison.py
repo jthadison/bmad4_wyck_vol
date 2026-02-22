@@ -601,6 +601,6 @@ class TestModuleImports:
 
     def test_imports_sc_detector(self):
         """SC detector is importable from correct module."""
-        from src.pattern_engine.phase_detector import detect_selling_climax
+        from src.pattern_engine._phase_detector_impl import detect_selling_climax
 
         assert callable(detect_selling_climax)

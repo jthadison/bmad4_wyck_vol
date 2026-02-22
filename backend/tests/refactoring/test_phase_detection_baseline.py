@@ -23,7 +23,7 @@ from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
 from src.models.selling_climax import SellingClimax
 from src.models.volume_analysis import VolumeAnalysis
-from src.pattern_engine.phase_detector import (
+from src.pattern_engine._phase_detector_impl import (
     MIN_PHASE_CONFIDENCE,
     detect_automatic_rally,
     detect_secondary_test,
@@ -428,7 +428,7 @@ class TestPhaseDetectorV2Compatibility:
 
     def test_v1_exports_exist(self):
         """AC4: V1 phase_detector should export expected functions."""
-        from src.pattern_engine.phase_detector import (
+        from src.pattern_engine._phase_detector_impl import (
             detect_automatic_rally,
             detect_secondary_test,
             detect_selling_climax,
