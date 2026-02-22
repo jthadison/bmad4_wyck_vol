@@ -20,7 +20,8 @@ import pytest
 
 from src.campaign_management.campaign_manager import CampaignManager
 from src.models.campaign_lifecycle import Campaign, CampaignStatus
-from src.models.signal import TradeSignal
+from src.models.signal import ConfidenceComponents, TargetLevels, TradeSignal
+from src.models.validation import ValidationChain
 from src.orchestrator.orchestrator_facade import MasterOrchestratorFacade
 
 # Test Fixtures
@@ -38,44 +39,86 @@ def mock_campaign_manager():
 
 @pytest.fixture
 def spring_signal():
-    """Sample Spring signal for testing (using Mock for simplicity)."""
-    signal = Mock(spec=TradeSignal)
-    signal.symbol = "AAPL"
-    signal.pattern_type = "SPRING"
-    signal.phase = "C"
-    signal.timeframe = "1h"
-    signal.entry_price = Decimal("150.00")
-    signal.stop_loss = Decimal("148.00")
-    signal.campaign_id = None
-    return signal
+    """Sample Spring signal for testing (TradeSignalModel)."""
+    return TradeSignal(
+        symbol="AAPL",
+        pattern_type="SPRING",
+        phase="C",
+        timeframe="1h",
+        entry_price=Decimal("150.00"),
+        stop_loss=Decimal("148.00"),
+        target_levels=TargetLevels(primary_target=Decimal("156.00")),
+        position_size=Decimal("100"),
+        risk_amount=Decimal("200.00"),
+        r_multiple=Decimal("3.0"),
+        notional_value=Decimal("15000.00"),
+        confidence_score=85,
+        confidence_components=ConfidenceComponents(
+            pattern_confidence=85,
+            phase_confidence=85,
+            volume_confidence=85,
+            overall_confidence=85,
+        ),
+        validation_chain=ValidationChain(pattern_id=uuid4()),
+        campaign_id=None,
+        timestamp=datetime.now(UTC),
+    )
 
 
 @pytest.fixture
 def sos_signal():
-    """Sample SOS signal for testing (using Mock for simplicity)."""
-    signal = Mock(spec=TradeSignal)
-    signal.symbol = "AAPL"
-    signal.pattern_type = "SOS"
-    signal.phase = "D"
-    signal.timeframe = "1h"
-    signal.entry_price = Decimal("157.00")
-    signal.stop_loss = Decimal("154.00")
-    signal.campaign_id = None
-    return signal
+    """Sample SOS signal for testing (TradeSignalModel)."""
+    return TradeSignal(
+        symbol="AAPL",
+        pattern_type="SOS",
+        phase="D",
+        timeframe="1h",
+        entry_price=Decimal("157.00"),
+        stop_loss=Decimal("154.00"),
+        target_levels=TargetLevels(primary_target=Decimal("163.00")),
+        position_size=Decimal("100"),
+        risk_amount=Decimal("300.00"),
+        r_multiple=Decimal("2.0"),
+        notional_value=Decimal("15700.00"),
+        confidence_score=80,
+        confidence_components=ConfidenceComponents(
+            pattern_confidence=80,
+            phase_confidence=80,
+            volume_confidence=80,
+            overall_confidence=80,
+        ),
+        validation_chain=ValidationChain(pattern_id=uuid4()),
+        campaign_id=None,
+        timestamp=datetime.now(UTC),
+    )
 
 
 @pytest.fixture
 def lps_signal():
-    """Sample LPS signal for testing (using Mock for simplicity)."""
-    signal = Mock(spec=TradeSignal)
-    signal.symbol = "AAPL"
-    signal.pattern_type = "LPS"
-    signal.phase = "E"
-    signal.timeframe = "1h"
-    signal.entry_price = Decimal("155.50")
-    signal.stop_loss = Decimal("153.00")
-    signal.campaign_id = None
-    return signal
+    """Sample LPS signal for testing (TradeSignalModel)."""
+    return TradeSignal(
+        symbol="AAPL",
+        pattern_type="LPS",
+        phase="E",
+        timeframe="1h",
+        entry_price=Decimal("155.50"),
+        stop_loss=Decimal("153.00"),
+        target_levels=TargetLevels(primary_target=Decimal("161.50")),
+        position_size=Decimal("100"),
+        risk_amount=Decimal("250.00"),
+        r_multiple=Decimal("2.4"),
+        notional_value=Decimal("15550.00"),
+        confidence_score=82,
+        confidence_components=ConfidenceComponents(
+            pattern_confidence=82,
+            phase_confidence=82,
+            volume_confidence=82,
+            overall_confidence=82,
+        ),
+        validation_chain=ValidationChain(pattern_id=uuid4()),
+        campaign_id=None,
+        timestamp=datetime.now(UTC),
+    )
 
 
 @pytest.fixture

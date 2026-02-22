@@ -410,6 +410,102 @@ class CampaignRepository:
         )
         return campaigns
 
+    async def update_campaign(self, campaign: "Campaign") -> "Campaign":  # type: ignore
+        """
+        Update existing campaign record (Story 25.10).
+
+        Updates campaign fields including phase transitions.
+
+        Parameters:
+        -----------
+        campaign : Campaign
+            Campaign Pydantic model with updated fields
+
+        Returns:
+        --------
+        Campaign
+            Updated campaign
+
+        Raises:
+        -------
+        CampaignNotFoundError
+            If campaign does not exist
+        SQLAlchemyError
+            If database operation fails
+
+        Example:
+        --------
+        >>> campaign.phase = "D"
+        >>> updated = await repo.update_campaign(campaign)
+        """
+        from src.models.campaign_lifecycle import Campaign
+
+        try:
+            # Fetch existing campaign model
+            result = await self.session.execute(
+                select(CampaignModel).where(CampaignModel.id == campaign.id)
+            )
+            campaign_model = result.scalar_one_or_none()
+
+            if not campaign_model:
+                raise CampaignNotFoundError(f"Campaign {campaign.id} not found")
+
+            # Update fields
+            campaign_model.phase = campaign.phase
+            campaign_model.status = (
+                campaign.status.value if hasattr(campaign.status, "value") else campaign.status
+            )
+            campaign_model.total_risk = campaign.total_risk
+            campaign_model.total_allocation = campaign.total_allocation
+            campaign_model.current_risk = campaign.current_risk
+            campaign_model.weighted_avg_entry = campaign.weighted_avg_entry
+            campaign_model.total_shares = campaign.total_shares
+            campaign_model.total_pnl = campaign.total_pnl
+            campaign_model.completed_at = campaign.completed_at
+            campaign_model.invalidation_reason = campaign.invalidation_reason
+            campaign_model.updated_at = datetime.now(UTC)
+
+            await self.session.commit()
+            await self.session.refresh(campaign_model)
+
+            logger.info(
+                "campaign_updated",
+                campaign_id=campaign.campaign_id,
+                phase=campaign.phase,
+            )
+
+            # Convert back to Pydantic
+            return Campaign(
+                id=campaign_model.id,
+                campaign_id=campaign_model.campaign_id,
+                symbol=campaign_model.symbol,
+                timeframe=campaign_model.timeframe,
+                trading_range_id=campaign_model.trading_range_id,
+                status=campaign_model.status,
+                phase=campaign_model.phase,
+                positions=[],
+                entries=campaign_model.entries or {},
+                total_risk=campaign_model.total_risk,
+                total_allocation=campaign_model.total_allocation,
+                current_risk=campaign_model.current_risk,
+                weighted_avg_entry=campaign_model.weighted_avg_entry,
+                total_shares=campaign_model.total_shares,
+                total_pnl=campaign_model.total_pnl,
+                start_date=campaign_model.start_date,
+                completed_at=campaign_model.completed_at,
+                invalidation_reason=campaign_model.invalidation_reason,
+                version=campaign_model.version,
+            )
+
+        except SQLAlchemyError as e:
+            await self.session.rollback()
+            logger.error(
+                "failed_to_update_campaign",
+                campaign_id=campaign.campaign_id,
+                error=str(e),
+            )
+            raise
+
     async def get_campaign_positions(
         self, campaign_id: UUID, include_closed: bool = True
     ) -> CampaignPositions:

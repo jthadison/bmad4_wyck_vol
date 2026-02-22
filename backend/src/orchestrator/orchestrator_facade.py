@@ -881,10 +881,6 @@ class MasterOrchestratorFacade:
             return  # Graceful degradation (AC7)
 
         for signal in signals:
-            # Only process Pydantic TradeSignalModel instances with campaign_id field
-            if not isinstance(signal, TradeSignalModel):
-                continue
-
             try:
                 # Find existing active campaign for this symbol
                 existing_campaign = await self._find_existing_campaign(symbol)

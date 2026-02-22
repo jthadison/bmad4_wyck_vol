@@ -467,19 +467,21 @@ class CampaignManager:
                 raise CampaignNotFoundError(f"Campaign {campaign_id_str} not found")
 
             # Update campaign phase based on signal pattern type
+            old_phase = campaign.phase
             if signal.pattern_type == "SOS" and campaign.phase == "C":
                 campaign.phase = "D"  # Move to Markup phase
             elif signal.pattern_type == "LPS" and campaign.phase in ("C", "D"):
                 campaign.phase = "E"  # Move to Distribution/profit-taking phase
 
-            # Note: Campaign persistence happens at the orchestrator level
-            # We just update the in-memory model here
-            # The repository update would happen separately
+            # Persist phase transition to database
+            if campaign.phase != old_phase:
+                await self._campaign_repo.update_campaign(campaign)
 
             self.logger.info(
                 "signal_added_to_campaign",
                 campaign_id=campaign_id_str,
                 pattern_type=signal.pattern_type,
+                old_phase=old_phase,
                 new_phase=campaign.phase,
             )
 
