@@ -170,14 +170,15 @@ class TestVolumeAnalysisStage:
 
     @pytest.mark.asyncio
     async def test_execute_empty_bars_raises(self, mock_volume_analyzer):
-        """Test that empty bars list raises ValueError."""
+        """Test that empty bars list returns empty output (AC4: no exception)."""
         stage = VolumeAnalysisStage(mock_volume_analyzer)
         context = PipelineContextBuilder().with_symbol("AAPL").with_timeframe("1d").build()
 
         result = await stage.run([], context)
 
-        assert result.success is False
-        assert "empty bars" in result.error.lower()
+        assert result.success is True
+        assert result.output == []
+        assert context.get(VolumeAnalysisStage.CONTEXT_KEY) == []
 
     @pytest.mark.asyncio
     async def test_execute_records_timing(self, mock_volume_analyzer, sample_bars):
