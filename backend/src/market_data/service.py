@@ -480,8 +480,6 @@ class MarketDataCoordinator:
             This method matches the lookback window used by the pattern engine's
             volume_analyzer.calculate_volume_ratio() function (20 bars).
         """
-        from decimal import Decimal as D
-
         async with async_session_maker() as session:
             repo = OHLCVRepository(session)
             recent_bars = await repo.get_latest_bars(symbol, timeframe, count=20)
@@ -493,7 +491,7 @@ class MarketDataCoordinator:
                 symbol=symbol,
                 timeframe=timeframe,
             )
-            return (D("1.0"), D("1.0"), True)
+            return (Decimal("1.0"), Decimal("1.0"), True)
 
         # Handle insufficient history (< 20 bars)
         low_history_flag = len(recent_bars) < 20
@@ -506,31 +504,32 @@ class MarketDataCoordinator:
             )
 
         # Compute averages from available bars
-        volumes = [D(str(bar.volume)) for bar in recent_bars]
-        spreads = [bar.spread for bar in recent_bars]
+        # Explicit Decimal conversion on both volume and spread for type safety
+        volumes = [Decimal(str(bar.volume)) for bar in recent_bars]
+        spreads = [Decimal(str(bar.spread)) for bar in recent_bars]
 
-        avg_volume = sum(volumes) / D(len(volumes))
-        avg_spread = sum(spreads) / D(len(spreads))
+        avg_volume = sum(volumes) / Decimal(len(volumes))
+        avg_spread = sum(spreads) / Decimal(len(spreads))
 
         # Handle division by zero for volume ratio
-        if avg_volume == D("0"):
+        if avg_volume == Decimal("0"):
             logger.warning(
                 "zero_avg_volume_for_ratio_computation",
                 symbol=symbol,
                 timeframe=timeframe,
             )
-            volume_ratio = D("1.0")
+            volume_ratio = Decimal("1.0")
         else:
-            volume_ratio = D(str(current_volume)) / avg_volume
+            volume_ratio = Decimal(str(current_volume)) / avg_volume
 
         # Handle division by zero for spread ratio
-        if avg_spread == D("0"):
+        if avg_spread == Decimal("0"):
             logger.warning(
                 "zero_avg_spread_for_ratio_computation",
                 symbol=symbol,
                 timeframe=timeframe,
             )
-            spread_ratio = D("1.0")
+            spread_ratio = Decimal("1.0")
         else:
             spread_ratio = current_spread / avg_spread
 
