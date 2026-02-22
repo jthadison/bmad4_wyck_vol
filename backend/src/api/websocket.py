@@ -705,8 +705,13 @@ async def websocket_endpoint(
         return
 
     # Decode and validate token
-    payload = decode_access_token(token)
-    if payload is None:
+    try:
+        payload = decode_access_token(token)
+        if payload is None:
+            await websocket.close(code=1008, reason="Invalid or expired token")
+            return
+    except Exception:
+        # Catch any unexpected JWT decoding errors
         await websocket.close(code=1008, reason="Invalid or expired token")
         return
 
