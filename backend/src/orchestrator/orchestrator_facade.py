@@ -38,6 +38,9 @@ from src.signal_generator.validators.base import BaseValidator
 
 logger = structlog.get_logger(__name__)
 
+# Confidence floor requirement (FR3, Story 25.7)
+CONFIDENCE_FLOOR = 70
+
 
 class _PassThroughSignalGenerator:
     """Adapter: passes validated patterns through as signals without transformation."""
@@ -232,27 +235,47 @@ class _TradeSignalGenerator:
             pattern_id = getattr(pattern, "id", None) or uuid4()
             chain = ValidationChain(pattern_id=pattern_id)
 
-        # 5. Derive confidence from chain metadata or pattern
-        raw_confidence = getattr(pattern, "confidence", None)
-        if raw_confidence is None:
+        # 5. Derive confidence from chain metadata or pattern (Story 25.7)
+        # Start with base confidence from pattern or derive from volume_ratio
+        base_confidence = getattr(pattern, "confidence", None)
+        if base_confidence is None:
             # For Spring-like patterns: derive confidence from volume_ratio (lower = higher quality)
             volume_ratio = getattr(pattern, "volume_ratio", None)
             if volume_ratio is not None:
                 # volume_ratio in [0, 0.7] guaranteed by Spring validator
                 # Map to confidence [70, 95]: lower volume = higher confidence
-                raw_confidence = max(70, min(95, int(95 - (float(volume_ratio) / 0.7) * 25)))
+                base_confidence = max(70, min(95, int(95 - (float(volume_ratio) / 0.7) * 25)))
             else:
-                raw_confidence = 75
-        confidence_score = int(raw_confidence)
-        if confidence_score < 70:
+                # AC5: No arbitrary fallback — reject signal with insufficient evidence
+                logger.warning(
+                    "signal_generator_insufficient_evidence",
+                    symbol=symbol,
+                    pattern_type=pattern_type,
+                    detail="Rejecting signal: volume_ratio unavailable, insufficient confidence evidence",
+                )
+                return None
+
+        # Apply session-based confidence penalty if present (Story 13.3.1)
+        session_penalty = getattr(pattern, "session_confidence_penalty", 0)
+        final_confidence = int(base_confidence) + session_penalty
+
+        # AC4: Floor check AFTER all penalties applied (not before)
+        # AC1-AC3: Reject if below floor, log actual computed confidence and components
+        if final_confidence < CONFIDENCE_FLOOR:
             logger.warning(
-                "signal_generator_low_confidence",
-                raw_confidence=raw_confidence,
+                "signal_generator_confidence_floor_not_met",
+                pattern_type=pattern_type,
                 symbol=symbol,
-                detail="Rejecting signal — confidence below 70 threshold",
+                computed_confidence=final_confidence,
+                base_confidence=int(base_confidence),
+                session_penalty=session_penalty,
+                confidence_floor=CONFIDENCE_FLOOR,
+                detail=f"Rejecting signal: computed confidence {final_confidence} below {CONFIDENCE_FLOOR}% floor",
             )
             return None
-        confidence_score = min(95, confidence_score)
+
+        # Cap at 95 and use as confidence_score
+        confidence_score = min(95, final_confidence)
 
         # Build ConfidenceComponents that satisfies the weighted-average validator.
         # Use the single confidence value and reverse-engineer valid components:
