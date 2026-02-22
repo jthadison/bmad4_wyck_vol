@@ -65,6 +65,5 @@ def get_volume_validator(pattern_type: str) -> VolumeValidationStrategy:
         return UTADVolumeValidator()
     else:
         raise ValueError(
-            f"Unknown pattern_type: '{pattern_type}' "
-            "(expected SPRING, SOS, LPS, or UTAD)"
+            f"Unknown pattern_type: '{pattern_type}' (expected SPRING, SOS, LPS, or UTAD)"
         )
