@@ -17,7 +17,7 @@ FR15: Phase-pattern alignment rules:
     - Spring: Only Phase C allowed
     - SOS: Phase D primary, late Phase C if confidence ≥85%
     - LPS: Phase D or E only
-    - UTAD: Distribution Phase C or D
+    - UTAD: Phase D or E only
 
 Integration:
 ------------
@@ -45,7 +45,7 @@ class PhaseValidator(BaseValidator):
     - AC7.2: Phase confidence ≥60% (minimum for pattern detection)
     - FR3: Phase confidence ≥70% (signal generation requirement)
     - FR14: No trading in Phase A or early Phase B (<10 bars)
-    - FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→Distribution C/D)
+    - FR15: Phase-pattern alignment (Spring→C, SOS→D/late C, LPS→D/E, UTAD→D/E)
 
     Properties:
     -----------
@@ -292,7 +292,7 @@ class PhaseValidator(BaseValidator):
         - SPRING: Only Phase C allowed
         - SOS: Phase D primary, late Phase C if confidence ≥85%
         - LPS: Phase D or E only
-        - UTAD: Distribution Phase C or D
+        - UTAD: Phase D or E only
 
         Parameters:
         -----------
@@ -374,17 +374,17 @@ class PhaseValidator(BaseValidator):
 
         # UTAD Pattern Rules
         elif pattern_type == "UTAD":
-            if phase not in [WyckoffPhase.C, WyckoffPhase.D]:
+            if phase not in [WyckoffPhase.D, WyckoffPhase.E]:
                 logger.debug(
                     "fr15_alignment_check",
                     pattern_type=pattern_type,
-                    required_phase="C or D (Distribution)",
+                    required_phase="D or E",
                     actual_phase=phase.value if phase else "None",
                     valid=False,
                 )
                 return (
                     False,
-                    f"UTAD pattern detected in Phase {phase.value if phase else 'None'} - UTAD only valid in Distribution Phase C or D (FR15)",
+                    f"UTAD pattern detected in Phase {phase.value if phase else 'None'} - UTAD only valid in Phase D or E (FR15)",
                 )
 
         # Unknown pattern type - log warning but don't block
