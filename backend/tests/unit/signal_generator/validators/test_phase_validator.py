@@ -443,9 +443,10 @@ async def test_sos_in_late_phase_c_with_85_confidence_passes(
     validator = PhaseValidator()
     result = await validator.validate(sos_late_phase_c_high_confidence_context)
 
-    assert result.status == ValidationStatus.PASS
+    assert result.status == ValidationStatus.WARN
     assert result.metadata["phase"] == "C"
     assert result.metadata["phase_confidence"] == 85
+    assert result.reason == "SOS in Phase C: elevated confidence override"
 
 
 @pytest.mark.asyncio
@@ -742,7 +743,7 @@ async def test_utad_in_other_phases_fails(mock_pattern, phase_events, phase):
         ("SOS", WyckoffPhase.B, 80, 5, ValidationStatus.FAIL, "Phase B duration"),
         ("SOS", WyckoffPhase.B, 80, 15, ValidationStatus.FAIL, "valid in Phase D"),
         ("SOS", WyckoffPhase.C, 84, 15, ValidationStatus.FAIL, "≥85%"),
-        ("SOS", WyckoffPhase.C, 85, 15, ValidationStatus.PASS, None),
+        ("SOS", WyckoffPhase.C, 85, 15, ValidationStatus.WARN, "elevated confidence override"),
         ("SOS", WyckoffPhase.D, 75, 20, ValidationStatus.PASS, None),
         # LPS combinations
         ("LPS", WyckoffPhase.C, 80, 15, ValidationStatus.FAIL, "Phase D"),

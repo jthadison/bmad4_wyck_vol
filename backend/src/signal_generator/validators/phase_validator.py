@@ -174,6 +174,30 @@ class PhaseValidator(BaseValidator):
             )
             return self.create_result(ValidationStatus.FAIL, reason=reason)
 
+        # Step 5: Check for SOS in late Phase C (AC4 warning)
+        # This is allowed by FR15 but should include a warning that we're using
+        # elevated confidence override rather than the ideal Phase D context
+        if pattern_type == "SOS" and phase == WyckoffPhase.C and confidence >= 85:
+            warning_msg = "SOS in Phase C: elevated confidence override"
+            logger.info(
+                "phase_validation_warning",
+                pattern_type=pattern_type,
+                phase=phase.value,
+                confidence=confidence,
+                warning=warning_msg,
+            )
+            metadata = {
+                "phase": phase.value,
+                "phase_confidence": confidence,
+                "pattern_type": pattern_type,
+                "phase_duration": phase_classification.duration,
+                "trading_allowed": phase_classification.trading_allowed,
+                "ac7_2_confidence_check": "PASS",
+                "fr3_confidence_check": "PASS",
+                "fr14_check": "PASS",
+                "fr15_check": "PASS",
+            }
+            return self.create_result(ValidationStatus.WARN, reason=warning_msg, metadata=metadata)
         # All validations passed
         metadata = {
             "phase": phase.value if phase else "None",
@@ -272,6 +296,9 @@ class PhaseValidator(BaseValidator):
             )
 
         # Phase B: Check duration
+        # NOTE (AC7 Limitation): This only checks Phase B duration when CURRENT phase is B.
+        # AC7 requires checking historical Phase B duration when in Phase C, but PhaseResult.phase_durations
+        # dict does not exist in the data model. This would require PhaseClassifier to track phase history.
         if phase == WyckoffPhase.B:
             if duration < 10:
                 return (
