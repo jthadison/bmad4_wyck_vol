@@ -90,13 +90,10 @@ async def _repo_get_signal_by_id(signal_id: UUID, db: AsyncSession) -> TradeSign
     """Fetch signal by ID from database via SignalRepository."""
     repo = _get_signal_repo(db)
     try:
-        result = await repo.get_signal_by_id(signal_id)
-        if result is not None:
-            return result
+        return await repo.get_signal_by_id(signal_id)
     except Exception:
-        logger.error("repo_get_signal_by_id_fallback", signal_id=str(signal_id), exc_info=True)
-    # Fall back to legacy mock store (supports existing tests / unmigrated DB)
-    return _signal_store.get(signal_id)
+        logger.error("repo_get_signal_by_id_failed", signal_id=str(signal_id), exc_info=True)
+        return None
 
 
 async def _repo_get_signals_with_filters(
@@ -138,7 +135,7 @@ async def _repo_get_signals_with_filters(
     try:
         if symbol:
             # Push symbol + status + since filters to SQL; fetch enough rows for pagination
-            db_signals = await repo.get_signals_by_symbol(
+            signals = await repo.get_signals_by_symbol(
                 symbol=symbol,
                 start_date=since,
                 status=status,
@@ -146,22 +143,16 @@ async def _repo_get_signals_with_filters(
             )
         else:
             # No symbol filter: push status/since to SQL via get_all_signals
-            db_signals = await repo.get_all_signals(
+            signals = await repo.get_all_signals(
                 status=status,
                 since=since,
                 limit=limit + offset if limit else 500,
             )
     except Exception:
-        logger.error("repo_get_signals_with_filters_fallback", exc_info=True)
-        db_signals = []
-
-    # Merge in legacy mock store signals (supports existing tests / unmigrated DB)
-    db_ids = {s.id for s in db_signals}
-    in_memory_extra = [s for s in _signal_store.values() if s.id not in db_ids]
-    db_signals.extend(in_memory_extra)
+        logger.error("repo_get_signals_with_filters_failed", exc_info=True)
+        signals = []
 
     # Apply remaining filters not handled at SQL level
-    signals = db_signals
     if min_confidence:
         signals = [s for s in signals if s.confidence_score >= min_confidence]
     if min_r_multiple:
@@ -170,11 +161,11 @@ async def _repo_get_signals_with_filters(
     # Sort by timestamp descending (newest first)
     signals.sort(key=lambda s: s.timestamp, reverse=True)
 
-    # Use DB count + in-memory extras for accurate total when no Python-side
-    # filters were applied; fall back to len(signals) otherwise since the
-    # COUNT(*) doesn't reflect min_confidence/min_r_multiple filtering.
+    # Use DB count for accurate total when no Python-side filters were applied;
+    # fall back to len(signals) otherwise since the COUNT(*) doesn't reflect
+    # min_confidence/min_r_multiple filtering.
     if db_total is not None and not min_confidence and not min_r_multiple:
-        total_count = db_total + len(in_memory_extra)
+        total_count = db_total
     else:
         total_count = len(signals)
 
@@ -193,14 +184,7 @@ async def _repo_update_signal_status(
         if updated:
             return updated
     except Exception:
-        logger.error("repo_update_signal_status_fallback", signal_id=str(signal_id), exc_info=True)
-
-    # Fall back to legacy mock store (supports existing tests / unmigrated DB)
-    signal = _signal_store.get(signal_id)
-    if signal:
-        updated_signal = signal.model_copy(update={"status": status_update.status})
-        _signal_store[signal_id] = updated_signal
-        return updated_signal
+        logger.error("repo_update_signal_status_failed", signal_id=str(signal_id), exc_info=True)
 
     raise HTTPException(
         status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Signal {signal_id} not found"
@@ -864,23 +848,14 @@ def calculate_adhoc_priority_score(signal: TradeSignal) -> float:
 
 
 # ============================================================================
-# Helper Functions for Testing (kept for backwards compatibility)
+# Deprecated: In-memory store removed (production readiness fix)
 # ============================================================================
-
-# TODO: Remove once DB migration fully complete and all tests use test DB fixtures.
-# This in-memory store grows unboundedly and is not suitable for production use.
-# Legacy in-memory store — kept so existing tests that import these don't break.
-_signal_store: dict[UUID, TradeSignal] = {}
-
-
-def add_signal_to_store(signal: TradeSignal) -> None:
-    """Add signal to legacy mock store (for testing only)."""
-    _signal_store[signal.id] = signal
-
-
-def clear_signal_store() -> None:
-    """Clear legacy mock store (for testing only)."""
-    _signal_store.clear()
+# The global _signal_store dict has been removed. In multi-worker deployment,
+# each worker had its own isolated dict, causing random 404s when different
+# workers handled different requests. DB is now the only signal storage path.
+#
+# Tests that relied on add_signal_to_store() and clear_signal_store() must
+# be updated to use the database via SignalRepository and db_session fixtures.
 
 
 @router.get(
