@@ -383,16 +383,16 @@ class SignalRepository:
         (signal generation time) to support live polling use cases.
 
         Args:
-            since: Return signals with created_at >= since
+            since: Return signals with created_at > since (strict greater-than per AC3)
             symbol: Optional symbol filter
 
         Returns:
-            List of TradeSignals with status=APPROVED and created_at >= since
+            List of TradeSignals with status=APPROVED and created_at > since
         """
         if self.db_session is not None:
             conditions = [
                 TradeSignalModel.status == "APPROVED",
-                TradeSignalModel.created_at >= since,
+                TradeSignalModel.created_at > since,  # AC3: strict >, not >=
             ]
             if symbol:
                 conditions.append(TradeSignalModel.symbol == symbol)
@@ -411,7 +411,7 @@ class SignalRepository:
         signals = [
             s
             for s in self._signals.values()
-            if s.status == "APPROVED" and (s.created_at or s.timestamp) >= since
+            if s.status == "APPROVED" and (s.created_at or s.timestamp) > since  # AC3: strict >
         ]
         if symbol:
             signals = [s for s in signals if s.symbol == symbol]

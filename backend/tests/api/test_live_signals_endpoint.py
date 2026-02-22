@@ -503,3 +503,80 @@ async def test_empty_result_when_no_signals_in_window(
     assert response.status_code == 200
     signals = response.json()
     assert signals == []
+
+
+@pytest.mark.asyncio
+async def test_since_excludes_signal_at_exact_timestamp(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """
+    AC3 STRICT >: Signal created at EXACTLY the since timestamp must be EXCLUDED.
+
+    This verifies the fix for the blocking issue where >= was incorrectly used.
+    Per AC3: "only signals with created_at > T are returned"
+
+    With >=, polling clients would receive duplicate signals on every poll.
+    With > (correct), signals are delivered exactly once.
+
+    Given a signal created at timestamp T
+    When GET /api/v1/signals/live?since=T is called
+    Then the signal at timestamp T is EXCLUDED (created_at > T, not >=)
+    """
+    from src.models.signal import ConfidenceComponents, TargetLevels, TradeSignal
+    from src.models.validation import ValidationChain
+    from src.repositories.signal_repository import SignalRepository
+
+    repo = SignalRepository(db_session=db_session)
+    exact_timestamp = datetime.now(UTC) - timedelta(seconds=10)
+
+    # Create a signal at EXACTLY the since timestamp
+    signal_at_exact_time = TradeSignal(
+        id=uuid4(),
+        symbol="TEST",
+        pattern_type="SPRING",
+        phase="C",
+        timeframe="1d",
+        entry_price=Decimal("100.00"),
+        stop_loss=Decimal("95.00"),
+        target_levels=TargetLevels(primary_target=Decimal("120.00")),
+        position_size=Decimal("100"),
+        risk_amount=Decimal("500.00"),
+        r_multiple=Decimal("4.0"),
+        confidence_score=85,
+        confidence_components=ConfidenceComponents(
+            pattern_confidence=88,
+            phase_confidence=82,
+            volume_confidence=80,
+            overall_confidence=85,
+        ),
+        validation_chain=ValidationChain(
+            pattern_id=uuid4(),
+            validation_results=[],
+            overall_status="PASS",
+        ),
+        status="APPROVED",
+        timestamp=exact_timestamp,
+        created_at=exact_timestamp,  # EXACTLY at the since timestamp
+        notional_value=Decimal("10000.00"),
+    )
+    await repo.save_signal(signal_at_exact_time)
+
+    # Query with since = exact_timestamp (should EXCLUDE the signal at that exact time)
+    since_iso = quote(exact_timestamp.isoformat())
+    response = await async_client.get(
+        f"/api/v1/signals/live?since={since_iso}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    signals = response.json()
+
+    # AC3: created_at > T (strict greater-than)
+    # The signal at EXACTLY timestamp T should be EXCLUDED
+    test_signal_ids = [s["id"] for s in signals if s["symbol"] == "TEST"]
+    assert len(test_signal_ids) == 0, (
+        f"Signal at exact timestamp {exact_timestamp.isoformat()} was incorrectly included. "
+        "AC3 requires strict > (not >=) to prevent duplicate delivery on polling."
+    )
