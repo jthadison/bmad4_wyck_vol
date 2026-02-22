@@ -6,6 +6,7 @@ Runs validation chain on detected patterns.
 Story 18.10.3: Pattern Detection and Validation Stages (AC2, AC4)
 """
 
+from datetime import UTC
 from decimal import Decimal
 from typing import Any
 
@@ -297,15 +298,28 @@ class ValidationStage(PipelineStage[list[Any], ValidationResults]):
         # VolumeValidator expects single object, not list
         matched_volume_analysis = None
         if volume_analysis:
-            # Get pattern timestamp
-            pattern_timestamp = getattr(pattern, "bar_timestamp", None) or getattr(
-                pattern, "timestamp", None
+            # Get pattern timestamp (handles both direct fields and nested pattern.bar.timestamp)
+            pattern_timestamp = (
+                getattr(pattern, "bar_timestamp", None)
+                or getattr(pattern, "timestamp", None)
+                or (getattr(pattern, "bar", None).timestamp if hasattr(pattern, "bar") else None)
             )
 
             if pattern_timestamp:
+                # Normalize pattern timestamp to UTC for comparison
+                # (handles timezone-aware vs naive datetime equality)
+                if pattern_timestamp.tzinfo is None:
+                    pattern_timestamp_utc = pattern_timestamp.replace(tzinfo=UTC)
+                else:
+                    pattern_timestamp_utc = pattern_timestamp.astimezone(UTC)
+
                 # Find VolumeAnalysis matching pattern bar timestamp
                 matched_volume_analysis = next(
-                    (va for va in volume_analysis if va.bar.timestamp == pattern_timestamp),
+                    (
+                        va
+                        for va in volume_analysis
+                        if va.bar.timestamp.astimezone(UTC) == pattern_timestamp_utc
+                    ),
                     None,
                 )
 
