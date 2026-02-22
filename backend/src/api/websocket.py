@@ -44,6 +44,8 @@ Integration Points:
 Author: Story 10.9
 """
 
+import time
+from collections import deque
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
@@ -86,6 +88,11 @@ class ConnectionManager:
         """Initialize ConnectionManager with empty connection tracking."""
         # Maps connection_id to (WebSocket, sequence_number) tuple
         self.active_connections: dict[str, tuple[WebSocket, int]] = {}
+
+        # Story 25.13: Ring buffer for missed message recovery
+        # Stores (global_seq, timestamp, message) tuples with 15-min TTL
+        self._message_buffer: deque[tuple[int, float, dict[str, Any]]] = deque(maxlen=500)
+        self._global_sequence: int = 0  # Global sequence counter for recovery
 
     async def connect(self, websocket: WebSocket, already_accepted: bool = False) -> str:
         """
@@ -163,6 +170,13 @@ class ConnectionManager:
 
         try:
             await ws.send_json(message)
+
+            # Story 25.13: Buffer message after successful send for recovery
+            self._global_sequence += 1
+            buffered_message = message.copy()
+            buffered_message["sequence_number"] = self._global_sequence  # Override with global seq
+            self._message_buffer.append((self._global_sequence, time.time(), buffered_message))
+
         except Exception as e:
             print(f"[WebSocket] Failed to send message to {connection_id}: {e}")
             # Remove dead connection
@@ -187,6 +201,38 @@ class ConnectionManager:
             print(f"[WebSocket] Sending to connection {connection_id}", flush=True)
             await self.send_message(connection_id, message.copy())
             print(f"[WebSocket] Sent to connection {connection_id}", flush=True)
+
+    def get_messages_since(self, since_seq: int) -> list[dict[str, Any]]:
+        """
+        Retrieve buffered messages for recovery after reconnection (Story 25.13).
+
+        Returns messages with global sequence_number > since_seq and within 15-minute TTL.
+        Used by GET /websocket/messages endpoint for missed message recovery.
+
+        Args:
+            since_seq: Last known global sequence number from client
+
+        Returns:
+            List of message dictionaries with global sequence_number field
+
+        TTL: 900 seconds (15 minutes)
+
+        Example:
+            Client disconnects after receiving message with global seq 42.
+            Server emits messages with global seq 43, 44, 45 while client is offline.
+            Client reconnects and calls /websocket/messages?since=42
+            Returns messages 43, 44, 45 (if within 15-min TTL)
+        """
+        now = time.time()
+        ttl_cutoff = now - 900  # 15 minutes = 900 seconds
+
+        result = []
+        for seq, timestamp, message in self._message_buffer:
+            # Filter: sequence > since AND within TTL
+            if seq > since_seq and timestamp > ttl_cutoff:
+                result.append(message)
+
+        return result
 
     async def emit_pattern_detected(
         self,

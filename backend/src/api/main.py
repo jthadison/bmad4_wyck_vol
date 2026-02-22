@@ -17,8 +17,10 @@ if sys.platform == "win32":
     else:
         print("[WINDOWS FIX] SelectorEventLoop policy already set", flush=True)
 
+from typing import Any
+
 import structlog
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import Depends, FastAPI, Query, Request, WebSocket
 
 try:
     from importlib.metadata import version as get_version
@@ -31,6 +33,7 @@ from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.api.dependencies import get_current_user_id
 from src.api.middleware.rate_limiter import RateLimiterMiddleware
 from src.api.routes import (
     audit,
@@ -65,7 +68,7 @@ from src.api.routes import (
 from src.api.routes import settings as settings_routes
 from src.api.routes.data import router as data_router
 from src.api.routes.journal import router as journal_router
-from src.api.websocket import websocket_endpoint
+from src.api.websocket import manager, websocket_endpoint
 from src.config import settings
 from src.market_data.exceptions import ConfigurationError
 from src.market_data.factory import MarketDataProviderFactory
@@ -155,6 +158,37 @@ app.include_router(data_router)  # Historical data ingestion routes (Story 25.5)
 async def websocket_route(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time event streaming."""
     await websocket_endpoint(websocket)
+
+
+# WebSocket missed message recovery endpoint (Story 25.13)
+@app.get("/websocket/messages")
+async def get_missed_messages(
+    since: int = Query(default=0, description="Last known global sequence number"),
+    user_id: str = Depends(get_current_user_id),  # JWT auth - returns 401 if missing/invalid
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Retrieve missed WebSocket messages after reconnection (Story 25.13).
+
+    Returns messages with global sequence_number > since and within 15-minute TTL.
+    Used by frontend websocketService.ts for reconnection recovery.
+
+    Args:
+        since: Last known global sequence number (default 0 returns all buffered messages)
+        user_id: Authenticated user ID from JWT (injected by dependency)
+
+    Returns:
+        {"messages": [<message1>, <message2>, ...]}
+
+    Authentication:
+        Requires valid JWT token in Authorization header.
+        Returns 401 if token is missing or invalid.
+
+    Example:
+        GET /websocket/messages?since=42
+        Returns all messages with global sequence > 42 and within 15-min TTL
+    """
+    messages = manager.get_messages_since(since)
+    return {"messages": messages}
 
 
 # Custom middleware to ensure CORS headers on all responses, even errors
