@@ -69,16 +69,18 @@ class VolumeAnalysisStage(PipelineStage[list[OHLCVBar], list[VolumeAnalysis]]):
             context: Pipeline context for data passing
 
         Returns:
-            List of VolumeAnalysis results, one per input bar
+            List of VolumeAnalysis results, one per input bar.
+            Empty list if bars is empty.
 
         Raises:
-            ValueError: If bars list is empty
             TypeError: If bars is not a list or contains non-OHLCVBar items
         """
         if not isinstance(bars, list):
             raise TypeError(f"Expected list[OHLCVBar], got {type(bars).__name__}")
         if not bars:
-            raise ValueError("Cannot analyze empty bars list")
+            # AC4: Return empty list for empty input (no exception)
+            context.set(self.CONTEXT_KEY, [])
+            return []
         if bars and not isinstance(bars[0], OHLCVBar):
             raise TypeError(f"Expected OHLCVBar items, got {type(bars[0]).__name__}")
 
