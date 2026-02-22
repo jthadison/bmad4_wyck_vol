@@ -14,6 +14,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import structlog
 
@@ -447,6 +448,103 @@ class MarketDataCoordinator:
         """
         # Create async task to insert bar
         asyncio.create_task(self._insert_bar(bar))
+
+    async def _compute_ratios(
+        self,
+        symbol: str,
+        timeframe: str,
+        current_volume: int,
+        current_spread: Decimal,
+    ) -> tuple[Decimal, Decimal, bool]:
+        """
+        Compute volume_ratio and spread_ratio from trailing 20-bar average.
+
+        Fetches the most recent 20 bars from the database and calculates the
+        ratio of current volume/spread to the average. This ensures Spring
+        (< 0.7x volume) and SOS (> 1.5x volume) detectors work correctly on
+        live data.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+            current_volume: Volume of the bar being inserted
+            current_spread: Spread (high - low) of the bar being inserted
+
+        Returns:
+            Tuple of (volume_ratio, spread_ratio, low_history_flag):
+            - volume_ratio: current / 20-bar avg, or 1.0 if no history
+            - spread_ratio: current / 20-bar avg, or 1.0 if no history
+            - low_history_flag: True if < 20 bars available (informational only)
+
+        Note:
+            This method matches the lookback window used by the pattern engine's
+            volume_analyzer.calculate_volume_ratio() function (20 bars).
+        """
+        from decimal import Decimal as D
+
+        async with async_session_maker() as session:
+            repo = OHLCVRepository(session)
+            recent_bars = await repo.get_latest_bars(symbol, timeframe, count=20)
+
+        # Handle edge case: no historical data
+        if len(recent_bars) == 0:
+            logger.debug(
+                "no_history_for_ratio_computation",
+                symbol=symbol,
+                timeframe=timeframe,
+            )
+            return (D("1.0"), D("1.0"), True)
+
+        # Handle insufficient history (< 20 bars)
+        low_history_flag = len(recent_bars) < 20
+        if low_history_flag:
+            logger.debug(
+                "insufficient_history_for_ratio_computation",
+                symbol=symbol,
+                timeframe=timeframe,
+                bars_available=len(recent_bars),
+            )
+
+        # Compute averages from available bars
+        volumes = [D(str(bar.volume)) for bar in recent_bars]
+        spreads = [bar.spread for bar in recent_bars]
+
+        avg_volume = sum(volumes) / D(len(volumes))
+        avg_spread = sum(spreads) / D(len(spreads))
+
+        # Handle division by zero for volume ratio
+        if avg_volume == D("0"):
+            logger.warning(
+                "zero_avg_volume_for_ratio_computation",
+                symbol=symbol,
+                timeframe=timeframe,
+            )
+            volume_ratio = D("1.0")
+        else:
+            volume_ratio = D(str(current_volume)) / avg_volume
+
+        # Handle division by zero for spread ratio
+        if avg_spread == D("0"):
+            logger.warning(
+                "zero_avg_spread_for_ratio_computation",
+                symbol=symbol,
+                timeframe=timeframe,
+            )
+            spread_ratio = D("1.0")
+        else:
+            spread_ratio = current_spread / avg_spread
+
+        logger.debug(
+            "ratios_computed",
+            symbol=symbol,
+            timeframe=timeframe,
+            volume_ratio=float(volume_ratio),
+            spread_ratio=float(spread_ratio),
+            bars_used=len(recent_bars),
+            low_history_flag=low_history_flag,
+        )
+
+        return (volume_ratio, spread_ratio, low_history_flag)
 
     async def _insert_bar(self, bar: OHLCVBar) -> None:
         """
