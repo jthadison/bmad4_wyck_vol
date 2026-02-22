@@ -11,25 +11,11 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
+import pytest_asyncio
+from httpx import AsyncClient
 
-from src.api.main import app
-from src.api.routes.signals import add_signal_to_store, clear_signal_store
 from src.models.signal import ConfidenceComponents, TargetLevels, TradeSignal, ValidationChain
-
-
-@pytest.fixture
-def client():
-    """FastAPI test client."""
-    return TestClient(app)
-
-
-@pytest.fixture(autouse=True)
-def clear_store():
-    """Clear signal store before each test."""
-    clear_signal_store()
-    yield
-    clear_signal_store()
+from src.repositories.signal_repository import SignalRepository
 
 
 def create_test_signal(
@@ -38,11 +24,21 @@ def create_test_signal(
     r_multiple: Decimal,
     symbol: str = "AAPL",
     entry_price: Decimal = Decimal("150.00"),
-    stop_loss: Decimal = Decimal("148.00"),
+    stop_loss: Decimal | None = None,
 ) -> TradeSignal:
     """Create test signal with correct R-multiple calculation."""
-    risk_per_share = entry_price - stop_loss
-    target_price = entry_price + (r_multiple * risk_per_share)
+    # UTAD is SHORT, needs stop_loss > entry_price
+    # All others are LONG, need stop_loss < entry_price
+    if pattern_type == "UTAD":
+        if stop_loss is None:
+            stop_loss = Decimal("152.00")
+        risk_per_share = stop_loss - entry_price
+        target_price = entry_price - (r_multiple * risk_per_share)
+    else:
+        if stop_loss is None:
+            stop_loss = Decimal("148.00")
+        risk_per_share = entry_price - stop_loss
+        target_price = entry_price + (r_multiple * risk_per_share)
 
     return TradeSignal(
         id=uuid4(),
@@ -71,12 +67,26 @@ def create_test_signal(
     )
 
 
+@pytest_asyncio.fixture
+async def signal_repo(db_session):
+    """Provide signal repository with test database session."""
+    return SignalRepository(db_session=db_session)
+
+
+async def add_signal_to_db(repo: SignalRepository, signal: TradeSignal) -> None:
+    """Add signal to database via repository."""
+    await repo.create_signal(signal)
+
+
 # =============================================================================
 # Test: GET /signals?sorted=true Returns Priority-Ordered Signals (AC: 10)
 # =============================================================================
 
 
-def test_get_signals_sorted_true_returns_priority_order(client):
+@pytest.mark.asyncio
+async def test_get_signals_sorted_true_returns_priority_order(
+    async_client: AsyncClient, signal_repo: SignalRepository
+):
     """
     Test AC 10: GET /signals?sorted=true returns signals in priority order.
 
@@ -90,15 +100,15 @@ def test_get_signals_sorted_true_returns_priority_order(client):
     signal_sos_low = create_test_signal("SOS", 75, Decimal("2.8"), "TSLA")  # Fourth
     signal_utad = create_test_signal("UTAD", 85, Decimal("2.5"), "NVDA")  # Lowest
 
-    # Add to store
-    add_signal_to_store(signal_spring)
-    add_signal_to_store(signal_lps)
-    add_signal_to_store(signal_sos_high)
-    add_signal_to_store(signal_sos_low)
-    add_signal_to_store(signal_utad)
+    # Add to database
+    await signal_repo.save_signal(signal_spring)
+    await signal_repo.save_signal(signal_lps)
+    await signal_repo.save_signal(signal_sos_high)
+    await signal_repo.save_signal(signal_sos_low)
+    await signal_repo.save_signal(signal_utad)
 
     # GET /signals?sorted=true
-    response = client.get("/api/v1/signals?sorted=true")
+    response = await async_client.get("/api/v1/signals?sorted=true")
 
     # Verify response
     assert response.status_code == 200
@@ -134,7 +144,10 @@ def test_get_signals_sorted_true_returns_priority_order(client):
     assert signals[-1]["pattern_type"] == "SOS"
 
 
-def test_get_signals_sorted_false_returns_timestamp_order(client):
+@pytest.mark.asyncio
+async def test_get_signals_sorted_false_returns_timestamp_order(
+    async_client: AsyncClient, signal_repo: SignalRepository
+):
     """
     Test GET /signals?sorted=false returns signals in timestamp order.
 
@@ -144,18 +157,18 @@ def test_get_signals_sorted_false_returns_timestamp_order(client):
     import time
 
     signal_1 = create_test_signal("SPRING", 85, Decimal("4.0"), "AAPL")  # Oldest
-    add_signal_to_store(signal_1)
+    await signal_repo.save_signal(signal_1)
     time.sleep(0.01)
 
     signal_2 = create_test_signal("SOS", 80, Decimal("3.0"), "MSFT")  # Middle
-    add_signal_to_store(signal_2)
+    await signal_repo.save_signal(signal_2)
     time.sleep(0.01)
 
     signal_3 = create_test_signal("LPS", 75, Decimal("2.5"), "GOOGL")  # Newest
-    add_signal_to_store(signal_3)
+    await signal_repo.save_signal(signal_3)
 
     # GET /signals (sorted=false by default)
-    response = client.get("/api/v1/signals")
+    response = await async_client.get("/api/v1/signals")
 
     assert response.status_code == 200
     data = response.json()
@@ -171,7 +184,10 @@ def test_get_signals_sorted_false_returns_timestamp_order(client):
     assert timestamps[1] >= timestamps[2]
 
 
-def test_get_signals_sorted_true_with_filters(client):
+@pytest.mark.asyncio
+async def test_get_signals_sorted_true_with_filters(
+    async_client: AsyncClient, signal_repo: SignalRepository
+):
     """
     Test sorted=true works with other filters (status, symbol, etc.).
 
@@ -180,18 +196,18 @@ def test_get_signals_sorted_true_with_filters(client):
     # Create signals with different statuses
     signal_1 = create_test_signal("SPRING", 85, Decimal("4.0"), "AAPL")
     signal_1.status = "PENDING"
-    add_signal_to_store(signal_1)
+    await signal_repo.save_signal(signal_1)
 
     signal_2 = create_test_signal("SOS", 80, Decimal("3.0"), "AAPL")
     signal_2.status = "APPROVED"
-    add_signal_to_store(signal_2)
+    await signal_repo.save_signal(signal_2)
 
     signal_3 = create_test_signal("LPS", 90, Decimal("3.5"), "MSFT")
     signal_3.status = "APPROVED"
-    add_signal_to_store(signal_3)
+    await signal_repo.save_signal(signal_3)
 
     # GET /signals?sorted=true&status=APPROVED
-    response = client.get("/api/v1/signals?sorted=true&status=APPROVED")
+    response = await async_client.get("/api/v1/signals?sorted=true&status=APPROVED")
 
     assert response.status_code == 200
     data = response.json()
@@ -207,7 +223,10 @@ def test_get_signals_sorted_true_with_filters(client):
     assert signals[1]["symbol"] == "AAPL"  # SOS 80%
 
 
-def test_get_signals_sorted_true_pagination(client):
+@pytest.mark.asyncio
+async def test_get_signals_sorted_true_pagination(
+    async_client: AsyncClient, signal_repo: SignalRepository
+):
     """
     Test sorted=true works with pagination (limit/offset).
 
@@ -216,10 +235,10 @@ def test_get_signals_sorted_true_pagination(client):
     # Create 10 signals
     for i in range(10):
         signal = create_test_signal("SOS", 75 + i, Decimal("2.5"), f"SYM{i}")
-        add_signal_to_store(signal)
+        await signal_repo.save_signal(signal)
 
     # GET /signals?sorted=true&limit=3
-    response = client.get("/api/v1/signals?sorted=true&limit=3")
+    response = await async_client.get("/api/v1/signals?sorted=true&limit=3")
 
     assert response.status_code == 200
     data = response.json()
@@ -230,7 +249,7 @@ def test_get_signals_sorted_true_pagination(client):
     assert data["pagination"]["has_more"] is True
 
     # GET /signals?sorted=true&limit=3&offset=3
-    response2 = client.get("/api/v1/signals?sorted=true&limit=3&offset=3")
+    response2 = await async_client.get("/api/v1/signals?sorted=true&limit=3&offset=3")
 
     assert response2.status_code == 200
     data2 = response2.json()
@@ -241,7 +260,10 @@ def test_get_signals_sorted_true_pagination(client):
     assert signals_1 != signals_2
 
 
-def test_get_signals_sorted_spring_beats_sos_higher_confidence(client):
+@pytest.mark.asyncio
+async def test_get_signals_sorted_spring_beats_sos_higher_confidence(
+    async_client: AsyncClient, signal_repo: SignalRepository
+):
     """
     Test AC 7 via API: Spring with lower confidence beats SOS with higher confidence.
 
@@ -251,11 +273,11 @@ def test_get_signals_sorted_spring_beats_sos_higher_confidence(client):
     signal_spring = create_test_signal("SPRING", 75, Decimal("3.5"), "AAPL")
     signal_sos = create_test_signal("SOS", 85, Decimal("3.5"), "MSFT")
 
-    add_signal_to_store(signal_spring)
-    add_signal_to_store(signal_sos)
+    await signal_repo.save_signal(signal_spring)
+    await signal_repo.save_signal(signal_sos)
 
     # GET /signals?sorted=true
-    response = client.get("/api/v1/signals?sorted=true")
+    response = await async_client.get("/api/v1/signals?sorted=true")
 
     assert response.status_code == 200
     data = response.json()
@@ -270,7 +292,10 @@ def test_get_signals_sorted_spring_beats_sos_higher_confidence(client):
     assert signals[1]["pattern_type"] == "SOS"
 
 
-def test_get_signals_sorted_lps_beats_sos_lower_r_multiple(client):
+@pytest.mark.asyncio
+async def test_get_signals_sorted_lps_beats_sos_lower_r_multiple(
+    async_client: AsyncClient, signal_repo: SignalRepository
+):
     """
     Test AC 8 via API: LPS with higher R-multiple beats SOS with lower R-multiple.
 
@@ -280,11 +305,11 @@ def test_get_signals_sorted_lps_beats_sos_lower_r_multiple(client):
     signal_lps = create_test_signal("LPS", 80, Decimal("3.5"), "AAPL")
     signal_sos = create_test_signal("SOS", 80, Decimal("2.8"), "MSFT")
 
-    add_signal_to_store(signal_lps)
-    add_signal_to_store(signal_sos)
+    await signal_repo.save_signal(signal_lps)
+    await signal_repo.save_signal(signal_sos)
 
     # GET /signals?sorted=true
-    response = client.get("/api/v1/signals?sorted=true")
+    response = await async_client.get("/api/v1/signals?sorted=true")
 
     assert response.status_code == 200
     data = response.json()
@@ -299,16 +324,17 @@ def test_get_signals_sorted_lps_beats_sos_lower_r_multiple(client):
     assert signals[1]["pattern_type"] == "SOS"
 
 
-def test_get_signals_empty_store_returns_empty_list(client):
+@pytest.mark.asyncio
+async def test_get_signals_empty_store_returns_empty_list(async_client: AsyncClient):
     """
-    Test GET /signals?sorted=true with empty store returns empty list.
+    Test GET /signals?sorted=true with empty database returns empty list.
 
     Verify graceful handling when no signals available.
     """
-    # Store is empty (autouse fixture clears it)
+    # Database is empty (fresh db_session per test)
 
     # GET /signals?sorted=true
-    response = client.get("/api/v1/signals?sorted=true")
+    response = await async_client.get("/api/v1/signals?sorted=true")
 
     assert response.status_code == 200
     data = response.json()
