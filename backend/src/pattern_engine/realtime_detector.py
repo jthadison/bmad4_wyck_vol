@@ -722,7 +722,7 @@ class RealtimePatternDetector:
         Calls the same detect_selling_climax() function used by backtesting.
         """
         from src.models.volume_analysis import VolumeAnalysis
-        from src.pattern_engine.phase_detector import detect_selling_climax
+        from src.pattern_engine._phase_detector_impl import detect_selling_climax
 
         # Skip if we already detected an SC at this index
         if context.last_sc_bar_index == bar_index:

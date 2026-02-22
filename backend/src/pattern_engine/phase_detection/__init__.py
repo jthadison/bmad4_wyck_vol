@@ -1,6 +1,10 @@
 """
 Wyckoff Phase Detection Package.
 
+⚠️ SINGLE AUTHORITATIVE ENTRY POINT FOR PHASE DETECTION ⚠️
+This is the ONLY module to use for Wyckoff phase detection and event detection.
+Legacy modules phase_detector.py and phase_detector_v2.py have been removed (Story 25.15).
+
 Provides unified phase detection for Wyckoff accumulation/distribution analysis.
 
 Usage:
@@ -9,28 +13,6 @@ Usage:
     classifier = PhaseClassifier()
     result = classifier.classify(ohlcv_data)
     print(f"Current phase: {result.phase.value}, confidence: {result.confidence}")
-
-Migration Guide (Story 22.7c)
-=============================
-This package replaces the deprecated modules:
-- pattern_engine.phase_detector (deprecated v0.2.0, removed v0.3.0)
-- pattern_engine.phase_detector_v2 (deprecated v0.2.0, removed v0.3.0)
-
-Migration mappings:
-    # Old imports (deprecated):
-    from pattern_engine.phase_detector import detect_selling_climax
-    from pattern_engine.phase_detector_v2 import PhaseDetector
-
-    # New imports (recommended):
-    from pattern_engine.phase_detection import SellingClimaxDetector
-    from pattern_engine.phase_detection import PhaseClassifier
-
-    # Types are already available:
-    from pattern_engine.phase_detection import PhaseType, EventType, PhaseResult
-
-Note:
-    Full implementation pending Story 22.7b (Migrate Phase Detector Logic).
-    Until then, deprecated modules will continue to work via facades.
 
 Package Structure:
     - types.py: Core type definitions (PhaseType, EventType, dataclasses)

@@ -23,7 +23,7 @@ from src.models.automatic_rally import AutomaticRally
 from src.models.phase_classification import PhaseEvents, WyckoffPhase
 from src.models.secondary_test import SecondaryTest
 from src.models.selling_climax import SellingClimax
-from src.pattern_engine.phase_detector import (
+from src.pattern_engine._phase_detector_impl import (
     MIN_PHASE_CONFIDENCE,
     calculate_phase_confidence,
     should_reject_phase,

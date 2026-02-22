@@ -18,7 +18,7 @@ import pytest
 from src.models.effort_result import EffortResult
 from src.models.ohlcv import OHLCVBar
 from src.models.volume_analysis import VolumeAnalysis
-from src.pattern_engine.phase_detector import (
+from src.pattern_engine._phase_detector_impl import (
     detect_automatic_rally,
     detect_secondary_test,
     detect_selling_climax,
