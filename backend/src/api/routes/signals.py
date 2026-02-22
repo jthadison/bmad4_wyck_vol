@@ -16,7 +16,7 @@ Author: Story 8.8 (AC 9)
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
@@ -490,6 +490,126 @@ async def list_signals(
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error fetching signals",
+        ) from e
+
+
+# ============================================================================
+# Live Signals Endpoint (Story 25.12)
+# NOTE: This static route MUST be defined BEFORE parameterized routes like
+#       /{signal_id} to prevent FastAPI from matching "/live" as a UUID.
+# ============================================================================
+
+
+@router.get(
+    "/live",
+    response_model=list[TradeSignal],
+    summary="Get recent live signals",
+    description="Get signals created in the last N seconds or since a timestamp. "
+    "Intended for polling clients that cannot use WebSocket.",
+)
+async def get_live_signals(
+    window_seconds: int = Query(
+        default=30,
+        ge=1,
+        description="Time window in seconds (default 30, max 300)",
+    ),
+    since: datetime | None = Query(
+        None,
+        description="Only signals created after this ISO 8601 timestamp",
+    ),
+    symbol: str | None = Query(None, description="Filter by symbol (e.g., AAPL)"),
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[TradeSignal]:
+    """
+    Get live signals from the last N seconds (Story 25.12).
+
+    Returns signals with status=APPROVED created within the specified time window.
+    Filters on created_at (database insertion time) to support live polling.
+
+    Query Parameters:
+    -----------------
+    - window_seconds: Time window in seconds (default 30, max 300)
+    - since: ISO 8601 timestamp for cursor-based polling
+    - symbol: Filter by trading symbol (optional)
+
+    Time Window Logic:
+    ------------------
+    - If only window_seconds provided: returns signals created in last N seconds
+    - If only since provided: returns signals created after that timestamp
+    - If BOTH provided: uses the more restrictive (later) timestamp
+
+    Returns:
+    --------
+    list[TradeSignal]
+        Bare list of approved signals (no pagination wrapper)
+
+    Raises:
+    -------
+    HTTPException
+        400 if window_seconds > 300
+        401 if authentication fails (handled by dependency)
+
+    Example:
+    --------
+    GET /api/v1/signals/live?window_seconds=30
+    GET /api/v1/signals/live?since=2026-02-22T14:30:00Z
+    GET /api/v1/signals/live?window_seconds=60&symbol=AAPL
+    """
+    # AC5: Explicit 400 for window_seconds > 300 (FastAPI Query validation
+    # returns 422, but story spec requires 400)
+    if window_seconds > 300:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Maximum window is 300 seconds",
+        )
+
+    try:
+        # Normalize since to UTC if naive (prevents TypeError comparing naive/aware datetimes)
+        if since is not None and since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+
+        # Compute effective_since timestamp
+        now = datetime.now(UTC)
+        window_cutoff = now - timedelta(seconds=window_seconds)
+
+        # If both since and window_seconds provided, use the more restrictive (later) timestamp
+        if since is not None:
+            effective_since = max(since, window_cutoff)
+        else:
+            effective_since = window_cutoff
+
+        # Query via repository
+        repo = _get_signal_repo(db)
+        signals = await repo.get_live_signals(
+            since=effective_since,
+            symbol=symbol,
+        )
+
+        logger.info(
+            "live_signals_queried",
+            user_id=str(user_id),
+            window_seconds=window_seconds,
+            since_provided=since is not None,
+            symbol=symbol,
+            returned_count=len(signals),
+            effective_since=effective_since.isoformat(),
+        )
+
+        return signals
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "live_signals_error",
+            user_id=str(user_id),
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error fetching live signals",
         ) from e
 
 
