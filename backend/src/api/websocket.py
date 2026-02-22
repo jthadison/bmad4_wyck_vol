@@ -45,10 +45,12 @@ Author: Story 10.9
 """
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import Query, WebSocket, WebSocketDisconnect
+
+from src.api.dependencies import decode_access_token
 
 if TYPE_CHECKING:
     from src.orm.models import Notification
@@ -85,22 +87,24 @@ class ConnectionManager:
         # Maps connection_id to (WebSocket, sequence_number) tuple
         self.active_connections: dict[str, tuple[WebSocket, int]] = {}
 
-    async def connect(self, websocket: WebSocket) -> str:
+    async def connect(self, websocket: WebSocket, already_accepted: bool = False) -> str:
         """
         Accept WebSocket connection and send connected message.
 
         Args:
             websocket: FastAPI WebSocket instance
+            already_accepted: If True, skip the accept() call (for pre-authenticated connections)
 
         Returns:
             connection_id: Unique UUID for this connection
 
         Side Effects:
-            - Accepts WebSocket connection
+            - Accepts WebSocket connection (unless already_accepted=True)
             - Assigns UUID and initializes sequence_number to 0
             - Sends connected message with connection_id
         """
-        await websocket.accept()
+        if not already_accepted:
+            await websocket.accept()
         connection_id = str(uuid4())
         self.active_connections[connection_id] = (websocket, 0)
 
@@ -656,19 +660,31 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def websocket_endpoint(websocket: WebSocket) -> None:
+async def websocket_endpoint(
+    websocket: WebSocket, token: Optional[str] = Query(default=None)
+) -> None:
     """
-    WebSocket endpoint handler.
+    WebSocket endpoint handler with JWT authentication (Story 25.17).
 
-    Endpoint: ws://localhost:8000/ws
+    Endpoint: ws://localhost:8000/ws?token=<jwt>
+
+    Authentication:
+    ---------------
+    - Requires valid JWT token passed as query parameter
+    - Missing token → close code 1008 "Authentication required"
+    - Invalid/expired token → close code 1008 "Invalid or expired token"
+    - Connection closed before adding to pool to prevent signal leakage
 
     Connection Flow:
     ----------------
-    1. Client connects: `new WebSocket('ws://localhost:8000/ws')`
-    2. Server accepts, assigns connection_id, sends connected message
-    3. Server emits events as they occur (pattern detected, signal generated, etc.)
-    4. Client processes messages, updates UI
-    5. On disconnect: Server removes connection from tracking
+    1. Client connects: `new WebSocket('ws://localhost:8000/ws?token=<jwt>')`
+    2. Server accepts connection (required by WebSocket protocol)
+    3. Server validates JWT token
+    4. If invalid: close connection immediately before pool add
+    5. If valid: assign connection_id, add to pool, send connected message
+    6. Server emits events as they occur (pattern detected, signal generated, etc.)
+    7. Client processes messages, updates UI
+    8. On disconnect: Server removes connection from tracking
 
     Heartbeat:
     ----------
@@ -680,8 +696,23 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     - WebSocketDisconnect: Normal disconnection, cleanup connection
     - Any Exception: Log error, cleanup connection
     """
-    connection_id = await manager.connect(websocket)
-    print(f"[WebSocket] Client connected: {connection_id}")
+    # Accept connection first (WebSocket protocol requirement)
+    await websocket.accept()
+
+    # Validate JWT token
+    if not token:
+        await websocket.close(code=1008, reason="Authentication required")
+        return
+
+    # Decode and validate token
+    payload = decode_access_token(token)
+    if payload is None:
+        await websocket.close(code=1008, reason="Invalid or expired token")
+        return
+
+    # Token is valid - proceed with connection (pass already_accepted=True)
+    connection_id = await manager.connect(websocket, already_accepted=True)
+    print(f"[WebSocket] Client connected (authenticated): {connection_id}")
 
     try:
         # Keep connection alive, listen for client messages if needed
