@@ -87,6 +87,7 @@ class OHLCVRepository:
                 spread=bar.spread,
                 spread_ratio=bar.spread_ratio,
                 volume_ratio=bar.volume_ratio,
+                low_history_flag=bar.low_history_flag,
                 created_at=bar.created_at,
             )
 
@@ -155,6 +156,7 @@ class OHLCVRepository:
                     spread=bar.spread,
                     spread_ratio=bar.spread_ratio,
                     volume_ratio=bar.volume_ratio,
+                    low_history_flag=bar.low_history_flag,
                     created_at=bar.created_at,
                 )
                 self.session.add(model)

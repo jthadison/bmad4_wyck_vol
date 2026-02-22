@@ -11,6 +11,7 @@ from uuid import uuid4
 from sqlalchemy import (
     DECIMAL,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -100,6 +101,11 @@ class OHLCVBarModel(Base):
         DECIMAL(10, 4),
         nullable=False,
         default=Decimal("1.0"),
+    )
+    low_history_flag: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+        default=None,
     )
 
     # Metadata
