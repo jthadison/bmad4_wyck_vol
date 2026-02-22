@@ -34,11 +34,14 @@ def test_spring_uses_config_threshold():
         pattern.volume_ratio = Decimal("0.6")  # Would pass with 0.7 threshold
         pattern.id = uuid4()
 
+        volume_analysis = MagicMock()
+
         context = ValidationContext(
             pattern=pattern,
             symbol="TEST",
             asset_class="STOCK",
             timeframe="1d",
+            volume_analysis=volume_analysis,
             config={},
         )
 
@@ -71,11 +74,14 @@ def test_sos_uses_config_threshold():
         pattern.volume_ratio = Decimal("1.8")  # Would pass with 1.5 threshold
         pattern.id = uuid4()
 
+        volume_analysis = MagicMock()
+
         context = ValidationContext(
             pattern=pattern,
             symbol="TEST",
             asset_class="STOCK",
             timeframe="1d",
+            volume_analysis=volume_analysis,
             config={},
         )
 

@@ -35,12 +35,16 @@ def test_sos_volume_ratio_boundaries(volume_ratio, expected_pass):
     pattern.volume_ratio = volume_ratio
     pattern.id = uuid4()
 
+    # Create mock volume_analysis
+    volume_analysis = MagicMock()
+
     # Create minimal context
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 
@@ -69,11 +73,14 @@ def test_sos_fail_reason_informative():
     pattern.volume_ratio = Decimal("1.2")
     pattern.id = uuid4()
 
+    volume_analysis = MagicMock()
+
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 
@@ -95,11 +102,14 @@ def test_sos_none_volume_ratio():
     pattern.volume_ratio = None
     pattern.id = uuid4()
 
+    volume_analysis = MagicMock()
+
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 
@@ -118,11 +128,14 @@ def test_sos_nan_volume_ratio():
     pattern.volume_ratio = float("nan")  # NaN
     pattern.id = uuid4()
 
+    volume_analysis = MagicMock()
+
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 

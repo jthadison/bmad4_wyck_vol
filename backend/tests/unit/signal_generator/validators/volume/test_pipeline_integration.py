@@ -31,12 +31,15 @@ def test_pipeline_rejects_spring_at_volume_stage():
     pattern.volume_ratio = Decimal("0.8")  # Too high for Spring (>= 0.7 threshold)
     pattern.id = uuid4()
 
+    volume_analysis = MagicMock()
+
     # Create context
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 
@@ -65,12 +68,15 @@ async def test_adapter_rejects_spring_with_high_volume():
     pattern.volume_ratio = Decimal("0.8")
     pattern.id = uuid4()
 
+    volume_analysis = MagicMock()
+
     # Create context
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 
@@ -92,11 +98,14 @@ async def test_adapter_passes_spring_with_low_volume():
     pattern.volume_ratio = Decimal("0.5")  # Valid low volume
     pattern.id = uuid4()
 
+    volume_analysis = MagicMock()
+
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 
@@ -116,11 +125,14 @@ async def test_adapter_rejects_sos_with_low_volume():
     pattern.volume_ratio = Decimal("1.2")  # Too low for SOS (<= 1.5 threshold)
     pattern.id = uuid4()
 
+    volume_analysis = MagicMock()
+
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 
@@ -140,11 +152,14 @@ async def test_adapter_passes_sos_with_high_volume():
     pattern.volume_ratio = Decimal("1.8")  # Valid high volume
     pattern.id = uuid4()
 
+    volume_analysis = MagicMock()
+
     context = ValidationContext(
         pattern=pattern,
         symbol="TEST",
         asset_class="STOCK",
         timeframe="1d",
+        volume_analysis=volume_analysis,
         config={},
     )
 
