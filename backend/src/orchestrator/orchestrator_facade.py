@@ -39,6 +39,8 @@ from src.signal_generator.validators.base import BaseValidator
 logger = structlog.get_logger(__name__)
 
 # Confidence floor requirement (FR3, Story 25.7)
+# Wyckoff principle: "Volume precedes price" — only high-evidence signals traded
+# 70% threshold ensures sufficient accumulation "cause" to justify markup expectation
 CONFIDENCE_FLOOR = 70
 
 
@@ -257,6 +259,8 @@ class _TradeSignalGenerator:
 
         # Apply session-based confidence penalty if present (Story 13.3.1)
         session_penalty = getattr(pattern, "session_confidence_penalty", 0)
+        # int() truncation is intentional: conservative floor enforcement
+        # (e.g., 69.9 → 69 → rejected is safer than rounding to 70 → accepted)
         final_confidence = int(base_confidence) + session_penalty
 
         # AC4: Floor check AFTER all penalties applied (not before)
